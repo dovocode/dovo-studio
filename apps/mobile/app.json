@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "Dovo Studio",
+    "slug": "dovo-studio",
+    "version": "0.1.0",
+    "icon": "./assets/icon.png",
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "jsEngine": "hermes",
+    "scheme": "dovo",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dovo.studio",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Connect to your Dovo desktop runtime on your private network.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        },
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true,
+        "NSSupportsLiveActivities": true
+      },
+      "entitlements": {
+        "application-identifier": "$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)",
+        "keychain-access-groups": ["$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)"]
+      }
+    },
+    "android": {
+      "package": "com.dovo.studio"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "./plugins/with-scenes.cjs",
+      "expo-sharing",
+      "expo-router",
+      "expo-status-bar",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Use the microphone to dictate a message in Dovo Studio.",
+          "speechRecognitionPermission": "Turn your speech into message text. Audio may be processed by your device\u2019s speech service."
+        }
+      ],
+      "expo-localization",
+      [
+        "expo-widgets",
+        {
+          "enablePushNotifications": false
+        }
+      ]
+    ]
+  }
+}

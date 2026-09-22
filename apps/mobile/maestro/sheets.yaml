@@ -1,0 +1,45 @@
+appId: com.dovo.studio
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: Tab Settings
+    timeout: 15000
+- runFlow: open-devices.yaml
+- scrollUntilVisible:
+    element:
+      id: iOS Shortcuts
+    direction: DOWN
+    centerElement: false
+- tapOn:
+    id: iOS Shortcuts
+- extendedWaitUntil:
+    visible:
+      id: Close
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: dovo-mobile-native-sheet
+- swipe:
+    start: 50%, 12%
+    end: 50%, 80%
+    duration: 650
+- extendedWaitUntil:
+    notVisible:
+      id: Close
+    timeout: 10000
+- assertVisible:
+    id: iOS Shortcuts
+- tapOn:
+    id: iOS Shortcuts
+- extendedWaitUntil:
+    visible:
+      id: Close
+    timeout: 10000
+- tapOn:
+    id: Close
+- extendedWaitUntil:
+    notVisible:
+      id: Close
+    timeout: 10000
+- assertVisible:
+    id: iOS Shortcuts

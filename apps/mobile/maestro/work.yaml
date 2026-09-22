@@ -1,0 +1,317 @@
+appId: com.dovo.studio
+---
+- tapOn:
+    id: Tab Issues
+- extendedWaitUntil:
+    visible: '.*Mobile issue workflow.*'
+    timeout: 20000
+- assertVisible: All states
+- assertVisible: 1 issue · All projects
+- takeScreenshot: dovo-mobile-issues-tab
+# Native detail push keeps search and issue state on the retained collection.
+- tapOn:
+    id: Issue state
+- tapOn: open
+- tapOn: 'Load more · Mobile work fixture.*'
+- extendedWaitUntil:
+    visible: '.*Mobile older issue.*'
+    timeout: 15000
+- assertNotVisible: 'Load more · Mobile work fixture.*'
+- tapOn:
+    id: Search issues
+- inputText: Mobile
+- pressKey: Enter
+- tapOn:
+    id: Work item 1
+- assertVisible: Details
+- assertNotVisible:
+    id: Tab PRs
+- swipe:
+    start: 1%, 45%
+    end: 95%, 45%
+    duration: 700
+- extendedWaitUntil:
+    visible:
+      id: Search issues
+      text: Mobile
+    timeout: 10000
+- assertVisible: open
+- assertVisible: '.*Mobile older issue.*'
+- takeScreenshot: dovo-mobile-issue-native-return
+# Same source IDs must never be resolved against an unknown computer.
+- openLink: dovo://issues/item/unknown-computer/work/1
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible: Computer unavailable
+    timeout: 15000
+- assertNotVisible: Details
+- assertNotVisible: Start task
+- tapOn: Back
+- extendedWaitUntil:
+    visible:
+      id: Work item 1
+    timeout: 10000
+# A cached or fresh matching ID is insufficient if its provider URL has changed.
+- openLink: 'dovo://issues/item/${RUNTIME_ID}/work/1?url=https%3A%2F%2Fgithub.com%2Foriginal%2Fproject%2Fissues%2F1'
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible: '.*different issue source.*'
+    timeout: 15000
+- assertVisible: Open original source on server
+- assertNotVisible: Start task
+- assertNotVisible: Details
+- tapOn: Back
+- extendedWaitUntil:
+    visible:
+      id: Work item 1
+    timeout: 10000
+- tapOn: '.*Mobile issue workflow.*'
+- assertVisible: Details
+- tapOn: Work actions
+- tapOn: Comment
+- tapOn:
+    id: Comment
+- inputText: Mobile fixture comment
+- tapOn: Dismiss keyboard
+- tapOn: Post comment
+- extendedWaitUntil:
+    visible: Mobile fixture comment
+    timeout: 20000
+- takeScreenshot: dovo-mobile-issue-workflow
+- tapOn: Start task
+- extendedWaitUntil:
+    visible: 'Open issue #1'
+    timeout: 20000
+- assertVisible:
+    id: Open source on server
+- assertVisible:
+    id: Message
+- tapOn: 'Open issue #1'
+- extendedWaitUntil:
+    visible: Open linked task
+    timeout: 20000
+- assertVisible: Mobile fixture comment
+- takeScreenshot: dovo-mobile-issue-task-return
+- tapOn: Linked tasks
+- tapOn: Start another task
+- extendedWaitUntil:
+    visible: 'Open issue #1'
+    timeout: 20000
+- tapOn: 'Open issue #1'
+- extendedWaitUntil:
+    visible: Open linked task
+    timeout: 20000
+- tapOn: Back
+- assertVisible:
+    id: Search issues
+    text: Mobile
+- assertVisible: open
+# Runs are a PR-owned detail route; there is no standalone Pipelines collection.
+- openLink: 'dovo://pulls/runs/${RUNTIME_ID}/work?sha=${RUN_SHA}&pull=7'
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: Work item 42
+    timeout: 20000
+- tapOn:
+    id: Search pipelines
+- inputText: '${RUN_SHA}'
+- pressKey: Enter
+- tapOn:
+    id: Work item 42
+- assertVisible: 'Run #256'
+- assertNotVisible:
+    id: Tab Issues
+- swipe:
+    start: 1%, 45%
+    end: 95%, 45%
+    duration: 700
+- extendedWaitUntil:
+    visible:
+      id: Search pipelines
+      text: '${RUN_SHA}'
+    timeout: 10000
+- takeScreenshot: dovo-mobile-pipeline-native-return
+- tapOn:
+    id: Work item 42
+- assertVisible: 'Run #256'
+- assertVisible: '.*Attempt 2.*'
+- assertVisible: '.*5m 0s.*'
+- assertVisible: Run failed after a test error.
+- scrollUntilVisible:
+    element:
+      id: Pipeline run details
+    direction: DOWN
+    centerElement: true
+- tapOn: Pipeline run details
+- scrollUntilVisible:
+    element:
+      text: Preserve selected runtime in new tasks
+    direction: DOWN
+    centerElement: true
+- assertVisible: '.*Continuous integration.*'
+- scrollUntilVisible:
+    element:
+      text: '${RUN_SHA}'
+    direction: DOWN
+    centerElement: true
+- assertVisible: '${RUN_SHA}'
+- takeScreenshot: dovo-mobile-pipeline-run-details
+- scrollUntilVisible:
+    element:
+      id: Pipeline run details
+    direction: UP
+    centerElement: true
+- tapOn: Pipeline run details
+- scrollUntilVisible:
+    element:
+      text: linux-test-runner
+    direction: UP
+    centerElement: true
+- assertVisible: linux-test-runner
+- scrollUntilVisible:
+    element:
+      text: Expected the selected runtime to remain connected.
+    direction: UP
+    centerElement: true
+- assertVisible: '.*Run unit tests.*'
+- assertVisible: '.*4m 30s.*'
+- assertVisible: Expected the selected runtime to remain connected.
+- takeScreenshot: dovo-mobile-pipeline-steps
+- scrollUntilVisible:
+    element:
+      id: Job Upload artifacts
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Job Upload artifacts
+- scrollUntilVisible:
+    element:
+      text: The provider did not supply step details for this job.
+    direction: DOWN
+    centerElement: true
+- assertVisible: The provider did not supply step details for this job.
+- scrollUntilVisible:
+    element:
+      id: Investigate run
+    direction: UP
+    centerElement: true
+- tapOn: Work actions
+- assertVisible: Rerun
+- tapOn: Refresh details
+- extendedWaitUntil:
+    visible: Investigate run
+    timeout: 20000
+- tapOn: Investigate run
+- extendedWaitUntil:
+    visible: 'Open pipeline #42'
+    timeout: 20000
+- assertVisible:
+    id: Message
+- tapOn: 'Open pipeline #42'
+- extendedWaitUntil:
+    visible: Open linked task
+    timeout: 20000
+- tapOn: Work actions
+- tapOn: Run pipeline
+- assertVisible: main
+- tapOn:
+    id: Branch or ref
+- eraseText
+- inputText: main
+- tapOn: Dismiss keyboard
+- tapOn: Run pipeline
+- extendedWaitUntil:
+    visible: Pipeline submitted
+    timeout: 20000
+- takeScreenshot: dovo-mobile-pipeline-workflow
+- tapOn: Back
+- openLink: 'dovo://issues'
+- tapOn:
+    text: Open
+    optional: true
+- assertVisible: '.*Mobile issue workflow.*'
+- tapOn: '.*Mobile issue workflow.*'
+- assertVisible: Mobile fixture comment
+- assertVisible: Open linked task
+- assertVisible: 'Issue 1: Mobile issue workflow'
+- tapOn: Back
+- openLink: 'dovo://pulls/runs/${RUNTIME_ID}/work?sha=${RUN_SHA}&pull=7'
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: Work item 42
+    timeout: 20000
+- tapOn: '.*Mobile pipeline workflow.*'
+- assertVisible: Open linked task
+- assertVisible: 'Pipeline 42: Mobile pipeline workflow'
+- tapOn: Back
+- tapOn: Back
+- tapOn:
+    id: Tab Settings
+- runFlow:
+    when:
+      visible:
+        text: Back
+    commands:
+      - tapOn:
+          text: Back
+- tapOn:
+    id: Source control
+- tapOn: Connect account
+- scrollUntilVisible:
+    element:
+      id: Discover in
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Discover in
+- tapOn: 'Mobile work fixture · Project checkout'
+- extendedWaitUntil:
+    visible: Refresh profiles
+    timeout: 15000
+- tapOn:
+    id: CLI profile
+- tapOn: 'Work · developer'
+- tapOn: Refresh profiles
+- extendedWaitUntil:
+    visible: '.*Fixture CLI discovery unavailable.*'
+    timeout: 15000
+- assertVisible: work
+- takeScreenshot: dovo-mobile-cli-profile-fallback
+- scrollUntilVisible:
+    element:
+      id: Save account
+    direction: DOWN
+    centerElement: true
+- tapOn: Save account
+- extendedWaitUntil:
+    visible: Connect account
+    timeout: 15000
+- assertVisible: GitHub
+- tapOn:
+    id: Tab Issues
+
+# A composer already open when connectivity drops must keep its text and disable submission.
+- tapOn:
+    id: Work item 1
+- extendedWaitUntil:
+    visible: Mobile fixture comment
+    timeout: 10000
+- tapOn: Work actions
+- tapOn: Comment
+- tapOn:
+    id: Comment
+- inputText: Retained offline comment
+- tapOn: Dismiss keyboard
+- assertVisible:
+    id: Post comment
+    enabled: true

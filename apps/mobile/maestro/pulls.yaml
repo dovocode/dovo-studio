@@ -1,0 +1,254 @@
+appId: com.dovo.studio
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: Tab Settings
+    timeout: 15000
+- runFlow: reset-computers.yaml
+- tapOn:
+    id: Runtime address
+- inputText: ${RUNTIME_ADDRESS}
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing options
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing options
+- scrollUntilVisible:
+    element:
+      id: Device name
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Device name
+- eraseText
+- inputText: Dovo simulator test
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing code
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing code
+- inputText: ${PAIRING_CODE}
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Pair device
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pair device
+- extendedWaitUntil:
+    visible:
+      id: Connected computer
+    timeout: 20000
+- tapOn:
+    id: Tab PRs
+- extendedWaitUntil:
+    visible: '.*Fix second runtime.*'
+    timeout: 20000
+- assertVisible: '.*Your review requested.*'
+- assertVisible: '.*Checks failed.*'
+- assertVisible: '.*Approved.*'
+- takeScreenshot: dovo-mobile-pr-overview
+- tapOn: Show PRs needing attention
+- assertNotVisible: '.*Fix first runtime.*'
+- assertVisible: '.*Fix second runtime.*'
+- tapOn: Show all PRs
+- assertVisible: '.*Fix first runtime.*'
+- tapOn: PR filters
+- scrollUntilVisible:
+    element:
+      id: Reset PR filters
+    direction: DOWN
+    centerElement: true
+- tapOn: Reset PR filters
+- tapOn: Show pull requests
+- extendedWaitUntil:
+    visible: '.*Fix first runtime.*'
+    timeout: 10000
+- tapOn: '.*Fix first runtime.*'
+- extendedWaitUntil:
+    visible: Runtime fix
+    timeout: 15000
+- assertVisible:
+    id: PR actions
+    width: 44
+    tolerance: 1
+- assertVisible:
+    text: Back
+- takeScreenshot: dovo-mobile-pr-details
+- assertNotVisible:
+    id: More PR actions
+- tapOn:
+    id: PR actions
+- assertVisible:
+    id: Edit PR
+- assertVisible:
+    id: Request reviewers
+- assertVisible:
+    id: Merge
+- assertVisible:
+    id: Close PR
+- tapOn:
+    id: Comment
+- extendedWaitUntil:
+    visible:
+      id: Message
+    timeout: 10000
+- tapOn:
+    id: Message
+- inputText: Mobile fixture discussion
+- tapOn:
+    id: Dismiss keyboard
+- tapOn:
+    id: Add comment
+    index: 1
+- extendedWaitUntil:
+    notVisible:
+      id: Message
+    timeout: 10000
+- tapOn:
+    id: Review
+- extendedWaitUntil:
+    visible:
+      id: Message
+    timeout: 10000
+- tapOn:
+    id: Message
+- inputText: Mobile fixture review
+- tapOn:
+    id: Dismiss keyboard
+- tapOn:
+    id: Submit review
+    index: 1
+- extendedWaitUntil:
+    notVisible:
+      id: Message
+    timeout: 10000
+- takeScreenshot: dovo-mobile-pr-actions
+- tapOn:
+    id: PR actions
+- assertVisible:
+    id: Open on GitHub
+- assertVisible:
+    id: Refresh details
+- tapOn:
+    id: Start task from PR
+- extendedWaitUntil:
+    visible:
+      id: Task objective
+    timeout: 10000
+- assertVisible:
+    id: Create task
+- assertVisible:
+    id: Create & run
+- takeScreenshot: dovo-mobile-pr-task-sheet
+- tapOn:
+    id: Agent
+- assertVisible:
+    id: Choose Offline cache fixture
+- tapOn:
+    id: Choose Offline cache fixture
+- assertVisible:
+    id: Task objective
+- tapOn:
+    id: Close
+- assertVisible: Runtime fix
+- scrollUntilVisible:
+    element:
+      text: Validation checklist
+    direction: DOWN
+    centerElement: true
+- assertVisible: '.*Keep the current conversation.*'
+- takeScreenshot: dovo-mobile-pr-markdown-checklist
+- scrollUntilVisible:
+    element:
+      text: Verification matrix
+    direction: DOWN
+    centerElement: true
+- takeScreenshot: dovo-mobile-pr-markdown-table
+- tapOn: Checks
+- assertVisible:
+    id: Open Typecheck
+- assertVisible: '.*Typecheck, success.*'
+- assertVisible: '.*Verify remote runtime reconnection across Tailscale and NetBird devices.*'
+- assertVisible:
+    id: Open Verify remote runtime reconnection across Tailscale and NetBird devices
+    width: ${PR_ACTION_HALF_WIDTH}
+    tolerance: ${PR_ACTION_HALF_WIDTH}
+- scrollUntilVisible:
+    element:
+      text: '.*No merge conflicts.*'
+    direction: DOWN
+    centerElement: true
+- assertVisible: '.*No merge conflicts.*'
+- takeScreenshot: dovo-mobile-pr-checks
+- tapOn: Activity
+- scrollUntilVisible:
+    element:
+      text: Verified second comment page.
+    direction: DOWN
+    centerElement: true
+- assertVisible: Verified second comment page.
+- scrollUntilVisible:
+    element:
+      text: "View reviewer's Approved on server"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "View reviewer's Approved on server"
+- scrollUntilVisible:
+    element:
+      text: "View reviewer's Review comment on server"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "View reviewer's Review comment on server"
+- scrollUntilVisible:
+    element:
+      text: "View security-reviewer's Changes requested on server"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "View security-reviewer's Changes requested on server"
+- takeScreenshot: dovo-mobile-pr-review-events
+- tapOn: Files
+- extendedWaitUntil:
+    visible: Changed file
+    timeout: 10000
+- tapOn: Mark viewed
+- assertVisible: '1 of 1 file viewed'
+- takeScreenshot: dovo-mobile-pr-changes
+- tapOn: Overview
+- tapOn: Files
+- assertVisible: '1 of 1 file viewed'
+- tapOn:
+    id: PR actions
+- tapOn:
+    id: Start task from PR
+- extendedWaitUntil:
+    visible:
+      id: Task objective
+    timeout: 10000
+- tapOn:
+    id: Close
+- assertVisible: '1 of 1 file viewed'
+- scrollUntilVisible:
+    element:
+      text: Inline cancellation feedback
+    direction: DOWN
+    centerElement: true
+- tapOn: Back
+- tapOn: Merged
+- extendedWaitUntil:
+    visible: '.*Merged.*'
+    timeout: 10000
+- tapOn: Open
+- tapOn: '.*Fix first runtime.*'
+- extendedWaitUntil:
+    visible: Runtime fix
+    timeout: 10000

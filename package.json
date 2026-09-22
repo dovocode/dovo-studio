@@ -1,0 +1,42 @@
+{
+  "name": "dovo-studio",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @dovo/client-runtime build && vp run --parallel dev",
+    "dev:api": "pnpm --filter @dovo/runtime... -r build && vp -C apps/api dev",
+    "dev:desktop": "pnpm --filter @dovo/api... -r build && vp -C apps/desktop dev",
+    "dev:mobile": "pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build && node scripts/build-mobile-terminal.mjs && pnpm --filter @dovo/mobile start",
+    "dev:web": "pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build && vp -C apps/web dev",
+    "build": "vp run -r build",
+    "check": "vp check",
+    "check:fix": "vp check --fix",
+    "fmt": "vp fmt",
+    "fmt:fix": "vp fmt",
+    "lint": "vp lint",
+    "test": "vp test",
+    "typecheck": "vp run -r typecheck",
+    "fallow": "fallow dead-code",
+    "fallow:ci": "fallow dead-code --format compact",
+    "postinstall": "node scripts/prepare-pty.mjs && node scripts/build-mobile-terminal.mjs && node scripts/prepare-mobile-markdown.mjs && node scripts/build-browser-viewer.mjs",
+    "package:desktop": "pnpm build && node scripts/packaging/package-desktop.mjs",
+    "pair": "pnpm --filter @dovo/api exec tsx src/cli.ts",
+    "server": "pnpm --filter @dovo/api exec tsx src/server-cli.ts",
+    "mobile:update": "node scripts/update-mobile.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.4.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "fallow": "^3.22.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite-plus": "^0.3.0",
+    "zod": "^4.5.4"
+  },
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "packageManager": "pnpm@12.3.4"
+}

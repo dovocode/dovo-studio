@@ -1,0 +1,11 @@
+appId: com.dovo.studio
+---
+- tapOn:
+    id: Tab Settings
+- runFlow:
+    when:
+      visible:
+        text: Back
+    commands:
+      - tapOn:
+          text: Back

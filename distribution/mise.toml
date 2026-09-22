@@ -1,0 +1,17 @@
+# Copy the aliases and desired tool entries into your mise config after the first release.
+[tool_alias]
+dovo-server = "github:dovocode/dovo-studio"
+dovo-studio = "github:dovocode/dovo-studio"
+
+[tools.dovo-server]
+version = "latest"
+asset_pattern = "Dovo-Server-*-{{ os() }}-{{ arch() }}.tar.gz"
+strip_components = 0
+bin_path = "bin"
+
+[tools.dovo-studio]
+version = "latest"
+os = ["macos"]
+asset_pattern = "Dovo-Studio-mise-*-{{ os() }}-{{ arch() }}.tar.gz"
+strip_components = 0
+bin_path = "bin"

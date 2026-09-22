@@ -1,0 +1,213 @@
+appId: com.dovo.studio
+---
+# The verifier runs empty/typed new-draft geometry checks before this behavioral flow.
+- tapOn:
+    id: Dismiss keyboard
+- tapOn:
+    text: Back
+- assertVisible:
+    id: Task mobile-task
+- assertVisible:
+    id: Device overview
+    height: 44
+    tolerance: 1
+- assertVisible:
+    id: Task mobile-task actions
+    width: 44
+    tolerance: 1
+- tapOn:
+    id: Task filters and sorting
+- tapOn:
+    id: Thread sort
+- takeScreenshot: dovo-mobile-sort-menu
+- tapOn:
+    id: Choose Title A–Z
+- tapOn: Done
+- assertVisible: .*Title A–Z.*
+- tapOn:
+    id: Task filters and sorting
+- tapOn:
+    id: Thread sort
+- tapOn:
+    id: Choose Priority
+- tapOn: Done
+- tapOn:
+    id: Task mobile-task
+- assertVisible: Review this change from your phone.
+- assertVisible:
+    text: Chat
+- assertVisible:
+    text: Terminal
+- tapOn:
+    id: Message
+- eraseText
+- inputText: Native first
+- tapOn: Dismiss keyboard
+- tapOn:
+    text: Terminal
+- assertVisible: New terminal
+- tapOn:
+    text: Chat
+- assertVisible:
+    id: Message
+    text: Native first
+- assertVisible:
+    id: Send
+    width: 44
+    height: 44
+    tolerance: 1
+- assertVisible:
+    id: Dictate message
+    width: 44
+    height: 44
+    tolerance: 1
+- assertVisible:
+    id: Attach files
+    width: 44
+    height: 44
+    tolerance: 1
+- assertVisible:
+    text: Back
+    width: 44
+    height: 44
+    tolerance: 1
+- takeScreenshot: dovo-mobile-native-thread
+- tapOn:
+    id: Send
+# The event stream confirms acceptance even though the HTTP response is lost.
+- extendedWaitUntil:
+    visible: Stop
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible:
+      id: Message
+      text: Native first
+    timeout: 10000
+- assertNotVisible: Fixture delivered message had a lost reply.
+- assertNotVisible:
+    id: Queued messages
+# An unacknowledged failure retains its identity and text across an actual native pop/reopen.
+- tapOn:
+    id: Message
+- inputText: Native retry
+- tapOn: Dismiss keyboard
+- tapOn:
+    id: Queue
+- extendedWaitUntil:
+    visible: Fixture interrupted reply. Retry this message.
+    timeout: 10000
+- tapOn:
+    text: Changes \(.*\)
+- assertVisible: Change history
+- tapOn:
+    text: Chat
+- assertVisible: Fixture interrupted reply. Retry this message.
+- assertVisible:
+    id: Message
+    text: Native retry
+- tapOn:
+    text: Back
+- tapOn:
+    id: Task mobile-task
+- assertVisible:
+    id: Message
+    text: Native retry
+- extendedWaitUntil:
+    visible: Stop
+    timeout: 10000
+- tapOn:
+    id: Queue
+- extendedWaitUntil:
+    notVisible: Fixture interrupted reply. Retry this message.
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: Queued messages
+    timeout: 10000
+- tapOn:
+    id: Queued messages
+- assertVisible: Native retry
+- tapOn: Remove 1
+- extendedWaitUntil:
+    visible: The queue is empty.
+    timeout: 10000
+- tapOn: Close
+- assertNotVisible:
+    id: Queued messages
+# Opening the picker from a focused empty draft collapses the composer.
+# Its operation must survive that button relocation and leave the composer usable.
+- tapOn:
+    id: Message
+- tapOn: Attach files
+- waitForAnimationToEnd
+- tapOn:
+    text: 'Cancel|Annuleer'
+    childOf:
+      id: FullDocumentManagerViewControllerNavigationBar
+- extendedWaitUntil:
+    visible:
+      id: Message
+    timeout: 10000
+- tapOn:
+    id: Message
+- eraseText
+- inputText: Native follow-up
+- tapOn: Attach files
+- takeScreenshot: dovo-mobile-composer-file-picker
+- waitForAnimationToEnd
+- tapOn:
+    text: 'Cancel|Annuleer'
+    childOf:
+      id: FullDocumentManagerViewControllerNavigationBar
+- extendedWaitUntil:
+    visible:
+      id: Message
+    timeout: 10000
+- tapOn:
+    id: Message
+- takeScreenshot: dovo-mobile-followup-keyboard
+- tapOn: Dismiss keyboard
+- takeScreenshot: dovo-mobile-followup-ready
+- assertVisible:
+    id: Queue
+    width: 100
+    tolerance: 45
+- assertVisible:
+    id: Queue
+    height: 44
+    tolerance: 1
+- assertVisible:
+    id: Steer
+    width: 100
+    tolerance: 45
+- assertVisible:
+    id: Steer
+    height: 44
+    tolerance: 1
+- tapOn:
+    id: Queue
+- extendedWaitUntil:
+    visible:
+      id: Queued messages
+    timeout: 10000
+- tapOn:
+    id: Queued messages
+- assertVisible: Pause queue
+- assertVisible: Native follow-up
+- takeScreenshot: dovo-mobile-message-queue
+- tapOn: Close
+- tapOn: Stop
+- tapOn:
+    id: Queued messages
+- extendedWaitUntil:
+    visible: Resume queue
+    timeout: 10000
+- tapOn: Remove 1
+- extendedWaitUntil:
+    visible: The queue is empty.
+    timeout: 10000
+- tapOn: Close
+- assertNotVisible:
+    id: Queued messages
+- tapOn: Back
+- runFlow: reset-computers.yaml

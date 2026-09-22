@@ -1,0 +1,4 @@
+appId: com.dovo.studio
+---
+- tapOn: Back
+- runFlow: reset-computers.yaml

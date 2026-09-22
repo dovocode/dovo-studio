@@ -1,0 +1,50 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/client-runtime/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/studio-ui/tsconfig.json"
+    },
+    {
+      "path": "./apps/api/tsconfig.json"
+    },
+    {
+      "path": "./apps/desktop/tsconfig.json"
+    },
+    {
+      "path": "./apps/mobile/tsconfig.json"
+    },
+    {
+      "path": "./apps/web/tsconfig.json"
+    },
+    {
+      "path": "./packages/studio-core/tsconfig.json"
+    },
+    {
+      "path": "./packages/studio-shell/tsconfig.json"
+    },
+    {
+      "path": "./packages/extension-tasks/tsconfig.json"
+    },
+    {
+      "path": "./packages/extension-scm/tsconfig.json"
+    },
+    {
+      "path": "./packages/extension-agents/tsconfig.json"
+    },
+    {
+      "path": "./packages/extension-jobs/tsconfig.json"
+    },
+    {
+      "path": "./packages/extension-runtime/tsconfig.json"
+    },
+    {
+      "path": "./packages/protocol/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/runtime/tsconfig.build.json"
+    }
+  ]
+}

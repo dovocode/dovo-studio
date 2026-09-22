@@ -1,0 +1,70 @@
+diff --git a/Diffs.podspec b/Diffs.podspec
+index aa8a1b933315b33d8171530eefe45553a8015710..579030449b0b10b8dce95fe0fa134bdc4d39e6bd 100644
+--- a/Diffs.podspec
++++ b/Diffs.podspec
+@@ -21,7 +21,7 @@ Pod::Spec.new do |s|
+ 
+   spm_dependency(s,
+     url: "https://github.com/HumanInterfaceDesign/MarkdownView",
+-    requirement: { kind: "branch", branch: "main" }, # todo use version
++    requirement: { kind: "revision", revision: "4e2ad8961ab07a83e555865a87c4a5a9edb5c3c6" },
+     products: ["MarkdownView"]
+   )
+ 
+diff --git a/ios/Diffs.swift b/ios/Diffs.swift
+index 366fcc1d2052245a581e243c78aedbbf24a57347..50b03753b8fb1d1ea9c18cf34f6bc4b662f6a72c 100644
+--- a/ios/Diffs.swift
++++ b/ios/Diffs.swift
+@@ -44,6 +44,12 @@ final class HybridDiffs : HybridDiffsSpec {
+     }
+ 
+     func afterUpdate() {
++        // Nitro callbacks are nonisolated; render through the main actor explicitly.
++        DispatchQueue.main.async { [weak self] in self?.updateContent() }
++    }
++
++    @MainActor
++    private func updateContent() {
+         if let contentInset {
+             let insets = UIEdgeInsets(top: contentInset.top, left: 0, bottom: contentInset.bottom, right: 0)
+             scrollView.contentInset = insets
+@@ -65,11 +71,14 @@ final class HybridDiffs : HybridDiffsSpec {
+             markdown: content,
+             theme: mdTheme
+         )
+-        markdownTextView.setMarkdown(preprocessed)
++        // Nitro already batches prop updates. Commit the document synchronously so a
++        // following theme update cannot replace pending content with the old document.
++        markdownTextView.setMarkdownManually(preprocessed)
+     }
+ 
+     // MARK: - Theme Application
+ 
++    @MainActor
+     private func applyTheme(_ theme: Theme?, to mdTheme: inout MarkdownTheme) {
+         guard let theme else { return }
+ 
+@@ -187,6 +196,7 @@ final class HybridDiffs : HybridDiffsSpec {
+ 
+     // MARK: - Custom Menu
+ 
++    @MainActor
+     private func applyCustomMenuItems() {
+         guard let items = customMenuItems, !items.isEmpty else {
+             markdownTextView.textView.customMenuItems = []
+@@ -209,6 +219,7 @@ final class HybridDiffs : HybridDiffsSpec {
+ 
+     // MARK: - Line Selection
+ 
++    @MainActor
+     private func applyLineSelectionHandler() {
+         let liveHandler = onLineSelection
+         let endHandler = onLineSelectionEnd
+@@ -230,6 +241,7 @@ final class HybridDiffs : HybridDiffsSpec {
+         }
+     }
+ 
++    @MainActor
+     private static func bridge(_ info: MarkdownView.LineSelectionInfo) -> LineSelectionInfo {
+         LineSelectionInfo(
+             startLine: Double(info.lineRange.lowerBound),

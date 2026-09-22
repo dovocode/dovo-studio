@@ -1,0 +1,21 @@
+{
+  "name": "@dovo/extension-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@dovo/studio-core": "workspace:*",
+    "@dovo/studio-ui": "workspace:*",
+    "lucide-react": "^0.577.0",
+    "react": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18"
+  }
+}

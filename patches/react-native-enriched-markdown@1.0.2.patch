@@ -1,0 +1,80 @@
+diff --git a/ios/utils/MarkdownAccessibilityElementBuilder.m b/ios/utils/MarkdownAccessibilityElementBuilder.m
+index ea2680928501c071d3089d2aec9bd5f6678ac87c..9621498b3ba63bf2c3fb564ddeb8cc3d50b5b0b4 100644
+--- a/ios/utils/MarkdownAccessibilityElementBuilder.m
++++ b/ios/utils/MarkdownAccessibilityElementBuilder.m
+@@ -8,6 +8,39 @@ typedef NS_ENUM(NSInteger, ElementType) { ElementTypeText, ElementTypeLink, Elem
+ 
+ static const CGFloat kFocusRectPadding = 2.0;
+ 
++#if !TARGET_OS_OSX
++@interface MarkdownAccessibilityElementBuilder (LiveGeometry)
+++ (UIBezierPath *)accessibilityPathForRange:(NSRange)range inTextView:(UITextView *)textView;
+++ (CGRect)frameForRange:(NSRange)range inTextView:(UITextView *)textView container:(id)container;
++@end
++
++// Elements outlive scrolling, keyboard changes and native tab layout transitions.
++// Resolve their screen coordinates when queried instead of caching an offscreen path.
++@interface ENRMLiveAccessibilityElement : UIAccessibilityElement
++@property (nonatomic, weak) UITextView *textView;
++@property (nonatomic) NSRange textRange;
++@end
++
++@implementation ENRMLiveAccessibilityElement
++- (UIBezierPath *)accessibilityPath
++{
++  UITextView *view = self.textView;
++  return view ? [MarkdownAccessibilityElementBuilder accessibilityPathForRange:self.textRange inTextView:view] : nil;
++}
++- (CGRect)accessibilityFrame
++{
++  UITextView *view = self.textView;
++  if (!view) return CGRectZero;
++  UIBezierPath *path = self.accessibilityPath;
++  if (path) return path.bounds;
++  CGRect frame = [MarkdownAccessibilityElementBuilder frameForRange:self.textRange
++                                                       inTextView:view
++                                                        container:self.accessibilityContainer];
++  return UIAccessibilityConvertFrameToScreenCoordinates(frame, self.accessibilityContainer);
++}
++@end
++#endif
++
+ @implementation MarkdownAccessibilityElementBuilder
+ 
+ #if !TARGET_OS_OSX
+@@ -157,17 +190,12 @@ static const CGFloat kFocusRectPadding = 2.0;
+                                              view:(UITextView *)textView
+                                         container:(id)container
+ {
+-  UIAccessibilityElement *element = [[UIAccessibilityElement alloc] initWithAccessibilityContainer:container];
++  ENRMLiveAccessibilityElement *element = [[ENRMLiveAccessibilityElement alloc] initWithAccessibilityContainer:container];
++  element.textView = textView;
++  element.textRange = range;
+   if (text.length > 0)
+     element.accessibilityLabel = text;
+ 
+-  UIBezierPath *path = [self accessibilityPathForRange:range inTextView:textView];
+-  if (path) {
+-    element.accessibilityPath = path;
+-  } else {
+-    element.accessibilityFrameInContainerSpace = [self frameForRange:range inTextView:textView container:container];
+-  }
+-
+   if (type == ElementTypeImage) {
+     element.accessibilityTraits =
+         linked ? (UIAccessibilityTraitImage | UIAccessibilityTraitLink) : UIAccessibilityTraitImage;
+diff --git a/ios/renderer/CodeRenderer.m b/ios/renderer/CodeRenderer.m
+--- a/ios/renderer/CodeRenderer.m
++++ b/ios/renderer/CodeRenderer.m
+@@ -24,7 +24,10 @@
+   UIFontDescriptorSymbolicTraits traits = blockFont.fontDescriptor.symbolicTraits;
+   UIFontWeight weight = (traits & UIFontDescriptorTraitBold) ? UIFontWeightBold : UIFontWeightRegular;
+ 
+-  CGFloat codeFontSize = _config.codeFontSize > 0 ? _config.codeFontSize : blockStyle.fontSize;
++  CGFloat scaleMultiplier =
++      context.allowFontScaling ? RCTFontSizeMultiplierWithMax(context.maxFontSizeMultiplier) : 1.0;
++  // The block font already includes Dynamic Type; only explicit code sizes need scaling.
++  CGFloat codeFontSize = _config.codeFontSize > 0 ? _config.codeFontSize * scaleMultiplier : blockFont.pointSize;
+ 
+   NSString *codeFontFamily = _config.codeFontFamily;
+   UIFont *codeFont;

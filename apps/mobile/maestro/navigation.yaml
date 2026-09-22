@@ -1,0 +1,297 @@
+appId: com.dovo.studio
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: Tab Settings
+    timeout: 15000
+- runFlow: reset-computers.yaml
+- tapOn:
+    id: Runtime address
+- inputText: ${RUNTIME_ADDRESS}
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing options
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing options
+- scrollUntilVisible:
+    element:
+      id: Device name
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Device name
+- eraseText
+- inputText: Dovo simulator test
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing code
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing code
+- inputText: ${PAIRING_CODE}
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Pair device
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pair device
+- extendedWaitUntil:
+    visible:
+      id: Connected computer
+    timeout: 20000
+- tapOn:
+    id: Tab Tasks
+- assertVisible:
+    id: Task mobile-task
+    width: ${TASK_ROW_HALF_WIDTH}
+    tolerance: ${TASK_ROW_HALF_WIDTH}
+- assertVisible:
+    id: Task mobile-task actions
+    width: 44
+    height: 44
+    tolerance: 1
+- assertVisible:
+    id: Device overview
+    height: 44
+    tolerance: 1
+- takeScreenshot: dovo-mobile-task-dashboard
+- tapOn:
+    id: Task mobile-task actions
+- assertVisible: Pin task
+- takeScreenshot: dovo-mobile-task-menu
+- tapOn:
+    id: Task menu pin
+- extendedWaitUntil:
+    visible: 'Pinned, .*'
+    timeout: 10000
+- tapOn:
+    id: Task mobile-task actions
+- assertVisible: Unpin task
+- tapOn:
+    id: Task menu snooze
+- tapOn: Snooze 1 hour
+- extendedWaitUntil:
+    notVisible:
+      id: Task mobile-task
+    timeout: 10000
+- tapOn:
+    id: Task filters and sorting
+- tapOn:
+    id: Task filter
+- tapOn:
+    id: Choose Snoozed
+- tapOn: Done
+- extendedWaitUntil:
+    visible:
+      id: Task mobile-task
+    timeout: 10000
+- tapOn:
+    id: Task mobile-task actions
+- tapOn:
+    id: Task menu unsnooze
+- extendedWaitUntil:
+    notVisible:
+      id: Task mobile-task
+    timeout: 10000
+- tapOn:
+    id: Task filters and sorting
+- tapOn:
+    id: Task filter
+- tapOn:
+    id: Choose Active
+- tapOn: Done
+- extendedWaitUntil:
+    visible:
+      id: Task mobile-task
+    timeout: 10000
+- tapOn:
+    id: Task mobile-task actions
+- tapOn:
+    id: Task menu settle
+- extendedWaitUntil:
+    notVisible:
+      id: Task mobile-task
+    timeout: 10000
+- tapOn:
+    id: Task filters and sorting
+- tapOn:
+    id: Task filter
+- tapOn:
+    id: Choose Settled
+- tapOn: Done
+- extendedWaitUntil:
+    visible:
+      id: Task mobile-task
+    timeout: 10000
+- tapOn:
+    id: Task mobile-task actions
+- assertVisible: Reopen task
+- tapOn:
+    id: Task menu settle
+- extendedWaitUntil:
+    notVisible:
+      id: Task mobile-task
+    timeout: 10000
+- tapOn:
+    id: Task filters and sorting
+- tapOn:
+    id: Task filter
+- tapOn:
+    id: Choose Active
+- tapOn: Done
+- extendedWaitUntil:
+    visible:
+      id: Task mobile-task
+    timeout: 10000
+- tapOn:
+    id: Task mobile-task actions
+- tapOn:
+    id: Task menu details
+- assertVisible: Task details
+- assertVisible: Unpin task
+- tapOn: Close
+- tapOn:
+    id: Task filters and sorting
+- tapOn:
+    id: Thread sort
+- tapOn:
+    id: Choose Title A–Z
+- tapOn: Done
+- tapOn:
+    id: Task mobile-task
+- assertVisible: Review this change from your phone.
+- assertNotVisible:
+    id: Tab PRs
+- tapOn:
+    id: Message
+- inputText: Preserved through native back
+- tapOn: Dismiss keyboard
+# Native edge swipe must pop the route, preserve its draft and reveal the retained list.
+- swipe:
+    start: 1%, 45%
+    end: 95%, 45%
+    duration: 700
+- extendedWaitUntil:
+    visible:
+      id: Task mobile-task
+    timeout: 10000
+- assertVisible: .*Title A–Z.*
+- tapOn:
+    id: Task mobile-task
+- assertVisible:
+    id: Message
+    text: Preserved through native back
+- tapOn: Back
+- assertVisible:
+    id: Tab Issues
+- tapOn:
+    id: Tab Automations
+- assertVisible:
+    text: Automations
+- tapOn:
+    id: Tab Tasks
+- assertVisible: .*Title A–Z.*
+- tapOn: Projects
+- assertVisible: Back
+- assertNotVisible:
+    id: Tab Settings
+- swipe:
+    start: 1%, 45%
+    end: 95%, 45%
+    duration: 700
+- extendedWaitUntil:
+    visible:
+      id: Task mobile-task
+    timeout: 10000
+- tapOn:
+    id: Tab Settings
+- tapOn:
+    id: Tab Tasks
+- assertVisible:
+    id: Task mobile-task
+- assertNotVisible: Back
+- stopApp
+- openLink: 'dovo://task?text=Shortcut%20verification%20message&title=Shortcut%20verification'
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: Message
+    timeout: 20000
+- assertVisible: Shortcut verification message
+- tapOn:
+    id: Send
+- extendedWaitUntil:
+    visible: '.*Verified fixture response.*'
+    timeout: 20000
+- tapOn: Back
+- tapOn:
+    id: Tab Automations
+- tapOn:
+    id: Tab Tasks
+- assertVisible:
+    id: Task mobile-task
+- assertNotVisible:
+    id: Message
+- takeScreenshot: dovo-mobile-native-tabs
+- tapOn:
+    id: Tab Settings
+- tapOn: Agents
+- assertVisible: Mobile agent
+- swipe:
+    start: 1%, 45%
+    end: 95%, 45%
+    duration: 700
+- assertVisible:
+    id: Devices & runtime
+- tapOn: MCP & skills
+- assertVisible: MCP servers & skills
+- tapOn: Back
+- assertVisible:
+    id: Devices & runtime
+- takeScreenshot: dovo-mobile-native-settings
+- tapOn:
+    id: Tab Tasks
+# Unknown computers must never resolve against the selected host's identically named task.
+- openLink: dovo://thread/unknown-computer/mobile-task
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible: Computer unavailable
+    timeout: 15000
+- assertNotVisible:
+    id: Message
+- tapOn: Back
+- extendedWaitUntil:
+    visible:
+      id: Task mobile-task
+    timeout: 10000
+# A direct new-draft route must wait for saved computer hydration on cold launch.
+- stopApp
+- openLink: dovo://new
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: Message
+    timeout: 20000
+- assertNotVisible: Computer changed
+- tapOn: Back
+- extendedWaitUntil:
+    visible:
+      id: Task mobile-task
+    timeout: 10000
+- runFlow: reset-computers.yaml

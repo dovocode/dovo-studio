@@ -1,0 +1,11 @@
+appId: com.dovo.studio
+---
+- waitForAnimationToEnd
+- assertVisible: Inline code
+- assertVisible: '.*pnpm test.*'
+- assertVisible: '.*RemoteRuntimeConnectionCheckpointRestorationStrategy.*'
+- assertVisible: '.*src/runtime.ts.*'
+- assertNotVisible: '.*`pnpm test`.*'
+- assertNotVisible: '.*`draft.text`.*'
+- waitForAnimationToEnd
+- takeScreenshot: dovo-mobile-inline-xxxl

@@ -1,0 +1,9 @@
+{
+  "oxc.languageServer.enable": true,
+  "oxc.lint.run": "onType",
+  "oxc.fmt.configPath": "./vite.config.ts",
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "editor.formatOnSave": true,
+  "[typescript]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+  "[typescriptreact]": { "editor.defaultFormatter": "oxc.oxc-vscode" }
+}

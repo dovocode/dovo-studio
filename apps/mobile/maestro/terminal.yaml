@@ -1,0 +1,69 @@
+appId: com.dovo.studio
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: Tab Settings
+    timeout: 15000
+- runFlow: reset-computers.yaml
+- tapOn:
+    id: Runtime address
+- inputText: ${RUNTIME_ADDRESS}
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing options
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing options
+- scrollUntilVisible:
+    element:
+      id: Device name
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Device name
+- eraseText
+- inputText: Dovo simulator test
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing code
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing code
+- inputText: ${PAIRING_CODE}
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Pair device
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pair device
+- extendedWaitUntil:
+    visible:
+      id: Connected computer
+    timeout: 20000
+- tapOn:
+    id: Tab Tasks
+- tapOn:
+    id: Task mobile-task
+- tapOn: Terminal
+- tapOn: New terminal
+- extendedWaitUntil:
+    notVisible: 'Loading terminal…|Connecting terminal…'
+    timeout: 15000
+- tapOn: Keyboard
+- inputText: printf mobile-terminal-ok > terminal-proof.txt
+- pressKey: Enter
+- takeScreenshot: dovo-mobile-terminal-keyboard
+- tapOn: Chat
+- tapOn: Terminal
+- assertVisible: Close shell
+- tapOn: Close shell
+- tapOn: Back
+- runFlow: reset-computers.yaml

@@ -1,0 +1,296 @@
+appId: com.dovo.studio
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: Tab Settings
+    timeout: 15000
+- runFlow: reset-computers.yaml
+- tapOn:
+    id: Runtime address
+- inputText: ${RUNTIME_ADDRESS}
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing options
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing options
+- scrollUntilVisible:
+    element:
+      id: Device name
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Device name
+- eraseText
+- inputText: Dovo simulator test
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing code
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing code
+- inputText: ${PAIRING_CODE}
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Pair device
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pair device
+- extendedWaitUntil:
+    visible:
+      id: Connected computer
+    timeout: 20000
+- tapOn:
+    id: Tab Tasks
+- tapOn:
+    id: Task mobile-task
+- assertVisible: Review this change from your phone.
+- tapOn:
+    id: Message
+- eraseText
+- inputText: Native first
+- tapOn: Dismiss keyboard
+- tapOn:
+    id: Send
+- extendedWaitUntil:
+    visible: Stop
+    timeout: 10000
+- tapOn:
+    id: Message
+- eraseText
+- inputText: Native follow-up
+- takeScreenshot: dovo-mobile-followup-keyboard
+- tapOn: Dismiss keyboard
+- takeScreenshot: dovo-mobile-followup-ready
+- tapOn:
+    id: Queue
+- extendedWaitUntil:
+    visible:
+      id: Queued messages
+    timeout: 10000
+- tapOn: Stop
+- tapOn:
+    id: Queued messages
+- extendedWaitUntil:
+    visible: Resume queue
+    timeout: 10000
+- tapOn: Remove 1
+- extendedWaitUntil:
+    visible: The queue is empty.
+    timeout: 10000
+- tapOn: Close
+- tapOn:
+    id: Task settings
+- assertVisible: Task settings
+- scrollUntilVisible:
+    element:
+      id: Pin task
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pin task
+- extendedWaitUntil:
+    visible: Unpin task
+    timeout: 10000
+- tapOn: Close
+- tapOn:
+    id: Message
+- eraseText
+- inputText: Question verification
+- tapOn: Dismiss keyboard
+- tapOn:
+    id: Queue
+- extendedWaitUntil:
+    visible:
+      id: Queued messages
+    timeout: 10000
+- tapOn:
+    id: Queued messages
+- assertVisible: Resume queue
+- tapOn: Resume queue
+- tapOn: Close
+- extendedWaitUntil:
+    visible: Use existing patterns
+    timeout: 10000
+- tapOn: Use existing patterns
+- takeScreenshot: dovo-mobile-question-options
+- swipe:
+    from:
+      text: Use existing patterns
+    direction: UP
+- scrollUntilVisible:
+    element:
+      id: 'Answer: Details'
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: 'Answer: Details'
+- inputText: Keep it compact
+- takeScreenshot: dovo-mobile-question-keyboard
+- pressKey: Enter
+- takeScreenshot: dovo-mobile-question
+- tapOn: Send answers
+- extendedWaitUntil:
+    notVisible: Send answers
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      text: '.*Question answers verified.*'
+    direction: DOWN
+    centerElement: true
+- assertVisible: '.*Question answers verified.*'
+- tapOn: Attach files
+- takeScreenshot: dovo-mobile-file-picker
+- tapOn:
+    text: 'Browse|Blader'
+    optional: true
+- tapOn:
+    text: 'On My iPhone|Op mijn iPhone'
+    optional: true
+- tapOn:
+    text: Dovo Studio
+    optional: true
+- tapOn: 'dovo-attachment.*'
+- tapOn:
+    text: 'Open|Openen'
+    optional: true
+- extendedWaitUntil:
+    visible: 'File: dovo-attachment.txt'
+    timeout: 15000
+- tapOn: 'File: dovo-attachment.txt'
+- extendedWaitUntil:
+    visible: Attachment fixture context
+    timeout: 10000
+- takeScreenshot: dovo-mobile-attachment-preview
+- tapOn: Close preview
+- tapOn:
+    id: Message
+- inputText: Attachment verification
+- tapOn: Dismiss keyboard
+- tapOn:
+    id: Send
+- scrollUntilVisible:
+    element:
+      text: '.*Attachment inputs verified.*'
+    direction: DOWN
+    centerElement: true
+- assertVisible: '.*Attachment inputs verified.*'
+- tapOn:
+    id: 'Changes \(1\)'
+- assertVisible: hello.txt
+- assertVisible: '.*mobile review.*'
+- takeScreenshot: dovo-mobile-diff
+- tapOn: Edit file
+- assertVisible: Apply to disk
+- tapOn: Cancel edit
+- tapOn: Terminal
+- tapOn: New terminal
+- extendedWaitUntil:
+    visible: Close shell
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 'Loading terminal…|Connecting terminal…'
+    timeout: 15000
+- assertVisible: Keyboard
+- assertVisible: Ctrl C
+- tapOn: Ctrl C
+- takeScreenshot: dovo-mobile-terminal
+- tapOn: Keyboard
+- inputText: printf mobile-terminal-ok > terminal-proof.txt
+- pressKey: Enter
+- takeScreenshot: dovo-mobile-terminal-keyboard
+- tapOn: Chat
+- assertVisible:
+    id: Message
+- tapOn: Terminal
+- assertVisible: Close shell
+- tapOn: Close shell
+- tapOn: Back
+- tapOn: Projects
+- tapOn: Refresh Git
+- extendedWaitUntil:
+    visible: Stage 1 files
+    timeout: 10000
+- tapOn: Stage 1 files
+- scrollUntilVisible:
+    element:
+      id: Commit message
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Commit message
+- inputText: Native review
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Commit staged changes
+    direction: DOWN
+    centerElement: true
+- tapOn: Commit staged changes
+- scrollUntilVisible:
+    element:
+      id: Stage 0 files
+    direction: UP
+    centerElement: true
+- tapOn: Branches
+- extendedWaitUntil:
+    visible: New branch name
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: New branch name
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: New branch name
+- inputText: mobile-review
+- pressKey: Enter
+- tapOn: Create branch
+- extendedWaitUntil:
+    visible: 'Current: mobile-review'
+    timeout: 10000
+- takeScreenshot: dovo-mobile-branch
+- runFlow: open-settings.yaml
+- tapOn: Agents
+- assertVisible: New agent
+- tapOn:
+    id: Tab Automations
+- assertVisible: Run and review your automations here. Build their canvas on desktop or web.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: '.*Mobile verification.*'
+    timeout: 10000
+- stopApp
+- openLink: 'dovo://task?text=Shortcut%20verification%20message&title=Shortcut%20verification'
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: Message
+    timeout: 20000
+- assertVisible: Shortcut verification message
+- tapOn:
+    id: Send
+- extendedWaitUntil:
+    visible: '.*Verified fixture response.*'
+    timeout: 20000
+- tapOn: Back
+- runFlow: open-devices.yaml
+- tapOn: CLI commands & shell
+- assertVisible: 'Host executable names.*'
+- tapOn: Close
+- tapOn: iOS Shortcuts
+- assertVisible: 'dovo://task.*'
+- tapOn: Close
+- runFlow: reset-computers.yaml
+- assertVisible: Computers

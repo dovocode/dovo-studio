@@ -1,0 +1,73 @@
+appId: com.dovo.studio
+---
+- launchApp:
+    stopApp: true
+- tapOn:
+    id: Tab PRs
+- extendedWaitUntil:
+    visible: '.*Fix first runtime.*'
+    timeout: 15000
+- assertVisible: '.*Fix second runtime.*'
+- tapOn: '.*Fix first runtime.*'
+- extendedWaitUntil:
+    visible: Runtime fix
+    timeout: 10000
+- assertVisible:
+    id: Review
+    enabled: false
+- tapOn:
+    id: PR actions
+- assertVisible:
+    id: Comment
+    enabled: false
+- assertVisible:
+    id: Merge
+    enabled: false
+- assertVisible:
+    id: Close PR
+    enabled: false
+- assertVisible:
+    id: Start task from PR
+    enabled: false
+- assertVisible:
+    id: Refresh details
+    enabled: false
+- assertVisible:
+    id: Open on GitHub
+    enabled: true
+- takeScreenshot: dovo-mobile-pr-offline-actions
+- tapOn:
+    point: '5%,50%'
+- tapOn: Checks
+- assertVisible:
+    id: Open Typecheck
+- takeScreenshot: dovo-mobile-pr-offline
+- tapOn: Back
+- tapOn:
+    id: Tab Tasks
+- assertVisible:
+    id: Connection details
+- tapOn:
+    id: Connection details
+- assertVisible: '.*Reconnect to send messages or run commands.*'
+- assertVisible: Reconnect
+- takeScreenshot: dovo-mobile-connection-details
+- tapOn: Close
+- assertVisible:
+    id: Device overview
+    height: 44
+    tolerance: 1
+- tapOn:
+    id: Device overview
+- assertVisible:
+    id: 'Runtime summary .*'
+    width: ${PR_ACTION_HALF_WIDTH}
+    tolerance: ${PR_ACTION_HALF_WIDTH}
+- takeScreenshot: dovo-mobile-fleet-offline
+- tapOn:
+    id: 'Runtime summary .*'
+- assertVisible: Showing saved activity
+- assertVisible: 'Pull requests on .*'
+- takeScreenshot: dovo-mobile-fleet-details
+- tapOn: Close
+- runFlow: reset-computers.yaml

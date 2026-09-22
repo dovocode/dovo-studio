@@ -1,0 +1,98 @@
+appId: com.dovo.studio
+---
+- launchApp:
+    permissions:
+      all: allow
+      microphone: deny
+- extendedWaitUntil:
+    visible:
+      id: Tab Settings
+    timeout: 15000
+- runFlow: reset-computers.yaml
+- tapOn:
+    id: Runtime address
+- inputText: ${RUNTIME_ADDRESS}
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing options
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing options
+- scrollUntilVisible:
+    element:
+      id: Device name
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Device name
+- eraseText
+- inputText: Dovo simulator test
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing code
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing code
+- inputText: ${PAIRING_CODE}
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Pair device
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pair device
+- extendedWaitUntil:
+    visible:
+      id: Connected computer
+    timeout: 20000
+- tapOn:
+    id: Tab Tasks
+- tapOn:
+    id: Task mobile-task
+- assertVisible: Review this change from your phone.
+- assertVisible:
+    id: Dictate message
+    width: 44
+    height: 44
+    tolerance: 1
+- tapOn:
+    id: Message
+- inputText: Keep this developer context
+- tapOn: Dismiss keyboard
+- tapOn:
+    id: Dictate message
+- extendedWaitUntil:
+    visible: Allow microphone and speech recognition for Dovo Studio in Settings.
+    timeout: 15000
+- assertVisible:
+    id: Open Settings
+- assertVisible:
+    id: Message
+    text: Keep this developer context
+- assertVisible:
+    id: Dictate message
+- takeScreenshot: dovo-mobile-dictation-permission
+- tapOn: Terminal
+- tapOn: Chat
+- assertVisible:
+    id: Message
+    text: Keep this developer context
+- tapOn:
+    id: Message
+    point: '95%,90%'
+- eraseText
+- inputText: Keep this developer context and my edit
+- tapOn: Dismiss keyboard
+- assertNotVisible: Allow microphone and speech recognition for Dovo Studio in Settings.
+- assertVisible:
+    id: Message
+    text: Keep this developer context and my edit
+- takeScreenshot: dovo-mobile-neat-chat
+- tapOn: Back
+- runFlow: reset-computers.yaml

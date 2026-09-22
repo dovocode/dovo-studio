@@ -1,0 +1,189 @@
+appId: com.dovo.studio
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: Tab Settings
+    timeout: 15000
+- runFlow: reset-computers.yaml
+- tapOn:
+    id: Runtime address
+- inputText: ${RUNTIME_ADDRESS}
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing options
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing options
+- scrollUntilVisible:
+    element:
+      id: Device name
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Device name
+- eraseText
+- inputText: Dovo simulator test
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing code
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing code
+- inputText: ${PAIRING_CODE}
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Pair device
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pair device
+- extendedWaitUntil:
+    visible:
+      id: Connected computer
+    timeout: 20000
+- tapOn:
+    id: Tab Tasks
+- tapOn:
+    id: Task mobile-task
+- tapOn:
+    id: Message
+- inputText: Keep this draft through a failed settings save
+- tapOn: Dismiss keyboard
+- tapOn:
+    id: Task settings
+- tapOn: Model & access
+- extendedWaitUntil:
+    notVisible: Loading provider models…
+    timeout: 15000
+- tapOn:
+    id: Model
+- tapOn:
+    id: Choose Fixture model
+- tapOn:
+    id: Reasoning level
+- tapOn:
+    id: Choose High
+- tapOn:
+    id: Speed
+- tapOn:
+    id: Choose Fast
+- scrollUntilVisible:
+    element:
+      id: Daybreak mode
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Daybreak mode
+- tapOn:
+    id: Choose Daybreak Blue
+- scrollUntilVisible:
+    element:
+      id: Save model & access
+    direction: DOWN
+    centerElement: false
+- tapOn:
+    id: Save model & access
+# The fixture holds this request until all guard assertions have completed.
+- assertVisible: Saving model settings…
+- assertVisible:
+    id: Save model & access
+    enabled: false
+- assertVisible:
+    id: Close
+    enabled: false
+- scrollUntilVisible:
+    element:
+      text: Back
+    direction: UP
+    centerElement: false
+- assertVisible:
+    text: Back
+    enabled: false
+- assertVisible:
+    id: Model
+    enabled: false
+- assertVisible:
+    id: Reasoning level
+    enabled: false
+- assertVisible:
+    id: Speed
+    enabled: false
+- assertVisible:
+    id: Daybreak mode
+    enabled: false
+- takeScreenshot: dovo-mobile-settings-saving
+- evalScript: ${output.release = json(http.post(RUNTIME_ADDRESS + '/__fixture/settings/reject', {body:'{}'}).body)}
+- assertTrue: ${output.release.released}
+- scrollUntilVisible:
+    element:
+      text: Fixture save failed. Your changes are still here.
+    direction: DOWN
+    centerElement: true
+- assertVisible: Fixture save failed. Your changes are still here.
+- assertNotVisible: Saving model settings…
+- assertVisible:
+    id: Save model & access
+    enabled: true
+- assertVisible:
+    id: Close
+    enabled: true
+- takeScreenshot: dovo-mobile-settings-save-failure
+- scrollUntilVisible:
+    element:
+      text: Back
+    direction: UP
+    centerElement: false
+- assertVisible:
+    text: Back
+    enabled: true
+- assertVisible:
+    id: Model
+    enabled: true
+- assertVisible: Fixture model
+- assertVisible: High
+- assertVisible: Fast
+- assertVisible: Daybreak Blue
+- scrollUntilVisible:
+    element:
+      id: Save model & access
+    direction: DOWN
+    centerElement: false
+- tapOn:
+    id: Save model & access
+- extendedWaitUntil:
+    visible:
+      id: Task title
+    timeout: 10000
+- tapOn:
+    id: Close
+- extendedWaitUntil:
+    visible:
+      id: Message
+    timeout: 10000
+- assertVisible:
+    id: Message
+    text: Keep this draft through a failed settings save
+# Reopen from the task header to verify the successful retry was stored.
+- tapOn:
+    id: Task settings
+- tapOn: Model & access
+- extendedWaitUntil:
+    notVisible: Loading provider models…
+    timeout: 15000
+- assertVisible: Fixture model
+- assertVisible: High
+- assertVisible: Fast
+- assertVisible: Daybreak Blue
+- takeScreenshot: dovo-mobile-settings-save-retried
+- tapOn:
+    id: Close
+- tapOn:
+    text: Back
+- runFlow: reset-computers.yaml

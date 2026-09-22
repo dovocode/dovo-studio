@@ -1,0 +1,5 @@
+appId: com.dovo.studio
+---
+- runFlow: open-settings.yaml
+- tapOn:
+    id: Devices & runtime

@@ -1,0 +1,200 @@
+appId: com.dovo.studio
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: Tab Settings
+    timeout: 15000
+- runFlow: reset-computers.yaml
+- tapOn:
+    id: Runtime address
+- inputText: ${RUNTIME_ADDRESS}
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing options
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing options
+- scrollUntilVisible:
+    element:
+      id: Device name
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Device name
+- eraseText
+- inputText: Dovo simulator test
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing code
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing code
+- inputText: ${PAIRING_CODE}
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Pair device
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pair device
+- extendedWaitUntil:
+    visible:
+      id: Connected computer
+    timeout: 20000
+- tapOn:
+    id: Tab PRs
+- extendedWaitUntil:
+    visible: '22 pull requests'
+    timeout: 20000
+- tapOn:
+    id: Search PRs
+- inputText: navigation
+- pressKey: Enter
+- tapOn:
+    text: PR filters
+- tapOn:
+    id: Repository
+- tapOn:
+    id: Choose developer-platform/first-runtime-and-remote-device-connections.*
+- tapOn:
+    id: Draft status
+- tapOn:
+    id: Choose Ready for review
+- tapOn:
+    id: Sort PRs
+- tapOn:
+    id: Choose Recently updated
+- tapOn: Show pull requests
+- extendedWaitUntil:
+    visible: '20 pull requests'
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: '.*Final navigation pull request.*'
+    direction: DOWN
+    centerElement: false
+    timeout: 30000
+# XCTest exposes a row's full accessibility frame even when the list clips it.
+# Finish scrolling to the physical end before tapping its center above the tabs.
+- swipe:
+    start: 50%, 70%
+    end: 50%, 35%
+    duration: 700
+- waitForAnimationToEnd
+- takeScreenshot: dovo-mobile-pr-list-end
+- tapOn: '.*Final navigation pull request.*'
+- extendedWaitUntil:
+    visible: Navigation return proof
+    timeout: 15000
+- assertVisible: Final navigation pull request
+- assertNotVisible:
+    id: PR pulls
+- assertNotVisible:
+    id: PR pipelines
+- assertNotVisible:
+    id: Tab PRs
+- waitForAnimationToEnd
+- takeScreenshot: dovo-mobile-pr-native-detail
+- tapOn:
+    text: Back
+- extendedWaitUntil:
+    visible: '.*Final navigation pull request.*'
+    timeout: 10000
+- waitForAnimationToEnd
+- assertVisible: '.*Final navigation pull request.*'
+- assertNotVisible: '.*Fix second runtime.*'
+- assertNotVisible:
+    id: Search PRs
+- takeScreenshot: dovo-mobile-pr-list-restored
+- tapOn: '.*Final navigation pull request.*'
+- extendedWaitUntil:
+    visible: Navigation return proof
+    timeout: 15000
+# Pop the actual native stack using the iOS edge gesture.
+- waitForAnimationToEnd
+- swipe:
+    start: 1%, 45%
+    end: 95%, 45%
+    duration: 700
+- extendedWaitUntil:
+    visible: '.*Final navigation pull request.*'
+    timeout: 10000
+- assertNotVisible:
+    id: Search PRs
+- scrollUntilVisible:
+    element:
+      id: Search PRs
+    direction: UP
+    centerElement: true
+    timeout: 30000
+- assertVisible:
+    id: Search PRs
+    text: navigation
+- assertVisible: '.*Ready for review.*'
+- tapOn:
+    text: PR filters
+- assertVisible: '.*Recently updated.*'
+- tapOn: Show pull requests
+- takeScreenshot: dovo-mobile-pr-retained-filters
+# A direct link must wait for the saved runtime to hydrate on a cold launch.
+- stopApp
+- openLink: ${PR_DIRECT_LINK}
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible: Navigation return proof
+    timeout: 20000
+- assertVisible: Final navigation pull request
+- assertNotVisible:
+    id: Tab PRs
+- waitForAnimationToEnd
+- takeScreenshot: dovo-mobile-pr-cold-link
+- tapOn:
+    text: Back
+- extendedWaitUntil:
+    visible:
+      id: Search PRs
+    timeout: 10000
+# A matching repository ID on the current computer must never satisfy another host's URL.
+- openLink: dovo://pulls/pr/unknown-computer/first/987654
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible: Computer unavailable
+    timeout: 10000
+- assertNotVisible:
+    id: PR actions
+- assertNotVisible:
+    id: Review
+- takeScreenshot: dovo-mobile-pr-unknown-computer
+- tapOn:
+    text: Back
+- extendedWaitUntil:
+    visible:
+      id: Search PRs
+    timeout: 10000
+- openLink: ${PR_INVALID_LINK}
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible: Pull request unavailable
+    timeout: 10000
+- assertNotVisible:
+    id: PR actions
+- tapOn:
+    text: Back
+- extendedWaitUntil:
+    visible:
+      id: Search PRs
+    timeout: 10000
+- runFlow: reset-computers.yaml

@@ -1,0 +1,233 @@
+import { useState } from 'react'
+import { Check, ChevronDown, Folder, GitBranch } from 'lucide-react'
+import {
+  branchesSchema,
+  canChangeTaskCheckout,
+  updateTask,
+  useWorkspace,
+  type Task,
+} from '@dovo/studio-core'
+import { Button, DropdownMenu, Popover } from '@dovo/studio-ui'
+export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: boolean }) {
+  const { workspace, setWorkspace, request, connected } = useWorkspace()
+  const editable = canChangeTaskCheckout(task)
+  const repository = workspace.repositories.find((repo) => repo.id === task.repositoryId)
+  const [branches, setBranches] = useState<ReturnType<typeof branchesSchema.parse> | null>(null)
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const itemClass =
+    'flex cursor-default items-center justify-between gap-4 rounded-md px-3 py-2 text-xs outline-none focus:bg-accent data-[state=checked]:bg-accent'
+  const act = async (operation: () => Promise<ReturnType<typeof branchesSchema.parse>>) => {
+    setBusy(true)
+    setError('')
+    try {
+      setBranches(await operation())
+    } catch (error) {
+      setError(String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[744px] flex-wrap items-center gap-x-2 gap-y-1 rounded-b-2xl border border-t-0 bg-muted/20 px-2 pb-1.5 pt-4 text-muted-foreground">
+      {editable ? (
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-6 gap-1.5 px-2 text-[10px] font-normal"
+              aria-label="Working directory"
+              data-value={task.execution ?? 'main'}
+              disabled={disabled}
+            >
+              <Folder className="size-3" />
+              {task.execution === 'worktree' ? 'Worktree' : 'Local checkout'}
+              <ChevronDown className="size-3" />
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              side="top"
+              align="start"
+              sideOffset={8}
+              className="z-50 min-w-48 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
+            >
+              <DropdownMenu.RadioGroup
+                value={task.execution ?? 'main'}
+                onValueChange={(execution) => {
+                  if (disabled || !editable) return
+                  if (execution === 'main' || execution === 'worktree')
+                    setWorkspace((w) =>
+                      updateTask(w, task.id, (t) =>
+                        canChangeTaskCheckout(t) ? { ...t, execution } : t,
+                      ),
+                    )
+                }}
+              >
+                {(['main', 'worktree'] as const).map((mode) => (
+                  <DropdownMenu.RadioItem
+                    key={mode}
+                    value={mode}
+                    data-value={mode}
+                    disabled={disabled}
+                    className={itemClass}
+                  >
+                    {mode === 'main' ? 'Local checkout' : 'Worktree'}
+                    <DropdownMenu.ItemIndicator>
+                      <Check className="size-3" />
+                    </DropdownMenu.ItemIndicator>
+                  </DropdownMenu.RadioItem>
+                ))}
+              </DropdownMenu.RadioGroup>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      ) : (
+        <span
+          className="inline-flex h-6 items-center gap-1.5 px-2 text-[10px]"
+          aria-label={`Working directory: ${task.execution === 'worktree' ? 'Worktree' : 'Local checkout'}`}
+          title="Checkout cannot be changed after a task starts."
+        >
+          <Folder className="size-3" />
+          {task.execution === 'worktree' ? 'Worktree' : 'Local checkout'}
+        </span>
+      )}
+      {editable && (
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-6 min-w-0 max-w-40 gap-1 px-1 text-[10px] font-normal"
+              aria-label="Task project"
+              data-value={task.repositoryId}
+              disabled={disabled || !!task.workItem}
+            >
+              <span className="truncate">{repository?.name ?? 'Choose project'}</span>
+              <ChevronDown className="size-3" />
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              side="top"
+              align="start"
+              sideOffset={8}
+              className="z-50 max-h-64 min-w-48 overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
+            >
+              {workspace.repositories.map((repo) => (
+                <DropdownMenu.Item
+                  key={repo.id}
+                  data-value={repo.id}
+                  className={itemClass}
+                  disabled={disabled || !!task.workItem}
+                  onSelect={() =>
+                    setWorkspace((w) =>
+                      updateTask(w, task.id, (t) =>
+                        canChangeTaskCheckout(t) && !t.workItem
+                          ? { ...t, repositoryId: repo.id }
+                          : t,
+                      ),
+                    )
+                  }
+                >
+                  {repo.name}
+                </DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      )}
+      <Popover.Root
+        open={open}
+        onOpenChange={(value) => {
+          setOpen(value)
+          if (value)
+            void act(() =>
+              request(
+                '/api/scm/branches',
+                { repositoryId: task.repositoryId, taskId: task.id },
+                branchesSchema,
+              ),
+            )
+        }}
+      >
+        <Popover.Trigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label="Checkout branch"
+            disabled={
+              disabled ||
+              !connected ||
+              task.status === 'running' ||
+              (task.execution === 'worktree' && !task.checkoutBranch)
+            }
+            className="ml-auto h-6 min-w-0 max-w-48 gap-1 px-2 text-[10px] font-normal"
+          >
+            <GitBranch className="size-3" />
+            <span className="truncate">
+              {task.checkoutBranch ?? repository?.branch ?? 'Branch'}
+            </span>
+            <ChevronDown className="size-3" />
+          </Button>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            side="top"
+            align="end"
+            sideOffset={8}
+            className="z-50 max-h-72 w-64 overflow-y-auto rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
+            aria-label="Checkout branches"
+          >
+            <p className="px-2 py-1 text-xs text-muted-foreground">Switch branch</p>
+            {branches?.branches.map((branch) => (
+              <Button
+                key={branch.ref}
+                type="button"
+                variant="ghost"
+                disabled={
+                  busy ||
+                  branch.name === branches.current ||
+                  (branch.checkedOut && branch.name !== branches.current)
+                }
+                className="h-8 w-full justify-between text-xs font-normal"
+                onClick={() =>
+                  void act(async () => {
+                    const next = await request(
+                      '/api/scm/branch',
+                      {
+                        repositoryId: task.repositoryId,
+                        taskId: task.id,
+                        action: 'switch',
+                        name: branch.ref,
+                        revision: branches.revision,
+                      },
+                      branchesSchema,
+                    )
+                    setOpen(false)
+                    return next
+                  })
+                }
+              >
+                {branch.name}
+                {branch.name === branches.current && <Check className="size-3" />}
+              </Button>
+            ))}
+            {busy && (
+              <p role="status" className="p-2 text-xs">
+                Loading branches…
+              </p>
+            )}
+            {error && (
+              <p role="alert" className="p-2 text-xs text-destructive">
+                {error}
+              </p>
+            )}
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+    </div>
+  )
+}

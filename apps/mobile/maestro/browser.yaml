@@ -1,0 +1,242 @@
+# App launch and isolated-runtime pairing are prepended by verify-mobile-browser.mjs.
+- tapOn:
+    id: Tab Tasks
+- assertVisible:
+    id: Task browser-task
+- takeScreenshot: dovo-mobile-walkthrough-tasks
+- tapOn: Projects
+- tapOn: Add repository
+- tapOn:
+    id: Local path on runtime host
+- inputText: ${BROWSER_DIRECTORY}
+- tapOn:
+    id: Dismiss keyboard
+- runFlow:
+    when:
+      visible: Browse runtime folders…
+    commands:
+      - tapOn: Browse runtime folders…
+- extendedWaitUntil:
+    visible: 100 of 103 folders
+    timeout: 15000
+- assertVisible: Home folder
+- assertVisible: Parent folder
+- assertVisible: Choose this folder
+- takeScreenshot: dovo-mobile-folder-browser
+- scrollUntilVisible:
+    element:
+      text: Load more folders
+    direction: DOWN
+    speed: 80
+    timeout: 60000
+    centerElement: true
+- tapOn: Load more folders
+- scrollUntilVisible:
+    element:
+      text: 103 of 103 folders
+    direction: UP
+    speed: 80
+    timeout: 60000
+    centerElement: true
+- assertVisible: 103 of 103 folders
+- scrollUntilVisible:
+    element:
+      id: Filter folders
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: Filter folders
+- inputText: folder2
+- tapOn:
+    id: Dismiss keyboard
+- extendedWaitUntil:
+    visible: 11 of 11 folders
+    timeout: 10000
+- tapOn: Open folder2 folder
+- assertVisible: No subfolders. You can choose this folder.
+- tapOn: Parent folder
+- extendedWaitUntil:
+    visible: 100 of 103 folders
+    timeout: 10000
+# Remaining folder actions
+- tapOn:
+    id: Folder visibility
+- tapOn:
+    id: Choose All folders
+- extendedWaitUntil:
+    visible: 100 of 104 folders
+    timeout: 10000
+- assertVisible: Open .hidden folder
+- tapOn:
+    id: Filter folders
+- inputText: retry
+- tapOn:
+    id: Dismiss keyboard
+- extendedWaitUntil:
+    visible: 1 of 1 folder
+    timeout: 10000
+- tapOn: Open retry folder
+- extendedWaitUntil:
+    visible: Fixture folder temporarily unavailable. Retry.
+    timeout: 10000
+- assertVisible:
+    text: Choose this folder
+    enabled: false
+- takeScreenshot: dovo-mobile-folder-error
+- tapOn: Retry folders
+- extendedWaitUntil:
+    visible: No subfolders. You can choose this folder.
+    timeout: 10000
+- takeScreenshot: dovo-mobile-folder-retry-recovered
+- tapOn: Choose this folder
+- assertVisible: '${BROWSER_DIRECTORY}/retry'
+- takeScreenshot: dovo-mobile-folder-return
+- tapOn:
+    id: Repository name
+- inputText: Invalid fixture project
+- tapOn:
+    id: Dismiss keyboard
+- tapOn: Add repository
+- extendedWaitUntil:
+    visible: '.*Choose an existing Git repository on the runtime host.*'
+    timeout: 10000
+- assertVisible:
+    id: Repository name
+- takeScreenshot: dovo-mobile-add-project-error
+- tapOn: Close
+- tapOn: Back
+- tapOn:
+    id: Task browser-task
+- assertVisible: Review the folder picker and changed-file navigation.
+- takeScreenshot: dovo-mobile-walkthrough-chat
+- tapOn: Changes (14)
+- tapOn:
+    id: Changed file
+- tapOn:
+    id: Search changed file
+- inputText: recovery-14
+- tapOn:
+    id: Dismiss keyboard
+- tapOn:
+    id: Choose remote-device-recovery-14.ts · packages/runtime/src/connections
+- assertVisible: remote-device-recovery-14.ts · packages/runtime/src/connections
+- takeScreenshot: dovo-mobile-changed-file-picker
+- tapOn: Terminal
+- assertVisible: New terminal
+- takeScreenshot: dovo-mobile-walkthrough-terminal
+- tapOn: Chat
+- tapOn:
+    id: Task settings
+- assertVisible: Task settings
+- takeScreenshot: dovo-mobile-walkthrough-task-settings
+- tapOn: Close
+- tapOn: Back
+- tapOn:
+    id: Tab Issues
+- extendedWaitUntil:
+    visible: '.*Verify compact mobile navigation.*'
+    timeout: 15000
+- takeScreenshot: dovo-mobile-walkthrough-issues
+- tapOn: '.*Verify compact mobile navigation.*'
+- assertVisible: Check folder selection and source context.
+- takeScreenshot: dovo-mobile-walkthrough-issue
+- tapOn: Back
+- tapOn:
+    id: Tab PRs
+- extendedWaitUntil:
+    visible: '.*Fix first runtime.*'
+    timeout: 20000
+- takeScreenshot: dovo-mobile-walkthrough-pulls
+- tapOn: '.*Fix first runtime.*'
+- extendedWaitUntil:
+    visible: Runtime fix
+    timeout: 15000
+- takeScreenshot: dovo-mobile-walkthrough-pull
+- tapOn: Checks
+- takeScreenshot: dovo-mobile-walkthrough-checks
+- tapOn: Files
+- extendedWaitUntil:
+    visible: Changed file
+    timeout: 15000
+- assertVisible: runtime.ts · src
+- assertVisible: 0 of 1 file viewed
+- takeScreenshot: dovo-mobile-walkthrough-pull-files
+- tapOn: Back
+- tapOn: Pipelines
+- extendedWaitUntil:
+    visible: '.*Validate mobile folder browsing.*'
+    timeout: 15000
+- tapOn: '.*Validate mobile folder browsing.*'
+- assertVisible: 'Run #256'
+- scrollUntilVisible:
+    element:
+      id: Job Native checks
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Job Native checks
+- assertVisible: Verify folder selection
+- takeScreenshot: dovo-mobile-walkthrough-pipeline
+- tapOn: Back
+- tapOn:
+    id: Tab Automations
+- assertVisible: Review repository changes
+- assertVisible: Manual · 1 step
+- takeScreenshot: dovo-mobile-walkthrough-jobs
+- tapOn: Edit Review repository changes
+- assertVisible:
+    id: Automation name
+- takeScreenshot: dovo-mobile-walkthrough-job-editor
+- tapOn: Close
+- runFlow: open-settings.yaml
+- takeScreenshot: dovo-mobile-walkthrough-settings
+- tapOn:
+    id: Agents
+- assertVisible: Mobile agent
+- tapOn: Edit Mobile agent
+- assertVisible:
+    id: Provider
+- takeScreenshot: dovo-mobile-walkthrough-agent
+- tapOn: Back
+- tapOn:
+    id: MCP & skills
+- assertVisible: MCP servers & skills
+- takeScreenshot: dovo-mobile-walkthrough-resources
+- tapOn: Add MCP server
+- assertVisible:
+    id: Server name
+- takeScreenshot: dovo-mobile-walkthrough-mcp-editor
+- tapOn: Close
+- tapOn: Add skill
+- assertVisible:
+    id: Skill name
+- takeScreenshot: dovo-mobile-walkthrough-skill-editor
+- tapOn: Close
+- tapOn: Back
+- tapOn:
+    id: Source control
+- assertVisible: Fixture GitHub
+- takeScreenshot: dovo-mobile-walkthrough-source-control
+- tapOn: Clone a project
+- assertVisible:
+    id: Account
+- tapOn:
+    id: Clone parent folder on runtime
+- inputText: ${BROWSER_DIRECTORY}
+- tapOn:
+    id: Dismiss keyboard
+- tapOn: Browse folders
+- extendedWaitUntil:
+    visible: 100 of 103 folders
+    timeout: 10000
+- tapOn: Choose this folder
+- assertVisible: '${BROWSER_DIRECTORY}'
+- takeScreenshot: dovo-mobile-walkthrough-clone
+- tapOn: Close
+- tapOn: Back
+- tapOn:
+    id: Devices & runtime
+- assertVisible:
+    id: Connected computer
+- takeScreenshot: dovo-mobile-walkthrough-computers
+- runFlow: reset-computers.yaml

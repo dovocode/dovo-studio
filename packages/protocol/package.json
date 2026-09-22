@@ -1,0 +1,34 @@
+{
+  "name": "@dovo/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./browser-viewer": {
+      "types": "./src/generated/browser-viewer.ts",
+      "development": "./src/generated/browser-viewer.ts",
+      "import": "./dist/generated/browser-viewer.js",
+      "default": "./dist/generated/browser-viewer.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-browser-viewer.mjs && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "cron-parser": "^5.10.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "vitest": "4.1.11"
+  }
+}

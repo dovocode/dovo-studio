@@ -1,0 +1,93 @@
+entry = [
+  "packages/*/src/index.ts",
+  "packages/**/*.test.ts",
+  "apps/*/src/**/*.{ts,tsx}",
+  "apps/mobile/index.js",
+  "apps/desktop/electron/**/*.ts",
+  "apps/mobile/plugins/*.cjs",
+]
+ignorePatterns = [
+  "**/dist/**",
+  "**/dist-electron/**",
+  "**/node_modules/**",
+  "**/.expo/**",
+  "**/routeTree.gen.ts",
+  "work/**",
+]
+# Expo resolves the app entry through its runtime manifest; keep this shared
+# workspace package explicit even though Fallow cannot follow that edge yet.
+# assistant-cloud is a required peer of @assistant-ui/core, reached through
+# @assistant-ui/react-native even though Dovo does not import its cloud API.
+# Expo's native Worklets adapters load Reanimated/Worklets through autolinking;
+# explicit SDK-compatible pins prevent pnpm from choosing incompatible peers.
+ignoreDependencies = [
+  "@dovo/client-runtime",
+  "vite-plus",
+  "assistant-cloud",
+  "react-native-reanimated",
+  "react-native-worklets",
+]
+
+[[framework]]
+name = "dovo-verification"
+detection = { type = "fileExists", pattern = "scripts/verify-*.{cjs,mjs}" }
+entryPoints = [
+  "scripts/verify-*.{cjs,mjs}",
+  "scripts/packaging/verify-*.mjs",
+  # Started as child-process executables, never imported by the tests.
+  "scripts/fixtures/*.cjs",
+]
+entryPointRole = "test"
+
+[[framework]]
+name = "dovo-extension-views"
+detection = { type = "fileExists", pattern = "packages/studio-core/src/index.ts" }
+# defineStudioExtension loads these modules; StudioShell consumes their default
+# exports through React.lazy rather than a syntactic default import.
+usedExports = [
+  { pattern = "packages/extension-*/src/**/view.tsx", exports = [
+    "default",
+  ] },
+  { pattern = "packages/extension-scm/src/forge-settings.tsx", exports = [
+    "default",
+  ] },
+  { pattern = "packages/extension-scm/src/pipelines-view.tsx", exports = [
+    "default",
+  ] },
+  { pattern = "packages/extension-scm/src/work-view.tsx", exports = [
+    "default",
+    "PipelinesView",
+  ] },
+]
+
+[[framework]]
+name = "jsonrpc-transport"
+enablers = ["vscode-jsonrpc"]
+# vscode-jsonrpc invokes these abstract transport overrides through its own
+# MessageReader/MessageWriter interfaces, outside this source graph.
+usedClassMembers = [
+  { extends = "AbstractMessageReader", members = [
+    "listen",
+  ] },
+  { extends = "AbstractMessageWriter", members = [
+    "write",
+    "end",
+  ] },
+]
+
+[[framework]]
+name = "expo"
+enablers = ["expo"]
+entryPoints = ["apps/mobile/index.js"]
+configPatterns = [
+  "apps/mobile/babel.config.js",
+  "apps/mobile/metro.config.js",
+  "apps/mobile/app.json",
+]
+# expo-build-properties is loaded from the plugins array in app.json.
+toolingDependencies = ["@expo/metro-config", "babel-preset-expo", "expo-build-properties"]
+
+[rules]
+unused-files = "error"
+unused-exports = "warn"
+unused-types = "off"

@@ -1,0 +1,12 @@
+appId: com.dovo.studio
+---
+- scrollUntilVisible:
+    element:
+      text: Fix first runtime
+    direction: UP
+    centerElement: true
+- assertVisible:
+    text: Back
+- assertVisible:
+    id: PR actions
+- takeScreenshot: dovo-mobile-pr-${PR_TEXT_SIZE}-actions

@@ -1,0 +1,155 @@
+appId: com.dovo.studio
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: Tab Settings
+    timeout: 15000
+- runFlow: reset-computers.yaml
+- tapOn:
+    id: Runtime address
+- inputText: ${RUNTIME_ADDRESS}
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing options
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing options
+- scrollUntilVisible:
+    element:
+      id: Device name
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Device name
+- eraseText
+- inputText: Dovo simulator test
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing code
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing code
+- inputText: ${PAIRING_CODE}
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Pair device
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pair device
+- extendedWaitUntil:
+    visible:
+      id: Connected computer
+    timeout: 20000
+- tapOn:
+    id: Tab Tasks
+- assertVisible: '.*build-mac.*'
+- tapOn:
+    id: Task markdown-task
+- assertVisible: '.*Mobile fixture.*build-mac.*'
+- assertVisible: Markdown preview
+- assertNotVisible: '# Markdown preview'
+- takeScreenshot: dovo-markdown-blocks
+- tapOn:
+    id: Message
+- inputText: Markdown verification
+- tapOn: Dismiss keyboard
+- tapOn:
+    id: Send
+- extendedWaitUntil:
+    visible: '.*Mobile fixture.*Working.*'
+    timeout: 10000
+- extendedWaitUntil:
+    visible: '.*Verified output.*'
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible:
+      id: Stop
+    timeout: 15000
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: Latest message
+- takeScreenshot: dovo-markdown-reply
+- tapOn:
+    id: Message
+- inputText: Keyboard draft remains
+- waitForAnimationToEnd
+- assertVisible: '.*Verified output.*'
+- assertNotVisible:
+    id: Latest message
+- takeScreenshot: dovo-markdown-keyboard-following
+- tapOn: Dismiss keyboard
+- waitForAnimationToEnd
+- assertVisible: '.*Verified output.*'
+- assertNotVisible:
+    id: Latest message
+- takeScreenshot: dovo-markdown-keyboard-dismissed
+- swipe:
+    start: 50%, 30%
+    end: 50%, 75%
+    duration: 700
+- waitForAnimationToEnd
+- assertVisible:
+    id: Latest message
+- assertVisible: Markdown preview
+- evalScript: ${output.remote = json(http.post(CONTROL_ADDRESS + '/remote-turn', {body:'{}'}).body)}
+- assertTrue: ${output.remote.ok}
+- extendedWaitUntil:
+    visible: '.*Mobile fixture.*Working.*'
+    timeout: 10000
+- assertVisible: Markdown preview
+- assertVisible:
+    id: Latest message
+- extendedWaitUntil:
+    notVisible:
+      id: Stop
+    timeout: 15000
+- waitForAnimationToEnd
+- assertVisible: Markdown preview
+- assertVisible:
+    id: Latest message
+- takeScreenshot: dovo-markdown-history-preserved
+- tapOn:
+    id: Latest message
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: Latest message
+- assertVisible: '.*Verified output.*'
+- takeScreenshot: dovo-markdown-latest
+- swipe:
+    start: 50%, 30%
+    end: 50%, 75%
+    duration: 700
+- waitForAnimationToEnd
+- assertVisible:
+    id: Latest message
+- tapOn:
+    id: Message
+- eraseText
+- inputText: Markdown verification local
+- tapOn: Dismiss keyboard
+- tapOn:
+    id: Send
+- extendedWaitUntil:
+    visible: '.*Mobile fixture.*Working.*'
+    timeout: 10000
+- assertNotVisible:
+    id: Latest message
+- extendedWaitUntil:
+    notVisible:
+      id: Stop
+    timeout: 15000
+- waitForAnimationToEnd
+- assertVisible: '.*Verified output.*'
+- assertNotVisible:
+    id: Latest message
+- takeScreenshot: dovo-markdown-local-send-following
+- tapOn: Back
+- runFlow: reset-computers.yaml

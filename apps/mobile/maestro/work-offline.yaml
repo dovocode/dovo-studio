@@ -1,0 +1,106 @@
+appId: com.dovo.studio
+---
+# The verifier stopped only its isolated runtime while a comment sheet was already open.
+- extendedWaitUntil:
+    visible:
+      id: Post comment
+      enabled: false
+    timeout: 30000
+- assertVisible:
+    id: Comment
+    text: Retained offline comment
+- takeScreenshot: dovo-mobile-work-offline-form
+- tapOn: Close
+- tapOn: Back
+# The collection survives returning from the now-unmounted native detail.
+- extendedWaitUntil:
+    visible:
+      id: Connection details
+    timeout: 30000
+- assertVisible:
+    id: Search issues
+    text: Mobile
+- assertVisible: open
+- tapOn:
+    id: Work item 1
+- extendedWaitUntil:
+    visible: Mobile fixture comment
+    timeout: 10000
+- assertVisible: Details
+- assertVisible: Open linked task
+- assertNotVisible:
+    id: Tab PRs
+- tapOn: Work actions
+- assertVisible:
+    id: Edit issue
+    enabled: false
+- assertVisible:
+    id: Comment
+    enabled: false
+- tapOn:
+    point: 10%, 65%
+- takeScreenshot: dovo-mobile-issue-offline-detail
+- swipe:
+    start: 1%, 45%
+    end: 95%, 45%
+    duration: 700
+- extendedWaitUntil:
+    visible:
+      id: Search issues
+      text: Mobile
+    timeout: 10000
+- openLink: 'dovo://pulls/runs/${RUNTIME_ID}/work?sha=${RUN_SHA}&pull=7'
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: Work item 42
+    timeout: 20000
+- tapOn:
+    id: Work item 42
+- extendedWaitUntil:
+    visible: 'Run #256'
+    timeout: 10000
+- assertVisible: Run failed after a test error.
+- assertVisible: Mobile pipeline workflow
+- tapOn: Work actions
+- assertVisible:
+    text: Run pipeline
+    enabled: false
+- assertVisible:
+    id: Rerun
+    enabled: false
+- tapOn:
+    point: 10%, 65%
+- takeScreenshot: dovo-mobile-pipeline-offline-detail
+- tapOn: Back
+- assertVisible:
+    id: Search pipelines
+# Cached details must still obey the original provider URL after a native pop.
+- openLink: 'dovo://issues/item/${RUNTIME_ID}/work/1?url=https%3A%2F%2Fgithub.com%2Foriginal%2Fproject%2Fissues%2F1'
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible: '.*different issue source.*'
+    timeout: 15000
+- assertVisible: Open original source on server
+- assertNotVisible: Details
+- assertNotVisible: Start task
+- tapOn: Back
+- stopApp
+- openLink: 'dovo://pulls/pipeline/${RUNTIME_ID}/work/42'
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible: Mobile pipeline workflow
+    timeout: 20000
+- tapOn: Back
+- extendedWaitUntil:
+    visible:
+      id: Search PRs
+    timeout: 15000
+- assertNotVisible: Pipelines
+- runFlow: reset-computers.yaml

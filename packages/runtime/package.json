@@ -1,0 +1,62 @@
+{
+  "name": "@dovo/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/copy-runtime-assets.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.4.0",
+    "@anthropic-ai/claude-agent-sdk": "0.3.278",
+    "@dovo/client-runtime": "workspace:*",
+    "@dovo/protocol": "workspace:*",
+    "@grpc/grpc-js": "^1.14.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@opencode-ai/sdk": "1.18.31",
+    "ajv": "^8.20.0",
+    "ajv-draft-04": "^1.0.0",
+    "ajv-formats": "^3.0.1",
+    "better-sqlite3": "^13.0.3",
+    "cron-parser": "^5.10.0",
+    "dicer": "^0.3.1",
+    "diff": "^9.0.0",
+    "file-type": "^22.0.2",
+    "jose": "^6.2.12",
+    "marklassian": "^1.2.1",
+    "mdast-util-from-adf": "^2.2.0",
+    "mdast-util-gfm": "^3.1.0",
+    "mdast-util-to-markdown": "^2.1.2",
+    "node-pty": "^1.1.0",
+    "playwright": "^1.63.0",
+    "protobufjs": "^8.8.0",
+    "semver": "^7.8.5",
+    "sharp": "^0.35.4",
+    "turndown": "^7.2.4",
+    "vscode-jsonrpc": "^9.0.2",
+    "ws": "^8.21.3",
+    "yaml": "^2.9.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/dicer": "^0.2.4",
+    "@types/semver": "^7.8.0",
+    "@types/turndown": "^5.0.6",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.13",
+    "vitest": "4.1.11"
+  }
+}

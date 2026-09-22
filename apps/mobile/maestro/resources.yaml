@@ -1,0 +1,237 @@
+appId: com.dovo.studio
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: Tab Settings
+    timeout: 15000
+- runFlow: reset-computers.yaml
+- tapOn:
+    id: Runtime address
+- inputText: ${RUNTIME_ADDRESS}
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing options
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing options
+- scrollUntilVisible:
+    element:
+      id: Device name
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Device name
+- eraseText
+- inputText: Dovo simulator test
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing code
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing code
+- inputText: ${PAIRING_CODE}
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Pair device
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pair device
+- extendedWaitUntil:
+    visible:
+      id: Connected computer
+    timeout: 20000
+- waitForAnimationToEnd
+- takeScreenshot: dovo-mobile-computers-settings
+- scrollUntilVisible:
+    element:
+      id: iOS Shortcuts
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: iOS Shortcuts
+- assertVisible:
+    id: Close
+- tapOn:
+    id: Close
+- runFlow: open-settings.yaml
+- waitForAnimationToEnd
+- takeScreenshot: dovo-mobile-settings-home
+- tapOn: MCP & skills
+- tapOn:
+    id: Resource scope
+- tapOn:
+    id: Choose Project · Mobile fixture
+- tapOn:
+    id: Add skill
+- tapOn:
+    id: SKILL.md path on runtime
+- inputText: ${SKILL_PATH}
+- tapOn:
+    id: Import SKILL.md
+- extendedWaitUntil:
+    visible: imported-mobile-skill
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: Save skill
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Save skill
+- extendedWaitUntil:
+    visible: Edit skill imported-mobile-skill
+    timeout: 10000
+- tapOn:
+    id: Browse MCP Registry
+- extendedWaitUntil:
+    visible: View io.example/docs
+    timeout: 10000
+- tapOn:
+    id: View io.example/docs
+- tapOn:
+    id: Configure server
+- extendedWaitUntil:
+    visible: Server name
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: Save server
+    direction: DOWN
+    centerElement: false
+- tapOn:
+    id: Save server
+- extendedWaitUntil:
+    visible: 'Edit MCP .*'
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: Browse skills.sh
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Browse skills.sh
+- tapOn:
+    id: Search catalog
+- inputText: fixture
+- extendedWaitUntil:
+    visible: Import Catalog fixture
+    timeout: 10000
+- tapOn:
+    id: Import Catalog fixture
+- extendedWaitUntil:
+    visible: catalog-fixture
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: Save skill
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Save skill
+- scrollUntilVisible:
+    element:
+      id: Edit skill catalog-fixture
+    direction: DOWN
+    centerElement: true
+- scrollUntilVisible:
+    element:
+      id: Resource scope
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: Resource scope
+- tapOn:
+    id: Choose Agent · Mobile agent
+- assertNotVisible: Edit skill catalog-fixture
+- tapOn:
+    id: Add skill
+- tapOn:
+    id: Skill name
+- inputText: agent-review
+- tapOn:
+    id: When to use
+- inputText: Review code
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Save skill
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Save skill
+- assertVisible: 'Too small: expected string to have >=1 characters'
+- scrollUntilVisible:
+    element:
+      id: Skill instructions
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Skill instructions
+- inputText: Check changed files
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Save skill
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Save skill
+- scrollUntilVisible:
+    element:
+      id: Edit skill agent-review
+    direction: DOWN
+    centerElement: true
+- takeScreenshot: dovo-mobile-resources
+- tapOn:
+    id: Tab Tasks
+- tapOn:
+    text: New task
+- extendedWaitUntil:
+    visible:
+      id: Message
+    timeout: 10000
+- assertNotVisible: Create task
+- tapOn: Project & checkout
+- tapOn:
+    id: Working directory
+- tapOn:
+    id: Choose New worktree
+- tapOn: Done
+- tapOn: Model & access
+- tapOn:
+    id: Harness or custom agent
+- tapOn:
+    id: Choose Codex
+- tapOn:
+    id: Access
+- tapOn:
+    id: Choose Full access
+- scrollUntilVisible:
+    element:
+      id: Save model & access
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Save model & access
+- tapOn:
+    id: Message
+- inputText: Mobile first-message task
+- tapOn: Dismiss keyboard
+- takeScreenshot: dovo-mobile-new-composer
+- tapOn:
+    id: Send
+- extendedWaitUntil:
+    visible: '.*Verified fixture response.*'
+    timeout: 20000
+- tapOn: Back
+- runFlow: reset-computers.yaml

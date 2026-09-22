@@ -1,0 +1,15 @@
+appId: com.dovo.studio
+---
+- inputText: Keyboard layout draft
+- waitForAnimationToEnd
+- assertVisible:
+    id: Message
+    text: Keyboard layout draft
+- assertVisible:
+    id: Project & checkout
+- assertVisible:
+    id: Dismiss keyboard
+    width: 44
+    height: 44
+    tolerance: 1
+- takeScreenshot: dovo-mobile-new-draft-keyboard-typed

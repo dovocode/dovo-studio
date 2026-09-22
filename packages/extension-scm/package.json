@@ -1,0 +1,26 @@
+{
+  "name": "@dovo/extension-scm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./projects": "./src/projects-menu.tsx",
+    "./connections": "./src/forge-connections.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@dovo/studio-core": "workspace:*",
+    "@dovo/studio-ui": "workspace:*",
+    "@pierre/diffs": "1.4.1",
+    "lucide-react": "^0.577.0",
+    "react": "^19.2.8",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "vitest": "4.1.11"
+  }
+}

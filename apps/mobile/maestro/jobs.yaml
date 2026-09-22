@@ -1,0 +1,203 @@
+appId: com.dovo.studio
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: Tab Settings
+    timeout: 15000
+- runFlow: reset-computers.yaml
+- tapOn:
+    id: Runtime address
+- inputText: ${RUNTIME_ADDRESS}
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing options
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing options
+- scrollUntilVisible:
+    element:
+      id: Device name
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Device name
+- eraseText
+- inputText: Dovo simulator test
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing code
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pairing code
+- inputText: ${PAIRING_CODE}
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Pair device
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Pair device
+- extendedWaitUntil:
+    visible:
+      id: Connected computer
+    timeout: 20000
+- tapOn:
+    id: Tab Automations
+- assertVisible:
+    id: Automation row jobs-fixture
+- assertNotVisible: Run automation
+- tapOn:
+    id: Search automations
+- inputText: Repository
+- pressKey: Enter
+- takeScreenshot: dovo-mobile-automation-list
+- tapOn:
+    id: Automation row jobs-fixture
+- tapOn: Run automation
+- extendedWaitUntil:
+    visible: '.*Fixture connection interrupted.*'
+    timeout: 20000
+- takeScreenshot: dovo-mobile-job-failed
+- tapOn:
+    id: Back to automations
+- assertVisible:
+    id: Search automations
+- assertVisible: Repository
+- tapOn:
+    id: Automation row jobs-fixture
+- scrollUntilVisible:
+    element:
+      id: Retry start
+    direction: DOWN
+    centerElement: true
+- tapOn: Retry start
+- scrollUntilVisible:
+    element:
+      id: Retry run
+    direction: UP
+    centerElement: true
+- tapOn: Retry run
+- extendedWaitUntil:
+    visible: Approve review
+    timeout: 20000
+- takeScreenshot: dovo-mobile-job-review
+- tapOn: Approve review
+- extendedWaitUntil:
+    visible: 'Completed.*'
+    timeout: 10000
+- runFlow:
+    when:
+      notVisible: Open task Preflight
+    commands:
+      - tapOn:
+          id: 'Run details .*'
+- tapOn: Open task Preflight
+- assertVisible: Automation step verified.
+- tapOn: Back
+- tapOn:
+    id: Tab Automations
+- tapOn:
+    id: Back to automations
+- tapOn:
+    id: Search automations
+- eraseText
+- pressKey: Enter
+- tapOn: New automation
+- tapOn:
+    id: Automation name
+- inputText: Mobile daily check
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Instructions
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Instructions
+- inputText: Check the repository from my phone
+- tapOn:
+    id: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Add review
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Add review
+- scrollUntilVisible:
+    element:
+      id: Move up
+    direction: DOWN
+    centerElement: false
+- tapOn:
+    id: Move up
+- tapOn:
+    id: Move down
+- scrollUntilVisible:
+    element:
+      id: Add task
+    direction: DOWN
+    centerElement: false
+- tapOn:
+    id: Add task
+- scrollUntilVisible:
+    element:
+      id: Remove step
+    direction: DOWN
+    centerElement: false
+- tapOn:
+    id: Remove step
+- scrollUntilVisible:
+    element:
+      id: Save automation
+    direction: DOWN
+    centerElement: false
+- takeScreenshot: dovo-mobile-job-editor
+- tapOn:
+    id: Save automation
+- extendedWaitUntil:
+    visible: 'Mobile daily check.*'
+    timeout: 10000
+- tapOn: 'Mobile daily check.*'
+- scrollUntilVisible:
+    element:
+      id: Edit Mobile daily check
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: Edit Mobile daily check
+- tapOn:
+    id: Automation name
+- eraseText
+- inputText: Mobile daily check updated
+- tapOn:
+    id: Dismiss keyboard
+- tapOn:
+    id: Trigger
+- tapOn:
+    id: Choose Schedule
+- assertVisible:
+    id: Time zone
+- scrollUntilVisible:
+    element:
+      id: Save automation
+    direction: DOWN
+    centerElement: false
+- tapOn:
+    id: Save automation
+- extendedWaitUntil:
+    visible: Mobile daily check updated
+    timeout: 10000
+- takeScreenshot: dovo-mobile-jobs
+- tapOn:
+    id: Back to automations
+- runFlow: reset-computers.yaml

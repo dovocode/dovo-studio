@@ -1,0 +1,84 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  draft:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Create release draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "$TAG"
+  mac:
+    needs: draft
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+      - name: Verify release version
+        run: node -e 'const p=require("./package.json"); if(process.env.GITHUB_REF_NAME!==`v${p.version}`) throw Error("Tag must match package.json version")'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Build signed update artifacts into a draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          CSC_NAME: ${{ secrets.MAC_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/packaging/package-desktop.mjs --publish
+      - name: Upload mise desktop archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" release/Dovo-Studio-mise-*.tar.gz --clobber
+  server:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+      - run: node -e 'const p=require("./package.json"); if(process.env.GITHUB_REF_NAME!==`v${p.version}`) throw Error("Tag must match package.json version")'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @dovo/api... -r build
+      - run: node scripts/packaging/package-server.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ matrix.runner }}
+          path: release/Dovo-Server-*.tar.gz
+  upload:
+    needs: server
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: server-*
+          merge-multiple: true
+          path: release
+      - name: Upload server archives into draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release upload "$TAG" release/*.tar.gz --clobber

@@ -1,0 +1,50 @@
+node_modules/
+dist/
+dist-electron/
+.output/
+.expo/
+.fallow/
+.vite/
+data/
+*.log
+*.tsbuildinfo
+.DS_Store
+
+# Local environment
+.env.local
+.env.*.local
+
+# Native build products
+ios/Pods/
+ios/build/
+android/.gradle/
+android/app/build/
+android/build/
+
+# Generated desktop distributions and Expo native projects
+release/
+apps/mobile/ios/
+apps/mobile/android/
+apps/mobile/assets/terminal.json
+
+# Generated shared canvas viewer
+packages/protocol/src/generated/browser-viewer.ts
+
+# Native physical-device helper build cache
+packages/runtime/native/ios-device/target/
+
+# Local reference downloads, QA captures and release worktrees
+work/
+# Secrets and signing material
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.p8
+*.p12
+*.mobileprovision
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.pem
+*.key

@@ -1,0 +1,37 @@
+{
+  "name": "@dovo/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@dovo/client-runtime": "workspace:*",
+    "@dovo/extension-agents": "workspace:*",
+    "@dovo/extension-jobs": "workspace:*",
+    "@dovo/extension-runtime": "workspace:*",
+    "@dovo/extension-scm": "workspace:*",
+    "@dovo/extension-tasks": "workspace:*",
+    "@dovo/protocol": "workspace:*",
+    "@dovo/studio-shell": "workspace:*",
+    "@dovo/studio-ui": "workspace:*",
+    "effect": "^3.22.1",
+    "electron-updater": "^6.8.9",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.2.0",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
+    "vite-plugin-electron": "^1.1.2"
+  }
+}

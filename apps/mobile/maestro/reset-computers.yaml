@@ -1,0 +1,16 @@
+appId: com.dovo.studio
+---
+- runFlow: open-devices.yaml
+- repeat:
+    while:
+      visible: 'Manage .+'
+    commands:
+      - tapOn:
+          text: 'Manage .+'
+          index: 0
+      - scrollUntilVisible:
+          element:
+            id: Forget computer
+          direction: DOWN
+          centerElement: true
+      - tapOn: Forget computer
