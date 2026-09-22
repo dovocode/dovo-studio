@@ -251,7 +251,7 @@ pnpm package:desktop
 node scripts/packaging/verify-packaged.mjs
 ```
 
-Produces `release/Dovo-Studio-0.1.0-arm64.dmg`, the matching ZIP, and
+Produces `release/Dovo-Studio-0.0.1-arm64.dmg`, the matching ZIP, and
 `release/mac-arm64/Dovo Studio.app`. The app bundles its own Node runtime and production modules,
 including PTY binaries. Packaging stages a temporary workspace, preserves the development install,
 and checks runtime startup and a real shell before creating artifacts. The verification script

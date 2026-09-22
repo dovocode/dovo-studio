@@ -255,7 +255,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
         <ResizablePanelGroup direction="horizontal">
           {(sidebar || !task) && !compact && (
             <>
-              <ResizablePanel id="task-list" order={1} defaultSize={24} minSize={20} maxSize={35}>
+              <ResizablePanel id="task-list" order={1} defaultSize={18} minSize={15} maxSize={35}>
                 <TaskList
                   projectId={projectId}
                   onProjectChange={setProjectId}
