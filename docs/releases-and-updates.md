@@ -21,8 +21,11 @@ push alone is not a binary release. macOS updating requires a Developer ID signe
 3. Configure GitHub Actions secrets: `MAC_CERTIFICATE` (Developer ID `.p12` as base64),
    `MAC_CERTIFICATE_PASSWORD`, `MAC_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`,
    and `APPLE_TEAM_ID`. Do not commit signing material.
-4. Push a matching `vX.Y.Z` tag. `Desktop release` builds on macOS arm64/Node 24 and creates a
-   **draft** release. Inspect the artifacts, signing and notarization, then publish the draft.
+4. Run the **Release** GitHub Action manually from `main` with a matching `vX.Y.Z` tag, or push that
+   tag. The workflow checks the version and signing secrets before creating/updating a **draft**,
+   builds macOS arm64/Node 24 desktop and standalone server archives, and verifies the expected
+   assets. For the first release, run it with `v0.0.1`; an existing empty draft is reused. Inspect
+   the artifacts, signing and notarization, then publish the draft.
 5. On an older signed install, exercise download, Later, restart/install and retained runtime data.
 
 For a local package use Node 24, `pnpm build`, then `node scripts/packaging/package-desktop.mjs`.

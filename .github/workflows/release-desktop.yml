@@ -2,19 +2,51 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag matching package.json (for example v0.0.1)
+        required: true
+        default: v0.0.1
 permissions:
   contents: write
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 jobs:
   draft:
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
+      - name: Verify version and signing configuration
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          node -e 'const p=require("./package.json"); if(process.env.TAG!==`v${p.version}`) throw Error("Release tag must match package.json version")'
+          for name in MAC_CERTIFICATE MAC_CERTIFICATE_PASSWORD MAC_SIGNING_IDENTITY APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing $name GitHub Actions secret"
+              exit 1
+            fi
+          done
       - name: Create release draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "$TAG"
+          if gh release view "$TAG" --json isDraft --jq .isDraft >/tmp/dovo-release-draft 2>/dev/null; then
+            test "$(cat /tmp/dovo-release-draft)" = true || { echo '::error::Release is already published'; exit 1; }
+            gh release edit "$TAG" --target "$GITHUB_SHA"
+          else
+            gh release create "$TAG" --draft --title "Dovo Studio ${TAG#v}" --target "$GITHUB_SHA" --generate-notes
+          fi
   mac:
     needs: draft
     runs-on: macos-15
@@ -26,7 +58,9 @@ jobs:
           node-version: '24'
       - uses: pnpm/action-setup@v4
       - name: Verify release version
-        run: node -e 'const p=require("./package.json"); if(process.env.GITHUB_REF_NAME!==`v${p.version}`) throw Error("Tag must match package.json version")'
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: node -e 'const p=require("./package.json"); if(process.env.TAG!==`v${p.version}`) throw Error("Tag must match package.json version")'
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Build signed update artifacts into a draft release
@@ -38,11 +72,12 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GITHUB_REF_NAME: ${{ inputs.tag || github.ref_name }}
         run: node scripts/packaging/package-desktop.mjs --publish
       - name: Upload mise desktop archive
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: gh release upload "$TAG" release/Dovo-Studio-mise-*.tar.gz --clobber
   server:
     needs: draft
@@ -58,7 +93,10 @@ jobs:
         with:
           node-version: '24'
       - uses: pnpm/action-setup@v4
-      - run: node -e 'const p=require("./package.json"); if(process.env.GITHUB_REF_NAME!==`v${p.version}`) throw Error("Tag must match package.json version")'
+      - name: Verify release version
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: node -e 'const p=require("./package.json"); if(process.env.TAG!==`v${p.version}`) throw Error("Tag must match package.json version")'
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @dovo/api... -r build
       - run: node scripts/packaging/package-server.mjs
@@ -79,6 +117,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           gh release upload "$TAG" release/*.tar.gz --clobber
+  verify:
+    needs: [mac, upload]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify draft assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$TAG" --json assets --jq '.assets[].name' | sort > /tmp/dovo-release-assets
+          for pattern in \
+            "Dovo-Studio-${TAG#v}-arm64.dmg" \
+            "Dovo-Studio-${TAG#v}-arm64.zip" \
+            "Dovo-Studio-mise-${TAG#v}-macos-arm64.tar.gz" \
+            "Dovo-Server-${TAG#v}-macos-arm64.tar.gz" \
+            "Dovo-Server-${TAG#v}-linux-x64.tar.gz" \
+            "Dovo-Server-${TAG#v}-linux-arm64.tar.gz" \
+            latest-mac.yml; do
+            grep -Fx "$pattern" /tmp/dovo-release-assets || { echo "::error::Missing release asset: $pattern"; exit 1; }
+          done
+          echo "Draft $TAG is ready to inspect and publish." >> "$GITHUB_STEP_SUMMARY"
