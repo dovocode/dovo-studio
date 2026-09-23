@@ -7,13 +7,19 @@ import { supportsAccess } from '@dovo/protocol'
 import type { AgentRun } from '../types'
 import { codexAdapter } from './codex'
 import { claudeAdapter } from './claude'
-const captured = vi.hoisted(() => ({ options: [] as Options[] }))
+const captured = vi.hoisted(() => ({
+  options: [] as Options[],
+}))
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: ({ options }: { options: Options }) => {
     captured.options.push(options)
     return {
       async *[Symbol.asyncIterator]() {
-        yield { type: 'result', subtype: 'success', is_error: false }
+        yield {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+        }
       },
       close() {},
     }
@@ -56,7 +62,12 @@ it.each([
   'sends the distinct Codex policy and selected service tier for %s',
   async (permission, approvalPolicy, sandbox, approvalsReviewer, textOnly) => {
     const directory = await mkdtemp(join(tmpdir(), 'dovo-access-'))
-    cleanups.push(() => rm(directory, { recursive: true, force: true }))
+    cleanups.push(() =>
+      rm(directory, {
+        recursive: true,
+        force: true,
+      }),
+    )
     const executable = join(directory, 'harness')
     await writeFile(
       executable,
@@ -65,7 +76,21 @@ const send = x => process.stdout.write(JSON.stringify(x)+'\\n');
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);if(m.id===undefined)return;
  if(m.method==='thread/start'){
-  const expected=${JSON.stringify({ approvalPolicy, sandbox, approvalsReviewer, serviceTier: 'fixture-priority', ...(textOnly ? { ephemeral: true, config: { 'features.shell_tool': false, web_search: 'disabled' } } : {}) })};
+  const expected=${JSON.stringify({
+    approvalPolicy,
+    sandbox,
+    approvalsReviewer,
+    serviceTier: 'fixture-priority',
+    ...(textOnly
+      ? {
+          ephemeral: true,
+          config: {
+            'features.shell_tool': false,
+            web_search: 'disabled',
+          },
+        }
+      : {}),
+  })};
   if(Object.keys(expected).some(k=>JSON.stringify(m.params[k])!==JSON.stringify(expected[k]))){send({id:m.id,error:{code:-1,message:'Wrong permission policy'}});return;}
   send({id:m.id,result:{thread:{id:'t'},approvalPolicy:expected.approvalPolicy,approvalsReviewer:expected.approvalsReviewer,sandbox:{type:'dangerFullAccess'}}});return;
  }
@@ -73,7 +98,9 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
  send({id:m.id,result:{}});
  if(m.method==='turn/start')send({method:'turn/completed',params:{turn:{status:'completed'}}});
 });`,
-      { mode: 0o700 },
+      {
+        mode: 0o700,
+      },
     )
     const input = run(permission)
     if (textOnly) input.tools = 'none'
@@ -103,7 +130,6 @@ it('does not advertise harness review where the integration cannot enforce it', 
   expect(supportsAccess('codex', 'auto')).toBe(true)
   expect(supportsAccess('claude', 'auto')).toBe(true)
 })
-
 it('disables Claude built-ins and inherited MCP servers for text-only utility turns', async () => {
   const input = run('read-only')
   input.tools = 'none'
@@ -118,23 +144,35 @@ it('disables Claude built-ins and inherited MCP servers for text-only utility tu
     await options.canUseTool?.(
       'Read',
       {},
-      { signal: input.signal, toolUseID: 'read', requestId: 'request' },
+      {
+        signal: input.signal,
+        toolUseID: 'read',
+        requestId: 'request',
+      },
     ),
-  ).toMatchObject({ behavior: 'deny' })
+  ).toMatchObject({
+    behavior: 'deny',
+  })
   expect(input.approve).not.toHaveBeenCalled()
 })
-
 it.each(['auto', 'full-access'] as const)(
   'rejects Codex %s when the harness does not confirm the mode',
   async (permission) => {
     const directory = await mkdtemp(join(tmpdir(), 'dovo-access-unsupported-'))
-    cleanups.push(() => rm(directory, { recursive: true, force: true }))
+    cleanups.push(() =>
+      rm(directory, {
+        recursive: true,
+        force: true,
+      }),
+    )
     const executable = join(directory, 'harness')
     await writeFile(
       executable,
       `#!${process.execPath}
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);if(m.id!==undefined)process.stdout.write(JSON.stringify({id:m.id,result:{thread:{id:'old-harness'}}})+'\\n')});`,
-      { mode: 0o700 },
+      {
+        mode: 0o700,
+      },
     )
     const input = run(permission)
     input.agent.endpoint = executable

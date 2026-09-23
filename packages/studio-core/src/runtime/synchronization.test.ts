@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { expect, it, vi } from 'vitest'
 import { WorkspaceSynchronization, type WorkspaceOutbox } from './synchronization'
 import { workspaceSchema, type RuntimeConnection, type WorkspacePatch } from '@dovo/protocol'
@@ -8,7 +9,12 @@ const connection: RuntimeConnection = {
 const patch: WorkspacePatch = {
   collection: 'agents',
   id: 'agent',
-  changes: { name: { before: 'Before', after: 'After' } },
+  changes: {
+    name: {
+      before: 'Before',
+      after: 'After',
+    },
+  },
 }
 it('rejects a snapshot that began before an edit, even when the patch has finished', async () => {
   const sync = new WorkspaceSynchronization(
@@ -36,7 +42,10 @@ it('keeps an old connection response from consuming the new connection queue', a
   sync.enqueue([patch])
   const old = sync.flush()
   await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
-  sync.bind({ ...connection, address: 'http://localhost:8788' })
+  sync.bind({
+    ...connection,
+    address: 'http://localhost:8788',
+  })
   sync.enqueue([patch])
   release()
   await old
@@ -60,7 +69,6 @@ it('retains conflicts until explicitly reconnecting', async () => {
   expect(sync.accepts(sync.checkpoint())).toBe(false)
   await expect(sync.flush()).rejects.toThrow('Retry sync')
 })
-
 it('retries the same queued patch after a connection failure before allowing a switch', async () => {
   const send = vi
     .fn<(connection: RuntimeConnection, patch: WorkspacePatch) => Promise<unknown>>()
@@ -89,8 +97,7 @@ it('retains conflicting edits after an explicit retry fails', async () => {
   expect(sync.accepts(sync.checkpoint())).toBe(false)
   await expect(sync.flush()).rejects.toThrow('Retry sync')
 })
-
-const editedWorkspace = workspaceSchema.parse({
+const editedWorkspace = decode(workspaceSchema, {
   version: 1,
   agents: [
     {
@@ -136,7 +143,6 @@ it('commits the durable outbox before sending any edit to the host', async () =>
   expect(send).toHaveBeenCalledOnce()
   expect(persist).toHaveBeenLastCalledWith(connection, null)
 })
-
 it('restores failed edits after restart and requires explicit retry before replay', async () => {
   let saved: WorkspaceOutbox | null = null
   const persist = async (_connection: RuntimeConnection, value: WorkspaceOutbox | null) => {
@@ -152,7 +158,11 @@ it('restores failed edits after restart and requires explicit retry before repla
   first.bind(connection)
   first.enqueue([patch], editedWorkspace)
   await expect(first.flush()).rejects.toThrow('Offline')
-  expect(saved).toEqual({ version: 1, workspace: editedWorkspace, patches: [patch] })
+  expect(saved).toEqual({
+    version: 1,
+    workspace: editedWorkspace,
+    patches: [patch],
+  })
   const send = vi
     .fn<(connection: RuntimeConnection, patch: WorkspacePatch) => Promise<unknown>>()
     .mockResolvedValue(undefined)
@@ -166,7 +176,6 @@ it('restores failed edits after restart and requires explicit retry before repla
   expect(send).toHaveBeenCalledWith(connection, patch)
   expect(saved).toBeNull()
 })
-
 it('retains an uncertain acknowledgement when clearing the durable outbox fails', async () => {
   const persist = vi
     .fn<(connection: RuntimeConnection, value: WorkspaceOutbox | null) => Promise<void>>()
@@ -185,7 +194,6 @@ it('retains an uncertain acknowledgement when clearing the durable outbox fails'
   expect(send.mock.calls.map((call) => call[1])).toEqual([patch, patch])
   expect(sync.hasPending()).toBe(false)
 })
-
 it('does not discard pending changes when the durable clear fails', async () => {
   const sync = new WorkspaceSynchronization(
     () => {},
@@ -194,8 +202,79 @@ it('does not discard pending changes when the durable clear fails', async () => 
       throw new Error('Disk unavailable')
     },
   )
-  sync.bind(connection, { version: 1, workspace: editedWorkspace, patches: [patch] })
+  sync.bind(connection, {
+    version: 1,
+    workspace: editedWorkspace,
+    patches: [patch],
+  })
   await expect(sync.discard(sync.checkpoint())).rejects.toThrow('Disk unavailable')
   expect(sync.hasPending()).toBe(true)
   expect(sync.accepts(sync.checkpoint())).toBe(false)
+})
+
+it('keeps interrupted patches pending and requires an explicit retry', async () => {
+  const { Effect, Fiber } = await import('effect')
+  const errors: Array<string | null> = []
+  let sends = 0
+  const sync = new WorkspaceSynchronization(
+    (error) => errors.push(error),
+    () =>
+      Effect.suspend(() => {
+        sends++
+        return sends === 1 ? Effect.never : Effect.void
+      }),
+  )
+  sync.bind(connection)
+  sync.enqueue([patch])
+  const fiber = Effect.runFork(sync.flushEffect())
+  await vi.waitFor(() => expect(sends).toBe(1))
+  await Effect.runPromise(Fiber.interrupt(fiber))
+  expect(sync.hasPending()).toBe(true)
+  expect(sync.isSending()).toBe(false)
+  expect(errors.at(-1)).toContain('interrupted')
+  await expect(sync.flush()).rejects.toThrow('Retry sync')
+  await sync.retry()
+  expect(sends).toBe(2)
+  expect(sync.hasPending()).toBe(false)
+})
+
+it('preserves unsent edits for an address replacement without requiring the old runtime', async () => {
+  const send = vi.fn<() => Promise<void>>().mockRejectedValue(new Error('Old address offline'))
+  const writes = new Map<string, WorkspaceOutbox | null>()
+  const sync = new WorkspaceSynchronization(
+    () => {},
+    send,
+    async (target, value) => {
+      writes.set(target.address, value)
+    },
+  )
+  sync.bind(connection)
+  sync.enqueue([patch], editedWorkspace)
+  await expect(sync.flush()).rejects.toThrow('Old address offline')
+  const { Effect } = await import('effect')
+  const saved = await Effect.runPromise(sync.savedEffect())
+  expect(saved.outbox?.patches).toEqual([patch])
+  expect(sync.acceptsSaved(saved.checkpoint)).toBe(true)
+  expect(send).toHaveBeenCalledTimes(1)
+  const replacement = { ...connection, address: 'http://new-vpn:8787' }
+  sync.bind(replacement, saved.outbox)
+  expect(sync.hasPending()).toBe(true)
+  send.mockResolvedValue(undefined)
+  await sync.retry()
+  expect(writes.get(replacement.address)).toBeNull()
+})
+
+it('does not release edits for replacement if local durability failed', async () => {
+  const sync = new WorkspaceSynchronization(
+    () => {},
+    async () => {},
+    async () => {
+      throw new Error('Disk full')
+    },
+  )
+  sync.bind(connection)
+  sync.enqueue([patch], editedWorkspace)
+  const { Effect } = await import('effect')
+  await expect(Effect.runPromise(sync.savedEffect())).rejects.toThrow('Disk full')
+  expect(sync.hasPending()).toBe(true)
 })

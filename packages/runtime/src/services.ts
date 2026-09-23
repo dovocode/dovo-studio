@@ -1,3 +1,5 @@
+import { RuntimePreferences } from './storage/runtime-preferences.js'
+import { Context } from 'effect'
 import { LiveActivities } from './notifications/live-activities.js'
 import { TitleGeneration } from './agents/title-generation.js'
 import { Attachments } from './storage/attachments.js'
@@ -26,6 +28,7 @@ import { RemoteBrowsers } from './previews/browser.js'
 export function createServices(db: Database.Database, ownerToken: string): Services {
   const activity = new Activity(db)
   const commands = new Commands(db)
+  const preferences = new RuntimePreferences(db)
   const store = new WorkspaceStore(db, (before, after) => activity.workspace(before, after))
   const forgeCli = new ForgeCliAccounts(() => commands.get())
   const forges = new ForgeConnections(
@@ -85,6 +88,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       questions.list().some((item) => item.taskId === id),
   )
   return {
+    preferences,
     liveActivities,
     forges,
     forgeCli,
@@ -115,6 +119,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  preferences: RuntimePreferences
   liveActivities: LiveActivities
   forgeCli: ForgeCliAccounts
   forgeWork: ForgeWork
@@ -143,3 +148,8 @@ export interface Services {
   browsers: RemoteBrowsers
   browserTickets: SocketTickets
 }
+
+export class RuntimeServices extends Context.Tag('dovo/RuntimeServices')<
+  RuntimeServices,
+  Services
+>() {}

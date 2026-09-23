@@ -105,9 +105,9 @@ it('allows punctuation around unchanged developer syntax and preserves ambiguous
 
 it.each(['', '  ', 'x'.repeat(12001)])(
   'rejects invalid transcripts before launching a harness',
-  (text) => {
+  async (text) => {
     const { titles, lookup } = setup(async () => {})
-    expect(() => titles.cleanup({ text })).toThrow(/too_small|too_big/)
+    await expect(titles.cleanup({ text })).rejects.toThrow(/Expected at least|Expected at most/)
     expect(lookup).not.toHaveBeenCalled()
   },
 )

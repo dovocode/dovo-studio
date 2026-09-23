@@ -1,7 +1,9 @@
+import { mutableStruct } from '@dovo/protocol'
+import { decodeResult, decode } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
 import { mcpServerEnvironment, mcpHeaders } from '../mcp-settings.js'
 import { isImageAttachment } from '@dovo/protocol'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { questionPromptSchema } from '@dovo/protocol'
 import { createOpencodeClient, type PermissionRuleset } from '@opencode-ai/sdk/v2'
 import type { AgentAdapter } from '../types.js'
@@ -21,7 +23,10 @@ export const opencodeAdapter: AgentAdapter = {
   models: async (agent) => {
     const { data } = await client(agent.endpoint).provider.list(
       {},
-      { throwOnError: true, signal: AbortSignal.timeout(15000) },
+      {
+        throwOnError: true,
+        signal: AbortSignal.timeout(15000),
+      },
     )
     return {
       models: data.all
@@ -30,7 +35,10 @@ export const opencodeAdapter: AgentAdapter = {
           Object.values(provider.models).map((model) => ({
             id: `${provider.id}/${model.id}`,
             name: `${provider.name} / ${model.name}`,
-            reasoning: Object.keys(model.variants ?? {}).map((id) => ({ id, name: id })),
+            reasoning: Object.keys(model.variants ?? {}).map((id) => ({
+              id,
+              name: id,
+            })),
           })),
         ),
       reasoning: [],
@@ -38,8 +46,14 @@ export const opencodeAdapter: AgentAdapter = {
   },
   probe: async (agent) => {
     try {
-      await client(agent.endpoint).global.health({ signal: AbortSignal.timeout(5000) })
-      return { provider: 'opencode', available: true, detail: 'OpenCode Serve is reachable.' }
+      await client(agent.endpoint).global.health({
+        signal: AbortSignal.timeout(5000),
+      })
+      return {
+        provider: 'opencode',
+        available: true,
+        detail: 'OpenCode Serve is reachable.',
+      }
     } catch {
       return {
         provider: 'opencode',
@@ -81,7 +95,10 @@ export const opencodeAdapter: AgentAdapter = {
                     oauth: false,
                   },
           },
-          { throwOnError: true, signal: run.signal },
+          {
+            throwOnError: true,
+            signal: run.signal,
+          },
         )
         const status = connection.data[name]
         if (status?.status !== 'connected')
@@ -105,10 +122,22 @@ export const opencodeAdapter: AgentAdapter = {
       ]
       if (run.tools !== 'none')
         for (const name of ['read', 'glob', 'grep', 'list', 'question'])
-          permission.push({ permission: name, pattern: '*', action: 'allow' })
+          permission.push({
+            permission: name,
+            pattern: '*',
+            action: 'allow',
+          })
       if (run.tools !== 'none' && run.agent.permission === 'workspace-write')
-        permission.push({ permission: 'edit', pattern: '*', action: 'allow' })
-      permission.push({ permission: 'dovo_*', pattern: '*', action: 'deny' })
+        permission.push({
+          permission: 'edit',
+          pattern: '*',
+          action: 'allow',
+        })
+      permission.push({
+        permission: 'dovo_*',
+        pattern: '*',
+        action: 'deny',
+      })
       for (const name of registered)
         permission.push({
           permission: `${name}_*`,
@@ -124,14 +153,28 @@ export const opencodeAdapter: AgentAdapter = {
         run.sessionId ??
         (
           await api.session.create(
-            { directory: run.cwd, title: 'Dovo Studio task', permission },
-            { throwOnError: true, signal: run.signal },
+            {
+              directory: run.cwd,
+              title: 'Dovo Studio task',
+              permission,
+            },
+            {
+              throwOnError: true,
+              signal: run.signal,
+            },
           )
         ).data.id
       if (run.sessionId)
         await api.session.update(
-          { sessionID, directory: run.cwd, permission },
-          { throwOnError: true, signal: run.signal },
+          {
+            sessionID,
+            directory: run.cwd,
+            permission,
+          },
+          {
+            throwOnError: true,
+            signal: run.signal,
+          },
         )
       run.onSession(sessionID)
       const eventsController = new AbortController()
@@ -139,30 +182,50 @@ export const opencodeAdapter: AgentAdapter = {
         eventsController.abort()
         void api.session
           .abort(
-            { sessionID, directory: run.cwd },
-            { throwOnError: true, signal: AbortSignal.timeout(5000) },
+            {
+              sessionID,
+              directory: run.cwd,
+            },
+            {
+              throwOnError: true,
+              signal: AbortSignal.timeout(5000),
+            },
           )
           .catch((error) => run.onActivity(`Could not interrupt OpenCode: ${String(error)}`))
       }
-      run.signal.addEventListener('abort', abort, { once: true })
+      run.signal.addEventListener('abort', abort, {
+        once: true,
+      })
       if (run.signal.aborted) abort()
       let streamed = false
       const textParts = new Set<string>()
       const events = await api.event.subscribe(
-        { directory: run.cwd },
-        { signal: eventsController.signal },
+        {
+          directory: run.cwd,
+        },
+        {
+          signal: eventsController.signal,
+        },
       )
       const consume = (async () => {
         for await (const event of events.stream) {
-          const scope = z
-            .object({
-              sessionID: z.string().optional(),
-              info: z
-                .object({ sessionID: z.string().optional(), id: z.string().optional() })
-                .optional(),
-              part: z.object({ sessionID: z.string().optional() }).optional(),
-            })
-            .safeParse(event.properties)
+          const scope = decodeResult(
+            mutableStruct({
+              sessionID: Schema.optional(Schema.String),
+              info: Schema.optional(
+                mutableStruct({
+                  sessionID: Schema.optional(Schema.String),
+                  id: Schema.optional(Schema.String),
+                }),
+              ),
+              part: Schema.optional(
+                mutableStruct({
+                  sessionID: Schema.optional(Schema.String),
+                }),
+              ),
+            }),
+            event.properties,
+          )
           if (
             scope.success &&
             (scope.data.sessionID === sessionID ||
@@ -171,7 +234,6 @@ export const opencodeAdapter: AgentAdapter = {
               scope.data.part?.sessionID === sessionID)
           )
             run.onEvent?.(event.type, event)
-
           if (
             event.type === 'message.part.updated' &&
             event.properties.sessionID === sessionID &&
@@ -197,7 +259,10 @@ export const opencodeAdapter: AgentAdapter = {
                 directory: run.cwd,
                 reply: allow ? 'once' : 'reject',
               },
-              { throwOnError: true, signal: run.signal },
+              {
+                throwOnError: true,
+                signal: run.signal,
+              },
             )
           }
           if (
@@ -205,20 +270,29 @@ export const opencodeAdapter: AgentAdapter = {
             event.properties.sessionID === sessionID
           ) {
             const answers = await run.ask(
-              questionPromptSchema.parse({
+              decode(questionPromptSchema, {
                 title: 'Agent needs your input',
                 questions: event.properties.questions.map((q, i) => ({
                   ...q,
                   id: String(i),
-                  options: q.options.map((o) => ({ ...o, value: o.label })),
+                  options: q.options.map((o) => ({
+                    ...o,
+                    value: o.label,
+                  })),
                 })),
               }),
               eventsController.signal,
             )
             if (eventsController.signal.aborted) break
-            const parameters = { requestID: event.properties.id, directory: run.cwd }
+            const parameters = {
+              requestID: event.properties.id,
+              directory: run.cwd,
+            }
             if (event.type === 'question.v2.asked') {
-              const target = { sessionID, requestID: event.properties.id }
+              const target = {
+                sessionID,
+                requestID: event.properties.id,
+              }
               if (answers)
                 await api.v2.session.question.reply(
                   {
@@ -227,7 +301,10 @@ export const opencodeAdapter: AgentAdapter = {
                       answers: event.properties.questions.map((_, i) => answers[String(i)] ?? []),
                     },
                   },
-                  { throwOnError: true, signal: run.signal },
+                  {
+                    throwOnError: true,
+                    signal: run.signal,
+                  },
                 )
               else
                 await api.v2.session.question.reject(target, {
@@ -242,9 +319,16 @@ export const opencodeAdapter: AgentAdapter = {
                   ...parameters,
                   answers: event.properties.questions.map((_, i) => answers[String(i)] ?? []),
                 },
-                { throwOnError: true, signal: run.signal },
+                {
+                  throwOnError: true,
+                  signal: run.signal,
+                },
               )
-            else await api.question.reject(parameters, { throwOnError: true, signal: run.signal })
+            else
+              await api.question.reject(parameters, {
+                throwOnError: true,
+                signal: run.signal,
+              })
           }
         }
       })()
@@ -266,7 +350,11 @@ export const opencodeAdapter: AgentAdapter = {
               sessionID,
               directory: run.cwd,
               system: run.agent.instructions,
-              ...(run.agent.reasoning ? { variant: run.agent.reasoning } : {}),
+              ...(run.agent.reasoning
+                ? {
+                    variant: run.agent.reasoning,
+                  }
+                : {}),
               ...(run.agent.model
                 ? {
                     model: {
@@ -276,7 +364,10 @@ export const opencodeAdapter: AgentAdapter = {
                   }
                 : {}),
               parts: [
-                { type: 'text', text: run.prompt },
+                {
+                  type: 'text',
+                  text: run.prompt,
+                },
                 ...(run.attachments ?? []).filter(isImageAttachment).map((file) => ({
                   type: 'file' as const,
                   mime: file.mime,
@@ -285,7 +376,10 @@ export const opencodeAdapter: AgentAdapter = {
                 })),
               ],
             },
-            { throwOnError: true, signal: run.signal },
+            {
+              throwOnError: true,
+              signal: run.signal,
+            },
           ),
         ])
         run.onEvent?.('prompt.result', response.data)
@@ -306,8 +400,14 @@ export const opencodeAdapter: AgentAdapter = {
       const results = await Promise.allSettled(
         registered.map((name) =>
           api.mcp.disconnect(
-            { name, directory: run.cwd },
-            { throwOnError: true, signal: AbortSignal.timeout(5000) },
+            {
+              name,
+              directory: run.cwd,
+            },
+            {
+              throwOnError: true,
+              signal: AbortSignal.timeout(5000),
+            },
           ),
         ),
       )

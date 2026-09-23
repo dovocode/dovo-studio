@@ -1,4 +1,6 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
+import { urlSchema, decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import type {
   ForgeCapabilities,
   ForgeRepository,
@@ -14,78 +16,150 @@ import type { ForgeAdapter } from './forge-types.js'
 import type { ForgeHttp } from './forge-http.js'
 import { parseForgeDiff } from './forge-diff.js'
 import { HttpError } from '../errors.js'
-
-const link = z.object({ href: z.url() })
-const user = z.object({
-  uuid: z.string(),
-  display_name: z.string().optional(),
-  nickname: z.string().optional(),
+const link = mutableStruct({
+  href: urlSchema(),
 })
-const repository = z.object({
-  uuid: z.string(),
-  name: z.string(),
-  full_name: z.string(),
-  mainbranch: z.object({ name: z.string() }).nullish(),
-  links: z.object({
+const user = mutableStruct({
+  uuid: Schema.String,
+  display_name: Schema.optional(Schema.String),
+  nickname: Schema.optional(Schema.String),
+})
+const repository = mutableStruct({
+  uuid: Schema.String,
+  name: Schema.String,
+  full_name: Schema.String,
+  mainbranch: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        name: Schema.String,
+      }),
+    ),
+  ),
+  links: mutableStruct({
     html: link,
-    clone: z.array(z.object({ name: z.string(), href: z.string() })).optional(),
+    clone: Schema.optional(
+      mutableArray(
+        mutableStruct({
+          name: Schema.String,
+          href: Schema.String,
+        }),
+      ),
+    ),
   }),
 })
-const branch = z.object({
-  branch: z.object({ name: z.string() }),
-  commit: z.object({ hash: z.string().regex(/^[a-f0-9]{40}$/) }),
+const branch = mutableStruct({
+  branch: mutableStruct({
+    name: Schema.String,
+  }),
+  commit: mutableStruct({
+    hash: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+  }),
   repository,
 })
-const participant = z.object({
+const participant = mutableStruct({
   user,
-  approved: z.boolean().default(false),
-  state: z.string().optional(),
-  participated_on: z.string().nullish(),
+  approved: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
+  state: Schema.optional(Schema.String),
+  participated_on: Schema.optional(Schema.NullOr(Schema.String)),
 })
-const pull = z.object({
-  id: z.number().int().positive(),
-  title: z.string(),
-  description: z.string().default(''),
-  state: z.enum(['OPEN', 'MERGED', 'DECLINED', 'SUPERSEDED']),
-  draft: z.boolean().default(false),
+const pull = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.positive()),
+  title: Schema.String,
+  description: Schema.optionalWith(Schema.String, {
+    default: () => '',
+  }),
+  state: Schema.Literal('OPEN', 'MERGED', 'DECLINED', 'SUPERSEDED'),
+  draft: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
   author: user,
-  updated_on: z.string(),
+  updated_on: Schema.String,
   source: branch,
   destination: branch,
-  reviewers: z.array(user).default([]),
-  participants: z.array(participant).default([]),
-  links: z.object({ html: link }),
+  reviewers: Schema.optionalWith(mutableArray(user), {
+    default: () => [],
+  }),
+  participants: Schema.optionalWith(mutableArray(participant), {
+    default: () => [],
+  }),
+  links: mutableStruct({
+    html: link,
+  }),
 })
-const comment = z.object({
-  id: z.number().int(),
-  content: z.object({ raw: z.string().default('') }),
+const comment = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite()).pipe(
+    Schema.int(),
+    Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  ),
+  content: mutableStruct({
+    raw: Schema.optionalWith(Schema.String, {
+      default: () => '',
+    }),
+  }),
   user,
-  created_on: z.string(),
-  deleted: z.boolean().default(false),
-  parent: z.object({ id: z.number().int() }).nullish(),
-  inline: z
-    .object({
-      path: z.string(),
-      from: z.number().nullish(),
-      to: z.number().nullish(),
-      outdated: z.boolean().optional(),
-    })
-    .nullish(),
-  resolution: z.unknown().optional(),
-  links: z.object({ html: link }).optional(),
+  created_on: Schema.String,
+  deleted: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
+  parent: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        id: Schema.Number.pipe(Schema.finite()).pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ),
+      }),
+    ),
+  ),
+  inline: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        path: Schema.String,
+        from: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
+        to: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
+        outdated: Schema.optional(Schema.Boolean),
+      }),
+    ),
+  ),
+  resolution: Schema.optional(Schema.Unknown),
+  links: Schema.optional(
+    mutableStruct({
+      html: link,
+    }),
+  ),
 })
-const status = z.object({
-  key: z.string(),
-  name: z.string().optional(),
-  state: z.string(),
-  url: z.url().optional(),
+const status = mutableStruct({
+  key: Schema.String,
+  name: Schema.optional(Schema.String),
+  state: Schema.String,
+  url: Schema.optional(urlSchema()),
 })
-const stat = z.object({
-  status: z.string(),
-  lines_added: z.number().int().nonnegative(),
-  lines_removed: z.number().int().nonnegative(),
-  old: z.object({ path: z.string() }).nullish(),
-  new: z.object({ path: z.string() }).nullish(),
+const stat = mutableStruct({
+  status: Schema.String,
+  lines_added: Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.nonNegative()),
+  lines_removed: Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.nonNegative()),
+  old: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        path: Schema.String,
+      }),
+    ),
+  ),
+  new: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        path: Schema.String,
+      }),
+    ),
+  ),
 })
 const capabilities: ForgeCapabilities = {
   actions: [
@@ -103,10 +177,10 @@ const capabilities: ForgeCapabilities = {
   reviewDecisions: ['comment', 'approve', 'request-changes'],
   mergeMethods: ['merge', 'squash'],
 }
-const person = (value: z.infer<typeof user>) => value.display_name ?? value.nickname ?? value.uuid
+const person = (value: Schema.Schema.Type<typeof user>) =>
+  value.display_name ?? value.nickname ?? value.uuid
 const message = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason))
 const encoded = (value: string) => encodeURIComponent(value)
-
 export class BitbucketForge implements ForgeAdapter {
   private readonly path: string
   private readonly workspace: string
@@ -123,7 +197,7 @@ export class BitbucketForge implements ForgeAdapter {
     this.workspace = name ? parts[0]! : ''
     this.path = name ? `repositories/${parts.map(encoded).join('/')}` : ''
   }
-  private repo(value: z.infer<typeof repository>): ForgeRepository {
+  private repo(value: Schema.Schema.Type<typeof repository>): ForgeRepository {
     const clone =
       value.links.clone?.find((entry) => entry.name === 'https')?.href ??
       `${value.links.html.href}.git`
@@ -141,24 +215,33 @@ export class BitbucketForge implements ForgeAdapter {
       defaultBranch: value.mainbranch?.name,
     }
   }
-  private async page<T>(path: string, schema: z.ZodType<T>, page: number) {
+  private async page<T, I>(path: string, schema: Schema.Schema<T, I>, page: number) {
     if (!Number.isInteger(page) || page < 1 || page > 100)
       throw new HttpError(400, 'Page must be between 1 and 100')
-    const shape = z.object({ values: z.array(schema), next: z.url().optional() })
+    const shape = mutableStruct({
+      values: mutableArray(schema),
+      next: Schema.optional(urlSchema()),
+    })
     let next: string | undefined = path
     const seen = new Set<string>()
     for (let index = 1; next; index++) {
       if (seen.has(next))
         throw new HttpError(400, 'Bitbucket returned a repeated pagination cursor')
       seen.add(next)
-      const current = shape.parse(await this.http.json(next))
+      const current: Schema.Schema.Type<typeof shape> = decode(shape, await this.http.json(next))
       if (index === page) return current
       next = current.next
     }
-    return { values: [] as T[], next: undefined }
+    return {
+      values: [] as T[],
+      next: undefined,
+    }
   }
-  private async all<T>(path: string, schema: z.ZodType<T>) {
-    const shape = z.object({ values: z.array(schema), next: z.url().optional() })
+  private async all<T, I>(path: string, schema: Schema.Schema<T, I>) {
+    const shape = mutableStruct({
+      values: mutableArray(schema),
+      next: Schema.optional(urlSchema()),
+    })
     const values: T[] = []
     const seen = new Set<string>()
     let next: string | undefined = path
@@ -166,7 +249,7 @@ export class BitbucketForge implements ForgeAdapter {
       if (seen.has(next) || seen.size >= 100)
         throw new HttpError(400, 'Bitbucket pagination could not be completed')
       seen.add(next)
-      const current = shape.parse(await this.http.json(next))
+      const current: Schema.Schema.Type<typeof shape> = decode(shape, await this.http.json(next))
       values.push(...current.values)
       next = current.next
     }
@@ -177,7 +260,7 @@ export class BitbucketForge implements ForgeAdapter {
     return this.path
   }
   async repository() {
-    return this.repo(repository.parse(await this.http.json(this.scoped())))
+    return this.repo(decode(repository, await this.http.json(this.scoped())))
   }
   async repositories(page: number) {
     if (!this.workspace) {
@@ -187,7 +270,11 @@ export class BitbucketForge implements ForgeAdapter {
       // memberships with the replacement API, then each workspace's repositories.
       const workspaces = await this.all(
         'user/workspaces?pagelen=100',
-        z.object({ workspace: z.object({ slug: z.string() }) }),
+        mutableStruct({
+          workspace: mutableStruct({
+            slug: Schema.String,
+          }),
+        }),
       )
       const values: ForgeRepository[] = []
       const seen = new Set<string>()
@@ -201,9 +288,13 @@ export class BitbucketForge implements ForgeAdapter {
               'Bitbucket repository discovery exceeded its page limit. Choose a repository by workspace/repository.',
             )
           seen.add(next)
-          const result = z
-            .object({ values: z.array(repository), next: z.url().optional() })
-            .parse(await this.http.json(next))
+          const result: { values: Schema.Schema.Type<typeof repository>[]; next?: string } = decode(
+            mutableStruct({
+              values: mutableArray(repository),
+              next: Schema.optional(urlSchema()),
+            }),
+            await this.http.json(next),
+          )
           values.push(...result.values.map((value) => this.repo(value)))
           if (values.length >= page * 50)
             return {
@@ -214,7 +305,11 @@ export class BitbucketForge implements ForgeAdapter {
           next = result.next
         }
       }
-      return { repositories: values.slice((page - 1) * 50), page, hasMore: false }
+      return {
+        repositories: values.slice((page - 1) * 50),
+        page,
+        hasMore: false,
+      }
     }
     const result = await this.page(
       `repositories/${encoded(this.workspace)}?pagelen=50&sort=full_name`,
@@ -227,7 +322,7 @@ export class BitbucketForge implements ForgeAdapter {
       hasMore: !!result.next,
     }
   }
-  private summary(value: z.infer<typeof pull>, viewer?: string): PullSummary {
+  private summary(value: Schema.Schema.Type<typeof pull>, viewer?: string): PullSummary {
     const requested = value.participants.some((entry) => entry.state === 'changes_requested')
     return {
       provider: 'bitbucket',
@@ -264,11 +359,14 @@ export class BitbucketForge implements ForgeAdapter {
         : state === 'closed'
           ? ['MERGED', 'DECLINED', 'SUPERSEDED']
           : ['OPEN', 'MERGED', 'DECLINED', 'SUPERSEDED']
-    const query = new URLSearchParams({ pagelen: '50', sort: '-updated_on' })
+    const query = new URLSearchParams({
+      pagelen: '50',
+      sort: '-updated_on',
+    })
     for (const state of states) query.append('state', state)
     const [pageResult, viewer] = await Promise.allSettled([
       this.page(`${this.path}/pullrequests?${query}`, pull, page),
-      this.http.json('user').then((data) => user.parse(data).uuid),
+      this.http.json('user').then((data) => decode(user, data).uuid),
     ])
     if (pageResult.status === 'rejected') throw pageResult.reason
     const result = pageResult.value
@@ -276,7 +374,9 @@ export class BitbucketForge implements ForgeAdapter {
       pulls: result.values.map((value) => ({
         ...this.summary(value, viewer.status === 'fulfilled' ? viewer.value : undefined),
         ...(viewer.status === 'rejected'
-          ? { statusError: `Viewer identity unavailable: ${message(viewer.reason)}` }
+          ? {
+              statusError: `Viewer identity unavailable: ${message(viewer.reason)}`,
+            }
           : {}),
       })),
       page,
@@ -286,7 +386,7 @@ export class BitbucketForge implements ForgeAdapter {
   private get(number: number) {
     return this.http
       .json(`${this.scoped()}/pullrequests/${number}`)
-      .then((value) => pull.parse(value))
+      .then((value) => decode(pull, value))
   }
   async detail(number: number): Promise<PullDetail> {
     const value = await this.get(number)
@@ -431,41 +531,62 @@ export class BitbucketForge implements ForgeAdapter {
     return value
   }
   private result(
-    value: z.infer<typeof pull>,
+    value: Schema.Schema.Type<typeof pull>,
     status: PullActionResult['status'] = 'updated',
   ): PullActionResult {
-    return { number: value.id, url: value.links.html.href, status }
+    return {
+      number: value.id,
+      url: value.links.html.href,
+      status,
+    }
   }
   async create(input: PullCreate) {
     this.scoped()
-    const value = pull.parse(
+    const value = decode(
+      pull,
       await this.http.json(`${this.path}/pullrequests`, {
         method: 'POST',
         body: {
           title: input.title,
           description: input.body,
-          source: { branch: { name: input.head } },
-          destination: { branch: { name: input.base } },
+          source: {
+            branch: {
+              name: input.head,
+            },
+          },
+          destination: {
+            branch: {
+              name: input.base,
+            },
+          },
           draft: input.draft,
         },
       }),
     )
     return this.result(value, 'created')
   }
-  async comment(input: z.infer<typeof pullLineCommentSchema>) {
+  async comment(input: Schema.Schema.Type<typeof pullLineCommentSchema>) {
     if (input.start !== input.end)
       throw new HttpError(400, 'Bitbucket Cloud supports single-line comments. Select one line.')
     const value = await this.current(input.number, input.headSha)
-    const result = comment.parse(
+    const result = decode(
+      comment,
       await this.http.json(`${this.path}/pullrequests/${input.number}/comments`, {
         method: 'POST',
         body: {
-          content: { raw: input.body },
-          inline: { path: input.path, [input.side === 'additions' ? 'to' : 'from']: input.end },
+          content: {
+            raw: input.body,
+          },
+          inline: {
+            path: input.path,
+            [input.side === 'additions' ? 'to' : 'from']: input.end,
+          },
         },
       }),
     )
-    return { url: result.links?.html.href ?? `${value.links.html.href}#comment-${result.id}` }
+    return {
+      url: result.links?.html.href ?? `${value.links.html.href}#comment-${result.id}`,
+    }
   }
   async act(input: PullAction): Promise<PullActionResult> {
     if (!capabilities.actions.includes(input.action))
@@ -480,9 +601,21 @@ export class BitbucketForge implements ForgeAdapter {
       await this.http.json(`${path}/comments`, {
         method: 'POST',
         body: {
-          content: { raw: input.body },
+          content: {
+            raw: input.body,
+          },
           ...(input.action === 'reply'
-            ? { parent: { id: z.coerce.number().int().positive().parse(input.commentId) } }
+            ? {
+                parent: {
+                  id: decode(
+                    CoercedNumber.pipe(
+                      Schema.int(),
+                      Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+                    ).pipe(Schema.positive()),
+                    input.commentId,
+                  ),
+                },
+              }
             : {}),
         },
       })
@@ -493,15 +626,27 @@ export class BitbucketForge implements ForgeAdapter {
       if (input.body)
         await this.http.json(`${path}/comments`, {
           method: 'POST',
-          body: { content: { raw: input.body } },
+          body: {
+            content: {
+              raw: input.body,
+            },
+          },
         })
       if (input.event !== 'comment')
         await this.http.json(
           `${path}/${input.event === 'approve' ? 'approve' : 'request-changes'}`,
-          { method: 'POST' },
+          {
+            method: 'POST',
+          },
         )
     } else if (input.action === 'resolve') {
-      const id = z.coerce.number().int().positive().parse(input.threadId)
+      const id = decode(
+        CoercedNumber.pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ).pipe(Schema.positive()),
+        input.threadId,
+      )
       await this.http.json(`${path}/comments/${id}/resolve`, {
         method: input.resolved ? 'POST' : 'DELETE',
       })
@@ -511,7 +656,15 @@ export class BitbucketForge implements ForgeAdapter {
         body: {
           title: input.title,
           description: input.body,
-          ...(input.base ? { destination: { branch: { name: input.base } } } : {}),
+          ...(input.base
+            ? {
+                destination: {
+                  branch: {
+                    name: input.base,
+                  },
+                },
+              }
+            : {}),
         },
       })
     } else if (input.action === 'reviewers') {
@@ -522,17 +675,27 @@ export class BitbucketForge implements ForgeAdapter {
           : [...new Set([...existing, ...input.reviewers])]
       await this.http.json(path, {
         method: 'PUT',
-        body: { reviewers: reviewers.map((uuid) => ({ uuid })) },
+        body: {
+          reviewers: reviewers.map((uuid) => ({
+            uuid,
+          })),
+        },
       })
     } else if (input.action === 'close') {
-      await this.http.json(`${path}/decline`, { method: 'POST' })
+      await this.http.json(`${path}/decline`, {
+        method: 'POST',
+      })
     } else if (input.action === 'merge') {
       const result = await this.http.jsonResponse(`${path}/merge`, {
         method: 'POST',
         body: {
           type: 'pullrequest',
           merge_strategy: input.method === 'squash' ? 'squash' : 'merge_commit',
-          ...(input.message ? { message: input.message } : {}),
+          ...(input.message
+            ? {
+                message: input.message,
+              }
+            : {}),
         },
       })
       if (result.status === 202)
@@ -540,7 +703,7 @@ export class BitbucketForge implements ForgeAdapter {
           ...this.result(value, 'queued'),
           message: 'Bitbucket is processing the merge. Refresh to check its result.',
         }
-      const merged = pull.parse(result.data)
+      const merged = decode(pull, result.data)
       return this.result(merged, merged.state === 'MERGED' ? 'merged' : 'queued')
     }
     return this.result(value, input.action === 'review' ? 'submitted' : 'updated')

@@ -1,16 +1,28 @@
-import { z } from 'zod'
+import { mutableArray, mutableStruct } from '@dovo/protocol'
+import { decodeResult, minValue, maxValue } from '@dovo/protocol'
+import { Schema } from 'effect'
 import type { Agent } from '@dovo/protocol'
-
-const record = z.record(z.string(), z.unknown())
-const object = (value: unknown) => record.safeParse(value).data ?? {}
+const record = Schema.mutable(
+  Schema.Record({
+    key: Schema.String,
+    value: Schema.Unknown,
+  }),
+)
+const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const string = (value: unknown) => (typeof value === 'string' ? value : '')
 const MAX_TEXT = 64000
 export type ReasoningActivityRow = {
   toolId: string
   status: 'running' | 'completed'
-  reasoning: { text: string }
+  reasoning: {
+    text: string
+  }
 }
-type Entry = { text: string; status: ReasoningActivityRow['status']; parts?: Map<number, string> }
+type Entry = {
+  text: string
+  status: ReasoningActivityRow['status']
+  parts?: Map<number, string>
+}
 
 /** Collect only the provider's exposed summary/thinking text, never opaque reasoning data. */
 export class ReasoningEvents {
@@ -24,12 +36,19 @@ export class ReasoningEvents {
     private provider: Agent['provider'],
     private emit: (row: ReasoningActivityRow) => void,
   ) {}
-
   private set(id: string, text: string, status: Entry['status'], parts?: Map<number, string>) {
     const previous = this.entries.get(id)
     text = text.slice(0, MAX_TEXT)
     status = previous?.status === 'completed' ? 'completed' : status
-    this.entries.set(id, { text, status, ...(parts ? { parts } : {}) })
+    this.entries.set(id, {
+      text,
+      status,
+      ...(parts
+        ? {
+            parts,
+          }
+        : {}),
+    })
     if (previous?.text === text && previous.status === status) return
     this.dirty.add(id)
     if (status === 'completed') this.flush()
@@ -52,7 +71,9 @@ export class ReasoningEvents {
         this.emit({
           toolId: `reasoning:${id}`,
           status: entry.status,
-          reasoning: { text: entry.text },
+          reasoning: {
+            text: entry.text,
+          },
         })
     }
     this.dirty.clear()
@@ -76,7 +97,7 @@ export class ReasoningEvents {
         const itemId = string(item.id)
         if (!itemId) return true
         const id = `codex:${itemId}`
-        const summary = z.array(z.string()).safeParse(item.summary).data
+        const summary = decodeResult(mutableArray(Schema.String), item.summary).data
         if (summary?.length)
           this.set(
             id,
@@ -88,13 +109,23 @@ export class ReasoningEvents {
         return true
       }
       if (name === 'item/reasoning/summaryTextDelta') {
-        const parsed = z
-          .object({
-            itemId: z.string().min(1),
-            summaryIndex: z.number().int().min(0).max(1000),
-            delta: z.string(),
-          })
-          .safeParse(data)
+        const parsed = decodeResult(
+          mutableStruct({
+            itemId: minValue(Schema.String, 1),
+            summaryIndex: maxValue(
+              minValue(
+                Schema.Number.pipe(Schema.finite()).pipe(
+                  Schema.int(),
+                  Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+                ),
+                0,
+              ),
+              1000,
+            ),
+            delta: Schema.String,
+          }),
+          data,
+        )
         if (parsed.success) {
           const { itemId, summaryIndex, delta } = parsed.data
           const id = `codex:${itemId}`
@@ -155,7 +186,7 @@ export class ReasoningEvents {
       }
       if (name === 'assistant') {
         const message = object(data.message)
-        const blocks = z.array(record).safeParse(message.content).data ?? []
+        const blocks = decodeResult(mutableArray(record), message.content).data ?? []
         const messageId = string(message.id)
         blocks.forEach((block, index) => {
           if (block.type !== 'thinking' || !messageId || typeof block.thinking !== 'string') return
@@ -222,7 +253,10 @@ export function safeReasoningEvent(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(safeReasoningEvent)
   if (!value || typeof value !== 'object') return value
   const data = object(value)
-  if (data.type === 'redacted_thinking') return { type: data.type }
+  if (data.type === 'redacted_thinking')
+    return {
+      type: data.type,
+    }
   return Object.fromEntries(
     Object.entries(data)
       .filter(

@@ -1,5 +1,4 @@
 import type { Automation, JobRun, RuntimeSnapshot } from '@dovo/studio-core'
-
 export type RunStep = NonNullable<JobRun['steps']>[number]
 export const stepLabels = {
   pending: 'Queued',
@@ -16,7 +15,6 @@ export const runLabels = {
   failed: 'Failed',
   cancelled: 'Cancelled',
 } satisfies Record<JobRun['status'], string>
-
 export function runSteps(run: JobRun, flow: Automation): RunStep[] {
   // New runs carry their own step snapshot, so editing the graph cannot rewrite run history.
   if (run.steps) return run.steps
@@ -50,7 +48,6 @@ export function elapsed(
   return `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60) % 60}m`
 }
 export const liveRun = (run: JobRun) => run.status === 'running' || run.status === 'waiting'
-
 export function pendingTaskInput(snapshot: RuntimeSnapshot | null, taskId?: string) {
   if (!taskId) return null
   return (

@@ -1,6 +1,12 @@
 export * from './workspace.js'
 export * from './runtime.js'
-export { runtimeRequest, clearRuntimeRequestCache, getRuntimeSnapshotTag } from './client.js'
+export {
+  runtimeRequest,
+  runtimeRequestEffect,
+  RuntimeRequestError,
+  clearRuntimeRequestCache,
+  getRuntimeSnapshotTag,
+} from './client.js'
 
 export * from './models.js'
 
@@ -49,3 +55,9 @@ export * from './tool-presentation.js'
 export * from './live-activities.js'
 
 export * from './subagents.js'
+
+export * from './schema.js'
+
+export * from './runtime-pairing.js'
+export * from './credential-fields.js'
+export * from './pairing-invitation.js'

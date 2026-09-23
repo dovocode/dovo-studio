@@ -1,7 +1,7 @@
-import { z } from 'zod'
+import { decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import type { Task, useWorkspace } from '@dovo/studio-core'
 import type { TaskSource } from './task-collection'
-
 export type TaskRowChanges = Partial<
   Pick<
     Task,
@@ -11,15 +11,43 @@ export type TaskRowChanges = Partial<
 
 /** Patch only the requested fields, with their original values as conflict guards. */
 export function taskRowPatch(task: Task, updates: TaskRowChanges) {
-  const before = z.record(z.string(), z.unknown()).parse(task)
-  const after = z.record(z.string(), z.unknown()).parse(updates)
-  const changes: Record<string, { before: unknown; after: unknown }> = {}
+  const before = decode(
+    Schema.mutable(
+      Schema.Record({
+        key: Schema.String,
+        value: Schema.Unknown,
+      }),
+    ),
+    task,
+  )
+  const after = decode(
+    Schema.mutable(
+      Schema.Record({
+        key: Schema.String,
+        value: Schema.Unknown,
+      }),
+    ),
+    updates,
+  )
+  const changes: Record<
+    string,
+    {
+      before: unknown
+      after: unknown
+    }
+  > = {}
   for (const [field, value] of Object.entries(after))
     if (JSON.stringify(before[field] ?? null) !== JSON.stringify(value ?? null))
-      changes[field] = { before: before[field] ?? null, after: value ?? null }
-  return { collection: 'tasks' as const, id: task.id, changes }
+      changes[field] = {
+        before: before[field] ?? null,
+        after: value ?? null,
+      }
+  return {
+    collection: 'tasks' as const,
+    id: task.id,
+    changes,
+  }
 }
-
 type Store = Pick<
   ReturnType<typeof useWorkspace>,
   | 'activeRuntimeId'
@@ -46,7 +74,6 @@ export function taskActionClient(store: Store, source: TaskSource) {
     refresh: () => (profile ? store.refreshRuntime(profile) : store.refreshRuntimes()),
   }
 }
-
 export function taskRowValues(task: Task, source: TaskSource) {
   const repository = source.workspace.repositories.find((entry) => entry.id === task.repositoryId)
   return {

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '../runtime/application-state'
+import { useEffect } from 'react'
 import { Pressable, View } from 'react-native'
 import {
   pipelineDuration,
@@ -11,10 +12,9 @@ import { Icon } from '../ui/icon'
 import { Text } from '../ui/text'
 import { colors, styles } from '../ui/theme'
 import { useNavigation } from '../shell/navigation'
-
 function usePipelineNow(active: boolean) {
   const { focused } = useNavigation()
-  const [now, setNow] = useState(Date.now)
+  const [now, setNow] = useApplicationState(Date.now)
   useEffect(() => {
     if (!focused || !active) return
     setNow(Date.now())
@@ -23,7 +23,6 @@ function usePipelineNow(active: boolean) {
   }, [focused, active])
   return now
 }
-
 export function WorkSignal({ status, emphasis = false }: { status: string; emphasis?: boolean }) {
   const signal = pipelineSignal(status)
   const color = {
@@ -34,32 +33,67 @@ export function WorkSignal({ status, emphasis = false }: { status: string; empha
     neutral: colors.muted,
   }[signal.tone]
   return (
-    <Text style={[styles.muted, { color, fontWeight: emphasis ? '600' : '400', flexShrink: 1 }]}>
+    <Text
+      style={[
+        styles.muted,
+        {
+          color,
+          fontWeight: emphasis ? '600' : '400',
+          flexShrink: 1,
+        },
+      ]}
+    >
       {signal.label}
     </Text>
   )
 }
-
 function date(value?: string) {
   if (!value) return undefined
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toLocaleString()
 }
-
 function Metadata({ label, value }: { label: string; value?: string }) {
   return value ? (
-    <View style={{ flexDirection: 'row', gap: 12, paddingVertical: 3 }}>
-      <Text style={[styles.muted, { width: 82 }]}>{label}</Text>
-      <Text selectable style={[styles.text, { flex: 1, minWidth: 0, fontSize: 15 }]}>
+    <View
+      style={{
+        flexDirection: 'row',
+        gap: 12,
+        paddingVertical: 3,
+      }}
+    >
+      <Text
+        style={[
+          styles.muted,
+          {
+            width: 82,
+          },
+        ]}
+      >
+        {label}
+      </Text>
+      <Text
+        selectable
+        style={[
+          styles.text,
+          {
+            flex: 1,
+            minWidth: 0,
+            fontSize: 15,
+          },
+        ]}
+      >
         {value}
       </Text>
     </View>
   ) : null
 }
-
 function Errors({ errors }: { errors?: string[] }) {
   return errors?.length ? (
-    <View style={{ gap: 6 }}>
+    <View
+      style={{
+        gap: 6,
+      }}
+    >
       {errors.map((error, index) => (
         <Text key={index} selectable style={styles.error}>
           {error}
@@ -68,13 +102,25 @@ function Errors({ errors }: { errors?: string[] }) {
     </View>
   ) : null
 }
-
 export function PipelineRunInfo({ run }: { run: ForgePipeline }) {
   const now = usePipelineNow(pipelineSignal(run.status).phase === 'active' && !!run.startedAt)
   const duration = pipelineDuration(run, now)
   return (
-    <View style={{ gap: 10 }}>
-      <Text selectable style={[styles.title, { fontSize: 22, lineHeight: 28 }]}>
+    <View
+      style={{
+        gap: 10,
+      }}
+    >
+      <Text
+        selectable
+        style={[
+          styles.title,
+          {
+            fontSize: 22,
+            lineHeight: 28,
+          },
+        ]}
+      >
         {run.title}
       </Text>
       <View style={styles.row}>
@@ -89,29 +135,62 @@ export function PipelineRunInfo({ run }: { run: ForgePipeline }) {
     </View>
   )
 }
-
 export function PipelineRunDetails({ run }: { run: ForgePipeline }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useApplicationState(false)
   return (
-    <View style={{ gap: 4 }}>
+    <View
+      style={{
+        gap: 4,
+      }}
+    >
       <Pressable
         testID="Pipeline run details"
         accessibilityRole="button"
         accessibilityLabel="Pipeline run details"
-        accessibilityState={{ expanded }}
+        accessibilityState={{
+          expanded,
+        }}
         onPress={() => setExpanded((value) => !value)}
         style={({ pressed }) => [
           styles.row,
-          { minHeight: 44, flexWrap: 'nowrap', opacity: pressed ? 0.55 : 1 },
+          {
+            minHeight: 44,
+            flexWrap: 'nowrap',
+            opacity: pressed ? 0.55 : 1,
+          },
         ]}
       >
-        <Text style={[styles.text, { flex: 1, fontSize: 15 }]}>Run details</Text>
+        <Text
+          style={[
+            styles.text,
+            {
+              flex: 1,
+              fontSize: 15,
+            },
+          ]}
+        >
+          Run details
+        </Text>
         <Icon name={expanded ? 'down' : 'next'} size={13} color={colors.muted} />
       </Pressable>
       {expanded && (
-        <View style={{ gap: 2, paddingBottom: 8 }}>
+        <View
+          style={{
+            gap: 2,
+            paddingBottom: 8,
+          }}
+        >
           {!!run.commitMessage && (
-            <Text selectable style={[styles.text, { fontSize: 15, marginBottom: 8 }]}>
+            <Text
+              selectable
+              style={[
+                styles.text,
+                {
+                  fontSize: 15,
+                  marginBottom: 8,
+                },
+              ]}
+            >
               {run.commitMessage}
             </Text>
           )}
@@ -130,7 +209,6 @@ export function PipelineRunDetails({ run }: { run: ForgePipeline }) {
     </View>
   )
 }
-
 function PipelineJob({
   job,
   onOpen,
@@ -141,26 +219,53 @@ function PipelineJob({
   now: number
 }) {
   const failed = pipelineSignal(job.status).tone === 'danger' || !!job.errors?.length
-  const [expanded, setExpanded] = useState(failed)
+  const [expanded, setExpanded] = useApplicationState(failed)
   useEffect(() => {
     if (failed) setExpanded(true)
   }, [failed])
   const duration = pipelineDuration(job, now)
   return (
-    <View style={{ borderTopWidth: 0.5, borderColor: colors.border }}>
+    <View
+      style={{
+        borderTopWidth: 0.5,
+        borderColor: colors.border,
+      }}
+    >
       <Pressable
         testID={`Job ${job.name}`}
         accessibilityRole="button"
         accessibilityLabel={`Job ${job.name}`}
-        accessibilityState={{ expanded }}
+        accessibilityState={{
+          expanded,
+        }}
         onPress={() => setExpanded((value) => !value)}
         style={({ pressed }) => [
           styles.row,
-          { flexWrap: 'nowrap', minHeight: 56, paddingVertical: 10, opacity: pressed ? 0.55 : 1 },
+          {
+            flexWrap: 'nowrap',
+            minHeight: 56,
+            paddingVertical: 10,
+            opacity: pressed ? 0.55 : 1,
+          },
         ]}
       >
-        <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-          <Text style={[styles.text, { fontWeight: '600' }]}>{job.name}</Text>
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+            gap: 4,
+          }}
+        >
+          <Text
+            style={[
+              styles.text,
+              {
+                fontWeight: '600',
+              },
+            ]}
+          >
+            {job.name}
+          </Text>
           <View style={styles.row}>
             <WorkSignal status={job.status} />
             {duration && <Text style={styles.muted}>· {duration}</Text>}
@@ -169,10 +274,19 @@ function PipelineJob({
         <Icon name={expanded ? 'down' : 'next'} size={13} color={colors.muted} />
       </Pressable>
       {expanded && (
-        <View style={{ gap: 10, paddingBottom: 12 }}>
+        <View
+          style={{
+            gap: 10,
+            paddingBottom: 12,
+          }}
+        >
           <Errors errors={job.errors} />
           {job.steps?.length ? (
-            <View style={{ gap: 12 }}>
+            <View
+              style={{
+                gap: 12,
+              }}
+            >
               {[...job.steps]
                 .sort(
                   (a, b) =>
@@ -189,7 +303,14 @@ function PipelineJob({
                       borderLeftColor: colors.border,
                     }}
                   >
-                    <Text style={[styles.text, { fontSize: 15 }]}>
+                    <Text
+                      style={[
+                        styles.text,
+                        {
+                          fontSize: 15,
+                        },
+                      ]}
+                    >
                       {step.number !== undefined ? `${step.number}. ` : ''}
                       {step.name}
                     </Text>
@@ -224,7 +345,6 @@ function PipelineJob({
     </View>
   )
 }
-
 export function PipelineJobs({
   jobs,
   hasMore,
@@ -247,10 +367,20 @@ export function PipelineJobs({
     (job) => pipelineSignal(job.status).tone === 'danger' || job.errors?.length,
   ).length
   return (
-    <View style={{ gap: 4 }}>
+    <View
+      style={{
+        gap: 4,
+      }}
+    >
       <Text
         accessibilityRole="header"
-        style={[styles.text, { fontWeight: '600', paddingBottom: 6 }]}
+        style={[
+          styles.text,
+          {
+            fontWeight: '600',
+            paddingBottom: 6,
+          },
+        ]}
       >
         Jobs · {jobs.length}
         {hasMore ? ' loaded' : ''}

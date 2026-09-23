@@ -1,14 +1,18 @@
+import { decode } from '@dovo/protocol'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import type { AgentRun, AgentSteer } from '../types'
 import { codexAdapter } from './codex'
 const directories: string[] = []
 afterEach(async () => {
   for (const directory of directories.splice(0))
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, {
+      recursive: true,
+      force: true,
+    })
 })
 async function fixture(
   mode: 'steer' | 'question' | 'clear-question' | 'reject-steer' | 'message-form' | 'child-events',
@@ -54,7 +58,9 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
    complete();
  } else send({id:m.id,result:{}});
 });`,
-    { mode: 0o700 },
+    {
+      mode: 0o700,
+    },
   )
   const controller = new AbortController()
   const run: AgentRun = {
@@ -80,8 +86,22 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     (await readFile(log, 'utf8'))
       .trim()
       .split('\n')
-      .map((line) => z.record(z.string(), z.unknown()).parse(JSON.parse(line)))
-  return { run, messages, controller }
+      .map((line) =>
+        decode(
+          Schema.mutable(
+            Schema.Record({
+              key: Schema.String,
+              value: Schema.Unknown,
+            }),
+          ),
+          JSON.parse(line),
+        ),
+      )
+  return {
+    run,
+    messages,
+    controller,
+  }
 }
 it('sends native steering with the exact active turn, client id and image inputs', async () => {
   const { run, messages } = await fixture('steer')
@@ -114,8 +134,15 @@ it('sends native steering with the exact active turn, client id and image inputs
     expectedTurnId: 'turn-1',
     clientUserMessageId: 'user-followup',
     input: [
-      { type: 'text', text: 'Focus on tests', text_elements: [] },
-      { type: 'localImage', path: '/tmp/test.png' },
+      {
+        type: 'text',
+        text: 'Focus on tests',
+        text_elements: [],
+      },
+      {
+        type: 'localImage',
+        path: '/tmp/test.png',
+      },
     ],
   })
   expect(rows.some((row) => row.method === 'turn/interrupt')).toBe(false)
@@ -128,7 +155,12 @@ it('propagates a native steering rejection without restarting the harness', asyn
   }
   const done = codexAdapter.run(run)
   await vi.waitFor(() => expect(steer).toBeTypeOf('function'))
-  await expect(steer!({ id: 'late', prompt: 'Too late' })).rejects.toThrow('no longer active')
+  await expect(
+    steer!({
+      id: 'late',
+      prompt: 'Too late',
+    }),
+  ).rejects.toThrow('no longer active')
   await done
   expect((await messages()).filter((row) => row.method === 'turn/start')).toHaveLength(1)
 })
@@ -137,17 +169,26 @@ it('keeps streaming during an Astra question and returns the chosen/free-text an
   let answer: (value: { '0': string[] }) => void = () => {}
   run.ask = vi.fn<AgentRun['ask']>(async (prompt) => {
     expect(prompt.blocking).toBe(false)
-    expect(prompt.questions[0]).toMatchObject({ custom: true, question: 'How should we proceed?' })
+    expect(prompt.questions[0]).toMatchObject({
+      custom: true,
+      question: 'How should we proceed?',
+    })
     return new Promise((resolve) => {
       answer = resolve
     })
   })
   const done = codexAdapter.run(run)
   await vi.waitFor(() => expect(run.onText).toHaveBeenCalledWith('Continuing independent work'))
-  answer({ '0': ['My own approach'] })
+  answer({
+    '0': ['My own approach'],
+  })
   await done
   expect((await messages()).find((row) => row.id === 'question-1')?.result).toEqual({
-    answers: { direction: { answers: ['My own approach'] } },
+    answers: {
+      direction: {
+        answers: ['My own approach'],
+      },
+    },
   })
 })
 it('clears a resolved question without inventing a default answer', async () => {
@@ -155,12 +196,16 @@ it('clears a resolved question without inventing a default answer', async () => 
   run.ask = async (_prompt, signal) =>
     new Promise((resolve) => {
       if (signal?.aborted) resolve(null)
-      else signal?.addEventListener('abort', () => resolve(null), { once: true })
+      else
+        signal?.addEventListener('abort', () => resolve(null), {
+          once: true,
+        })
     })
   await codexAdapter.run(run)
-  expect((await messages()).find((row) => row.id === 'question-1')?.result).toEqual({ answers: {} })
+  expect((await messages()).find((row) => row.id === 'question-1')?.result).toEqual({
+    answers: {},
+  })
 })
-
 it('recognizes Astra assistant-message forms once, including choices and free text', async () => {
   const { run } = await fixture('message-form')
   run.onQuestions = vi.fn<NonNullable<AgentRun['onQuestions']>>()
@@ -174,11 +219,19 @@ it('recognizes Astra assistant-message forms once, including choices and free te
           question: 'Which output style?',
           custom: true,
           options: [
-            expect.objectContaining({ label: 'Compact' }),
-            expect.objectContaining({ label: 'Detailed' }),
+            expect.objectContaining({
+              label: 'Compact',
+            }),
+            expect.objectContaining({
+              label: 'Detailed',
+            }),
           ],
         }),
-        expect.objectContaining({ question: 'Any additional context?', custom: true, options: [] }),
+        expect.objectContaining({
+          question: 'Any additional context?',
+          custom: true,
+          options: [],
+        }),
       ],
     }),
   )
@@ -190,6 +243,8 @@ it('keeps child output and completion out of the parent conversation', async () 
   expect(run.onText).toHaveBeenCalledExactlyOnceWith('Parent output')
   expect(run.onEvent).toHaveBeenCalledWith(
     'turn/completed',
-    expect.objectContaining({ threadId: 'child' }),
+    expect.objectContaining({
+      threadId: 'child',
+    }),
   )
 })

@@ -1,5 +1,6 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { MoreHorizontal } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import {
   forgeLabels,
   pullActionResultSchema,
@@ -22,8 +23,11 @@ import {
   Input,
   Textarea,
 } from '@dovo/studio-ui'
-
-export type PullActionContext = { repositoryId: string; detail: PullDetail; onDone: () => void }
+export type PullActionContext = {
+  repositoryId: string
+  detail: PullDetail
+  onDone: () => void
+}
 type ActionKind = PullAction['action']
 const titles: Record<ActionKind, string> = {
   comment: 'Comment on PR',
@@ -36,11 +40,14 @@ const titles: Record<ActionKind, string> = {
   close: 'Close pull request',
   reopen: 'Reopen pull request',
 }
-
-export function PullActions(props: PullActionContext & { onStartTask?: () => void }) {
+export function PullActions(
+  props: PullActionContext & {
+    onStartTask?: () => void
+  },
+) {
   const { connected } = useWorkspace()
-  const [action, setAction] = useState<ActionKind | null>(null)
-  const [notice, setNotice] = useState('')
+  const [action, setAction] = useApplicationState<ActionKind | null>(null)
+  const [notice, setNotice] = useApplicationState('')
   const supported = props.detail.capabilities?.actions ?? []
   const items: ActionKind[] = ['comment', 'review', 'edit', 'reviewers', 'merge', 'close', 'reopen']
   const available = items.filter(
@@ -134,13 +141,14 @@ export function PullActions(props: PullActionContext & { onStartTask?: () => voi
     </>
   )
 }
-
 export function PullCommentActions({
   comment,
   ...context
-}: PullActionContext & { comment: PullComment }) {
+}: PullActionContext & {
+  comment: PullComment
+}) {
   const { connected } = useWorkspace()
-  const [action, setAction] = useState<'reply' | 'resolve' | null>(null)
+  const [action, setAction] = useApplicationState<'reply' | 'resolve' | null>(null)
   const supported = context.detail.capabilities?.actions ?? []
   const reply =
     supported.includes('reply') &&
@@ -178,7 +186,6 @@ export function PullCommentActions({
     </div>
   )
 }
-
 function PullActionDialog({
   repositoryId,
   detail,
@@ -193,46 +200,62 @@ function PullActionDialog({
   onCompleted: (message: string) => void
 }) {
   const { request, connected } = useWorkspace()
-  const [body, setBody] = useState(kind === 'edit' ? detail.pull.body : '')
-  const [title, setTitle] = useState(detail.pull.title)
-  const [base, setBase] = useState(
+  const [body, setBody] = useApplicationState(kind === 'edit' ? detail.pull.body : '')
+  const [title, setTitle] = useApplicationState(detail.pull.title)
+  const [base, setBase] = useApplicationState(
     detail.pull.base
       .replace(/^refs\/heads\//, '')
       .split(':')
       .at(-1) ?? '',
   )
-  const [event, setEvent] = useState<'comment' | 'approve' | 'request-changes'>(
+  const [event, setEvent] = useApplicationState<'comment' | 'approve' | 'request-changes'>(
     detail.capabilities?.reviewDecisions[0] ?? 'comment',
   )
-  const [initialBase] = useState(base)
-  const [method, setMethod] = useState<'merge' | 'squash' | 'rebase'>(
+  const [initialBase] = useApplicationState(base)
+  const [method, setMethod] = useApplicationState<'merge' | 'squash' | 'rebase'>(
     detail.capabilities?.mergeMethods[0] ?? 'merge',
   )
-  const [reviewers, setReviewers] = useState('')
-  const [teams, setTeams] = useState('')
-  const [operation, setOperation] = useState<'add' | 'remove'>('add')
-  const [confirmed, setConfirmed] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [reviewers, setReviewers] = useApplicationState('')
+  const [teams, setTeams] = useApplicationState('')
+  const [operation, setOperation] = useApplicationState<'add' | 'remove'>('add')
+  const [confirmed, setConfirmed] = useApplicationState(false)
+  const [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useApplicationState('')
   // Keep the revision the form opened against. Background refreshes must not
   // silently move a user's review or merge confirmation onto a different head.
-  const [scope] = useState({ number: detail.pull.number, headSha: detail.pull.headSha })
+  const [scope] = useApplicationState({
+    number: detail.pull.number,
+    headSha: detail.pull.headSha,
+  })
   const provider = forgeLabels[detail.pull.provider ?? 'github']
   const list = (value: string) => [...new Set(value.split(/[\s,]+/).filter(Boolean))]
   const payload = (): PullAction => {
     switch (kind) {
       case 'comment':
-        return { ...scope, action: kind, body }
+        return {
+          ...scope,
+          action: kind,
+          body,
+        }
       case 'review':
-        return { ...scope, action: kind, body, event }
+        return {
+          ...scope,
+          action: kind,
+          body,
+          event,
+        }
       case 'reply':
         return {
           ...scope,
           action: kind,
           body,
           commentId: comment?.id ?? '',
-          ...(comment?.threadId ? { threadId: comment.threadId } : {}),
+          ...(comment?.threadId
+            ? {
+                threadId: comment.threadId,
+              }
+            : {}),
         }
       case 'resolve':
         return {
@@ -247,15 +270,37 @@ function PullActionDialog({
           action: kind,
           title,
           body,
-          ...(base.trim() && base.trim() !== initialBase ? { base: base.trim() } : {}),
+          ...(base.trim() && base.trim() !== initialBase
+            ? {
+                base: base.trim(),
+              }
+            : {}),
         }
       case 'reviewers':
-        return { ...scope, action: kind, operation, reviewers: list(reviewers), teams: list(teams) }
+        return {
+          ...scope,
+          action: kind,
+          operation,
+          reviewers: list(reviewers),
+          teams: list(teams),
+        }
       case 'merge':
-        return { ...scope, action: kind, method, ...(body.trim() ? { message: body } : {}) }
+        return {
+          ...scope,
+          action: kind,
+          method,
+          ...(body.trim()
+            ? {
+                message: body,
+              }
+            : {}),
+        }
       case 'close':
       case 'reopen':
-        return { ...scope, action: kind }
+        return {
+          ...scope,
+          action: kind,
+        }
     }
   }
   const needsBody =
@@ -273,7 +318,10 @@ function PullActionDialog({
     try {
       const result = await request(
         '/api/scm/pulls/action',
-        { repositoryId, ...payload() },
+        {
+          repositoryId,
+          ...payload(),
+        },
         pullActionResultSchema,
       )
       onCompleted(

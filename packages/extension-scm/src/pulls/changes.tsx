@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace, pullLineCommentResponse, type PullDetail } from '@dovo/studio-core'
 import { Button, Checkbox, Input } from '@dovo/studio-ui'
 import { PullFileTree } from './file-tree'
@@ -16,11 +16,11 @@ export function PullChanges({
   onPosted: () => void
 }) {
   const { request, connected } = useWorkspace()
-  const [selected, setSelected] = useState(detail.files[0]?.path ?? ''),
-    [split, setSplit] = useState(false),
-    [treeOpen, setTreeOpen] = useState(true),
-    [query, setQuery] = useState(''),
-    [viewed, setViewed] = useState<Set<string>>(new Set())
+  const [selected, setSelected] = useApplicationState(detail.files[0]?.path ?? ''),
+    [split, setSplit] = useApplicationState(false),
+    [treeOpen, setTreeOpen] = useApplicationState(true),
+    [query, setQuery] = useApplicationState(''),
+    [viewed, setViewed] = useApplicationState<Set<string>>(new Set())
   const file = detail.files.find((f) => f.path === selected) ?? detail.files[0]
   const index = detail.files.findIndex((f) => f.path === file?.path)
   if (!file) return <p className="p-4 text-xs text-muted-foreground">No changed files returned.</p>
@@ -130,7 +130,11 @@ export function PullChanges({
             fileBaseURL={
               detail.fileBaseUrl ?? `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
             }
-            actionContext={{ repositoryId, detail, onDone: onPosted }}
+            actionContext={{
+              repositoryId,
+              detail,
+              onDone: onPosted,
+            }}
           />
         </div>
         {treeOpen && (

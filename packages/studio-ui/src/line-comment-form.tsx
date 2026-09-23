@@ -1,5 +1,6 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { suggestionComment } from './suggestion'
-import { useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { Button } from './components/ui/button'
 import { Textarea } from './components/ui/textarea'
 export function LineCommentForm({
@@ -17,11 +18,11 @@ export function LineCommentForm({
   children?: ReactNode
   selectedCode?: string
 }) {
-  const [body, setBody] = useState(''),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
-  const [suggesting, setSuggesting] = useState(false),
-    [replacement, setReplacement] = useState(selectedCode ?? '')
+  const [body, setBody] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
+  const [suggesting, setSuggesting] = useApplicationState(false),
+    [replacement, setReplacement] = useApplicationState(selectedCode ?? '')
   const submitted = suggesting ? suggestionComment(body, replacement) : body.trim()
   return (
     <form

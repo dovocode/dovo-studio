@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import { pullPageSchema, type PullPage } from '@dovo/protocol'
-import { z } from 'zod'
+import { useEffect, useRef } from 'react'
+import { AppState } from 'react-native'
+import { Effect, Schema } from 'effect'
+import { startPolling, clientTaskScope } from '@dovo/client-runtime'
+import { mutableArray, mutableStruct, pullPageSchema, type PullPage } from '@dovo/protocol'
+import { useApplicationState } from '../runtime/application-state'
 import { refreshFirstPage } from './collection-pages'
 import { useRuntime } from '../runtime/provider'
 import {
@@ -8,10 +11,8 @@ import {
   collectionSourceIdentity,
   projectContentIdentity,
 } from '../runtime/collection-sources'
-import { AppState } from 'react-native'
 import { useNavigation } from '../shell/navigation'
 import { acknowledgePullList, pullListRevision } from './pull-list-invalidation'
-
 type Page = PullPage & {
   sourceKey: string
   sourceIdentity: string
@@ -23,14 +24,16 @@ type Page = PullPage & {
   error?: string
   firstPageIds?: string[]
 }
-const cachedPullPageSchema = pullPageSchema.extend({ firstPageIds: z.array(z.string()).optional() })
+const cachedPullPageSchema = mutableStruct({
+  ...pullPageSchema.fields,
+  firstPageIds: Schema.optional(mutableArray(Schema.String)),
+})
 type Repository = { id: string; name: string; path: string; forge?: unknown }
 const cacheKey = (repository: Repository, state: string) =>
   JSON.stringify(['pulls', 'list', repository.id, repository.path, state, repository.forge])
-
 export function usePulls(repositoryId: string, state: string) {
   const { focused: enabled } = useNavigation()
-  const { readRuntime: request, overviews, cacheForRuntime } = useRuntime()
+  const { readRuntimeEffect: request, overviews, cacheForRuntime } = useRuntime()
   const sources = collectionSources(overviews).filter(
     (source) => !repositoryId || source.key === repositoryId,
   )
@@ -38,229 +41,237 @@ export function usePulls(repositoryId: string, state: string) {
   const sourcesRef = useRef(sources)
   sourcesRef.current = sources
   const connected = sources.some((source) => source.connected)
-  const [pages, setPages] = useState<Record<string, Page>>({})
-  const pageRef = useRef(pages)
-  const [busy, setBusy] = useState(false)
-  const [revision, setRevision] = useState(0)
+  const [pages, setPages, pagesRef] = useApplicationState<Record<string, Page>>({})
+  const [busy, setBusy] = useApplicationState(false)
+  const [revision, setRevision] = useApplicationState(0)
   const forceNext = useRef(false)
-  const source = useRef<string>('')
+  const sourceState = useRef('')
   const generation = useRef(0)
-  const inFlight = useRef<number | null>(null)
+  const moreRef = useRef<(id: string) => Promise<void>>(async () => {})
   const remoteState = state === 'merged' ? 'closed' : state
-  const update = (id: string, page: Page) => {
-    pageRef.current = { ...pageRef.current, [id]: page }
-    setPages(pageRef.current)
-  }
   useEffect(() => {
     const current = ++generation.current
     const repositories = sourcesRef.current
     const currentSources = new Map(repositories.map((entry) => [entry.key, entry]))
-    pageRef.current =
-      source.current !== remoteState
+    setPages((previous) =>
+      sourceState.current !== remoteState
         ? {}
         : Object.fromEntries(
-            Object.entries(pageRef.current).filter(([id, page]) => {
+            Object.entries(previous).filter(([id, page]) => {
               const entry = currentSources.get(id)
               return entry && page.sourceIdentity === projectContentIdentity(entry)
             }),
-          )
-    setPages(pageRef.current)
-    source.current = remoteState
-    const hydrated = Promise.all(
-      repositories.map(async (entry) => {
-        const repo = entry.repository,
-          readCache = cacheForRuntime(entry.profile)
-        const metadata = {
-          sourceKey: entry.key,
-          sourceIdentity: projectContentIdentity(entry),
-          runtimeId: entry.profile.id,
-          runtimeName: entry.profile.name,
-          connected: entry.connected,
-        }
-        try {
-          const cached = await readCache.read(cacheKey(repo, remoteState), cachedPullPageSchema)
-          if (cached && current === generation.current && !pageRef.current[entry.key])
-            update(entry.key, {
-              ...metadata,
-              ...cached.value,
-              repositoryId: repo.id,
-              name: repo.name,
-              stale: true,
-              cachedAt: cached.value.cachedAt ?? cached.cachedAt,
-            })
-        } catch {
-          if (current === generation.current && !pageRef.current[entry.key])
-            update(entry.key, {
-              ...metadata,
-              pulls: [],
-              page: 0,
-              hasMore: false,
-              repositoryId: repo.id,
-              name: repo.name,
-              error: 'Saved PRs could not be read from this device.',
-            })
-        }
-      }),
+          ),
     )
-    setBusy(connected && enabled)
-    let loading = false
-    const load = async (force = false) => {
-      if (
-        loading ||
-        inFlight.current === current ||
-        current !== generation.current ||
-        !connected ||
-        !enabled
-      )
-        return
-      inFlight.current = current
-      loading = true
-      await hydrated
-      for (let i = 0; i < repositories.length && current === generation.current; i += 3)
-        await Promise.all(
-          repositories.slice(i, i + 3).map(async (entry) => {
-            if (!entry.connected) return
-            const repo = entry.repository,
-              readCache = cacheForRuntime(entry.profile)
-            const metadata = {
-              sourceKey: entry.key,
-              sourceIdentity: projectContentIdentity(entry),
-              runtimeId: entry.profile.id,
-              runtimeName: entry.profile.name,
-              connected: entry.connected,
-            }
-            try {
-              const invalidated = pullListRevision(readCache, repo.id)
-              const refresh = force || !!invalidated
-              const response = await request(
-                entry.profile,
-                '/api/scm/pulls/overview',
-                { repositoryId: repo.id, state: remoteState, page: 1, refresh },
-                pullPageSchema,
-              )
-              if (current !== generation.current) return
-              const previous = pageRef.current[entry.key]
-              const page: Page = {
-                ...metadata,
-                ...response,
-                repositoryId: repo.id,
-                name: repo.name,
-                error: response.refreshError,
-                firstPageIds: response.pulls.map((pull) => String(pull.number)),
-                ...(previous?.page > 1 && previous.firstPageIds && !refresh
-                  ? {
-                      page: previous.page,
-                      hasMore: previous.hasMore,
-                      stale: previous.stale || response.stale,
-                      error: response.refreshError || previous.error,
-                      pulls: refreshFirstPage(
-                        previous.pulls,
-                        previous.firstPageIds ?? [],
-                        response.pulls,
-                        (pull) => String(pull.number),
-                      ),
-                    }
-                  : {}),
-              }
-              update(entry.key, page)
-              if (!response.stale && !response.refreshError)
-                acknowledgePullList(readCache, repo.id, invalidated)
-              try {
-                await readCache?.write(
-                  cacheKey(repo, remoteState),
-                  cachedPullPageSchema.parse(page),
-                )
-              } catch {
-                if (current === generation.current)
-                  update(entry.key, {
-                    ...metadata,
-                    ...page,
-                    error: 'PRs loaded, but could not be saved for offline use.',
-                  })
-              }
-            } catch (error) {
-              if (current === generation.current)
-                update(entry.key, {
-                  ...metadata,
-                  ...(pageRef.current[entry.key] ?? { pulls: [], hasMore: false, page: 0 }),
-                  repositoryId: repo.id,
-                  name: repo.name,
-                  stale: true,
-                  error: String(error),
-                })
-            }
-          }),
-        )
-      if (current === generation.current) setBusy(false)
-      loading = false
-      if (inFlight.current === current) inFlight.current = null
+    sourceState.current = remoteState
+    const semaphore = Effect.runSync(Effect.makeSemaphore(1))
+    const commands = clientTaskScope()
+    const update = (id: string, page: Page) => {
+      if (current === generation.current) setPages((previous) => ({ ...previous, [id]: page }))
     }
-    const force = forceNext.current
+    const metadata = (entry: (typeof repositories)[number]) => ({
+      sourceKey: entry.key,
+      sourceIdentity: projectContentIdentity(entry),
+      runtimeId: entry.profile.id,
+      runtimeName: entry.profile.name,
+      connected: entry.connected,
+      repositoryId: entry.repository.id,
+      name: entry.repository.name,
+    })
+    const save = (entry: (typeof repositories)[number], page: Page) =>
+      Schema.decodeUnknown(cachedPullPageSchema)(page).pipe(
+        Effect.flatMap((value) =>
+          cacheForRuntime(entry.profile).writeEffect(
+            cacheKey(entry.repository, remoteState),
+            value,
+          ),
+        ),
+        Effect.catchAll(() =>
+          Effect.sync(() =>
+            update(entry.key, {
+              ...page,
+              error: 'PRs loaded, but could not be saved for offline use.',
+            }),
+          ),
+        ),
+      )
+    const hydrated = Effect.runSync(
+      Effect.cached(
+        Effect.forEach(
+          repositories,
+          (entry) =>
+            Effect.gen(function* () {
+              const cached = yield* cacheForRuntime(entry.profile).readEffect(
+                cacheKey(entry.repository, remoteState),
+                cachedPullPageSchema,
+              )
+              if (cached && !pagesRef.current[entry.key])
+                update(entry.key, {
+                  ...cached.value,
+                  ...metadata(entry),
+                  stale: true,
+                  cachedAt: cached.value.cachedAt ?? cached.cachedAt,
+                })
+            }).pipe(
+              Effect.catchAll(() =>
+                Effect.sync(() => {
+                  if (!pagesRef.current[entry.key])
+                    update(entry.key, {
+                      ...metadata(entry),
+                      pulls: [],
+                      page: 0,
+                      hasMore: false,
+                      error: 'Saved PRs could not be read from this device.',
+                    })
+                }),
+              ),
+            ),
+          { concurrency: 3, discard: true },
+        ),
+      ),
+    )
+    let force = forceNext.current
     forceNext.current = false
-    void load(force)
-    const timer = setInterval(() => {
-      if (AppState.currentState === 'active') void load()
-    }, 10000)
+    setBusy(connected && enabled)
+    const load = Effect.gen(function* () {
+      yield* hydrated
+      if (!connected || !enabled || AppState.currentState !== 'active') return
+      const forced = force
+      force = false
+      yield* Effect.forEach(
+        repositories.filter((entry) => entry.connected),
+        (entry) =>
+          Effect.gen(function* () {
+            const cache = cacheForRuntime(entry.profile)
+            const invalidated = pullListRevision(cache, entry.repository.id)
+            const refresh = forced || !!invalidated
+            const response = yield* request(
+              entry.profile,
+              '/api/scm/pulls/overview',
+              {
+                repositoryId: entry.repository.id,
+                state: remoteState,
+                page: 1,
+                refresh,
+              },
+              pullPageSchema,
+            )
+            const previous = pagesRef.current[entry.key]
+            const page: Page = {
+              ...response,
+              ...metadata(entry),
+              error: response.refreshError,
+              firstPageIds: response.pulls.map((pull) => String(pull.number)),
+              ...(previous?.page > 1 && previous.firstPageIds && !refresh
+                ? {
+                    page: previous.page,
+                    hasMore: previous.hasMore,
+                    stale: previous.stale || response.stale,
+                    error: response.refreshError || previous.error,
+                    pulls: refreshFirstPage(
+                      previous.pulls,
+                      previous.firstPageIds,
+                      response.pulls,
+                      (pull) => String(pull.number),
+                    ),
+                  }
+                : {}),
+            }
+            update(entry.key, page)
+            if (!response.stale && !response.refreshError)
+              acknowledgePullList(cache, entry.repository.id, invalidated)
+            yield* save(entry, page)
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.sync(() =>
+                update(entry.key, {
+                  ...(pagesRef.current[entry.key] ?? { pulls: [], hasMore: false, page: 0 }),
+                  ...metadata(entry),
+                  stale: true,
+                  error: error.message,
+                }),
+              ),
+            ),
+          ),
+        { concurrency: 3, discard: true },
+      )
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (current === generation.current) setBusy(false)
+        }),
+      ),
+    )
+    const polling = startPolling(semaphore.withPermits(1)(load), {
+      interval: 10000,
+      onError: () => {},
+    })
+    const more = (id: string) =>
+      Effect.gen(function* () {
+        const previous = pagesRef.current[id]
+        const entry = repositories.find((item) => item.key === id)
+        if (!previous || !entry?.connected || !enabled) return
+        if (previous.error) {
+          force = true
+          polling.refresh()
+          return
+        }
+        setBusy(true)
+        yield* Effect.gen(function* () {
+          const next = yield* request(
+            entry.profile,
+            '/api/scm/pulls/overview',
+            {
+              repositoryId: entry.repository.id,
+              state: remoteState,
+              page: previous.page + 1,
+            },
+            pullPageSchema,
+          )
+          const page = {
+            ...previous,
+            ...next,
+            stale: previous.stale || next.stale,
+            error: next.refreshError || previous.error,
+            pulls: [
+              ...new Map(
+                [...previous.pulls, ...next.pulls].map((pull) => [pull.number, pull]),
+              ).values(),
+            ],
+          }
+          update(id, page)
+          yield* save(entry, page)
+        }).pipe(
+          Effect.catchAll((error) =>
+            Effect.sync(() => update(id, { ...previous, error: error.message })),
+          ),
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (current === generation.current) setBusy(false)
+            }),
+          ),
+        )
+      })
+    moreRef.current = (id) =>
+      commands.run(semaphore.withPermitsIfAvailable(1)(more(id)).pipe(Effect.asVoid))
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') polling.refresh()
+    })
     return () => {
-      clearInterval(timer)
       generation.current++
+      moreRef.current = async () => {}
+      subscription.remove()
+      void polling.stop()
+      void commands.stop()
     }
   }, [key, remoteState, connected, request, cacheForRuntime, revision, enabled])
   const refresh = () => {
     forceNext.current = true
     setRevision((value) => value + 1)
   }
-  const more = async (id: string) => {
-    const previous = pageRef.current[id],
-      current = generation.current
-    const entry = sourcesRef.current.find((item) => item.key === id)
-    if (!previous || !entry || busy || inFlight.current === current || !entry.connected || !enabled)
-      return
-    const repo = entry.repository,
-      readCache = cacheForRuntime(entry.profile)
-    if (previous.error) {
-      refresh()
-      return
-    }
-    inFlight.current = current
-    setBusy(true)
-    try {
-      const next = await request(
-        entry.profile,
-        '/api/scm/pulls/overview',
-        { repositoryId: repo.id, state: remoteState, page: previous.page + 1 },
-        pullPageSchema,
-      )
-      if (current === generation.current) {
-        const page = {
-          ...previous,
-          ...next,
-          stale: previous.stale || next.stale,
-          error: next.refreshError || previous.error,
-          pulls: [
-            ...new Map(
-              [...previous.pulls, ...next.pulls].map((pull) => [pull.number, pull]),
-            ).values(),
-          ],
-        }
-        update(id, page)
-        try {
-          await readCache?.write(cacheKey(repo, remoteState), cachedPullPageSchema.parse(page))
-        } catch {
-          if (current === generation.current)
-            update(id, { ...page, error: 'PRs loaded, but could not be saved for offline use.' })
-        }
-      }
-    } catch (error) {
-      if (current === generation.current) update(id, { ...previous, error: String(error) })
-    } finally {
-      if (inFlight.current === current) inFlight.current = null
-      if (current === generation.current) setBusy(false)
-    }
-  }
   const currentSources = new Map(sources.map((entry) => [entry.key, entry]))
   const values =
-    source.current !== remoteState
+    sourceState.current !== remoteState
       ? []
       : Object.values(pages).flatMap((page) => {
           const entry = currentSources.get(page.sourceKey)
@@ -275,5 +286,12 @@ export function usePulls(repositoryId: string, state: string) {
               ]
             : []
         })
-  return { pages: values, sources, busy, connected, more, refresh }
+  return {
+    pages: values,
+    sources,
+    busy,
+    connected,
+    more: (id: string) => moreRef.current(id),
+    refresh,
+  }
 }

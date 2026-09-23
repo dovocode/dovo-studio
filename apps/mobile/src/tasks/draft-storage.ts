@@ -1,3 +1,6 @@
+import { Effect } from 'effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { nativeEffect } from '../runtime/native-effect'
 type Storage = {
   getItem: (key: string) => Promise<string | null>
   setItem: (key: string, value: string) => Promise<void>
@@ -6,21 +9,47 @@ type Storage = {
 
 /** A reopened thread must wait for saves owned by its previous screen. */
 export function createDraftStorage(storage: Storage) {
-  const pending = new Map<string, Promise<void>>()
+  const locks = new Map<string, { semaphore: Effect.Semaphore; users: number }>()
   const listeners = new Map<string, Set<(value: string) => void>>()
-  const enqueue = <Result>(key: string, work: () => Promise<Result>) => {
-    const operation = (pending.get(key) ?? Promise.resolve()).then(work)
-    // Return the original failure to its caller, but allow later operations to recover.
-    const settled = operation.then(
-      () => undefined,
-      () => undefined,
-    )
-    pending.set(key, settled)
-    void settled.then(() => {
-      if (pending.get(key) === settled) pending.delete(key)
+  const serialize = <A, E>(key: string, operation: Effect.Effect<A, E>) =>
+    Effect.suspend(() => {
+      const lock = locks.get(key) ?? { semaphore: Effect.unsafeMakeSemaphore(1), users: 0 }
+      locks.set(key, lock)
+      lock.users++
+      // Native storage cannot be cancelled. Keep its permit until it really settles.
+      return lock.semaphore
+        .withPermits(1)(operation)
+        .pipe(
+          Effect.uninterruptible,
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (--lock.users === 0) locks.delete(key)
+            }),
+          ),
+        )
     })
-    return operation
-  }
+  const readEffect = (key: string, legacyKey?: string) =>
+    serialize(
+      key,
+      Effect.gen(function* () {
+        const value = yield* nativeEffect(() => storage.getItem(key))
+        if (value !== null || !legacyKey) return value
+        const legacy = yield* nativeEffect(() => storage.getItem(legacyKey))
+        if (legacy !== null) {
+          yield* nativeEffect(() => storage.setItem(key, legacy))
+          yield* nativeEffect(() => storage.removeItem(legacyKey))
+        }
+        return legacy
+      }),
+    )
+  const writeEffect = (key: string, value: string) =>
+    Effect.suspend(() => {
+      listeners.get(key)?.forEach((listener) => listener(value))
+      return serialize(
+        key,
+        nativeEffect(() => storage.setItem(key, value)),
+      )
+    })
   return {
     subscribe(key: string, listener: (value: string) => void) {
       const subscribers = listeners.get(key) ?? new Set<(value: string) => void>()
@@ -31,21 +60,9 @@ export function createDraftStorage(storage: Storage) {
         if (!subscribers.size) listeners.delete(key)
       }
     },
-    read: (key: string, legacyKey?: string) =>
-      enqueue(key, async () => {
-        const value = await storage.getItem(key)
-        if (value !== null || !legacyKey) return value
-        const legacy = await storage.getItem(legacyKey)
-        if (legacy !== null) {
-          await storage.setItem(key, legacy)
-          await storage.removeItem(legacyKey)
-        }
-        return legacy
-      }),
-    write: (key: string, value: string) => {
-      // A previous screen's successful send must also clear a reopened composer's draft.
-      listeners.get(key)?.forEach((listener) => listener(value))
-      return enqueue(key, () => storage.setItem(key, value))
-    },
+    readEffect,
+    writeEffect,
+    read: (key: string, legacyKey?: string) => runClientEffect(readEffect(key, legacyKey)),
+    write: (key: string, value: string) => runClientEffect(writeEffect(key, value)),
   }
 }

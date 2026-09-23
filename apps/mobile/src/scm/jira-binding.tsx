@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { useApplicationState } from '../runtime/application-state'
+import { validationMessages } from '@dovo/protocol'
+import { decodeResult } from '@dovo/protocol'
+import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
 import {
   jiraBindingSchema,
@@ -7,14 +12,13 @@ import {
   jiraSourceSchema,
   type JiraSource,
 } from '@dovo/protocol'
-import { z } from 'zod'
+import { Schema, Effect } from 'effect'
 import { useRuntime } from '../runtime/provider'
 import { Action } from '../ui/action'
 import { Choice } from '../ui/choice'
 import { Field } from '../ui/field'
 import { Text } from '../ui/text'
 import { styles } from '../ui/theme'
-
 export function JiraProjectForm({
   initial,
   onClose,
@@ -26,17 +30,19 @@ export function JiraProjectForm({
   onSaved?: () => void
   onBusyChange: (busy: boolean) => void
 }) {
-  const { call, read, connected, profile } = useRuntime()
-  const [name, setName] = useState(initial?.name ?? '')
-  const [site, setSite] = useState(initial?.site ?? '')
-  const [project, setProject] = useState(initial?.project ?? '')
-  const [manual, setManual] = useState(false)
-  const [projects, setProjects] = useState<z.infer<typeof jiraProjectsSchema>>()
-  const [loading, setLoading] = useState(connected)
-  const [revision, retry] = useState(0)
-  const [loadError, setLoadError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const { read, connected, profile, callEffect, readEffect } = useRuntime()
+  const [name, setName] = useApplicationState(initial?.name ?? '')
+  const [site, setSite] = useApplicationState(initial?.site ?? '')
+  const [project, setProject] = useApplicationState(initial?.project ?? '')
+  const [manual, setManual] = useApplicationState(false)
+  const [projects, setProjects] = useApplicationState<
+    Schema.Schema.Type<typeof jiraProjectsSchema> | undefined
+  >(undefined)
+  const [loading, setLoading] = useApplicationState(connected)
+  const [revision, retry] = useApplicationState(0)
+  const [loadError, setLoadError] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   const pending = useRef(false)
   const hasInitial = !!initial
   useEffect(() => {
@@ -47,73 +53,118 @@ export function JiraProjectForm({
     }
     setLoading(true)
     setLoadError('')
-    void read('/api/scm/jira/projects/read', {}, jiraProjectsSchema)
-      .then((result) => {
-        if (!current) return
-        setProjects(result)
-        if (!hasInitial) setSite(result.site)
-      })
-      .catch((cause) => {
-        if (current) setLoadError(cause instanceof Error ? cause.message : String(cause))
-      })
-      .finally(() => {
-        if (current) setLoading(false)
-      })
+    void runClientEffect(
+      readEffect('/api/scm/jira/projects/read', {}, jiraProjectsSchema)
+        .pipe(
+          Effect.flatMap((result) =>
+            nativeEffect(() => {
+              if (!current) return
+              setProjects(result)
+              if (!hasInitial) setSite(result.site)
+            }),
+          ),
+        )
+        .pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              if (current) setLoadError(cause instanceof Error ? cause.message : String(cause))
+            }),
+          ),
+        )
+        .pipe(
+          Effect.ensuring(
+            nativeEffect(() => {
+              if (current) setLoading(false)
+            }).pipe(Effect.orDie),
+          ),
+        ),
+    )
     return () => {
       current = false
     }
   }, [read, connected, revision, hasInitial])
-  const save = async (remove = false) => {
-    if (pending.current || !connected) return
-    const parsed = jiraBindingSchema.safeParse({
-      site: /^https?:\/\//i.test(site.trim()) ? site.trim() : `https://${site.trim()}`,
-      project: project.trim().toUpperCase(),
-    })
-    if (!remove && !parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? 'Enter a Jira site and project.')
-      return
-    }
-    pending.current = true
-    setBusy(true)
-    onBusyChange(true)
-    setError('')
-    try {
-      if (remove && initial)
-        await call('/api/scm/jira/sources/remove', { sourceId: initial.id }, responses.ok)
-      else
-        await call(
-          '/api/scm/jira/sources/save',
-          {
-            source: {
-              ...parsed.data,
-              ...(initial ? { id: initial.id } : {}),
-              name: name.trim() || projects?.projects.find((entry) => entry.key === project)?.name,
-            },
-          },
-          jiraSourceSchema,
+  const save = (remove = false) => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (pending.current || !connected) return
+        const parsed = decodeResult(jiraBindingSchema, {
+          site: /^https?:\/\//i.test(site.trim()) ? site.trim() : `https://${site.trim()}`,
+          project: project.trim().toUpperCase(),
+        })
+        if (!remove && !parsed.success) {
+          setError(validationMessages(parsed.error)[0] ?? 'Enter a Jira site and project.')
+          return
+        }
+        pending.current = true
+        setBusy(true)
+        onBusyChange(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          if (remove && initial)
+            yield* callEffect(
+              '/api/scm/jira/sources/remove',
+              {
+                sourceId: initial.id,
+              },
+              responses.ok,
+            )
+          else
+            yield* callEffect(
+              '/api/scm/jira/sources/save',
+              {
+                source: {
+                  ...parsed.data,
+                  ...(initial
+                    ? {
+                        id: initial.id,
+                      }
+                    : {}),
+                  name:
+                    name.trim() || projects?.projects.find((entry) => entry.key === project)?.name,
+                },
+              },
+              jiraSourceSchema,
+            )
+          onSaved?.()
+          onClose()
+        }).pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              setError(cause instanceof Error ? cause.message : String(cause))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              pending.current = false
+              setBusy(false)
+              onBusyChange(false)
+            }).pipe(Effect.orDie),
+          ),
         )
-      onSaved?.()
-      onClose()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      pending.current = false
-      setBusy(false)
-      onBusyChange(false)
-    }
+      }),
+    )
   }
   const projectItems =
-    projects?.projects.map((entry) => ({ id: entry.key, name: `${entry.key} · ${entry.name}` })) ??
-    []
+    projects?.projects.map((entry) => ({
+      id: entry.key,
+      name: `${entry.key} · ${entry.name}`,
+    })) ?? []
   if (initial && !projectItems.some((entry) => entry.id === initial.project))
-    projectItems.unshift({ id: initial.project, name: initial.project })
+    projectItems.unshift({
+      id: initial.project,
+      name: initial.project,
+    })
   return (
     <>
       <Text style={styles.muted}>
         Browse Jira independently of your code. Link an issue to a Dovo project when you are ready
         to work on it.
       </Text>
-      <View style={{ gap: 4 }}>
+      <View
+        style={{
+          gap: 4,
+        }}
+      >
         <Text style={styles.muted}>Signed-in account on {profile?.name ?? 'this computer'}</Text>
         <Text selectable style={styles.text}>
           {projects?.site ?? initial?.site ?? 'Checking Jira account…'}
@@ -157,7 +208,13 @@ export function JiraProjectForm({
           label="Jira space / project"
           value={project}
           disabled={busy || loading || !!initial}
-          items={[{ id: '', name: 'Choose a project…' }, ...projectItems]}
+          items={[
+            {
+              id: '',
+              name: 'Choose a project…',
+            },
+            ...projectItems,
+          ]}
           onChange={(value) => {
             setProject(value)
             if (projects) setSite(projects.site)

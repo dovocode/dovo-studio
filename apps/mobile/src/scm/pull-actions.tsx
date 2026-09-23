@@ -1,4 +1,9 @@
-import { useRef, useState } from 'react'
+import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import { decode } from '@dovo/protocol'
+import { useRef } from 'react'
 import { Alert, View } from 'react-native'
 import {
   pullActionSchema,
@@ -16,8 +21,10 @@ import { Text } from '../ui/text'
 import { colors, styles } from '../ui/theme'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { PullActionOption } from './pull-action-options'
-
-export type PullActionTarget = { action: PullAction['action']; comment?: PullComment }
+export type PullActionTarget = {
+  action: PullAction['action']
+  comment?: PullComment
+}
 export function PullActionSheet({
   repositoryId,
   detail,
@@ -31,19 +38,21 @@ export function PullActionSheet({
   onClose: () => void
   onDone: () => void
 }) {
-  const { read: call, connected } = useRuntime()
-  const [headSha] = useState(detail.pull.headSha)
-  const [title, setTitle] = useState(detail.pull.title),
-    [body, setBody] = useState(target.action === 'edit' ? detail.pull.body : '')
-  const [base, setBase] = useState(detail.pull.base),
-    [reviewers, setReviewers] = useState(''),
-    [teams, setTeams] = useState('')
-  const [event, setEvent] = useState('comment'),
-    [method, setMethod] = useState<string>(detail.capabilities?.mergeMethods[0] ?? 'merge')
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
+  const { connected, callEffect } = useRuntime()
+  const [headSha] = useApplicationState(detail.pull.headSha)
+  const [title, setTitle] = useApplicationState(detail.pull.title),
+    [body, setBody] = useApplicationState(target.action === 'edit' ? detail.pull.body : '')
+  const [base, setBase] = useApplicationState(detail.pull.base),
+    [reviewers, setReviewers] = useApplicationState(''),
+    [teams, setTeams] = useApplicationState('')
+  const [event, setEvent] = useApplicationState('comment'),
+    [method, setMethod] = useApplicationState<string>(
+      detail.capabilities?.mergeMethods[0] ?? 'merge',
+    )
+  const [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const pending = useRef(false)
-  const [operation, setOperation] = useState('add')
+  const [operation, setOperation] = useApplicationState('add')
   const labels: Record<PullAction['action'], string> = {
     comment: 'Add comment',
     review: 'Submit review',
@@ -55,52 +64,67 @@ export function PullActionSheet({
     close: 'Close pull request',
     reopen: 'Reopen pull request',
   }
-  const submit = async () => {
-    if (pending.current || !connected || detail.stale || detail.refreshError) return
-    pending.current = true
-    setBusy(true)
-    setError('')
-    try {
-      const input = pullActionSchema.parse({
-        number: detail.pull.number,
-        headSha,
-        action: target.action,
-        body,
-        title,
-        base: base === detail.pull.base ? undefined : base,
-        operation,
-        event,
-        method,
-        reviewers: reviewers
-          .split(',')
-          .map((v) => v.trim())
-          .filter(Boolean),
-        teams: teams
-          .split(',')
-          .map((v) => v.trim())
-          .filter(Boolean),
-        commentId: target.comment?.id,
-        threadId: target.comment?.threadId,
-        resolved: !target.comment?.resolved,
-      })
-      const result = await call(
-        '/api/scm/pulls/action',
-        { repositoryId, ...input },
-        pullActionResultSchema,
-      )
-      onDone()
-      onClose()
-      if (result.status === 'queued')
-        Alert.alert(
-          'Merge queued',
-          result.message ?? 'The server is processing this merge. Refresh to see its final state.',
+  const submit = () => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (pending.current || !connected || detail.stale || detail.refreshError) return
+        pending.current = true
+        setBusy(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          const input = decode(pullActionSchema, {
+            number: detail.pull.number,
+            headSha,
+            action: target.action,
+            body,
+            title,
+            base: base === detail.pull.base ? undefined : base,
+            operation,
+            event,
+            method,
+            reviewers: reviewers
+              .split(',')
+              .map((v) => v.trim())
+              .filter(Boolean),
+            teams: teams
+              .split(',')
+              .map((v) => v.trim())
+              .filter(Boolean),
+            commentId: target.comment?.id,
+            threadId: target.comment?.threadId,
+            resolved: !target.comment?.resolved,
+          })
+          const result = yield* callEffect(
+            '/api/scm/pulls/action',
+            {
+              repositoryId,
+              ...input,
+            },
+            pullActionResultSchema,
+          )
+          onDone()
+          onClose()
+          if (result.status === 'queued')
+            Alert.alert(
+              'Merge queued',
+              result.message ??
+                'The server is processing this merge. Refresh to see its final state.',
+            )
+        }).pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              setError(cause instanceof Error ? cause.message : String(cause))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              pending.current = false
+              setBusy(false)
+            }).pipe(Effect.orDie),
+          ),
         )
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      pending.current = false
-      setBusy(false)
-    }
+      }),
+    )
   }
   const textAction = ['comment', 'review', 'reply', 'edit'].includes(target.action)
   return (
@@ -154,7 +178,10 @@ export function PullActionSheet({
           value={body}
           onChangeText={setBody}
           editable={!busy}
-          style={{ minHeight: 150, textAlignVertical: 'top' }}
+          style={{
+            minHeight: 150,
+            textAlignVertical: 'top',
+          }}
           placeholder="Markdown supported"
         />
       )}
@@ -166,8 +193,14 @@ export function PullActionSheet({
             onChange={setOperation}
             disabled={busy}
             items={[
-              { id: 'add', name: 'Add reviewers' },
-              { id: 'remove', name: 'Remove reviewers' },
+              {
+                id: 'add',
+                name: 'Add reviewers',
+              },
+              {
+                id: 'remove',
+                name: 'Remove reviewers',
+              },
             ]}
           />
           <Field
@@ -229,7 +262,6 @@ export function PullActionSheet({
     </Sheet>
   )
 }
-
 export function PullPrimaryAction({
   option,
   onAction,
@@ -259,7 +291,11 @@ export function PullPrimaryAction({
       <Action
         label={option.label}
         disabled={disabled}
-        onPress={() => onAction({ action: option.action })}
+        onPress={() =>
+          onAction({
+            action: option.action,
+          })
+        }
       />
     </View>
   )

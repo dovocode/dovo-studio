@@ -1,10 +1,14 @@
+import { nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { useApplicationState } from '../runtime/application-state'
+import { mutableStruct } from '@dovo/protocol'
 import type { ShortcutInput } from '../shell/shortcuts'
 import { defaultTaskHarness, type Task } from '@dovo/protocol'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/text'
 import { randomUUID } from 'expo-crypto'
-import { z } from 'zod'
+import { Schema, Effect } from 'effect'
 import { useRuntime } from '../runtime/provider'
 import { Action } from '../ui/action'
 import { Choice } from '../ui/choice'
@@ -19,13 +23,19 @@ export function NewTask({
   onCancel: () => void
 }) {
   const { snapshot, call, connected } = useRuntime()
-  const [repositoryId, setRepositoryId] = useState(initial?.repositoryId ?? '')
-  const [requested, setRequested] = useState(false)
-  const [id] = useState(() => initial?.id ?? randomUUID()),
-    [error, setError] = useState(''),
-    [retry, setRetry] = useState(0)
-  const callbacks = useRef({ onCreated, onCancel })
-  callbacks.current = { onCreated, onCancel }
+  const [repositoryId, setRepositoryId] = useApplicationState(initial?.repositoryId ?? '')
+  const [requested, setRequested] = useApplicationState(false)
+  const [id] = useApplicationState(() => initial?.id ?? randomUUID()),
+    [error, setError] = useApplicationState(''),
+    [retry, setRetry] = useApplicationState(0)
+  const callbacks = useRef({
+    onCreated,
+    onCancel,
+  })
+  callbacks.current = {
+    onCreated,
+    onCancel,
+  }
   const workspace = useRef(snapshot?.workspace)
   workspace.current = snapshot?.workspace
   useEffect(() => {
@@ -53,22 +63,39 @@ export function NewTask({
       example: false,
     }
     setError('')
-    void (
-      existing
-        ? Promise.resolve()
-        : call(
-            '/api/workspace',
-            { collection: 'tasks', id, create: task, changes: {} },
-            z.object({ revision: z.number() }),
-            'PATCH',
-          )
+    void runClientEffect(
+      nativeEffect(() =>
+        existing
+          ? Promise.resolve()
+          : call(
+              '/api/workspace',
+              {
+                collection: 'tasks',
+                id,
+                create: task,
+                changes: {},
+              },
+              mutableStruct({
+                revision: Schema.Number.pipe(Schema.finite()),
+              }),
+              'PATCH',
+            ),
+      )
+        .pipe(
+          Effect.flatMap(() =>
+            nativeEffect(() => {
+              if (active) callbacks.current.onCreated(id)
+            }),
+          ),
+        )
+        .pipe(
+          Effect.catchAll((error) =>
+            nativeEffect(() => {
+              if (active) setError(String(error))
+            }),
+          ),
+        ),
     )
-      .then(() => {
-        if (active) callbacks.current.onCreated(id)
-      })
-      .catch((error) => {
-        if (active) setError(String(error))
-      })
     return () => {
       active = false
     }

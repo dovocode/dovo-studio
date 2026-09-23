@@ -14,7 +14,7 @@
     "fmt": "vp fmt",
     "fmt:fix": "vp fmt",
     "lint": "vp lint",
-    "test": "vp test",
+    "test": "pnpm --filter @dovo/api... -r build && vp test",
     "typecheck": "vp run -r typecheck",
     "fallow": "fallow dead-code",
     "fallow:ci": "fallow dead-code --format compact",
@@ -22,18 +22,19 @@
     "package:desktop": "pnpm build && node scripts/packaging/package-desktop.mjs",
     "pair": "pnpm --filter @dovo/api exec tsx src/cli.ts",
     "server": "pnpm --filter @dovo/api exec tsx src/server-cli.ts",
-    "mobile:update": "node scripts/update-mobile.mjs"
+    "mobile:update": "node scripts/update-mobile.mjs",
+    "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm build"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.4.1",
+    "effect": "^3.22.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "fallow": "^3.22.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite-plus": "^0.3.0",
-    "zod": "^4.5.4"
+    "vite-plus": "^0.3.0"
   },
   "engines": {
     "node": ">=24.11.0"

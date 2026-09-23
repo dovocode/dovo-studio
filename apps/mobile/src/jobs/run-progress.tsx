@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '../runtime/application-state'
+import { useEffect } from 'react'
 import { Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import { responses, type JobRun } from '@dovo/protocol'
@@ -9,7 +10,6 @@ import { Icon } from '../ui/icon'
 import { colors, styles } from '../ui/theme'
 import { useAction } from '../ui/use-action'
 import { automationRunSummary } from './automation-summary'
-
 export function RunProgress({
   run,
   anotherActive = false,
@@ -17,10 +17,10 @@ export function RunProgress({
   run: JobRun
   anotherActive?: boolean
 }) {
-  const { snapshot, connected, call } = useRuntime()
+  const { snapshot, connected, callEffect } = useRuntime()
   const { navigate, focused } = useNavigation()
   const { busy, error, act } = useAction()
-  const [expanded, setExpanded] = useState(
+  const [expanded, setExpanded] = useApplicationState(
     run.status === 'running' || run.status === 'waiting' || run.status === 'failed',
   )
   const taskNeedsInput = (id?: string) =>
@@ -35,7 +35,7 @@ export function RunProgress({
       ),
     ),
   )
-  const [now, setNow] = useState(Date.now())
+  const [now, setNow] = useApplicationState(Date.now())
   useEffect(() => {
     if (!active || !focused) return
     setNow(Date.now())
@@ -67,29 +67,68 @@ export function RunProgress({
         ? colors.error
         : colors.muted
   return (
-    <View testID={`Job run ${run.id}`} style={{ gap: 6 }}>
+    <View
+      testID={`Job run ${run.id}`}
+      style={{
+        gap: 6,
+      }}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${status} · ${progress}`}
-        accessibilityState={{ expanded }}
+        accessibilityState={{
+          expanded,
+        }}
         disabled={!focused}
         testID={`Run details ${run.id}`}
         onPress={() => setExpanded((value) => !value)}
-        style={[styles.row, { flexWrap: 'nowrap', minHeight: 52 }]}
+        style={[
+          styles.row,
+          {
+            flexWrap: 'nowrap',
+            minHeight: 52,
+          },
+        ]}
       >
         <Icon
           name={run.status === 'completed' ? 'check' : active ? 'jobs' : 'refresh'}
           color={color}
           size={17}
         />
-        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-          <Text style={[styles.text, { fontSize: 15, fontWeight: '600', color }]}>{status}</Text>
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+            gap: 2,
+          }}
+        >
+          <Text
+            style={[
+              styles.text,
+              {
+                fontSize: 15,
+                fontWeight: '600',
+                color,
+              },
+            ]}
+          >
+            {status}
+          </Text>
           <Text numberOfLines={2} style={styles.muted}>
             {current?.label ? `${current.label} · ` : ''}
             {progress}
           </Text>
         </View>
-        <Text style={[styles.muted, { flexShrink: 0 }]}>{elapsed}</Text>
+        <Text
+          style={[
+            styles.muted,
+            {
+              flexShrink: 0,
+            },
+          ]}
+        >
+          {elapsed}
+        </Text>
         <Icon name={expanded ? 'down' : 'next'} size={12} color={colors.muted} />
       </Pressable>
       {!!current?.taskId &&
@@ -102,7 +141,11 @@ export function RunProgress({
           />
         )}
       {run.status === 'waiting' && (
-        <View style={{ gap: 6 }}>
+        <View
+          style={{
+            gap: 6,
+          }}
+        >
           <Text style={styles.muted}>
             Automation review gate · Approve to continue the remaining steps.
           </Text>
@@ -111,7 +154,16 @@ export function RunProgress({
               label="Approve review"
               disabled={!focused || !connected || busy}
               onPress={() =>
-                act(() => call('/api/jobs/review', { id: run.id, allow: true }, responses.ok))
+                act(() =>
+                  callEffect(
+                    '/api/jobs/review',
+                    {
+                      id: run.id,
+                      allow: true,
+                    },
+                    responses.ok,
+                  ),
+                )
               }
             />
             <Action
@@ -119,18 +171,41 @@ export function RunProgress({
               label="Reject review"
               disabled={!focused || !connected || busy}
               onPress={() =>
-                act(() => call('/api/jobs/review', { id: run.id, allow: false }, responses.ok))
+                act(() =>
+                  callEffect(
+                    '/api/jobs/review',
+                    {
+                      id: run.id,
+                      allow: false,
+                    },
+                    responses.ok,
+                  ),
+                )
               }
             />
           </View>
         </View>
       )}
       {(run.status === 'failed' || run.status === 'cancelled') && (
-        <View style={{ gap: 4 }}>
+        <View
+          style={{
+            gap: 4,
+          }}
+        >
           <Action
             label="Retry run"
             disabled={!focused || !connected || busy || anotherActive}
-            onPress={() => act(() => call('/api/jobs/retry', { id: run.id }, responses.job))}
+            onPress={() =>
+              act(() =>
+                callEffect(
+                  '/api/jobs/retry',
+                  {
+                    id: run.id,
+                  },
+                  responses.job,
+                ),
+              )
+            }
           />
           {expanded && (
             <Text style={styles.muted}>
@@ -163,9 +238,31 @@ export function RunProgress({
                 const task = snapshot?.workspace.tasks.find((item) => item.id === step.taskId)
                 const content = (
                   <>
-                    <Text style={[styles.muted, { width: 18 }]}>{index + 1}</Text>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text numberOfLines={2} style={[styles.text, { fontSize: 15 }]}>
+                    <Text
+                      style={[
+                        styles.muted,
+                        {
+                          width: 18,
+                        },
+                      ]}
+                    >
+                      {index + 1}
+                    </Text>
+                    <View
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
+                      <Text
+                        numberOfLines={2}
+                        style={[
+                          styles.text,
+                          {
+                            fontSize: 15,
+                          },
+                        ]}
+                      >
                         {step.label}
                       </Text>
                       <Text style={step.status === 'failed' ? styles.error : styles.muted}>
@@ -193,14 +290,26 @@ export function RunProgress({
                     accessibilityLabel={`Open task ${task.title}`}
                     disabled={!focused}
                     onPress={() => navigate('tasks', task.id)}
-                    style={[styles.row, { minHeight: 52, flexWrap: 'nowrap' }]}
+                    style={[
+                      styles.row,
+                      {
+                        minHeight: 52,
+                        flexWrap: 'nowrap',
+                      },
+                    ]}
                   >
                     {content}
                   </Pressable>
                 ) : (
                   <View
                     key={step.nodeId}
-                    style={[styles.row, { minHeight: 52, flexWrap: 'nowrap' }]}
+                    style={[
+                      styles.row,
+                      {
+                        minHeight: 52,
+                        flexWrap: 'nowrap',
+                      },
+                    ]}
                   >
                     {content}
                   </View>
@@ -216,7 +325,10 @@ export function RunProgress({
                       accessibilityLabel={`Open task ${task.title}`}
                       disabled={!focused}
                       onPress={() => navigate('tasks', id)}
-                      style={{ minHeight: 48, justifyContent: 'center' }}
+                      style={{
+                        minHeight: 48,
+                        justifyContent: 'center',
+                      }}
                     >
                       <Text numberOfLines={2} style={styles.text}>
                         {task.title}
@@ -231,7 +343,17 @@ export function RunProgress({
               secondary
               label="Cancel run"
               disabled={!focused || !connected || busy}
-              onPress={() => act(() => call('/api/jobs/cancel', { id: run.id }, responses.ok))}
+              onPress={() =>
+                act(() =>
+                  callEffect(
+                    '/api/jobs/cancel',
+                    {
+                      id: run.id,
+                    },
+                    responses.ok,
+                  ),
+                )
+              }
             />
           )}
         </View>

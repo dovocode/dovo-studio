@@ -1,4 +1,8 @@
-import { useEffect, useState } from 'react'
+import { nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import { useEffect } from 'react'
 import { ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import {
@@ -10,7 +14,6 @@ import { useRuntime } from '../runtime/provider'
 import { Action } from '../ui/action'
 import { Field } from '../ui/field'
 import { styles } from '../ui/theme'
-
 export function GithubRepositoryPicker({
   onSelect,
   onClose,
@@ -18,40 +21,55 @@ export function GithubRepositoryPicker({
   onSelect: (repository: GithubRepositoryChoice) => void
   onClose: () => void
 }) {
-  const { call, connected } = useRuntime()
-  const [load, setLoad] = useState({ page: 1 })
-  const [data, setData] = useState<GithubRepositoryPage | null>(null)
-  const [filter, setFilter] = useState('')
-  const [busy, setBusy] = useState(true)
-  const [error, setError] = useState('')
+  const { call, connected, callEffect } = useRuntime()
+  const [load, setLoad] = useApplicationState({
+    page: 1,
+  })
+  const [data, setData] = useApplicationState<GithubRepositoryPage | null>(null)
+  const [filter, setFilter] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(true)
+  const [error, setError] = useApplicationState('')
   useEffect(() => {
     let active = true
     setBusy(true)
     setError('')
-    void call('/api/scm/repositories/github/read', load, githubRepositoryPageSchema)
-      .then((result) => {
-        if (active)
-          setData((previous) => ({
-            ...result,
-            repositories:
-              load.page === 1
-                ? result.repositories
-                : [
-                    ...new Map(
-                      [...(previous?.repositories ?? []), ...result.repositories].map((repo) => [
-                        repo.fullName,
-                        repo,
-                      ]),
-                    ).values(),
-                  ],
-          }))
-      })
-      .catch((error: unknown) => {
-        if (active) setError(error instanceof Error ? error.message : String(error))
-      })
-      .finally(() => {
-        if (active) setBusy(false)
-      })
+    void runClientEffect(
+      callEffect('/api/scm/repositories/github/read', load, githubRepositoryPageSchema)
+        .pipe(
+          Effect.flatMap((result) =>
+            nativeEffect(() => {
+              if (active)
+                setData((previous) => ({
+                  ...result,
+                  repositories:
+                    load.page === 1
+                      ? result.repositories
+                      : [
+                          ...new Map(
+                            [...(previous?.repositories ?? []), ...result.repositories].map(
+                              (repo) => [repo.fullName, repo],
+                            ),
+                          ).values(),
+                        ],
+                }))
+            }),
+          ),
+        )
+        .pipe(
+          Effect.catchAll((error: unknown) =>
+            nativeEffect(() => {
+              if (active) setError(error instanceof Error ? error.message : String(error))
+            }),
+          ),
+        )
+        .pipe(
+          Effect.ensuring(
+            nativeEffect(() => {
+              if (active) setBusy(false)
+            }).pipe(Effect.orDie),
+          ),
+        ),
+    )
     return () => {
       active = false
     }
@@ -61,7 +79,11 @@ export function GithubRepositoryPicker({
       `${repo.fullName} ${repo.description}`.toLowerCase().includes(filter.toLowerCase().trim()),
     ) ?? []
   return (
-    <View style={{ gap: 12 }}>
+    <View
+      style={{
+        gap: 12,
+      }}
+    >
       <Text style={styles.text}>Choose a GitHub repository</Text>
       <Text style={styles.muted}>
         Uses the runtime host’s GitHub login, including accessible organization repositories.
@@ -82,18 +104,31 @@ export function GithubRepositoryPicker({
             label="Retry"
             secondary
             disabled={busy || !connected}
-            onPress={() => setLoad({ ...load })}
+            onPress={() =>
+              setLoad({
+                ...load,
+              })
+            }
           />
         </>
       )}
       <ScrollView
-        style={{ maxHeight: 350 }}
-        contentContainerStyle={{ gap: 8 }}
+        style={{
+          maxHeight: 350,
+        }}
+        contentContainerStyle={{
+          gap: 8,
+        }}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
       >
         {repositories.map((repo) => (
-          <View key={repo.fullName} style={{ gap: 4 }}>
+          <View
+            key={repo.fullName}
+            style={{
+              gap: 4,
+            }}
+          >
             <Action
               label={`${repo.fullName} · ${repo.private ? 'Private' : 'Public'}`}
               secondary
@@ -128,7 +163,10 @@ export function GithubRepositoryPicker({
           secondary
           disabled={busy || !connected}
           onPress={() => {
-            if (data.nextPage !== null) setLoad({ page: data.nextPage })
+            if (data.nextPage !== null)
+              setLoad({
+                page: data.nextPage,
+              })
           }}
         />
       )}

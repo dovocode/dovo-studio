@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
 import { responses, useWorkspace, updateTask, type Task, type ChangedFile } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 export function DiskActions({ task, file }: { task: Task; file: ChangedFile }) {
   const { connected, request, setWorkspace } = useWorkspace(),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+    [error, setError] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false)
   const apply = () => {
     setBusy(true)
     setError('')
@@ -23,7 +23,14 @@ export function DiskActions({ task, file }: { task: Task; file: ChangedFile }) {
         setWorkspace((w) =>
           updateTask(w, task.id, (t) => ({
             ...t,
-            files: t.files.map((f) => (f.path === file.path ? { ...f, diskContents: f.after } : f)),
+            files: t.files.map((f) =>
+              f.path === file.path
+                ? {
+                    ...f,
+                    diskContents: f.after,
+                  }
+                : f,
+            ),
           })),
         ),
       )
@@ -52,7 +59,10 @@ export function DiskActions({ task, file }: { task: Task; file: ChangedFile }) {
             setError('')
             void request(
               '/api/scm/changes',
-              { repositoryId: task.repositoryId, taskId: task.id },
+              {
+                repositoryId: task.repositoryId,
+                taskId: task.id,
+              },
               responses.files,
             )
               .catch((error) => setError(String(error)))

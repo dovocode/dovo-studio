@@ -66,11 +66,11 @@ export function ChatThread({ task, onReview }: { task: Task; onReview: () => voi
   )
   return (
     <Conversation key={task.id}>
-      <ConversationContent className="mx-auto w-full max-w-3xl gap-12 px-5 py-6 md:pl-10 md:pr-6">
+      <ConversationContent className="mx-auto w-full max-w-3xl gap-5 px-4 py-4 md:pl-8 md:pr-5">
         {!task.messages.length && !task.queue?.length && (
-          <div className="py-10 text-center">
-            <h2 className="text-lg font-medium">What would you like to work on?</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
+          <div className="py-8 text-center">
+            <h2 className="text-base font-medium">What would you like to work on?</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
               Describe a change or ask a question.
             </p>
           </div>
@@ -80,7 +80,7 @@ export function ChatThread({ task, onReview }: { task: Task; onReview: () => voi
             key={group.id}
             id={`turn-${task.id}-${group.id}`}
             aria-label={`User request · ${conversationTurnLabel(group.status)}`}
-            className="flex min-w-0 flex-col gap-5"
+            className="flex min-w-0 flex-col gap-3"
           >
             {group.messages.map((message) => {
               const turn = turns.get(message.id)

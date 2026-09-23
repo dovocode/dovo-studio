@@ -1,6 +1,8 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { mutableStruct } from '@dovo/protocol'
+import { useRef, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import {
   generatedTitleSchema,
   hasUnviewedTaskCompletion,
@@ -47,13 +49,11 @@ import {
   taskRowValues,
   type TaskRowChanges,
 } from './task-row-actions'
-
 const menuClass =
   'z-50 max-h-[var(--radix-context-menu-content-available-height)] min-w-56 max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border bg-popover p-1 text-popover-foreground shadow-xl'
 const itemClass =
   'flex cursor-default items-center gap-2 rounded-lg px-2.5 py-2 text-xs outline-none transition-colors data-[highlighted]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg]:text-muted-foreground'
 const separatorClass = 'my-1 h-px bg-border/70'
-
 export function TaskContextMenu({
   entry,
   selected,
@@ -79,16 +79,15 @@ export function TaskContextMenu({
   const { task, source } = entry
   const client = taskActionClient(store, source)
   const { repository, branch, titlePrompt } = taskRowValues(task, source)
-  const [pending, setPending] = useState(false)
+  const [pending, setPending] = useApplicationState(false)
   const pendingRef = useRef(false)
-  const [error, setError] = useState('')
-  const [dialog, setDialog] = useState<'rename' | 'settings' | 'delete' | null>(null)
-  const [title, setTitle] = useState(task.title)
+  const [error, setError] = useApplicationState('')
+  const [dialog, setDialog] = useApplicationState<'rename' | 'settings' | 'delete' | null>(null)
+  const [title, setTitle] = useApplicationState(task.title)
   const blocked = busy || pending
   const canEdit = source.online && !blocked
   const turn = latestCompletedTaskTurn(task)
   const unread = hasUnviewedTaskCompletion(task)
-
   const run = async (action: () => Promise<void>) => {
     if (pendingRef.current || busy) return
     pendingRef.current = true
@@ -109,7 +108,14 @@ export function TaskContextMenu({
   const patch = async (updates: TaskRowChanges) => {
     const input = taskRowPatch(task, updates)
     if (!Object.keys(input.changes).length) return
-    await client.request('/api/workspace', input, z.object({ revision: z.number() }), 'PATCH')
+    await client.request(
+      '/api/workspace',
+      input,
+      mutableStruct({
+        revision: Schema.Number.pipe(Schema.finite()),
+      }),
+      'PATCH',
+    )
     await client.refresh()
   }
   const settings = dialog === 'settings' && (
@@ -183,7 +189,13 @@ export function TaskContextMenu({
             <ContextMenu.Item
               className={itemClass}
               disabled={!canEdit}
-              onSelect={() => void run(() => patch({ pinned: !task.pinned }))}
+              onSelect={() =>
+                void run(() =>
+                  patch({
+                    pinned: !task.pinned,
+                  }),
+                )
+              }
             >
               {task.pinned ? <PinOff /> : <Pin />}
               {task.pinned ? 'Unpin' : 'Pin'}
@@ -192,7 +204,12 @@ export function TaskContextMenu({
               className={itemClass}
               disabled={!canEdit || !!task.archivedAt || task.status === 'running'}
               onSelect={() =>
-                void run(() => patch({ archived: !task.archived, snoozedUntil: null }))
+                void run(() =>
+                  patch({
+                    archived: !task.archived,
+                    snoozedUntil: null,
+                  }),
+                )
               }
             >
               {task.archived ? <Undo2 /> : <Check />}
@@ -231,7 +248,13 @@ export function TaskContextMenu({
                     {isSnoozed(task, Date.now()) && (
                       <ContextMenu.Item
                         className={itemClass}
-                        onSelect={() => void run(() => patch({ snoozedUntil: null }))}
+                        onSelect={() =>
+                          void run(() =>
+                            patch({
+                              snoozedUntil: null,
+                            }),
+                          )
+                        }
                       >
                         Unsnooze
                       </ContextMenu.Item>
@@ -260,10 +283,14 @@ export function TaskContextMenu({
                 void run(async () => {
                   const generated = await client.request(
                     '/api/tasks/title',
-                    { text: titlePrompt },
+                    {
+                      text: titlePrompt,
+                    },
                     generatedTitleSchema,
                   )
-                  await patch({ title: generated.title })
+                  await patch({
+                    title: generated.title,
+                  })
                 })
               }
             >
@@ -350,7 +377,10 @@ export function TaskContextMenu({
                 void run(async () => {
                   await client.request(
                     '/api/tasks/lifecycle',
-                    { id: task.id, action: task.archivedAt ? 'restore' : 'archive' },
+                    {
+                      id: task.id,
+                      action: task.archivedAt ? 'restore' : 'archive',
+                    },
                     responses.ok,
                   )
                   if (selected && !task.archivedAt) onDeselect()
@@ -397,7 +427,9 @@ export function TaskContextMenu({
               event.preventDefault()
               if (title.trim())
                 void run(async () => {
-                  await patch({ title: title.trim() })
+                  await patch({
+                    title: title.trim(),
+                  })
                   setDialog(null)
                 })
             }}
@@ -459,7 +491,10 @@ export function TaskContextMenu({
                 void run(async () => {
                   await client.request(
                     '/api/tasks/lifecycle',
-                    { id: task.id, action: 'delete' },
+                    {
+                      id: task.id,
+                      action: 'delete',
+                    },
                     responses.ok,
                   )
                   setDialog(null)

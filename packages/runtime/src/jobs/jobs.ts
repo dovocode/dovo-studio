@@ -1,9 +1,12 @@
+import { mutableStruct } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { CronExpressionParser } from 'cron-parser'
 import { jobRunSchema, type JobRun, type AutomationNode } from '@dovo/protocol'
-import { z } from 'zod'
+import { Cause, Effect, Exit, Fiber, Layer, ManagedRuntime, Schema } from 'effect'
+import { runClientEffect, startPolling } from '@dovo/client-runtime'
 import { WorkspaceStore } from '../storage/workspace.js'
 import { Tasks } from '../agents/tasks.js'
 import { HttpError, errorMessage } from '../errors.js'
@@ -15,14 +18,23 @@ import {
   reconcileCompletedTasks,
   type StoredRun,
 } from './run-state.js'
-const recordSchema = z.object({ value: z.string() })
+const recordSchema = mutableStruct({
+  value: Schema.String,
+})
 export class Jobs {
   private runs = new Map<string, StoredRun>()
-  private active = new Map<string, Promise<void>>()
+  private active = new Map<string, Fiber.RuntimeFiber<void, never>>()
+  private readonly executor = ManagedRuntime.make(Layer.empty)
   private stopping = false
-  private timer?: ReturnType<typeof setInterval>
+  private scheduler?: ReturnType<typeof startPolling>
   private scheduleErrors = new Map<string, string>()
-  private next = new Map<string, { signature: string; at: number }>()
+  private next = new Map<
+    string,
+    {
+      signature: string
+      at: number
+    }
+  >()
   constructor(
     private db: Database.Database,
     private store: WorkspaceStore,
@@ -30,8 +42,11 @@ export class Jobs {
     private activity?: Pick<Activity, 'add'>,
   ) {
     for (const row of db.prepare('SELECT value FROM job_runs').all()) {
-      const stored = storedRunSchema.parse(JSON.parse(recordSchema.parse(row).value))
-      const run = { ...stored, steps: runSteps(stored) }
+      const stored = decode(storedRunSchema, JSON.parse(decode(recordSchema, row).value))
+      const run = {
+        ...stored,
+        steps: runSteps(stored),
+      }
       this.runs.set(run.id, run)
       if (run.status === 'running') {
         this.runs.set(run.id, reconcileCompletedTasks(run, store.get().tasks))
@@ -55,22 +70,25 @@ export class Jobs {
       throw new HttpError(409, 'Finish or cancel the automation before changing this thread.')
   }
   startScheduler() {
-    if (this.timer || this.stopping) return
-    this.timer = setInterval(() => {
-      try {
-        this.tick()
-      } catch (error) {
-        console.error('Scheduler failed', error)
-      }
-    }, 1000)
-    this.timer.unref()
+    if (this.scheduler || this.stopping) return
+    this.scheduler = startPolling(
+      Effect.try(() => this.tick()),
+      {
+        interval: 1000,
+        immediate: false,
+        onError: (error) => console.error('Scheduler failed', error),
+      },
+    )
+  }
+  ownsTask(id: string) {
+    return [...this.runs.values()].some((run) => run.taskIds.includes(id))
   }
   list(): JobRun[] {
     return [...this.runs.values()]
       .reverse()
       .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))
       .slice(0, 100)
-      .map((run) => jobRunSchema.parse(run))
+      .map((run) => decode(jobRunSchema, run))
   }
   private write(run: StoredRun) {
     this.db
@@ -90,7 +108,10 @@ export class Jobs {
     })
   }
   private save(input: StoredRun) {
-    const run = { ...input, updatedAt: new Date().toISOString() }
+    const run = {
+      ...input,
+      updatedAt: new Date().toISOString(),
+    }
     this.db.transaction(() => this.write(run))()
     this.runs.set(run.id, run)
     return run
@@ -138,7 +159,10 @@ export class Jobs {
       updatedAt: now,
       attempt: 1,
     }
-    const run = { ...initial, steps: runSteps(initial) }
+    const run = {
+      ...initial,
+      steps: runSteps(initial),
+    }
     // A delivery is consumed only if its accepted run also commits successfully.
     this.db.transaction(() => {
       if (key) {
@@ -183,7 +207,12 @@ export class Jobs {
       steps: runSteps(reconciled).map((step) =>
         step.status === 'completed'
           ? step
-          : { ...step, status: 'pending', error: undefined, finishedAt: undefined },
+          : {
+              ...step,
+              status: 'pending',
+              error: undefined,
+              finishedAt: undefined,
+            },
       ),
       currentNodeId: undefined,
       failedNodeId: undefined,
@@ -206,7 +235,10 @@ export class Jobs {
     }
     const nodeId = run.waitingNodeId
     this.save({
-      ...updateStep(run, nodeId, { status: 'completed', finishedAt: new Date().toISOString() }),
+      ...updateStep(run, nodeId, {
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+      }),
       status: 'running',
       completedNodes: [...run.completedNodes, nodeId],
       currentNodeId: undefined,
@@ -214,9 +246,14 @@ export class Jobs {
     })
     const pending = this.active.get(id)
     if (pending)
-      void pending
-        .then(() => this.launch(id))
-        .catch((error) => console.error('Could not resume reviewed automation', error))
+      this.executor.runFork(
+        Fiber.await(pending).pipe(
+          Effect.zipRight(Effect.sync(() => this.launch(id))),
+          Effect.tapErrorCause((cause) =>
+            Effect.logError('Could not resume reviewed automation', cause),
+          ),
+        ),
+      )
     else this.launch(id)
   }
   cancel(id: string) {
@@ -251,7 +288,13 @@ export class Jobs {
         (step) =>
           step.nodeId === (run.currentNodeId ?? run.waitingNodeId) && step.status !== 'completed',
       ) ?? runSteps(run).find((step) => step.status === 'running')
-    const next = current ? updateStep(run, current.nodeId, { status, error, finishedAt }) : run
+    const next = current
+      ? updateStep(run, current.nodeId, {
+          status,
+          error,
+          finishedAt,
+        })
+      : run
     this.save({
       ...next,
       status,
@@ -265,13 +308,18 @@ export class Jobs {
   }
   private launch(id: string) {
     if (this.active.has(id) || this.stopping) return
-    // Schedule after registering ownership so synchronous review/completion paths
-    // cannot leave a stale active promise behind.
-    const pending = Promise.resolve()
-      .then(() => this.advance(id))
-      .finally(() => this.active.delete(id))
+    const pending = this.executor.runFork(
+      Effect.yieldNow().pipe(
+        Effect.zipRight(this.advanceEffect(id)),
+        Effect.ensuring(
+          Effect.sync(() => {
+            this.active.delete(id)
+          }),
+        ),
+        Effect.tapErrorCause((cause) => Effect.logError('Automation persistence failed', cause)),
+      ),
+    )
     this.active.set(id, pending)
-    void pending.catch((error) => console.error('Automation persistence failed', error))
   }
   private createTask(run: StoredRun, node: AutomationNode) {
     const previous = this.store.get()
@@ -290,7 +338,9 @@ export class Jobs {
           origin: run.automationId,
         })
         next = {
-          ...updateStep(run, node.id, { taskId: task.id }),
+          ...updateStep(run, node.id, {
+            taskId: task.id,
+          }),
           taskIds: [...run.taskIds, task.id],
           updatedAt: new Date().toISOString(),
         }
@@ -306,8 +356,8 @@ export class Jobs {
       throw error
     }
   }
-  private async advance(id: string) {
-    try {
+  private advanceEffect(id: string) {
+    return Effect.gen(this, function* () {
       while (!this.stopping) {
         const currentRun = this.runs.get(id)
         if (!currentRun || currentRun.status !== 'running') return
@@ -342,7 +392,7 @@ export class Jobs {
         if (node.data.kind === 'task') {
           const task = step.taskId ? this.store.task(step.taskId) : this.createTask(run, node)
           if (!['review', 'done'].includes(task.status)) {
-            const execution = await this.tasks.start(task.id)
+            const execution = yield* this.tasks.startEffect(task.id)
             const current = this.runs.get(id)
             if (!current || current.status !== 'running' || this.stopping) {
               this.stopTask({
@@ -350,12 +400,10 @@ export class Jobs {
                 steps: runSteps(this.runs.get(id) ?? run),
                 currentNodeId: node.id,
               })
-              await execution.done.catch(() => {
-                /* Cancellation is recorded on the task. */
-              })
+              yield* Effect.exit(execution.completion)
               return
             }
-            await execution.done
+            yield* execution.completion
           }
         }
         const current = this.runs.get(id)
@@ -369,26 +417,45 @@ export class Jobs {
           currentNodeId: undefined,
         })
       }
-    } catch (error) {
-      const run = this.runs.get(id)
-      if (run?.status === 'running')
-        this.finish(id, 'failed', errorMessage(error), this.stopping || undefined)
-    }
+    }).pipe(
+      Effect.catchAllCause((cause) =>
+        Effect.sync(() => {
+          const run = this.runs.get(id)
+          if (run?.status === 'running')
+            this.finish(id, 'failed', errorMessage(Cause.squash(cause)), this.stopping || undefined)
+        }),
+      ),
+    )
   }
-  async shutdown() {
-    this.dispose()
-    this.stopping = true
-    for (const run of this.runs.values()) {
-      if (run.status !== 'running') continue
-      this.finish(
-        run.id,
-        'failed',
-        'Runtime stopped during execution. Retry to resume unfinished steps.',
-        true,
+  shutdownEffect() {
+    return Effect.gen(this, function* () {
+      this.dispose()
+      this.stopping = true
+      const stopped = yield* Effect.forEach(
+        [...this.runs.values()].filter((run) => run.status === 'running'),
+        (run) =>
+          Effect.exit(
+            Effect.sync(() =>
+              this.finish(
+                run.id,
+                'failed',
+                'Runtime stopped during execution. Retry to resume unfinished steps.',
+                true,
+              ),
+            ).pipe(Effect.ensuring(Effect.sync(() => this.stopTask(run)))),
+          ),
       )
-      this.stopTask(run)
-    }
-    await Promise.allSettled(this.active.values())
+      yield* Effect.forEach(this.active.values(), (fiber) => Fiber.await(fiber), {
+        concurrency: 'unbounded',
+        discard: true,
+      })
+      yield* Effect.promise(() => this.executor.dispose())
+      const failures = stopped.filter(Exit.isFailure).map((exit) => exit.cause)
+      if (failures.length) yield* Effect.failCause(failures.reduce(Cause.sequential))
+    })
+  }
+  shutdown() {
+    return runClientEffect(this.shutdownEffect())
   }
   tick(now = Date.now()) {
     const flows = this.store.get().automations
@@ -449,7 +516,7 @@ export class Jobs {
     }
   }
   dispose() {
-    if (this.timer) clearInterval(this.timer)
-    this.timer = undefined
+    void this.scheduler?.stop()
+    this.scheduler = undefined
   }
 }

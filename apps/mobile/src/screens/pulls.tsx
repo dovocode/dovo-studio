@@ -1,3 +1,7 @@
+import { nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
 import {
   comparePulls,
   pullNextStep,
@@ -11,7 +15,7 @@ import {
 import { Signal, pullSignalColor } from '../scm/pull-status'
 import { PullTabs } from '../scm/pull-tabs'
 import { Sheet } from '../ui/sheet'
-import { useDeferredValue, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useMemo, useRef } from 'react'
 import { Alert, Keyboard, Linking, FlatList, Pressable, View } from 'react-native'
 import { router } from 'expo-router'
 import { Text } from '../ui/text'
@@ -31,7 +35,7 @@ import { useNavigation } from '../shell/navigation'
 import { pullHref } from '../shell/source-route'
 import { invalidatePullList } from '../scm/pull-list-invalidation'
 export default function PullsScreen() {
-  const [repositoryId, setRepository] = useState('')
+  const [repositoryId, setRepository] = useApplicationState('')
   return <PullsContent repositoryId={repositoryId} setRepository={setRepository} />
 }
 function PullsContent({
@@ -44,13 +48,13 @@ function PullsContent({
   const { overviews, cacheForRuntime } = useRuntime()
   const { focused } = useNavigation()
   const listOffset = useRef(0)
-  const [creating, setCreating] = useState(false)
-  const [state, setState] = useState('open'),
-    [search, setSearch] = useState(''),
-    [draft, setDraft] = useState('all'),
-    [filters, setFilters] = useState(false),
-    [attention, setAttention] = useState(false),
-    [sort, setSort] = useState('attention')
+  const [creating, setCreating] = useApplicationState(false)
+  const [state, setState] = useApplicationState('open'),
+    [search, setSearch] = useApplicationState(''),
+    [draft, setDraft] = useApplicationState('all'),
+    [filters, setFilters] = useApplicationState(false),
+    [attention, setAttention] = useApplicationState(false),
+    [sort, setSort] = useApplicationState('attention')
   const { pages, sources, busy, connected, more, refresh } = usePulls(repositoryId, state)
   const openPull = (runtimeId: string, repositoryId: string, number: number) => {
     retainPosition()
@@ -138,12 +142,24 @@ function PullsContent({
         refreshing={busy}
         onRefresh={connected ? refresh : undefined}
         keyboardDismissMode="on-drag"
-        contentContainerStyle={[styles.content, { gap: 0, paddingTop: 0, flexGrow: 1 }]}
+        contentContainerStyle={[
+          styles.content,
+          {
+            gap: 0,
+            paddingTop: 0,
+            flexGrow: 1,
+          },
+        ]}
         initialNumToRender={10}
         windowSize={7}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
-          <View style={{ gap: 4, paddingBottom: 4 }}>
+          <View
+            style={{
+              gap: 4,
+              paddingBottom: 4,
+            }}
+          >
             <SearchField
               label="Search PRs"
               clearButtonMode="while-editing"
@@ -152,13 +168,32 @@ function PullsContent({
               value={search}
               onChangeText={setSearch}
             />
-            <View style={[styles.row, { columnGap: 12, rowGap: 0 }]}>
-              <Text style={[styles.muted, { flex: 1 }]}>All computers</Text>
+            <View
+              style={[
+                styles.row,
+                {
+                  columnGap: 12,
+                  rowGap: 0,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.muted,
+                  {
+                    flex: 1,
+                  },
+                ]}
+              >
+                All computers
+              </Text>
               {attentionCount > 0 && state === 'open' && (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={attention ? 'Show all PRs' : 'Show PRs needing attention'}
-                  accessibilityState={{ selected: attention }}
+                  accessibilityState={{
+                    selected: attention,
+                  }}
                   onPress={() => setAttention((value) => !value)}
                   style={({ pressed }) => [
                     styles.row,
@@ -174,7 +209,14 @@ function PullsContent({
                 >
                   <Icon name="tasks" size={17} color={colors.accent} />
                   <Text
-                    style={[styles.text, { flexShrink: 1, fontSize: 15, color: colors.accent }]}
+                    style={[
+                      styles.text,
+                      {
+                        flexShrink: 1,
+                        fontSize: 15,
+                        color: colors.accent,
+                      },
+                    ]}
                   >
                     {attentionCount} need{attentionCount === 1 ? 's' : ''} attention
                   </Text>
@@ -193,15 +235,31 @@ function PullsContent({
                   .join(' · ')}
               </Text>
             )}
-            <View style={{ marginHorizontal: -16 }}>
+            <View
+              style={{
+                marginHorizontal: -16,
+              }}
+            >
               <PullTabs
                 value={state}
                 onChange={setState}
                 items={[
-                  { id: 'open', name: 'Open' },
-                  { id: 'merged', name: 'Merged' },
-                  { id: 'closed', name: 'Closed' },
-                  { id: 'all', name: 'All' },
+                  {
+                    id: 'open',
+                    name: 'Open',
+                  },
+                  {
+                    id: 'merged',
+                    name: 'Merged',
+                  },
+                  {
+                    id: 'closed',
+                    name: 'Closed',
+                  },
+                  {
+                    id: 'all',
+                    name: 'All',
+                  },
                 ]}
               />
             </View>
@@ -223,12 +281,19 @@ function PullsContent({
                 {
                   text: `Open on ${forgeLabels[p.provider ?? 'github']}`,
                   onPress: () => {
-                    void Linking.openURL(p.url).catch((error) =>
-                      Alert.alert('Could not open PR', String(error)),
+                    void runClientEffect(
+                      nativeEffect(() => Linking.openURL(p.url)).pipe(
+                        Effect.catchAll((error) =>
+                          nativeEffect(() => Alert.alert('Could not open PR', String(error))),
+                        ),
+                      ),
                     )
                   },
                 },
-                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Cancel',
+                  style: 'cancel',
+                },
               ])
             }
             style={({ pressed }) => ({
@@ -239,9 +304,25 @@ function PullsContent({
               opacity: pressed ? 0.55 : 1,
             })}
           >
-            <View style={[styles.row, { flexWrap: 'nowrap' }]}>
+            <View
+              style={[
+                styles.row,
+                {
+                  flexWrap: 'nowrap',
+                },
+              ]}
+            >
               <Icon name="pulls" size={14} color={pullSignalColor(pullState(p))} />
-              <Text numberOfLines={1} style={[styles.muted, { flex: 1, minWidth: 0 }]}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.muted,
+                  {
+                    flex: 1,
+                    minWidth: 0,
+                  },
+                ]}
+              >
                 {p.repositoryName} · #{p.number} · {p.runtimeName}
                 {!p.online ? ' · Offline' : ''}
               </Text>
@@ -252,10 +333,24 @@ function PullsContent({
                 })}
               </Text>
             </View>
-            <View style={[styles.row, { flexWrap: 'nowrap' }]}>
+            <View
+              style={[
+                styles.row,
+                {
+                  flexWrap: 'nowrap',
+                },
+              ]}
+            >
               <Text
                 numberOfLines={2}
-                style={[styles.text, { flex: 1, minWidth: 0, fontWeight: '600' }]}
+                style={[
+                  styles.text,
+                  {
+                    flex: 1,
+                    minWidth: 0,
+                    fontWeight: '600',
+                  },
+                ]}
               >
                 {p.title}
               </Text>
@@ -268,10 +363,25 @@ function PullsContent({
           !busy ? (
             <View style={styles.empty}>
               <Icon name="pulls" size={30} color={colors.muted} />
-              <Text style={[styles.text, { textAlign: 'center', fontWeight: '600' }]}>
+              <Text
+                style={[
+                  styles.text,
+                  {
+                    textAlign: 'center',
+                    fontWeight: '600',
+                  },
+                ]}
+              >
                 {connected ? 'No pull requests to show' : 'Connect to a computer'}
               </Text>
-              <Text style={[styles.muted, { textAlign: 'center' }]}>
+              <Text
+                style={[
+                  styles.muted,
+                  {
+                    textAlign: 'center',
+                  },
+                ]}
+              >
                 {connected
                   ? 'Try another filter or pull down to refresh.'
                   : 'Your saved pull requests will appear here when available.'}
@@ -280,7 +390,11 @@ function PullsContent({
           ) : null
         }
         ListFooterComponent={
-          <View style={{ gap: 10 }}>
+          <View
+            style={{
+              gap: 10,
+            }}
+          >
             {pages.map((page) => (
               <View key={page.sourceKey}>
                 {page.error && (
@@ -308,7 +422,10 @@ function PullsContent({
             value={repositoryId}
             onChange={setRepository}
             items={[
-              { id: '', name: 'All repositories' },
+              {
+                id: '',
+                name: 'All repositories',
+              },
               ...collectionSources(overviews).map((source) => ({
                 id: source.key,
                 name: `${source.repository.name} · ${source.profile.name}`,
@@ -320,9 +437,18 @@ function PullsContent({
             value={draft}
             onChange={setDraft}
             items={[
-              { id: 'all', name: 'Draft + ready' },
-              { id: 'draft', name: 'Drafts' },
-              { id: 'ready', name: 'Ready for review' },
+              {
+                id: 'all',
+                name: 'Draft + ready',
+              },
+              {
+                id: 'draft',
+                name: 'Drafts',
+              },
+              {
+                id: 'ready',
+                name: 'Ready for review',
+              },
             ]}
           />
           <Choice
@@ -330,8 +456,14 @@ function PullsContent({
             value={attention ? 'attention' : 'all'}
             onChange={(value) => setAttention(value === 'attention')}
             items={[
-              { id: 'all', name: 'All PRs' },
-              { id: 'attention', name: 'Needs attention' },
+              {
+                id: 'all',
+                name: 'All PRs',
+              },
+              {
+                id: 'attention',
+                name: 'Needs attention',
+              },
             ]}
           />
           <Text style={styles.muted}>
@@ -342,8 +474,14 @@ function PullsContent({
             value={sort}
             onChange={setSort}
             items={[
-              { id: 'attention', name: 'Attention first' },
-              { id: 'updated', name: 'Recently updated' },
+              {
+                id: 'attention',
+                name: 'Attention first',
+              },
+              {
+                id: 'updated',
+                name: 'Recently updated',
+              },
             ]}
           />
           <Action

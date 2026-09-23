@@ -79,6 +79,7 @@ appId: com.dovo.studio
     id: Dictate message
 - takeScreenshot: dovo-mobile-dictation-permission
 - tapOn: Terminal
+- tapOn: Task tools
 - tapOn: Chat
 - assertVisible:
     id: Message

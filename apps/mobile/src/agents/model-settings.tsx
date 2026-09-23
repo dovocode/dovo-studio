@@ -1,4 +1,9 @@
-import { useEffect, useState } from 'react'
+import { nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import { decode } from '@dovo/protocol'
+import { useEffect } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/text'
 import {
@@ -27,12 +32,12 @@ export function ModelSettings({
   disabled?: boolean
   onChange: (agent: Agent) => void
 }) {
-  const { call, connected } = useRuntime()
-  const [catalog, setCatalog] = useState<ModelCatalog | null>(null),
-    [error, setError] = useState(''),
-    [loading, setLoading] = useState(false),
-    [refresh, setRefresh] = useState(0),
-    [custom, setCustom] = useState(false)
+  const { call, connected, callEffect } = useRuntime()
+  const [catalog, setCatalog] = useApplicationState<ModelCatalog | null>(null),
+    [error, setError] = useApplicationState(''),
+    [loading, setLoading] = useApplicationState(false),
+    [refresh, setRefresh] = useApplicationState(0),
+    [custom, setCustom] = useApplicationState(false)
   const key = JSON.stringify({
     provider: agent.provider,
     endpoint: agent.endpoint,
@@ -46,16 +51,30 @@ export function ModelSettings({
     setLoading(connected)
     if (!connected) return
     const timer = setTimeout(() => {
-      void call('/api/agents/models', JSON.parse(key), modelCatalogSchema)
-        .then((value) => {
-          if (!stopped) setCatalog(value)
-        })
-        .catch((error) => {
-          if (!stopped) setError(String(error))
-        })
-        .finally(() => {
-          if (!stopped) setLoading(false)
-        })
+      void runClientEffect(
+        callEffect('/api/agents/models', JSON.parse(key), modelCatalogSchema)
+          .pipe(
+            Effect.flatMap((value) =>
+              nativeEffect(() => {
+                if (!stopped) setCatalog(value)
+              }),
+            ),
+          )
+          .pipe(
+            Effect.catchAll((error) =>
+              nativeEffect(() => {
+                if (!stopped) setError(String(error))
+              }),
+            ),
+          )
+          .pipe(
+            Effect.ensuring(
+              nativeEffect(() => {
+                if (!stopped) setLoading(false)
+              }).pipe(Effect.orDie),
+            ),
+          ),
+      )
     }, 400)
     return () => {
       stopped = true
@@ -77,19 +96,34 @@ export function ModelSettings({
       cyberAccessProgram: model === agent.model ? agent.cyberAccessProgram : undefined,
     })
   return (
-    <View style={{ gap: 12 }}>
+    <View
+      style={{
+        gap: 12,
+      }}
+    >
       <Choice
         row
         label="Model"
         disabled={disabled}
         value={custom ? '__custom__' : agent.model}
         items={[
-          { id: '', name: 'Provider default' },
+          {
+            id: '',
+            name: 'Provider default',
+          },
           ...models,
           ...(agent.model && !selected
-            ? [{ id: agent.model, name: `${agent.model} (saved/custom)` }]
+            ? [
+                {
+                  id: agent.model,
+                  name: `${agent.model} (saved/custom)`,
+                },
+              ]
             : []),
-          { id: '__custom__', name: 'Custom model…' },
+          {
+            id: '__custom__',
+            name: 'Custom model…',
+          },
         ]}
         onChange={(value) => {
           setCustom(value === '__custom__')
@@ -110,13 +144,26 @@ export function ModelSettings({
         disabled={disabled}
         value={agent.reasoning ?? ''}
         items={[
-          { id: '', name: 'Provider default' },
+          {
+            id: '',
+            name: 'Provider default',
+          },
           ...efforts,
           ...(agent.reasoning && !efforts.some((e) => e.id === agent.reasoning)
-            ? [{ id: agent.reasoning, name: `${agent.reasoning} (saved)` }]
+            ? [
+                {
+                  id: agent.reasoning,
+                  name: `${agent.reasoning} (saved)`,
+                },
+              ]
             : []),
         ]}
-        onChange={(reasoning) => onChange({ ...agent, reasoning })}
+        onChange={(reasoning) =>
+          onChange({
+            ...agent,
+            reasoning,
+          })
+        }
       />
       {serviceTier && agent.provider === 'codex' && (
         <>
@@ -126,7 +173,12 @@ export function ModelSettings({
             disabled={disabled}
             value={serviceTierValue(agent.serviceTier)}
             items={modelServiceTiers(catalog, agent.model, agent.serviceTier)}
-            onChange={(serviceTier) => onChange({ ...agent, serviceTier })}
+            onChange={(serviceTier) =>
+              onChange({
+                ...agent,
+                serviceTier,
+              })
+            }
           />
           {(catalog?.codex?.fastModeBlocked ||
             serviceTierValue(agent.serviceTier) !== 'default') && (
@@ -148,7 +200,7 @@ export function ModelSettings({
               onChange({
                 ...agent,
                 cyberAccessProgram: program
-                  ? agentSchema.shape.cyberAccessProgram.parse(program)
+                  ? decode(agentSchema.fields.cyberAccessProgram.from, program)
                   : undefined,
               })
             }

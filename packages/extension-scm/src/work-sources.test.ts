@@ -1,12 +1,20 @@
+import { Effect } from 'effect'
+import { mutableStruct } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import { beforeEach, expect, it, vi } from 'vite-plus/test'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { snapshotSchema, runtimeProfile } from '@dovo/studio-core'
 import type { useWorkspace, RepositorySource } from '@dovo/studio-core'
 import { jiraSourceKey, useIssueSources } from './work-sources'
-
 type Store = Pick<
   ReturnType<typeof useWorkspace>,
-  'workspace' | 'activeRuntimeId' | 'connected' | 'runtimes' | 'readRuntime' | 'runtimeReadCache'
+  | 'workspace'
+  | 'activeRuntimeId'
+  | 'connected'
+  | 'runtimes'
+  | 'readRuntime'
+  | 'readRuntimeEffect'
+  | 'runtimeReadCache'
 >
 let store: Store
 let repositories: RepositorySource[] = []
@@ -19,7 +27,7 @@ vi.mock('react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react')>()),
   useMemo: (factory: () => unknown) => factory(),
 }))
-const snapshot = snapshotSchema.parse({
+const snapshot = decode(snapshotSchema, {
   revision: 1,
   owner: false,
   workspace: {
@@ -30,7 +38,12 @@ const snapshot = snapshotSchema.parse({
     tasks: [],
     repositories: [],
     jiraSources: [
-      { id: 'tracker', site: 'https://team.atlassian.net', project: 'TEAM', name: 'Team backlog' },
+      {
+        id: 'tracker',
+        site: 'https://team.atlassian.net',
+        project: 'TEAM',
+        name: 'Team backlog',
+      },
     ],
   },
   approvals: [],
@@ -41,14 +54,25 @@ const snapshot = snapshotSchema.parse({
   pendingDevices: [],
 })
 const mac = runtimeProfile(
-  { address: 'http://mac.local:51464', token: 'fixture-credential-123456789' },
+  {
+    address: 'http://mac.local:51464',
+    token: 'fixture-credential-123456789',
+  },
   'Mac',
 )
 const linux = runtimeProfile(
-  { address: 'http://linux.local:51464', token: 'fixture-credential-123456789' },
+  {
+    address: 'http://linux.local:51464',
+    token: 'fixture-credential-123456789',
+  },
   'Linux',
 )
 const cache = {
+  readEffect: () => Effect.succeed(null),
+  writeEffect: () => Effect.void,
+  removeEffect: () => Effect.void,
+  clearEffect: () => Effect.void,
+  closeEffect: () => Effect.void,
   read: async () => null,
   write: async () => {},
   remove: async () => {},
@@ -70,8 +94,13 @@ beforeEach(() => {
       pulls: null,
       pullError: null,
     })),
+    readRuntimeEffect: (profile, _path, input, schema) =>
+      Effect.sync(() => decode(schema, { owner: profile.id, input })),
     readRuntime: async (profile, _path, input, schema) =>
-      schema.parse({ owner: profile.id, input }),
+      decode(schema, {
+        owner: profile.id,
+        input,
+      }),
     runtimeReadCache: () => cache,
   }
 })
@@ -80,7 +109,9 @@ it('lists standalone Jira with no code projects and keeps same IDs distinct acro
   expect(sources).toHaveLength(2)
   expect(sources[0]).toMatchObject({
     name: 'Team backlog',
-    input: { jiraSourceId: 'tracker' },
+    input: {
+      jiraSourceId: 'tracker',
+    },
   })
   expect(sources[0].key).toBe(jiraSourceKey(mac.id, 'tracker'))
   expect(sources[1].key).not.toBe(sources[0].key)
@@ -92,14 +123,27 @@ it('keeps requests bound to the Jira owner and invalidates scope on credential c
     await source.request(
       '/api/scm/work/issues/list',
       source.input,
-      z.object({ owner: z.string(), input: z.object({ jiraSourceId: z.string() }) }),
+      mutableStruct({
+        owner: Schema.String,
+        input: mutableStruct({
+          jiraSourceId: Schema.String,
+        }),
+      }),
     ),
-  ).toEqual({ owner: linux.id, input: { jiraSourceId: 'tracker' } })
+  ).toEqual({
+    owner: linux.id,
+    input: {
+      jiraSourceId: 'tracker',
+    },
+  })
   store.runtimes[1] = {
     ...store.runtimes[1],
     profile: {
       ...linux,
-      connection: { ...linux.connection, token: 'replacement-credential-123456789' },
+      connection: {
+        ...linux.connection,
+        token: 'replacement-credential-123456789',
+      },
     },
   }
   expect(useIssueSources(true)[1].scope).not.toBe(source.scope)
@@ -108,11 +152,28 @@ it('adds optional per-issue project labels without changing the Jira identity', 
   const source = useIssueSources(true)[0]
   store.workspace = {
     ...store.workspace,
-    repositories: [{ id: 'app', name: 'Mobile app', path: '/app', branch: 'main' }],
-    jiraIssueLinks: [{ sourceId: 'tracker', issueId: 'TEAM-1', repositoryId: 'app' }],
+    repositories: [
+      {
+        id: 'app',
+        name: 'Mobile app',
+        path: '/app',
+        branch: 'main',
+      },
+    ],
+    jiraIssueLinks: [
+      {
+        sourceId: 'tracker',
+        issueId: 'TEAM-1',
+        repositoryId: 'app',
+      },
+    ],
   }
   const linked = useIssueSources(true)[0]
   expect(linked.scope).toBe(source.scope)
-  expect(linked.projectLinks).toEqual({ 'TEAM-1': 'Mobile app' })
-  expect(linked.input).toEqual({ jiraSourceId: 'tracker' })
+  expect(linked.projectLinks).toEqual({
+    'TEAM-1': 'Mobile app',
+  })
+  expect(linked.input).toEqual({
+    jiraSourceId: 'tracker',
+  })
 })

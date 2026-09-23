@@ -1,3 +1,4 @@
+import { useApplicationState } from '../runtime/application-state'
 import { Host, Button, Text as NativeText } from '@expo/ui/swift-ui'
 import {
   buttonBorderShape,
@@ -16,13 +17,11 @@ import {
   contentShape,
   shapes,
 } from '@expo/ui/swift-ui/modifiers'
-import { useState } from 'react'
 import { Platform, Pressable, View, useWindowDimensions } from 'react-native'
 import { Text } from './text'
 import { IconButton } from './icon-button'
 import type { IconName } from './icon'
 import { colors } from './theme'
-
 const actionIcons: Readonly<Partial<Record<string, IconName>>> = {
   'New terminal': 'add',
   'New task': 'add',
@@ -48,7 +47,6 @@ type ActionProps = {
   disabled?: boolean
   secondary?: boolean
 }
-
 export function Action(props: ActionProps) {
   const icon = props.label.startsWith('Changes (') ? 'changes' : actionIcons[props.label]
   if (icon)
@@ -71,16 +69,18 @@ export function Action(props: ActionProps) {
     )
   return <TextAction {...props} />
 }
-
 function TextAction({ label, onPress, disabled = false, secondary = false }: ActionProps) {
-  const [availableWidth, setAvailableWidth] = useState<number>()
+  const [availableWidth, setAvailableWidth] = useApplicationState<number | undefined>(undefined)
   const { fontScale } = useWindowDimensions()
-  const [intrinsic, setIntrinsic] = useState<{
-    label: string
-    fontScale: number
-    secondary: boolean
-    width: number
-  }>()
+  const [intrinsic, setIntrinsic] = useApplicationState<
+    | {
+        label: string
+        fontScale: number
+        secondary: boolean
+        width: number
+      }
+    | undefined
+  >(undefined)
   const naturalWidth =
     intrinsic?.label === label &&
     intrinsic.fontScale === fontScale &&
@@ -106,10 +106,18 @@ function TextAction({ label, onPress, disabled = false, secondary = false }: Act
           key={`${label}:${fontScale}:${secondary}`}
           matchContents
           colorScheme="dark"
-          style={{ flexShrink: 0, maxWidth: '100%' }}
+          style={{
+            flexShrink: 0,
+            maxWidth: '100%',
+          }}
           onLayoutContent={({ nativeEvent }) => {
             if (naturalWidth === undefined && nativeEvent.width > 0)
-              setIntrinsic({ label, fontScale, secondary, width: Math.ceil(nativeEvent.width) })
+              setIntrinsic({
+                label,
+                fontScale,
+                secondary,
+                width: Math.ceil(nativeEvent.width),
+              })
           }}
         >
           <Button
@@ -126,22 +134,34 @@ function TextAction({ label, onPress, disabled = false, secondary = false }: Act
                 width: naturalWidth === undefined || !availableWidth ? undefined : availableWidth,
               }),
               contentShape(shapes.rectangle(), ['interaction', 'accessibility']),
-              font({ textStyle: 'body', weight: 'semibold' }),
-              tint(secondary ? colors.accent : '#007aff'),
+              font({
+                textStyle: 'body',
+                weight: 'semibold',
+              }),
+              tint(colors.accent),
               disabledModifier(disabled),
               accessibilityLabel(label),
             ]}
           >
             <NativeText
               modifiers={[
-                foregroundStyle(secondary ? colors.accent : '#ffffff'),
+                foregroundStyle(secondary ? colors.accent : colors.onAccent),
                 lineLimit(),
-                fixedSize({ horizontal: false, vertical: true }),
+                fixedSize({
+                  horizontal: false,
+                  vertical: true,
+                }),
                 multilineTextAlignment('center'),
                 ...(secondary
                   ? [
-                      padding({ horizontal: 8, vertical: 8 }),
-                      frame({ minWidth: 44, minHeight: 44 }),
+                      padding({
+                        horizontal: 8,
+                        vertical: 8,
+                      }),
+                      frame({
+                        minWidth: 44,
+                        minHeight: 44,
+                      }),
                       contentShape(shapes.rectangle(), ['interaction', 'accessibility']),
                     ]
                   : []),
@@ -159,7 +179,9 @@ function TextAction({ label, onPress, disabled = false, secondary = false }: Act
       testID={label}
       accessibilityLabel={label}
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
+      accessibilityState={{
+        disabled,
+      }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
@@ -172,7 +194,7 @@ function TextAction({ label, onPress, disabled = false, secondary = false }: Act
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: 12,
-        backgroundColor: secondary ? 'transparent' : '#007aff',
+        backgroundColor: secondary ? 'transparent' : colors.accent,
         opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >
@@ -180,7 +202,7 @@ function TextAction({ label, onPress, disabled = false, secondary = false }: Act
         style={{
           fontSize: 17,
           fontWeight: '600',
-          color: secondary ? colors.accent : '#ffffff',
+          color: secondary ? colors.accent : colors.onAccent,
           textAlign: 'center',
         }}
       >

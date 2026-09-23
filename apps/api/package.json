@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@dovo/protocol": "workspace:*",
-    "@dovo/runtime": "workspace:*"
+    "@dovo/runtime": "workspace:*",
+    "effect": "^3.22.1"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

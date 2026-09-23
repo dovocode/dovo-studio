@@ -15,3 +15,34 @@ it('does not overwrite malformed saved runtime credentials', () => {
   expect(() => decodeRuntimeRegistry('broken', JSON.stringify(connection))).toThrow(SyntaxError)
   expect(() => decodeRuntimeRegistry(null, 'broken')).toThrow(SyntaxError)
 })
+
+it('reads the saved workspace registry without waiting for pending network pairing', async () => {
+  const { vi } = await import('vitest')
+  const { readRuntimeRegistry } = await import('./runtime-registry')
+  const registry = decodeRuntimeRegistry(null, JSON.stringify(connection))
+  const pending = {
+    ...registry,
+    pendingPairings: [
+      {
+        profile: registry.profiles[0],
+        proof: {
+          id: 'pending',
+          secret: 'synthetic-pairing-secret',
+          expiresAt: new Date(Date.now() + 120000).toISOString(),
+        },
+      },
+    ],
+  }
+  const fetcher = vi.fn()
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('window', {})
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => (key === 'dovo.runtimes.v1' ? JSON.stringify(pending) : null),
+  })
+  try {
+    expect(await readRuntimeRegistry()).toEqual(pending)
+    expect(fetcher).not.toHaveBeenCalled()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})

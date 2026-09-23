@@ -1,6 +1,8 @@
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import {
   forgeConnectionSchema,
   forgeConnectionInputSchema,
@@ -10,11 +12,13 @@ import { HttpError } from '../errors.js'
 import { ForgeHttp } from './forge-http.js'
 import type { ForgeCliAccounts } from './forge-cli-accounts.js'
 import { withinForgeServer } from './forge-url.js'
-
-const storedSchema = forgeConnectionSchema.extend({
-  token: z.string().optional(),
-  environmentFingerprint: z.string().optional(),
-  cliFingerprint: z.string().optional(),
+const storedSchema = mutableStruct({
+  ...forgeConnectionSchema.fields,
+  ...{
+    token: Schema.optional(Schema.String),
+    environmentFingerprint: Schema.optional(Schema.String),
+    cliFingerprint: Schema.optional(Schema.String),
+  },
 })
 function environmentFingerprint(tokenEnv: string | undefined) {
   return createHash('sha256')
@@ -34,11 +38,15 @@ export class ForgeConnections {
     // Reconcile before clients can receive a workspace snapshot after restarting.
     this.rows()
   }
-  private refreshEnvironment(row: z.infer<typeof storedSchema>) {
+  private refreshEnvironment(row: Schema.Schema.Type<typeof storedSchema>) {
     if (row.credential !== 'environment') return row
     const fingerprint = environmentFingerprint(row.tokenEnv)
     if (row.environmentFingerprint === fingerprint) return row
-    const next = { ...row, environmentFingerprint: fingerprint, revision: randomUUID() }
+    const next = {
+      ...row,
+      environmentFingerprint: fingerprint,
+      revision: randomUUID(),
+    }
     this.db.transaction(() => {
       this.db
         .prepare('UPDATE forge_connections SET value=? WHERE id=?')
@@ -48,13 +56,17 @@ export class ForgeConnections {
     return next
   }
   private rows() {
-    return z
-      .array(z.object({ value: z.string() }))
-      .parse(this.db.prepare('SELECT value FROM forge_connections ORDER BY id').all())
-      .map((row) => this.refreshEnvironment(storedSchema.parse(JSON.parse(row.value))))
+    return decode(
+      mutableArray(
+        mutableStruct({
+          value: Schema.String,
+        }),
+      ),
+      this.db.prepare('SELECT value FROM forge_connections ORDER BY id').all(),
+    ).map((row) => this.refreshEnvironment(decode(storedSchema, JSON.parse(row.value))))
   }
   list(): ForgeConnection[] {
-    return this.rows().map((row) => forgeConnectionSchema.parse(row))
+    return this.rows().map((row) => decode(forgeConnectionSchema, row))
   }
   get(id: string): ForgeConnection {
     const found = this.list().find((connection) => connection.id === id)
@@ -62,7 +74,7 @@ export class ForgeConnections {
     return found
   }
   save(value: unknown): ForgeConnection {
-    const input = forgeConnectionInputSchema.parse(value)
+    const input = decode(forgeConnectionInputSchema, value)
     const old = input.id ? this.rows().find((row) => row.id === input.id) : undefined
     if (input.id && !old) throw new HttpError(404, 'Source control connection not found')
     if (input.provider === 'github' && input.credential !== 'gh')
@@ -103,7 +115,7 @@ export class ForgeConnections {
         : undefined
     if (input.credential === 'token' && !token)
       throw new HttpError(400, 'Enter an API token for this connection')
-    const record = storedSchema.parse({
+    const record = decode(storedSchema, {
       ...input,
       baseUrl,
       token,
@@ -115,7 +127,7 @@ export class ForgeConnections {
     this.db
       .prepare('INSERT OR REPLACE INTO forge_connections(id,value) VALUES(?,?)')
       .run(record.id, JSON.stringify(record))
-    return forgeConnectionSchema.parse(record)
+    return decode(forgeConnectionSchema, record)
   }
   remove(id: string) {
     this.get(id)
@@ -147,7 +159,11 @@ export class ForgeConnections {
     )
       throw new HttpError(409, 'This source control account changed. Refresh before continuing.')
     if (current.cliFingerprint !== cliFingerprint) {
-      const next = { ...row, cliFingerprint, revision: randomUUID() }
+      const next = {
+        ...row,
+        cliFingerprint,
+        revision: randomUUID(),
+      }
       this.db.transaction(() => {
         this.db
           .prepare('UPDATE forge_connections SET value=? WHERE id=?')
@@ -197,7 +213,6 @@ export class ForgeConnections {
     return this.authorization(id, true, cwd)
   }
 }
-
 export function connectionHttp(
   connections: ForgeConnections,
   connection: ForgeConnection,

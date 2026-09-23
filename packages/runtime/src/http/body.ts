@@ -6,7 +6,6 @@ import { HttpError } from '../errors.js'
 const compress = promisify(gzip)
 const observers = new WeakMap<IncomingMessage, (value: unknown) => void>()
 const workspaceFingerprints = new WeakMap<object, string>()
-
 function snapshotTag(data: unknown) {
   if (!data || typeof data !== 'object' || !('workspace' in data)) return undefined
   const { workspace, ...state } = data
@@ -24,7 +23,6 @@ function snapshotTag(data: unknown) {
     .digest('base64url')
   return `W/"snapshot-${hash}"`
 }
-
 function matchesTag(header: string | undefined, tag: string) {
   return (header ?? '').split(',').some((value) => {
     const candidate = value.trim()
@@ -56,7 +54,10 @@ function acceptsGzip(header: string | undefined) {
   const encodings = (header ?? '').split(',').map((entry) => {
     const [encoding, ...parameters] = entry.trim().toLowerCase().split(';')
     const quality = parameters.find((parameter) => parameter.trim().startsWith('q='))
-    return { encoding, quality: quality ? Number(quality.trim().slice(2)) : 1 }
+    return {
+      encoding,
+      quality: quality ? Number(quality.trim().slice(2)) : 1,
+    }
   })
   const encoding =
     encodings.find((entry) => entry.encoding === 'gzip') ??
@@ -88,14 +89,26 @@ export async function json(
   // Native fetch and browsers decode gzip automatically. Large thread histories otherwise
   // consume megabytes on every refresh, especially painful over a phone's VPN connection.
   const compressed = plain.length >= 2048 && acceptsGzip(request.headers['accept-encoding'])
-  const payload = compressed ? await compress(plain, { level: 4 }) : plain
+  const payload = compressed
+    ? await compress(plain, {
+        level: 4,
+      })
+    : plain
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
     vary: 'Accept-Encoding',
     'content-length': payload.length,
-    ...(tag ? { etag: tag } : {}),
-    ...(compressed ? { 'content-encoding': 'gzip' } : {}),
+    ...(tag
+      ? {
+          etag: tag,
+        }
+      : {}),
+    ...(compressed
+      ? {
+          'content-encoding': 'gzip',
+        }
+      : {}),
   })
   response.end(payload)
 }

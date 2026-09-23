@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
 import { Modal, Image, View, ScrollView } from 'react-native'
 import { Text } from '../ui/text'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
@@ -21,26 +24,44 @@ export function MessageAttachments({
   disabled?: boolean
   onBusy?: (busy: boolean) => void
 }) {
-  const { call, connected } = useRuntime()
-  const [preview, setPreview] = useState<{ attachment: Attachment; data: string } | null>(null),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
-  const act = async (operation: () => Promise<void>) => {
-    setBusy(true)
-    onBusy?.(true)
-    setError('')
-    try {
-      await operation()
-    } catch (error) {
-      setError(String(error))
-    } finally {
-      setBusy(false)
-      onBusy?.(false)
-    }
+  const { connected, callEffect } = useRuntime()
+  const [preview, setPreview] = useApplicationState<{
+      attachment: Attachment
+      data: string
+    } | null>(null),
+    [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
+  const act = (operation: () => Promise<void>) => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        setBusy(true)
+        onBusy?.(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          yield* nativeEffect(() => operation())
+        }).pipe(
+          Effect.catchAll((error) =>
+            nativeEffect(() => {
+              setError(String(error))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              setBusy(false)
+              onBusy?.(false)
+            }).pipe(Effect.orDie),
+          ),
+        )
+      }),
+    )
   }
   if (!files.length) return null
   return (
-    <View style={{ gap: 4 }}>
+    <View
+      style={{
+        gap: 4,
+      }}
+    >
       {files.map((file) => (
         <View key={file.id} style={styles.row}>
           <Action
@@ -48,15 +69,22 @@ export function MessageAttachments({
             label={`File: ${file.name}`}
             disabled={!connected || busy || disabled}
             onPress={() =>
-              void act(async () =>
-                setPreview(
-                  await call(
-                    '/api/attachments/read',
-                    { taskId, id: file.id },
-                    attachmentReadSchema,
-                  ),
-                ),
-              )
+              void act(() => {
+                return runClientEffect(
+                  mobileWorkflow(function* () {
+                    return setPreview(
+                      yield* callEffect(
+                        '/api/attachments/read',
+                        {
+                          taskId,
+                          id: file.id,
+                        },
+                        attachmentReadSchema,
+                      ),
+                    )
+                  }),
+                )
+              })
             }
           />
           {removable && (
@@ -65,8 +93,19 @@ export function MessageAttachments({
               label={`Remove ${file.name}`}
               disabled={!connected || busy || disabled}
               onPress={() =>
-                void act(async () => {
-                  await call('/api/attachments/remove', { taskId, id: file.id }, responses.ok)
+                void act(() => {
+                  return runClientEffect(
+                    mobileWorkflow(function* () {
+                      yield* callEffect(
+                        '/api/attachments/remove',
+                        {
+                          taskId,
+                          id: file.id,
+                        },
+                        responses.ok,
+                      )
+                    }),
+                  )
                 })
               }
             />
@@ -87,9 +126,14 @@ export function MessageAttachments({
               {preview &&
                 (isImageAttachment(preview.attachment) ? (
                   <Image
-                    source={{ uri: `data:${preview.attachment.mime};base64,${preview.data}` }}
+                    source={{
+                      uri: `data:${preview.attachment.mime};base64,${preview.data}`,
+                    }}
                     accessibilityLabel={preview.attachment.name}
-                    style={{ height: 320, width: '100%' }}
+                    style={{
+                      height: 320,
+                      width: '100%',
+                    }}
                     resizeMode="contain"
                   />
                 ) : (
@@ -101,16 +145,28 @@ export function MessageAttachments({
                 label="Share file"
                 disabled={busy}
                 onPress={() =>
-                  void act(async () => {
-                    if (!preview) return
-                    if (!(await Sharing.isAvailableAsync()))
-                      throw new Error('File sharing is unavailable on this device')
-                    const file = new File(
-                      Paths.cache,
-                      `${preview.attachment.id}-${preview.attachment.name}`,
+                  void act(() => {
+                    return runClientEffect(
+                      mobileWorkflow(function* () {
+                        if (!preview) return
+                        if (!(yield* nativeEffect(() => Sharing.isAvailableAsync())))
+                          return yield* Effect.fail(
+                            new Error('File sharing is unavailable on this device'),
+                          )
+                        const file = new File(
+                          Paths.cache,
+                          `${preview.attachment.id}-${preview.attachment.name}`,
+                        )
+                        file.write(preview.data, {
+                          encoding: 'base64',
+                        })
+                        yield* nativeEffect(() =>
+                          Sharing.shareAsync(file.uri, {
+                            mimeType: preview.attachment.mime,
+                          }),
+                        )
+                      }),
                     )
-                    file.write(preview.data, { encoding: 'base64' })
-                    await Sharing.shareAsync(file.uri, { mimeType: preview.attachment.mime })
                   })
                 }
               />
@@ -124,9 +180,9 @@ export function MessageAttachments({
 }
 function textPreview(data: string) {
   try {
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(
-      Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
-    )
+    const text = new TextDecoder('utf-8', {
+      fatal: true,
+    }).decode(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)))
     return text.includes('\0')
       ? 'Share this file to open it in another app.'
       : text.slice(0, 32000) + (text.length > 32000 ? '\n… Preview truncated' : '')

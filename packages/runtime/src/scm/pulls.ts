@@ -1,10 +1,12 @@
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { refine, urlSchema, decode, minValue } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 import { createHash } from 'node:crypto'
 import { pullStatuses } from './pull-statuses.js'
 import { actOnGithubPull, createGithubPull } from './github-actions.js'
 import { githubThreads } from './github-threads.js'
 import { githubChecks } from './github-checks.js'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import type { GitService } from './git.js'
 import {
   pullLineCommentSchema,
@@ -28,7 +30,13 @@ import {
   summary,
 } from './pull-schemas.js'
 export class PullRequests {
-  private accounts = new Map<string, { expires: number; value: Promise<string> }>()
+  private accounts = new Map<
+    string,
+    {
+      expires: number
+      value: Promise<string>
+    }
+  >()
   constructor(
     private git: GitService,
     private target?: {
@@ -39,28 +47,24 @@ export class PullRequests {
     },
   ) {}
   private async location(cwd: string) {
-    const repo = z
-      .object({
-        nameWithOwner: z
-          .string()
-          .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/)
-          .refine(
-            (value) => value.split('/').every((part) => part !== '.' && part !== '..'),
-            'Use a GitHub owner/repository name',
-          ),
-        url: z.url({ protocol: /^https?$/ }),
-      })
-      .parse(
-        this.target
-          ? {
-              nameWithOwner: this.target.repository,
-              url: `https://${z
-                .string()
-                .regex(/^[a-zA-Z0-9.-]+(?::[0-9]+)?$/)
-                .parse(this.target.host)}/${this.target.repository}`,
-            }
-          : await this.json(cwd, ['repo', 'view', '--json', 'nameWithOwner,url']),
-      )
+    const repo = decode(
+      mutableStruct({
+        nameWithOwner: refine(
+          Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/)),
+          (value) => value.split('/').every((part) => part !== '.' && part !== '..'),
+          'Use a GitHub owner/repository name',
+        ),
+        url: urlSchema({
+          protocol: /^https?$/,
+        }),
+      }),
+      this.target
+        ? {
+            nameWithOwner: this.target.repository,
+            url: `https://${decode(Schema.String.pipe(Schema.pattern(/^[a-zA-Z0-9.-]+(?::[0-9]+)?$/)), this.target.host)}/${this.target.repository}`,
+          }
+        : await this.json(cwd, ['repo', 'view', '--json', 'nameWithOwner,url']),
+    )
     return {
       nameWithOwner: repo.nameWithOwner,
       url: repo.url,
@@ -76,9 +80,17 @@ export class PullRequests {
       throw new HttpError(401, 'The selected GitHub profile is not signed in on this runtime.')
     return this.git.githubAccount(
       args,
-      { timeout: 60000, maxBuffer: 32 * 1024 * 1024 },
+      {
+        timeout: 60000,
+        maxBuffer: 32 * 1024 * 1024,
+      },
       cwd,
-      token ? { host: this.target.host, token } : undefined,
+      token
+        ? {
+            host: this.target.host,
+            token,
+          }
+        : undefined,
     )
   }
   private async json(cwd: string, args: string[]): Promise<unknown> {
@@ -101,7 +113,12 @@ export class PullRequests {
     if (refresh || !account || account.expires <= Date.now()) {
       const value = this.target?.profile
         ? this.json(cwd, ['api', '--hostname', repo.host, 'user']).then((response) => {
-            const account = z.object({ login: z.string().min(1) }).parse(response)
+            const account = decode(
+              mutableStruct({
+                login: minValue(Schema.String, 1),
+              }),
+              response,
+            )
             if (account.login.toLowerCase() !== this.target!.profile!.toLowerCase())
               throw new HttpError(
                 409,
@@ -118,20 +135,23 @@ export class PullRequests {
             '--json',
             'hosts',
           ]).then((response) => {
-            const accounts = z
-              .object({
-                hosts: z.record(
-                  z.string(),
-                  z.array(
-                    z.object({
-                      login: z.string().min(1),
-                      active: z.boolean(),
-                      state: z.string(),
-                    }),
-                  ),
+            const accounts = decode(
+              mutableStruct({
+                hosts: Schema.mutable(
+                  Schema.Record({
+                    key: Schema.String,
+                    value: mutableArray(
+                      mutableStruct({
+                        login: minValue(Schema.String, 1),
+                        active: Schema.Boolean,
+                        state: Schema.String,
+                      }),
+                    ),
+                  }),
                 ),
-              })
-              .parse(response).hosts[repo.host]
+              }),
+              response,
+            ).hosts[repo.host]
             const current = accounts?.find((entry) => entry.active && entry.state === 'success')
             if (!current)
               throw new Error(
@@ -139,7 +159,10 @@ export class PullRequests {
               )
             return current.login
           })
-      account = { expires: Date.now() + 60000, value }
+      account = {
+        expires: Date.now() + 60000,
+        value,
+      }
       this.accounts.set(key, account)
       const entry = account
       void value.catch(() => {
@@ -162,16 +185,15 @@ export class PullRequests {
   }
   async list(cwd: string, state: 'open' | 'closed' | 'all', page: number) {
     const repo = await this.location(cwd)
-    const pulls = z
-      .array(restPull)
-      .parse(
-        await this.json(cwd, [
-          'api',
-          '--hostname',
-          repo.host,
-          `${repo.path}/pulls?state=${state}&sort=updated&direction=desc&per_page=50&page=${page}`,
-        ]),
-      )
+    const pulls = decode(
+      mutableArray(restPull),
+      await this.json(cwd, [
+        'api',
+        '--hostname',
+        repo.host,
+        `${repo.path}/pulls?state=${state}&sort=updated&direction=desc&per_page=50&page=${page}`,
+      ]),
+    )
     const statuses = await pullStatuses(
       this.git,
       cwd,
@@ -180,47 +202,55 @@ export class PullRequests {
       pulls.map((p) => p.number),
       this.target ? (args) => this.run(cwd, args) : undefined,
     )
-    return pullPageSchema.parse({
-      pulls: pulls.map((p) => ({ ...summary(p), provider: 'github', ...statuses.get(p.number) })),
+    return decode(pullPageSchema, {
+      pulls: pulls.map((p) => ({
+        ...summary(p),
+        provider: 'github',
+        ...statuses.get(p.number),
+      })),
       hasMore: pulls.length === 50,
       page,
     })
   }
   async comment(cwd: string, value: unknown) {
-    const input = pullLineCommentSchema.parse(value)
+    const input = decode(pullLineCommentSchema, value)
     const repo = await this.location(cwd)
-    const pull = restDetail.parse(
+    const pull = decode(
+      restDetail,
       await this.json(cwd, ['api', '--hostname', repo.host, `${repo.path}/pulls/${input.number}`]),
     )
     if (pull.head.sha !== input.headSha)
       throw new HttpError(409, 'This PR changed. Refresh before posting your comment.')
     const side = input.side === 'additions' ? 'RIGHT' : 'LEFT'
-    const result = z
-      .object({ html_url: z.url() })
-      .parse(
-        await this.json(cwd, [
-          'api',
-          '--hostname',
-          repo.host,
-          `${repo.path}/pulls/${input.number}/comments`,
-          '--method',
-          'POST',
-          '-f',
-          `body=${input.body}`,
-          '-f',
-          `commit_id=${input.headSha}`,
-          '-f',
-          `path=${input.path}`,
-          '-f',
-          `side=${side}`,
-          '-F',
-          `line=${input.end}`,
-          ...(input.start === input.end
-            ? []
-            : ['-F', `start_line=${input.start}`, '-f', `start_side=${side}`]),
-        ]),
-      )
-    return pullLineCommentResponse.parse({ url: result.html_url })
+    const result = decode(
+      mutableStruct({
+        html_url: urlSchema(),
+      }),
+      await this.json(cwd, [
+        'api',
+        '--hostname',
+        repo.host,
+        `${repo.path}/pulls/${input.number}/comments`,
+        '--method',
+        'POST',
+        '-f',
+        `body=${input.body}`,
+        '-f',
+        `commit_id=${input.headSha}`,
+        '-f',
+        `path=${input.path}`,
+        '-f',
+        `side=${side}`,
+        '-F',
+        `line=${input.end}`,
+        ...(input.start === input.end
+          ? []
+          : ['-F', `start_line=${input.start}`, '-f', `start_side=${side}`]),
+      ]),
+    )
+    return decode(pullLineCommentResponse, {
+      url: result.html_url,
+    })
   }
   async detail(cwd: string, number: number) {
     const repo = await this.location(cwd)
@@ -232,22 +262,31 @@ export class PullRequests {
         `${repo.path}/${path}`,
         ...(paginate ? ['--paginate', '--slurp'] : []),
       ])
-    const pull = restDetail.parse(await api(`pulls/${number}`))
+    const pull = decode(restDetail, await api(`pulls/${number}`))
     const results = await Promise.allSettled([
       api(`issues/${number}/comments?per_page=100`, true).then((v) =>
-        z.array(z.array(restComment)).parse(v).flat(),
+        decode(mutableArray(mutableArray(restComment)), v).flat(),
       ),
       api(`pulls/${number}/reviews?per_page=100`, true).then((v) =>
-        z
-          .array(z.array(restReview.extend({ commit_id: z.string().optional() })))
-          .parse(v)
-          .flat(),
+        decode(
+          mutableArray(
+            mutableArray(
+              mutableStruct({
+                ...restReview.fields,
+                ...{
+                  commit_id: Schema.optional(Schema.String),
+                },
+              }),
+            ),
+          ),
+          v,
+        ).flat(),
       ),
       api(`pulls/${number}/comments?per_page=100`, true).then((v) =>
-        z.array(z.array(restInline)).parse(v).flat(),
+        decode(mutableArray(mutableArray(restInline)), v).flat(),
       ),
       api(`pulls/${number}/files?per_page=100`, true).then((v) =>
-        z.array(z.array(restFile)).parse(v).flat(),
+        decode(mutableArray(mutableArray(restFile)), v).flat(),
       ),
       this.json(cwd, [
         'pr',
@@ -257,17 +296,18 @@ export class PullRequests {
         repo.repository,
         '--json',
         'statusCheckRollup',
-      ]).then((v) => checkRollup.parse(v).statusCheckRollup ?? []),
+      ]).then((v) => decode(checkRollup, v).statusCheckRollup ?? []),
       githubThreads((args) => this.json(cwd, args), repo, number),
       githubChecks((args) => this.json(cwd, args), repo, pull.head.sha),
       this.json(cwd, ['api', '--hostname', repo.host, repo.path]).then((value) =>
-        z
-          .object({
-            allow_merge_commit: z.boolean().optional(),
-            allow_squash_merge: z.boolean().optional(),
-            allow_rebase_merge: z.boolean().optional(),
-          })
-          .parse(value),
+        decode(
+          mutableStruct({
+            allow_merge_commit: Schema.optional(Schema.Boolean),
+            allow_squash_merge: Schema.optional(Schema.Boolean),
+            allow_rebase_merge: Schema.optional(Schema.Boolean),
+          }),
+          value,
+        ),
       ),
     ])
     const warnings: string[] = [],
@@ -300,7 +340,11 @@ export class PullRequests {
           url: c.html_url,
           kind: 'review' as const,
           state: c.state,
-          ...(c.commit_id ? { commitId: c.commit_id } : {}),
+          ...(c.commit_id
+            ? {
+                commitId: c.commit_id,
+              }
+            : {}),
         })),
       )
     if (inline.status === 'fulfilled')
@@ -316,7 +360,11 @@ export class PullRequests {
           line: c.line ?? c.original_line,
           diff: c.diff_hunk,
           ...(threads.status === 'fulfilled' ? threads.value.get(`inline-${c.id}`) : {}),
-          ...(c.in_reply_to_id ? { replyTo: `inline-${c.in_reply_to_id}` } : {}),
+          ...(c.in_reply_to_id
+            ? {
+                replyTo: `inline-${c.in_reply_to_id}`,
+              }
+            : {}),
         })),
       )
     comments.sort((a, b) => (a.date || '\uffff').localeCompare(b.date || '\uffff'))
@@ -358,10 +406,14 @@ export class PullRequests {
         ? checks.value.map((c) => ({
             name: c.name ?? c.context ?? 'Check',
             status: c.conclusion || c.state || c.status || 'Unknown',
-            ...(c.detailsUrl || c.targetUrl ? { url: c.detailsUrl || c.targetUrl } : {}),
+            ...(c.detailsUrl || c.targetUrl
+              ? {
+                  url: c.detailsUrl || c.targetUrl,
+                }
+              : {}),
           }))
         : []
-    return pullDetailSchema.parse({
+    return decode(pullDetailSchema, {
       capabilities,
       fileBaseUrl: `${repo.url}/blob/${pull.head.sha}/`,
       pull: {

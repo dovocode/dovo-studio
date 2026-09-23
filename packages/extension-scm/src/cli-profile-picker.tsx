@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
-import { z } from 'zod'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { decodeResult } from '@dovo/protocol'
+import { useEffect } from 'react'
+import { Schema } from 'effect'
 import {
   cliProfileOptions,
   forgeCliProfileQuerySchema,
@@ -8,7 +10,6 @@ import {
   type ForgeProvider,
 } from '@dovo/studio-core'
 import { Button, ChoicePicker, FormField, Input } from '@dovo/studio-ui'
-
 export function CliProfilePicker({
   provider,
   baseUrl,
@@ -29,7 +30,7 @@ export function CliProfilePicker({
   disabled: boolean
 }) {
   const { request, connected, workspace } = useWorkspace()
-  const [repositoryId, setRepositoryId] = useState(
+  const [repositoryId, setRepositoryId] = useApplicationState(
     () =>
       workspace.repositories.find(
         (repo) => connectionId && repo.forge?.connectionId === connectionId,
@@ -37,18 +38,20 @@ export function CliProfilePicker({
       initialRepositoryId ??
       '',
   )
-  const [result, setResult] = useState<z.infer<typeof forgeCliProfilesSchema>>()
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [revision, reload] = useState(0)
-  const [manual, setManual] = useState(false)
+  const [result, setResult] = useApplicationState<
+    Schema.Schema.Type<typeof forgeCliProfilesSchema> | undefined
+  >(undefined)
+  const [loading, setLoading] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [revision, reload] = useApplicationState(0)
+  const [manual, setManual] = useApplicationState(false)
   useEffect(() => {
     let current = true
     setResult(undefined)
     setError('')
     setLoading(false)
     if (!connected) return
-    const query = forgeCliProfileQuerySchema.safeParse({
+    const query = decodeResult(forgeCliProfileQuerySchema, {
       provider,
       baseUrl: baseUrl.trim(),
       cliTool,

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useApplicationState } from '../runtime/application-state'
 import { Pressable } from 'react-native'
 import { Text } from '../ui/text'
 import { Action } from '../ui/action'
@@ -6,7 +6,6 @@ import { Sheet } from '../ui/sheet'
 import { colors } from '../ui/theme'
 import type { PullActionTarget } from './pull-actions'
 import type { PullActionOption } from './pull-action-options'
-
 export type PullMenuProps = {
   providerName?: string
   onRefresh: () => void
@@ -18,9 +17,8 @@ export type PullMenuProps = {
   onAction: (target: PullActionTarget) => void
   actionDisabled: boolean
 }
-
 export function PullMenu(props: PullMenuProps) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useApplicationState(false)
   const choose = (action: () => void) => {
     setOpen(false)
     action()
@@ -40,7 +38,14 @@ export function PullMenu(props: PullMenuProps) {
         })}
         onPress={() => setOpen(true)}
       >
-        <Text style={{ color: colors.text, fontSize: 22 }}>···</Text>
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: 22,
+          }}
+        >
+          ···
+        </Text>
       </Pressable>
       {open && (
         <Sheet title="PR actions" onClose={() => setOpen(false)}>
@@ -50,7 +55,13 @@ export function PullMenu(props: PullMenuProps) {
               secondary
               label={option.label}
               disabled={props.actionDisabled}
-              onPress={() => choose(() => props.onAction({ action: option.action }))}
+              onPress={() =>
+                choose(() =>
+                  props.onAction({
+                    action: option.action,
+                  }),
+                )
+              }
             />
           ))}
           <Action

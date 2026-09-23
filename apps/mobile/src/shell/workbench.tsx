@@ -1,3 +1,7 @@
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
 import { ConnectionStatus } from '../runtime/connection-status'
 import { NativeTabs } from 'expo-router/unstable-native-tabs'
 import { router, useGlobalSearchParams, useIsFocused, usePathname } from 'expo-router'
@@ -17,7 +21,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
   type ComponentType,
   type ReactNode,
 } from 'react'
@@ -39,14 +42,28 @@ function WorkbenchNotices() {
   return (
     <>
       {context?.shortcutSaved && (
-        <Text style={[styles.muted, { paddingHorizontal: 16, paddingVertical: 8 }]}>
+        <Text
+          style={[
+            styles.muted,
+            {
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+            },
+          ]}
+        >
           Shortcut saved on this phone. Pair or reconnect to review it.
         </Text>
       )}
       {!!context?.error && (
         <Text
           accessibilityRole="alert"
-          style={[styles.error, { paddingHorizontal: 16, paddingVertical: 8 }]}
+          style={[
+            styles.error,
+            {
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+            },
+          ]}
         >
           {context.error}
         </Text>
@@ -60,11 +77,20 @@ export function WorkbenchScene({ tab }: { tab: Tab | 'scm' }) {
   if (!context) return null
   const navigation = context.navigations[tab === 'scm' ? 'tasks' : tab]
   return (
-    <NavigationContext.Provider value={{ ...navigation, focused: navigation.focused && focused }}>
+    <NavigationContext.Provider
+      value={{
+        ...navigation,
+        focused: navigation.focused && focused,
+      }}
+    >
       <WorkbenchNotices />
       {tab !== 'settings' && tab !== 'scm' && (
         <ConnectionStatus
-          onSettings={() => router.navigate('/settings/devices', { withAnchor: true })}
+          onSettings={() =>
+            router.navigate('/settings/devices', {
+              withAnchor: true,
+            })
+          }
         />
       )}
       {context.scenes[tab] ?? null}
@@ -88,8 +114,17 @@ export function WorkbenchDetailRoute({
   if (!context) return null
   const navigation = context.navigations[tab]
   return (
-    <NavigationContext.Provider value={{ ...navigation, focused: navigation.focused && focused }}>
-      <NativeSafeAreaView edges={{ bottom: bottomInset }}>
+    <NavigationContext.Provider
+      value={{
+        ...navigation,
+        focused: navigation.focused && focused,
+      }}
+    >
+      <NativeSafeAreaView
+        edges={{
+          bottom: bottomInset,
+        }}
+      >
         <WorkbenchNotices />
         {children}
       </NativeSafeAreaView>
@@ -98,8 +133,11 @@ export function WorkbenchDetailRoute({
 }
 export function Workbench() {
   const runtime = useRuntime(),
-    [extensions] = useState(createMobileExtensions)
-  const [work, setWork] = useState<{ target: WorkTarget; runtimeId: string | null } | null>(null)
+    [extensions] = useApplicationState(createMobileExtensions)
+  const [work, setWork] = useApplicationState<{
+    target: WorkTarget
+    runtimeId: string | null
+  } | null>(null)
   const pathname = usePathname()
   const routeParams = useGlobalSearchParams<{
     runtimeId?: string
@@ -123,7 +161,15 @@ export function Workbench() {
       previous.target.id === itemId &&
       previous.target.url === url
         ? previous
-        : { runtimeId, target: { kind, repositoryId, id: itemId, url } },
+        : {
+            runtimeId,
+            target: {
+              kind,
+              repositoryId,
+              id: itemId,
+              url,
+            },
+          },
     )
   }, [
     pathname,
@@ -134,8 +180,8 @@ export function Workbench() {
     runtime.activeId,
   ])
   const { tab: active, detail: routeDetail } = workbenchRoute(pathname)
-  const [screens, setScreens] = useState<Record<string, ComponentType>>({}),
-    [loadError, setLoadError] = useState('')
+  const [screens, setScreens] = useApplicationState<Record<string, ComponentType>>({}),
+    [loadError, setLoadError] = useApplicationState('')
   useEffect(() => {
     if (runtime.ready && !runtime.profiles.length && active !== 'settings')
       router.replace('/settings')
@@ -151,8 +197,8 @@ export function Workbench() {
     // Bring its draft creation scene into view before consuming the inbox item.
     router.navigate('/')
   }, [hasOnlineComputer, shortcuts.input])
-  const [keyboard, setKeyboard] = useState(false)
-  const [details, setDetails] = useState<Record<Tab, boolean>>({
+  const [keyboard, setKeyboard] = useApplicationState(false)
+  const [details, setDetails] = useApplicationState<Record<Tab, boolean>>({
     tasks: false,
     issues: false,
     pulls: false,
@@ -162,7 +208,14 @@ export function Workbench() {
   const detail = active === 'settings' ? details.settings : routeDetail
   const detailSetters = useMemo(() => {
     const setter = (tab: Tab) => (value: boolean) =>
-      setDetails((current) => (current[tab] === value ? current : { ...current, [tab]: value }))
+      setDetails((current) =>
+        current[tab] === value
+          ? current
+          : {
+              ...current,
+              [tab]: value,
+            },
+      )
     return {
       tasks: setter('tasks'),
       issues: setter('issues'),
@@ -179,20 +232,33 @@ export function Workbench() {
       hide.remove()
     }
   }, [])
-  const finishShortcut = async (runtimeId?: string, taskId?: string) => {
-    const input = shortcuts.input
-    if (!input) return
-    try {
-      if (runtimeId) {
-        const owner = runtime.profiles.find((entry) => entry.id === runtimeId)
-        if (!owner) throw new Error('This computer is no longer saved')
-        await runtime.readRuntime(owner, '/api/shortcuts/received', input, responses.ok)
-      }
-      await shortcuts.consume(input.id)
-      if (runtimeId && taskId) router.navigate(taskHref(runtimeId, taskId), { withAnchor: true })
-    } catch (e) {
-      setLoadError(String(e))
-    }
+  const finishShortcut = (runtimeId?: string, taskId?: string) => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        const input = shortcuts.input
+        if (!input) return
+        return yield* mobileWorkflow(function* () {
+          if (runtimeId) {
+            const owner = runtime.profiles.find((entry) => entry.id === runtimeId)
+            if (!owner) return yield* Effect.fail(new Error('This computer is no longer saved'))
+            yield* nativeEffect(() =>
+              runtime.readRuntime(owner, '/api/shortcuts/received', input, responses.ok),
+            )
+          }
+          yield* nativeEffect(() => shortcuts.consume(input.id))
+          if (runtimeId && taskId)
+            router.navigate(taskHref(runtimeId, taskId), {
+              withAnchor: true,
+            })
+        }).pipe(
+          Effect.catchAll((e) =>
+            nativeEffect(() => {
+              setLoadError(String(e))
+            }),
+          ),
+        )
+      }),
+    )
   }
   const selected = !runtime.profiles.length
     ? 'settings'
@@ -202,26 +268,44 @@ export function Workbench() {
   useEffect(() => {
     let stopped = false
     setLoadError('')
-    void extensions
-      .view(selected)
-      .then((View) => {
-        if (!stopped)
-          setScreens((current) =>
-            current[selected] === View ? current : { ...current, [selected]: View },
-          )
-      })
-      .catch((error) => {
-        if (!stopped) setLoadError(String(error))
-      })
+    void runClientEffect(
+      nativeEffect(() => extensions.view(selected))
+        .pipe(
+          Effect.flatMap((View) =>
+            nativeEffect(() => {
+              if (!stopped)
+                setScreens((current) =>
+                  current[selected] === View
+                    ? current
+                    : {
+                        ...current,
+                        [selected]: View,
+                      },
+                )
+            }),
+          ),
+        )
+        .pipe(
+          Effect.catchAll((error) =>
+            nativeEffect(() => {
+              if (!stopped) setLoadError(String(error))
+            }),
+          ),
+        ),
+    )
     return () => {
       stopped = true
     }
   }, [selected, extensions])
   useEffect(
     () => () => {
-      void extensions.host
-        .dispose()
-        .catch((error) => console.error('Mobile extension shutdown failed', error))
+      void runClientEffect(
+        nativeEffect(() => extensions.host.dispose()).pipe(
+          Effect.catchAll((error) =>
+            nativeEffect(() => console.error('Mobile extension shutdown failed', error)),
+          ),
+        ),
+      )
     },
     [extensions],
   )
@@ -230,11 +314,16 @@ export function Workbench() {
       Keyboard.dismiss()
       if (view === 'tasks' && id) {
         const host = runtimeId ?? runtime.activeId
-        if (host) router.navigate(taskHref(host, id), { withAnchor: true })
+        if (host)
+          router.navigate(taskHref(host, id), {
+            withAnchor: true,
+          })
         return
       }
       if (view === 'scm') {
-        router.push('/projects', { withAnchor: true })
+        router.push('/projects', {
+          withAnchor: true,
+        })
         return
       }
       const tab =
@@ -261,7 +350,10 @@ export function Workbench() {
           : undefined,
       openWork: (target: WorkTarget) => {
         Keyboard.dismiss()
-        setWork({ target, runtimeId: runtime.activeId })
+        setWork({
+          target,
+          runtimeId: runtime.activeId,
+        })
         if (target.id && runtime.activeId) {
           const href = target.kind === 'issue' ? issueHref : pipelineHref
           router.navigate(
@@ -294,7 +386,12 @@ export function Workbench() {
       const View = screens[tab]
       content[tab] =
         !runtime.ready || !View ? (
-          <ActivityIndicator style={{ flex: 1 }} color={colors.accent} />
+          <ActivityIndicator
+            style={{
+              flex: 1,
+            }}
+            color={colors.accent}
+          />
         ) : (
           // Context and section controls can precede a list. Use the tab controller's
           // measured bottom safe area rather than depending on ScrollView discovery.
@@ -348,7 +445,12 @@ export function Workbench() {
       ? runtime.error
       : '')
   const sceneContext = useMemo(
-    () => ({ scenes: content, navigations, shortcutSaved, error }),
+    () => ({
+      scenes: content,
+      navigations,
+      shortcutSaved,
+      error,
+    }),
     [content, navigations, shortcutSaved, error],
   )
   return (
@@ -383,7 +485,9 @@ export function Workbench() {
                 disableAutomaticContentInsets={Platform.OS === 'ios'}
                 testID="Tab Issues"
                 disabled={!runtime.profiles.length}
-                listeners={{ tabPress: () => active === 'issues' && router.dismissTo('/issues') }}
+                listeners={{
+                  tabPress: () => active === 'issues' && router.dismissTo('/issues'),
+                }}
               >
                 <NativeTabs.Trigger.Icon sf="exclamationmark.bubble" md="assignment" />
                 <NativeTabs.Trigger.Label>Issues</NativeTabs.Trigger.Label>
@@ -393,7 +497,9 @@ export function Workbench() {
                 disableAutomaticContentInsets={Platform.OS === 'ios'}
                 testID="Tab PRs"
                 disabled={!runtime.profiles.length}
-                listeners={{ tabPress: () => active === 'pulls' && router.dismissTo('/pulls') }}
+                listeners={{
+                  tabPress: () => active === 'pulls' && router.dismissTo('/pulls'),
+                }}
               >
                 <NativeTabs.Trigger.Icon sf="arrow.triangle.pull" md="merge" />
                 <NativeTabs.Trigger.Label>PRs</NativeTabs.Trigger.Label>
@@ -403,7 +509,9 @@ export function Workbench() {
                 disableAutomaticContentInsets={Platform.OS === 'ios'}
                 testID="Tab Automations"
                 disabled={!runtime.profiles.length}
-                listeners={{ tabPress: () => active === 'jobs' && router.dismissTo('/jobs') }}
+                listeners={{
+                  tabPress: () => active === 'jobs' && router.dismissTo('/jobs'),
+                }}
               >
                 <NativeTabs.Trigger.Icon sf="square.3.layers.3d" md="layers" />
                 <NativeTabs.Trigger.Label>Automations</NativeTabs.Trigger.Label>

@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace, updateTask, type Task, type ChangedFile } from '@dovo/studio-core'
 import { Button, Checkbox, Textarea } from '@dovo/studio-ui'
 export function ReviewFeedback({ task, file }: { task: Task; file: ChangedFile }) {
   const { setWorkspace } = useWorkspace()
-  const [feedback, setFeedback] = useState('')
+  const [feedback, setFeedback] = useApplicationState('')
   return (
     <div className="shrink-0 space-y-2 border-t p-3">
       <div className="flex items-center justify-between">
@@ -15,7 +15,12 @@ export function ReviewFeedback({ task, file }: { task: Task; file: ChangedFile }
                 updateTask(w, task.id, (t) => ({
                   ...t,
                   files: t.files.map((f) =>
-                    f.path === file.path ? { ...f, viewed: checked === true } : f,
+                    f.path === file.path
+                      ? {
+                          ...f,
+                          viewed: checked === true,
+                        }
+                      : f,
                   ),
                 })),
               )
@@ -36,7 +41,12 @@ export function ReviewFeedback({ task, file }: { task: Task; file: ChangedFile }
               ...t,
               messages: [
                 ...t.messages,
-                { id: crypto.randomUUID(), role: 'user', text: feedback.trim(), file: file.path },
+                {
+                  id: crypto.randomUUID(),
+                  role: 'user',
+                  text: feedback.trim(),
+                  file: file.path,
+                },
               ],
             })),
           )

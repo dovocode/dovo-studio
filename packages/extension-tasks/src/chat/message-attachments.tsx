@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
 import { Paperclip, X } from 'lucide-react'
 import { attachmentReadSchema, isImageAttachment, type Attachment } from '@dovo/studio-core'
 import { useWorkspace } from '@dovo/studio-core'
@@ -15,14 +15,26 @@ export function MessageAttachments({
   disabled?: boolean
 }) {
   const { request, connected } = useWorkspace()
-  const [preview, setPreview] = useState<{ attachment: Attachment; data: string } | null>(null),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+  const [preview, setPreview] = useApplicationState<{
+      attachment: Attachment
+      data: string
+    } | null>(null),
+    [error, setError] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false)
   const open = async (id: string) => {
     setBusy(true)
     setError('')
     try {
-      setPreview(await request('/api/attachments/read', { taskId, id }, attachmentReadSchema))
+      setPreview(
+        await request(
+          '/api/attachments/read',
+          {
+            taskId,
+            id,
+          },
+          attachmentReadSchema,
+        ),
+      )
     } catch (error) {
       setError(String(error))
     } finally {
@@ -115,9 +127,9 @@ export function MessageAttachments({
 }
 function textPreview(data: string) {
   try {
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(
-      Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
-    )
+    const text = new TextDecoder('utf-8', {
+      fatal: true,
+    }).decode(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)))
     return text.includes('\0')
       ? 'Download this file to inspect its contents.'
       : text.slice(0, 32000) + (text.length > 32000 ? '\n… Preview truncated' : '')

@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { Effect, Schema } from 'effect'
+import { useEffect, useMemo } from 'react'
 import {
   activitySchema,
+  startPolling,
   clientScopeKey,
   recentTools,
   activitySummary,
@@ -25,49 +28,49 @@ import {
   taskActivityOutcome,
   type ActivityState,
 } from './task-activity-state'
-
 export function useTaskActivity(taskId: string) {
-  const { request, connected, connection, activeRuntimeId } = useWorkspace()
+  const { requestEffect: request, connected, connection, activeRuntimeId } = useWorkspace()
   const identity = JSON.stringify([activeRuntimeId, clientScopeKey(connection), taskId])
-  const [snapshot, setSnapshot] = useState<{
+  const [snapshot, setSnapshot] = useApplicationState<{
     identity: string
-    events: ReturnType<typeof activitySchema.parse>['events']
+    events: Schema.Schema.Type<typeof activitySchema>['events']
     error: string
-  }>(() => ({ identity, events: [], error: '' }))
+  }>(() => ({
+    identity,
+    events: [],
+    error: '',
+  }))
   useEffect(() => {
-    let stopped = false,
-      busy = false
+    let stopped = false
     setSnapshot((previous) =>
       previous.identity === identity ? previous : { identity, events: [], error: '' },
     )
-    const load = async () => {
-      if (!connected || busy) return
-      busy = true
-      try {
-        const result = await request(
-          '/api/activity',
-          { scope: taskId, kind: 'task-activity' },
-          activitySchema,
-        )
-        if (!stopped) setSnapshot({ identity, events: result.events, error: '' })
-      } catch (error) {
+    const load = Effect.gen(function* () {
+      if (!connected || document.visibilityState !== 'visible') return
+      const result = yield* request(
+        '/api/activity',
+        { scope: taskId, kind: 'task-activity' },
+        activitySchema,
+      )
+      if (!stopped) setSnapshot({ identity, events: result.events, error: '' })
+    })
+    const polling = startPolling(load, {
+      interval: 2000,
+      onError: (error) => {
         if (!stopped)
           setSnapshot((previous) =>
-            previous.identity === identity ? { ...previous, error: String(error) } : previous,
+            previous.identity === identity ? { ...previous, error: error.message } : previous,
           )
-      } finally {
-        busy = false
-      }
-    }
-    void load()
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') void load()
-    }, 2000)
+      },
+    })
+    document.addEventListener('visibilitychange', polling.refresh)
     return () => {
       stopped = true
-      clearInterval(timer)
+      document.removeEventListener('visibilitychange', polling.refresh)
+      void polling.stop()
     }
   }, [request, connected, taskId, identity])
+
   return {
     tools: useMemo(
       () => recentTools(snapshot.identity === identity ? snapshot.events : []),
@@ -76,7 +79,6 @@ export function useTaskActivity(taskId: string) {
     error: snapshot.identity === identity ? snapshot.error : '',
   }
 }
-
 type ActivityTool = ReturnType<typeof recentTools>[number]
 type Presentation = ReturnType<typeof toolPresentation>
 const icons = {
@@ -87,7 +89,6 @@ const icons = {
   tool: Wrench,
   reasoning: BrainCircuit,
 }
-
 function activeTitle(presentation: Presentation) {
   if (presentation.kind === 'command')
     return `Running ${activityCommandLabel(presentation.input || presentation.title)}`
@@ -97,7 +98,6 @@ function activeTitle(presentation: Presentation) {
     return presentation.title === 'Computer Use' ? 'Using Computer Use' : presentation.title
   return presentation.title
 }
-
 export function TaskActivity({
   tools,
   error = '',
@@ -109,7 +109,7 @@ export function TaskActivity({
   turn?: TaskTurn
   status?: TaskTurn['status']
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useApplicationState(false)
   const entries = useMemo(
     () =>
       tools
@@ -210,7 +210,6 @@ export function TaskActivity({
     </section>
   )
 }
-
 function ActivityEntry({
   tool,
   presentation,

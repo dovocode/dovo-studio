@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useMemo } from 'react'
 import { getFiletypeFromFileName, parseDiffFromFile, preloadHighlighter } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import { BookmarkCheck, ChevronRight, Folder } from 'lucide-react'
@@ -12,15 +13,20 @@ import {
   DialogTitle,
   ErrorBoundary,
 } from '@dovo/studio-ui'
-
 function CheckpointDiff({ file }: { file: ChangedFile }) {
-  const [ready, setReady] = useState(false)
-  const [error, setError] = useState('')
+  const [ready, setReady] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   const diff = useMemo(
     () =>
       parseDiffFromFile(
-        { name: file.path, contents: file.before },
-        { name: file.path, contents: file.after },
+        {
+          name: file.path,
+          contents: file.before,
+        },
+        {
+          name: file.path,
+          contents: file.after,
+        },
       ),
     [file],
   )
@@ -61,14 +67,18 @@ function CheckpointDiff({ file }: { file: ChangedFile }) {
   return (
     <FileDiff
       fileDiff={diff}
-      options={{ theme: 'pierre-dark', themeType: 'dark', diffStyle: 'unified', overflow: 'wrap' }}
+      options={{
+        theme: 'pierre-dark',
+        themeType: 'dark',
+        diffStyle: 'unified',
+        overflow: 'wrap',
+      }}
     />
   )
 }
-
 export function TurnCheckpoint({ turn }: { turn: TaskTurn }) {
-  const [open, setOpen] = useState(false)
-  const [selected, setSelected] = useState('')
+  const [open, setOpen] = useApplicationState(false)
+  const [selected, setSelected] = useApplicationState('')
   const checkpoint = turn.checkpoint
   if (!checkpoint) return null
   const file = selected

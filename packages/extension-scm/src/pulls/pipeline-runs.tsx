@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useCallback, useEffect, useRef } from 'react'
 import { ChevronRight, ExternalLink, RefreshCw } from 'lucide-react'
 import {
   forgePipelinePageSchema,
@@ -9,7 +10,6 @@ import {
 import { Button } from '@dovo/studio-ui'
 import { PipelineState } from '../pipeline-detail'
 import { WorkContent } from '../work-detail'
-
 export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; sha: string }) {
   const { connected, request, workspace, readCache } = useWorkspace()
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
@@ -20,13 +20,13 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
     repository?.forge,
     sha,
   ])
-  const [runs, setRuns] = useState<ForgePipeline[]>([])
-  const [next, setNext] = useState<string>()
-  const [selected, setSelected] = useState<ForgePipeline>()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [stale, setStale] = useState(false)
+  const [runs, setRuns] = useApplicationState<ForgePipeline[]>([])
+  const [next, setNext] = useApplicationState<string | undefined>(undefined)
+  const [selected, setSelected] = useApplicationState<ForgePipeline | undefined>(undefined)
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [notice, setNotice] = useApplicationState('')
+  const [stale, setStale] = useApplicationState(false)
   const generation = useRef(0)
   const pending = useRef(false)
   const stored = useRef<ForgePipeline[]>([])
@@ -40,7 +40,10 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
       try {
         const options = await request(
           '/api/scm/work/options',
-          { repositoryId, area: 'pipelines' },
+          {
+            repositoryId,
+            area: 'pipelines',
+          },
           forgeWorkOptionsSchema,
         )
         if (current !== generation.current) return
@@ -57,7 +60,11 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
         }
         const page = await request(
           '/api/scm/work/pipelines/list',
-          { repositoryId, cursor, refresh },
+          {
+            repositoryId,
+            cursor,
+            refresh,
+          },
           forgePipelinePageSchema,
         )
         if (current !== generation.current) return
@@ -73,7 +80,10 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
         setStale(!!page.stale)
         setError(page.refreshError ?? '')
         try {
-          await readCache?.write(cacheKey, { ...page, items })
+          await readCache?.write(cacheKey, {
+            ...page,
+            items,
+          })
         } catch {
           if (current === generation.current)
             setError('Runs loaded, but could not be saved for offline use.')
@@ -121,7 +131,6 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
       generation.current++
     }
   }, [cacheKey, readCache, load])
-
   if (selected)
     return (
       <div className="mb-5 min-w-0 rounded-xl border">

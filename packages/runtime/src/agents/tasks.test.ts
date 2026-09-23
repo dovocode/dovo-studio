@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import type { AgentAdapter } from './types'
 import { afterEach, expect, it, vi } from 'vitest'
 import { startRuntime } from '../index'
@@ -29,7 +30,10 @@ it('streams, resumes a task and starts a fresh session when its configuration ch
     run: async (run) => {
       runs.push(run)
       run.onSession('session-1')
-      run.onEvent?.('tool.completed', { command: 'git status', exitCode: 0 })
+      run.onEvent?.('tool.completed', {
+        command: 'git status',
+        exitCode: 0,
+      })
       run.onText('Hello')
       run.onText(' world')
     },
@@ -51,7 +55,14 @@ it('streams, resumes a task and starts a fresh session when its configuration ch
   )
   s.store.updateTask(task.id, (t) => ({
     ...t,
-    messages: [...t.messages, { id: 'followup', role: 'user', text: 'Follow up' }],
+    messages: [
+      ...t.messages,
+      {
+        id: 'followup',
+        role: 'user',
+        text: 'Follow up',
+      },
+    ],
   }))
   await (
     await s.tasks.start(task.id)
@@ -61,7 +72,12 @@ it('streams, resumes a task and starts a fresh session when its configuration ch
   s.store.patch({
     collection: 'agents',
     id: 'agent',
-    changes: { instructions: { before: '', after: 'Changed' } },
+    changes: {
+      instructions: {
+        before: '',
+        after: 'Changed',
+      },
+    },
   })
   await (
     await s.tasks.start(task.id)
@@ -70,7 +86,12 @@ it('streams, resumes a task and starts a fresh session when its configuration ch
   s.store.patch({
     collection: 'agents',
     id: 'agent',
-    changes: { reasoning: { before: null, after: 'high' } },
+    changes: {
+      reasoning: {
+        before: null,
+        after: 'high',
+      },
+    },
   })
   await (
     await s.tasks.start(task.id)
@@ -133,7 +154,14 @@ it('preserves line steering and includes it in the next agent turn', async () =>
   })
   s.store.updateTask(task.id, (t) => ({
     ...t,
-    files: [{ path: 'a.ts', before: 'old', after: 'new', viewed: false }],
+    files: [
+      {
+        path: 'a.ts',
+        before: 'old',
+        after: 'new',
+        viewed: false,
+      },
+    ],
   }))
   const starting = s.tasks.start(task.id)
   s.tasks.feedback({
@@ -163,7 +191,6 @@ it('preserves line steering and includes it in the next agent turn', async () =>
   expect(prompts[0]).toContain('a.ts:1-1 (new version)')
   expect(prompts[0]).toContain('Handle cancellation')
 })
-
 it('queues follow-ups during a turn, deduplicates retries and drains in the chosen order', async () => {
   const s = await setup(),
     prompts: string[] = []
@@ -254,7 +281,13 @@ it('reserves tasks before checkout preparation and isolates task model overrides
     collection: 'tasks',
     id: task.id,
     changes: {
-      agentOverrides: { before: null, after: { model: 'custom-model', reasoning: 'high' } },
+      agentOverrides: {
+        before: null,
+        after: {
+          model: 'custom-model',
+          reasoning: 'high',
+        },
+      },
     },
   })
   vi.spyOn(s.agents, 'get').mockResolvedValue({
@@ -270,7 +303,12 @@ it('reserves tasks before checkout preparation and isolates task model overrides
     s.store.patch({
       collection: 'tasks',
       id: task.id,
-      changes: { archived: { before: null, after: true } },
+      changes: {
+        archived: {
+          before: null,
+          after: true,
+        },
+      },
     }),
   ).toThrow('Stop the active turn')
   await (
@@ -278,7 +316,6 @@ it('reserves tasks before checkout preparation and isolates task model overrides
   ).done
   expect(s.store.get().agents[0].model).not.toBe('custom-model')
 })
-
 it('keeps completed agent work successful when the diff refresh fails', async () => {
   const s = await setup()
   vi.spyOn(s.git, 'changes').mockRejectedValue(new Error('Review path unavailable'))
@@ -299,7 +336,6 @@ it('keeps completed agent work successful when the diff refresh fails', async ()
   expect(s.store.task(task.id).turns?.[0].status).toBe('completed')
   expect(s.store.task(task.id).error).toContain('Could not refresh changes')
 })
-
 it('retains the full conversation when a fresh session fails after a configuration change', async () => {
   const s = await setup(),
     prompts: string[] = []
@@ -324,7 +360,14 @@ it('retains the full conversation when a fresh session fails after a configurati
   s.store.patch({
     collection: 'tasks',
     id: task.id,
-    changes: { agentOverrides: { before: null, after: { model: 'another-model' } } },
+    changes: {
+      agentOverrides: {
+        before: null,
+        after: {
+          model: 'another-model',
+        },
+      },
+    },
   })
   await expect((await s.tasks.start(task.id)).done).rejects.toThrow('Provider disconnected')
   await (
@@ -333,7 +376,6 @@ it('retains the full conversation when a fresh session fails after a configurati
   expect(prompts[2]).toContain('Preserve the original requirement')
   expect(prompts[2]).toContain('assistant: Completed')
 })
-
 it('persists separate checkpoint diffs for completed and failed turns', async () => {
   const s = await setup()
   const { writeFile } = await import('node:fs/promises')
@@ -360,7 +402,10 @@ it('persists separate checkpoint diffs for completed and failed turns', async ()
     await s.tasks.start(task.id)
   ).done
   const first = s.store.task(task.id).turns?.[0]?.checkpoint
-  expect(first?.files[0]).toMatchObject({ before: 'original\n', after: 'first turn\n' })
+  expect(first?.files[0]).toMatchObject({
+    before: 'original\n',
+    after: 'first turn\n',
+  })
   await expect((await s.tasks.start(task.id)).done).rejects.toThrow('Provider failed')
   const turns = s.store.task(task.id).turns
   expect(turns?.[0]?.checkpoint).toEqual(first)
@@ -368,16 +413,23 @@ it('persists separate checkpoint diffs for completed and failed turns', async ()
     status: 'failed',
     checkpoint: {
       files: [
-        { path: 'hello.txt', before: 'first turn\n', after: 'partial failure\n', viewed: false },
+        {
+          path: 'hello.txt',
+          before: 'first turn\n',
+          after: 'partial failure\n',
+          viewed: false,
+        },
       ],
     },
   })
 })
-
 it('does not start provider work without a baseline and reports after-snapshot failures separately', async () => {
   const s = await setup()
   const run = vi.fn<AgentAdapter['run']>().mockResolvedValue(undefined)
-  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run,
+  })
   const task = s.tasks.create({
     title: 'Capture failure',
     repositoryId: 'repo',
@@ -404,12 +456,13 @@ it('does not start provider work without a baseline and reports after-snapshot f
     turns: [
       {
         status: 'completed',
-        checkpoint: { error: 'Could not capture turn changes: After snapshot unavailable' },
+        checkpoint: {
+          error: 'Could not capture turn changes: After snapshot unavailable',
+        },
       },
     ],
   })
 })
-
 it('applies task permission overrides and starts a fresh provider session', async () => {
   const s = await setup()
   const runs: AgentRun[] = []
@@ -429,7 +482,12 @@ it('applies task permission overrides and starts a fresh provider session', asyn
   await (
     await s.tasks.start(task.id)
   ).done
-  s.store.updateTask(task.id, (task) => ({ ...task, agentOverrides: { permission: 'read-only' } }))
+  s.store.updateTask(task.id, (task) => ({
+    ...task,
+    agentOverrides: {
+      permission: 'read-only',
+    },
+  }))
   await (
     await s.tasks.start(task.id)
   ).done
@@ -437,7 +495,6 @@ it('applies task permission overrides and starts a fresh provider session', asyn
   expect(runs[1].sessionId).toBeUndefined()
   expect(s.store.get().agents[0].permission).toBe('ask')
 })
-
 it.each([false, true])('steers ahead of queued input and preserves paused=%s', async (paused) => {
   const s = await setup()
   const runs: AgentRun[] = []
@@ -474,7 +531,6 @@ it.each([false, true])('steers ahead of queued input and preserves paused=%s', a
   await s.tasks.steer(task.id, 'steering', 'Change direction now')
   expect(s.store.task(task.id).messages.filter((m) => m.id === 'steering')).toHaveLength(1)
 })
-
 it('rejects steering after the active turn has finished without queuing input', async () => {
   const s = await setup()
   const task = s.tasks.create({
@@ -486,7 +542,6 @@ it('rejects steering after the active turn has finished without queuing input', 
   await expect(s.tasks.steer(task.id, 'steer', 'New direction')).rejects.toThrow('turn finished')
   expect(s.store.task(task.id).queue ?? []).toEqual([])
 })
-
 it('Stop during steering leaves the instruction queued without restarting', async () => {
   const s = await setup()
   let release = () => {}
@@ -522,7 +577,6 @@ it('Stop during steering leaves the instruction queued without restarting', asyn
   expect(s.store.task(task.id).queue?.map((m) => m.id)).toEqual(['steering'])
   expect(s.store.task(task.id).queuePaused).toBe(true)
 })
-
 it('runs a task-specific harness without a saved agent and resets sessions after harness changes', async () => {
   const s = await setup()
   const runs: AgentRun[] = []
@@ -534,7 +588,10 @@ it('runs a task-specific harness without a saved agent and resets sessions after
       run.onText('Done')
     },
   })
-  s.store.update((w) => ({ ...w, agents: [] }))
+  s.store.update((w) => ({
+    ...w,
+    agents: [],
+  }))
   const task = s.tasks.create({
     title: 'Inline',
     repositoryId: 'repo',
@@ -552,7 +609,12 @@ it('runs a task-specific harness without a saved agent and resets sessions after
   s.store.patch({
     collection: 'tasks',
     id: task.id,
-    changes: { harness: { before: null, after: harness } },
+    changes: {
+      harness: {
+        before: null,
+        after: harness,
+      },
+    },
   })
   await (
     await s.tasks.start(task.id)
@@ -569,7 +631,15 @@ it('runs a task-specific harness without a saved agent and resets sessions after
   s.store.patch({
     collection: 'tasks',
     id: task.id,
-    changes: { harness: { before: harness, after: { ...harness, model: 'another-model' } } },
+    changes: {
+      harness: {
+        before: harness,
+        after: {
+          ...harness,
+          model: 'another-model',
+        },
+      },
+    },
   })
   await (
     await s.tasks.start(task.id)
@@ -580,12 +650,20 @@ it('runs a task-specific harness without a saved agent and resets sessions after
 it('applies project resources with custom-agent overrides and resets changed sessions', async () => {
   const s = await setup(),
     runs: AgentRun[] = []
-  const skill = { name: 'review', description: 'Review', content: 'Project rules', enabled: true }
+  const skill = {
+    name: 'review',
+    description: 'Review',
+    content: 'Project rules',
+    enabled: true,
+  }
   s.store.update((workspace) => ({
     ...workspace,
     repositories: workspace.repositories.map((repo) => ({
       ...repo,
-      resources: { mcpServers: [], skills: [skill] },
+      resources: {
+        mcpServers: [],
+        skills: [skill],
+      },
     })),
   }))
   vi.spyOn(s.agents, 'get').mockResolvedValue({
@@ -610,7 +688,15 @@ it('applies project resources with custom-agent overrides and resets changed ses
     ...workspace,
     agents: workspace.agents.map((agent) => ({
       ...agent,
-      resources: { mcpServers: [], skills: [{ ...skill, enabled: false }] },
+      resources: {
+        mcpServers: [],
+        skills: [
+          {
+            ...skill,
+            enabled: false,
+          },
+        ],
+      },
     })),
   }))
   await (
@@ -619,7 +705,6 @@ it('applies project resources with custom-agent overrides and resets changed ses
   expect(runs[1].agent.instructions).not.toContain('Project rules')
   expect(runs[1].sessionId).toBeUndefined()
 })
-
 it.each([false, true])(
   'steers natively without restarting or replaying accepted input (paused=%s)',
   async (paused) => {
@@ -657,7 +742,11 @@ it.each([false, true])(
     await s.tasks.steer(task.id, 'live', 'New direction')
     await s.tasks.steer(task.id, 'live', 'New direction')
     expect(steer).toHaveBeenCalledTimes(1)
-    expect(steer).toHaveBeenCalledWith({ id: 'live', prompt: 'New direction', attachments: [] })
+    expect(steer).toHaveBeenCalledWith({
+      id: 'live',
+      prompt: 'New direction',
+      attachments: [],
+    })
     expect(runs[0].signal.aborted).toBe(false)
     expect(
       s.store
@@ -675,7 +764,6 @@ it.each([false, true])(
     expect(runs[1]?.sessionId).toBe(paused ? undefined : 'native-session')
   },
 )
-
 it('retains unconfirmed native steering in a paused queue and does not automatically replay it', async () => {
   const s = await setup()
   let release = () => {}
@@ -711,7 +799,6 @@ it('retains unconfirmed native steering in a paused queue and does not automatic
   expect(s.store.task(task.id).queuePaused).toBe(true)
   expect(s.store.task(task.id).queue?.map((m) => m.id)).toEqual(['live'])
 })
-
 it('does not strand input received between the final queue check and run cleanup', async () => {
   const s = await setup()
   const prompts: string[] = []
@@ -746,7 +833,6 @@ it('does not strand input received between the final queue check and run cleanup
   expect(prompts).toEqual(['user: Original', 'user: Arrived at handoff'])
   expect(s.store.task(task.id).queue).toEqual([])
 })
-
 it.each(['pause', 'stop'] as const)(
   'preserves %s requested while native steering is awaiting acknowledgement',
   async (action) => {
@@ -793,13 +879,12 @@ it.each(['pause', 'stop'] as const)(
     expect(s.store.task(task.id).consumedMessageIds).toContain('live')
   },
 )
-
 it.each(['live', 'finished', 'declined'] as const)(
   'delivers Astra message-form answers when %s',
   async (timing) => {
     const s = await setup()
     const { questionPromptSchema } = await import('@dovo/protocol')
-    const prompt = questionPromptSchema.parse({
+    const prompt = decode(questionPromptSchema, {
       title: 'Choose output',
       blocking: false,
       questions: [
@@ -807,7 +892,12 @@ it.each(['live', 'finished', 'declined'] as const)(
           id: 'style',
           header: 'Style',
           question: 'Which output style?',
-          options: [{ value: 'Compact', label: 'Compact' }],
+          options: [
+            {
+              value: 'Compact',
+              label: 'Compact',
+            },
+          ],
         },
       ],
     })
@@ -840,8 +930,22 @@ it.each(['live', 'finished', 'declined'] as const)(
     await vi.waitFor(() => expect(s.questions.list()).toHaveLength(1))
     if (timing !== 'live') await execution.done
     const id = s.questions.list()[0].id
-    s.questions.respond(id, timing === 'declined' ? null : { style: ['Compact'] })
-    s.questions.respond(id, timing === 'declined' ? null : { style: ['Compact'] })
+    s.questions.respond(
+      id,
+      timing === 'declined'
+        ? null
+        : {
+            style: ['Compact'],
+          },
+    )
+    s.questions.respond(
+      id,
+      timing === 'declined'
+        ? null
+        : {
+            style: ['Compact'],
+          },
+    )
     await vi.waitFor(() =>
       expect(timing === 'live' ? steer.mock.calls.length : runs.length).toBe(
         timing === 'live' ? 1 : 2,
@@ -861,7 +965,6 @@ it.each(['live', 'finished', 'declined'] as const)(
     expect(steer).toHaveBeenCalledTimes(timing === 'live' ? 1 : 0)
   },
 )
-
 it('Stop dismisses Astra message forms without sending an answer or starting another turn', async () => {
   const s = await setup()
   const { questionPromptSchema } = await import('@dovo/protocol')
@@ -869,10 +972,16 @@ it('Stop dismisses Astra message forms without sending an answer or starting ano
     probe: vi.fn<AgentAdapter['probe']>(),
     run: async (run) => {
       run.onQuestions?.(
-        questionPromptSchema.parse({
+        decode(questionPromptSchema, {
           title: 'Optional',
           blocking: false,
-          questions: [{ id: 'one', header: '', question: 'Any context?' }],
+          questions: [
+            {
+              id: 'one',
+              header: '',
+              question: 'Any context?',
+            },
+          ],
         }),
       )
       await run.approve('Wait', 'Fixture')
@@ -895,7 +1004,6 @@ it('Stop dismisses Astra message forms without sending an answer or starting ano
   expect(runSpy).toHaveBeenCalledTimes(1)
   expect(s.store.task(task.id).messages.filter((m) => m.role === 'user')).toHaveLength(1)
 })
-
 it('queues a second form answer while the first native steering acknowledgement is pending', async () => {
   const s = await setup()
   const { questionPromptSchema } = await import('@dovo/protocol')
@@ -917,10 +1025,16 @@ it('queues a second form answer while the first native steering acknowledgement 
         run.onSteer?.(steer)
         for (const question of ['First question?', 'Second question?'])
           run.onQuestions?.(
-            questionPromptSchema.parse({
+            decode(questionPromptSchema, {
               title: 'Question',
               blocking: false,
-              questions: [{ id: 'answer', header: '', question }],
+              questions: [
+                {
+                  id: 'answer',
+                  header: '',
+                  question,
+                },
+              ],
             }),
           )
         await completed
@@ -936,9 +1050,13 @@ it('queues a second form answer while the first native steering acknowledgement 
   const execution = await s.tasks.start(task.id)
   await vi.waitFor(() => expect(s.questions.list()).toHaveLength(2))
   const [first, second] = s.questions.list()
-  s.questions.respond(first.id, { answer: ['One'] })
+  s.questions.respond(first.id, {
+    answer: ['One'],
+  })
   await vi.waitFor(() => expect(steer).toHaveBeenCalledTimes(1))
-  s.questions.respond(second.id, { answer: ['Two'] })
+  s.questions.respond(second.id, {
+    answer: ['Two'],
+  })
   expect(s.store.task(task.id).queue?.map((m) => m.text)).toContain('Second question?\nTwo')
   accept()
   finish()
@@ -951,25 +1069,35 @@ it('queues a second form answer while the first native steering acknowledgement 
   ).toEqual(['Original', 'First question?\nOne', 'Second question?\nTwo'])
   expect(s.store.task(task.id).queue).toEqual([])
 })
-
 it('persists exposed reasoning once per turn item alongside tools and flushes at completion', async () => {
   const s = await setup()
   s.store.update((workspace) => ({
     ...workspace,
-    agents: workspace.agents.map((agent) => ({ ...agent, provider: 'codex' })),
+    agents: workspace.agents.map((agent) => ({
+      ...agent,
+      provider: 'codex',
+    })),
   }))
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
     run: async (run) => {
       run.onEvent?.('item/started', {
-        item: { id: 'reason', type: 'reasoning', summary: [], content: ['hidden'] },
+        item: {
+          id: 'reason',
+          type: 'reasoning',
+          summary: [],
+          content: ['hidden'],
+        },
       })
       run.onEvent?.('item/reasoning/summaryTextDelta', {
         itemId: 'reason',
         summaryIndex: 0,
         delta: 'Checking the files.',
       })
-      run.onEvent?.('item/reasoning/textDelta', { itemId: 'reason', delta: 'hidden' })
+      run.onEvent?.('item/reasoning/textDelta', {
+        itemId: 'reason',
+        delta: 'hidden',
+      })
       run.onEvent?.('item/completed', {
         item: {
           id: 'read',
@@ -997,11 +1125,12 @@ it('persists exposed reasoning once per turn item alongside tools and flushes at
   expect(JSON.parse(summary.payload)).toMatchObject({
     turnId: s.store.task(task.id).turns![0]!.id,
     status: 'completed',
-    reasoning: { text: 'Checking the files.' },
+    reasoning: {
+      text: 'Checking the files.',
+    },
   })
   expect(s.activity.list('hidden', '', 0, task.id).events).toEqual([])
 })
-
 it('refuses to execute legacy task configuration with a provider different from its first turn', async () => {
   const s = await setup()
   s.store.update((workspace) => ({
@@ -1014,7 +1143,13 @@ it('refuses to execute legacy task configuration with a provider different from 
         agentId: 'agent',
         status: 'review',
         createdAt: '',
-        messages: [{ id: 'first', role: 'user', text: 'Continue' }],
+        messages: [
+          {
+            id: 'first',
+            role: 'user',
+            text: 'Continue',
+          },
+        ],
         files: [],
         draft: '',
         example: false,
@@ -1048,7 +1183,6 @@ it('refuses to execute legacy task configuration with a provider different from 
   await expect(run.done).rejects.toThrow('This task uses codex')
   expect(execute).not.toHaveBeenCalled()
 })
-
 it.each(['custom', 'built-in'] as const)(
   'uses the %s choice made in a draft for the first send, including its instructions and resources',
   async (choice) => {
@@ -1080,7 +1214,12 @@ it.each(['custom', 'built-in'] as const)(
       repositoryId: 'repo',
       agentId: choice === 'custom' ? '' : custom.id,
       harness: choice === 'custom' ? builtin : null,
-      agentOverrides: choice === 'built-in' ? { model: 'old-override' } : undefined,
+      agentOverrides:
+        choice === 'built-in'
+          ? {
+              model: 'old-override',
+            }
+          : undefined,
       status: 'draft',
       createdAt: '',
       messages: [],
@@ -1097,9 +1236,18 @@ it.each(['custom', 'built-in'] as const)(
       collection: 'tasks',
       id: task.id,
       changes: {
-        agentId: { before: task.agentId, after: choice === 'custom' ? custom.id : '' },
-        harness: { before: task.harness, after: choice === 'custom' ? null : builtin },
-        agentOverrides: { before: task.agentOverrides, after: null },
+        agentId: {
+          before: task.agentId,
+          after: choice === 'custom' ? custom.id : '',
+        },
+        harness: {
+          before: task.harness,
+          after: choice === 'custom' ? null : builtin,
+        },
+        agentOverrides: {
+          before: task.agentOverrides,
+          after: null,
+        },
       },
     })
     if (choice === 'custom')
@@ -1109,7 +1257,11 @@ it.each(['custom', 'built-in'] as const)(
         changes: {
           agentOverrides: {
             before: null,
-            after: { model: 'task-model', reasoning: 'high', permission: 'workspace-write' },
+            after: {
+              model: 'task-model',
+              reasoning: 'high',
+              permission: 'workspace-write',
+            },
           },
         },
       })
@@ -1143,7 +1295,10 @@ it.each(['custom', 'built-in'] as const)(
             provider: 'codex',
             model: '',
             permission: 'ask',
-            resources: { mcpServers: [], skills: [] },
+            resources: {
+              mcpServers: [],
+              skills: [],
+            },
           }
     expect(configured).toMatchObject(expected)
     expect(configured.args).toEqual(choice === 'custom' ? custom.args : undefined)
@@ -1155,7 +1310,11 @@ it.each(['custom', 'built-in'] as const)(
     expect(s.store.task(task.id).agentId).toBe(choice === 'custom' ? custom.id : '')
     expect(s.store.task(task.id).agentOverrides).toEqual(
       choice === 'custom'
-        ? { model: 'task-model', reasoning: 'high', permission: 'workspace-write' }
+        ? {
+            model: 'task-model',
+            reasoning: 'high',
+            permission: 'workspace-write',
+          }
         : undefined,
     )
     expect(s.store.get().agents.find((agent) => agent.id === custom.id)).toEqual(custom)
@@ -1167,3 +1326,19 @@ it.each(['custom', 'built-in'] as const)(
     })
   },
 )
+
+it('settles task admission racing executor shutdown without leaving a running task', async () => {
+  const { Effect, Fiber, Exit } = await import('effect')
+  const s = await setup()
+  const task = s.tasks.create({
+    title: 'Race',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Race shutdown',
+  })
+  const starting = Effect.runFork(s.tasks.startEffect(task.id))
+  await s.tasks.dispose()
+  const result = await Effect.runPromise(Fiber.await(starting).pipe(Effect.timeout('1 second')))
+  expect(Exit.isFailure(result)).toBe(true)
+  expect(s.store.task(task.id).status).not.toBe('running')
+})

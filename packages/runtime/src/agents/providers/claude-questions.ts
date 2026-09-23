@@ -1,14 +1,21 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { questionPromptSchema } from '@dovo/protocol'
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentRun } from '../types.js'
-const request = z.object({
-  questions: z.array(
-    z.object({
-      question: z.string(),
-      header: z.string(),
-      options: z.array(z.object({ label: z.string(), description: z.string() })),
-      multiSelect: z.boolean().optional(),
+const request = mutableStruct({
+  questions: mutableArray(
+    mutableStruct({
+      question: Schema.String,
+      header: Schema.String,
+      options: mutableArray(
+        mutableStruct({
+          label: Schema.String,
+          description: Schema.String,
+        }),
+      ),
+      multiSelect: Schema.optional(Schema.Boolean),
     }),
   ),
 })
@@ -17,14 +24,17 @@ export async function claudeQuestions(
   run: AgentRun,
   signal: AbortSignal,
 ): Promise<Awaited<ReturnType<CanUseTool>>> {
-  const parsed = request.parse(input)
-  const prompt = questionPromptSchema.parse({
+  const parsed = decode(request, input)
+  const prompt = decode(questionPromptSchema, {
     title: 'Agent needs your input',
     questions: parsed.questions.map((q, i) => ({
       id: String(i),
       header: q.header,
       question: q.question,
-      options: q.options.map((o) => ({ ...o, value: o.label })),
+      options: q.options.map((o) => ({
+        ...o,
+        value: o.label,
+      })),
       multiple: q.multiSelect,
     })),
   })
@@ -39,5 +49,8 @@ export async function claudeQuestions(
           ),
         },
       }
-    : { behavior: 'deny', message: 'User declined to answer in Dovo Studio' }
+    : {
+        behavior: 'deny',
+        message: 'User declined to answer in Dovo Studio',
+      }
 }

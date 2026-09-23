@@ -1,12 +1,13 @@
+import { mutableStruct } from '@dovo/protocol'
+import { decodeResult, decode } from '@dovo/protocol'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stripVTControlCharacters } from 'node:util'
 import { compare, valid } from 'semver'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import type { AgentDiscovery, CommandSettings } from '@dovo/protocol'
 import { exec, processEnvironment } from '../process.js'
-
 export interface AdapterDiagnostic {
   id: string
   name: string
@@ -20,7 +21,6 @@ export interface AdapterDiagnostic {
   guidance: string
   documentationUrl: string
 }
-
 interface Check {
   id: string
   name: string
@@ -29,18 +29,23 @@ interface Check {
   packageName?: string
   guidance: string
   documentationUrl: string
-  inspect: () => Promise<{ version: string | null; detail: string }>
+  inspect: () => Promise<{
+    version: string | null
+    detail: string
+  }>
 }
-
-const packageSchema = z.object({ name: z.string(), version: z.string() })
-
+const packageSchema = mutableStruct({
+  name: Schema.String,
+  version: Schema.String,
+})
 async function installedPackageVersion(name: string) {
   const entry = name === '@modelcontextprotocol/sdk' ? `${name}/client/index.js` : name
   let directory = dirname(fileURLToPath(import.meta.resolve(entry)))
   // Package exports often hide package.json; find the manifest belonging to the resolved module.
   for (let depth = 0; depth < 6; depth++) {
     try {
-      const manifest = packageSchema.safeParse(
+      const manifest = decodeResult(
+        packageSchema,
         JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')),
       )
       if (manifest.success && manifest.data.name === name) return manifest.data.version
@@ -53,7 +58,6 @@ async function installedPackageVersion(name: string) {
   }
   throw new Error('Installed package manifest could not be located.')
 }
-
 function reportedVersion(output: string) {
   const clean = stripVTControlCharacters(output)
   const candidate = clean.match(
@@ -61,7 +65,6 @@ function reportedVersion(output: string) {
   )?.[1]
   return candidate ? valid(candidate) : null
 }
-
 function executable(command: string) {
   return async () => {
     const { stdout } = await exec(command, ['--version'], {
@@ -75,14 +78,12 @@ function executable(command: string) {
     }
   }
 }
-
 function sdk(name: string) {
   return async () => ({
     version: await installedPackageVersion(name),
     detail: 'Adapter dependency bundled with this Dovo runtime.',
   })
 }
-
 function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
   const result: Check[] = [
     {
@@ -143,8 +144,14 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
   ]
   const configured = new Set<string>(['codex\0' + settings.codex])
   for (const agent of [
-    { provider: 'claude' as const, endpoint: settings.claude },
-    { provider: 'acp' as const, endpoint: settings.acp },
+    {
+      provider: 'claude' as const,
+      endpoint: settings.claude,
+    },
+    {
+      provider: 'acp' as const,
+      endpoint: settings.acp,
+    },
     ...agents,
   ]) {
     if (agent.provider === 'opencode') continue
@@ -157,9 +164,13 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
       provider: agent.provider,
       kind: 'executable',
       ...(agent.provider === 'claude'
-        ? { packageName: '@anthropic-ai/claude-code' }
+        ? {
+            packageName: '@anthropic-ai/claude-code',
+          }
         : agent.provider === 'codex'
-          ? { packageName: '@openai/codex' }
+          ? {
+              packageName: '@openai/codex',
+            }
           : {}),
       inspect: executable(command),
       guidance:
@@ -204,9 +215,13 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
             : {},
         })
         if (!response.ok) throw new Error(`OpenCode health check returned HTTP ${response.status}.`)
-        const health = z
-          .object({ healthy: z.literal(true), version: z.string() })
-          .parse(await response.json())
+        const health = decode(
+          mutableStruct({
+            healthy: Schema.Literal(true),
+            version: Schema.String,
+          }),
+          await response.json(),
+        )
         return {
           version: valid(health.version),
           detail: `Server responds at ${url.origin}. Model credentials were not tested.`,
@@ -220,7 +235,10 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
 /** Read-only checks: no model turns, logins, updates, or install commands are executed. */
 export async function checkAdapterUpdates(
   settings: CommandSettings,
-  options: { checkUpdates?: boolean; agents?: AgentDiscovery[] } = {},
+  options: {
+    checkUpdates?: boolean
+    agents?: AgentDiscovery[]
+  } = {},
 ): Promise<AdapterDiagnostic[]> {
   const releases = new Map<string, Promise<string>>()
   const latest = (name: string) => {
@@ -229,10 +247,12 @@ export async function checkAdapterUpdates(
       pending = (async () => {
         const response = await fetch(
           `https://registry.npmjs.org/${encodeURIComponent(name)}/latest`,
-          { signal: AbortSignal.timeout(5000) },
+          {
+            signal: AbortSignal.timeout(5000),
+          },
         )
         if (!response.ok) throw new Error(`Update registry returned HTTP ${response.status}.`)
-        const manifest = packageSchema.parse(await response.json())
+        const manifest = decode(packageSchema, await response.json())
         if (manifest.name !== name || !valid(manifest.version))
           throw new Error('Update registry returned an invalid package version.')
         return manifest.version

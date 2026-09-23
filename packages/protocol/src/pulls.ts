@@ -1,139 +1,166 @@
-import { z } from 'zod'
+import { mutableArray, mutableStruct } from './schema.js'
+import { urlSchema, maxValue, minValue, refine } from './schema.js'
+import { Schema } from 'effect'
 import { taskHarnessSchema, taskPullSchema } from './workspace.js'
 import { forgeCapabilitiesSchema, forgeProviderSchema } from './forges.js'
-const link = z.url({ protocol: /^https?$/ })
-export const pullSummarySchema = z.object({
-  provider: forgeProviderSchema.optional(),
-  number: z.number().int().positive(),
-  title: z.string(),
+const link = urlSchema({
+  protocol: /^https?$/,
+})
+export const pullSummarySchema = mutableStruct({
+  provider: Schema.optional(forgeProviderSchema),
+  number: Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.positive()),
+  title: Schema.String,
   url: link,
-  state: z.enum(['open', 'closed', 'merged']),
-  draft: z.boolean(),
-  author: z.string(),
-  updatedAt: z.string(),
-  head: z.string(),
-  base: z.string(),
-  labels: z.array(z.string()),
-  viewerIsAuthor: z.boolean().optional(),
-  viewerReviewRequested: z.boolean().optional(),
-  checksState: z.string().nullable().optional(),
-  reviewDecision: z.string().nullable().optional(),
-  statusError: z.string().optional(),
+  state: Schema.Literal('open', 'closed', 'merged'),
+  draft: Schema.Boolean,
+  author: Schema.String,
+  updatedAt: Schema.String,
+  head: Schema.String,
+  base: Schema.String,
+  labels: mutableArray(Schema.String),
+  viewerIsAuthor: Schema.optional(Schema.Boolean),
+  viewerReviewRequested: Schema.optional(Schema.Boolean),
+  checksState: Schema.optional(Schema.NullOr(Schema.String)),
+  reviewDecision: Schema.optional(Schema.NullOr(Schema.String)),
+  statusError: Schema.optional(Schema.String),
 })
-export const pullPageSchema = z.object({
-  cachedAt: z.string().optional(),
-  stale: z.boolean().optional(),
-  refreshError: z.string().optional(),
-  pulls: z.array(pullSummarySchema),
-  hasMore: z.boolean(),
-  page: z.number(),
+export const pullPageSchema = mutableStruct({
+  cachedAt: Schema.optional(Schema.String),
+  stale: Schema.optional(Schema.Boolean),
+  refreshError: Schema.optional(Schema.String),
+  pulls: mutableArray(pullSummarySchema),
+  hasMore: Schema.Boolean,
+  page: Schema.Number.pipe(Schema.finite()),
 })
-export const pullCommentSchema = z.object({
-  threadId: z.string().optional(),
-  resolved: z.boolean().optional(),
-  canResolve: z.boolean().optional(),
-  outdated: z.boolean().optional(),
-  commitId: z.string().optional(),
-  id: z.string(),
-  author: z.string(),
-  body: z.string(),
-  date: z.string(),
+export const pullCommentSchema = mutableStruct({
+  threadId: Schema.optional(Schema.String),
+  resolved: Schema.optional(Schema.Boolean),
+  canResolve: Schema.optional(Schema.Boolean),
+  outdated: Schema.optional(Schema.Boolean),
+  commitId: Schema.optional(Schema.String),
+  id: Schema.String,
+  author: Schema.String,
+  body: Schema.String,
+  date: Schema.String,
   url: link,
-  kind: z.enum(['comment', 'review', 'inline']),
-  state: z.string().optional(),
-  path: z.string().optional(),
-  line: z.number().nullish(),
-  replyTo: z.string().optional(),
-  diff: z.string().optional(),
+  kind: Schema.Literal('comment', 'review', 'inline'),
+  state: Schema.optional(Schema.String),
+  path: Schema.optional(Schema.String),
+  line: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
+  replyTo: Schema.optional(Schema.String),
+  diff: Schema.optional(Schema.String),
 })
-export const pullDetailSchema = z.object({
-  capabilities: forgeCapabilitiesSchema.optional(),
-  fileBaseUrl: link.optional(),
-  cachedAt: z.string().optional(),
-  stale: z.boolean().optional(),
-  refreshError: z.string().optional(),
-  pull: pullSummarySchema.extend({
-    ...taskPullSchema.pick({ headSha: true, baseSha: true, repositoryUrl: true }).shape,
-    ...taskPullSchema.pick({ provider: true, connectionId: true, headRef: true, cloneUrl: true })
-      .shape,
-    body: z.string(),
-    additions: z.number().nullable(),
-    deletions: z.number().nullable(),
-    changedFiles: z.number().nullable(),
-    mergeable: z.boolean().nullable(),
-    reviewers: z.array(z.string()),
-    assignees: z.array(z.string()),
+export const pullDetailSchema = mutableStruct({
+  capabilities: Schema.optional(forgeCapabilitiesSchema),
+  fileBaseUrl: Schema.optional(link),
+  cachedAt: Schema.optional(Schema.String),
+  stale: Schema.optional(Schema.Boolean),
+  refreshError: Schema.optional(Schema.String),
+  pull: mutableStruct({
+    ...pullSummarySchema.fields,
+    ...{
+      ...taskPullSchema.pick('headSha', 'baseSha', 'repositoryUrl').fields,
+      ...taskPullSchema.pick('provider', 'connectionId', 'headRef', 'cloneUrl').fields,
+      body: Schema.String,
+      additions: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
+      deletions: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
+      changedFiles: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
+      mergeable: Schema.NullOr(Schema.Boolean),
+      reviewers: mutableArray(Schema.String),
+      assignees: mutableArray(Schema.String),
+    },
   }),
-  comments: z.array(pullCommentSchema),
-  files: z.array(
-    z.object({
-      path: z.string(),
-      previousPath: z.string().optional(),
-      status: z.string(),
-      additions: z.number().nullable(),
-      deletions: z.number().nullable(),
-      patch: z.string().optional(),
+  comments: mutableArray(pullCommentSchema),
+  files: mutableArray(
+    mutableStruct({
+      path: Schema.String,
+      previousPath: Schema.optional(Schema.String),
+      status: Schema.String,
+      additions: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
+      deletions: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
+      patch: Schema.optional(Schema.String),
     }),
   ),
-  checks: z.array(
-    z.object({
-      name: z.string(),
-      status: z.string(),
-      url: link.optional(),
-      id: z.string().optional(),
-      summary: z.string().optional(),
-      details: z.string().optional(),
-      startedAt: z.string().optional(),
-      completedAt: z.string().optional(),
-      annotations: z
-        .array(
-          z.object({
-            path: z.string(),
-            startLine: z.number(),
-            endLine: z.number(),
-            level: z.string(),
-            message: z.string(),
-            title: z.string().optional(),
+  checks: mutableArray(
+    mutableStruct({
+      name: Schema.String,
+      status: Schema.String,
+      url: Schema.optional(link),
+      id: Schema.optional(Schema.String),
+      summary: Schema.optional(Schema.String),
+      details: Schema.optional(Schema.String),
+      startedAt: Schema.optional(Schema.String),
+      completedAt: Schema.optional(Schema.String),
+      annotations: Schema.optional(
+        mutableArray(
+          mutableStruct({
+            path: Schema.String,
+            startLine: Schema.Number.pipe(Schema.finite()),
+            endLine: Schema.Number.pipe(Schema.finite()),
+            level: Schema.String,
+            message: Schema.String,
+            title: Schema.optional(Schema.String),
           }),
-        )
-        .optional(),
+        ),
+      ),
     }),
   ),
-  warnings: z.array(z.string()),
+  warnings: mutableArray(Schema.String),
 })
-export type PullSummary = z.infer<typeof pullSummarySchema>
-export type PullPage = z.infer<typeof pullPageSchema>
-export type PullDetail = z.infer<typeof pullDetailSchema>
-export type PullComment = z.infer<typeof pullCommentSchema>
-
-export const pullTaskInputSchema = z
-  .object({
-    number: z.number().int().positive(),
-    agentId: z.string().max(200).default(''),
-    harness: taskHarnessSchema.optional(),
-    objective: z.string().trim().min(1).max(12000),
-    headSha: taskPullSchema.shape.headSha,
-    run: z.boolean().default(false),
-  })
-  .refine((input) => !(input.agentId && input.harness), {
+export type PullSummary = Schema.Schema.Type<typeof pullSummarySchema>
+export type PullPage = Schema.Schema.Type<typeof pullPageSchema>
+export type PullDetail = Schema.Schema.Type<typeof pullDetailSchema>
+export type PullComment = Schema.Schema.Type<typeof pullCommentSchema>
+export const pullTaskInputSchema = refine(
+  mutableStruct({
+    number: Schema.Number.pipe(Schema.finite())
+      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+      .pipe(Schema.positive()),
+    agentId: Schema.optionalWith(maxValue(Schema.String, 200), {
+      default: () => '',
+    }),
+    harness: Schema.optional(taskHarnessSchema),
+    objective: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 12000),
+    headSha: taskPullSchema.fields.headSha,
+    run: Schema.optionalWith(Schema.Boolean, {
+      default: () => false,
+    }),
+  }),
+  (input) => !(input.agentId && input.harness),
+  {
     path: ['agentId'],
     message: 'Choose either a saved agent or a built-in harness',
-  })
-export const pullTaskResponse = z.object({ id: z.string(), error: z.string().optional() })
+  },
+)
+export const pullTaskResponse = mutableStruct({
+  id: Schema.String,
+  error: Schema.optional(Schema.String),
+})
 // Synthetic safe headers preserve GitHub hunk coordinates; the UI displays the real path separately.
 export function pullFilePatch(file: Pick<PullDetail['files'][number], 'patch' | 'status'>) {
   return `--- ${file.status === 'added' ? '/dev/null' : 'a/file'}\n+++ ${file.status === 'removed' ? '/dev/null' : 'b/file'}\n${file.patch ?? ''}\n`
 }
-
-export const pullLineCommentSchema = z
-  .object({
-    number: z.number().int().positive(),
-    headSha: taskPullSchema.shape.headSha,
-    path: z.string().min(1),
-    side: z.enum(['additions', 'deletions']),
-    start: z.number().int().positive(),
-    end: z.number().int().positive(),
-    body: z.string().trim().min(1).max(10000),
-  })
-  .refine((v) => v.end >= v.start, 'Invalid line range')
-export const pullLineCommentResponse = z.object({ url: link })
+export const pullLineCommentSchema = refine(
+  mutableStruct({
+    number: Schema.Number.pipe(Schema.finite())
+      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+      .pipe(Schema.positive()),
+    headSha: taskPullSchema.fields.headSha,
+    path: minValue(Schema.String, 1),
+    side: Schema.Literal('additions', 'deletions'),
+    start: Schema.Number.pipe(Schema.finite())
+      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+      .pipe(Schema.positive()),
+    end: Schema.Number.pipe(Schema.finite())
+      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+      .pipe(Schema.positive()),
+    body: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 10000),
+  }),
+  (v) => v.end >= v.start,
+  'Invalid line range',
+)
+export const pullLineCommentResponse = mutableStruct({
+  url: link,
+})

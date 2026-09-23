@@ -1,11 +1,11 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { ChoicePicker } from '@dovo/studio-ui'
-import { useState } from 'react'
 import { useWorkspace, type Repository } from '@dovo/studio-core'
 import { FormField } from '@dovo/studio-ui'
 import { RepositoryActions } from './repository-actions'
 export function RepositoryCheckouts({ repo }: { repo: Repository }) {
   const { workspace } = useWorkspace()
-  const [taskId, setTaskId] = useState('')
+  const [taskId, setTaskId] = useApplicationState('')
   return (
     <div className="mt-4 space-y-3">
       <FormField label="Working directory">

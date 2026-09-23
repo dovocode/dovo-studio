@@ -1,5 +1,5 @@
+import { useApplicationState } from '../runtime/application-state'
 import { Icon } from './icon'
-import { useState } from 'react'
 import { Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native'
 import { Text } from './text'
 import { styles, colors } from './theme'
@@ -9,7 +9,10 @@ import { ChoiceMenu } from './choice-menu'
 export type ChoiceProps = {
   label: string
   value: string
-  items: Array<{ id: string; name: string }>
+  items: Array<{
+    id: string
+    name: string
+  }>
   onChange: (value: string) => void
   hideLabel?: boolean
   disabled?: boolean
@@ -26,8 +29,8 @@ export function Choice({
   compact = false,
   row = false,
 }: ChoiceProps) {
-  const [open, setOpen] = useState(false),
-    [search, setSearch] = useState('')
+  const [open, setOpen] = useApplicationState(false),
+    [search, setSearch] = useApplicationState('')
   const { fontScale } = useWindowDimensions()
   const insideSheet = useInsideSheet()
   const horizontal = row && fontScale < 1.5
@@ -50,7 +53,10 @@ export function Choice({
             key={item.id}
             testID={`Choose ${item.name}`}
             accessibilityRole="button"
-            accessibilityState={{ selected: item.id === value, disabled }}
+            accessibilityState={{
+              selected: item.id === value,
+              disabled,
+            }}
             disabled={disabled}
             style={({ pressed }) => [
               styles.row,
@@ -71,7 +77,16 @@ export function Choice({
               setOpen(false)
             }}
           >
-            <Text style={[styles.text, { flex: 1 }]}>{item.name}</Text>
+            <Text
+              style={[
+                styles.text,
+                {
+                  flex: 1,
+                },
+              ]}
+            >
+              {item.name}
+            </Text>
             {item.id === value && <Icon name="check" size={17} />}
           </Pressable>
         ))}
@@ -81,7 +96,11 @@ export function Choice({
     </>
   )
   return (
-    <View style={{ gap: row ? 0 : 4 }}>
+    <View
+      style={{
+        gap: row ? 0 : 4,
+      }}
+    >
       <View
         style={
           row
@@ -94,7 +113,9 @@ export function Choice({
                 paddingRight: 8,
                 paddingTop: horizontal ? 0 : 10,
               }
-            : { gap: 4 }
+            : {
+                gap: 4,
+              }
         }
       >
         {!hideLabel && (
@@ -116,9 +137,27 @@ export function Choice({
             {label}
           </Text>
         )}
-        <View style={row ? { flex: horizontal ? 1 : undefined, minWidth: 0 } : undefined}>
+        <View
+          style={
+            row
+              ? {
+                  flex: horizontal ? 1 : undefined,
+                  minWidth: 0,
+                }
+              : undefined
+          }
+        >
           {Platform.OS === 'ios' && items.length > 0 && items.length <= 12 ? (
-            <ChoiceMenu {...{ label, value, items, onChange, disabled }} compact={compactControl} />
+            <ChoiceMenu
+              {...{
+                label,
+                value,
+                items,
+                onChange,
+                disabled,
+              }}
+              compact={compactControl}
+            />
           ) : (
             <View
               style={{
@@ -134,7 +173,10 @@ export function Choice({
                 accessibilityValue={{
                   text: items.find((item) => item.id === value)?.name ?? value,
                 }}
-                accessibilityState={{ disabled, expanded: open }}
+                accessibilityState={{
+                  disabled,
+                  expanded: open,
+                }}
                 disabled={disabled}
                 onPress={() => {
                   setSearch('')
@@ -172,12 +214,19 @@ export function Choice({
       </View>
       {open &&
         (insideSheet ? (
-          <View style={{ gap: 8, paddingTop: 8 }}>
+          <View
+            style={{
+              gap: 8,
+              paddingTop: 8,
+            }}
+          >
             {searchField}
             <ScrollView
               nestedScrollEnabled
               keyboardShouldPersistTaps="handled"
-              style={{ maxHeight: 320 }}
+              style={{
+                maxHeight: 320,
+              }}
             >
               {optionRows}
             </ScrollView>

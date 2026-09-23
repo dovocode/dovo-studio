@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import { decode } from '@dovo/protocol'
+import { useEffect, useRef } from 'react'
 import { Switch, View } from 'react-native'
 import { pullCreateSchema, pullActionResultSchema, pullCreateOptionsSchema } from '@dovo/protocol'
 import { useRuntime } from '../runtime/provider'
@@ -8,7 +13,6 @@ import { Choice } from '../ui/choice'
 import { Action } from '../ui/action'
 import { Text } from '../ui/text'
 import { styles } from '../ui/theme'
-
 export function CreatePull({
   repositoryId: initial,
   onClose,
@@ -18,19 +22,19 @@ export function CreatePull({
   onClose: () => void
   onCreated: (repositoryId: string, number: number) => void
 }) {
-  const { read: call, connected, snapshot } = useRuntime()
+  const { read: call, connected, snapshot, callEffect } = useRuntime()
   const repos = snapshot?.workspace.repositories ?? []
-  const [repositoryId, setRepository] = useState(initial || repos[0]?.id || '')
-  const [title, setTitle] = useState(''),
-    [body, setBody] = useState(''),
-    [head, setHead] = useState(''),
-    [base, setBase] = useState(''),
-    [draft, setDraft] = useState(false)
-  const [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+  const [repositoryId, setRepository] = useApplicationState(initial || repos[0]?.id || '')
+  const [title, setTitle] = useApplicationState(''),
+    [body, setBody] = useApplicationState(''),
+    [head, setHead] = useApplicationState(''),
+    [base, setBase] = useApplicationState(''),
+    [draft, setDraft] = useApplicationState(false)
+  const [error, setError] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
-  const [supportsDraft, setSupportsDraft] = useState(false)
-  const [sourceTask, setSourceTask] = useState('')
+  const [supportsDraft, setSupportsDraft] = useApplicationState(false)
+  const [sourceTask, setSourceTask] = useApplicationState('')
   const sourceTasks = (snapshot?.workspace.tasks ?? []).filter(
     (task) => task.repositoryId === repositoryId && task.workItem && task.checkoutBranch,
   )
@@ -39,36 +43,72 @@ export function CreatePull({
     setSupportsDraft(false)
     setDraft(false)
     if (repositoryId)
-      void call('/api/scm/pulls/options/read', { repositoryId }, pullCreateOptionsSchema)
-        .then((value) => {
-          if (active) setSupportsDraft(value.draft)
-        })
-        .catch((cause) => {
-          if (active) setError(String(cause))
-        })
+      void runClientEffect(
+        callEffect(
+          '/api/scm/pulls/options/read',
+          {
+            repositoryId,
+          },
+          pullCreateOptionsSchema,
+        )
+          .pipe(
+            Effect.flatMap((value) =>
+              nativeEffect(() => {
+                if (active) setSupportsDraft(value.draft)
+              }),
+            ),
+          )
+          .pipe(
+            Effect.catchAll((cause) =>
+              nativeEffect(() => {
+                if (active) setError(String(cause))
+              }),
+            ),
+          ),
+      )
     return () => {
       active = false
     }
   }, [call, repositoryId])
-  const submit = async () => {
-    if (pending.current) return
-    pending.current = true
-    setBusy(true)
-    setError('')
-    try {
-      const input = pullCreateSchema.parse({ title, body, head, base, draft })
-      const result = await call(
-        '/api/scm/pulls/create',
-        { repositoryId, ...input },
-        pullActionResultSchema,
-      )
-      onCreated(repositoryId, result.number)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      pending.current = false
-      setBusy(false)
-    }
+  const submit = () => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (pending.current) return
+        pending.current = true
+        setBusy(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          const input = decode(pullCreateSchema, {
+            title,
+            body,
+            head,
+            base,
+            draft,
+          })
+          const result = yield* callEffect(
+            '/api/scm/pulls/create',
+            {
+              repositoryId,
+              ...input,
+            },
+            pullActionResultSchema,
+          )
+          onCreated(repositoryId, result.number)
+        }).pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              setError(cause instanceof Error ? cause.message : String(cause))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              pending.current = false
+              setBusy(false)
+            }).pipe(Effect.orDie),
+          ),
+        )
+      }),
+    )
   }
   return (
     <Sheet title="Create pull request" onClose={onClose} busy={busy}>
@@ -80,7 +120,10 @@ export function CreatePull({
           setSourceTask('')
         }}
         disabled={busy}
-        items={repos.map((repo) => ({ id: repo.id, name: repo.name }))}
+        items={repos.map((repo) => ({
+          id: repo.id,
+          name: repo.name,
+        }))}
       />
       <Field label="Title" value={title} onChangeText={setTitle} editable={!busy} />
       {!!sourceTasks.length && (
@@ -90,8 +133,14 @@ export function CreatePull({
           value={sourceTask}
           disabled={busy}
           items={[
-            { id: '', name: 'Choose a task…' },
-            ...sourceTasks.map((task) => ({ id: task.id, name: task.title })),
+            {
+              id: '',
+              name: 'Choose a task…',
+            },
+            ...sourceTasks.map((task) => ({
+              id: task.id,
+              name: task.title,
+            })),
           ]}
           onChange={(id) => {
             setSourceTask(id)
@@ -128,10 +177,20 @@ export function CreatePull({
         onChangeText={setBody}
         editable={!busy}
         multiline
-        style={{ minHeight: 130, textAlignVertical: 'top' }}
+        style={{
+          minHeight: 130,
+          textAlignVertical: 'top',
+        }}
       />
       {supportsDraft && (
-        <View style={[styles.row, { justifyContent: 'space-between' }]}>
+        <View
+          style={[
+            styles.row,
+            {
+              justifyContent: 'space-between',
+            },
+          ]}
+        >
           <Text style={styles.text}>Draft</Text>
           <Switch
             accessibilityLabel="Draft pull request"

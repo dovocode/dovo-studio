@@ -1,5 +1,6 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { BookMarked, Lock, Globe } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import {
   githubRepositoryPageSchema,
   useWorkspace,
@@ -7,7 +8,6 @@ import {
   type GithubRepositoryPage,
 } from '@dovo/studio-core'
 import { Button, FormField, Input } from '@dovo/studio-ui'
-
 export function GithubRepositoryPicker({
   onSelect,
   onClose,
@@ -16,11 +16,13 @@ export function GithubRepositoryPicker({
   onClose: () => void
 }) {
   const { request, connected } = useWorkspace()
-  const [load, setLoad] = useState({ page: 1 })
-  const [data, setData] = useState<GithubRepositoryPage | null>(null)
-  const [filter, setFilter] = useState('')
-  const [busy, setBusy] = useState(true)
-  const [error, setError] = useState('')
+  const [load, setLoad] = useApplicationState({
+    page: 1,
+  })
+  const [data, setData] = useApplicationState<GithubRepositoryPage | null>(null)
+  const [filter, setFilter] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(true)
+  const [error, setError] = useApplicationState('')
   useEffect(() => {
     let active = true
     setBusy(true)
@@ -80,7 +82,11 @@ export function GithubRepositoryPicker({
             type="button"
             variant="outline"
             disabled={busy || !connected}
-            onClick={() => setLoad({ ...load })}
+            onClick={() =>
+              setLoad({
+                ...load,
+              })
+            }
           >
             Retry
           </Button>
@@ -143,7 +149,10 @@ export function GithubRepositoryPicker({
             variant="outline"
             disabled={busy || !connected}
             onClick={() => {
-              if (data.nextPage !== null) setLoad({ page: data.nextPage })
+              if (data.nextPage !== null)
+                setLoad({
+                  page: data.nextPage,
+                })
             }}
           >
             Load more

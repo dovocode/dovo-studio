@@ -1,25 +1,26 @@
-import { z } from 'zod'
+import { mutableStruct } from './schema.js'
+import { minValue, maxValue } from './schema.js'
+import { Schema } from 'effect'
 import type { Task } from './workspace.js'
-
-export const liveActivityRegistrationSchema = z.object({
-  activityId: z.string().min(1).max(200),
-  taskId: z.string().min(1).max(200),
-  turnId: z.string().min(1).max(200),
-  pushToken: z.string().regex(/^[a-fA-F0-9]{32,512}$/),
+export const liveActivityRegistrationSchema = mutableStruct({
+  activityId: maxValue(minValue(Schema.String, 1), 200),
+  taskId: maxValue(minValue(Schema.String, 1), 200),
+  turnId: maxValue(minValue(Schema.String, 1), 200),
+  pushToken: Schema.String.pipe(Schema.pattern(/^[a-fA-F0-9]{32,512}$/)),
 })
-export const liveActivityStatusSchema = z.object({
-  configured: z.boolean(),
-  environment: z.enum(['sandbox', 'production']),
-  error: z.string().nullable(),
+export const liveActivityStatusSchema = mutableStruct({
+  configured: Schema.Boolean,
+  environment: Schema.Literal('sandbox', 'production'),
+  error: Schema.NullOr(Schema.String),
 })
-export const liveTaskPropsSchema = z.object({
-  title: z.string(),
-  project: z.string(),
-  device: z.string(),
-  status: z.enum(['Working', 'Needs input', 'Done', 'Failed', 'Stopped']),
-  startedAt: z.number(),
+export const liveTaskPropsSchema = mutableStruct({
+  title: Schema.String,
+  project: Schema.String,
+  device: Schema.String,
+  status: Schema.Literal('Working', 'Needs input', 'Done', 'Failed', 'Stopped'),
+  startedAt: Schema.Number.pipe(Schema.finite()),
 })
-export type LiveTaskProps = z.infer<typeof liveTaskPropsSchema>
+export type LiveTaskProps = Schema.Schema.Type<typeof liveTaskPropsSchema>
 export function liveTaskProps(
   task: Task,
   device: string,

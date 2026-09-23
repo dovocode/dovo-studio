@@ -1,5 +1,6 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { ChoicePicker } from '@dovo/studio-ui'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import {
   comparePulls,
   matchesPull,
@@ -25,20 +26,23 @@ import { ForgeConnections } from '../forge-connections'
 import { SourcePicker } from '../source-picker'
 export default function PullRequestsView({ entityId }: { entityId?: string }) {
   const { activeRuntimeId, switchRuntime } = useWorkspace()
-  const [repositoryId, setRepository] = useState(
+  const [repositoryId, setRepository] = useApplicationState(
       entityId ? repositorySourceKey(activeRuntimeId ?? '', entityId) : '',
     ),
-    [state, setState] = useState('open'),
-    [search, setSearch] = useState(''),
-    [draft, setDraft] = useState('all'),
-    [attention, setAttention] = useState(false),
-    [sort, setSort] = useState('attention'),
-    [picking, setPicking] = useState<'create' | 'connections' | null>(null),
-    [connections, setConnections] = useState<RepositorySource | null>(null),
-    [creating, setCreating] = useState<RepositorySource | null>(null),
-    [openError, setOpenError] = useState(''),
-    [opening, setOpening] = useState(false),
-    [selected, setSelected] = useState<{ source: RepositorySource; number: number } | null>(null)
+    [state, setState] = useApplicationState('open'),
+    [search, setSearch] = useApplicationState(''),
+    [draft, setDraft] = useApplicationState('all'),
+    [attention, setAttention] = useApplicationState(false),
+    [sort, setSort] = useApplicationState('attention'),
+    [picking, setPicking] = useApplicationState<'create' | 'connections' | null>(null),
+    [connections, setConnections] = useApplicationState<RepositorySource | null>(null),
+    [creating, setCreating] = useApplicationState<RepositorySource | null>(null),
+    [openError, setOpenError] = useApplicationState(''),
+    [opening, setOpening] = useApplicationState(false),
+    [selected, setSelected] = useApplicationState<{
+      source: RepositorySource
+      number: number
+    } | null>(null)
   const lastTarget = useRef(entityId)
   useEffect(() => {
     if (lastTarget.current === entityId) return
@@ -58,7 +62,10 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
     setOpenError('')
     try {
       if (source.runtimeId !== activeRuntimeId) await switchRuntime(source.runtimeId)
-      setSelected({ source, number })
+      setSelected({
+        source,
+        number,
+      })
     } catch (error) {
       setOpenError(String(error))
     } finally {
@@ -92,7 +99,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       {!selected && (
-        <header className="space-y-3 border-b px-5 py-4">
+        <header className="studio-page-header space-y-3 border-b">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="mr-2 text-lg font-semibold tracking-tight">Pull requests</h1>
             <span className="text-xs text-muted-foreground">
@@ -332,7 +339,11 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
               (source) =>
                 source.runtimeId === activeRuntimeId && source.repository.id === repositoryId,
             )
-            if (source) setSelected({ source, number })
+            if (source)
+              setSelected({
+                source,
+                number,
+              })
             setState('open')
             refresh()
           }}

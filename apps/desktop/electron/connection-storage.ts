@@ -35,7 +35,9 @@ export function registerConnectionStorage(rendererPath: string) {
       throw new Error('Invalid runtime registry')
     JSON.parse(encoded)
     const target = path()
-    await writeFile(target + '.tmp', safeStorage.encryptString(encoded), { mode: 0o600 })
+    await writeFile(target + '.tmp', safeStorage.encryptString(encoded), {
+      mode: 0o600,
+    })
     await rename(target + '.tmp', target)
   })
 }

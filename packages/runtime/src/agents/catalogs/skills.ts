@@ -1,57 +1,73 @@
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode, decodeResult } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, posix } from 'node:path'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { catalogSearchSchema, skillCatalogSchema, skillCatalogImportSchema } from '@dovo/protocol'
 import { catalogBytes, catalogJson } from './fetch.js'
 import { importSkill } from '../resources.js'
 export async function searchSkills(input: unknown) {
-  const { query } = catalogSearchSchema.parse(input)
-  if (query.length < 2) return { entries: [] }
-  const result = z
-    .object({
-      skills: z.array(
-        z.object({
-          id: z.string(),
-          skillId: z.string().optional(),
-          name: z.string(),
-          source: z.string(),
-          installs: z.number().default(0),
+  const { query } = decode(catalogSearchSchema, input)
+  if (query.length < 2)
+    return {
+      entries: [],
+    }
+  const result = decode(
+    mutableStruct({
+      skills: mutableArray(
+        mutableStruct({
+          id: Schema.String,
+          skillId: Schema.optional(Schema.String),
+          name: Schema.String,
+          source: Schema.String,
+          installs: Schema.optionalWith(Schema.Number.pipe(Schema.finite()), {
+            default: () => 0,
+          }),
         }),
       ),
-    })
-    .parse(
-      await catalogJson(
-        `https://skills.sh/api/search?${new URLSearchParams({ q: query, limit: '20' })}`,
-      ),
-    )
-  return skillCatalogSchema.parse({
+    }),
+    await catalogJson(
+      `https://skills.sh/api/search?${new URLSearchParams({
+        q: query,
+        limit: '20',
+      })}`,
+    ),
+  )
+  return decode(skillCatalogSchema, {
     entries: result.skills.map((skill) => ({
       ...skill,
       id: skill.skillId ?? skill.id.split('/').at(-1),
       url: `https://skills.sh/${skill.id.split('/').map(encodeURIComponent).join('/')}`,
-      supported: skillCatalogImportSchema.safeParse({
+      supported: decodeResult(skillCatalogImportSchema, {
         source: skill.source,
         skill: skill.skillId ?? skill.id.split('/').at(-1),
       }).success,
     })),
   })
 }
-const fileSchema = z.object({
-  path: z.string(),
-  type: z.string(),
-  mode: z.string(),
-  size: z.number().optional(),
+const fileSchema = mutableStruct({
+  path: Schema.String,
+  type: Schema.String,
+  mode: Schema.String,
+  size: Schema.optional(Schema.Number.pipe(Schema.finite())),
 })
 export async function installCatalogSkill(input: unknown, root: string) {
-  const { source, skill } = skillCatalogImportSchema.parse(input)
+  const { source, skill } = decode(skillCatalogImportSchema, input)
   const api = `https://api.github.com/repos/${source}`
-  const commit = z
-    .object({ sha: z.string().regex(/^[a-f0-9]{40}$/) })
-    .parse(await catalogJson(`${api}/commits/HEAD`))
-  const tree = z
-    .object({ truncated: z.boolean(), tree: z.array(fileSchema) })
-    .parse(await catalogJson(`${api}/git/trees/${commit.sha}?recursive=1`, 8_000_000))
+  const commit = decode(
+    mutableStruct({
+      sha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+    }),
+    await catalogJson(`${api}/commits/HEAD`),
+  )
+  const tree = decode(
+    mutableStruct({
+      truncated: Schema.Boolean,
+      tree: mutableArray(fileSchema),
+    }),
+    await catalogJson(`${api}/git/trees/${commit.sha}?recursive=1`, 8_000_000),
+  )
   if (tree.truncated)
     throw new Error(
       'This repository is too large to import automatically. Import a local SKILL.md instead.',
@@ -82,7 +98,9 @@ export async function installCatalogSkill(input: unknown, root: string) {
     )
       throw new Error('Skill bundles must contain regular files without symlinks or parent paths')
   }
-  await mkdir(root, { recursive: true })
+  await mkdir(root, {
+    recursive: true,
+  })
   const destination = join(
     root,
     createHash('sha256').update(`${source}:${commit.sha}:${directory}`).digest('hex'),
@@ -100,7 +118,9 @@ export async function installCatalogSkill(input: unknown, root: string) {
           bytes += contents.length
           if (bytes > 8_000_000) throw new Error('Skill bundle exceeds 8 MB')
           const path = join(staging, file.path.slice(prefix.length))
-          await mkdir(dirname(path), { recursive: true })
+          await mkdir(dirname(path), {
+            recursive: true,
+          })
           await writeFile(path, contents, {
             mode: file.mode === '100755' ? 0o700 : 0o600,
             flag: 'wx',
@@ -109,7 +129,9 @@ export async function installCatalogSkill(input: unknown, root: string) {
       )
       for (const result of results) if (result.status === 'rejected') throw result.reason
     }
-    const imported = await importSkill({ path: join(staging, 'SKILL.md') })
+    const imported = await importSkill({
+      path: join(staging, 'SKILL.md'),
+    })
     if (imported.name !== skill)
       throw new Error('Skill metadata does not match the selected catalog entry')
     try {
@@ -130,6 +152,9 @@ export async function installCatalogSkill(input: unknown, root: string) {
       sourceRevision: commit.sha,
     }
   } finally {
-    await rm(staging, { recursive: true, force: true })
+    await rm(staging, {
+      recursive: true,
+      force: true,
+    })
   }
 }

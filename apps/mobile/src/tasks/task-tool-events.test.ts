@@ -1,7 +1,8 @@
+import { decode } from '@dovo/protocol'
 import { describe, expect, it } from 'vite-plus/test'
 import { taskSchema } from '@dovo/protocol'
 import { taskToolEvents, type ToolEvents } from './task-tool-events'
-const task = taskSchema.parse({
+const task = decode(taskSchema, {
   id: 'task',
   repositoryId: 'repo',
   agentId: 'agent',
@@ -30,7 +31,11 @@ const event = (scope: string, turnId: string): ToolEvents[number] => ({
   scope,
   time: '2026-09-23T10:00:01Z',
   summary: 'Run command',
-  payload: JSON.stringify({ toolId: 'command', turnId, status: 'running' }),
+  payload: JSON.stringify({
+    toolId: 'command',
+    turnId,
+    status: 'running',
+  }),
 })
 describe('mobile task activity ownership and lifecycle', () => {
   it('only treats a matching active turn as running, including legacy activity', () => {
@@ -48,20 +53,44 @@ describe('mobile task activity ownership and lifecycle', () => {
   it('does not report stale running activity after a cancelled turn', () => {
     const cancelled = {
       ...task,
-      turns: task.turns!.map((turn) => ({ ...turn, status: 'cancelled' as const })),
+      turns: task.turns!.map((turn) => ({
+        ...turn,
+        status: 'cancelled' as const,
+      })),
     }
     expect(taskToolEvents(cancelled, [event('task', 'live')])[0].status).toBe('cancelled')
   })
   it('stops stale tool spinners when the task ends before its turn status updates', () => {
-    expect(taskToolEvents({ ...task, status: 'failed' }, [event('task', 'live')])[0].status).toBe(
-      'interrupted',
-    )
     expect(
-      taskToolEvents({ ...task, status: 'cancelled' }, [event('task', 'live')])[0].status,
+      taskToolEvents(
+        {
+          ...task,
+          status: 'failed',
+        },
+        [event('task', 'live')],
+      )[0].status,
+    ).toBe('interrupted')
+    expect(
+      taskToolEvents(
+        {
+          ...task,
+          status: 'cancelled',
+        },
+        [event('task', 'live')],
+      )[0].status,
     ).toBe('cancelled')
   })
   it('does not keep an older unfinished turn active after a new turn starts', () => {
-    const next = { ...task, turns: [...task.turns!, { ...task.turns![0], id: 'next' }] }
+    const next = {
+      ...task,
+      turns: [
+        ...task.turns!,
+        {
+          ...task.turns![0],
+          id: 'next',
+        },
+      ],
+    }
     expect(
       taskToolEvents(next, [event('task', 'live'), event('task', 'next')]).map(
         (event) => event.status,

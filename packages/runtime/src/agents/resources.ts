@@ -1,7 +1,9 @@
+import { mutableStruct } from '@dovo/protocol'
+import { minValue, maxValue, decode } from '@dovo/protocol'
 import { open, realpath } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { parseDocument } from 'yaml'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -10,7 +12,12 @@ import { managedSkillSchema, mcpServerSchema, mcpTestResultSchema } from '@dovo/
 import { processEnvironment } from '../process.js'
 import { mcpServerEnvironment, mcpHeaders } from './mcp-settings.js'
 export async function importSkill(input: unknown) {
-  const { path } = z.object({ path: z.string().min(1).max(4000) }).parse(input)
+  const { path } = decode(
+    mutableStruct({
+      path: maxValue(minValue(Schema.String, 1), 4000),
+    }),
+    input,
+  )
   const sourcePath = await realpath(
     resolve(path.startsWith('~/') ? `${homedir()}/${path.slice(2)}` : path),
   )
@@ -33,12 +40,20 @@ export async function importSkill(input: unknown) {
   }
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)
   if (!match) throw new Error('SKILL.md needs YAML frontmatter with name and description')
-  const document = parseDocument(match[1], { uniqueKeys: true })
+  const document = parseDocument(match[1], {
+    uniqueKeys: true,
+  })
   if (document.errors.length) throw new Error('Invalid skill frontmatter')
-  const metadata = z
-    .object({ name: z.string(), description: z.string() })
-    .parse(document.toJS({ maxAliasCount: 20 }))
-  return managedSkillSchema.parse({
+  const metadata = decode(
+    mutableStruct({
+      name: Schema.String,
+      description: Schema.String,
+    }),
+    document.toJS({
+      maxAliasCount: 20,
+    }),
+  )
+  return decode(managedSkillSchema, {
     ...metadata,
     enabled: true,
     content: text.slice(match[0].length),
@@ -46,8 +61,11 @@ export async function importSkill(input: unknown) {
   })
 }
 export async function testMcpServer(input: unknown) {
-  const server = mcpServerSchema.parse(input)
-  const client = new Client({ name: 'dovo-studio', version: '0.1.0' })
+  const server = decode(mcpServerSchema, input)
+  const client = new Client({
+    name: 'dovo-studio',
+    version: '0.1.0',
+  })
   const transport =
     server.transport === 'stdio'
       ? new StdioClientTransport({
@@ -64,15 +82,29 @@ export async function testMcpServer(input: unknown) {
           stderr: 'ignore',
         })
       : new StreamableHTTPClientTransport(new URL(server.url), {
-          requestInit: { headers: mcpHeaders(server) },
+          requestInit: {
+            redirect: 'error',
+            headers: mcpHeaders(server),
+          },
         })
   const signal = AbortSignal.timeout(15000)
   try {
-    await client.connect(transport, { signal, timeout: 15000 })
+    await client.connect(transport, {
+      signal,
+      timeout: 15000,
+    })
     const tools = client.getServerCapabilities()?.tools
-      ? (await client.listTools({}, { signal, timeout: 15000 })).tools.map((tool) => tool.name)
+      ? (
+          await client.listTools(
+            {},
+            {
+              signal,
+              timeout: 15000,
+            },
+          )
+        ).tools.map((tool) => tool.name)
       : []
-    return mcpTestResultSchema.parse({
+    return decode(mcpTestResultSchema, {
       server: client.getServerVersion()?.name ?? server.name,
       tools,
     })

@@ -1,7 +1,8 @@
+import { mutableStruct } from '@dovo/protocol'
+import { decodeResult } from '@dovo/protocol'
 import { recentTools, type activitySchema, type Task } from '@dovo/protocol'
-import { z } from 'zod'
-
-export type ToolEvents = z.infer<typeof activitySchema>['events']
+import { Schema } from 'effect'
+export type ToolEvents = Schema.Schema.Type<typeof activitySchema>['events']
 export type TaskToolEvent = ReturnType<typeof recentTools>[number]
 export const pendingActivity = (status: string) =>
   ['started', 'running', 'in_progress', 'pending', 'inProgress'].includes(status)
@@ -25,16 +26,19 @@ export function taskToolEvents(task: Task, events: ToolEvents): TaskToolEvent[] 
     }
   })
 }
-
 export function activityIdentity(event: TaskToolEvent) {
   try {
-    const data = z.object({ toolId: z.string() }).safeParse(JSON.parse(event.payload)).data
+    const data = decodeResult(
+      mutableStruct({
+        toolId: Schema.String,
+      }),
+      JSON.parse(event.payload),
+    ).data
     return data ? `${event.turnId ?? ''}:${data.toolId}` : event.id
   } catch {
     return event.id
   }
 }
-
 export function activityOutcome(events: TaskToolEvent[]) {
   const failed = events.filter((event) => ['failed', 'error'].includes(event.status)).length
   const cancelled = events.filter((event) => event.status === 'cancelled').length

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect } from 'react'
 import {
   ArrowUpRight,
   Check,
@@ -21,7 +22,6 @@ import {
   type RunStep,
 } from './run-progress'
 import type { JobActions } from './use-job-actions'
-
 const stepIcons = {
   pending: Circle,
   running: LoaderCircle,
@@ -76,7 +76,7 @@ export function RunDetails({
 }) {
   const { workspace, connected, syncError, snapshot } = useWorkspace()
   const host = useStudioHost()
-  const [now, setNow] = useState(Date.now)
+  const [now, setNow] = useApplicationState(Date.now)
   const active = !!run && liveRun(run)
   useEffect(() => {
     if (!active) return
@@ -115,7 +115,11 @@ export function RunDetails({
     run.finishedAt ?? (!active ? run.updatedAt : undefined),
     now,
   )
-  const openTask = (id: string) => host.navigate({ viewId: 'tasks', entityId: id })
+  const openTask = (id: string) =>
+    host.navigate({
+      viewId: 'tasks',
+      entityId: id,
+    })
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="space-y-3 border-b p-4">
@@ -156,7 +160,9 @@ export function RunDetails({
         >
           <div
             className="h-full bg-primary transition-all"
-            style={{ width: `${steps.length ? (completed / steps.length) * 100 : 0}%` }}
+            style={{
+              width: `${steps.length ? (completed / steps.length) * 100 : 0}%`,
+            }}
           />
         </div>
         {(run.attempt ?? 1) > 1 && (

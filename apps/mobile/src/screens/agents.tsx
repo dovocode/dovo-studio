@@ -1,8 +1,9 @@
+import { mobileWorkflow } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/application-state'
 import { ScreenHeader } from '../ui/screen-header'
 import { TitleSettings } from '../agents/title-settings'
 import { accessLabel } from '@dovo/protocol'
 import { AgentEditor } from '../agents/agent-editor'
-import { useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import { randomUUID } from 'expo-crypto'
@@ -32,15 +33,34 @@ export default function AgentsScreen() {
   )
 }
 function ComputerAgents({ name }: { name: string }) {
-  const { snapshot, connected, call } = useRuntime(),
+  const { snapshot, connected, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
-  const [editing, setEditing] = useState<{ agent: Agent; creating: boolean } | null>(null),
-    [availability, setAvailability] = useState('')
-  const [titles, setTitles] = useState(false)
+  const [editing, setEditing] = useApplicationState<{
+      agent: Agent
+      creating: boolean
+    } | null>(null),
+    [availability, setAvailability] = useApplicationState('')
+  const [titles, setTitles] = useApplicationState(false)
   return (
-    <View style={{ gap: 12 }}>
-      <View style={[styles.row, { justifyContent: 'space-between' }]}>
-        <View style={{ flex: 1, minWidth: 0 }}>
+    <View
+      style={{
+        gap: 12,
+      }}
+    >
+      <View
+        style={[
+          styles.row,
+          {
+            justifyContent: 'space-between',
+          },
+        ]}
+      >
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
           <Text style={styles.text}>{name}</Text>
           <Text style={styles.muted}>{connected ? 'Online' : 'Offline · Saved agents'}</Text>
         </View>
@@ -75,23 +95,32 @@ function ComputerAgents({ name }: { name: string }) {
               secondary
               disabled={!connected}
               label={`Edit ${agent.name}`}
-              onPress={() => setEditing({ agent, creating: false })}
+              onPress={() =>
+                setEditing({
+                  agent,
+                  creating: false,
+                })
+              }
             />
             <Action
               secondary
               label="Check provider"
               disabled={!connected || busy}
               onPress={() =>
-                act(async () => {
-                  const result = await call(
-                    '/api/agents/probe',
-                    { id: agent.id },
-                    responses.provider,
-                  )
-                  setAvailability(
-                    `${agent.name}: ${result.available ? 'Available' : 'Unavailable'} · ${result.detail}`,
-                  )
-                })
+                act(() =>
+                  mobileWorkflow(function* () {
+                    const result = yield* callEffect(
+                      '/api/agents/probe',
+                      {
+                        id: agent.id,
+                      },
+                      responses.provider,
+                    )
+                    setAvailability(
+                      `${agent.name}: ${result.available ? 'Available' : 'Unavailable'} · ${result.detail}`,
+                    )
+                  }),
+                )
               }
             />
           </View>

@@ -1,7 +1,9 @@
 export async function catalogBytes(url: string, maxBytes = 4_000_000): Promise<Buffer> {
   const response = await fetch(url, {
     signal: AbortSignal.timeout(20000),
-    headers: { Accept: 'application/json' },
+    headers: {
+      Accept: 'application/json',
+    },
   })
   if (!response.ok)
     throw new Error(
@@ -29,7 +31,6 @@ export async function catalogBytes(url: string, maxBytes = 4_000_000): Promise<B
   }
   return Buffer.concat(chunks)
 }
-
 export async function catalogJson(url: string, maxBytes = 4_000_000): Promise<unknown> {
   return JSON.parse((await catalogBytes(url, maxBytes)).toString('utf8'))
 }

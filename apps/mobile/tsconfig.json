@@ -4,5 +4,5 @@
     "types": ["node"],
     "moduleResolution": "Bundler"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "index.js"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "*.ts", "*.cts", "plugins/**/*.ts", "terminal/**/*.ts"]
 }

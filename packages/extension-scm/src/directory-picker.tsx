@@ -1,3 +1,4 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import {
   ArrowLeft,
   ChevronRight,
@@ -10,10 +11,9 @@ import {
   Search,
   X,
 } from 'lucide-react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { directoryPageSchema, useWorkspace, type DirectoryPage } from '@dovo/studio-core'
 import { Button, DropdownMenu, Input, cn } from '@dovo/studio-ui'
-
 export function DirectoryPicker({
   initialPath,
   onSelect,
@@ -24,18 +24,18 @@ export function DirectoryPicker({
   onClose: () => void
 }) {
   const { request, connected, snapshot } = useWorkspace()
-  const [location, setLocation] = useState({
+  const [location, setLocation] = useApplicationState({
     path: initialPath,
     hidden: false,
     query: '',
     offset: 0,
     delay: 0,
   })
-  const [draft, setDraft] = useState(initialPath || '~/')
-  const [data, setData] = useState<DirectoryPage | null>(null)
-  const [busy, setBusy] = useState(true)
-  const [error, setError] = useState('')
-  const [selected, setSelected] = useState(0)
+  const [draft, setDraft] = useApplicationState(initialPath || '~/')
+  const [data, setData] = useApplicationState<DirectoryPage | null>(null)
+  const [busy, setBusy] = useApplicationState(true)
+  const [error, setError] = useApplicationState('')
+  const [selected, setSelected] = useApplicationState(0)
   const list = useRef<HTMLDivElement>(null)
   const breadcrumbs = useRef<HTMLElement>(null)
   const pathInput = useRef<HTMLInputElement>(null)
@@ -82,13 +82,21 @@ export function DirectoryPicker({
     generation.current++
     setBusy(connected)
     setError('')
-    setLocation((previous) => ({ ...previous, delay: 0, ...change }))
+    setLocation((previous) => ({
+      ...previous,
+      delay: 0,
+      ...change,
+    }))
   }
   const navigate = (path: string) => {
     if (!connected) return
     editingPath.current = false
     setDraft(displayPath(path || '~/', data?.home))
-    update({ path, query: '', offset: 0 })
+    update({
+      path,
+      query: '',
+      offset: 0,
+    })
     list.current?.focus()
   }
   const choose = () => {
@@ -130,7 +138,9 @@ export function DirectoryPicker({
                 : (selected + (event.key === 'ArrowDown' ? 1 : -1) + entries.length) %
                   entries.length
           setSelected(next)
-          document.getElementById(`${id}-${next}`)?.scrollIntoView({ block: 'nearest' })
+          document.getElementById(`${id}-${next}`)?.scrollIntoView({
+            block: 'nearest',
+          })
         }
         if (event.key === 'Enter' || event.key === 'ArrowRight') {
           event.preventDefault()
@@ -188,7 +198,12 @@ export function DirectoryPicker({
               const path = event.target.value
               editingPath.current = true
               setDraft(path)
-              update({ path, query: '', offset: 0, delay: 250 })
+              update({
+                path,
+                query: '',
+                offset: 0,
+                delay: 250,
+              })
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
@@ -245,7 +260,13 @@ export function DirectoryPicker({
             value={location.query}
             disabled={!connected}
             className="h-9 pl-9 text-sm"
-            onChange={(event) => update({ query: event.target.value, offset: 0, delay: 250 })}
+            onChange={(event) =>
+              update({
+                query: event.target.value,
+                offset: 0,
+                delay: 250,
+              })
+            }
             onKeyDown={(event) => {
               if (event.key === 'ArrowDown') {
                 event.preventDefault()
@@ -275,7 +296,12 @@ export function DirectoryPicker({
             >
               <DropdownMenu.CheckboxItem
                 checked={location.hidden}
-                onCheckedChange={(hidden) => update({ hidden, offset: 0 })}
+                onCheckedChange={(hidden) =>
+                  update({
+                    hidden,
+                    offset: 0,
+                  })
+                }
                 className="relative cursor-default rounded py-2 pl-8 pr-3 text-xs outline-none data-[highlighted]:bg-accent"
               >
                 <DropdownMenu.ItemIndicator className="absolute left-2">
@@ -379,7 +405,11 @@ export function DirectoryPicker({
             variant="ghost"
             size="sm"
             disabled={!ready || !location.offset}
-            onClick={() => update({ offset: Math.max(0, location.offset - 100) })}
+            onClick={() =>
+              update({
+                offset: Math.max(0, location.offset - 100),
+              })
+            }
           >
             Previous
           </Button>
@@ -393,7 +423,10 @@ export function DirectoryPicker({
             size="sm"
             disabled={!ready || data.nextOffset === null}
             onClick={() => {
-              if (data.nextOffset !== null) update({ offset: data.nextOffset })
+              if (data.nextOffset !== null)
+                update({
+                  offset: data.nextOffset,
+                })
             }}
           >
             Next
@@ -430,7 +463,6 @@ export function DirectoryPicker({
     </section>
   )
 }
-
 function displayPath(path: string, home?: string) {
   if (!home) return path
   if (path === home) return '~/'

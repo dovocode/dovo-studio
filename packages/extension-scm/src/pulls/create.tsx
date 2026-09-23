@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { Schema } from 'effect'
+import { useEffect, useRef } from 'react'
 import { pullActionResultSchema, pullCreateOptionsSchema, useWorkspace } from '@dovo/studio-core'
 import {
   Button,
@@ -13,7 +15,6 @@ import {
   Input,
   Textarea,
 } from '@dovo/studio-ui'
-
 export function CreatePull({
   initialRepositoryId,
   onClose,
@@ -24,34 +25,40 @@ export function CreatePull({
   onCreated: (repositoryId: string, number: number) => void
 }) {
   const { workspace, request, connected } = useWorkspace()
-  const [repositoryId, setRepository] = useState(
+  const [repositoryId, setRepository] = useApplicationState(
     initialRepositoryId || workspace.repositories[0]?.id || '',
   )
-  const [head, setHead] = useState(
+  const [head, setHead] = useApplicationState(
     workspace.repositories.find((repo) => repo.id === repositoryId)?.branch ?? '',
   )
-  const [base, setBase] = useState('')
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
-  const [sourceTask, setSourceTask] = useState('')
+  const [base, setBase] = useApplicationState('')
+  const [title, setTitle] = useApplicationState('')
+  const [body, setBody] = useApplicationState('')
+  const [sourceTask, setSourceTask] = useApplicationState('')
   const sourceTasks = workspace.tasks.filter(
     (task) => task.repositoryId === repositoryId && task.workItem && task.checkoutBranch,
   )
-  const [draft, setDraft] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [draft, setDraft] = useApplicationState(false)
+  const [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
-  const [error, setError] = useState('')
-  const [options, setOptions] = useState<ReturnType<typeof pullCreateOptionsSchema.parse> | null>(
-    null,
-  )
-  const [optionsError, setOptionsError] = useState('')
+  const [error, setError] = useApplicationState('')
+  const [options, setOptions] = useApplicationState<Schema.Schema.Type<
+    typeof pullCreateOptionsSchema
+  > | null>(null)
+  const [optionsError, setOptionsError] = useApplicationState('')
   useEffect(() => {
     let stopped = false
     setOptions(null)
     setOptionsError('')
     setDraft(false)
     if (connected && repositoryId)
-      void request('/api/scm/pulls/options/read', { repositoryId }, pullCreateOptionsSchema)
+      void request(
+        '/api/scm/pulls/options/read',
+        {
+          repositoryId,
+        },
+        pullCreateOptionsSchema,
+      )
         .then((value) => {
           if (!stopped) setOptions(value)
         })
@@ -79,7 +86,14 @@ export function CreatePull({
     try {
       const result = await request(
         '/api/scm/pulls/create',
-        { repositoryId, title, body, head, base, draft: !!options.draft && draft },
+        {
+          repositoryId,
+          title,
+          body,
+          head,
+          base,
+          draft: !!options.draft && draft,
+        },
         pullActionResultSchema,
       )
       onCreated(repositoryId, result.number)

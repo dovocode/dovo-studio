@@ -1,3 +1,4 @@
+import { decodeResult } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
 import { jiraBindingSchema, type JiraBinding, type Workspace } from '@dovo/protocol'
 
@@ -35,13 +36,16 @@ export function migrateJiraSources(workspace: Workspace): Workspace {
     // A repository may have switched Jira namespaces after the task was created.
     // Its original issue URL, rather than today's binding, identifies that history.
     const issueUrl = new URL(task.workItem.url)
-    const binding = jiraBindingSchema.safeParse({
+    const binding = decodeResult(jiraBindingSchema, {
       site: issueUrl.origin,
       project: /^(.+)-\d+$/.exec(task.workItem.id)?.[1],
     })
     if (binding.success && issueUrl.pathname === `/browse/${task.workItem.id}`)
       sourceId = ensureSource(binding.data)
-    const workItem = { ...task.workItem, jiraSourceId: task.workItem.jiraSourceId ?? sourceId }
+    const workItem = {
+      ...task.workItem,
+      jiraSourceId: task.workItem.jiraSourceId ?? sourceId,
+    }
     if (
       !links.some((link) => link.sourceId === workItem.jiraSourceId && link.issueId === workItem.id)
     )
@@ -50,7 +54,16 @@ export function migrateJiraSources(workspace: Workspace): Workspace {
         issueId: workItem.id,
         repositoryId: task.repositoryId,
       })
-    return { ...task, workItem }
+    return {
+      ...task,
+      workItem,
+    }
   })
-  return { ...workspace, repositories, tasks, jiraSources: sources, jiraIssueLinks: links }
+  return {
+    ...workspace,
+    repositories,
+    tasks,
+    jiraSources: sources,
+    jiraIssueLinks: links,
+  }
 }

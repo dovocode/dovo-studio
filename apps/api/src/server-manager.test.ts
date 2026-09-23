@@ -48,7 +48,7 @@ it('starts independently, reuses a healthy runtime, and preserves pairing throug
   const pending = await fetch(connection.address + '/api/pair/request', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: code.code, name: 'Lifecycle phone' }),
+    body: JSON.stringify({ protocolVersion: 2, code: code.code, name: 'Lifecycle phone' }),
   }).then((value) => value.json())
   const paired = await fetch(connection.address + '/api/pair/claim', {
     method: 'POST',
@@ -56,6 +56,12 @@ it('starts independently, reuses a healthy runtime, and preserves pairing throug
     body: JSON.stringify({ id: pending.id, secret: pending.secret }),
   }).then((value) => value.json())
   expect(paired.status).toBe('approved')
+  const confirmation = await fetch(connection.address + '/api/pair/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(pending),
+  })
+  expect(confirmation.ok).toBe(true)
   await stopServer(directory)
   expect((await serverStatus(directory)).running).toBe(false)
   const next = await startServer(directory, entrypoint)

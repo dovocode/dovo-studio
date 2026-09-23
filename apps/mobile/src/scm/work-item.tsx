@@ -1,5 +1,13 @@
-import { appendUniqueRows, clientScopeKey, RequestScope } from '@dovo/client-runtime'
-import { useEffect, useRef, useState } from 'react'
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import {
+  appendUniqueRows,
+  clientScopeKey,
+  RequestScope,
+  runClientEffect,
+} from '@dovo/client-runtime'
+import { useEffect, useRef } from 'react'
 import { Linking, RefreshControl, ScrollView, View } from 'react-native'
 import {
   forgeWorkOptionsSchema,
@@ -27,7 +35,6 @@ import { JiraIssueProject } from './jira-issue-project'
 import { WorkForm } from './work-form'
 import { assertWorkSource, workCacheKey } from './work-cache'
 import { PipelineRunInfo, PipelineRunDetails, PipelineJobs } from './pipeline-details'
-
 type WorkItemProps = {
   mode: 'issues' | 'pipelines'
   repositoryId?: string
@@ -48,7 +55,9 @@ export function WorkItemScreen(props: WorkItemProps) {
     <WorkItemContent
       key={JSON.stringify([
         clientScopeKey(connection),
-        workCacheKey(repository, props.mode, 'detail', { id: props.itemId }),
+        workCacheKey(repository, props.mode, 'detail', {
+          id: props.itemId,
+        }),
         props.expectedURL,
         props.jiraSourceId,
       ])}
@@ -56,7 +65,6 @@ export function WorkItemScreen(props: WorkItemProps) {
     />
   )
 }
-
 function WorkItemContent({
   repositoryId,
   jiraSourceId,
@@ -65,11 +73,17 @@ function WorkItemContent({
   expectedURL,
   onBack,
 }: WorkItemProps) {
-  const { read, connected, snapshot, profile, readCache } = useRuntime()
+  const { read, connected, snapshot, profile, readCache, readEffect } = useRuntime()
   const { focused } = useNavigation()
   const repository = snapshot?.workspace.repositories.find((item) => item.id === repositoryId)
   const jiraSource = snapshot?.workspace.jiraSources?.find((source) => source.id === jiraSourceId)
-  const sourceInput = jiraSourceId ? { jiraSourceId } : { repositoryId }
+  const sourceInput = jiraSourceId
+    ? {
+        jiraSourceId,
+      }
+    : {
+        repositoryId,
+      }
   const cacheSource = jiraSourceId ? jiraSource : repository
   const linkedProjectId = jiraSourceId
     ? snapshot?.workspace.jiraIssueLinks?.find(
@@ -77,17 +91,21 @@ function WorkItemContent({
       )?.repositoryId
     : repositoryId
   const optionsKey = workCacheKey(cacheSource, mode, 'options')
-  const detailKey = workCacheKey(cacheSource, mode, 'detail', { id: selected })
-  const [options, setOptions] = useState<ForgeWorkOptions>()
-  const [revision, reload] = useState(0)
-  const [issue, setIssue] = useState<ForgeIssueDetail>()
-  const [pipeline, setPipeline] = useState<ForgePipelineDetail>()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [stale, setStale] = useState(false)
-  const [message, setMessage] = useState('')
-  const [form, setForm] = useState<'edit' | 'comment' | 'run' | 'transition' | null>(null)
-  const [confirm, setConfirm] = useState<RunAction | null>(null)
+  const detailKey = workCacheKey(cacheSource, mode, 'detail', {
+    id: selected,
+  })
+  const [options, setOptions] = useApplicationState<ForgeWorkOptions | undefined>(undefined)
+  const [revision, reload] = useApplicationState(0)
+  const [issue, setIssue] = useApplicationState<ForgeIssueDetail | undefined>(undefined)
+  const [pipeline, setPipeline] = useApplicationState<ForgePipelineDetail | undefined>(undefined)
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [stale, setStale] = useApplicationState(false)
+  const [message, setMessage] = useApplicationState('')
+  const [form, setForm] = useApplicationState<'edit' | 'comment' | 'run' | 'transition' | null>(
+    null,
+  )
+  const [confirm, setConfirm] = useApplicationState<RunAction | null>(null)
   const pending = useRef(false)
   const requests = useRef(new RequestScope())
   const alive = useRef(true)
@@ -105,93 +123,146 @@ function WorkItemContent({
     setError('')
     setBusy(connected)
     setStale(true)
-    void (async () => {
-      try {
-        const cachedOptions = await readCache?.read(optionsKey, forgeWorkOptionsSchema)
-        if (!current()) return
-        if (cachedOptions) setOptions(cachedOptions.value)
-        if (mode === 'issues') {
-          const cached = await readCache?.read(detailKey, forgeIssueDetailSchema)
-          if (!current()) return
-          if (cached) {
-            assertWorkSource(mode, cached.value.issue.url, expectedURL)
-            setIssue(cached.value)
-          }
-        } else {
-          const cached = await readCache?.read(detailKey, forgePipelineDetailSchema)
-          if (!current()) return
-          if (cached) {
-            assertWorkSource(mode, cached.value.run.url, expectedURL)
-            setPipeline(cached.value)
-          }
-        }
-      } catch (cause) {
-        if (current())
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : 'Saved details could not be read from this device.',
+    void runClientEffect(
+      mobileWorkflow(function* () {
+        yield* mobileWorkflow(function* () {
+          return yield* mobileWorkflow(function* () {
+            const cachedOptions = yield* (
+              readCache?.readEffect(optionsKey, forgeWorkOptionsSchema) ?? Effect.succeed(undefined)
+            )
+            if (!current()) return
+            if (cachedOptions) setOptions(cachedOptions.value)
+            if (mode === 'issues') {
+              const cached = yield* (
+                readCache?.readEffect(detailKey, forgeIssueDetailSchema) ??
+                  Effect.succeed(undefined)
+              )
+              if (!current()) return
+              if (cached) {
+                assertWorkSource(mode, cached.value.issue.url, expectedURL)
+                setIssue(cached.value)
+              }
+            } else {
+              const cached = yield* (
+                readCache?.readEffect(detailKey, forgePipelineDetailSchema) ??
+                  Effect.succeed(undefined)
+              )
+              if (!current()) return
+              if (cached) {
+                assertWorkSource(mode, cached.value.run.url, expectedURL)
+                setPipeline(cached.value)
+              }
+            }
+          }).pipe(
+            Effect.catchAll((cause) =>
+              nativeEffect(() => {
+                if (current())
+                  setError(
+                    cause instanceof Error
+                      ? cause.message
+                      : 'Saved details could not be read from this device.',
+                  )
+              }),
+            ),
           )
-      }
-      if (!connected || !current()) return
-      const opts = await read(
-        '/api/scm/work/options',
-        { ...(jiraSourceId ? { jiraSourceId } : { repositoryId }), area: mode },
-        forgeWorkOptionsSchema,
-      )
-      if (!current()) return
-      setOptions(opts)
-      if (!(mode === 'issues' ? opts.issues : opts.pipelines)) return
-      if (mode === 'issues') {
-        const data = await read(
-          '/api/scm/work/issues/detail',
+        })
+        if (!connected || !current()) return
+        const opts = yield* readEffect(
+          '/api/scm/work/options',
           {
-            ...(jiraSourceId ? { jiraSourceId } : { repositoryId }),
-            id: selected,
-            refresh: revision > 0,
+            ...(jiraSourceId
+              ? {
+                  jiraSourceId,
+                }
+              : {
+                  repositoryId,
+                }),
+            area: mode,
           },
-          forgeIssueDetailSchema,
+          forgeWorkOptionsSchema,
         )
         if (!current()) return
-        assertWorkSource(mode, data.issue.url, expectedURL)
-        setIssue(data)
-        setStale(!!data.stale || !!data.refreshError)
-        setError(data.refreshError ?? '')
-        try {
-          await readCache?.write(optionsKey, opts)
-          await readCache?.write(detailKey, data)
-        } catch {
-          if (current()) setError('Details loaded, but could not be saved for offline use.')
+        setOptions(opts)
+        if (!(mode === 'issues' ? opts.issues : opts.pipelines)) return
+        if (mode === 'issues') {
+          const data = yield* readEffect(
+            '/api/scm/work/issues/detail',
+            {
+              ...(jiraSourceId
+                ? {
+                    jiraSourceId,
+                  }
+                : {
+                    repositoryId,
+                  }),
+              id: selected,
+              refresh: revision > 0,
+            },
+            forgeIssueDetailSchema,
+          )
+          if (!current()) return
+          assertWorkSource(mode, data.issue.url, expectedURL)
+          setIssue(data)
+          setStale(!!data.stale || !!data.refreshError)
+          setError(data.refreshError ?? '')
+          yield* mobileWorkflow(function* () {
+            yield* readCache?.writeEffect(optionsKey, opts) ?? Effect.succeed(undefined)
+            yield* readCache?.writeEffect(detailKey, data) ?? Effect.succeed(undefined)
+          }).pipe(
+            Effect.catchAll((_error) =>
+              nativeEffect(() => {
+                if (current()) setError('Details loaded, but could not be saved for offline use.')
+              }),
+            ),
+          )
+        } else {
+          const data = yield* readEffect(
+            '/api/scm/work/pipelines/detail',
+            {
+              ...(jiraSourceId
+                ? {
+                    jiraSourceId,
+                  }
+                : {
+                    repositoryId,
+                  }),
+              id: selected,
+              refresh: revision > 0,
+            },
+            forgePipelineDetailSchema,
+          )
+          if (!current()) return
+          assertWorkSource(mode, data.run.url, expectedURL)
+          setPipeline(data)
+          setStale(!!data.stale || !!data.refreshError)
+          setError(data.refreshError ?? '')
+          yield* mobileWorkflow(function* () {
+            yield* readCache?.writeEffect(optionsKey, opts) ?? Effect.succeed(undefined)
+            yield* readCache?.writeEffect(detailKey, data) ?? Effect.succeed(undefined)
+          }).pipe(
+            Effect.catchAll((_error) =>
+              nativeEffect(() => {
+                if (current()) setError('Details loaded, but could not be saved for offline use.')
+              }),
+            ),
+          )
         }
-      } else {
-        const data = await read(
-          '/api/scm/work/pipelines/detail',
-          {
-            ...(jiraSourceId ? { jiraSourceId } : { repositoryId }),
-            id: selected,
-            refresh: revision > 0,
-          },
-          forgePipelineDetailSchema,
+      })
+        .pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              if (current()) setError(cause instanceof Error ? cause.message : String(cause))
+            }),
+          ),
         )
-        if (!current()) return
-        assertWorkSource(mode, data.run.url, expectedURL)
-        setPipeline(data)
-        setStale(!!data.stale || !!data.refreshError)
-        setError(data.refreshError ?? '')
-        try {
-          await readCache?.write(optionsKey, opts)
-          await readCache?.write(detailKey, data)
-        } catch {
-          if (current()) setError('Details loaded, but could not be saved for offline use.')
-        }
-      }
-    })()
-      .catch((cause) => {
-        if (current()) setError(cause instanceof Error ? cause.message : String(cause))
-      })
-      .finally(() => {
-        if (current()) setBusy(false)
-      })
+        .pipe(
+          Effect.ensuring(
+            nativeEffect(() => {
+              if (current()) setBusy(false)
+            }).pipe(Effect.orDie),
+          ),
+        ),
+    )
     return () => requests.current.cancel()
   }, [
     read,
@@ -214,71 +285,112 @@ function WorkItemContent({
     setMessage(message)
     reload((value) => value + 1)
   }
-  const more = async () => {
-    if (pending.current || busy || !connected || !focused) return
-    const current = requests.current.begin()
-    setError('')
-    pending.current = true
-    setBusy(true)
-    try {
-      if (issue?.next) {
-        const data = await read(
-          '/api/scm/work/issues/detail',
-          {
-            ...(jiraSourceId ? { jiraSourceId } : { repositoryId }),
-            id: selected,
-            cursor: issue.next,
-          },
-          forgeIssueDetailSchema,
+  const more = () => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (pending.current || busy || !connected || !focused) return
+        const current = requests.current.begin()
+        setError('')
+        pending.current = true
+        setBusy(true)
+        return yield* mobileWorkflow(function* () {
+          if (issue?.next) {
+            const data = yield* readEffect(
+              '/api/scm/work/issues/detail',
+              {
+                ...(jiraSourceId
+                  ? {
+                      jiraSourceId,
+                    }
+                  : {
+                      repositoryId,
+                    }),
+                id: selected,
+                cursor: issue.next,
+              },
+              forgeIssueDetailSchema,
+            )
+            if (!current()) return
+            assertWorkSource(mode, data.issue.url, expectedURL ?? issue.issue.url)
+            const merged = {
+              ...data,
+              comments: appendUniqueRows(issue.comments, data.comments),
+            }
+            setIssue(merged)
+            setStale(stale || !!data.stale || !!data.refreshError)
+            setError(data.refreshError ?? '')
+            yield* mobileWorkflow(function* () {
+              yield* readCache?.writeEffect(detailKey, merged) ?? Effect.succeed(undefined)
+            }).pipe(
+              Effect.catchAll((_error) =>
+                nativeEffect(() => {
+                  if (current()) setError('Details loaded, but could not be saved for offline use.')
+                }),
+              ),
+            )
+          }
+          if (pipeline?.next) {
+            const data = yield* readEffect(
+              '/api/scm/work/pipelines/detail',
+              {
+                ...(jiraSourceId
+                  ? {
+                      jiraSourceId,
+                    }
+                  : {
+                      repositoryId,
+                    }),
+                id: selected,
+                cursor: pipeline.next,
+              },
+              forgePipelineDetailSchema,
+            )
+            if (!current()) return
+            assertWorkSource(mode, data.run.url, expectedURL ?? pipeline.run.url)
+            const merged = {
+              ...data,
+              jobs: appendUniqueRows(pipeline.jobs, data.jobs),
+            }
+            setPipeline(merged)
+            setStale(stale || !!data.stale || !!data.refreshError)
+            setError(data.refreshError ?? '')
+            yield* mobileWorkflow(function* () {
+              yield* readCache?.writeEffect(detailKey, merged) ?? Effect.succeed(undefined)
+            }).pipe(
+              Effect.catchAll((_error) =>
+                nativeEffect(() => {
+                  if (current()) setError('Details loaded, but could not be saved for offline use.')
+                }),
+              ),
+            )
+          }
+        }).pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              if (current()) {
+                setStale(true)
+                setError(String(cause))
+              }
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              if (current()) {
+                pending.current = false
+                setBusy(false)
+              }
+            }).pipe(Effect.orDie),
+          ),
         )
-        if (!current()) return
-        assertWorkSource(mode, data.issue.url, expectedURL ?? issue.issue.url)
-        const merged = { ...data, comments: appendUniqueRows(issue.comments, data.comments) }
-        setIssue(merged)
-        setStale(stale || !!data.stale || !!data.refreshError)
-        setError(data.refreshError ?? '')
-        try {
-          await readCache?.write(detailKey, merged)
-        } catch {
-          if (current()) setError('Details loaded, but could not be saved for offline use.')
-        }
-      }
-      if (pipeline?.next) {
-        const data = await read(
-          '/api/scm/work/pipelines/detail',
-          {
-            ...(jiraSourceId ? { jiraSourceId } : { repositoryId }),
-            id: selected,
-            cursor: pipeline.next,
-          },
-          forgePipelineDetailSchema,
-        )
-        if (!current()) return
-        assertWorkSource(mode, data.run.url, expectedURL ?? pipeline.run.url)
-        const merged = { ...data, jobs: appendUniqueRows(pipeline.jobs, data.jobs) }
-        setPipeline(merged)
-        setStale(stale || !!data.stale || !!data.refreshError)
-        setError(data.refreshError ?? '')
-        try {
-          await readCache?.write(detailKey, merged)
-        } catch {
-          if (current()) setError('Details loaded, but could not be saved for offline use.')
-        }
-      }
-    } catch (cause) {
-      if (current()) {
-        setStale(true)
-        setError(String(cause))
-      }
-    } finally {
-      if (current()) {
-        pending.current = false
-        setBusy(false)
-      }
-    }
+      }),
+    )
   }
   const open = (url: string) => {
-    void Linking.openURL(url).catch((cause) => setError(String(cause)))
+    void runClientEffect(
+      nativeEffect(() => Linking.openURL(url)).pipe(
+        Effect.catchAll((cause) => nativeEffect(() => setError(String(cause)))),
+      ),
+    )
   }
   const mutationDisabled = !focused || !connected || busy || stale
   const confirmAllowed = !!(
@@ -290,8 +402,16 @@ function WorkItemContent({
   const actions: WorkMenuAction[] = [
     ...(issue
       ? [
-          { label: 'Edit issue', disabled: mutationDisabled, onPress: () => setForm('edit') },
-          { label: 'Comment', disabled: mutationDisabled, onPress: () => setForm('comment') },
+          {
+            label: 'Edit issue',
+            disabled: mutationDisabled,
+            onPress: () => setForm('edit'),
+          },
+          {
+            label: 'Comment',
+            disabled: mutationDisabled,
+            onPress: () => setForm('comment'),
+          },
           ...(options?.provider === 'jira'
             ? [
                 {
@@ -301,14 +421,26 @@ function WorkItemContent({
                 },
               ]
             : []),
-          { label: 'Open on server', onPress: () => open(issue.issue.url) },
+          {
+            label: 'Open on server',
+            onPress: () => open(issue.issue.url),
+          },
         ]
       : []),
     ...(pipeline
       ? [
-          { label: 'Open run and logs', onPress: () => open(pipeline.run.url) },
+          {
+            label: 'Open run and logs',
+            onPress: () => open(pipeline.run.url),
+          },
           ...(options?.pipelineActions.includes('run')
-            ? [{ label: 'Run pipeline', disabled: mutationDisabled, onPress: () => setForm('run') }]
+            ? [
+                {
+                  label: 'Run pipeline',
+                  disabled: mutationDisabled,
+                  onPress: () => setForm('run'),
+                },
+              ]
             : []),
           ...(options?.pipelineActions ?? [])
             .filter((action): action is RunAction => action !== 'run')
@@ -354,10 +486,17 @@ function WorkItemContent({
       />
       <ScrollView
         testID="Work detail content"
-        style={{ flex: 1 }}
+        style={{
+          flex: 1,
+        }}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: 0, paddingBottom: 40, gap: 12, flexGrow: 1 },
+          {
+            paddingTop: 0,
+            paddingBottom: 40,
+            gap: 12,
+            flexGrow: 1,
+          },
         ]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -398,11 +537,35 @@ function WorkItemContent({
         {!issue && !pipeline && busy && <Text style={styles.muted}>Loading details…</Text>}
         {issue && (
           <>
-            <Text selectable style={[styles.title, { fontSize: 22, lineHeight: 28 }]}>
+            <Text
+              selectable
+              style={[
+                styles.title,
+                {
+                  fontSize: 22,
+                  lineHeight: 28,
+                },
+              ]}
+            >
               {issue.issue.title}
             </Text>
-            <View style={[styles.row, { gap: 8 }]}>
-              <Text style={[styles.text, { fontSize: 14, fontWeight: '600' }]}>
+            <View
+              style={[
+                styles.row,
+                {
+                  gap: 8,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.text,
+                  {
+                    fontSize: 14,
+                    fontWeight: '600',
+                  },
+                ]}
+              >
                 {issue.issue.state}
               </Text>
               <Text style={styles.muted}>· {issue.issue.type}</Text>
@@ -441,7 +604,13 @@ function WorkItemContent({
             </View>
             <Text
               accessibilityRole="header"
-              style={[styles.text, { fontWeight: '600', paddingTop: 4 }]}
+              style={[
+                styles.text,
+                {
+                  fontWeight: '600',
+                  paddingTop: 4,
+                },
+              ]}
             >
               Description
             </Text>
@@ -465,12 +634,21 @@ function WorkItemContent({
               key={`${issue.issue.url}:${issue.issue.revision}`}
               repositoryId={linkedProjectId}
               jiraSourceId={jiraSourceId}
-              source={{ kind: 'issue', item: issue.issue }}
+              source={{
+                kind: 'issue',
+                item: issue.issue,
+              }}
               disabled={mutationDisabled}
             />
             <Text
               accessibilityRole="header"
-              style={[styles.text, { fontWeight: '600', paddingTop: 8 }]}
+              style={[
+                styles.text,
+                {
+                  fontWeight: '600',
+                  paddingTop: 8,
+                },
+              ]}
             >
               Discussion · {issue.comments.length}
               {issue.next ? '+' : ''}
@@ -522,7 +700,10 @@ function WorkItemContent({
             <WorkTaskAction
               key={`${pipeline.run.url}:${pipeline.run.sha}`}
               repositoryId={repositoryId}
-              source={{ kind: 'pipeline', item: pipeline.run }}
+              source={{
+                kind: 'pipeline',
+                item: pipeline.run,
+              }}
               disabled={mutationDisabled}
             />
             <PipelineJobs jobs={pipeline.jobs} hasMore={!!pipeline.next} onOpen={open} />
@@ -570,26 +751,36 @@ function WorkItemContent({
               if (pending.current || mutationDisabled || !confirmAllowed) return
               pending.current = true
               setBusy(true)
-              void read(
-                '/api/scm/work/pipelines/action',
-                {
-                  repositoryId,
-                  action: confirm,
-                  id:
-                    confirm === 'enable' || confirm === 'disable'
-                      ? pipeline.run.definition
-                      : pipeline.run.id,
-                },
-                forgeWorkResultSchema,
+              void runClientEffect(
+                readEffect(
+                  '/api/scm/work/pipelines/action',
+                  {
+                    repositoryId,
+                    action: confirm,
+                    id:
+                      confirm === 'enable' || confirm === 'disable'
+                        ? pipeline.run.definition
+                        : pipeline.run.id,
+                  },
+                  forgeWorkResultSchema,
+                )
+                  .pipe(Effect.flatMap((result) => nativeEffect(() => done(result.message))))
+                  .pipe(
+                    Effect.catchAll((cause) =>
+                      nativeEffect(() => {
+                        if (alive.current) setError(String(cause))
+                      }),
+                    ),
+                  )
+                  .pipe(
+                    Effect.ensuring(
+                      nativeEffect(() => {
+                        pending.current = false
+                        if (alive.current) setBusy(false)
+                      }).pipe(Effect.orDie),
+                    ),
+                  ),
               )
-                .then((result) => done(result.message))
-                .catch((cause) => {
-                  if (alive.current) setError(String(cause))
-                })
-                .finally(() => {
-                  pending.current = false
-                  if (alive.current) setBusy(false)
-                })
             }}
           />
           {!!error && <Text style={styles.error}>{error}</Text>}

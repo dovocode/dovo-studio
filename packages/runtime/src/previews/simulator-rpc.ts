@@ -1,6 +1,7 @@
+import { decode } from '@dovo/protocol'
 import { Client, credentials, Metadata } from '@grpc/grpc-js'
 import protobuf from 'protobufjs'
-import type { z } from 'zod'
+import { Schema } from 'effect'
 
 // Use the upstream protobuf and gRPC implementations; validate native replies at the boundary.
 export class SimulatorRpc {
@@ -28,19 +29,24 @@ export class SimulatorRpc {
     const type = this.root.lookupType(name)
     return (value: object) => Buffer.from(type.encode(type.fromObject(value)).finish())
   }
-  private decode<T>(name: string, schema: z.ZodType<T>) {
+  private decode<T, I>(name: string, schema: Schema.Schema<T, I>) {
     const type = this.root.lookupType(name)
     return (value: Buffer): T =>
-      schema.parse(
-        type.toObject(type.decode(value), { longs: Number, bytes: Buffer, defaults: true }),
+      decode(
+        schema,
+        type.toObject(type.decode(value), {
+          longs: Number,
+          bytes: Buffer,
+          defaults: true,
+        }),
       )
   }
-  unary<T>(
+  unary<T, I>(
     method: string,
     requestType: string,
     responseType: string,
     request: object,
-    schema: z.ZodType<T>,
+    schema: Schema.Schema<T, I>,
   ) {
     return new Promise<T>((resolve, reject) => {
       this.client.makeUnaryRequest(
@@ -49,7 +55,9 @@ export class SimulatorRpc {
         this.decode(responseType, schema),
         request,
         this.metadata,
-        { deadline: Date.now() + 10000 },
+        {
+          deadline: Date.now() + 10000,
+        },
         (error, value) => {
           if (error) reject(error)
           else if (value === undefined) reject(new Error('Empty simulator response'))
@@ -58,12 +66,12 @@ export class SimulatorRpc {
       )
     })
   }
-  stream<T>(
+  stream<T, I>(
     method: string,
     requestType: string,
     responseType: string,
     request: object,
-    schema: z.ZodType<T>,
+    schema: Schema.Schema<T, I>,
   ) {
     return this.client.makeServerStreamRequest(
       `/${this.prefix}/${method}`,
@@ -73,7 +81,12 @@ export class SimulatorRpc {
       this.metadata,
     )
   }
-  duplex<T>(method: string, requestType: string, responseType: string, schema: z.ZodType<T>) {
+  duplex<T, I>(
+    method: string,
+    requestType: string,
+    responseType: string,
+    schema: Schema.Schema<T, I>,
+  ) {
     return this.client.makeBidiStreamRequest(
       `/${this.prefix}/${method}`,
       this.encode(requestType),
@@ -81,11 +94,11 @@ export class SimulatorRpc {
       this.metadata,
     )
   }
-  writeStream<T>(
+  writeStream<T, I>(
     method: string,
     requestType: string,
     responseType: string,
-    schema: z.ZodType<T>,
+    schema: Schema.Schema<T, I>,
     done: (error: Error | null) => void,
   ) {
     return this.client.makeClientStreamRequest(

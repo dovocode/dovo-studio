@@ -1,9 +1,10 @@
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
-import { z } from 'zod'
+import { Either, Schema } from 'effect'
 const data = await mkdtemp(join(tmpdir(), 'dovo-packaged-check-'))
 const binary = resolve('release/mac-arm64/Dovo Studio.app/Contents/MacOS/Dovo Studio')
 const environment = {
@@ -33,14 +34,14 @@ try {
     child.once('exit', () => reject(new Error(diagnostics)))
   })
   const address = new URL(String(endpoint))
-  const schema = z.array(
-    z.object({ type: z.string(), webSocketDebuggerUrl: z.string().optional() }),
+  const schema = Schema.Array(
+    Schema.Struct({ type: Schema.String, webSocketDebuggerUrl: Schema.optional(Schema.String) }),
   )
   let page
   for (let i = 0; i < 100; i++) {
-    page = schema
-      .parse(await (await fetch(`http://${address.host}/json/list`)).json())
-      .find((item) => item.type === 'page')
+    page = Schema.decodeUnknownSync(schema)(
+      await (await fetch(`http://${address.host}/json/list`)).json(),
+    ).find((item) => item.type === 'page')
     if (page?.webSocketDebuggerUrl) break
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
@@ -52,13 +53,13 @@ try {
   })
   const result = new Promise((resolve, reject) =>
     socket.addEventListener('message', (event) => {
-      const response = z
-        .object({
-          id: z.number().optional(),
-          result: z.unknown().optional(),
-          error: z.unknown().optional(),
-        })
-        .parse(JSON.parse(String(event.data)))
+      const response = Schema.decodeUnknownSync(
+        Schema.Struct({
+          id: Schema.optional(Schema.Number),
+          result: Schema.optional(Schema.Unknown),
+          error: Schema.optional(Schema.Unknown),
+        }),
+      )(JSON.parse(String(event.data)))
       if (response.id === 1) {
         if (response.error) reject(new Error(JSON.stringify(response.error)))
         else resolve(response.result)
@@ -77,35 +78,47 @@ try {
     }),
   )
   const raw = await result
-  const exception = z
-    .object({
-      exceptionDetails: z.object({
-        text: z.string(),
-        exception: z.object({ description: z.string() }).optional(),
+  const exception = Schema.decodeUnknownEither(
+    Schema.Struct({
+      exceptionDetails: Schema.Struct({
+        text: Schema.String,
+        exception: Schema.optional(Schema.Struct({ description: Schema.String })),
       }),
-    })
-    .safeParse(raw)
-  if (exception.success)
+    }),
+  )(raw)
+  if (Either.isRight(exception))
     throw new Error(
-      exception.data.exceptionDetails.exception?.description ??
-        exception.data.exceptionDetails.text,
+      exception.right.exceptionDetails.exception?.description ??
+        exception.right.exceptionDetails.text,
     )
-  const checked = z
-    .object({
-      result: z.object({
-        value: z.object({
-          owner: z.literal(true),
-          providers: z.array(z.string()).length(4),
-          connected: z.literal(true),
+  const checked = Schema.decodeUnknownSync(
+    Schema.Struct({
+      result: Schema.Struct({
+        value: Schema.Struct({
+          owner: Schema.Literal(true),
+          providers: Schema.Array(Schema.String).pipe(Schema.itemsCount(4)),
+          connected: Schema.Literal(true),
         }),
       }),
-    })
-    .parse(raw)
+    }),
+  )(raw)
   console.log('Packaged application verified without system Node:', checked.result.value)
 } finally {
   socket?.close()
   child.kill('SIGTERM')
   await finished
   clearTimeout(timeout)
+  // Packaged Mac runtime ownership belongs to launchd, not the test's Electron child.
+  const label = `com.dovo.studio.runtime.${createHash('sha256').update(data).digest('hex').slice(0, 16)}`
+  const target = `gui/${process.getuid()}/${label}`
+  let loaded = false
+  try {
+    execFileSync('/bin/launchctl', ['print', target], { stdio: 'pipe' })
+    loaded = true
+  } catch {
+    /* Startup may have failed before provisioning its isolated test service. */
+  }
+  if (loaded) execFileSync('/bin/launchctl', ['bootout', target], { stdio: 'pipe', timeout: 40000 })
+  await rm(join(homedir(), 'Library', 'LaunchAgents', `${label}.plist`), { force: true })
   await rm(data, { recursive: true, force: true })
 }

@@ -1,13 +1,15 @@
+import { Effect, Ref } from 'effect'
 import type { ExtensionState } from './types.js'
 
 export class StateStore implements ExtensionState {
-  private readonly values = new Map<string, unknown>()
+  private readonly values = Effect.runSync(Ref.make<ReadonlyMap<string, unknown>>(new Map()))
 
-  get<T>(key: string, defaultValue?: T): T | undefined {
-    return (this.values.has(key) ? this.values.get(key) : defaultValue) as T | undefined
+  get(key: string, defaultValue?: unknown): unknown {
+    const values = Effect.runSync(Ref.get(this.values))
+    return values.has(key) ? values.get(key) : defaultValue
   }
 
-  set<T>(key: string, value: T): void {
-    this.values.set(key, value)
+  set(key: string, value: unknown): void {
+    Effect.runSync(Ref.update(this.values, (current) => new Map(current).set(key, value)))
   }
 }

@@ -1,8 +1,10 @@
+import { mobileWorkflow } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/application-state'
+import { mutableStruct } from '@dovo/protocol'
 import { View, Switch, StyleSheet } from 'react-native'
 import { Text } from '../ui/text'
-import { useState } from 'react'
 import { randomUUID } from 'expo-crypto'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { automationIssues, responses, type Automation } from '@dovo/protocol'
 import { useRuntime } from '../runtime/provider'
 import { Action } from '../ui/action'
@@ -14,16 +16,21 @@ import { RunProgress } from './run-progress'
 import { automationRuns } from './automation-summary'
 import { automationStarts } from './automation-starts'
 import { useNavigation } from '../shell/navigation'
-
 export function AutomationCard({ flow, onEdit }: { flow: Automation; onEdit: () => void }) {
-  const { snapshot, call, connected, activeId } = useRuntime()
+  const { snapshot, connected, activeId, callEffect } = useRuntime()
   const { focused } = useNavigation()
   const { busy, error, act } = useAction()
-  const [history, setHistory] = useState(false)
+  const [history, setHistory] = useApplicationState(false)
   const requestId = activeId ? automationStarts.get(activeId, flow.id) : undefined
   const { history: runs, active, latest } = automationRuns(flow.id, snapshot?.runs ?? [])
   const trigger = flow.nodes.find((node) => node.data.kind === 'trigger')
-  const issues = automationIssues(flow, snapshot?.workspace ?? { agents: [], repositories: [] })
+  const issues = automationIssues(
+    flow,
+    snapshot?.workspace ?? {
+      agents: [],
+      repositories: [],
+    },
+  )
   const automatic = trigger?.data.trigger !== 'manual'
   const steps = flow.nodes.filter((node) => node.data.kind !== 'trigger').length
   const recoverable = latest?.status === 'failed' || latest?.status === 'cancelled'
@@ -37,8 +44,20 @@ export function AutomationCard({ flow, onEdit }: { flow: Automation; onEdit: () 
         borderColor: colors.border,
       }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+            gap: 3,
+          }}
+        >
           <Text numberOfLines={2} style={styles.muted}>
             {triggerSummary(flow)} · {steps} {steps === 1 ? 'step' : 'steps'}
           </Text>
@@ -52,24 +71,47 @@ export function AutomationCard({ flow, onEdit }: { flow: Automation; onEdit: () 
         />
       </View>
       {latest ? <RunProgress key={latest.id} run={latest} /> : null}
-      <View style={[styles.row, { justifyContent: 'space-between' }]}>
+      <View
+        style={[
+          styles.row,
+          {
+            justifyContent: 'space-between',
+          },
+        ]}
+      >
         {(!active || !!requestId) && (
           <Action
             secondary={recoverable}
             label={requestId ? 'Retry start' : 'Run automation'}
             disabled={!focused || !connected || !activeId || busy || issues.length > 0}
             onPress={() =>
-              act(async () => {
-                if (!focused || !activeId) return
-                const requestId = automationStarts.begin(activeId, flow.id, randomUUID)
-                await call('/api/jobs/run', { id: flow.id, requestId }, responses.job)
-                automationStarts.complete(activeId, flow.id, requestId)
-              })
+              act(() =>
+                mobileWorkflow(function* () {
+                  if (!focused || !activeId) return
+                  const requestId = automationStarts.begin(activeId, flow.id, randomUUID)
+                  yield* callEffect(
+                    '/api/jobs/run',
+                    {
+                      id: flow.id,
+                      requestId,
+                    },
+                    responses.job,
+                  )
+                  automationStarts.complete(activeId, flow.id, requestId)
+                }),
+              )
             }
           />
         )}
         {automatic && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              minHeight: 44,
+            }}
+          >
             <Text style={styles.muted}>
               {flow.enabled
                 ? trigger?.data.trigger === 'schedule'
@@ -83,14 +125,21 @@ export function AutomationCard({ flow, onEdit }: { flow: Automation; onEdit: () 
               disabled={!focused || !connected || busy || (!flow.enabled && issues.length > 0)}
               onValueChange={(enabled) =>
                 act(() =>
-                  call(
+                  callEffect(
                     '/api/workspace',
                     {
                       collection: 'automations',
                       id: flow.id,
-                      changes: { enabled: { before: flow.enabled ?? null, after: enabled } },
+                      changes: {
+                        enabled: {
+                          before: flow.enabled ?? null,
+                          after: enabled,
+                        },
+                      },
                     },
-                    z.object({ revision: z.number() }),
+                    mutableStruct({
+                      revision: Schema.Number.pipe(Schema.finite()),
+                    }),
                     'PATCH',
                   ),
                 )
@@ -124,7 +173,11 @@ export function AutomationCard({ flow, onEdit }: { flow: Automation; onEdit: () 
           .map((run) => (
             <View
               key={run.id}
-              style={{ borderTopWidth: 0.5, borderColor: colors.border, paddingTop: 4 }}
+              style={{
+                borderTopWidth: 0.5,
+                borderColor: colors.border,
+                paddingTop: 4,
+              }}
             >
               <RunProgress run={run} anotherActive={!!active} />
             </View>

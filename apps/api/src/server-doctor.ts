@@ -1,13 +1,13 @@
+import { decode } from '@dovo/protocol'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { commandsSchema, commandSettingsResponse, snapshotSchema, type Agent } from '@dovo/protocol'
 import { checkAdapterUpdates } from '@dovo/runtime'
 import { readConnection } from './connection.js'
 import { serverStatus } from './server-manager.js'
-
 export async function serverDoctor(directory: string, checkUpdates = false) {
   const status = await serverStatus(directory)
-  let settings = commandsSchema.parse({})
+  let settings = decode(commandsSchema, {})
   let agents: Agent[] = []
   const warnings: string[] = []
   if (status.running) {
@@ -32,8 +32,8 @@ export async function serverDoctor(directory: string, checkUpdates = false) {
         }),
       ])
       if (!commands.ok || !snapshot.ok) throw new Error('Runtime settings could not be read.')
-      settings = commandSettingsResponse.parse(await commands.json()).settings
-      agents = snapshotSchema.parse(await snapshot.json()).workspace.agents
+      settings = decode(commandSettingsResponse, await commands.json()).settings
+      agents = decode(snapshotSchema, await snapshot.json()).workspace.agents
     } catch (error) {
       warnings.push(
         `${error instanceof Error ? error.message : String(error)} Adapter checks use default executable names.`,
@@ -53,7 +53,10 @@ export async function serverDoctor(directory: string, checkUpdates = false) {
     typeof manifest.version === 'string'
       ? manifest.version
       : 'unknown'
-  const adapters = await checkAdapterUpdates(settings, { checkUpdates, agents })
+  const adapters = await checkAdapterUpdates(settings, {
+    checkUpdates,
+    agents,
+  })
   return {
     version,
     nodeVersion: process.version,

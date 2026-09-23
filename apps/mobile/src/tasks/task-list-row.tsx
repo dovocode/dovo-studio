@@ -8,8 +8,6 @@ import { Icon } from '../ui/icon'
 import { colors, styles } from '../ui/theme'
 import { showTaskDone, taskRowStatus } from './task-row-status'
 
-const projectColors = ['#67d9ef', '#bc9cff', '#79dcb5', '#f0be60', '#f795ae', '#7dc8ff']
-
 export function TaskListRow({
   row,
   runtime,
@@ -39,15 +37,17 @@ export function TaskListRow({
   const done = showTaskDone(task, row.needsInput, now)
   const failed = !row.needsInput && !done && status.startsWith('Failed')
   const worktree = task.execution === 'worktree'
-  const projectColor =
-    projectColors[
-      Array.from(task.repositoryId).reduce(
-        (hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0,
-        0,
-      ) % projectColors.length
-    ]
   return (
-    <View style={[styles.listItem, { paddingVertical: 0, gap: 0 }]}>
+    <View
+      style={{
+        paddingVertical: 3,
+        paddingHorizontal: 2,
+        marginBottom: 2,
+        gap: 0,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+      }}
+    >
       <View style={{ flexDirection: 'row', gap: 4 }}>
         <Pressable
           testID={testID}
@@ -60,13 +60,13 @@ export function TaskListRow({
           style={({ pressed }) => ({
             flex: 1,
             minWidth: 0,
-            gap: 3,
-            paddingVertical: 10,
+            gap: 5,
+            paddingVertical: 6,
             opacity: pressed ? 0.6 : 1,
           })}
         >
           <View style={[styles.row, { flexWrap: 'nowrap', gap: 6 }]}>
-            <Icon name="folder" size={14} color={projectColor} />
+            <Icon name="folder" size={14} color={colors.muted} />
             <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 12 }]}>
               {task.pinned ? '• ' : ''}
               {row.projectName || 'No project'}
@@ -94,8 +94,8 @@ export function TaskListRow({
             </Text>
           </View>
           <Text
-            numberOfLines={1}
-            style={[styles.text, { fontSize: 16, lineHeight: 22, fontWeight: '600' }]}
+            numberOfLines={2}
+            style={[styles.text, { fontSize: 15, lineHeight: 20, fontWeight: '600' }]}
           >
             {task.title}
           </Text>

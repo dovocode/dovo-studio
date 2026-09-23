@@ -1,10 +1,17 @@
+import { decode } from '@dovo/protocol'
 import { BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
 import { pathToFileURL } from 'node:url'
 import { browserCommandSchema, previewUrl } from '@dovo/protocol'
-
 export function registerBrowser(indexPath: string) {
   const registered = new WeakSet<BrowserWindow>()
-  const views = new Map<number, { key: string; view: WebContentsView; url: string }>()
+  const views = new Map<
+    number,
+    {
+      key: string
+      view: WebContentsView
+      url: string
+    }
+  >()
   ipcMain.handle('preview:browser', async (event, raw: unknown) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     if (!window || event.senderFrame !== event.sender.mainFrame)
@@ -16,7 +23,7 @@ export function registerBrowser(indexPath: string) {
         : sender.href !== pathToFileURL(indexPath).href
     )
       throw new Error('Untrusted browser request')
-    const command = browserCommandSchema.parse(raw)
+    const command = decode(browserCommandSchema, raw)
     if (command.action === 'external') {
       await shell.openExternal(previewUrl(command.url))
       return
@@ -43,7 +50,9 @@ export function registerBrowser(indexPath: string) {
             partition: 'dovo-preview',
           },
         })
-        view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+        view.webContents.setWindowOpenHandler(() => ({
+          action: 'deny',
+        }))
         view.webContents.session.setPermissionRequestHandler(
           (_webContents, _permission, callback) => callback(false),
         )
@@ -55,7 +64,11 @@ export function registerBrowser(indexPath: string) {
           if (!/^https?:\/\//i.test(url)) event.preventDefault()
         })
         window.contentView.addChildView(view)
-        entry = { key: command.key, view, url: '' }
+        entry = {
+          key: command.key,
+          view,
+          url: '',
+        }
         views.set(window.id, entry)
         if (!registered.has(window)) {
           registered.add(window)
@@ -82,11 +95,20 @@ export function registerBrowser(indexPath: string) {
         const { width: vw, height: vh } = command.viewport
         entry.view.webContents.enableDeviceEmulation({
           screenPosition: 'mobile',
-          screenSize: { width: vw, height: vh },
-          viewSize: { width: vw, height: vh },
+          screenSize: {
+            width: vw,
+            height: vh,
+          },
+          viewSize: {
+            width: vw,
+            height: vh,
+          },
           deviceScaleFactor: 1,
           scale: Math.min(bounds.width / vw, bounds.height / vh),
-          viewPosition: { x: 0, y: 0 },
+          viewPosition: {
+            x: 0,
+            y: 0,
+          },
         })
       } else entry.view.webContents.disableDeviceEmulation()
       entry.view.setVisible(true)

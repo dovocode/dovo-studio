@@ -1,5 +1,5 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import type { PullSummary } from '@dovo/studio-core'
-import { useState } from 'react'
 import { Badge, ContextMenu } from '@dovo/studio-ui'
 import { pullChecks, pullReview, pullState, pullNextStep } from '@dovo/studio-core'
 import { GitPullRequest, GitMerge } from 'lucide-react'
@@ -17,7 +17,7 @@ export function PullRow({
   selected: boolean
   onSelect: () => void
 }) {
-  const [error, setError] = useState('')
+  const [error, setError] = useApplicationState('')
   const copy = async (text: string) => {
     setError('')
     try {

@@ -1,54 +1,77 @@
-import { z } from 'zod'
-export const agentQuestionSchema = z.object({
-  id: z.string().min(1).max(200),
-  header: z.string().max(200),
-  question: z.string().min(1).max(12000),
-  options: z
-    .array(
-      z.object({
-        value: z.string().min(1).max(1000),
-        label: z.string().min(1).max(1000),
-        description: z.string().max(4000).default(''),
-      }),
-    )
-    .max(50)
-    .default([]),
-  multiple: z.boolean().default(false),
-  custom: z.boolean().default(true),
-  secret: z.boolean().default(false),
-  required: z.boolean().default(true),
-  inputType: z.enum(['text', 'number']).default('text'),
+import { mutableStruct, mutableArray } from './schema.js'
+import { minValue, maxValue, refine } from './schema.js'
+import { Schema } from 'effect'
+export const agentQuestionSchema = mutableStruct({
+  id: maxValue(minValue(Schema.String, 1), 200),
+  header: maxValue(Schema.String, 200),
+  question: maxValue(minValue(Schema.String, 1), 12000),
+  options: Schema.optionalWith(
+    maxValue(
+      mutableArray(
+        mutableStruct({
+          value: maxValue(minValue(Schema.String, 1), 1000),
+          label: maxValue(minValue(Schema.String, 1), 1000),
+          description: Schema.optionalWith(maxValue(Schema.String, 4000), {
+            default: () => '',
+          }),
+        }),
+      ),
+      50,
+    ),
+    {
+      default: () => [],
+    },
+  ),
+  multiple: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
+  custom: Schema.optionalWith(Schema.Boolean, {
+    default: () => true,
+  }),
+  secret: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
+  required: Schema.optionalWith(Schema.Boolean, {
+    default: () => true,
+  }),
+  inputType: Schema.optionalWith(Schema.Literal('text', 'number'), {
+    default: () => 'text',
+  }),
 })
-export const questionPromptSchema = z
-  .object({
-    title: z.string().min(1).max(12000),
+export const questionPromptSchema = refine(
+  mutableStruct({
+    title: maxValue(minValue(Schema.String, 1), 12000),
     /** Older harnesses block by default; Astra can ask while continuing its turn. */
-    blocking: z.boolean().optional(),
-    questions: z.array(agentQuestionSchema).min(1).max(20),
-  })
-  .refine(
-    (v) => new Set(v.questions.map((q) => q.id)).size === v.questions.length,
-    'Question IDs must be unique',
-  )
-export const questionAnswersSchema = z.record(
-  z.string().min(1).max(200),
-  z.array(z.string().max(10000)).max(50),
+    blocking: Schema.optional(Schema.Boolean),
+    questions: maxValue(minValue(mutableArray(agentQuestionSchema), 1), 20),
+  }),
+  (v) => new Set(v.questions.map((q) => q.id)).size === v.questions.length,
+  'Question IDs must be unique',
 )
-export const pendingQuestionSchema = z.object({
-  id: z.string(),
-  taskId: z.string(),
+export const questionAnswersSchema = Schema.mutable(
+  Schema.Record({
+    key: maxValue(minValue(Schema.String, 1), 200),
+    value: maxValue(mutableArray(maxValue(Schema.String, 10000)), 50),
+  }),
+)
+export const pendingQuestionSchema = mutableStruct({
+  id: Schema.String,
+  taskId: Schema.String,
   prompt: questionPromptSchema,
-  createdAt: z.string(),
+  createdAt: Schema.String,
 })
-export const questionReplySchema = z.object({
-  id: z.string().min(1).max(200),
-  answers: questionAnswersSchema.nullable(),
+export const questionReplySchema = mutableStruct({
+  id: maxValue(minValue(Schema.String, 1), 200),
+  answers: Schema.NullOr(questionAnswersSchema),
 })
-export type AgentQuestion = z.infer<typeof agentQuestionSchema>
-export type QuestionPrompt = z.infer<typeof questionPromptSchema>
-export type QuestionAnswers = z.infer<typeof questionAnswersSchema>
-export type PendingQuestion = z.infer<typeof pendingQuestionSchema>
-export type QuestionDraft = { selected: string[]; text: string }
+export type AgentQuestion = Schema.Schema.Type<typeof agentQuestionSchema>
+export type QuestionPrompt = Schema.Schema.Type<typeof questionPromptSchema>
+export type QuestionAnswers = Schema.Schema.Type<typeof questionAnswersSchema>
+export type PendingQuestion = Schema.Schema.Type<typeof pendingQuestionSchema>
+export type QuestionDraft = {
+  selected: string[]
+  text: string
+}
 export function questionDraftAnswers(drafts: Record<string, QuestionDraft>): QuestionAnswers {
   return Object.fromEntries(
     Object.entries(drafts).map(([id, draft]) => [
@@ -69,7 +92,10 @@ export function toggleQuestionChoice(
           ? draft.selected.filter((v) => v !== value)
           : [...draft.selected, value],
       }
-    : { selected: !q.required && draft.selected.includes(value) ? [] : [value], text: '' }
+    : {
+        selected: !q.required && draft.selected.includes(value) ? [] : [value],
+        text: '',
+      }
 }
 export function questionAnswerError(questions: AgentQuestion[], answers: QuestionAnswers) {
   if (Object.keys(answers).some((id) => !questions.some((q) => q.id === id)))

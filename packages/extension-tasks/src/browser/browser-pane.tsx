@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { Effect } from 'effect'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useRef } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -9,7 +11,7 @@ import {
   Smartphone,
   PanelRightClose,
 } from 'lucide-react'
-import { useWorkspace, useStudioHost } from '@dovo/studio-core'
+import { useWorkspace, useStudioHost, startPolling } from '@dovo/studio-core'
 import {
   previewUrl,
   previewPresets,
@@ -22,7 +24,6 @@ import { RemoteBrowser } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
 const addresses = new Map<string, string>()
-
 export function BrowserPane({ taskId, onClose }: { taskId: string; onClose?: () => void }) {
   const { connection } = useWorkspace()
   const scope = `${connection?.address ?? ''}:${taskId}`
@@ -39,21 +40,25 @@ function BrowserContent({
 }) {
   const { connection, request, connected, snapshot } = useWorkspace(),
     { browser } = useStudioHost()
-  const [input, setInput] = useState(addresses.get(scope) ?? 'http://localhost:3000')
-  const [url, setUrl] = useState(addresses.get(scope) ?? '')
-  const [history, setHistory] = useState({ url: '', back: false, forward: false })
+  const [input, setInput] = useApplicationState(addresses.get(scope) ?? 'http://localhost:3000')
+  const [url, setUrl] = useApplicationState(addresses.get(scope) ?? '')
+  const [history, setHistory] = useApplicationState({
+    url: '',
+    back: false,
+    forward: false,
+  })
   const editing = useRef(false)
-  const [mode, setMode] = useState<'remote' | 'web' | 'devices'>('remote')
-  const [preset, setPreset] = useState('fill'),
-    [landscape, setLandscape] = useState(false)
-  const [error, setError] = useState(''),
-    [reload, setReload] = useState(0)
-  const [devices, setDevices] = useState<PreviewDevice[]>([]),
-    [diagnostics, setDiagnostics] = useState<string[]>([])
-  const [liveDevice, setLiveDevice] = useState<PreviewDevice>()
-  const [expanded, setExpanded] = useState(false)
-  const [busy, setBusy] = useState(false),
-    [image, setImage] = useState('')
+  const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>('remote')
+  const [preset, setPreset] = useApplicationState('fill'),
+    [landscape, setLandscape] = useApplicationState(false)
+  const [error, setError] = useApplicationState(''),
+    [reload, setReload] = useApplicationState(0)
+  const [devices, setDevices] = useApplicationState<PreviewDevice[]>([]),
+    [diagnostics, setDiagnostics] = useApplicationState<string[]>([])
+  const [liveDevice, setLiveDevice] = useApplicationState<PreviewDevice | undefined>(undefined)
+  const [expanded, setExpanded] = useApplicationState(false)
+  const [busy, setBusy] = useApplicationState(false),
+    [image, setImage] = useApplicationState('')
   const pending = useRef(false),
     mount = useRef(true),
     slot = useRef<HTMLDivElement>(null)
@@ -78,7 +83,13 @@ function BrowserContent({
     }
   }
   const loadDevices = async () => {
-    const result = await request('/api/previews/devices', { taskId }, previewDevicesSchema)
+    const result = await request(
+      '/api/previews/devices',
+      {
+        taskId,
+      },
+      previewDevicesSchema,
+    )
     if (mount.current) {
       setDevices(result.devices)
       setDiagnostics(result.diagnostics)
@@ -88,7 +99,13 @@ function BrowserContent({
     try {
       const target = previewUrl(input, connection?.address)
       if (target === url) {
-        if (browser) void act(() => browser({ action: 'reload', key: scope }))
+        if (browser)
+          void act(() =>
+            browser({
+              action: 'reload',
+              key: scope,
+            }),
+          )
         else setReload((n) => n + 1)
       }
       setUrl(target)
@@ -102,22 +119,29 @@ function BrowserContent({
   useEffect(() => {
     if (!browser || !url || mode !== 'web') return
     let alive = true
-    const poll = () =>
-      void browser({ action: 'status', key: scope })
-        .then((state) => {
+    const poll = Effect.tryPromise({
+      try: () => browser({ action: 'status', key: scope }),
+      catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+    }).pipe(
+      Effect.tap((state) =>
+        Effect.sync(() => {
           if (!alive || !state || !state.url.startsWith('http')) return
           setHistory(state)
           if (!editing.current) setInput(state.url)
           addresses.set(scope, state.url)
-        })
-        .catch((e) => {
-          if (alive) setError(String(e))
-        })
-    const timer = setInterval(poll, 1000)
-    poll()
+        }),
+      ),
+      Effect.asVoid,
+    )
+    const polling = startPolling(poll, {
+      interval: 1000,
+      onError: (error) => {
+        if (alive) setError(error.message)
+      },
+    })
     return () => {
       alive = false
-      clearInterval(timer)
+      void polling.stop()
     }
   }, [browser, url, mode, scope])
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
@@ -149,7 +173,10 @@ function BrowserContent({
                 height: Math.round(rect.height),
               },
             }
-          : { action: 'hide' as const, key: scope }
+          : {
+              action: 'hide' as const,
+              key: scope,
+            }
       void browser(command).catch((e) => {
         if (alive) setError(String(e))
       })
@@ -157,7 +184,10 @@ function BrowserContent({
     const resize = new ResizeObserver(update),
       mutations = new MutationObserver(update)
     if (slot.current) resize.observe(slot.current)
-    mutations.observe(document.body, { childList: true, subtree: true })
+    mutations.observe(document.body, {
+      childList: true,
+      subtree: true,
+    })
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
     update()
@@ -167,7 +197,10 @@ function BrowserContent({
       mutations.disconnect()
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
-      void browser({ action: 'hide', key: scope }).catch(() => {})
+      void browser({
+        action: 'hide',
+        key: scope,
+      }).catch(() => {})
     }
   }, [browser, url, mode, scope, preset, landscape, size])
   const deviceAction = (
@@ -177,7 +210,12 @@ function BrowserContent({
     void act(async () => {
       const result = await request(
         '/api/previews/action',
-        { taskId, id: device.id, action, url: input },
+        {
+          taskId,
+          id: device.id,
+          action,
+          url: input,
+        },
         previewResultSchema,
       )
       if (mount.current && result.image) setImage(result.image)
@@ -242,7 +280,14 @@ function BrowserContent({
                 label={action === 'back' ? 'Back' : 'Forward'}
                 type="button"
                 disabled={!url || mode !== 'web' || !history[action]}
-                onClick={() => void act(() => browser({ action, key: scope }))}
+                onClick={() =>
+                  void act(() =>
+                    browser({
+                      action,
+                      key: scope,
+                    }),
+                  )
+                }
               >
                 {action === 'back' ? <ArrowLeft size={16} /> : <ArrowRight size={16} />}
               </IconButton>
@@ -269,7 +314,12 @@ function BrowserContent({
             disabled={!url}
             onClick={() =>
               browser
-                ? void act(() => browser({ action: 'reload', key: scope }))
+                ? void act(() =>
+                    browser({
+                      action: 'reload',
+                      key: scope,
+                    }),
+                  )
                 : setReload((n) => n + 1)
             }
           >
@@ -280,7 +330,13 @@ function BrowserContent({
               type="button"
               label="Open preview externally"
               onClick={() =>
-                void act(() => browser({ action: 'external', key: scope, url: history.url || url }))
+                void act(() =>
+                  browser({
+                    action: 'external',
+                    key: scope,
+                    url: history.url || url,
+                  }),
+                )
               }
             >
               <ExternalLink size={16} />
@@ -392,7 +448,11 @@ function BrowserContent({
                         width: landscape ? size.height : size.width,
                         height: landscape ? size.width : size.height,
                       }
-                    : { width: '100%', height: '100%', minHeight: 200 }
+                    : {
+                        width: '100%',
+                        height: '100%',
+                        minHeight: 200,
+                      }
                 }
               >
                 {!browser && (

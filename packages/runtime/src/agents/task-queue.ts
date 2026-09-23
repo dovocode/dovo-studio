@@ -54,7 +54,11 @@ export class TaskQueue {
   change(id: string, action: 'remove' | 'up' | 'down' | 'pause', messageId?: string) {
     const task = this.store.task(id)
     if (action === 'pause') {
-      this.store.updateTask(id, (t) => ({ ...t, queuePaused: true }))
+      this.store.updateTask(id, (t) => ({
+        ...t,
+        queuePaused: true,
+        restartRecovery: t.restartRecovery ? { ...t.restartRecovery, automatic: false } : undefined,
+      }))
       return
     }
     const queue = [...(task.queue ?? [])],
@@ -66,7 +70,13 @@ export class TaskQueue {
       if (target >= 0 && target < queue.length)
         [queue[index], queue[target]] = [queue[target], queue[index]]
     }
-    this.store.updateTask(id, (t) => ({ ...t, queue, checkoutLocked: true }))
+    this.store.updateTask(id, (t) => ({
+      ...t,
+      queue,
+      checkoutLocked: true,
+      restartRecovery:
+        !queue.length && t.restartRecovery?.kind === 'queue' ? undefined : t.restartRecovery,
+    }))
     this.activity?.add('queue', id, `Queued message ${action}`, { messageId })
   }
 }

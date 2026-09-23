@@ -1,10 +1,12 @@
+import { mutableStruct } from '@dovo/protocol'
+import { decodeResult, decode } from '@dovo/protocol'
 import { acpMcpServers } from '../mcp-settings.js'
 import { isImageAttachment } from '@dovo/protocol'
 import { acpModels } from '../catalogs/acp.js'
 import { formQuestions } from './form-questions.js'
 import { stopChild } from '../stop-child.js'
 import { spawn } from 'node:child_process'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import type { AgentAdapter } from '../types.js'
 import { executableAvailable, processEnvironment } from '../../process.js'
@@ -31,15 +33,29 @@ export const acpAdapter: AgentAdapter = {
       () => ({
         createElicitation: async (params) => {
           run.onEvent?.('elicitation/create', params)
-          const form = z
-            .object({ mode: z.literal('form'), message: z.string(), requestedSchema: z.unknown() })
-            .safeParse(params)
+          const form = decodeResult(
+            mutableStruct({
+              mode: Schema.Literal('form'),
+              message: Schema.String,
+              requestedSchema: Schema.Unknown,
+            }),
+            params,
+          )
           if (!form.success) {
             run.onActivity('This ACP input request is not a supported form')
-            return { action: 'cancel' }
+            return {
+              action: 'cancel',
+            }
           }
           const content = await formQuestions(form.data.message, form.data.requestedSchema, run)
-          return content ? { action: 'accept', content } : { action: 'decline' }
+          return content
+            ? {
+                action: 'accept',
+                content,
+              }
+            : {
+                action: 'decline',
+              }
         },
         requestPermission: async (params) => {
           run.onEvent?.('permission', params)
@@ -54,8 +70,13 @@ export const acpAdapter: AgentAdapter = {
           )
           return {
             outcome: option
-              ? { outcome: 'selected', optionId: option.optionId }
-              : { outcome: 'cancelled' },
+              ? {
+                  outcome: 'selected',
+                  optionId: option.optionId,
+                }
+              : {
+                  outcome: 'cancelled',
+                },
           }
         },
         sessionUpdate: (params) => {
@@ -83,7 +104,9 @@ export const acpAdapter: AgentAdapter = {
       ),
     )
     const abort = () => stopChild(child)
-    run.signal.addEventListener('abort', abort, { once: true })
+    run.signal.addEventListener('abort', abort, {
+      once: true,
+    })
     let rejectExit: (error: Error) => void = () => {}
     const exited = new Promise<never>((_, reject) => {
       rejectExit = reject
@@ -97,11 +120,19 @@ export const acpAdapter: AgentAdapter = {
         rpc.initialize({
           protocolVersion: PROTOCOL_VERSION,
           clientCapabilities: {
-            fs: { readTextFile: false, writeTextFile: false },
+            fs: {
+              readTextFile: false,
+              writeTextFile: false,
+            },
             terminal: false,
-            elicitation: { form: {} },
+            elicitation: {
+              form: {},
+            },
           },
-          clientInfo: { name: 'dovo-studio', version: '0.1.0' },
+          clientInfo: {
+            name: 'dovo-studio',
+            version: '0.1.0',
+          },
         }),
         exited,
       ])
@@ -115,11 +146,25 @@ export const acpAdapter: AgentAdapter = {
         throw new Error('This ACP harness does not support HTTP MCP servers')
       const session = await Promise.race([
         run.sessionId
-          ? rpc.loadSession({ sessionId: run.sessionId, cwd: run.cwd, mcpServers })
-          : rpc.newSession({ cwd: run.cwd, mcpServers }),
+          ? rpc.loadSession({
+              sessionId: run.sessionId,
+              cwd: run.cwd,
+              mcpServers,
+            })
+          : rpc.newSession({
+              cwd: run.cwd,
+              mcpServers,
+            }),
         exited,
       ])
-      const id = run.sessionId ?? z.object({ sessionId: z.string() }).parse(session).sessionId
+      const id =
+        run.sessionId ??
+        decode(
+          mutableStruct({
+            sessionId: Schema.String,
+          }),
+          session,
+        ).sessionId
       if (!id) throw new Error('ACP agent did not return a session id')
       run.onSession(id)
       if (run.agent.permission === 'read-only') {
@@ -127,7 +172,10 @@ export const acpAdapter: AgentAdapter = {
           /^(plan|read[-_ ]?only)$/i.test(mode.id),
         )
         if (!mode) throw new Error('This ACP agent does not advertise a read-only mode')
-        await rpc.setSessionMode({ sessionId: id, modeId: mode.id })
+        await rpc.setSessionMode({
+          sessionId: id,
+          modeId: mode.id,
+        })
       }
       let configOptions = session.configOptions
       if (run.agent.model) {
@@ -165,9 +213,11 @@ export const acpAdapter: AgentAdapter = {
           sessionId: id,
           prompt: [
             ...(initialization.agentCapabilities?.promptCapabilities?.image
-              ? (run.attachments ?? [])
-                  .filter(isImageAttachment)
-                  .map((file) => ({ type: 'image' as const, data: file.data, mimeType: file.mime }))
+              ? (run.attachments ?? []).filter(isImageAttachment).map((file) => ({
+                  type: 'image' as const,
+                  data: file.data,
+                  mimeType: file.mime,
+                }))
               : []),
             {
               type: 'text',

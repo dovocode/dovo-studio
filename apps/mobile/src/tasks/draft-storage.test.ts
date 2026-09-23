@@ -133,3 +133,29 @@ describe('persistent draft ordering', () => {
     expect(values.get('legacy.task')).toBe('Legacy text')
   })
 })
+
+it('keeps a native write serialized after its owning fiber is interrupted', async () => {
+  const { Effect, Fiber } = await import('effect')
+  const values = new Map<string, string>()
+  const blocked = gate()
+  const storage = memoryStorage(values)
+  const writes: string[] = []
+  const drafts = createDraftStorage({
+    ...storage,
+    setItem: async (key, value) => {
+      writes.push(value)
+      if (value === 'first') await blocked.promise
+      await storage.setItem(key, value)
+    },
+  })
+  const first = Effect.runFork(drafts.writeEffect('task', 'first'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const interrupted = Effect.runPromise(Fiber.interrupt(first))
+  const second = drafts.write('task', 'second')
+  expect(writes).toEqual(['first'])
+  blocked.resolve()
+  await interrupted
+  await second
+  expect(writes).toEqual(['first', 'second'])
+  expect(await drafts.read('task')).toBe('second')
+})

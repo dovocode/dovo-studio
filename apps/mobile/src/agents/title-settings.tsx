@@ -1,4 +1,9 @@
-import { useEffect, useState } from 'react'
+import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import { decode } from '@dovo/protocol'
+import { useEffect } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/text'
 import {
@@ -15,20 +20,32 @@ import { Action } from '../ui/action'
 import { styles } from '../ui/theme'
 import { useAction } from '../ui/use-action'
 export function TitleSettings() {
-  const { call, connected, snapshot } = useRuntime(),
+  const { call, connected, snapshot, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
-  const [settings, setSettings] = useState<TitleGenerationSettings>(),
-    [loadError, setLoadError] = useState('')
+  const [settings, setSettings] = useApplicationState<TitleGenerationSettings | undefined>(
+      undefined,
+    ),
+    [loadError, setLoadError] = useApplicationState('')
   useEffect(() => {
     let active = true
     if (connected)
-      void call('/api/agents/title-settings/read', {}, titleGenerationSettingsSchema)
-        .then((value) => {
-          if (active) setSettings(value)
-        })
-        .catch((error) => {
-          if (active) setLoadError(String(error))
-        })
+      void runClientEffect(
+        callEffect('/api/agents/title-settings/read', {}, titleGenerationSettingsSchema)
+          .pipe(
+            Effect.flatMap((value) =>
+              nativeEffect(() => {
+                if (active) setSettings(value)
+              }),
+            ),
+          )
+          .pipe(
+            Effect.catchAll((error) =>
+              nativeEffect(() => {
+                if (active) setLoadError(String(error))
+              }),
+            ),
+          ),
+      )
     return () => {
       active = false
     }
@@ -75,7 +92,10 @@ export function TitleSettings() {
             ...settings,
             agentId: value.startsWith('agent:') ? value.slice(6) : '',
             harness: value.startsWith('harness:')
-              ? { provider: agentSchema.shape.provider.parse(value.slice(8)), endpoint: '' }
+              ? {
+                  provider: decode(agentSchema.fields.provider, value.slice(8)),
+                  endpoint: '',
+                }
               : undefined,
             model: '',
             reasoning: '',
@@ -87,7 +107,11 @@ export function TitleSettings() {
         disabled={busy}
         agent={agent}
         onChange={(agent) =>
-          setSettings({ ...settings, model: agent.model, reasoning: agent.reasoning ?? '' })
+          setSettings({
+            ...settings,
+            model: agent.model,
+            reasoning: agent.reasoning ?? '',
+          })
         }
       />
       {settings.harness && (agent.provider === 'acp' || agent.provider === 'opencode') && (
@@ -96,7 +120,13 @@ export function TitleSettings() {
           editable={!busy}
           value={settings.harness.endpoint}
           onChangeText={(endpoint) =>
-            setSettings({ ...settings, harness: { ...settings.harness!, endpoint } })
+            setSettings({
+              ...settings,
+              harness: {
+                ...settings.harness!,
+                endpoint,
+              },
+            })
           }
         />
       )}
@@ -109,7 +139,10 @@ export function TitleSettings() {
           onChangeText={(args) =>
             setSettings({
               ...settings,
-              harness: { ...settings.harness!, args: args.split('\n').filter(Boolean) },
+              harness: {
+                ...settings.harness!,
+                args: args.split('\n').filter(Boolean),
+              },
             })
           }
         />
@@ -118,14 +151,16 @@ export function TitleSettings() {
         label="Save title settings"
         disabled={!connected || busy}
         onPress={() =>
-          act(async () =>
-            setSettings(
-              await call(
-                '/api/agents/title-settings/save',
-                settings,
-                titleGenerationSettingsSchema,
-              ),
-            ),
+          act(() =>
+            mobileWorkflow(function* () {
+              return setSettings(
+                yield* callEffect(
+                  '/api/agents/title-settings/save',
+                  settings,
+                  titleGenerationSettingsSchema,
+                ),
+              )
+            }),
           )
         }
       />

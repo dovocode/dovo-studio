@@ -1,22 +1,22 @@
-import { z } from 'zod'
-
-export const subagentSchema = z.object({
-  id: z.string(),
-  provider: z.string(),
-  name: z.string(),
-  status: z.enum(['working', 'completed', 'failed', 'stopped', 'unknown']),
-  activity: z.string().optional(),
-  prompt: z.string().optional(),
-  model: z.string().optional(),
-  reasoning: z.string().optional(),
-  tokens: z.number().nonnegative().optional(),
-  durationMs: z.number().nonnegative().optional(),
-  parentId: z.string().optional(),
-  startedAt: z.string(),
-  updatedAt: z.string(),
-  finishedAt: z.string().optional(),
+import { mutableStruct } from './schema.js'
+import { Schema } from 'effect'
+export const subagentSchema = mutableStruct({
+  id: Schema.String,
+  provider: Schema.String,
+  name: Schema.String,
+  status: Schema.Literal('working', 'completed', 'failed', 'stopped', 'unknown'),
+  activity: Schema.optional(Schema.String),
+  prompt: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  reasoning: Schema.optional(Schema.String),
+  tokens: Schema.optional(Schema.Number.pipe(Schema.finite()).pipe(Schema.nonNegative())),
+  durationMs: Schema.optional(Schema.Number.pipe(Schema.finite()).pipe(Schema.nonNegative())),
+  parentId: Schema.optional(Schema.String),
+  startedAt: Schema.String,
+  updatedAt: Schema.String,
+  finishedAt: Schema.optional(Schema.String),
 })
-export type Subagent = z.infer<typeof subagentSchema>
+export type Subagent = Schema.Schema.Type<typeof subagentSchema>
 export function subagentElapsed(agent: Subagent, now: number) {
   const ms =
     agent.durationMs ??
@@ -41,7 +41,10 @@ export function subagentMetadata(agent: Subagent) {
     agent.reasoning,
     agent.tokens === undefined
       ? undefined
-      : `${new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(agent.tokens)} tok`,
+      : `${new Intl.NumberFormat('en', {
+          notation: 'compact',
+          maximumFractionDigits: 1,
+        }).format(agent.tokens)} tok`,
   ]
     .filter(Boolean)
     .join(' · ')

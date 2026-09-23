@@ -1,13 +1,14 @@
-import { useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useRef } from 'react'
 import { ChevronDown, Plus, Trash2 } from 'lucide-react'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { Button, IconButton, cn } from '@dovo/studio-ui'
 import { TerminalSession } from './terminal-session'
 export function TerminalPane({ taskId, onClose }: { taskId: string; onClose: () => void }) {
   const { snapshot, connected, request } = useWorkspace(),
-    [selected, setSelected] = useState(''),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+    [selected, setSelected] = useApplicationState(''),
+    [error, setError] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
   const sessions = snapshot?.terminals.filter((session) => session.taskId === taskId) ?? [],
     active = sessions.find((session) => session.id === selected) ?? sessions[0]
@@ -25,9 +26,13 @@ export function TerminalPane({ taskId, onClose }: { taskId: string; onClose: () 
   }
   const create = () =>
     act(() =>
-      request('/api/terminals', { taskId }, responses.terminal).then((session) =>
-        setSelected(session.id),
-      ),
+      request(
+        '/api/terminals',
+        {
+          taskId,
+        },
+        responses.terminal,
+      ).then((session) => setSelected(session.id)),
     )
   return (
     <section className="flex h-full min-h-0 flex-col bg-[#0d0e10]" aria-label="Terminal">
@@ -58,7 +63,16 @@ export function TerminalPane({ taskId, onClose }: { taskId: string; onClose: () 
           className="size-6"
           disabled={!connected || !active || busy}
           onClick={() => {
-            if (active) act(() => request('/api/terminals/close', { id: active.id }, responses.ok))
+            if (active)
+              act(() =>
+                request(
+                  '/api/terminals/close',
+                  {
+                    id: active.id,
+                  },
+                  responses.ok,
+                ),
+              )
           }}
         >
           <Trash2 size={12} />

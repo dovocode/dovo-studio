@@ -1,36 +1,50 @@
+import { mutableStruct } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { dirname } from 'node:path'
 import { realpath, rm } from 'node:fs/promises'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { forgeConnectionSchema, pullDetailSchema, pullPageSchema } from '@dovo/protocol'
 import { fixture } from '../testing/fixture.js'
 import { startRuntime } from '../index.js'
-
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   for (const dispose of cleanup.splice(0).reverse()) await dispose()
 })
-
 async function setup() {
   const f = await fixture()
   cleanup.push(f.cleanup)
   const owner = 'forge-routing-fixture-owner-token-with-32-characters'
-  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: owner, port: 0 })
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: owner,
+    port: 0,
+  })
   cleanup.push(() => runtime.close())
   const services = runtime.services
   f.workspace.repositories[0]!.path = await realpath(f.directory)
   services.store.update(() => f.workspace)
   const sha = (await services.git.command(f.directory, ['rev-parse', 'HEAD'])).trim()
   const clientFetch = fetch
-  const writes: Array<{ path: string; body: unknown }> = []
-  const user = { uuid: '{me}', display_name: 'Me' }
+  const writes: Array<{
+    path: string
+    body: unknown
+  }> = []
+  const user = {
+    uuid: '{me}',
+    display_name: 'Me',
+  }
   const repository = {
     uuid: '{repo}',
     name: 'Studio',
     full_name: 'team/studio',
-    links: { html: { href: 'https://bitbucket.org/team/studio' } },
+    links: {
+      html: {
+        href: 'https://bitbucket.org/team/studio',
+      },
+    },
   }
   let title = 'Provider PR'
   let optionalFailure = false
@@ -41,11 +55,31 @@ async function setup() {
     state: 'OPEN',
     author: user,
     updated_on: '2026-09-20T08:00:00Z',
-    source: { branch: { name: 'feature' }, commit: { hash: sha }, repository },
-    destination: { branch: { name: 'main' }, commit: { hash: sha }, repository },
+    source: {
+      branch: {
+        name: 'feature',
+      },
+      commit: {
+        hash: sha,
+      },
+      repository,
+    },
+    destination: {
+      branch: {
+        name: 'main',
+      },
+      commit: {
+        hash: sha,
+      },
+      repository,
+    },
     reviewers: [],
     participants: [],
-    links: { html: { href: 'https://bitbucket.org/team/studio/pull-requests/7' } },
+    links: {
+      html: {
+        href: 'https://bitbucket.org/team/studio/pull-requests/7',
+      },
+    },
   })
   const provider = vi.fn<typeof fetch>(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input)
@@ -58,21 +92,33 @@ async function setup() {
         path: url.pathname,
         body: typeof init?.body === 'string' ? JSON.parse(init.body) : null,
       })
-      return Response.json({ id: 1 })
+      return Response.json({
+        id: 1,
+      })
     }
     if (url.pathname.endsWith('/user')) return Response.json(user)
-    if (url.pathname.endsWith('/pullrequests')) return Response.json({ values: [current()] })
+    if (url.pathname.endsWith('/pullrequests'))
+      return Response.json({
+        values: [current()],
+      })
     if (url.pathname.endsWith('/pullrequests/7')) return Response.json(current())
     if (url.pathname.endsWith('/studio')) return Response.json(repository)
     if (url.pathname.endsWith('/diff')) return new Response('')
     if (optionalFailure && /\/(comments|statuses)$/.test(url.pathname))
-      return Response.json({}, { status: 403 })
+      return Response.json(
+        {},
+        {
+          status: 403,
+        },
+      )
     if (url.pathname.endsWith('/comments'))
       return Response.json({
         values: [
           {
             id: 4,
-            content: { raw: 'Cached discussion' },
+            content: {
+              raw: 'Cached discussion',
+            },
             user,
             created_on: '2026-09-20T08:00:00Z',
           },
@@ -81,20 +127,34 @@ async function setup() {
     if (url.pathname.endsWith('/statuses'))
       return Response.json({
         values: [
-          { key: 'test', name: 'Tests', state: 'SUCCESSFUL', url: 'https://ci.example.com/7' },
+          {
+            key: 'test',
+            name: 'Tests',
+            state: 'SUCCESSFUL',
+            url: 'https://ci.example.com/7',
+          },
         ],
       })
-    if (url.pathname.endsWith('/diffstat')) return Response.json({ values: [] })
+    if (url.pathname.endsWith('/diffstat'))
+      return Response.json({
+        values: [],
+      })
     throw new Error(`Unexpected fixture endpoint: ${url.pathname}`)
   })
   vi.stubGlobal('fetch', provider)
   const request = async (path: string, body: unknown) => {
     const response = await clientFetch(`http://127.0.0.1:${runtime.port}/api/scm/${path}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${owner}`,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(body),
     })
-    return { status: response.status, data: (await response.json()) as unknown }
+    return {
+      status: response.status,
+      data: (await response.json()) as unknown,
+    }
   }
   const saved = await request('connections/save', {
     name: 'Bitbucket',
@@ -105,10 +165,13 @@ async function setup() {
     token: 'fixture-private-token',
   })
   expect(saved.status).toBe(200)
-  const connection = forgeConnectionSchema.parse(saved.data)
+  const connection = decode(forgeConnectionSchema, saved.data)
   const bound = await request('repositories/forge/bind', {
     repositoryId: 'repo',
-    forge: { connectionId: connection.id, repository: 'team/studio' },
+    forge: {
+      connectionId: connection.id,
+      repository: 'team/studio',
+    },
   })
   expect(bound.status).toBe(200)
   return {
@@ -126,18 +189,23 @@ async function setup() {
     },
   }
 }
-
 it('routes a bound provider through HTTP, keeps credentials private, invalidates account caches and rejects stale mutations', async () => {
   const { services, request, connection, sha, writes, setTitle } = await setup()
-  const listed = await request('pulls/overview', { repositoryId: 'repo', state: 'open' })
+  const listed = await request('pulls/overview', {
+    repositoryId: 'repo',
+    state: 'open',
+  })
   expect(listed.status).toBe(200)
-  expect(pullPageSchema.parse(listed.data).pulls[0]).toMatchObject({
+  expect(decode(pullPageSchema, listed.data).pulls[0]).toMatchObject({
     provider: 'bitbucket',
     title: 'Provider PR',
     viewerIsAuthor: true,
   })
-  const first = await request('pulls/detail', { repositoryId: 'repo', number: 7 })
-  expect(pullDetailSchema.parse(first.data).pull.connectionId).toBe(connection.id)
+  const first = await request('pulls/detail', {
+    repositoryId: 'repo',
+    number: 7,
+  })
+  expect(decode(pullDetailSchema, first.data).pull.connectionId).toBe(connection.id)
   const action = await request('pulls/action', {
     repositoryId: 'repo',
     number: 7,
@@ -149,7 +217,11 @@ it('routes a bound provider through HTTP, keeps credentials private, invalidates
   expect(writes).toEqual([
     {
       path: '/2.0/repositories/team/studio/pullrequests/7/comments',
-      body: { content: { raw: 'A useful comment' } },
+      body: {
+        content: {
+          raw: 'A useful comment',
+        },
+      },
     },
   ])
   const stale = await request('pulls/action', {
@@ -161,10 +233,16 @@ it('routes a bound provider through HTTP, keeps credentials private, invalidates
   expect(stale.status).toBe(409)
   expect(writes).toHaveLength(1)
   setTitle('Updated account result')
-  const edited = await request('connections/save', { ...connection, name: 'Renamed account' })
+  const edited = await request('connections/save', {
+    ...connection,
+    name: 'Renamed account',
+  })
   expect(edited.status).toBe(200)
-  const refreshed = await request('pulls/detail', { repositoryId: 'repo', number: 7 })
-  expect(pullDetailSchema.parse(refreshed.data).pull.title).toBe('Updated account result')
+  const refreshed = await request('pulls/detail', {
+    repositoryId: 'repo',
+    number: 7,
+  })
+  expect(decode(pullDetailSchema, refreshed.data).pull.title).toBe('Updated account result')
   expect(JSON.stringify((await request('connections/read', {})).data)).not.toContain(
     'fixture-private-token',
   )
@@ -173,7 +251,6 @@ it('routes a bound provider through HTTP, keeps credentials private, invalidates
     'fixture-private-token',
   )
 })
-
 it('preserves provider checkout metadata through task creation and an isolated worktree', async () => {
   const { services, request, connection, sha, f } = await setup()
   const fetchHead = vi
@@ -190,7 +267,12 @@ it('preserves provider checkout metadata through task creation and an isolated w
     run: false,
   })
   expect(created.status).toBe(200)
-  const id = z.object({ id: z.string() }).parse(created.data).id
+  const id = decode(
+    mutableStruct({
+      id: Schema.String,
+    }),
+    created.data,
+  ).id
   expect(services.store.task(id).pullRequest).toMatchObject({
     provider: 'bitbucket',
     connectionId: connection.id,
@@ -199,7 +281,12 @@ it('preserves provider checkout metadata through task creation and an isolated w
     headSha: sha,
   })
   const directory = await services.checkouts.directory(id)
-  cleanup.push(() => rm(dirname(directory), { recursive: true, force: true }))
+  cleanup.push(() =>
+    rm(dirname(directory), {
+      recursive: true,
+      force: true,
+    }),
+  )
   expect(directory).not.toBe(f.directory)
   expect((await services.git.command(directory, ['rev-parse', 'HEAD'])).trim()).toBe(sha)
   expect(fetchHead).toHaveBeenCalledWith(
@@ -215,7 +302,6 @@ it('preserves provider checkout metadata through task creation and an isolated w
   )
   expect(await services.pulls.identity(directory)).toContain(connection.id)
 })
-
 it('rejects an adapter captured before connection rotation without sending the new credential to the old host', async () => {
   const { services, connection } = await setup()
   const captured = services.pulls.adapter(connection.id, 'team/studio')
@@ -227,18 +313,35 @@ it('rejects an adapter captured before connection rotation without sending the n
     token: 'rotated-private-token',
   })
   const count = vi.mocked(fetch).mock.calls.length
-  await expect(captured.repository()).rejects.toMatchObject({ status: 409 })
+  await expect(captured.repository()).rejects.toMatchObject({
+    status: 409,
+  })
   expect(vi.mocked(fetch).mock.calls).toHaveLength(count)
 })
-
 it('retains cached same-head discussions and checks when optional provider reads temporarily fail', async () => {
   const { request, failOptional } = await setup()
-  await request('pulls/detail', { repositoryId: 'repo', number: 7 })
+  await request('pulls/detail', {
+    repositoryId: 'repo',
+    number: 7,
+  })
   failOptional()
-  const result = await request('pulls/detail', { repositoryId: 'repo', number: 7, refresh: true })
+  const result = await request('pulls/detail', {
+    repositoryId: 'repo',
+    number: 7,
+    refresh: true,
+  })
   expect(result.status).toBe(200)
-  const detail = pullDetailSchema.parse(result.data)
-  expect(detail.comments).toEqual([expect.objectContaining({ body: 'Cached discussion' })])
-  expect(detail.checks).toEqual([expect.objectContaining({ name: 'Tests', status: 'SUCCESS' })])
+  const detail = decode(pullDetailSchema, result.data)
+  expect(detail.comments).toEqual([
+    expect.objectContaining({
+      body: 'Cached discussion',
+    }),
+  ])
+  expect(detail.checks).toEqual([
+    expect.objectContaining({
+      name: 'Tests',
+      status: 'SUCCESS',
+    }),
+  ])
   expect(detail.warnings).toContain('Unavailable sections are showing the last cached data.')
 })

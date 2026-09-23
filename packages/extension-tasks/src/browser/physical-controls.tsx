@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect } from 'react'
 import {
   useWorkspace,
   previewResultSchema,
@@ -7,20 +8,28 @@ import {
 } from '@dovo/studio-core'
 import { SlidersHorizontal } from 'lucide-react'
 import { Button, Input, IconButton, Popover } from '@dovo/studio-ui'
-
 export function PhysicalControls({ taskId, device }: { taskId: string; device: PreviewDevice }) {
   const { request, connection } = useWorkspace()
-  const [apps, setApps] = useState<Array<{ name: string; bundleId: string }>>([])
-  const [selected, setSelected] = useState(''),
-    [url, setUrl] = useState('')
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [message, setMessage] = useState('')
+  const [apps, setApps] = useApplicationState<
+    Array<{
+      name: string
+      bundleId: string
+    }>
+  >([])
+  const [selected, setSelected] = useApplicationState(''),
+    [url, setUrl] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState(''),
+    [message, setMessage] = useApplicationState('')
   useEffect(() => {
     let live = true
     void request(
       '/api/previews/action',
-      { taskId, id: device.id, action: 'apps' },
+      {
+        taskId,
+        id: device.id,
+        action: 'apps',
+      },
       previewResultSchema,
     )
       .then((result) => {

@@ -1,5 +1,4 @@
 import { isSnoozed, hasUnviewedTaskCompletion, type Task } from '@dovo/protocol'
-
 function age(date: string, now: number) {
   const minutes = Math.max(0, Math.floor((now - Date.parse(date)) / 60000))
   return minutes < 1

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useRef } from 'react'
 import {
   useStudioHost,
   useWorkspace,
@@ -18,7 +19,6 @@ import {
   FormField,
 } from '@dovo/studio-ui'
 import { ArrowRight, FolderGit2 } from 'lucide-react'
-
 export function WorkTaskLinks({
   repositoryId,
   jiraSourceId,
@@ -56,13 +56,13 @@ export function WorkTaskLinks({
   const pending = useRef(false)
   const linkPending = useRef(false)
   const mounted = useRef(true)
-  const [busy, setBusy] = useState(false)
-  const [linking, setLinking] = useState(false)
-  const [error, setError] = useState('')
-  const [linkError, setLinkError] = useState('')
-  const [created, setCreated] = useState('')
-  const [picking, setPicking] = useState(false)
-  const [destination, setDestination] = useState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [linking, setLinking] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [linkError, setLinkError] = useApplicationState('')
+  const [created, setCreated] = useApplicationState('')
+  const [picking, setPicking] = useApplicationState(false)
+  const [destination, setDestination] = useApplicationState('')
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -72,7 +72,10 @@ export function WorkTaskLinks({
   useEffect(() => {
     if (!created || !workspace.tasks.some((task) => task.id === created)) return
     setCreated('')
-    host.navigate({ viewId: 'tasks', entityId: created })
+    host.navigate({
+      viewId: 'tasks',
+      entityId: created,
+    })
   }, [created, workspace.tasks, host])
   const linkProject = async (selected: string) => {
     if (!jiraSourceId || linkPending.current || disabled || !connected) return
@@ -82,7 +85,11 @@ export function WorkTaskLinks({
     try {
       await request(
         '/api/scm/jira/issues/link',
-        { sourceId: jiraSourceId, issueId: source.id, repositoryId: selected || null },
+        {
+          sourceId: jiraSourceId,
+          issueId: source.id,
+          repositoryId: selected || null,
+        },
         responses.ok,
       )
       await refreshRuntimes()
@@ -115,13 +122,23 @@ export function WorkTaskLinks({
         '/api/scm/work/task',
         {
           repositoryId: target,
-          ...(jiraSourceId ? { jiraSourceId } : {}),
+          ...(jiraSourceId
+            ? {
+                jiraSourceId,
+              }
+            : {}),
           requestId: requestId.current,
           id: source.id,
           url: source.url,
           ...('revision' in source
-            ? { kind: 'issue', revision: source.revision }
-            : { kind: 'pipeline', sha: source.sha }),
+            ? {
+                kind: 'issue',
+                revision: source.revision,
+              }
+            : {
+                kind: 'pipeline',
+                sha: source.sha,
+              }),
         },
         workTaskResponseSchema,
       )
@@ -209,7 +226,12 @@ export function WorkTaskLinks({
                 key={task.id}
                 type="button"
                 className="flex min-w-0 items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-muted"
-                onClick={() => host.navigate({ viewId: 'tasks', entityId: task.id })}
+                onClick={() =>
+                  host.navigate({
+                    viewId: 'tasks',
+                    entityId: task.id,
+                  })
+                }
               >
                 <span className="min-w-0 flex-1 truncate">{task.title}</span>
                 {jiraSourceId && (

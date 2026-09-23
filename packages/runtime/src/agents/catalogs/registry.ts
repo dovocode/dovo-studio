@@ -1,5 +1,7 @@
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode, decodeResult } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import {
   catalogSearchSchema,
   mcpServerSchema,
@@ -8,61 +10,92 @@ import {
   type RegistryEntry,
 } from '@dovo/protocol'
 import { catalogJson } from './fetch.js'
-const inputSchema = z.object({
-  name: z.string().optional(),
-  type: z.string().optional(),
-  valueHint: z.string().optional(),
-  value: z.string().optional(),
-  default: z.string().optional(),
-  description: z.string().optional(),
-  isRequired: z.boolean().optional(),
-  isSecret: z.boolean().optional(),
-  isRepeated: z.boolean().optional(),
-  variables: z.record(z.string(), z.unknown()).optional(),
+const inputSchema = mutableStruct({
+  name: Schema.optional(Schema.String),
+  type: Schema.optional(Schema.String),
+  valueHint: Schema.optional(Schema.String),
+  value: Schema.optional(Schema.String),
+  default: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  isRequired: Schema.optional(Schema.Boolean),
+  isSecret: Schema.optional(Schema.Boolean),
+  isRepeated: Schema.optional(Schema.Boolean),
+  variables: Schema.optional(
+    Schema.mutable(
+      Schema.Record({
+        key: Schema.String,
+        value: Schema.Unknown,
+      }),
+    ),
+  ),
 })
-const transportSchema = z.object({
-  type: z.string(),
-  url: z.string().optional(),
-  headers: z.array(inputSchema).default([]),
-  variables: z.record(z.string(), z.unknown()).optional(),
+const transportSchema = mutableStruct({
+  type: Schema.String,
+  url: Schema.optional(Schema.String),
+  headers: Schema.optionalWith(mutableArray(inputSchema), {
+    default: () => [],
+  }),
+  variables: Schema.optional(
+    Schema.mutable(
+      Schema.Record({
+        key: Schema.String,
+        value: Schema.Unknown,
+      }),
+    ),
+  ),
 })
-const packageSchema = z.object({
-  registryType: z.string(),
-  identifier: z.string(),
-  version: z.string().optional(),
-  registryBaseUrl: z.string().optional(),
-  fileSha256: z.string().optional(),
-  runtimeHint: z.string().optional(),
+const packageSchema = mutableStruct({
+  registryType: Schema.String,
+  identifier: Schema.String,
+  version: Schema.optional(Schema.String),
+  registryBaseUrl: Schema.optional(Schema.String),
+  fileSha256: Schema.optional(Schema.String),
+  runtimeHint: Schema.optional(Schema.String),
   transport: transportSchema,
-  runtimeArguments: z.array(inputSchema).default([]),
-  packageArguments: z.array(inputSchema).default([]),
-  environmentVariables: z.array(inputSchema).default([]),
+  runtimeArguments: Schema.optionalWith(mutableArray(inputSchema), {
+    default: () => [],
+  }),
+  packageArguments: Schema.optionalWith(mutableArray(inputSchema), {
+    default: () => [],
+  }),
+  environmentVariables: Schema.optionalWith(mutableArray(inputSchema), {
+    default: () => [],
+  }),
 })
-const registryServerSchema = z.object({
-  name: z.string(),
-  title: z.string().optional(),
-  description: z.string(),
-  version: z.string(),
-  remotes: z.array(transportSchema).default([]),
-  packages: z.array(packageSchema).default([]),
+const registryServerSchema = mutableStruct({
+  name: Schema.String,
+  title: Schema.optional(Schema.String),
+  description: Schema.String,
+  version: Schema.String,
+  remotes: Schema.optionalWith(mutableArray(transportSchema), {
+    default: () => [],
+  }),
+  packages: Schema.optionalWith(mutableArray(packageSchema), {
+    default: () => [],
+  }),
 })
 const marker = (name: string) => `__CONFIGURE_${name.replace(/[^a-zA-Z0-9_]/g, '_')}__`
 const envName = (name: string) => `MCP_${name.replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase()}`
 export function registryEntry(value: unknown): RegistryEntry {
-  const entry = registryServerSchema.parse(value)
+  const entry = decode(registryServerSchema, value)
   const sourceUrl = `https://registry.modelcontextprotocol.io/v0.1/servers/${encodeURIComponent(entry.name)}/versions/${encodeURIComponent(entry.version)}`
   const name = `${entry.name.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 65)}-${createHash('sha256').update(entry.name).digest('hex').slice(0, 8)}`
-  const base = { name, enabled: true, sourceUrl, sourceRevision: entry.version }
+  const base = {
+    name,
+    enabled: true,
+    sourceUrl,
+    sourceRevision: entry.version,
+  }
   const variants: RegistryEntry['variants'] = []
   const template = (value: string, variables?: Record<string, unknown>) =>
     value.replace(/\{([A-Za-z_][A-Za-z0-9_-]*)\}/g, (_match, key: string) => {
-      const input = inputSchema.safeParse(variables?.[key])
+      const input = decodeResult(inputSchema, variables?.[key])
       return input.success && !input.data.isSecret
         ? (input.data.value ?? input.data.default ?? marker(key))
         : marker(key)
     })
   const variables = (
-    inputs: z.infer<typeof inputSchema>[],
+    inputs: Schema.Schema.Type<typeof inputSchema>[],
     server: McpServer,
     notes: string[],
     headers: boolean,
@@ -77,8 +110,16 @@ export function registryEntry(value: unknown): RegistryEntry {
         continue
       }
       if (value !== undefined && !input.isSecret && !/\{[A-Za-z_][A-Za-z0-9_-]*\}/.test(value)) {
-        if (headers) server.headerValues = { ...server.headerValues, [input.name]: value }
-        else server.envValues = { ...server.envValues, [input.name]: value }
+        if (headers)
+          server.headerValues = {
+            ...server.headerValues,
+            [input.name]: value,
+          }
+        else
+          server.envValues = {
+            ...server.envValues,
+            [input.name]: value,
+          }
       } else {
         const variable = headers ? envName(input.name) : input.name
         if (headers && input.name.toLowerCase() === 'authorization' && value?.startsWith('Bearer '))
@@ -95,12 +136,16 @@ export function registryEntry(value: unknown): RegistryEntry {
     const id = `remote:${index}`,
       label = `${remote.type} · ${remote.url ?? 'Remote'}`
     if (remote.type !== 'streamable-http' || !remote.url) {
-      variants.push({ id, label, notes: ['This transport is not supported yet.'] })
+      variants.push({
+        id,
+        label,
+        notes: ['This transport is not supported yet.'],
+      })
       return
     }
     if (
       Object.values(remote.variables ?? {}).some(
-        (value) => inputSchema.safeParse(value).data?.isSecret,
+        (value) => decodeResult(inputSchema, value).data?.isSecret,
       )
     ) {
       variants.push({
@@ -113,7 +158,7 @@ export function registryEntry(value: unknown): RegistryEntry {
       return
     }
     const notes: string[] = []
-    const server = mcpServerSchema.parse({
+    const server = decode(mcpServerSchema, {
       ...base,
       transport: 'http',
       url: template(remote.url, remote.variables),
@@ -121,12 +166,21 @@ export function registryEntry(value: unknown): RegistryEntry {
     if (server.url.includes('__CONFIGURE_'))
       notes.push('Replace each __CONFIGURE_…__ value in the server URL before saving.')
     variables(remote.headers, server, notes, true)
-    variants.push({ id, label, server, notes })
+    variants.push({
+      id,
+      label,
+      server,
+      notes,
+    })
   })
   entry.packages.forEach((pkg, index) => {
     const id = `package:${index}`,
       label = `${pkg.registryType} · ${pkg.identifier}${pkg.version ? `@${pkg.version}` : ''}`
-    const runners: Record<string, string> = { npm: 'npx', pypi: 'uvx', oci: 'docker' }
+    const runners: Record<string, string> = {
+      npm: 'npx',
+      pypi: 'uvx',
+      oci: 'docker',
+    }
     const runner = runners[pkg.registryType]
     const customRegistry =
       pkg.registryBaseUrl &&
@@ -154,12 +208,12 @@ export function registryEntry(value: unknown): RegistryEntry {
       return
     }
     const notes: string[] = []
-    const args = (inputs: z.infer<typeof inputSchema>[]) =>
+    const args = (inputs: Schema.Schema.Type<typeof inputSchema>[]) =>
       inputs.flatMap((input, i) => {
         if (
           input.isSecret ||
           Object.values(input.variables ?? {}).some(
-            (value) => inputSchema.safeParse(value).data?.isSecret,
+            (value) => decodeResult(inputSchema, value).data?.isSecret,
           )
         )
           throw new Error(
@@ -197,7 +251,7 @@ export function registryEntry(value: unknown): RegistryEntry {
                 !pkg.identifier.split('/').at(-1)?.includes(':')
               ? `${pkg.identifier}:${pkg.version}`
               : pkg.identifier
-      const server = mcpServerSchema.parse({
+      const server = decode(mcpServerSchema, {
         ...base,
         transport: 'stdio',
         command: runner,
@@ -217,9 +271,18 @@ export function registryEntry(value: unknown): RegistryEntry {
             : [...(runner === 'npx' ? ['-y'] : []), ...runtimeArgs, identifier, ...packageArgs],
       })
       variables(pkg.environmentVariables, server, notes, false)
-      variants.push({ id, label, server, notes })
+      variants.push({
+        id,
+        label,
+        server,
+        notes,
+      })
     } catch (error) {
-      variants.push({ id, label, notes: [error instanceof Error ? error.message : String(error)] })
+      variants.push({
+        id,
+        label,
+        notes: [error instanceof Error ? error.message : String(error)],
+      })
     }
   })
   return {
@@ -231,27 +294,53 @@ export function registryEntry(value: unknown): RegistryEntry {
   }
 }
 export async function searchRegistry(input: unknown) {
-  const { query, cursor } = catalogSearchSchema.parse(input)
+  const { query, cursor } = decode(catalogSearchSchema, input)
   const params = new URLSearchParams({
     limit: '20',
     version: 'latest',
-    ...(query ? { search: query } : {}),
-    ...(cursor ? { cursor } : {}),
+    ...(query
+      ? {
+          search: query,
+        }
+      : {}),
+    ...(cursor
+      ? {
+          cursor,
+        }
+      : {}),
   })
-  const result = z
-    .object({
-      servers: z.array(
-        z.object({ server: z.unknown(), _meta: z.record(z.string(), z.unknown()).optional() }),
+  const result = decode(
+    mutableStruct({
+      servers: mutableArray(
+        mutableStruct({
+          server: Schema.Unknown,
+          _meta: Schema.optional(
+            Schema.mutable(
+              Schema.Record({
+                key: Schema.String,
+                value: Schema.Unknown,
+              }),
+            ),
+          ),
+        }),
       ),
-      metadata: z.object({ nextCursor: z.string().optional() }).optional(),
-    })
-    .parse(await catalogJson(`https://registry.modelcontextprotocol.io/v0.1/servers?${params}`))
-  return registryCatalogSchema.parse({
+      metadata: Schema.optional(
+        mutableStruct({
+          nextCursor: Schema.optional(Schema.String),
+        }),
+      ),
+    }),
+    await catalogJson(`https://registry.modelcontextprotocol.io/v0.1/servers?${params}`),
+  )
+  return decode(registryCatalogSchema, {
     entries: result.servers
       .filter((item) => {
-        const status = z
-          .object({ status: z.string().optional() })
-          .safeParse(item._meta?.['io.modelcontextprotocol.registry/official'])
+        const status = decodeResult(
+          mutableStruct({
+            status: Schema.optional(Schema.String),
+          }),
+          item._meta?.['io.modelcontextprotocol.registry/official'],
+        )
         return !status.success || !status.data.status || status.data.status === 'active'
       })
       .map((item) => registryEntry(item.server)),

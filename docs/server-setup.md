@@ -8,6 +8,47 @@ Use the background server when work should stay available after closing the desk
 survives those applications closing, but this command does **not** install a boot service, prevent
 computer sleep, or automatically restart a crashed process.
 
+## Packaged Mac desktop
+
+The packaged Mac app provisions a per-profile launchd agent when no existing runtime is available.
+The runtime stays running after **Quit**, starts at login, and restarts after a crash. Existing
+external runtimes are attached without restarting them. Development desktop and other platforms
+continue to use the explicit background-server commands below.
+
+The agent lives at `~/Library/LaunchAgents/com.dovo.studio.runtime.<profile-hash>.plist`; its
+`DOVO_DATABASE_PATH` identifies the desktop profile. Logs are in `runtime-service.log` in that data
+directory. The plist is private to your account. The service uses the bundled Node runtime and the
+same owner credential, database, saved bind address, and device pairings as desktop. Keep the app at
+its installed location. The desktop updater unloads its own service before replacing the app bundle;
+the restarted app provisions the new runtime. Failed installation restores the previous service. An
+externally managed runtime must be stopped or updated through its own supervisor. Desktop checks the
+runtime protocol version before attaching, so incompatible builds produce an explicit error. The
+window and updater remain available for recovery. Runtime connection requests are blocked while an
+update is pending and become available again if installation fails.
+
+Provider credentials and supported network settings supplied on the first launch are saved in
+`runtime-environment.json` in the profile directory, with owner-only permissions. The plist contains
+the path to that file plus `NODE_EXTRA_CA_CERTS` and `SSL_CERT_FILE` paths, which Node must receive
+before startup. Provider credentials stay in the private JSON file. Later GUI launches retain the
+saved settings. Supported values include `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+`ANTHROPIC_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, OpenAI organization/project IDs, GitHub
+tokens, proxy/CA settings and the explicit Bedrock/Vertex settings listed in
+`apps/api/src/runtime-environment.ts`. Unrelated environment variables and `NODE_OPTIONS` are
+excluded. Edit this JSON object and restart the service to change settings; an empty string clears a
+captured value. Never commit this file or include it in bug reports. For CA path changes, quit
+desktop, unload the launch agent as below, then reopen desktop to regenerate its startup
+environment.
+
+To stop and remove a provisioned service, quit desktop, then substitute its actual plist filename:
+
+```sh
+launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/<agent-filename>.plist"
+rm "$HOME/Library/LaunchAgents/<agent-filename>.plist"
+```
+
+This preserves your workspace. Opening packaged desktop again provisions the service again. A login
+agent cannot keep the runtime reachable while the Mac is asleep or logged out.
+
 ## Prerequisites
 
 - Node **24.11 or newer** and the pnpm version pinned in the root `package.json`.
@@ -370,3 +411,7 @@ managed `stop`/`update` flow applies to processes launched by `server start`.
 
 See also the [main README](../README.md) for desktop/mobile builds, feature walkthroughs, extension
 boundaries, verification commands, and supported execution behavior.
+
+Runtime and management operations use a persistent `*.lock.sqlite` file for OS-backed ownership. The
+adjacent JSON PID record supports diagnostics and older running versions. A crash releases the
+SQLite lock automatically; do not delete a lock database to force a second runtime to start.

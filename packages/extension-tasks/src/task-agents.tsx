@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect } from 'react'
 import { subagentElapsed, subagentMetadata } from '@dovo/studio-core'
 import { type Task, useWorkspace } from '@dovo/studio-core'
 import { Bot, ChevronRight } from 'lucide-react'
 import { cn } from '@dovo/studio-ui'
-
 export function TaskAgents({ task }: { task: Task }) {
   const { connected } = useWorkspace()
-  const [now, setNow] = useState(Date.now)
+  const [now, setNow] = useApplicationState(Date.now)
   const agents = task.subagents ?? []
   const live = connected && task.status === 'running'
   const working = live ? agents.filter((agent) => agent.status === 'working').length : 0

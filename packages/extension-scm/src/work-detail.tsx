@@ -1,3 +1,5 @@
+import { useApplicationState } from '@dovo/studio-core/state'
+import { decode } from '@dovo/protocol'
 import { issueEditInput } from '@dovo/studio-core'
 import { WorkTaskLinks } from './work-task-links'
 import { PipelineDetail as PipelineDetailView, PipelineState } from './pipeline-detail'
@@ -10,8 +12,8 @@ import {
   RefreshCw,
   ExternalLink,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { z } from 'zod'
+import { useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { Schema } from 'effect'
 import {
   useWorkspace,
   issueLabel,
@@ -50,9 +52,8 @@ import {
   MessageResponse,
   DropdownMenu,
 } from '@dovo/studio-ui'
-
 type Mode = 'issues' | 'pipelines'
-type PipelineDetail = z.infer<typeof forgePipelineDetailSchema>
+type PipelineDetail = Schema.Schema.Type<typeof forgePipelineDetailSchema>
 export function WorkContent({
   repositoryId,
   jiraSourceId,
@@ -80,28 +81,37 @@ export function WorkContent({
   connected: boolean
   onBack?: () => void
 }) {
-  const [options, setOptions] = useState<ForgeWorkOptions>()
-  const [rows, setRows] = useState<Array<ForgeIssue | ForgePipeline>>([])
-  const [search, setSearch] = useState(initialSearch ?? '')
-  const [next, setNext] = useState<string>()
-  const [cursor, setCursor] = useState<string>()
-  const [state, setState] = useState('all')
-  const [selected, setSelected] = useState(initialSelected ?? '')
-  const [issue, setIssue] = useState<ForgeIssueDetail>()
-  const [pipeline, setPipeline] = useState<PipelineDetail>()
-  const [revision, reload] = useState(0)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [stale, setStale] = useState(false)
-  const [form, setForm] = useState<'create' | 'edit' | 'comment' | 'run' | 'transition' | null>(
-    null,
-  )
-  const [confirm, setConfirm] = useState<'rerun' | 'cancel' | 'enable' | 'disable' | null>(null)
+  const [options, setOptions] = useApplicationState<ForgeWorkOptions | undefined>(undefined)
+  const [rows, setRows] = useApplicationState<Array<ForgeIssue | ForgePipeline>>([])
+  const [search, setSearch] = useApplicationState(initialSearch ?? '')
+  const [next, setNext] = useApplicationState<string | undefined>(undefined)
+  const [cursor, setCursor] = useApplicationState<string | undefined>(undefined)
+  const [state, setState] = useApplicationState('all')
+  const [selected, setSelected] = useApplicationState(initialSelected ?? '')
+  const [issue, setIssue] = useApplicationState<ForgeIssueDetail | undefined>(undefined)
+  const [pipeline, setPipeline] = useApplicationState<PipelineDetail | undefined>(undefined)
+  const [revision, reload] = useApplicationState(0)
+  const [error, setError] = useApplicationState('')
+  const [message, setMessage] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [stale, setStale] = useApplicationState(false)
+  const [form, setForm] = useApplicationState<
+    'create' | 'edit' | 'comment' | 'run' | 'transition' | null
+  >(null)
+  const [confirm, setConfirm] = useApplicationState<
+    'rerun' | 'cancel' | 'enable' | 'disable' | null
+  >(null)
   const pending = useRef(false)
   const requests = useRef(new RequestScope())
   const target = useMemo(
-    () => (jiraSourceId ? { jiraSourceId } : { repositoryId }),
+    () =>
+      jiraSourceId
+        ? {
+            jiraSourceId,
+          }
+        : {
+            repositoryId,
+          },
     [jiraSourceId, repositoryId],
   )
   const base = '/api/scm/work/'
@@ -120,7 +130,10 @@ export function WorkContent({
     void (async () => {
       const opts = await request(
         base + 'options',
-        { ...target, area: mode },
+        {
+          ...target,
+          area: mode,
+        },
         forgeWorkOptionsSchema,
       )
       if (!current()) return
@@ -133,7 +146,11 @@ export function WorkContent({
         if (mode === 'issues') {
           const data = await request(
             base + 'issues/detail',
-            { ...target, id: selected, refresh: revision > 0 },
+            {
+              ...target,
+              id: selected,
+              refresh: revision > 0,
+            },
             forgeIssueDetailSchema,
           )
           if (current()) {
@@ -152,7 +169,11 @@ export function WorkContent({
         } else {
           const data = await request(
             base + 'pipelines/detail',
-            { ...target, id: selected, refresh: revision > 0 },
+            {
+              ...target,
+              id: selected,
+              refresh: revision > 0,
+            },
             forgePipelineDetailSchema,
           )
           if (current()) {
@@ -176,12 +197,21 @@ export function WorkContent({
           mode === 'issues'
             ? await request(
                 base + 'issues/list',
-                { ...target, state, cursor, refresh: revision > 0 },
+                {
+                  ...target,
+                  state,
+                  cursor,
+                  refresh: revision > 0,
+                },
                 forgeIssuePageSchema,
               )
             : await request(
                 base + 'pipelines/list',
-                { ...target, cursor, refresh: revision > 0 },
+                {
+                  ...target,
+                  cursor,
+                  refresh: revision > 0,
+                },
                 forgePipelinePageSchema,
               )
         if (current()) {
@@ -230,21 +260,35 @@ export function WorkContent({
       if (issue?.next) {
         const data = await request(
           base + 'issues/detail',
-          { ...target, id: selected, cursor: issue.next },
+          {
+            ...target,
+            id: selected,
+            cursor: issue.next,
+          },
           forgeIssueDetailSchema,
         )
         if (!current()) return
-        setIssue({ ...data, comments: appendUniqueRows(issue.comments, data.comments) })
+        setIssue({
+          ...data,
+          comments: appendUniqueRows(issue.comments, data.comments),
+        })
         setStale(stale || !!data.stale)
         setError(data.refreshError ?? '')
       } else if (pipeline?.next) {
         const data = await request(
           base + 'pipelines/detail',
-          { ...target, id: selected, cursor: pipeline.next },
+          {
+            ...target,
+            id: selected,
+            cursor: pipeline.next,
+          },
           forgePipelineDetailSchema,
         )
         if (!current()) return
-        setPipeline({ ...data, jobs: appendUniqueRows(pipeline.jobs, data.jobs) })
+        setPipeline({
+          ...data,
+          jobs: appendUniqueRows(pipeline.jobs, data.jobs),
+        })
         setStale(stale || !!data.stale)
         setError(data.refreshError ?? '')
       }
@@ -778,33 +822,46 @@ export function WorkForm({
 }) {
   const { request, connected } = useWorkspace()
   const target = useMemo(
-    () => (jiraSourceId ? { jiraSourceId } : { repositoryId }),
+    () =>
+      jiraSourceId
+        ? {
+            jiraSourceId,
+          }
+        : {
+            repositoryId,
+          },
     [jiraSourceId, repositoryId],
   )
-  const [issue] = useState(initialIssue)
-  const [title, setTitle] = useState(kind === 'edit' ? (issue?.title ?? '') : '')
-  const [body, setBody] = useState(kind === 'edit' ? (issue?.body ?? '') : '')
-  const [type, setType] = useState(
+  const [issue] = useApplicationState(initialIssue)
+  const [title, setTitle] = useApplicationState(kind === 'edit' ? (issue?.title ?? '') : '')
+  const [body, setBody] = useApplicationState(kind === 'edit' ? (issue?.body ?? '') : '')
+  const [type, setType] = useApplicationState(
     options.issueTypes[0] ?? (options.provider === 'jira' ? 'Task' : 'Issue'),
   )
-  const [state, setState] = useState(issue?.state ?? '')
-  const [assignees, setAssignees] = useState(issue?.assignees.join(', ') ?? '')
-  const [labels, setLabels] = useState(issue?.labels.join(', ') ?? '')
-  const [definition, setDefinition] = useState(initialDefinition ?? ''),
-    [ref, setRef] = useState(initialRef),
-    [inputs, setInputs] = useState('{}')
-  const [definitions, setDefinitions] = useState<z.infer<typeof forgeDefinitionsSchema>>()
-  const [definitionsLoading, setDefinitionsLoading] = useState(kind === 'run')
-  const [definitionsRevision, retryDefinitions] = useState(0)
+  const [state, setState] = useApplicationState(issue?.state ?? '')
+  const [assignees, setAssignees] = useApplicationState(issue?.assignees.join(', ') ?? '')
+  const [labels, setLabels] = useApplicationState(issue?.labels.join(', ') ?? '')
+  const [definition, setDefinition] = useApplicationState(initialDefinition ?? ''),
+    [ref, setRef] = useApplicationState(initialRef),
+    [inputs, setInputs] = useApplicationState('{}')
+  const [definitions, setDefinitions] = useApplicationState<
+    Schema.Schema.Type<typeof forgeDefinitionsSchema> | undefined
+  >(undefined)
+  const [definitionsLoading, setDefinitionsLoading] = useApplicationState(kind === 'run')
+  const [definitionsRevision, retryDefinitions] = useApplicationState(0)
   const definitionRequests = useRef(new RequestScope())
   const definitionPending = useRef(false)
-  const [issueStates, setIssueStates] = useState(options.issueStates)
+  const [issueStates, setIssueStates] = useApplicationState(options.issueStates)
   useEffect(() => {
     if (kind !== 'edit' || options.provider !== 'azure-devops' || !issue) return
     let current = true
     void request(
       '/api/scm/work/options',
-      { ...target, type: issue.type, area: 'issues' },
+      {
+        ...target,
+        type: issue.type,
+        area: 'issues',
+      },
       forgeWorkOptionsSchema,
     )
       .then((v) => {
@@ -817,9 +874,8 @@ export function WorkForm({
       current = false
     }
   }, [kind, options.provider, issue, target, request])
-
-  const [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+  const [error, setError] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
   useEffect(() => {
     if (kind !== 'run') return
@@ -827,7 +883,13 @@ export function WorkForm({
     definitionPending.current = true
     setDefinitionsLoading(true)
     setError('')
-    void request('/api/scm/work/pipelines/definitions', { repositoryId }, forgeDefinitionsSchema)
+    void request(
+      '/api/scm/work/pipelines/definitions',
+      {
+        repositoryId,
+      },
+      forgeDefinitionsSchema,
+    )
       .then((value) => {
         if (current()) {
           setDefinitions(value)
@@ -854,11 +916,17 @@ export function WorkForm({
     try {
       const value = await request(
         '/api/scm/work/pipelines/definitions',
-        { repositoryId, cursor: definitions.next },
+        {
+          repositoryId,
+          cursor: definitions.next,
+        },
         forgeDefinitionsSchema,
       )
       if (current())
-        setDefinitions({ ...value, items: appendUniqueRows(definitions.items, value.items) })
+        setDefinitions({
+          ...value,
+          items: appendUniqueRows(definitions.items, value.items),
+        })
     } catch (error) {
       if (current()) setError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -886,25 +954,57 @@ export function WorkForm({
     try {
       const data =
         kind === 'transition'
-          ? { action: 'edit', id: issue?.id, revision: issue?.revision, state }
+          ? {
+              action: 'edit',
+              id: issue?.id,
+              revision: issue?.revision,
+              state,
+            }
           : kind === 'run'
             ? {
                 action: 'run',
                 definition,
                 ref,
-                inputs: z.record(z.string(), z.string()).parse(JSON.parse(inputs)),
+                inputs: decode(
+                  Schema.mutable(
+                    Schema.Record({
+                      key: Schema.String,
+                      value: Schema.String,
+                    }),
+                  ),
+                  JSON.parse(inputs),
+                ),
               }
             : kind === 'comment'
-              ? { action: 'comment', id: issue?.id, revision: issue?.revision, body }
+              ? {
+                  action: 'comment',
+                  id: issue?.id,
+                  revision: issue?.revision,
+                  body,
+                }
               : kind === 'edit' && issue
                 ? issueEditInput(issue, {
                     title,
                     body,
                     state,
-                    ...(options.assignees ? { assignees: split(assignees) } : {}),
-                    ...(options.labels ? { labels: split(labels) } : {}),
+                    ...(options.assignees
+                      ? {
+                          assignees: split(assignees),
+                        }
+                      : {}),
+                    ...(options.labels
+                      ? {
+                          labels: split(labels),
+                        }
+                      : {}),
                   })
-                : { title, body, type, assignees: split(assignees), labels: split(labels) }
+                : {
+                    title,
+                    body,
+                    type,
+                    assignees: split(assignees),
+                    labels: split(labels),
+                  }
       const result = await request(
         '/api/scm/work/' +
           (kind === 'run'
@@ -915,10 +1015,10 @@ export function WorkForm({
         {
           ...target,
           ...(kind === 'run'
-            ? forgePipelineActionSchema.parse(data)
+            ? decode(forgePipelineActionSchema, data)
             : kind === 'create'
-              ? forgeIssueCreateSchema.parse(data)
-              : forgeIssueActionSchema.parse(data)),
+              ? decode(forgeIssueCreateSchema, data)
+              : decode(forgeIssueActionSchema, data)),
         },
         forgeWorkResultSchema,
       )
@@ -1143,7 +1243,6 @@ export function WorkForm({
     </Dialog>
   )
 }
-
 function formatDate(value: string) {
   if (!value) return 'Not reported'
   const date = new Date(value)

@@ -1,7 +1,14 @@
-import { z } from 'zod'
+import { mutableArray } from '@dovo/protocol'
+import { decodeResult } from '@dovo/protocol'
+import { Schema } from 'effect'
 import type { Agent } from '@dovo/protocol'
-const record = z.record(z.string(), z.unknown())
-const object = (value: unknown) => record.safeParse(value).data ?? {}
+const record = Schema.mutable(
+  Schema.Record({
+    key: Schema.String,
+    value: Schema.Unknown,
+  }),
+)
+const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const string = (value: unknown) => (typeof value === 'string' ? value : '')
 export function toolEvent(provider: Agent['provider'], name: string, payload: unknown) {
   const data = object(payload)
@@ -21,7 +28,7 @@ export function toolEvent(provider: Agent['provider'], name: string, payload: un
     }
   }
   if (provider === 'claude') {
-    const blocks = z.array(record).safeParse(object(data.message).content).data ?? []
+    const blocks = decodeResult(mutableArray(record), object(data.message).content).data ?? []
     const tools = blocks.filter((b) => b.type === 'tool_use' || b.type === 'tool_result')
     if (!tools.length) return
     return {

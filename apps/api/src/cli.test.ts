@@ -1,6 +1,6 @@
+import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { snapshotSchema } from '@dovo/protocol'
-
 vi.mock('node:util', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:util')>()),
   parseArgs: () => ({
@@ -25,15 +25,20 @@ vi.mock('./connection.js', () => ({
 vi.mock('./network.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./network.js')>()),
   discoverNetworks: () =>
-    Promise.resolve([{ network: 'local', name: 'en0', host: '192.168.1.10' }]),
+    Promise.resolve([
+      {
+        network: 'local',
+        name: 'en0',
+        host: '192.168.1.10',
+      },
+    ]),
 }))
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
-
 it('honors an explicit HTTPS public address when network discovery cannot determine the proxy address', async () => {
-  const snapshot = snapshotSchema.parse({
+  const snapshot = decode(snapshotSchema, {
     owner: true,
     revision: 0,
     workspace: {
@@ -56,7 +61,10 @@ it('honors an explicit HTTPS public address when network discovery cannot determ
       Response.json(
         address.endsWith('/api/snapshot')
           ? snapshot
-          : { code: '12345678', expiresAt: '2026-09-19T12:02:00Z' },
+          : {
+              code: '12345678',
+              expiresAt: '2026-09-19T12:02:00Z',
+            },
       ),
     ),
   )
@@ -78,7 +86,9 @@ it('honors an explicit HTTPS public address when network discovery cannot determ
   expect(request).toHaveBeenLastCalledWith(
     'http://127.0.0.1:8787/api/pair/code',
     expect.objectContaining({
-      body: JSON.stringify({ autoApprove: true }),
+      body: JSON.stringify({
+        autoApprove: true,
+      }),
       redirect: 'error',
     }),
   )

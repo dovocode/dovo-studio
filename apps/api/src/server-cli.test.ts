@@ -6,13 +6,14 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { setupServer, writePrivateJson } from './server-config'
-
 it('runs doctor in the selected release so bundled SDK diagnostics do not use checkout versions', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'dovo-release-doctor-'))
   try {
     setupServer(directory)
     const release = join(directory, 'releases', 'selected')
-    mkdirSync(release, { recursive: true })
+    mkdirSync(release, {
+      recursive: true,
+    })
     writeFileSync(join(release, 'index.js'), '')
     writeFileSync(
       join(release, 'server-cli.js'),
@@ -34,10 +35,12 @@ it('runs doctor in the selected release so bundled SDK diagnostics do not use ch
       args: ['doctor', '--data-dir', directory, '--check-updates', '--json'],
     })
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(directory, {
+      recursive: true,
+      force: true,
+    })
   }
 })
-
 it('keeps archive installs on their package version and directs updates to the package manager', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'dovo-package-update-'))
   try {
@@ -49,13 +52,21 @@ it('keeps archive installs on their package version and directs updates to the p
         '--data-dir',
         directory,
       ],
-      { env: { ...process.env, DOVO_SERVER_DISTRIBUTION: 'archive' } },
+      {
+        env: {
+          ...process.env,
+          DOVO_SERVER_DISTRIBUTION: 'archive',
+        },
+      },
     )
     await expect(result).rejects.toMatchObject({
       code: 1,
       stderr: expect.stringContaining('managed by Homebrew, mise or an archive install'),
     })
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(directory, {
+      recursive: true,
+      force: true,
+    })
   }
 })

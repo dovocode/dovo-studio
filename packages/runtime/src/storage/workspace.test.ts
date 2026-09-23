@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { expect, it } from 'vitest'
 import { taskHarnessSchema, type Task, type Workspace, type WorkspacePatch } from '@dovo/protocol'
 import { openDatabase } from './database'
@@ -15,30 +16,47 @@ it('persists custom agent icons without adding presentation metadata to task har
       permission: 'ask' as const,
       endpoint: '',
     }
-    store.patch({ collection: 'agents', id: agent.id, changes: {}, create: agent })
+    store.patch({
+      collection: 'agents',
+      id: agent.id,
+      changes: {},
+      create: agent,
+    })
     expect(new WorkspaceStore(db).get().agents[0]?.icon).toBeUndefined()
     const patch: WorkspacePatch = {
       collection: 'agents',
       id: agent.id,
-      changes: { icon: { before: null, after: 'shield' } },
+      changes: {
+        icon: {
+          before: null,
+          after: 'shield',
+        },
+      },
     }
     store.patch(patch)
     store.patch(patch)
     const saved = new WorkspaceStore(db).get().agents[0]
-    expect(saved).toEqual({ ...agent, icon: 'shield' })
-    expect(taskHarnessSchema.parse(saved)).not.toHaveProperty('icon')
+    expect(saved).toEqual({
+      ...agent,
+      icon: 'shield',
+    })
+    expect(decode(taskHarnessSchema, saved)).not.toHaveProperty('icon')
     expect(() =>
       store.patch({
         ...patch,
-        changes: { icon: { before: 'shield', after: 'not-an-icon' } },
+        changes: {
+          icon: {
+            before: 'shield',
+            after: 'not-an-icon',
+          },
+        },
       }),
-    ).toThrow(/Invalid option/)
+    ).toThrow(/Expected/)
     expect(new WorkspaceStore(db).get().agents[0]).toEqual(saved)
   } finally {
     db.close()
   }
 })
-
 it('removes legacy examples from storage while preserving real conversations and preventing reimport', () => {
   const db = openDatabase(':memory:')
   try {
@@ -50,7 +68,13 @@ it('removes legacy examples from storage while preserving real conversations and
       status: 'review',
       createdAt: '',
       draft: 'My draft',
-      messages: [{ id: 'message', role: 'user', text: 'Keep this' }],
+      messages: [
+        {
+          id: 'message',
+          role: 'user',
+          text: 'Keep this',
+        },
+      ],
       files: [],
       example: false,
     }
@@ -60,7 +84,14 @@ it('removes legacy examples from storage while preserving real conversations and
       agents: [],
       repositories: [],
       automations: [],
-      tasks: [task, { ...task, id: 'welcome', example: true }],
+      tasks: [
+        task,
+        {
+          ...task,
+          id: 'welcome',
+          example: true,
+        },
+      ],
     }
     db.prepare('INSERT INTO documents VALUES (?, ?)').run('workspace', JSON.stringify(workspace))
     const store = new WorkspaceStore(db)
@@ -96,27 +127,41 @@ it('persists snooze deadlines through patching and restart and rejects invalid d
     store.patch({
       collection: 'tasks',
       id: 'task',
-      changes: { snoozedUntil: { before: null, after: '2026-09-12T12:00:00Z' } },
+      changes: {
+        snoozedUntil: {
+          before: null,
+          after: '2026-09-12T12:00:00Z',
+        },
+      },
     })
     expect(new WorkspaceStore(db).task('task').snoozedUntil).toBe('2026-09-12T12:00:00Z')
     expect(() =>
       store.patch({
         collection: 'tasks',
         id: 'task',
-        changes: { snoozedUntil: { before: '2026-09-12T12:00:00Z', after: 'invalid' } },
+        changes: {
+          snoozedUntil: {
+            before: '2026-09-12T12:00:00Z',
+            after: 'invalid',
+          },
+        },
       }),
     ).toThrow(/Invalid ISO datetime/)
     store.patch({
       collection: 'tasks',
       id: 'task',
-      changes: { snoozedUntil: { before: '2026-09-12T12:00:00Z', after: null } },
+      changes: {
+        snoozedUntil: {
+          before: '2026-09-12T12:00:00Z',
+          after: null,
+        },
+      },
     })
     expect(new WorkspaceStore(db).task('task').snoozedUntil).toBeUndefined()
   } finally {
     db.close()
   }
 })
-
 it('allows choosing a project and checkout only before the first submitted input', () => {
   const db = openDatabase(':memory:')
   try {
@@ -134,23 +179,45 @@ it('allows choosing a project and checkout only before the first submitted input
       example: false,
       execution: 'main',
     }
-    store.update((w) => ({ ...w, tasks: [draft] }))
+    store.update((w) => ({
+      ...w,
+      tasks: [draft],
+    }))
     const change = () =>
       store.patch({
         collection: 'tasks',
         id: draft.id,
-        changes: { execution: { before: 'main', after: 'worktree' } },
+        changes: {
+          execution: {
+            before: 'main',
+            after: 'worktree',
+          },
+        },
       })
     change()
     expect(new WorkspaceStore(db).task(draft.id).execution).toBe('worktree')
     store.patch({
       collection: 'tasks',
       id: draft.id,
-      changes: { repositoryId: { before: 'repo', after: 'other-repo' } },
+      changes: {
+        repositoryId: {
+          before: 'repo',
+          after: 'other-repo',
+        },
+      },
     })
     expect(new WorkspaceStore(db).task(draft.id).repositoryId).toBe('other-repo')
     for (const started of [
-      { ...draft, messages: [{ id: 'first', role: 'user' as const, text: 'Do this' }] },
+      {
+        ...draft,
+        messages: [
+          {
+            id: 'first',
+            role: 'user' as const,
+            text: 'Do this',
+          },
+        ],
+      },
       {
         ...draft,
         queue: [
@@ -162,10 +229,22 @@ it('allows choosing a project and checkout only before the first submitted input
           },
         ],
       },
-      { ...draft, status: 'running' as const },
-      { ...draft, checkoutBranch: 'task/existing' },
-      { ...draft, sessionId: 'existing-session' },
-      { ...draft, consumedMessageIds: ['accepted-input'] },
+      {
+        ...draft,
+        status: 'running' as const,
+      },
+      {
+        ...draft,
+        checkoutBranch: 'task/existing',
+      },
+      {
+        ...draft,
+        sessionId: 'existing-session',
+      },
+      {
+        ...draft,
+        consumedMessageIds: ['accepted-input'],
+      },
       {
         ...draft,
         turns: [
@@ -181,24 +260,44 @@ it('allows choosing a project and checkout only before the first submitted input
         ],
       },
     ]) {
-      store.update((w) => ({ ...w, tasks: [started] }))
+      store.update((w) => ({
+        ...w,
+        tasks: [started],
+      }))
       expect(change).toThrow('before sending the first message')
       expect(store.task(draft.id).execution).toBe('main')
       expect(() =>
         store.patch({
           collection: 'tasks',
           id: draft.id,
-          changes: { repositoryId: { before: 'repo', after: 'other-repo' } },
+          changes: {
+            repositoryId: {
+              before: 'repo',
+              after: 'other-repo',
+            },
+          },
         }),
       ).toThrow('before sending the first message')
       expect(store.task(draft.id).repositoryId).toBe('repo')
-
-      store.update((w) => ({ ...w, tasks: [{ ...started, execution: 'worktree' }] }))
+      store.update((w) => ({
+        ...w,
+        tasks: [
+          {
+            ...started,
+            execution: 'worktree',
+          },
+        ],
+      }))
       expect(() =>
         store.patch({
           collection: 'tasks',
           id: draft.id,
-          changes: { execution: { before: 'worktree', after: 'main' } },
+          changes: {
+            execution: {
+              before: 'worktree',
+              after: 'main',
+            },
+          },
         }),
       ).toThrow('before sending the first message')
       expect(store.task(draft.id).execution).toBe('worktree')
@@ -209,50 +308,82 @@ it('allows choosing a project and checkout only before the first submitted input
     store.patch({
       collection: 'tasks',
       id: draft.id,
-      changes: { execution: { before: 'main', after: 'worktree' } },
+      changes: {
+        execution: {
+          before: 'main',
+          after: 'worktree',
+        },
+      },
     })
     expect(store.version()).toBe(version)
   } finally {
     db.close()
   }
 })
-
 it('safely replays an applied patch after losing its response without duplicating writes', () => {
   const db = openDatabase(':memory:')
   try {
     const store = new WorkspaceStore(db)
     store.update((workspace) => ({
       ...workspace,
-      repositories: [{ id: 'repo', name: 'Before', path: '/repo', branch: 'main' }],
+      repositories: [
+        {
+          id: 'repo',
+          name: 'Before',
+          path: '/repo',
+          branch: 'main',
+        },
+      ],
     }))
     const patch: WorkspacePatch = {
       collection: 'repositories',
       id: 'repo',
-      changes: { name: { before: 'Before', after: 'After' } },
+      changes: {
+        name: {
+          before: 'Before',
+          after: 'After',
+        },
+      },
     }
     store.patch(patch)
     const version = store.version()
     store.patch(patch)
     expect(store.version()).toBe(version)
     expect(store.get().repositories[0].name).toBe('After')
-    store.patch({ ...patch, changes: { name: { before: 'After', after: 'Someone else' } } })
+    store.patch({
+      ...patch,
+      changes: {
+        name: {
+          before: 'After',
+          after: 'Someone else',
+        },
+      },
+    })
     expect(() => store.patch(patch)).toThrow('Another client changed name')
     expect(store.get().repositories[0].name).toBe('Someone else')
     expect(() =>
       store.patch({
         ...patch,
         changes: {
-          name: { before: 'Someone else', after: 'Unsaved' },
-          branch: { before: 'old-branch', after: 'new-branch' },
+          name: {
+            before: 'Someone else',
+            after: 'Unsaved',
+          },
+          branch: {
+            before: 'old-branch',
+            after: 'new-branch',
+          },
         },
       }),
     ).toThrow('Another client changed branch')
-    expect(store.get().repositories[0]).toMatchObject({ name: 'Someone else', branch: 'main' })
+    expect(store.get().repositories[0]).toMatchObject({
+      name: 'Someone else',
+      branch: 'main',
+    })
   } finally {
     db.close()
   }
 })
-
 it('recognizes an identical creation retry while rejecting changed entities and restricted fields', () => {
   const db = openDatabase(':memory:')
   try {
@@ -269,30 +400,61 @@ it('recognizes an identical creation retry while rejecting changed entities and 
       draft: '',
       example: false,
     }
-    const create: WorkspacePatch = { collection: 'tasks', id: draft.id, create: draft, changes: {} }
+    const create: WorkspacePatch = {
+      collection: 'tasks',
+      id: draft.id,
+      create: draft,
+      changes: {},
+    }
     store.patch(create)
     const version = store.version()
     store.patch(create)
     expect(store.version()).toBe(version)
     expect(store.get().tasks).toEqual([draft])
-    expect(() => store.patch({ ...create, create: { ...draft, title: 'Different' } })).toThrow(
-      'already exists',
-    )
-    expect(() => store.patch({ ...create, create: { ...draft, status: 'running' } })).toThrow(
-      'must be drafts',
-    )
+    expect(() =>
+      store.patch({
+        ...create,
+        create: {
+          ...draft,
+          title: 'Different',
+        },
+      }),
+    ).toThrow('already exists')
+    expect(() =>
+      store.patch({
+        ...create,
+        create: {
+          ...draft,
+          status: 'running',
+        },
+      }),
+    ).toThrow('must be drafts')
     expect(() =>
       store.patch({
         collection: 'tasks',
         id: draft.id,
-        changes: { status: { before: 'draft', after: 'draft' } },
+        changes: {
+          status: {
+            before: 'draft',
+            after: 'draft',
+          },
+        },
       }),
     ).toThrow('Cannot edit status')
     const append: WorkspacePatch = {
       collection: 'tasks',
       id: draft.id,
       changes: {
-        messages: { before: [], after: [{ id: 'input', role: 'user', text: 'Run once' }] },
+        messages: {
+          before: [],
+          after: [
+            {
+              id: 'input',
+              role: 'user',
+              text: 'Run once',
+            },
+          ],
+        },
       },
     }
     store.patch(append)
@@ -302,7 +464,6 @@ it('recognizes an identical creation retry while rejecting changed entities and 
     db.close()
   }
 })
-
 it('persists manual PR links independently from execution checkout and rejects unsafe links', () => {
   const db = openDatabase(':memory:')
   try {
@@ -345,7 +506,12 @@ it('persists manual PR links independently from execution checkout and rejects u
     const patch: WorkspacePatch = {
       collection: 'tasks',
       id: 'linked',
-      changes: { linkedPullRequests: { before: null, after: links } },
+      changes: {
+        linkedPullRequests: {
+          before: null,
+          after: links,
+        },
+      },
     }
     store.patch(patch)
     store.patch(patch)
@@ -360,13 +526,26 @@ it('persists manual PR links independently from execution checkout and rejects u
         changes: {
           linkedPullRequests: {
             before: links,
-            after: [{ ...links[0], url: 'javascript:alert(1)' }],
+            after: [
+              {
+                ...links[0],
+                url: 'javascript:alert(1)',
+              },
+            ],
           },
         },
       }),
     ).toThrow(/Invalid URL/)
     expect(store.task('linked').linkedPullRequests).toEqual(links)
-    store.patch({ ...patch, changes: { linkedPullRequests: { before: links, after: [] } } })
+    store.patch({
+      ...patch,
+      changes: {
+        linkedPullRequests: {
+          before: links,
+          after: [],
+        },
+      },
+    })
     expect(new WorkspaceStore(db).task('linked').linkedPullRequests).toEqual([])
     expect(store.task('linked').pullRequest).toEqual(source)
   } finally {

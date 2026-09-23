@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
 import { defaultShell } from './shell.js'
 import { commandsSchema, type CommandSettings } from '@dovo/protocol'
@@ -14,7 +15,7 @@ type Session = {
 }
 export class Terminals {
   constructor(
-    private settings: () => CommandSettings = () => commandsSchema.parse({}),
+    private settings: () => CommandSettings = () => decode(commandsSchema, {}),
     private activity?: Pick<Activity, 'add'>,
   ) {}
   private sessions = new Map<string, Session>()
@@ -35,7 +36,12 @@ export class Terminals {
         env: processEnvironment(),
       })
     const session: Session = {
-      info: { id, taskId, title: `Terminal ${this.sessions.size + 1}`, exited: false },
+      info: {
+        id,
+        taskId,
+        title: `Terminal ${this.sessions.size + 1}`,
+        exited: false,
+      },
       process,
       buffer: '',
       listeners: new Set(),
@@ -52,9 +58,16 @@ export class Terminals {
       for (const listener of session.listeners) listener(data)
     })
     process.onExit(({ exitCode }) => {
-      session.info = { ...session.info, exited: true, exitCode }
+      session.info = {
+        ...session.info,
+        exited: true,
+        exitCode,
+      }
       if (this.sessions.has(id))
-        this.activity?.add('terminal', id, 'Shell exited', { taskId, exitCode })
+        this.activity?.add('terminal', id, 'Shell exited', {
+          taskId,
+          exitCode,
+        })
       for (const listener of session.listeners) listener(`\r\n[Process exited ${exitCode}]\r\n`)
     })
     return session.info
@@ -81,7 +94,9 @@ export class Terminals {
   close(id: string) {
     const session = this.get(id)
     if (!session.info.exited) session.process.kill()
-    this.activity?.add('terminal', id, 'Terminal closed', { taskId: session.info.taskId })
+    this.activity?.add('terminal', id, 'Terminal closed', {
+      taskId: session.info.taskId,
+    })
     this.sessions.delete(id)
   }
   dispose() {

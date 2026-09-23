@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect } from 'react'
 import type { TaskTurn } from '@dovo/studio-core'
 export function TurnLabel({ turn }: { turn: TaskTurn }) {
-  const [now, setNow] = useState(Date.now())
+  const [now, setNow] = useApplicationState(Date.now())
   useEffect(() => {
     if (turn.finishedAt || turn.status !== 'running') return
     const timer = setInterval(() => setNow(Date.now()), 1000)

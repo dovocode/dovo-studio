@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useRef } from 'react'
 import {
   forgeLabels,
   forgeRepositoryPageSchema,
@@ -10,8 +11,10 @@ import {
 } from '@dovo/studio-core'
 import { Button, ChoicePicker, FormField, Input } from '@dovo/studio-ui'
 import { ForgeConnectionsButton, useForgeConnections } from './forge-connections'
-
-type Binding = { connectionId: string; repository: string }
+type Binding = {
+  connectionId: string
+  repository: string
+}
 function RepositoryResults({
   connectionId,
   repositoryId,
@@ -22,18 +25,24 @@ function RepositoryResults({
   onSelect: (repo: ForgeRepository) => void
 }) {
   const { request, connected } = useWorkspace()
-  const [load, setLoad] = useState({ page: 1 })
-  const [data, setData] = useState<ForgeRepositoryPage | null>(null)
-  const [filter, setFilter] = useState('')
-  const [busy, setBusy] = useState(true)
-  const [error, setError] = useState('')
+  const [load, setLoad] = useApplicationState({
+    page: 1,
+  })
+  const [data, setData] = useApplicationState<ForgeRepositoryPage | null>(null)
+  const [filter, setFilter] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(true)
+  const [error, setError] = useApplicationState('')
   useEffect(() => {
     let current = true
     setBusy(true)
     setError('')
     void request(
       '/api/scm/repositories/forge/read',
-      { connectionId, repositoryId, page: load.page },
+      {
+        connectionId,
+        repositoryId,
+        page: load.page,
+      },
       forgeRepositoryPageSchema,
     )
       .then((result) => {
@@ -117,7 +126,11 @@ function RepositoryResults({
             size="sm"
             variant="outline"
             disabled={busy || !connected}
-            onClick={() => setLoad({ ...load })}
+            onClick={() =>
+              setLoad({
+                ...load,
+              })
+            }
           >
             Retry
           </Button>
@@ -129,7 +142,11 @@ function RepositoryResults({
           size="sm"
           variant="outline"
           disabled={busy || !connected}
-          onClick={() => setLoad({ page: data.page + 1 })}
+          onClick={() =>
+            setLoad({
+              page: data.page + 1,
+            })
+          }
         >
           Load more
         </Button>
@@ -137,7 +154,6 @@ function RepositoryResults({
     </section>
   )
 }
-
 export function ForgeRepositoryFields({
   value,
   onChange,
@@ -155,7 +171,7 @@ export function ForgeRepositoryFields({
 }) {
   const { connected } = useWorkspace()
   const { connections, loading, error, reload } = useForgeConnections()
-  const [browse, setBrowse] = useState(false)
+  const [browse, setBrowse] = useApplicationState(false)
   const selected = connections.find((c) => c.id === value.connectionId)
   return (
     <div className="grid gap-3">
@@ -165,7 +181,10 @@ export function ForgeRepositoryFields({
           disabled={disabled || !connected || loading}
           value={value.connectionId}
           onValueChange={(connectionId) => {
-            onChange({ connectionId, repository: '' })
+            onChange({
+              connectionId,
+              repository: '',
+            })
             setBrowse(false)
           }}
         >
@@ -216,7 +235,12 @@ export function ForgeRepositoryFields({
               required
               disabled={disabled}
               value={value.repository}
-              onChange={(e) => onChange({ ...value, repository: e.target.value })}
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  repository: e.target.value,
+                })
+              }
               placeholder={
                 selected?.provider === 'azure-devops' ? 'Project/Repository' : 'owner/repository'
               }
@@ -239,7 +263,10 @@ export function ForgeRepositoryFields({
               connectionId={value.connectionId}
               repositoryId={repositoryId}
               onSelect={(repo) => {
-                onChange({ ...value, repository: repo.fullName })
+                onChange({
+                  ...value,
+                  repository: repo.fullName,
+                })
                 onSelect?.(repo)
                 setBrowse(false)
               }}
@@ -250,16 +277,15 @@ export function ForgeRepositoryFields({
     </div>
   )
 }
-
 export function ProjectForgeBinding({ repo }: { repo: Repository }) {
   const { request, connected } = useWorkspace()
-  const [value, setValue] = useState<Binding>({
+  const [value, setValue] = useApplicationState<Binding>({
     connectionId: repo.forge?.connectionId ?? '',
     repository: repo.forge?.repository ?? '',
   })
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [saved, setSaved] = useState(false)
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [saved, setSaved] = useApplicationState(false)
   const running = useRef(false)
   const changed =
     value.connectionId !== (repo.forge?.connectionId ?? '') ||
@@ -280,7 +306,12 @@ export function ProjectForgeBinding({ repo }: { repo: Repository }) {
           '/api/scm/repositories/forge/bind',
           {
             repositoryId: repo.id,
-            forge: value.connectionId ? { ...value, repository: value.repository.trim() } : null,
+            forge: value.connectionId
+              ? {
+                  ...value,
+                  repository: value.repository.trim(),
+                }
+              : null,
           },
           responses.ok,
         )

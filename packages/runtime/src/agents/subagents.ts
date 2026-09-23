@@ -1,7 +1,14 @@
-import { z } from 'zod'
+import { mutableArray } from '@dovo/protocol'
+import { decodeResult } from '@dovo/protocol'
+import { Schema } from 'effect'
 import type { Subagent } from '@dovo/protocol'
-const record = z.record(z.string(), z.unknown())
-const object = (value: unknown) => record.safeParse(value).data ?? {}
+const record = Schema.mutable(
+  Schema.Record({
+    key: Schema.String,
+    value: Schema.Unknown,
+  }),
+)
+const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
 const number = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
@@ -48,21 +55,31 @@ export function updateSubagents(
   ) {
     if (method === 'thread/tokenUsage/updated') {
       const tokens = number(object(object(event.tokenUsage).total).totalTokens)
-      if (tokens !== undefined) put(childId, { tokens })
+      if (tokens !== undefined)
+        put(childId, {
+          tokens,
+        })
     }
     if (method === 'item/started') {
       const activity = text(item.type)
-      if (activity) put(childId, { activity, status: 'working' })
+      if (activity)
+        put(childId, {
+          activity,
+          status: 'working',
+        })
     }
     if (method === 'turn/completed') {
       const turn = object(event.turn)
-      put(childId, { status: status(turn.status), activity: text(object(turn.error).message) })
+      put(childId, {
+        status: status(turn.status),
+        activity: text(object(turn.error).message),
+      })
     }
   }
   if (provider === 'codex' && item.type === 'collabAgentToolCall') {
     const states = object(item.agentsStates)
     const ids = new Set([
-      ...(z.array(z.string()).safeParse(item.receiverThreadIds).data ?? []),
+      ...(decodeResult(mutableArray(Schema.String), item.receiverThreadIds).data ?? []),
       ...Object.keys(states),
     ])
     for (const id of ids) {

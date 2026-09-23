@@ -1,5 +1,7 @@
+import { mobileWorkflow } from '../runtime/native-effect'
+import { mutableStruct } from '@dovo/protocol'
 import { Alert } from 'react-native'
-import { z } from 'zod'
+import { Schema, Effect } from 'effect'
 import {
   latestCompletedTaskTurn,
   hasUnviewedTaskCompletion,
@@ -8,22 +10,36 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/provider'
 import { useAction } from '../ui/use-action'
-
 export const snoozeOptions = [
-  { hours: 1, label: 'Snooze 1 hour' },
-  { hours: 4, label: 'Snooze 4 hours' },
-  { hours: 24, label: 'Until tomorrow' },
+  {
+    hours: 1,
+    label: 'Snooze 1 hour',
+  },
+  {
+    hours: 4,
+    label: 'Snooze 4 hours',
+  },
+  {
+    hours: 24,
+    label: 'Until tomorrow',
+  },
 ] as const
-
 type LifecycleChanges = Partial<{
   [Key in 'pinned' | 'archived' | 'snoozedUntil']: {
     before: Task[Key] | null
     after: Task[Key] | null
   }
 }>
-
 export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () => void) {
-  const { call, connected, activeId, overviews, readRuntime, refreshRuntime } = useRuntime()
+  const {
+    call,
+    connected,
+    activeId,
+    overviews,
+    readRuntimeEffect,
+    refreshRuntimeEffect,
+    callEffect,
+  } = useRuntime()
   const { act, busy, error } = useAction()
   const onCurrentRuntime = runtimeId === undefined || runtimeId === activeId
   const enabled = connected && onCurrentRuntime
@@ -35,8 +51,14 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
     if (!enabled) throw new Error('Reconnect to this task’s device before changing it.')
     return call(
       '/api/workspace',
-      { collection: 'tasks', id: task.id, changes },
-      z.object({ revision: z.number() }),
+      {
+        collection: 'tasks',
+        id: task.id,
+        changes,
+      },
+      mutableStruct({
+        revision: Schema.Number.pipe(Schema.finite()),
+      }),
       'PATCH',
     )
   }
@@ -48,25 +70,29 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
     readStateEnabled,
     unread,
     toggleRead: () =>
-      act(async () => {
-        if (!readStateEnabled || !owner || !completed)
-          throw new Error('Reconnect to this task’s device before changing its read status.')
-        await readRuntime(
-          owner.profile,
-          '/api/tasks/viewed',
-          {
-            id: task.id,
-            turnId: completed.id,
-            viewed: unread,
-            expectedRevision: task.viewedRevision ?? 0,
-          },
-          responses.ok,
-        )
-        await refreshRuntime(owner.profile)
-      }),
+      act(() =>
+        mobileWorkflow(function* () {
+          if (!readStateEnabled || !owner || !completed)
+            return yield* Effect.fail(
+              new Error('Reconnect to this task’s device before changing its read status.'),
+            )
+          yield* readRuntimeEffect(
+            owner.profile,
+            '/api/tasks/viewed',
+            {
+              id: task.id,
+              turnId: completed.id,
+              viewed: unread,
+              expectedRevision: task.viewedRevision ?? 0,
+            },
+            responses.ok,
+          )
+          yield* refreshRuntimeEffect(owner.profile)
+        }),
+      ),
     toggleArchived: () =>
       act(() =>
-        call(
+        callEffect(
           '/api/tasks/lifecycle',
           {
             id: task.id,
@@ -80,31 +106,62 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
         'Delete thread?',
         `“${task.title}” and its conversation will be permanently deleted. Project files and worktrees stay on disk.`,
         [
-          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
           {
             text: 'Delete',
             style: 'destructive',
             onPress: () =>
-              act(async () => {
-                await call('/api/tasks/lifecycle', { id: task.id, action: 'delete' }, responses.ok)
-                onDeleted?.()
-              }),
+              act(() =>
+                mobileWorkflow(function* () {
+                  yield* callEffect(
+                    '/api/tasks/lifecycle',
+                    {
+                      id: task.id,
+                      action: 'delete',
+                    },
+                    responses.ok,
+                  )
+                  onDeleted?.()
+                }),
+              ),
           },
         ],
       ),
     togglePinned: () =>
-      act(() => patch({ pinned: { before: task.pinned ?? null, after: !task.pinned } })),
+      act(() =>
+        patch({
+          pinned: {
+            before: task.pinned ?? null,
+            after: !task.pinned,
+          },
+        }),
+      ),
     toggleSettled: () =>
       act(() => {
         if (task.status === 'running') throw new Error('Stop the task before settling it.')
         return patch({
-          archived: { before: task.archived ?? null, after: !task.archived },
-          snoozedUntil: { before: task.snoozedUntil ?? null, after: null },
+          archived: {
+            before: task.archived ?? null,
+            after: !task.archived,
+          },
+          snoozedUntil: {
+            before: task.snoozedUntil ?? null,
+            after: null,
+          },
         })
       }),
     snooze: (until: string | null) =>
-      act(() => patch({ snoozedUntil: { before: task.snoozedUntil ?? null, after: until } })),
+      act(() =>
+        patch({
+          snoozedUntil: {
+            before: task.snoozedUntil ?? null,
+            after: until,
+          },
+        }),
+      ),
   }
 }
-
 export type TaskLifecycle = ReturnType<typeof useTaskLifecycle>

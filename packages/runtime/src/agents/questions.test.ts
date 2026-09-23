@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { questionPromptSchema } from '@dovo/protocol'
 import { startRuntime } from '../index'
@@ -5,17 +6,27 @@ const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
-const prompt = questionPromptSchema.parse({
+const prompt = decode(questionPromptSchema, {
   title: 'Choose an approach',
   questions: [
     {
       id: 'choice',
       header: 'Approach',
       question: 'How should this work?',
-      options: [{ value: 'existing', label: 'Existing' }],
+      options: [
+        {
+          value: 'existing',
+          label: 'Existing',
+        },
+      ],
       custom: false,
     },
-    { id: 'secret', header: 'Secret', question: 'Private value', secret: true },
+    {
+      id: 'secret',
+      header: 'Secret',
+      question: 'Private value',
+      secret: true,
+    },
   ],
 })
 it('validates answers, accepts identical retries, rejects conflicting replies, and redacts secrets', async () => {
@@ -27,21 +38,38 @@ it('validates answers, accepts identical retries, rejects conflicting replies, a
   cleanups.push(r.close)
   const pending = r.services.questions.request('task', prompt, new AbortController().signal)
   const id = r.services.questions.list()[0].id
-  expect(() => r.services.questions.respond(id, { choice: ['other'] })).toThrow('available option')
-  expect(() => r.services.questions.respond(id, { choice: ['existing'] })).toThrow('Secret')
+  expect(() =>
+    r.services.questions.respond(id, {
+      choice: ['other'],
+    }),
+  ).toThrow('available option')
+  expect(() =>
+    r.services.questions.respond(id, {
+      choice: ['existing'],
+    }),
+  ).toThrow('Secret')
   expect(r.services.questions.list()).toHaveLength(1)
   const call = (token: string) =>
     fetch(`http://127.0.0.1:${r.port}/api/tasks/answer`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
         id,
-        answers: { choice: ['existing'], secret: ['sensitive-fixture-value'] },
+        answers: {
+          choice: ['existing'],
+          secret: ['sensitive-fixture-value'],
+        },
       }),
     })
   expect((await call('invalid')).status).toBe(401)
   expect((await call('owner-token-at-least-thirty-two-characters')).status).toBe(200)
-  expect(await pending).toEqual({ choice: ['existing'], secret: ['sensitive-fixture-value'] })
+  expect(await pending).toEqual({
+    choice: ['existing'],
+    secret: ['sensitive-fixture-value'],
+  })
   expect((await call('owner-token-at-least-thirty-two-characters')).status).toBe(200)
   expect(() => r.services.questions.respond(id, null)).toThrow('already answered')
   expect(r.services.questions.list()).toEqual([])

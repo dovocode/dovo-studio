@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react'
+import { startPolling } from '@dovo/client-runtime'
+import { useApplicationState } from './application-state'
+import { Effect, Schema } from 'effect'
+import { useEffect } from 'react'
 import { AppState, View } from 'react-native'
 import { Text } from '../ui/text'
 import { activitySchema } from '@dovo/protocol'
@@ -7,37 +10,51 @@ import { Action } from '../ui/action'
 import { Field } from '../ui/field'
 import { styles } from '../ui/theme'
 export function ActivityLog() {
-  const { call, connected } = useRuntime(),
-    [query, setQuery] = useState(''),
-    [offset, setOffset] = useState(0),
-    [data, setData] = useState<ReturnType<typeof activitySchema.parse>>({ events: [] }),
-    [error, setError] = useState(''),
-    [expanded, setExpanded] = useState('')
+  const { readEffect, connected } = useRuntime(),
+    [query, setQuery] = useApplicationState(''),
+    [offset, setOffset] = useApplicationState(0),
+    [data, setData] = useApplicationState<Schema.Schema.Type<typeof activitySchema>>({
+      events: [],
+    }),
+    [error, setError] = useApplicationState(''),
+    [expanded, setExpanded] = useApplicationState('')
   useEffect(() => {
     let stopped = false
-    const load = () => {
-      if (connected && AppState.currentState === 'active')
-        void call('/api/activity', { query, offset }, activitySchema)
-          .then((v) => {
-            if (!stopped) {
-              setData(v)
-              setError('')
-            }
-          })
-          .catch((e) => {
-            if (!stopped) setError(String(e))
-          })
-    }
-    const initial = setTimeout(load, 250),
-      timer = setInterval(load, 10000)
+    let first = true
+    const load = Effect.gen(function* () {
+      if (first) {
+        first = false
+        yield* Effect.sleep(250)
+      }
+      if (!connected || AppState.currentState !== 'active') return
+      const value = yield* readEffect('/api/activity', { query, offset }, activitySchema)
+      if (!stopped) {
+        setData(value)
+        setError('')
+      }
+    })
+    const polling = startPolling(load, {
+      interval: 10000,
+      onError: (error) => {
+        if (!stopped) setError(error.message)
+      },
+    })
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') polling.refresh()
+    })
     return () => {
       stopped = true
-      clearTimeout(initial)
-      clearInterval(timer)
+      subscription.remove()
+      void polling.stop()
     }
-  }, [call, connected, query, offset])
+  }, [readEffect, connected, query, offset])
+
   return (
-    <View style={{ gap: 8 }}>
+    <View
+      style={{
+        gap: 8,
+      }}
+    >
       <Text style={styles.title}>Activity & messages</Text>
       <Field
         label="Search activity"

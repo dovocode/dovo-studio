@@ -1,38 +1,95 @@
-import { z } from 'zod'
-
-export const directoryRequestSchema = z.object({
-  path: z
-    .string()
-    .max(4096)
-    .refine((value) => !value.includes('\0'), 'Invalid path')
-    .default(''),
-  hidden: z.boolean().default(false),
-  query: z.string().trim().max(200).default(''),
-  offset: z.number().int().min(0).max(1_000_000).default(0),
+import { mutableStruct, mutableArray } from './schema.js'
+import { maxValue, refine, minValue } from './schema.js'
+import { Schema } from 'effect'
+export const directoryRequestSchema = mutableStruct({
+  path: Schema.optionalWith(
+    refine(maxValue(Schema.String, 4096), (value) => !value.includes('\0'), 'Invalid path'),
+    {
+      default: () => '',
+    },
+  ),
+  hidden: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
+  query: Schema.optionalWith(maxValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 200), {
+    default: () => '',
+  }),
+  offset: Schema.optionalWith(
+    maxValue(
+      minValue(
+        Schema.Number.pipe(Schema.finite()).pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ),
+        0,
+      ),
+      1_000_000,
+    ),
+    {
+      default: () => 0,
+    },
+  ),
 })
-export const directoryPageSchema = z.object({
-  path: z.string(),
-  parent: z.string().nullable(),
-  home: z.string().optional(),
-  breadcrumbs: z.array(z.object({ name: z.string(), path: z.string() })).optional(),
-  total: z.number().int().nonnegative().optional(),
-  entries: z.array(z.object({ name: z.string(), path: z.string() })),
-  nextOffset: z.number().int().nonnegative().nullable(),
+export const directoryPageSchema = mutableStruct({
+  path: Schema.String,
+  parent: Schema.NullOr(Schema.String),
+  home: Schema.optional(Schema.String),
+  breadcrumbs: Schema.optional(
+    mutableArray(
+      mutableStruct({
+        name: Schema.String,
+        path: Schema.String,
+      }),
+    ),
+  ),
+  total: Schema.optional(
+    Schema.Number.pipe(Schema.finite())
+      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+      .pipe(Schema.nonNegative()),
+  ),
+  entries: mutableArray(
+    mutableStruct({
+      name: Schema.String,
+      path: Schema.String,
+    }),
+  ),
+  nextOffset: Schema.NullOr(
+    Schema.Number.pipe(Schema.finite())
+      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+      .pipe(Schema.nonNegative()),
+  ),
 })
-export type DirectoryPage = z.infer<typeof directoryPageSchema>
-
-export const githubRepositoryListRequestSchema = z.object({
-  page: z.number().int().min(1).max(10000).default(1),
+export type DirectoryPage = Schema.Schema.Type<typeof directoryPageSchema>
+export const githubRepositoryListRequestSchema = mutableStruct({
+  page: Schema.optionalWith(
+    maxValue(
+      minValue(
+        Schema.Number.pipe(Schema.finite()).pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ),
+        1,
+      ),
+      10000,
+    ),
+    {
+      default: () => 1,
+    },
+  ),
 })
-export const githubRepositoryChoiceSchema = z.object({
-  name: z.string(),
-  fullName: z.string(),
-  description: z.string(),
-  private: z.boolean(),
+export const githubRepositoryChoiceSchema = mutableStruct({
+  name: Schema.String,
+  fullName: Schema.String,
+  description: Schema.String,
+  private: Schema.Boolean,
 })
-export const githubRepositoryPageSchema = z.object({
-  repositories: z.array(githubRepositoryChoiceSchema),
-  nextPage: z.number().int().positive().nullable(),
+export const githubRepositoryPageSchema = mutableStruct({
+  repositories: mutableArray(githubRepositoryChoiceSchema),
+  nextPage: Schema.NullOr(
+    Schema.Number.pipe(Schema.finite())
+      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+      .pipe(Schema.positive()),
+  ),
 })
-export type GithubRepositoryChoice = z.infer<typeof githubRepositoryChoiceSchema>
-export type GithubRepositoryPage = z.infer<typeof githubRepositoryPageSchema>
+export type GithubRepositoryChoice = Schema.Schema.Type<typeof githubRepositoryChoiceSchema>
+export type GithubRepositoryPage = Schema.Schema.Type<typeof githubRepositoryPageSchema>

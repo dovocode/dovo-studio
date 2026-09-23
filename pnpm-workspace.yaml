@@ -9,6 +9,7 @@ allowBuilds:
   electron-winstaller: true
   react-native-enriched-markdown: false
   protobufjs: true
+  msgpackr-extract: false
 
 minimumReleaseAgeExclude:
   - '@tanstack/history@1.162.2'
@@ -39,8 +40,11 @@ minimumReleaseAgeExclude:
 overrides:
   vite: npm:@voidzero-dev/vite-plus-core@0.3.0
   vitest: 4.1.11
+  linkify-it@<5.0.2: 5.0.2
+  uuid@<11.1.1: 11.1.1
 
 patchedDependencies:
   '@expo/ui@57.0.18': patches/@expo__ui@57.0.18.patch
+  decode-uri-component@0.2.2: patches/decode-uri-component@0.2.2.patch
   react-native-diffs@1.0.3: patches/react-native-diffs@1.0.3.patch
   react-native-enriched-markdown@1.0.2: patches/react-native-enriched-markdown@1.0.2.patch

@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { randomUUID, createHash } from 'node:crypto'
 import {
   questionPromptSchema,
@@ -36,14 +37,22 @@ export class Questions {
     onResponse?: (answers: QuestionAnswers | null) => void,
   ) {
     if (signal.aborted) return Promise.resolve(null)
-    const prompt = questionPromptSchema.parse(value),
+    const prompt = decode(questionPromptSchema, value),
       id = randomUUID()
-    const info = { id, taskId, prompt, createdAt: new Date().toISOString() }
+    const info = {
+      id,
+      taskId,
+      prompt,
+      createdAt: new Date().toISOString(),
+    }
     this.activity.add(
       'question',
       taskId,
       prompt.title,
-      { ...info, status: 'requested' },
+      {
+        ...info,
+        status: 'requested',
+      },
       `question:${id}`,
     )
     return new Promise<QuestionAnswers | null>((resolve) => {
@@ -58,7 +67,12 @@ export class Questions {
           'question',
           taskId,
           prompt.title,
-          { ...info, answers: logged, status, resolvedAt: new Date().toISOString() },
+          {
+            ...info,
+            answers: logged,
+            status,
+            resolvedAt: new Date().toISOString(),
+          },
           `question:${id}`,
         )
         if (status !== 'cancelled') {
@@ -71,14 +85,20 @@ export class Questions {
         if (status !== 'cancelled') onResponse?.(answers)
       }
       const abort = () => finish(null, 'cancelled')
-      this.requests.set(id, { info, finish, validate })
-      signal.addEventListener('abort', abort, { once: true })
+      this.requests.set(id, {
+        info,
+        finish,
+        validate,
+      })
+      signal.addEventListener('abort', abort, {
+        once: true,
+      })
       if (signal.aborted) abort()
     })
   }
   respond(id: string, value: QuestionAnswers | null) {
     const request = this.requests.get(id)
-    const answers = value === null ? null : questionAnswersSchema.parse(value)
+    const answers = value === null ? null : decode(questionAnswersSchema, value)
     if (!request) {
       if (this.answered.get(id) === answerFingerprint(answers)) return
       throw new HttpError(409, 'This question was already answered or cancelled')

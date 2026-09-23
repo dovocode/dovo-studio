@@ -1,6 +1,6 @@
+import { useApplicationState } from './application-state'
 import type { ReactNode } from 'react'
 import type { RuntimeProfile } from '@dovo/protocol'
-import { useState } from 'react'
 import { View } from 'react-native'
 import { RuntimeScope, useRuntime } from './provider'
 import { Sheet } from '../ui/sheet'
@@ -22,7 +22,7 @@ export function CreationTarget({
 }) {
   const { overviews } = useRuntime()
   const available = overviews.filter((entry) => entry.connected && entry.snapshot)
-  const [target, setTarget] = useState<RuntimeProfile | null>(() =>
+  const [target, setTarget] = useApplicationState<RuntimeProfile | null>(() =>
     !alwaysChoose && available.length === 1 ? available[0].profile : null,
   )
   const current = overviews.find((entry) => entry.profile.id === target?.id)?.profile

@@ -14,3 +14,6 @@ appId: com.dovo.studio
           direction: DOWN
           centerElement: true
       - tapOn: Forget computer
+
+- tapOn:
+    id: Connect a computer

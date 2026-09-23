@@ -1,39 +1,58 @@
+import { decode } from '@dovo/protocol'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { commandsSchema } from '@dovo/protocol'
 import { checkAdapterUpdates } from './diagnostics'
-
 const run = vi.hoisted(() =>
   vi.fn<
     (
       command: string,
       args: string[],
       options: unknown,
-    ) => Promise<{ stdout: string; stderr?: string }>
+    ) => Promise<{
+      stdout: string
+      stderr?: string
+    }>
   >(),
 )
 vi.mock('../process.js', () => ({
   exec: run,
-  processEnvironment: () => ({ PATH: '/bin' }),
+  processEnvironment: () => ({
+    PATH: '/bin',
+  }),
 }))
-
-const settings = commandsSchema.parse({})
+const settings = decode(commandsSchema, {})
 const request = vi.fn<typeof fetch>()
 function urlString(input: Parameters<typeof fetch>[0]) {
   return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
 }
-
 beforeEach(() => {
-  run.mockReset().mockResolvedValue({ stdout: 'codex-cli 0.155.1\n', stderr: '' })
+  run.mockReset().mockResolvedValue({
+    stdout: 'codex-cli 0.155.1\n',
+    stderr: '',
+  })
   request.mockReset()
   vi.stubGlobal('fetch', request)
 })
 afterEach(() => vi.unstubAllGlobals())
-
 it('checks the installed adapters without contacting an update registry or running model turns', async () => {
-  request.mockResolvedValue(Response.json({ healthy: true, version: '1.18.31' }))
+  request.mockResolvedValue(
+    Response.json({
+      healthy: true,
+      version: '1.18.31',
+    }),
+  )
   const diagnostics = await checkAdapterUpdates(settings)
   expect(run.mock.calls).toEqual([
-    ['codex', ['--version'], expect.objectContaining({ timeout: 5000, env: { PATH: '/bin' } })],
+    [
+      'codex',
+      ['--version'],
+      expect.objectContaining({
+        timeout: 5000,
+        env: {
+          PATH: '/bin',
+        },
+      }),
+    ],
   ])
   expect(request.mock.calls.map(([url]) => urlString(url))).toEqual([
     'http://127.0.0.1:4096/global/health',
@@ -48,18 +67,22 @@ it('checks the installed adapters without contacting an update registry or runni
   )
   expect(diagnostics.every((item) => item.updateStatus === 'not-checked')).toBe(true)
 })
-
 it('compares stable, prerelease, and newer installed versions correctly', async () => {
   request.mockImplementation(async (url) => {
     if (urlString(url).includes('/global/health'))
-      return Response.json({ healthy: true, version: '2.0.0-beta.2' })
+      return Response.json({
+        healthy: true,
+        version: '2.0.0-beta.2',
+      })
     const name = decodeURIComponent(new URL(urlString(url)).pathname.split('/')[1])
     return Response.json({
       name,
       version: name === '@openai/codex' ? '0.154.0' : name === 'opencode-ai' ? '2.0.0' : '999.0.0',
     })
   })
-  const diagnostics = await checkAdapterUpdates(settings, { checkUpdates: true })
+  const diagnostics = await checkAdapterUpdates(settings, {
+    checkUpdates: true,
+  })
   expect(diagnostics.find((item) => item.id === 'codex')).toMatchObject({
     installedVersion: '0.155.1',
     latestVersion: '0.154.0',
@@ -74,14 +97,18 @@ it('compares stable, prerelease, and newer installed versions correctly', async 
     'update-available',
   )
 })
-
 it('retains useful results if an executable, server, or update registry is unavailable', async () => {
   run.mockRejectedValue(new Error('secret-token: child stderr must not be reported'))
   request.mockImplementation(async (url) => {
-    if (urlString(url).includes('/global/health')) return new Response(null, { status: 401 })
+    if (urlString(url).includes('/global/health'))
+      return new Response(null, {
+        status: 401,
+      })
     throw new Error('network offline')
   })
-  const diagnostics = await checkAdapterUpdates(settings, { checkUpdates: true })
+  const diagnostics = await checkAdapterUpdates(settings, {
+    checkUpdates: true,
+  })
   expect(diagnostics.find((item) => item.id === 'codex')).toMatchObject({
     available: false,
     installedVersion: null,
@@ -95,19 +122,40 @@ it('retains useful results if an executable, server, or update registry is unava
   expect(diagnostics.find((item) => item.kind === 'server')?.detail).toContain('HTTP 401')
   expect(JSON.stringify(diagnostics)).not.toContain('secret-token')
 })
-
 it('checks configured agent executables and deduplicates a shared installation', async () => {
-  request.mockResolvedValue(Response.json({ healthy: true, version: '1.18.31' }))
+  request.mockResolvedValue(
+    Response.json({
+      healthy: true,
+      version: '1.18.31',
+    }),
+  )
   run.mockImplementation(async (command) => ({
     stdout: command === '/bin/custom-agent' ? 'custom build\n' : '2.1.278 (Claude Code)\n',
   }))
-  const diagnostics = await checkAdapterUpdates(commandsSchema.parse({ claude: '/bin/claude' }), {
-    agents: [
-      { provider: 'claude', endpoint: '/bin/claude', model: '' },
-      { provider: 'acp', endpoint: '/bin/custom-agent', model: '' },
-      { provider: 'acp', endpoint: '/bin/custom-agent', model: '' },
-    ],
-  })
+  const diagnostics = await checkAdapterUpdates(
+    decode(commandsSchema, {
+      claude: '/bin/claude',
+    }),
+    {
+      agents: [
+        {
+          provider: 'claude',
+          endpoint: '/bin/claude',
+          model: '',
+        },
+        {
+          provider: 'acp',
+          endpoint: '/bin/custom-agent',
+          model: '',
+        },
+        {
+          provider: 'acp',
+          endpoint: '/bin/custom-agent',
+          model: '',
+        },
+      ],
+    },
+  )
   expect(run.mock.calls.map(([command]) => command)).toEqual([
     'codex',
     '/bin/claude',
@@ -115,21 +163,38 @@ it('checks configured agent executables and deduplicates a shared installation',
   ])
   expect(
     diagnostics.find((item) => item.provider === 'claude' && item.kind === 'executable'),
-  ).toMatchObject({ installedVersion: '2.1.278' })
+  ).toMatchObject({
+    installedVersion: '2.1.278',
+  })
   expect(
     diagnostics.find((item) => item.provider === 'acp' && item.kind === 'executable'),
-  ).toMatchObject({ available: true, installedVersion: null })
+  ).toMatchObject({
+    available: true,
+    installedVersion: null,
+  })
 })
-
 it('checks the actual configured OpenCode host and reuses its configured server authentication', async () => {
   vi.stubEnv('OPENCODE_SERVER_PASSWORD', 'test-server-password')
   vi.stubEnv('OPENCODE_SERVER_USERNAME', 'tester')
   try {
-    request.mockResolvedValue(Response.json({ healthy: true, version: '1.18.31' }))
+    request.mockResolvedValue(
+      Response.json({
+        healthy: true,
+        version: '1.18.31',
+      }),
+    )
     const diagnostics = await checkAdapterUpdates(settings, {
       agents: [
-        { provider: 'opencode', endpoint: 'https://code.example.test/api', model: '' },
-        { provider: 'opencode', endpoint: 'https://code.example.test/api', model: '' },
+        {
+          provider: 'opencode',
+          endpoint: 'https://code.example.test/api',
+          model: '',
+        },
+        {
+          provider: 'opencode',
+          endpoint: 'https://code.example.test/api',
+          model: '',
+        },
       ],
     })
     expect(request).toHaveBeenCalledTimes(1)
@@ -142,14 +207,21 @@ it('checks the actual configured OpenCode host and reuses its configured server 
     vi.unstubAllEnvs()
   }
 })
-
 it('rejects mismatched registry packages without claiming an update is available', async () => {
   request.mockImplementation(async (url) =>
     urlString(url).includes('/global/health')
-      ? Response.json({ healthy: true, version: '1.18.31' })
-      : Response.json({ name: 'different-package', version: '999.0.0' }),
+      ? Response.json({
+          healthy: true,
+          version: '1.18.31',
+        })
+      : Response.json({
+          name: 'different-package',
+          version: '999.0.0',
+        }),
   )
-  const diagnostics = await checkAdapterUpdates(settings, { checkUpdates: true })
+  const diagnostics = await checkAdapterUpdates(settings, {
+    checkUpdates: true,
+  })
   expect(diagnostics.every((item) => item.updateStatus === 'unknown')).toBe(true)
   expect(diagnostics.every((item) => item.latestVersion === null)).toBe(true)
 })

@@ -1,4 +1,6 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import {
   forgeCliProfilesSchema,
   type CommandSettings,
@@ -7,7 +9,6 @@ import {
 } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 import { runForgeCli } from './forge-cli.js'
-
 export async function readForgeCliProfiles(
   commands: CommandSettings,
   input: ForgeCliProfileQuery,
@@ -29,16 +30,17 @@ export async function readForgeCliProfiles(
   let profiles: ForgeCliProfiles['profiles'] = []
   let message: string | undefined
   if (input.provider === 'bitbucket') {
-    const rows = z
-      .array(
-        z.object({
-          name: z.string(),
-          apiRoot: z.string().optional(),
-          user: z.string().optional(),
-          default: z.boolean().optional(),
+    const rows = decode(
+      mutableArray(
+        mutableStruct({
+          name: Schema.String,
+          apiRoot: Schema.optional(Schema.String),
+          user: Schema.optional(Schema.String),
+          default: Schema.optional(Schema.Boolean),
         }),
-      )
-      .parse(await read(commands.bb, ['profile', 'list', '--output', 'json']))
+      ),
+      await read(commands.bb, ['profile', 'list', '--output', 'json']),
+    )
     profiles = rows
       .filter(
         (row) => (row.apiRoot?.replace(/\/$/, '') || 'https://api.bitbucket.org/2.0') === baseUrl,
@@ -51,16 +53,21 @@ export async function readForgeCliProfiles(
         active: row.default,
       }))
   } else if (input.provider === 'azure-devops') {
-    const rows = z
-      .array(
-        z.object({
-          tenantId: z.string(),
-          tenantDisplayName: z.string().optional(),
-          isDefault: z.boolean().optional(),
-          user: z.object({ name: z.string().optional() }).optional(),
+    const rows = decode(
+      mutableArray(
+        mutableStruct({
+          tenantId: Schema.String,
+          tenantDisplayName: Schema.optional(Schema.String),
+          isDefault: Schema.optional(Schema.Boolean),
+          user: Schema.optional(
+            mutableStruct({
+              name: Schema.optional(Schema.String),
+            }),
+          ),
         }),
-      )
-      .parse(await read(commands.az, ['account', 'list', '--all', '--output', 'json']))
+      ),
+      await read(commands.az, ['account', 'list', '--all', '--output', 'json']),
+    )
     const tenants = new Map<string, ForgeCliProfiles['profiles'][number]>()
     for (const row of rows) {
       const current = tenants.get(row.tenantId)
@@ -77,20 +84,23 @@ export async function readForgeCliProfiles(
       'Select a Microsoft Entra tenant. The Azure CLI keeps its current signed-in identity; no default subscription is changed.'
   } else if (input.provider === 'github') {
     const host = new URL(baseUrl).hostname
-    const data = z
-      .object({
-        hosts: z.record(
-          z.string(),
-          z.array(
-            z.object({
-              login: z.string(),
-              active: z.boolean().optional(),
-              tokenSource: z.string().optional(),
-            }),
-          ),
+    const data = decode(
+      mutableStruct({
+        hosts: Schema.mutable(
+          Schema.Record({
+            key: Schema.String,
+            value: mutableArray(
+              mutableStruct({
+                login: Schema.String,
+                active: Schema.optional(Schema.Boolean),
+                tokenSource: Schema.optional(Schema.String),
+              }),
+            ),
+          }),
         ),
-      })
-      .parse(await read(commands.gh, ['auth', 'status', '--hostname', host, '--json', 'hosts']))
+      }),
+      await read(commands.gh, ['auth', 'status', '--hostname', host, '--json', 'hosts']),
+    )
     // Environment-only accounts cannot be retrieved by gh auth token --user.
     profiles = (data.hosts[host] ?? [])
       .filter((row) => row.login && !row.tokenSource?.endsWith('_TOKEN'))
@@ -110,13 +120,25 @@ export async function readForgeCliProfiles(
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((host) => host === expected)
-      .map((host) => ({ id: host, name: host, baseUrl }))
+      .map((host) => ({
+        id: host,
+        name: host,
+        baseUrl,
+      }))
     message =
       'fj stores one account for each server. Use a named tea login for multiple accounts on the same server.'
   } else {
-    const rows = z
-      .array(z.record(z.string(), z.unknown()))
-      .parse(await read(commands.tea, ['logins', 'list', '--output', 'json']))
+    const rows = decode(
+      mutableArray(
+        Schema.mutable(
+          Schema.Record({
+            key: Schema.String,
+            value: Schema.Unknown,
+          }),
+        ),
+      ),
+      await read(commands.tea, ['logins', 'list', '--output', 'json']),
+    )
     for (const row of rows) {
       const name = row.name ?? row.Name,
         url = row.url ?? row.URL,
@@ -128,12 +150,16 @@ export async function readForgeCliProfiles(
         id: name,
         name,
         baseUrl,
-        ...(typeof user === 'string' ? { username: user } : {}),
+        ...(typeof user === 'string'
+          ? {
+              username: user,
+            }
+          : {}),
         active: active === true || active === 'true',
       })
     }
   }
-  return forgeCliProfilesSchema.parse({
+  return decode(forgeCliProfilesSchema, {
     profiles,
     message:
       message ??

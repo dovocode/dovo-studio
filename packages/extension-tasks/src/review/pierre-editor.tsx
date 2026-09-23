@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useMemo, useRef } from 'react'
 import { parseDiffFromFile, preloadHighlighter, getFiletypeFromFileName } from '@pierre/diffs'
 import { Editor } from '@pierre/diffs/edit'
 import {
@@ -23,16 +24,23 @@ export function PierreEditor({
   comments: Task['messages']
   onComment: (
     body: string,
-    range: { start: number; end: number; side: 'additions' | 'deletions' },
+    range: {
+      start: number
+      end: number
+      side: 'additions' | 'deletions'
+    },
   ) => Promise<void>
   onSave: (contents: string) => void
 }) {
-  const [ready, setReady] = useState(false)
-  const [loadError, setLoadError] = useState<Error | null>(null)
+  const [ready, setReady] = useApplicationState(false)
+  const [loadError, setLoadError] = useApplicationState<Error | null>(null)
   useEffect(() => {
     let cancelled = false
     // Prepare syntax resources before mounting the imperative diff renderer.
-    preloadHighlighter({ themes: ['pierre-dark'], langs: [getFiletypeFromFileName(file.path)] })
+    preloadHighlighter({
+      themes: ['pierre-dark'],
+      langs: [getFiletypeFromFileName(file.path)],
+    })
       .then(() => {
         if (!cancelled) setReady(true)
       })
@@ -43,21 +51,27 @@ export function PierreEditor({
       cancelled = true
     }
   }, [file.path])
-  const [selection, setSelection] = useState<{
+  const [selection, setSelection] = useApplicationState<{
     start: number
     end: number
     side: 'additions' | 'deletions'
   } | null>(null)
-  const [editing, setEditing] = useState(false)
-  const [split, setSplit] = useState(false)
-  const [dirty, setDirty] = useState(false)
+  const [editing, setEditing] = useApplicationState(false)
+  const [split, setSplit] = useApplicationState(false)
+  const [dirty, setDirty] = useApplicationState(false)
   const saveRef = useRef(onSave)
   saveRef.current = onSave
   const diff = useMemo(
     () =>
       parseDiffFromFile(
-        { name: file.path, contents: file.before },
-        { name: file.path, contents: file.after },
+        {
+          name: file.path,
+          contents: file.before,
+        },
+        {
+          name: file.path,
+          contents: file.after,
+        },
       ),
     [file.path, file.before, file.after],
   )
@@ -107,7 +121,10 @@ export function PierreEditor({
           ? [
               [
                 `${m.diffComment.side}:${m.diffComment.end}`,
-                { lineNumber: m.diffComment.end, side: m.diffComment.side },
+                {
+                  lineNumber: m.diffComment.end,
+                  side: m.diffComment.side,
+                },
               ] as const,
             ]
           : [],
@@ -118,7 +135,10 @@ export function PierreEditor({
     selection &&
     !anchors.some((a) => a.side === selection.side && a.lineNumber === selection.end)
   )
-    anchors.push({ lineNumber: selection.end, side: selection.side })
+    anchors.push({
+      lineNumber: selection.end,
+      side: selection.side,
+    })
   if (loadError) throw loadError
   return (
     <div className="flex min-h-0 flex-1 flex-col">

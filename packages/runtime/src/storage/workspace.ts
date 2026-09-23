@@ -1,30 +1,50 @@
+import { McpSecrets } from './mcp-secrets.js'
+import { newSecret } from '../auth/devices.js'
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import { migrateJiraSources } from './jira-migration.js'
 import type Database from 'better-sqlite3'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import {
   canChangeTaskCheckout,
   latestCompletedTaskTurn,
   lockedTaskProvider,
   resolveTaskAgent,
   workspaceSchema,
+  patchSchema,
   type Workspace,
   type WorkspacePatch,
   type Task,
 } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 import { isDeepStrictEqual } from 'node:util'
-const rowSchema = z.object({ value: z.string() })
+const rowSchema = mutableStruct({
+  value: Schema.String,
+})
 export class WorkspaceStore {
+  private readonly secrets: McpSecrets
   private workspace: Workspace
   private revision = 0
+  private projected?: { revision: number; workspace: Workspace }
   constructor(
     private readonly db: Database.Database,
     private onUpdate?: (before: Workspace, after: Workspace) => void,
   ) {
+    const keyRow = db.prepare('SELECT value FROM documents WHERE id = ?').get('mcp-projection-key')
+    const key = keyRow ? decode(rowSchema, keyRow).value : newSecret()
+    if (!keyRow) db.prepare('INSERT INTO documents VALUES (?, ?)').run('mcp-projection-key', key)
+    this.secrets = new McpSecrets(key)
     const row = db.prepare('SELECT value FROM documents WHERE id = ?').get('workspace')
     this.workspace = row
-      ? workspaceSchema.parse(JSON.parse(rowSchema.parse(row).value))
-      : { version: 1, agents: [], repositories: [], tasks: [], automations: [], runtimeAddress: '' }
+      ? decode(workspaceSchema, JSON.parse(decode(rowSchema, row).value))
+      : {
+          version: 1,
+          agents: [],
+          repositories: [],
+          tasks: [],
+          automations: [],
+          runtimeAddress: '',
+        }
     this.update((w) => ({
       ...w,
       tasks: w.tasks
@@ -34,6 +54,7 @@ export class WorkspaceStore {
             ? {
                 ...task,
                 status: 'failed',
+                restartRecovery: { kind: 'turn', automatic: !task.queuePaused },
                 queuePaused: true,
                 turns: task.turns?.map((turn) =>
                   turn.status === 'running'
@@ -54,7 +75,13 @@ export class WorkspaceStore {
                 error: 'Runtime stopped while this task was running. Resume to continue.',
               }
             : task.queue?.length
-              ? { ...task, queuePaused: true }
+              ? {
+                  ...task,
+                  restartRecovery:
+                    task.restartRecovery ??
+                    (!task.queuePaused ? { kind: 'queue', automatic: true } : undefined),
+                  queuePaused: true,
+                }
               : task,
         ),
     }))
@@ -62,11 +89,24 @@ export class WorkspaceStore {
   get() {
     return this.workspace
   }
+  publicWorkspace() {
+    if (this.projected?.revision !== this.revision)
+      this.projected = {
+        revision: this.revision,
+        workspace: decode(workspaceSchema, this.secrets.public(this.workspace)),
+      }
+    return this.projected.workspace
+  }
+  restoreSecrets(value: unknown) {
+    return this.secrets.restore(value, this.workspace)
+  }
   version() {
     return this.revision
   }
   update(fn: (workspace: Workspace) => Workspace) {
-    const parsed = migrateJiraSources(workspaceSchema.parse(fn(this.workspace)))
+    const parsed = migrateJiraSources(
+      decode(workspaceSchema, this.restoreSecrets(fn(this.workspace))),
+    )
     const previousTasks = new Map(this.workspace.tasks.map((task) => [task.id, task]))
     const next = {
       ...parsed,
@@ -92,11 +132,21 @@ export class WorkspaceStore {
               ? {
                   ...task,
                   subagents: task.subagents?.map((agent) =>
-                    agent.status === 'working' ? { ...agent, status: 'unknown' as const } : agent,
+                    agent.status === 'working'
+                      ? {
+                          ...agent,
+                          status: 'unknown' as const,
+                        }
+                      : agent,
                   ),
                 }
               : task
-          return providerLock ? { ...updated, providerLock } : updated
+          return providerLock
+            ? {
+                ...updated,
+                providerLock,
+              }
+            : updated
         }),
     }
     this.db.transaction(() => {
@@ -120,7 +170,12 @@ export class WorkspaceStore {
     this.update((w) => ({
       ...w,
       tasks: w.tasks.map((t) =>
-        t.id === id ? { ...fn(t), updatedAt: new Date().toISOString() } : t,
+        t.id === id
+          ? {
+              ...fn(t),
+              updatedAt: new Date().toISOString(),
+            }
+          : t,
       ),
     }))
   }
@@ -147,10 +202,36 @@ export class WorkspaceStore {
     }))
   }
   patch(patch: WorkspacePatch) {
+    patch = decode(patchSchema, {
+      ...patch,
+      create: this.restoreSecrets(patch.create),
+      changes: Object.fromEntries(
+        Object.entries(patch.changes).map(([key, change]) => [
+          key,
+          {
+            // A lost-response retry may refer to a secret that was already replaced.
+            // Keep missing before references for conflict checking; never persist them.
+            before: this.secrets.restore(change.before, this.workspace, true),
+            after: this.restoreSecrets(change.after),
+          },
+        ]),
+      ),
+    })
     const list = this.workspace[patch.collection]
     const entity = list.find((item) => item.id === patch.id)
     if (patch.create !== undefined) {
-      const record = z.object({ id: z.string() }).passthrough().parse(patch.create)
+      const record = decode(
+        Schema.Struct(
+          mutableStruct({
+            id: Schema.String,
+          }).fields,
+          {
+            key: Schema.String,
+            value: Schema.Unknown,
+          },
+        ),
+        patch.create,
+      )
       if (record.id !== patch.id) throw new HttpError(400, 'Item id does not match')
       if (
         patch.collection === 'tasks' &&
@@ -170,12 +251,15 @@ export class WorkspaceStore {
           record.consumedMessageIds !== undefined)
       )
         throw new HttpError(400, 'New tasks must be drafts')
-      const parsed = workspaceSchema.shape[patch.collection].element.parse(record)
+      const parsed = decode(workspaceSchema.fields[patch.collection].value, record)
       if (entity) {
         if (isDeepStrictEqual(entity, parsed)) return
         throw new HttpError(409, 'This item already exists. Refresh to load the latest version.')
       }
-      this.update((w) => ({ ...w, [patch.collection]: [...list, parsed] }))
+      this.update((w) => ({
+        ...w,
+        [patch.collection]: [...list, parsed],
+      }))
       return
     }
     if (!entity) throw new HttpError(404, 'Item not found')
@@ -193,7 +277,15 @@ export class WorkspaceStore {
       patch.changes.repositoryId
     )
       throw new HttpError(400, 'Linked tasks stay attached to their source repository')
-    const current = z.record(z.string(), z.unknown()).parse(entity)
+    const current = decode(
+      Schema.mutable(
+        Schema.Record({
+          key: Schema.String,
+          value: Schema.Unknown,
+        }),
+      ),
+      entity,
+    )
     const allowed =
       patch.collection === 'tasks'
         ? new Set([
@@ -238,8 +330,21 @@ export class WorkspaceStore {
           `Another client changed ${key}. Reconnect to load the latest version.`,
         )
       if (patch.collection === 'tasks' && key === 'messages') {
-        const old = z.array(z.unknown()).parse(current.messages),
-          next = z.array(z.object({ role: z.string() }).passthrough()).parse(change.after)
+        const old = decode(mutableArray(Schema.Unknown), current.messages),
+          next = decode(
+            mutableArray(
+              Schema.Struct(
+                mutableStruct({
+                  role: Schema.String,
+                }).fields,
+                {
+                  key: Schema.String,
+                  value: Schema.Unknown,
+                },
+              ),
+            ),
+            change.after,
+          )
         if (
           next.length < old.length ||
           !isDeepStrictEqual(next.slice(0, old.length), old) ||

@@ -1,4 +1,7 @@
-import { useRef, useState } from 'react'
+import { mobileWorkflow } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/application-state'
+import { mutableStruct } from '@dovo/protocol'
+import { useRef } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { Text } from '../ui/text'
 import { randomUUID } from 'expo-crypto'
@@ -8,7 +11,7 @@ import {
   type AutomationData,
   type AutomationNode,
 } from '@dovo/protocol'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { useRuntime } from '../runtime/provider'
 import { Sheet } from '../ui/sheet'
 import { Field } from '../ui/field'
@@ -21,32 +24,43 @@ import { useAction } from '../ui/use-action'
 import { linearNodes, newAutomationNode, withLinearNodes, scheduleChoices } from './linear-flow'
 import { StepFields } from './step-fields'
 import { useNavigation } from '../shell/navigation'
-
 export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose: () => void }) {
-  const { snapshot, call, connected } = useRuntime()
+  const { snapshot, connected, callEffect } = useRuntime()
   const { focused } = useNavigation()
   const focus = useRef(focused)
   focus.current = focused
   const { busy, error, act } = useAction()
-  const [baseline] = useState(flow)
-  const workspace = snapshot?.workspace ?? { agents: [], repositories: [] }
-  const [draft, setDraft] = useState<Automation>(() => {
+  const [baseline] = useApplicationState(flow)
+  const workspace = snapshot?.workspace ?? {
+    agents: [],
+    repositories: [],
+  }
+  const [draft, setDraft] = useApplicationState<Automation>(() => {
     if (flow) return flow
     const defaults = {
       repositoryId: workspace.repositories[0]?.id ?? '',
       agentId: workspace.agents[0]?.id ?? '',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     }
-    return withLinearNodes({ id: randomUUID(), name: '', nodes: [], edges: [], enabled: false }, [
-      newAutomationNode(randomUUID(), 'trigger', defaults),
-      newAutomationNode(randomUUID(), 'task', defaults),
-    ])
+    return withLinearNodes(
+      {
+        id: randomUUID(),
+        name: '',
+        nodes: [],
+        edges: [],
+        enabled: false,
+      },
+      [
+        newAutomationNode(randomUUID(), 'trigger', defaults),
+        newAutomationNode(randomUUID(), 'task', defaults),
+      ],
+    )
   })
   const ordered = linearNodes(draft)
   const trigger = ordered?.[0]
-  const [expanded, setExpanded] = useState(() => ordered?.[1]?.id ?? '')
-  const [attempted, setAttempted] = useState(false)
-  const [customSchedule, setCustomSchedule] = useState(
+  const [expanded, setExpanded] = useApplicationState(() => ordered?.[1]?.id ?? '')
+  const [attempted, setAttempted] = useApplicationState(false)
+  const [customSchedule, setCustomSchedule] = useApplicationState(
     () => !scheduleChoices.some((item) => item.id === trigger?.data.schedule),
   )
   const issues = automationIssues(draft, workspace)
@@ -56,7 +70,15 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
     if (ordered)
       updateNodes(
         ordered.map((node) =>
-          node.id === id ? { ...node, data: { ...node.data, ...patch } } : node,
+          node.id === id
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  ...patch,
+                },
+              }
+            : node,
         ),
       )
   }
@@ -97,21 +119,37 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
             label="Automation name"
             value={draft.name}
             editable={!busy}
-            onChangeText={(name) => setDraft((value) => ({ ...value, name }))}
+            onChangeText={(name) =>
+              setDraft((value) => ({
+                ...value,
+                name,
+              }))
+            }
             placeholder="Morning repository review"
           />
           <Choice
             label="Trigger"
             value={trigger.data.trigger}
             items={[
-              { id: 'manual', name: 'Manual' },
-              { id: 'schedule', name: 'Schedule' },
-              { id: 'webhook', name: 'Webhook' },
+              {
+                id: 'manual',
+                name: 'Manual',
+              },
+              {
+                id: 'schedule',
+                name: 'Schedule',
+              },
+              {
+                id: 'webhook',
+                name: 'Webhook',
+              },
             ]}
             disabled={busy}
             onChange={(value) => {
               if (value === 'manual' || value === 'schedule' || value === 'webhook')
-                updateNode(trigger.id, { trigger: value })
+                updateNode(trigger.id, {
+                  trigger: value,
+                })
             }}
           />
           {trigger.data.trigger === 'schedule' && (
@@ -123,7 +161,10 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                 disabled={busy}
                 onChange={(schedule) => {
                   setCustomSchedule(schedule === 'custom')
-                  if (schedule !== 'custom') updateNode(trigger.id, { schedule })
+                  if (schedule !== 'custom')
+                    updateNode(trigger.id, {
+                      schedule,
+                    })
                 }}
               />
               {customSchedule && (
@@ -131,7 +172,11 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                   label="Cron expression"
                   value={trigger.data.schedule}
                   editable={!busy}
-                  onChangeText={(schedule) => updateNode(trigger.id, { schedule })}
+                  onChangeText={(schedule) =>
+                    updateNode(trigger.id, {
+                      schedule,
+                    })
+                  }
                   placeholder="0 9 * * 1-5"
                 />
               )}
@@ -139,7 +184,11 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                 label="Time zone"
                 value={trigger.data.timezone}
                 editable={!busy}
-                onChangeText={(timezone) => updateNode(trigger.id, { timezone })}
+                onChangeText={(timezone) =>
+                  updateNode(trigger.id, {
+                    timezone,
+                  })
+                }
                 placeholder="Europe/Amsterdam"
               />
               <Text style={styles.muted}>Schedules use this time zone, even when you travel.</Text>
@@ -151,7 +200,15 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
               needs a unique X-Idempotency-Key.
             </Text>
           )}
-          <Text accessibilityRole="header" style={[styles.title, { marginTop: 8 }]}>
+          <Text
+            accessibilityRole="header"
+            style={[
+              styles.title,
+              {
+                marginTop: 8,
+              },
+            ]}
+          >
             Steps
           </Text>
           {ordered.slice(1).map((node, stepIndex) => {
@@ -170,13 +227,43 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                 <Pressable
                   testID={`Edit step ${index}`}
                   accessibilityRole="button"
-                  accessibilityState={{ expanded: open }}
+                  accessibilityState={{
+                    expanded: open,
+                  }}
                   onPress={() => setExpanded(open ? '' : node.id)}
-                  style={[styles.row, { minHeight: 44, flexWrap: 'nowrap' }]}
+                  style={[
+                    styles.row,
+                    {
+                      minHeight: 44,
+                      flexWrap: 'nowrap',
+                    },
+                  ]}
                 >
-                  <Text style={[styles.muted, { width: 20 }]}>{index}</Text>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text numberOfLines={2} style={[styles.text, { fontWeight: '600' }]}>
+                  <Text
+                    style={[
+                      styles.muted,
+                      {
+                        width: 20,
+                      },
+                    ]}
+                  >
+                    {index}
+                  </Text>
+                  <View
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                    }}
+                  >
+                    <Text
+                      numberOfLines={2}
+                      style={[
+                        styles.text,
+                        {
+                          fontWeight: '600',
+                        },
+                      ]}
+                    >
                       {node.data.label || 'Untitled step'}
                     </Text>
                     <Text style={styles.muted}>
@@ -193,7 +280,14 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                       disabled={busy}
                       onChange={(patch) => updateNode(node.id, patch)}
                     />
-                    <View style={[styles.row, { justifyContent: 'flex-end' }]}>
+                    <View
+                      style={[
+                        styles.row,
+                        {
+                          justifyContent: 'flex-end',
+                        },
+                      ]}
+                    >
                       <IconButton
                         icon="moveUp"
                         variant="plain"
@@ -251,31 +345,48 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
             onPress={() => {
               setAttempted(true)
               if (issues.length) return
-              act(async () => {
-                if (!focus.current) return
-                await call(
-                  '/api/workspace',
-                  {
-                    collection: 'automations',
-                    id: draft.id,
-                    ...(baseline
-                      ? {
-                          changes: {
-                            name: { before: baseline.name, after: draft.name.trim() },
-                            nodes: { before: baseline.nodes, after: draft.nodes },
-                            edges: { before: baseline.edges, after: draft.edges },
-                          },
-                        }
-                      : {
-                          create: { ...draft, name: draft.name.trim(), enabled: false },
-                          changes: {},
-                        }),
-                  },
-                  z.object({ revision: z.number() }),
-                  'PATCH',
-                )
-                onClose()
-              })
+              act(() =>
+                mobileWorkflow(function* () {
+                  if (!focus.current) return
+                  yield* callEffect(
+                    '/api/workspace',
+                    {
+                      collection: 'automations',
+                      id: draft.id,
+                      ...(baseline
+                        ? {
+                            changes: {
+                              name: {
+                                before: baseline.name,
+                                after: draft.name.trim(),
+                              },
+                              nodes: {
+                                before: baseline.nodes,
+                                after: draft.nodes,
+                              },
+                              edges: {
+                                before: baseline.edges,
+                                after: draft.edges,
+                              },
+                            },
+                          }
+                        : {
+                            create: {
+                              ...draft,
+                              name: draft.name.trim(),
+                              enabled: false,
+                            },
+                            changes: {},
+                          }),
+                    },
+                    mutableStruct({
+                      revision: Schema.Number.pipe(Schema.finite()),
+                    }),
+                    'PATCH',
+                  )
+                  onClose()
+                }),
+              )
             }}
           />
         </>

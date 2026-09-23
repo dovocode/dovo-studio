@@ -12,12 +12,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@dovo/protocol": "workspace:*",
     "@dovo/studio-core": "workspace:*",
     "@dovo/studio-ui": "workspace:*",
     "@pierre/diffs": "1.4.1",
+    "effect": "^3.22.1",
     "lucide-react": "^0.577.0",
-    "react": "^19.2.8",
-    "zod": "^4.5.4"
+    "react": "^19.2.8"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",

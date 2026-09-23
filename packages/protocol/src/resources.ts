@@ -1,28 +1,75 @@
-import { z } from 'zod'
-const name = z
-  .string()
-  .trim()
-  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/, 'Use letters, numbers, dashes or underscores')
-const environmentName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
-export const mcpServerSchema = z
-  .object({
+import { mutableArray, mutableStruct } from './schema.js'
+import { maxValue, urlSchema, superRefine, minValue } from './schema.js'
+import { Schema } from 'effect'
+const name = Schema.String.pipe(Schema.compose(Schema.Trim)).pipe(
+  Schema.pattern(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/),
+)
+const environmentName = Schema.String.pipe(Schema.pattern(/^[A-Za-z_][A-Za-z0-9_]*$/))
+export const mcpServerSchema = superRefine(
+  mutableStruct({
     name,
-    enabled: z.boolean(),
-    transport: z.enum(['stdio', 'http']),
-    command: z.string().max(2000).default(''),
-    args: z.array(z.string().max(4000)).max(100).default([]),
-    url: z.string().max(4000).default(''),
-    env: z.record(environmentName, environmentName).default({}),
-    bearerTokenEnv: z.union([z.literal(''), environmentName]).default(''),
-    envValues: z.record(environmentName, z.string().max(4000)).optional(),
-    headerValues: z.record(z.string().regex(/^[A-Za-z0-9-]+$/), z.string().max(4000)).optional(),
-    sourceUrl: z.url().optional(),
-    sourceRevision: z.string().max(200).optional(),
-    headerEnv: z.record(z.string().regex(/^[A-Za-z0-9-]+$/), environmentName).default({}),
-  })
-  .superRefine((server, context) => {
+    enabled: Schema.Boolean,
+    transport: Schema.Literal('stdio', 'http'),
+    command: Schema.optionalWith(maxValue(Schema.String, 2000), {
+      default: () => '',
+    }),
+    args: Schema.optionalWith(maxValue(mutableArray(maxValue(Schema.String, 4000)), 100), {
+      default: () => [],
+    }),
+    url: Schema.optionalWith(maxValue(Schema.String, 4000), {
+      default: () => '',
+    }),
+    env: Schema.optionalWith(
+      Schema.mutable(
+        Schema.Record({
+          key: environmentName,
+          value: environmentName,
+        }),
+      ),
+      {
+        default: () => ({}),
+      },
+    ),
+    bearerTokenEnv: Schema.optionalWith(Schema.Union(Schema.Literal(''), environmentName), {
+      default: () => '',
+    }),
+    envValues: Schema.optional(
+      Schema.mutable(
+        Schema.Record({
+          key: environmentName,
+          value: maxValue(Schema.String, 4000),
+        }),
+      ),
+    ),
+    headerValues: Schema.optional(
+      Schema.mutable(
+        Schema.Record({
+          key: Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9-]+$/)),
+          value: maxValue(Schema.String, 4000),
+        }),
+      ),
+    ),
+    sourceUrl: Schema.optional(urlSchema()),
+    sourceRevision: Schema.optional(maxValue(Schema.String, 200)),
+    headerEnv: Schema.optionalWith(
+      Schema.mutable(
+        Schema.Record({
+          key: Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9-]+$/)),
+          value: environmentName,
+        }),
+      ),
+      {
+        default: () => ({}),
+      },
+    ),
+  }),
+  (server, context) => {
     if (server.transport === 'stdio' && !server.command.trim())
-      context.addIssue({ code: 'custom', path: ['command'], message: 'Enter an executable' })
+      context.addIssue({
+        code: 'custom',
+        path: ['command'],
+        message: 'Enter an executable',
+      })
     if (server.transport === 'http') {
       try {
         const url = new URL(server.url)
@@ -36,22 +83,27 @@ export const mcpServerSchema = z
         })
       }
     }
-  })
-export const managedSkillSchema = z.object({
+  },
+)
+export const managedSkillSchema = mutableStruct({
   name,
-  description: z.string().trim().min(1).max(2000),
-  enabled: z.boolean(),
-  content: z.string().trim().min(1).max(64000),
-  sourceUrl: z.url().optional(),
-  sourceRevision: z.string().max(200).optional(),
-  sourcePath: z.string().max(4000).optional(),
+  description: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 2000),
+  enabled: Schema.Boolean,
+  content: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 64000),
+  sourceUrl: Schema.optional(urlSchema()),
+  sourceRevision: Schema.optional(maxValue(Schema.String, 200)),
+  sourcePath: Schema.optional(maxValue(Schema.String, 4000)),
 })
-export const resourceSettingsSchema = z
-  .object({
-    mcpServers: z.array(mcpServerSchema).max(30).default([]),
-    skills: z.array(managedSkillSchema).max(20).default([]),
-  })
-  .superRefine((settings, context) => {
+export const resourceSettingsSchema = superRefine(
+  mutableStruct({
+    mcpServers: Schema.optionalWith(maxValue(mutableArray(mcpServerSchema), 30), {
+      default: () => [],
+    }),
+    skills: Schema.optionalWith(maxValue(mutableArray(managedSkillSchema), 20), {
+      default: () => [],
+    }),
+  }),
+  (settings, context) => {
     for (const key of ['mcpServers', 'skills'] as const)
       if (new Set(settings[key].map((item) => item.name)).size !== settings[key].length)
         context.addIssue({
@@ -65,11 +117,15 @@ export const resourceSettingsSchema = z
         path: ['skills'],
         message: 'Skills exceed the 200 KB limit for this scope',
       })
-  })
-export const mcpTestResultSchema = z.object({ tools: z.array(z.string()), server: z.string() })
-export type McpServer = z.infer<typeof mcpServerSchema>
-export type ManagedSkill = z.infer<typeof managedSkillSchema>
-export type ResourceSettings = z.infer<typeof resourceSettingsSchema>
+  },
+)
+export const mcpTestResultSchema = mutableStruct({
+  tools: mutableArray(Schema.String),
+  server: Schema.String,
+})
+export type McpServer = Schema.Schema.Type<typeof mcpServerSchema>
+export type ManagedSkill = Schema.Schema.Type<typeof managedSkillSchema>
+export type ResourceSettings = Schema.Schema.Type<typeof resourceSettingsSchema>
 export function mergeResources(
   project?: ResourceSettings,
   agent?: ResourceSettings,

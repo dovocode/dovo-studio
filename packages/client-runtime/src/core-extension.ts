@@ -1,3 +1,4 @@
+import { Effect } from 'effect'
 import type { Extension } from './types.js'
 
 export const CORE_EXTENSION_ID = 'dovo.core'
@@ -14,9 +15,10 @@ export function createCoreExtension(): Extension {
         commands: [{ command: 'dovo.runtime.ping', title: 'Ping runtime', category: 'Runtime' }],
       },
     },
-    activate: async (context) => {
-      context.commands.registerCommand('dovo.runtime.ping', () => ({ ok: true }))
-      await context.events.emit('runtime:core-ready', { extensionId: context.extension.id })
-    },
+    activate: (context) =>
+      Effect.gen(function* () {
+        context.commands.registerCommand('dovo.runtime.ping', () => ({ ok: true }))
+        yield* context.events.emit('runtime:core-ready', { extensionId: context.extension.id })
+      }),
   }
 }

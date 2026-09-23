@@ -1,3 +1,5 @@
+import { mobileWorkflow } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
 import { Text } from '../ui/text'
 import { pullTaskResponse, type PullDetail } from '@dovo/protocol'
 import { useRuntime } from '../runtime/provider'
@@ -15,28 +17,41 @@ export function StartPullTask({
   pull: PullDetail['pull']
   onBack: () => void
 }) {
-  const { call, connected } = useRuntime(),
+  const { connected, callEffect } = useRuntime(),
     { navigate } = useNavigation(),
     { busy, error, act } = useAction()
-  const create = async () => {
-    const result = await call(
-      '/api/scm/pulls/task',
-      {
-        repositoryId,
-        number: pull.number,
-        headSha: pull.headSha,
-        objective:
-          'Review this PR for correctness, regressions, and missing tests. Report concrete findings without changing files.',
-        run: false,
-      },
-      pullTaskResponse,
+  const create = () => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        const result = yield* callEffect(
+          '/api/scm/pulls/task',
+          {
+            repositoryId,
+            number: pull.number,
+            headSha: pull.headSha,
+            objective:
+              'Review this PR for correctness, regressions, and missing tests. Report concrete findings without changing files.',
+            run: false,
+          },
+          pullTaskResponse,
+        )
+        onBack()
+        navigate('tasks', result.id)
+      }),
     )
-    onBack()
-    navigate('tasks', result.id)
   }
   return (
     <Sheet title={`Task from PR #${pull.number}`} onClose={onBack} busy={busy}>
-      <Text style={[styles.text, { fontWeight: '600' }]}>{pull.title}</Text>
+      <Text
+        style={[
+          styles.text,
+          {
+            fontWeight: '600',
+          },
+        ]}
+      >
+        {pull.title}
+      </Text>
       <Text style={styles.muted}>
         The draft includes the PR description and review feedback, with a worktree prepared from
         commit {pull.headSha.slice(0, 8)} when you send it.

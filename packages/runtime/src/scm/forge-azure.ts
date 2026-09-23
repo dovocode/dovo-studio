@@ -1,4 +1,7 @@
-import { z } from 'zod'
+import { uuidSchema } from '@dovo/protocol'
+import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
+import { urlSchema, decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { createTwoFilesPatch } from 'diff'
 import type {
   ForgeCapabilities,
@@ -15,121 +18,216 @@ import type { ForgeAdapter } from './forge-types.js'
 import type { ForgeHttp } from './forge-http.js'
 import { parseForgeDiff } from './forge-diff.js'
 import { HttpError } from '../errors.js'
-
-const identity = z.object({
-  id: z.string(),
-  displayName: z.string().optional(),
-  uniqueName: z.string().optional(),
+const identity = mutableStruct({
+  id: Schema.String,
+  displayName: Schema.optional(Schema.String),
+  uniqueName: Schema.optional(Schema.String),
 })
-const repository = z
-  .object({
-    id: z.string(),
-    name: z.string(),
-    project: z.object({ id: z.string(), name: z.string() }),
-    webUrl: z.url().optional(),
-    remoteUrl: z.url(),
-    defaultBranch: z.string().optional(),
-  })
-  .transform((value) => {
-    const web = new URL(value.webUrl ?? value.remoteUrl)
-    web.username = ''
-    web.password = ''
-    web.search = ''
-    web.hash = ''
-    return { ...value, webUrl: web.href }
-  })
-const commit = z.object({ commitId: z.string().regex(/^[a-f0-9]{40}$/) })
-const reviewer = identity.extend({
-  vote: z.number().default(0),
-  isRequired: z.boolean().optional(),
+const repositoryInput = mutableStruct({
+  id: Schema.String,
+  name: Schema.String,
+  project: mutableStruct({
+    id: Schema.String,
+    name: Schema.String,
+  }),
+  webUrl: Schema.optional(urlSchema()),
+  remoteUrl: urlSchema(),
+  defaultBranch: Schema.optional(Schema.String),
 })
-const pull = z.object({
-  pullRequestId: z.number().int().positive(),
-  title: z.string(),
-  description: z.string().nullish(),
-  status: z.enum(['active', 'abandoned', 'completed']),
-  isDraft: z.boolean().default(false),
+const repository = Schema.transform(
+  repositoryInput,
+  mutableStruct({ ...repositoryInput.fields, webUrl: urlSchema() }),
+  {
+    strict: true,
+    decode: (value) => {
+      const web = new URL(value.webUrl ?? value.remoteUrl)
+      web.username = ''
+      web.password = ''
+      web.search = ''
+      web.hash = ''
+      return { ...value, webUrl: web.href }
+    },
+    encode: (value) => value,
+  },
+)
+const commit = mutableStruct({
+  commitId: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+})
+const reviewer = mutableStruct({
+  ...identity.fields,
+  ...{
+    vote: Schema.optionalWith(Schema.Number.pipe(Schema.finite()), {
+      default: () => 0,
+    }),
+    isRequired: Schema.optional(Schema.Boolean),
+  },
+})
+const pull = mutableStruct({
+  pullRequestId: Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.positive()),
+  title: Schema.String,
+  description: Schema.optional(Schema.NullOr(Schema.String)),
+  status: Schema.Literal('active', 'abandoned', 'completed'),
+  isDraft: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
   createdBy: identity,
-  creationDate: z.string(),
-  closedDate: z.string().optional(),
-  sourceRefName: z.string(),
-  targetRefName: z.string(),
+  creationDate: Schema.String,
+  closedDate: Schema.optional(Schema.String),
+  sourceRefName: Schema.String,
+  targetRefName: Schema.String,
   repository,
-  forkSource: z.object({ repository, name: z.string().optional() }).nullish(),
-  lastMergeSourceCommit: commit.nullish(),
-  lastMergeTargetCommit: commit.nullish(),
-  reviewers: z.array(reviewer).default([]),
-  labels: z.array(z.object({ name: z.string() })).default([]),
-  mergeStatus: z.string().optional(),
-  mergeFailureMessage: z.string().optional(),
-  completionQueueTime: z.string().optional(),
-})
-const position = z.object({ line: z.number().int(), offset: z.number().int().optional() })
-const thread = z.object({
-  id: z.number().int(),
-  status: z.union([z.string(), z.number()]),
-  isDeleted: z.boolean().optional(),
-  publishedDate: z.string(),
-  lastUpdatedDate: z.string().optional(),
-  comments: z
-    .array(
-      z.object({
-        id: z.number().int(),
-        parentCommentId: z.number().int().optional(),
-        author: identity,
-        content: z.string().nullish(),
-        publishedDate: z.string(),
-        isDeleted: z.boolean().optional(),
-        commentType: z.union([z.string(), z.number()]).optional(),
+  forkSource: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        repository,
+        name: Schema.optional(Schema.String),
       }),
-    )
-    .default([]),
-  threadContext: z
-    .object({
-      filePath: z.string().optional(),
-      leftFileStart: position.nullish(),
-      rightFileStart: position.nullish(),
-    })
-    .nullish(),
-  pullRequestThreadContext: z
-    .object({
-      iterationContext: z.object({ secondComparingIteration: z.number() }).optional(),
-      trackingCriteria: z.object({ origFilePath: z.string().optional() }).nullish(),
-    })
-    .nullish(),
+    ),
+  ),
+  lastMergeSourceCommit: Schema.optional(Schema.NullOr(commit)),
+  lastMergeTargetCommit: Schema.optional(Schema.NullOr(commit)),
+  reviewers: Schema.optionalWith(mutableArray(reviewer), {
+    default: () => [],
+  }),
+  labels: Schema.optionalWith(
+    mutableArray(
+      mutableStruct({
+        name: Schema.String,
+      }),
+    ),
+    {
+      default: () => [],
+    },
+  ),
+  mergeStatus: Schema.optional(Schema.String),
+  mergeFailureMessage: Schema.optional(Schema.String),
+  completionQueueTime: Schema.optional(Schema.String),
 })
-const iteration = z.object({
-  id: z.number().int().positive(),
+const position = mutableStruct({
+  line: Schema.Number.pipe(Schema.finite()).pipe(
+    Schema.int(),
+    Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  ),
+  offset: Schema.optional(
+    Schema.Number.pipe(Schema.finite()).pipe(
+      Schema.int(),
+      Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+    ),
+  ),
+})
+const thread = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite()).pipe(
+    Schema.int(),
+    Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  ),
+  status: Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite())),
+  isDeleted: Schema.optional(Schema.Boolean),
+  publishedDate: Schema.String,
+  lastUpdatedDate: Schema.optional(Schema.String),
+  comments: Schema.optionalWith(
+    mutableArray(
+      mutableStruct({
+        id: Schema.Number.pipe(Schema.finite()).pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ),
+        parentCommentId: Schema.optional(
+          Schema.Number.pipe(Schema.finite()).pipe(
+            Schema.int(),
+            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+          ),
+        ),
+        author: identity,
+        content: Schema.optional(Schema.NullOr(Schema.String)),
+        publishedDate: Schema.String,
+        isDeleted: Schema.optional(Schema.Boolean),
+        commentType: Schema.optional(
+          Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite())),
+        ),
+      }),
+    ),
+    {
+      default: () => [],
+    },
+  ),
+  threadContext: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        filePath: Schema.optional(Schema.String),
+        leftFileStart: Schema.optional(Schema.NullOr(position)),
+        rightFileStart: Schema.optional(Schema.NullOr(position)),
+      }),
+    ),
+  ),
+  pullRequestThreadContext: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        iterationContext: Schema.optional(
+          mutableStruct({
+            secondComparingIteration: Schema.Number.pipe(Schema.finite()),
+          }),
+        ),
+        trackingCriteria: Schema.optional(
+          Schema.NullOr(
+            mutableStruct({
+              origFilePath: Schema.optional(Schema.String),
+            }),
+          ),
+        ),
+      }),
+    ),
+  ),
+})
+const iteration = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.positive()),
   sourceRefCommit: commit,
   targetRefCommit: commit,
   commonRefCommit: commit,
-  createdDate: z.string().optional(),
-  updatedDate: z.string().optional(),
+  createdDate: Schema.optional(Schema.String),
+  updatedDate: Schema.optional(Schema.String),
 })
-const change = z.object({
-  changeTrackingId: z.number().int(),
-  changeType: z.union([z.string(), z.number()]),
-  originalPath: z.string().optional(),
-  item: z.object({
-    path: z.string(),
-    objectId: z.string().optional(),
-    isFolder: z.boolean().optional(),
+const change = mutableStruct({
+  changeTrackingId: Schema.Number.pipe(Schema.finite()).pipe(
+    Schema.int(),
+    Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  ),
+  changeType: Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite())),
+  originalPath: Schema.optional(Schema.String),
+  item: mutableStruct({
+    path: Schema.String,
+    objectId: Schema.optional(Schema.String),
+    isFolder: Schema.optional(Schema.Boolean),
   }),
 })
-const status = z.object({
-  id: z.number(),
-  state: z.string(),
-  context: z.object({ name: z.string(), genre: z.string().optional() }),
-  targetUrl: z.url().nullish(),
-  iterationId: z.number().optional(),
-})
-const policy = z.object({
-  status: z.string(),
-  configuration: z.object({
-    isBlocking: z.boolean().optional(),
-    type: z.object({ displayName: z.string() }),
+const status = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite()),
+  state: Schema.String,
+  context: mutableStruct({
+    name: Schema.String,
+    genre: Schema.optional(Schema.String),
   }),
-  context: z.object({ buildId: z.number().optional() }).nullish(),
+  targetUrl: Schema.optional(Schema.NullOr(urlSchema())),
+  iterationId: Schema.optional(Schema.Number.pipe(Schema.finite())),
+})
+const policy = mutableStruct({
+  status: Schema.String,
+  configuration: mutableStruct({
+    isBlocking: Schema.optional(Schema.Boolean),
+    type: mutableStruct({
+      displayName: Schema.String,
+    }),
+  }),
+  context: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        buildId: Schema.optional(Schema.Number.pipe(Schema.finite())),
+      }),
+    ),
+  ),
 })
 const capabilities: ForgeCapabilities = {
   actions: [
@@ -148,7 +246,8 @@ const capabilities: ForgeCapabilities = {
   reviewDecisions: ['comment', 'approve', 'request-changes'],
   mergeMethods: ['merge', 'squash', 'rebase'],
 }
-const label = (value: z.infer<typeof identity>) => value.displayName ?? value.uniqueName ?? value.id
+const label = (value: Schema.Schema.Type<typeof identity>) =>
+  value.displayName ?? value.uniqueName ?? value.id
 const branchName = (value: string) => value.replace(/^refs\/heads\//, '')
 const branchRef = (value: string) =>
   value.startsWith('refs/heads/') ? value : `refs/heads/${value}`
@@ -164,7 +263,6 @@ const reviewState = (vote: number) =>
         : vote === -10
           ? 'CHANGES_REQUESTED'
           : undefined
-
 export class AzureForge implements ForgeAdapter {
   private readonly project: string
   private readonly path: string
@@ -184,9 +282,12 @@ export class AzureForge implements ForgeAdapter {
       : ''
   }
   private api(path: string, query: Record<string, string> = {}) {
-    return `${path}?${new URLSearchParams({ ...query, 'api-version': '7.1' })}`
+    return `${path}?${new URLSearchParams({
+      ...query,
+      'api-version': '7.1',
+    })}`
   }
-  private repo(value: z.infer<typeof repository>): ForgeRepository {
+  private repo(value: Schema.Schema.Type<typeof repository>): ForgeRepository {
     const clone = new URL(value.remoteUrl)
     clone.username = ''
     clone.password = ''
@@ -206,29 +307,30 @@ export class AzureForge implements ForgeAdapter {
     return this.path
   }
   async repository() {
-    return this.repo(repository.parse(await this.http.json(this.api(this.scoped()))))
+    return this.repo(decode(repository, await this.http.json(this.api(this.scoped()))))
   }
   async repositories(page: number) {
     if (!Number.isInteger(page) || page < 1) throw new HttpError(400, 'Invalid page')
-    const result = z
-      .object({ value: z.array(repository) })
-      .parse(
-        await this.http.json(
-          this.api(
-            `${this.project ? `${encodeURIComponent(this.project)}/` : ''}_apis/git/repositories`,
-          ),
+    const result = decode(
+      mutableStruct({
+        value: mutableArray(repository),
+      }),
+      await this.http.json(
+        this.api(
+          `${this.project ? `${encodeURIComponent(this.project)}/` : ''}_apis/git/repositories`,
         ),
-      )
+      ),
+    )
     return {
       repositories: result.value.slice((page - 1) * 50, page * 50).map((value) => this.repo(value)),
       page,
       hasMore: result.value.length > page * 50,
     }
   }
-  private url(value: z.infer<typeof pull>) {
+  private url(value: Schema.Schema.Type<typeof pull>) {
     return `${value.repository.webUrl}/pullrequest/${value.pullRequestId}`
   }
-  private summary(value: z.infer<typeof pull>, viewer?: string): PullSummary {
+  private summary(value: Schema.Schema.Type<typeof pull>, viewer?: string): PullSummary {
     return {
       provider: 'azure-devops',
       number: value.pullRequestId,
@@ -262,14 +364,24 @@ export class AzureForge implements ForgeAdapter {
     if (!Number.isInteger(page) || page < 1 || page > 100)
       throw new HttpError(400, 'Page must be between 1 and 100')
     const viewer = this.viewer().then(
-      (id) => ({ id, error: undefined }),
-      (error: unknown) => ({ id: undefined, error: message(error) }),
+      (id) => ({
+        id,
+        error: undefined,
+      }),
+      (error: unknown) => ({
+        id: undefined,
+        error: message(error),
+      }),
     )
-    const summaries = async (values: z.infer<typeof pull>[]) => {
+    const summaries = async (values: Schema.Schema.Type<typeof pull>[]) => {
       const me = await viewer
       return values.map((value) => ({
         ...this.summary(value, me.id),
-        ...(me.error ? { statusError: `Viewer identity unavailable: ${me.error}` } : {}),
+        ...(me.error
+          ? {
+              statusError: `Viewer identity unavailable: ${me.error}`,
+            }
+          : {}),
       }))
     }
     // Azure has no combined closed-state filter. Read both states before paging so
@@ -278,7 +390,10 @@ export class AzureForge implements ForgeAdapter {
       const values = (
         await Promise.all(
           ['completed', 'abandoned'].map(async (status) => {
-            const result = z.object({ value: z.array(pull) }).parse(
+            const result = decode(
+              mutableStruct({
+                value: mutableArray(pull),
+              }),
               await this.http.json(
                 this.api(`${this.path}/pullrequests`, {
                   'searchCriteria.status': status,
@@ -300,7 +415,10 @@ export class AzureForge implements ForgeAdapter {
         hasMore: values.length > page * 50,
       }
     }
-    const result = z.object({ value: z.array(pull) }).parse(
+    const result = decode(
+      mutableStruct({
+        value: mutableArray(pull),
+      }),
       await this.http.json(
         this.api(`${this.path}/pullrequests`, {
           'searchCriteria.status': state === 'all' ? 'all' : 'active',
@@ -316,7 +434,8 @@ export class AzureForge implements ForgeAdapter {
     }
   }
   private async get(number: number) {
-    const value = pull.parse(
+    const value = decode(
+      pull,
       await this.http.json(this.api(`${this.scoped()}/pullrequests/${number}`)),
     )
     if (!value.lastMergeSourceCommit || !value.lastMergeTargetCommit)
@@ -331,10 +450,13 @@ export class AzureForge implements ForgeAdapter {
     }
   }
   private async iterations(number: number) {
-    const result = z
-      .object({ value: z.array(iteration) })
-      .parse(await this.http.json(this.api(`${this.path}/pullrequests/${number}/iterations`)))
-    const latest = result.value.reduce<z.infer<typeof iteration> | undefined>(
+    const result = decode(
+      mutableStruct({
+        value: mutableArray(iteration),
+      }),
+      await this.http.json(this.api(`${this.path}/pullrequests/${number}/iterations`)),
+    )
+    const latest = result.value.reduce<Schema.Schema.Type<typeof iteration> | undefined>(
       (latest, entry) => (!latest || entry.id > latest.id ? entry : latest),
       undefined,
     )
@@ -342,49 +464,65 @@ export class AzureForge implements ForgeAdapter {
     return latest
   }
   private async changes(number: number, id: number) {
-    const values: z.infer<typeof change>[] = []
+    const values: Schema.Schema.Type<typeof change>[] = []
     let skip = 0
     const seen = new Set<number>()
     for (;;) {
       if (seen.has(skip) || seen.size >= 100)
         throw new HttpError(400, 'Azure changed-file pagination could not be completed')
       seen.add(skip)
-      const result = z
-        .object({
-          changeEntries: z.array(change),
-          nextSkip: z.number().int().nonnegative().default(0),
-          nextTop: z.number().int().nonnegative().default(0),
-        })
-        .parse(
-          await this.http.json(
-            this.api(`${this.path}/pullrequests/${number}/iterations/${id}/changes`, {
-              $compareTo: '0',
-              $top: '100',
-              $skip: String(skip),
-            }),
+      const result = decode(
+        mutableStruct({
+          changeEntries: mutableArray(change),
+          nextSkip: Schema.optionalWith(
+            Schema.Number.pipe(Schema.finite())
+              .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+              .pipe(Schema.nonNegative()),
+            {
+              default: () => 0,
+            },
           ),
-        )
+          nextTop: Schema.optionalWith(
+            Schema.Number.pipe(Schema.finite())
+              .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+              .pipe(Schema.nonNegative()),
+            {
+              default: () => 0,
+            },
+          ),
+        }),
+        await this.http.json(
+          this.api(`${this.path}/pullrequests/${number}/iterations/${id}/changes`, {
+            $compareTo: '0',
+            $top: '100',
+            $skip: String(skip),
+          }),
+        ),
+      )
       values.push(...result.changeEntries.filter((entry) => !entry.item.isFolder))
       if (!result.nextSkip && !result.nextTop) return values
       skip = result.nextSkip
     }
   }
   private async content(path: string, sha: string, repositoryPath = this.path) {
-    const result = z
-      .object({
-        content: z.string().optional(),
-        contentMetadata: z.object({ isBinary: z.boolean().optional() }).optional(),
-      })
-      .parse(
-        await this.http.json(
-          this.api(`${repositoryPath}/items`, {
-            path,
-            'versionDescriptor.version': sha,
-            'versionDescriptor.versionType': 'commit',
-            includeContent: 'true',
+    const result = decode(
+      mutableStruct({
+        content: Schema.optional(Schema.String),
+        contentMetadata: Schema.optional(
+          mutableStruct({
+            isBinary: Schema.optional(Schema.Boolean),
           }),
         ),
-      )
+      }),
+      await this.http.json(
+        this.api(`${repositoryPath}/items`, {
+          path,
+          'versionDescriptor.version': sha,
+          'versionDescriptor.versionType': 'commit',
+          includeContent: 'true',
+        }),
+      ),
+    )
     if (
       result.contentMetadata?.isBinary ||
       result.content === undefined ||
@@ -395,7 +533,7 @@ export class AzureForge implements ForgeAdapter {
       throw new HttpError(400, 'File exceeds the diff preview limit')
     return result.content
   }
-  private fileStatus(value: z.infer<typeof change>) {
+  private fileStatus(value: Schema.Schema.Type<typeof change>) {
     const type = value.changeType
     if (typeof type === 'number')
       return type & 16 ? 'removed' : type & 1 ? 'added' : type & 8 ? 'renamed' : 'modified'
@@ -408,8 +546,8 @@ export class AzureForge implements ForgeAdapter {
           : 'modified'
   }
   private async files(
-    changes: z.infer<typeof change>[],
-    current: z.infer<typeof iteration>,
+    changes: Schema.Schema.Type<typeof change>[],
+    current: Schema.Schema.Type<typeof iteration>,
     sourcePath: string,
     warnings: string[],
   ) {
@@ -444,7 +582,11 @@ export class AzureForge implements ForgeAdapter {
               after,
               '',
               '',
-              { context: 3, timeout: 250, maxEditLength: 10000 },
+              {
+                context: 3,
+                timeout: 250,
+                maxEditLength: 10000,
+              },
             )
             if (raw === undefined)
               throw new HttpError(400, 'Diff exceeds the preview complexity limit')
@@ -469,29 +611,53 @@ export class AzureForge implements ForgeAdapter {
     return files
   }
   private async viewer() {
-    return z
-      .object({ authenticatedUser: identity })
-      .parse(
-        await this.http.json(
-          '_apis/connectionData?connectOptions=1&lastChangeId=-1&lastChangeId64=-1',
-        ),
-      ).authenticatedUser.id
+    return decode(
+      mutableStruct({
+        authenticatedUser: identity,
+      }),
+      await this.http.json(
+        '_apis/connectionData?connectOptions=1&lastChangeId=-1&lastChangeId64=-1',
+      ),
+    ).authenticatedUser.id
   }
   async detail(number: number): Promise<PullDetail> {
     const value = await this.get(number)
     const path = `${this.path}/pullrequests/${number}`
-    const policyPath = `${encodeURIComponent(this.project)}/_apis/policy/evaluations?${new URLSearchParams({ artifactId: `vstfs:///CodeReview/CodeReviewId/${value.repository.project.id}/${number}`, 'api-version': '7.1-preview.1' })}`
+    const policyPath = `${encodeURIComponent(this.project)}/_apis/policy/evaluations?${new URLSearchParams(
+      {
+        artifactId: `vstfs:///CodeReview/CodeReviewId/${value.repository.project.id}/${number}`,
+        'api-version': '7.1-preview.1',
+      },
+    )}`
     const results = await Promise.allSettled([
       this.iterations(number),
-      this.http
-        .json(this.api(`${path}/threads`))
-        .then((data) => z.object({ value: z.array(thread) }).parse(data).value),
-      this.http
-        .json(this.api(`${path}/statuses`))
-        .then((data) => z.object({ value: z.array(status) }).parse(data).value),
-      this.http
-        .json(policyPath)
-        .then((data) => z.object({ value: z.array(policy) }).parse(data).value),
+      this.http.json(this.api(`${path}/threads`)).then(
+        (data) =>
+          decode(
+            mutableStruct({
+              value: mutableArray(thread),
+            }),
+            data,
+          ).value,
+      ),
+      this.http.json(this.api(`${path}/statuses`)).then(
+        (data) =>
+          decode(
+            mutableStruct({
+              value: mutableArray(status),
+            }),
+            data,
+          ).value,
+      ),
+      this.http.json(policyPath).then(
+        (data) =>
+          decode(
+            mutableStruct({
+              value: mutableArray(policy),
+            }),
+            data,
+          ).value,
+      ),
       this.viewer(),
     ])
     const [iterationResult, threadResult, statusResult, policyResult, viewerResult] = results
@@ -684,10 +850,14 @@ export class AzureForge implements ForgeAdapter {
     return value
   }
   private result(
-    value: z.infer<typeof pull>,
+    value: Schema.Schema.Type<typeof pull>,
     status: PullActionResult['status'] = 'updated',
   ): PullActionResult {
-    return { number: value.pullRequestId, url: this.url(value), status }
+    return {
+      number: value.pullRequestId,
+      url: this.url(value),
+      status,
+    }
   }
   private description(body: string) {
     if (body.length > 4000)
@@ -696,7 +866,8 @@ export class AzureForge implements ForgeAdapter {
   }
   async create(input: PullCreate) {
     this.scoped()
-    const value = pull.parse(
+    const value = decode(
+      pull,
       await this.http.json(this.api(`${this.path}/pullrequests`), {
         method: 'POST',
         body: {
@@ -710,7 +881,7 @@ export class AzureForge implements ForgeAdapter {
     )
     return this.result(value, 'created')
   }
-  async comment(input: z.infer<typeof pullLineCommentSchema>) {
+  async comment(input: Schema.Schema.Type<typeof pullLineCommentSchema>) {
     const value = await this.current(input.number, input.headSha)
     const latest = await this.iterations(input.number)
     if (latest.sourceRefCommit.commitId !== input.headSha)
@@ -720,16 +891,31 @@ export class AzureForge implements ForgeAdapter {
     if (!file)
       throw new HttpError(400, 'The selected file is not part of the current pull request diff')
     const side = input.side === 'additions' ? 'right' : 'left'
-    const created = z.object({ id: z.number() }).parse(
+    const created = decode(
+      mutableStruct({
+        id: Schema.Number.pipe(Schema.finite()),
+      }),
       await this.http.json(this.api(`${this.path}/pullrequests/${input.number}/threads`), {
         method: 'POST',
         body: {
-          comments: [{ parentCommentId: 0, content: input.body, commentType: 1 }],
+          comments: [
+            {
+              parentCommentId: 0,
+              content: input.body,
+              commentType: 1,
+            },
+          ],
           status: 1,
           threadContext: {
             filePath: file.item.path,
-            [`${side}FileStart`]: { line: input.start, offset: 1 },
-            [`${side}FileEnd`]: { line: input.end, offset: 1 },
+            [`${side}FileStart`]: {
+              line: input.start,
+              offset: 1,
+            },
+            [`${side}FileEnd`]: {
+              line: input.end,
+              offset: 1,
+            },
           },
           pullRequestThreadContext: {
             changeTrackingId: file.changeTrackingId,
@@ -741,7 +927,9 @@ export class AzureForge implements ForgeAdapter {
         },
       }),
     )
-    return { url: `${this.url(value)}?discussionId=${created.id}` }
+    return {
+      url: `${this.url(value)}?discussionId=${created.id}`,
+    }
   }
   async act(input: PullAction): Promise<PullActionResult> {
     if (input.action === 'reviewers' && input.teams.length)
@@ -755,7 +943,13 @@ export class AzureForge implements ForgeAdapter {
         await this.http.json(this.api(`${path}/threads`), {
           method: 'POST',
           body: {
-            comments: [{ parentCommentId: 0, content: input.body, commentType: 1 }],
+            comments: [
+              {
+                parentCommentId: 0,
+                content: input.body,
+                commentType: 1,
+              },
+            ],
             status: 1,
           },
         })
@@ -763,22 +957,49 @@ export class AzureForge implements ForgeAdapter {
         const id = await this.viewer()
         await this.http.json(this.api(`${path}/reviewers/${encodeURIComponent(id)}`), {
           method: 'PUT',
-          body: { id, vote: input.event === 'approve' ? 10 : -10 },
+          body: {
+            id,
+            vote: input.event === 'approve' ? 10 : -10,
+          },
         })
       }
     } else if (input.action === 'reply') {
       if (!input.threadId) throw new HttpError(400, 'An Azure reply requires its thread ID')
-      const id = z.coerce.number().int().positive().parse(input.threadId)
-      const parent = z.coerce.number().int().positive().parse(input.commentId)
+      const id = decode(
+        CoercedNumber.pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ).pipe(Schema.positive()),
+        input.threadId,
+      )
+      const parent = decode(
+        CoercedNumber.pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ).pipe(Schema.positive()),
+        input.commentId,
+      )
       await this.http.json(this.api(`${path}/threads/${id}/comments`), {
         method: 'POST',
-        body: { parentCommentId: parent, content: input.body, commentType: 1 },
+        body: {
+          parentCommentId: parent,
+          content: input.body,
+          commentType: 1,
+        },
       })
     } else if (input.action === 'resolve') {
-      const id = z.coerce.number().int().positive().parse(input.threadId)
+      const id = decode(
+        CoercedNumber.pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ).pipe(Schema.positive()),
+        input.threadId,
+      )
       await this.http.json(this.api(`${path}/threads/${id}`), {
         method: 'PATCH',
-        body: { status: input.resolved ? 'fixed' : 'active' },
+        body: {
+          status: input.resolved ? 'fixed' : 'active',
+        },
       })
     } else if (input.action === 'edit') {
       await this.http.json(this.api(path), {
@@ -786,11 +1007,15 @@ export class AzureForge implements ForgeAdapter {
         body: {
           title: input.title,
           description: this.description(input.body),
-          ...(input.base ? { targetRefName: branchRef(input.base) } : {}),
+          ...(input.base
+            ? {
+                targetRefName: branchRef(input.base),
+              }
+            : {}),
         },
       })
     } else if (input.action === 'reviewers') {
-      const ids = input.reviewers.map((id) => z.uuid().parse(id))
+      const ids = input.reviewers.map((id) => decode(uuidSchema, id))
       if (input.operation === 'remove') {
         for (const entry of value.reviewers.filter((entry) => ids.includes(entry.id)))
           await this.http.json(this.api(`${path}/reviewers/${encodeURIComponent(entry.id)}`), {
@@ -802,7 +1027,10 @@ export class AzureForge implements ForgeAdapter {
         ))
           await this.http.json(this.api(`${path}/reviewers/${id}`), {
             method: 'PUT',
-            body: { id, vote: 0 },
+            body: {
+              id,
+              vote: 0,
+            },
           })
       }
     } else if (input.action === 'close' || input.action === 'reopen') {
@@ -810,15 +1038,20 @@ export class AzureForge implements ForgeAdapter {
         throw new HttpError(400, 'A completed Azure pull request cannot be reopened or abandoned')
       await this.http.json(this.api(path), {
         method: 'PATCH',
-        body: { status: input.action === 'close' ? 'abandoned' : 'active' },
+        body: {
+          status: input.action === 'close' ? 'abandoned' : 'active',
+        },
       })
     } else if (input.action === 'merge') {
-      const merged = pull.parse(
+      const merged = decode(
+        pull,
         await this.http.json(this.api(path), {
           method: 'PATCH',
           body: {
             status: 'completed',
-            lastMergeSourceCommit: { commitId: input.headSha },
+            lastMergeSourceCommit: {
+              commitId: input.headSha,
+            },
             completionOptions: {
               mergeStrategy:
                 input.method === 'merge'
@@ -828,7 +1061,11 @@ export class AzureForge implements ForgeAdapter {
                     : 'rebase',
               deleteSourceBranch: false,
               bypassPolicy: false,
-              ...(input.message ? { mergeCommitMessage: input.message } : {}),
+              ...(input.message
+                ? {
+                    mergeCommitMessage: input.message,
+                  }
+                : {}),
             },
           },
         }),

@@ -1,4 +1,6 @@
-import { z } from 'zod'
+import { mutableStruct } from '@dovo/protocol'
+import { decode, decodeResult } from '@dovo/protocol'
+import { Schema } from 'effect'
 import {
   connectionSchema,
   runtimeProfile,
@@ -8,23 +10,38 @@ import {
 } from '@dovo/protocol'
 const registryKey = 'dovo.runtimes.v1'
 const legacyConnectionKey = 'dovo.connection.v1'
-export const emptyRegistry = (): RuntimeRegistry => ({ version: 1, activeId: null, profiles: [] })
+export const emptyRegistry = (): RuntimeRegistry => ({
+  version: 1,
+  activeId: null,
+  profiles: [],
+})
 export function decodeRuntimeRegistry(
   saved: string | null,
   legacy: string | null,
 ): RuntimeRegistry {
-  if (saved) return runtimeRegistrySchema.parse(JSON.parse(saved))
+  if (saved) return decode(runtimeRegistrySchema, JSON.parse(saved))
   if (!legacy) return emptyRegistry()
-  return upsertRuntime(emptyRegistry(), runtimeProfile(connectionSchema.parse(JSON.parse(legacy))))
+  return upsertRuntime(
+    emptyRegistry(),
+    runtimeProfile(decode(connectionSchema, JSON.parse(legacy))),
+  )
 }
-const bridgeSchema = z.object({
-  dovo: z.object({
-    readRuntimeRegistry: z.function(),
-    writeRuntimeRegistry: z.function({ input: [z.string()] }),
+const bridgeSchema = mutableStruct({
+  dovo: mutableStruct({
+    readRuntimeRegistry: Schema.Unknown.pipe(
+      Schema.filter(
+        (value): value is (...args: unknown[]) => unknown => typeof value === 'function',
+      ),
+    ),
+    writeRuntimeRegistry: Schema.Unknown.pipe(
+      Schema.filter(
+        (value): value is (...args: unknown[]) => unknown => typeof value === 'function',
+      ),
+    ),
   }),
 })
 export async function readRuntimeRegistry(): Promise<RuntimeRegistry> {
-  const bridge = bridgeSchema.safeParse(window)
+  const bridge = decodeResult(bridgeSchema, window)
   const encrypted: unknown = bridge.success ? await bridge.data.dovo.readRuntimeRegistry() : null
   if (encrypted !== null && typeof encrypted !== 'string')
     throw new Error('Invalid saved runtime registry')
@@ -36,8 +53,8 @@ export async function readRuntimeRegistry(): Promise<RuntimeRegistry> {
   return value
 }
 export async function writeRuntimeRegistry(value: RuntimeRegistry): Promise<void> {
-  const encoded = JSON.stringify(runtimeRegistrySchema.parse(value))
-  const bridge = bridgeSchema.safeParse(window)
+  const encoded = JSON.stringify(decode(runtimeRegistrySchema, value))
+  const bridge = decodeResult(bridgeSchema, window)
   if (bridge.success) {
     await bridge.data.dovo.writeRuntimeRegistry(encoded)
     localStorage.removeItem(registryKey)

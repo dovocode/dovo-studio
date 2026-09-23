@@ -1,3 +1,6 @@
+import { Effect } from 'effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { nativeEffect } from '../runtime/native-effect'
 export type SendScope = { runtimeId: string; taskId: string }
 type DraftContent = { text: string; attachmentIds: readonly string[] }
 type SendInput = DraftContent & { mode: 'queue' | 'steer' }
@@ -20,6 +23,11 @@ export function createSendAttempts(createId: () => string) {
     attempts.delete(key(scope))
     return true
   }
+  const deliverEffect = <A, E>(scope: SendScope, attempt: SendAttempt, send: Effect.Effect<A, E>) =>
+    send.pipe(
+      Effect.catchAll((error) => (confirmed.has(attempt) ? Effect.void : Effect.fail(error))),
+      Effect.map(() => acknowledge(scope, attempt.id)),
+    )
   return {
     begin(scope: SendScope, input: SendInput) {
       const previous = attempts.get(key(scope))
@@ -43,15 +51,9 @@ export function createSendAttempts(createId: () => string) {
     },
     acknowledge,
     isConfirmed: (attempt: SendAttempt) => confirmed.has(attempt),
-    async deliver(scope: SendScope, attempt: SendAttempt, send: () => Promise<unknown>) {
-      try {
-        await send()
-      } catch (error) {
-        // The event stream can confirm acceptance before a lost HTTP reply reports failure.
-        if (!confirmed.has(attempt)) throw error
-      }
-      return acknowledge(scope, attempt.id)
-    },
+    deliverEffect,
+    deliver: (scope: SendScope, attempt: SendAttempt, send: () => Promise<unknown>) =>
+      runClientEffect(deliverEffect(scope, attempt, nativeEffect(send))),
     reconcile(scope: SendScope, draft: DraftContent, deliveredIds: readonly string[]) {
       const attempt = attempts.get(key(scope))
       if (!attempt) return false

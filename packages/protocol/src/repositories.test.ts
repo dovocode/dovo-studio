@@ -1,16 +1,15 @@
+import { decode, decodeResult } from './schema.js'
 import { expect, it } from 'vitest'
 import { addRepositorySchema, githubRepositorySchema } from './repositories.js'
-
 it.each(['owner/repo', ' https://github.com/owner/repo.git ', 'https://github.com/owner/repo/'])(
   'normalizes a GitHub repository: %s',
   (value) => {
-    expect(githubRepositorySchema.parse(value)).toEqual({
+    expect(decode(githubRepositorySchema, value)).toEqual({
       name: 'repo',
       url: 'https://github.com/owner/repo.git',
     })
   },
 )
-
 it.each([
   '',
   '../..',
@@ -27,21 +26,39 @@ it.each([
   '--help',
   'owner/repo\\escape',
 ])('rejects unsafe or unsupported clone input: %s', (value) => {
-  expect(githubRepositorySchema.safeParse(value).success).toBe(false)
+  expect(decodeResult(githubRepositorySchema, value).success).toBe(false)
 })
-
 it('validates the selected source, trims names and preserves exact folder paths', () => {
   expect(
-    addRepositorySchema.parse({ source: 'local', name: ' Project ', path: ' ~/Code/project ' }),
-  ).toEqual({ source: 'local', name: 'Project', path: ' ~/Code/project ' })
+    decode(addRepositorySchema, {
+      source: 'local',
+      name: ' Project ',
+      path: ' ~/Code/project ',
+    }),
+  ).toEqual({
+    source: 'local',
+    name: 'Project',
+    path: ' ~/Code/project ',
+  })
   expect(
-    addRepositorySchema.safeParse({ source: 'github', name: 'Project', repository: 'owner/repo' })
-      .success,
+    decodeResult(addRepositorySchema, {
+      source: 'github',
+      name: 'Project',
+      repository: 'owner/repo',
+    }).success,
   ).toBe(false)
-  expect(addRepositorySchema.safeParse({ source: 'local', name: ' ', path: '/tmp' }).success).toBe(
-    false,
-  )
   expect(
-    addRepositorySchema.safeParse({ source: 'local', name: 'Project', path: '/tmp\0bad' }).success,
+    decodeResult(addRepositorySchema, {
+      source: 'local',
+      name: ' ',
+      path: '/tmp',
+    }).success,
+  ).toBe(false)
+  expect(
+    decodeResult(addRepositorySchema, {
+      source: 'local',
+      name: 'Project',
+      path: '/tmp\0bad',
+    }).success,
   ).toBe(false)
 })

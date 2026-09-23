@@ -1,4 +1,8 @@
-import { useRef, useState } from 'react'
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import { useRef } from 'react'
 import { Keyboard, ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import {
@@ -20,40 +24,78 @@ export function QuestionForm({
   connected: boolean
   onAnswer: (answers: QuestionAnswers | null) => Promise<void>
 }) {
-  const [drafts, setDrafts] = useState<Record<string, QuestionDraft>>(() =>
-      Object.fromEntries(request.prompt.questions.map((q) => [q.id, { selected: [], text: '' }])),
+  const [drafts, setDrafts] = useApplicationState<Record<string, QuestionDraft>>(() =>
+      Object.fromEntries(
+        request.prompt.questions.map((q) => [
+          q.id,
+          {
+            selected: [],
+            text: '',
+          },
+        ]),
+      ),
     ),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
+    [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const submitting = useRef(false)
-  const submit = async (answers: QuestionAnswers | null) => {
-    if (submitting.current || !connected) return
-    const invalid = answers && questionAnswerError(request.prompt.questions, answers)
-    if (invalid) {
-      setError(invalid)
-      return
-    }
-    Keyboard.dismiss()
-    submitting.current = true
-    setError('')
-    setBusy(true)
-    try {
-      await onAnswer(answers)
-    } catch (error) {
-      setError(String(error))
-      submitting.current = false
-      setBusy(false)
-    }
+  const submit = (answers: QuestionAnswers | null) => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (submitting.current || !connected) return
+        const invalid = answers && questionAnswerError(request.prompt.questions, answers)
+        if (invalid) {
+          setError(invalid)
+          return
+        }
+        Keyboard.dismiss()
+        submitting.current = true
+        setError('')
+        setBusy(true)
+        return yield* mobileWorkflow(function* () {
+          yield* nativeEffect(() => onAnswer(answers))
+        }).pipe(
+          Effect.catchAll((error) =>
+            nativeEffect(() => {
+              setError(String(error))
+              submitting.current = false
+              setBusy(false)
+            }),
+          ),
+        )
+      }),
+    )
   }
   return (
-    <View style={[styles.card, { padding: 10, gap: 8 }]}>
-      <Text style={[styles.text, { fontSize: 13, fontWeight: '600' }]}>{request.prompt.title}</Text>
+    <View
+      style={[
+        styles.card,
+        {
+          padding: 10,
+          gap: 8,
+        },
+      ]}
+    >
+      <Text
+        style={[
+          styles.text,
+          {
+            fontSize: 13,
+            fontWeight: '600',
+          },
+        ]}
+      >
+        {request.prompt.title}
+      </Text>
       {request.prompt.blocking === false && (
         <Text style={styles.muted}>Answer when ready. You can keep chatting.</Text>
       )}
       <ScrollView
-        style={{ maxHeight: 200 }}
-        contentContainerStyle={{ gap: 14 }}
+        style={{
+          maxHeight: 200,
+        }}
+        contentContainerStyle={{
+          gap: 14,
+        }}
         keyboardShouldPersistTaps="handled"
       >
         {request.prompt.questions.map((q) => (
@@ -63,7 +105,10 @@ export function QuestionForm({
             draft={drafts[q.id]}
             disabled={busy || !connected}
             onChange={(draft) => {
-              setDrafts((current) => ({ ...current, [q.id]: draft }))
+              setDrafts((current) => ({
+                ...current,
+                [q.id]: draft,
+              }))
               setError('')
             }}
           />

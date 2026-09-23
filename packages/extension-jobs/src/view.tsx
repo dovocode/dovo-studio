@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useRef } from 'react'
 import { ArrowRight, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
 import { clientScopeKey, useWorkspace, type RuntimeConnection } from '@dovo/studio-core'
 import {
@@ -16,10 +17,17 @@ import { AutomationDetail } from './automation-detail'
 import { CachedAutomation } from './cached-automation'
 import { aggregateAutomations, type FleetAutomation } from './fleet'
 import { newNode } from './graph'
-
-type Selection = { runtimeId: string; automationId: string; canvas?: boolean }
-type Creation = { runtimeId: string; connection: RuntimeConnection; id: string; name: string }
-
+type Selection = {
+  runtimeId: string
+  automationId: string
+  canvas?: boolean
+}
+type Creation = {
+  runtimeId: string
+  connection: RuntimeConnection
+  id: string
+  name: string
+}
 export default function JobsView() {
   const {
     runtimes,
@@ -32,15 +40,15 @@ export default function JobsView() {
     setWorkspace,
     refreshRuntimes,
   } = useWorkspace()
-  const [selected, setSelected] = useState<Selection | null>(null)
-  const [search, setSearch] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [owner, setOwner] = useState('')
-  const [name, setName] = useState('')
-  const [pending, setPending] = useState<Creation | null>(null)
+  const [selected, setSelected] = useApplicationState<Selection | null>(null)
+  const [search, setSearch] = useApplicationState('')
+  const [error, setError] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [refreshing, setRefreshing] = useApplicationState(false)
+  const [creating, setCreating] = useApplicationState(false)
+  const [owner, setOwner] = useApplicationState('')
+  const [name, setName] = useApplicationState('')
+  const [pending, setPending] = useApplicationState<Creation | null>(null)
   const completedCreation = useRef('')
   const request = useRef(0)
   useEffect(
@@ -52,7 +60,16 @@ export default function JobsView() {
   // Keep unsynced edits on the current host visible while other hosts use saved snapshots.
   const entries = runtimes.map((entry) =>
     entry.profile.id === activeRuntimeId && connection?.token === entry.profile.connection.token
-      ? { ...entry, connected, snapshot: snapshot ? { ...snapshot, workspace } : entry.snapshot }
+      ? {
+          ...entry,
+          connected,
+          snapshot: snapshot
+            ? {
+                ...snapshot,
+                workspace,
+              }
+            : entry.snapshot,
+        }
       : entry,
   )
   const rows = aggregateAutomations(entries)
@@ -80,7 +97,10 @@ export default function JobsView() {
   const open = async (row: FleetAutomation, reconnect = false) => {
     if (busy) return
     const attempt = ++request.current
-    setSelected({ runtimeId: row.runtime.profile.id, automationId: row.flow.id })
+    setSelected({
+      runtimeId: row.runtime.profile.id,
+      automationId: row.flow.id,
+    })
     setError('')
     if (!row.runtime.connected && !reconnect) return
     if (row.runtime.profile.id === activeRuntimeId && connected) return
@@ -158,7 +178,11 @@ export default function JobsView() {
               ],
             },
       )
-      setSelected({ runtimeId: pending.runtimeId, automationId: pending.id, canvas: true })
+      setSelected({
+        runtimeId: pending.runtimeId,
+        automationId: pending.id,
+        canvas: true,
+      })
       setCreating(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -168,7 +192,7 @@ export default function JobsView() {
   }, [pending, activeRuntimeId, connection, setWorkspace, runtimes])
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col">
-      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3">
+      <header className="studio-page-header flex shrink-0 flex-wrap items-center gap-3 border-b">
         <div className="mr-auto min-w-0">
           <h1 className="text-sm font-medium">Automations</h1>
           <p className="mt-1 text-xs text-muted-foreground">

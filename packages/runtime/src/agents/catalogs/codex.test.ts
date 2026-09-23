@@ -13,8 +13,18 @@ it('preserves advertised reasoning and service tiers in the model catalog', asyn
   expect(catalog.models[0]).toMatchObject({
     id: 'fixture/model',
     isDefault: true,
-    reasoning: [{ id: 'high', name: 'high' }],
-    serviceTiers: [{ id: 'priority', name: 'Fast' }],
+    reasoning: [
+      {
+        id: 'high',
+        name: 'high',
+      },
+    ],
+    serviceTiers: [
+      {
+        id: 'priority',
+        name: 'Fast',
+      },
+    ],
   })
 })
 it('discovers Daybreak from the harness catalog and keeps model specialty and defaults', async () => {
@@ -23,14 +33,16 @@ it('discovers Daybreak from the harness catalog and keeps model specialty and de
     endpoint: resolve('scripts/fixtures/codex.cjs'),
     model: '',
   })
-  expect(catalog.codex).toEqual({ daybreakPrograms: ['daybreakBlue'], fastModeBlocked: false })
+  expect(catalog.codex).toEqual({
+    daybreakPrograms: ['daybreakBlue'],
+    fastModeBlocked: false,
+  })
   expect(catalog.models.find((model) => model.id === 'gpt-daybreak-blue-latest')).toMatchObject({
     specialty: 'cyber',
     defaultReasoning: 'low',
     serviceTiers: [],
   })
 })
-
 it.each([
   ['chatgpt', '0.155.1', false, ['daybreakBlue'], ['fast']],
   ['chatgpt', '0.155.1', true, ['daybreakBlue'], []],
@@ -54,15 +66,24 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
  if(m.method==='model/list')result={data:[{model:'gpt-daybreak-blue-latest',displayName:'Daybreak Blue',description:'Cyber',isDefault:true,additionalSpeedTiers:['fast'],supportedReasoningEfforts:[]}],nextCursor:null};
  send({id:m.id,result});
 });`,
-      { mode: 0o700 },
+      {
+        mode: 0o700,
+      },
     )
     try {
-      const catalog = await codexModels({ provider: 'codex', endpoint: executable, model: '' })
+      const catalog = await codexModels({
+        provider: 'codex',
+        endpoint: executable,
+        model: '',
+      })
       expect(catalog.codex?.daybreakPrograms).toEqual(programs)
       expect(catalog.codex?.fastModeBlocked).toBe(blocked)
       expect(catalog.models[0].serviceTiers?.map((tier) => tier.id)).toEqual(tiers)
     } finally {
-      await rm(dir, { recursive: true, force: true })
+      await rm(dir, {
+        recursive: true,
+        force: true,
+      })
     }
   },
 )

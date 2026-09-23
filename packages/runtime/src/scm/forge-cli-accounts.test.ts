@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { commandsSchema, forgeConnectionSchema } from '@dovo/protocol'
 import { ForgeCliAccounts } from './forge-cli-accounts'
@@ -12,8 +13,8 @@ afterEach(() => {
   vi.resetAllMocks()
   vi.unstubAllGlobals()
 })
-const cli = new ForgeCliAccounts(() => commandsSchema.parse({}))
-const connection = forgeConnectionSchema.parse({
+const cli = new ForgeCliAccounts(() => decode(commandsSchema, {}))
+const connection = decode(forgeConnectionSchema, {
   id: 'bb',
   name: 'Work',
   provider: 'bitbucket',
@@ -47,22 +48,38 @@ it('uses the explicitly named bb profile and keeps credentials out of metadata',
 })
 it('never uses a differently named profile or a non-Cloud endpoint', async () => {
   for (const profile of [
-    { name: 'personal', accessToken: 'secret' },
-    { name: 'work', apiRoot: 'https://other.example', accessToken: 'secret' },
+    {
+      name: 'personal',
+      accessToken: 'secret',
+    },
+    {
+      name: 'work',
+      apiRoot: 'https://other.example',
+      accessToken: 'secret',
+    },
   ]) {
     vi.mocked(runForgeCli).mockResolvedValue(JSON.stringify(profile))
     await expect(cli.authorization(connection)).rejects.toThrow('selected Bitbucket CLI profile')
   }
 })
 it('uses bearer tokens for the Bitbucket API and Git-compatible authentication for HTTPS clones', async () => {
-  vi.mocked(runForgeCli).mockResolvedValue(JSON.stringify({ name: 'work', accessToken: 'secret' }))
+  vi.mocked(runForgeCli).mockResolvedValue(
+    JSON.stringify({
+      name: 'work',
+      accessToken: 'secret',
+    }),
+  )
   expect(await cli.authorization(connection)).toBe('Bearer secret')
   expect(await cli.authorization(connection, true)).toBe(
     `Basic ${Buffer.from('x-token-auth:secret').toString('base64')}`,
   )
 })
 it('requires credentials rather than falling back to another bb login', async () => {
-  vi.mocked(runForgeCli).mockResolvedValue(JSON.stringify({ name: 'work' }))
+  vi.mocked(runForgeCli).mockResolvedValue(
+    JSON.stringify({
+      name: 'work',
+    }),
+  )
   await expect(cli.authorization(connection)).rejects.toThrow(
     'Authenticate the selected bb profile',
   )
@@ -76,7 +93,14 @@ const tea = {
   cliProfile: 'Work',
 }
 function teaAccount() {
-  vi.mocked(runForgeCli).mockResolvedValue(JSON.stringify([{ name: 'work', url: tea.baseUrl }]))
+  vi.mocked(runForgeCli).mockResolvedValue(
+    JSON.stringify([
+      {
+        name: 'work',
+        url: tea.baseUrl,
+      },
+    ]),
+  )
   vi.mocked(runForgeCliText).mockResolvedValue(
     'protocol=https\nhost=git.example\nusername=me\npassword=private=token\n',
   )
@@ -93,9 +117,18 @@ it('reads the explicitly selected tea login through its refreshed credential hel
 })
 it('does not read tea credentials for a differently configured server or profile', async () => {
   for (const login of [
-    { name: 'other', url: tea.baseUrl },
-    { name: 'work', url: 'https://git.example/elsewhere' },
-    { name: 'work', url: 'http://git.example/forge' },
+    {
+      name: 'other',
+      url: tea.baseUrl,
+    },
+    {
+      name: 'work',
+      url: 'https://git.example/elsewhere',
+    },
+    {
+      name: 'work',
+      url: 'http://git.example/forge',
+    },
   ]) {
     vi.mocked(runForgeCli).mockResolvedValue(JSON.stringify([login]))
     await expect(cli.authorization(tea)).rejects.toThrow('does not match this server URL')
@@ -123,46 +156,78 @@ it('enforces HTTP origin, redirect and response handling for tea accounts', asyn
   const db = openDatabase(':memory:')
   try {
     const connections = new ForgeConnections(db, undefined, cli)
-    const saved = connections.save({ ...tea, id: undefined })
+    const saved = connections.save({
+      ...tea,
+      id: undefined,
+    })
     const http = connectionHttp(connections, saved)
     fetcher.mockResolvedValueOnce(
-      Response.json({ accepted: true }, { status: 202, headers: { 'x-total-count': '5' } }),
+      Response.json(
+        {
+          accepted: true,
+        },
+        {
+          status: 202,
+          headers: {
+            'x-total-count': '5',
+          },
+        },
+      ),
     )
     const response = await http.jsonResponse('api/v1/repos/me/app/issues', {
       method: 'POST',
-      body: { title: 'hello' },
+      body: {
+        title: 'hello',
+      },
     })
     expect(response.status).toBe(202)
     expect(response.headers.get('x-total-count')).toBe('5')
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
       method: 'POST',
       redirect: 'manual',
-      headers: { Authorization: 'token private=token' },
+      headers: {
+        Authorization: 'token private=token',
+      },
       body: '{"title":"hello"}',
     })
     fetcher.mockResolvedValueOnce(
-      new Response(null, { status: 302, headers: { location: 'https://outside.example/file' } }),
+      new Response(null, {
+        status: 302,
+        headers: {
+          location: 'https://outside.example/file',
+        },
+      }),
     )
     await expect(http.json('api/v1/user')).rejects.toThrow('unsafe API URL')
     fetcher.mockResolvedValueOnce(
-      new Response(null, { status: 307, headers: { location: '/forge/elsewhere' } }),
+      new Response(null, {
+        status: 307,
+        headers: {
+          location: '/forge/elsewhere',
+        },
+      }),
     )
-    await expect(http.json('api/v1/issues', { method: 'POST', body: {} })).rejects.toThrow(
-      'redirected a write',
+    await expect(
+      http.json('api/v1/issues', {
+        method: 'POST',
+        body: {},
+      }),
+    ).rejects.toThrow('redirected a write')
+    fetcher.mockResolvedValueOnce(
+      new Response('private-token server error', {
+        status: 403,
+      }),
     )
-    fetcher.mockResolvedValueOnce(new Response('private-token server error', { status: 403 }))
     await expect(http.json('api/v1/issues')).rejects.toThrow('permission')
     expect(fetcher).toHaveBeenCalledTimes(4)
   } finally {
     db.close()
   }
 })
-
 it('does not expose malformed private account output in errors', async () => {
   vi.mocked(runForgeCli).mockResolvedValue('private-token malformed')
   await expect(cli.authorization(connection)).rejects.toThrow('invalid account data')
 })
-
 it('uses the project checkout for selected account credentials without switching global logins', async () => {
   const cwd = '/fixture/project'
   vi.mocked(runForgeCli).mockResolvedValue('github-private-token\n')
@@ -176,7 +241,10 @@ it('uses the project checkout for selected account credentials without switching
   const db = openDatabase(':memory:')
   try {
     const connections = new ForgeConnections(db, undefined, cli)
-    const selected = connections.save({ ...github, id: undefined })
+    const selected = connections.save({
+      ...github,
+      id: undefined,
+    })
     expect(await connections.githubToken(selected.id, cwd)).toBe('github-private-token')
     expect(runForgeCli).toHaveBeenCalledExactlyOnceWith(
       'gh',
@@ -190,7 +258,10 @@ it('uses the project checkout for selected account credentials without switching
     expect(() =>
       connections.gitAuthorization(selected.id, 'https://other.example/work/app.git', cwd),
     ).toThrow('outside this source control connection')
-    const current = connections.save({ ...selected, cliProfile: undefined })
+    const current = connections.save({
+      ...selected,
+      cliProfile: undefined,
+    })
     expect(await connections.githubToken(current.id, cwd)).toBeUndefined()
     expect(
       await connections.gitAuthorization(current.id, 'https://github.example/work/app.git', cwd),

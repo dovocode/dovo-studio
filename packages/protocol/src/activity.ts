@@ -1,23 +1,38 @@
-import { z } from 'zod'
-export const activitySchema = z.object({
-  events: z.array(
-    z.object({
-      id: z.string(),
-      time: z.string(),
-      kind: z.string(),
-      scope: z.string(),
-      summary: z.string(),
-      payload: z.string(),
+import { mutableStruct, mutableArray } from './schema.js'
+import { decodeResult } from './schema.js'
+import { Schema } from 'effect'
+export const activitySchema = mutableStruct({
+  events: mutableArray(
+    mutableStruct({
+      id: Schema.String,
+      time: Schema.String,
+      kind: Schema.String,
+      scope: Schema.String,
+      summary: Schema.String,
+      payload: Schema.String,
     }),
   ),
 })
-const toolPayload = z.object({ turnId: z.string(), toolId: z.string(), status: z.string() })
-const record = z.record(z.string(), z.unknown())
-const object = (value: unknown) => record.safeParse(value).data ?? {}
+const toolPayload = mutableStruct({
+  turnId: Schema.String,
+  toolId: Schema.String,
+  status: Schema.String,
+})
+const record = Schema.mutable(
+  Schema.Record({
+    key: Schema.String,
+    value: Schema.Unknown,
+  }),
+)
+const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const pending = (status: string) =>
   ['started', 'running', 'in_progress', 'pending', 'inProgress'].includes(status)
-type Event = z.infer<typeof activitySchema>['events'][number]
-type Tool = Event & { status: string; turnId?: string; inputPayload?: string }
+type Event = Schema.Schema.Type<typeof activitySchema>['events'][number]
+type Tool = Event & {
+  status: string
+  turnId?: string
+  inputPayload?: string
+}
 
 // Claude can send several calls in one message and return their results individually.
 function splitCalls(event: Event): Event[] {
@@ -30,7 +45,7 @@ function splitCalls(event: Event): Event[] {
   const envelope = object(payload)
   const data = object(envelope.event)
   const message = object(data.message)
-  const blocks = z.array(record).safeParse(message.content).data ?? []
+  const blocks = decodeResult(mutableArray(record), message.content).data ?? []
   const calls = blocks.filter((block) => block.type === 'tool_use' || block.type === 'tool_result')
   if (!calls.length) return [event]
   return calls.map((block) => {
@@ -45,12 +60,17 @@ function splitCalls(event: Event): Event[] {
         toolId: id,
         status:
           block.type === 'tool_use' ? 'running' : block.is_error === true ? 'failed' : 'completed',
-        event: { ...data, message: { ...message, content: [block] } },
+        event: {
+          ...data,
+          message: {
+            ...message,
+            content: [block],
+          },
+        },
       }),
     }
   })
 }
-
 export function recentTools(events: Event[]): Tool[] {
   const parsed = events
     .flatMap(splitCalls)
@@ -61,7 +81,7 @@ export function recentTools(events: Event[]): Tool[] {
       } catch {
         payload = {}
       }
-      const tool = toolPayload.safeParse(payload)
+      const tool = decodeResult(toolPayload, payload)
       return {
         ...event,
         key:

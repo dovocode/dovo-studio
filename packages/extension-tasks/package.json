@@ -12,11 +12,13 @@
   },
   "dependencies": {
     "@dovo/extension-scm": "workspace:*",
+    "@dovo/protocol": "workspace:*",
     "@dovo/studio-core": "workspace:*",
     "@dovo/studio-ui": "workspace:*",
     "@pierre/diffs": "1.4.1",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
+    "effect": "^3.22.1",
     "lucide-react": "^0.577.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

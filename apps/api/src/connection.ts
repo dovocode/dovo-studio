@@ -44,7 +44,9 @@ export function readConnection(path: string): LocalConnection {
 export function publishConnection(directory: string, connection: LocalConnection) {
   const path = join(directory, 'runtime-connection.json')
   const temporary = `${path}.${process.pid}.tmp`
-  writeFileSync(temporary, JSON.stringify(connection), { mode: 0o600 })
+  writeFileSync(temporary, JSON.stringify(connection), {
+    mode: 0o600,
+  })
   chmodSync(temporary, 0o600)
   renameSync(temporary, path)
   return () => {

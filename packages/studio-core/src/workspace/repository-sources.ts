@@ -1,13 +1,18 @@
 import { useMemo } from 'react'
 import type { Repository, RuntimeProfile } from '@dovo/protocol'
 import { useWorkspace } from './provider'
-
 export const repositorySourceKey = (runtimeId: string, repositoryId: string) =>
   JSON.stringify([runtimeId, repositoryId])
-
 export function useRepositorySources() {
-  const { workspace, activeRuntimeId, connected, runtimes, readRuntime, runtimeReadCache } =
-    useWorkspace()
+  const {
+    workspace,
+    activeRuntimeId,
+    connected,
+    runtimes,
+    readRuntime,
+    readRuntimeEffect,
+    runtimeReadCache,
+  } = useWorkspace()
   const descriptors = JSON.stringify(
     runtimes.flatMap((entry) => {
       const active = entry.profile.id === activeRuntimeId
@@ -49,12 +54,17 @@ export function useRepositorySources() {
         repository.jira,
       ]),
       readCache: runtimeReadCache(profile),
+      requestEffect: <T extends Parameters<typeof readRuntimeEffect>[3]>(
+        path: string,
+        input: unknown,
+        schema: T,
+      ) => readRuntimeEffect(profile, path, input, schema),
       request: <T extends Parameters<typeof readRuntime>[3]>(
         path: string,
         input: unknown,
         schema: T,
       ) => readRuntime(profile, path, input, schema),
     }))
-  }, [descriptors, readRuntime, runtimeReadCache])
+  }, [descriptors, readRuntime, readRuntimeEffect, runtimeReadCache])
 }
 export type RepositorySource = ReturnType<typeof useRepositorySources>[number]

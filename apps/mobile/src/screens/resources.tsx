@@ -1,8 +1,11 @@
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/application-state'
+import { mutableStruct } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import { ScreenHeader } from '../ui/screen-header'
-import { useState } from 'react'
 import { ScrollView, Switch, View } from 'react-native'
 import { Text } from '../ui/text'
-import { z } from 'zod'
+import { Schema, Effect } from 'effect'
 import {
   resourceSettingsSchema,
   type McpServer,
@@ -10,7 +13,7 @@ import {
   type ResourceSettings,
 } from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../runtime/provider'
-import { clientScopeKey } from '@dovo/client-runtime'
+import { clientScopeKey, runClientEffect } from '@dovo/client-runtime'
 import { Sheet } from '../ui/sheet'
 import { SettingsGroup, SettingsRow } from './settings-group'
 import { Action } from '../ui/action'
@@ -37,7 +40,7 @@ export default function ResourcesScreen() {
 }
 function ComputerResources({ name }: { name: string }) {
   const { snapshot, connected } = useRuntime()
-  const [selected, setSelected] = useState('')
+  const [selected, setSelected] = useApplicationState('')
   const scopes = [
     ...(snapshot?.workspace.repositories ?? []).map((item) => ({
       item,
@@ -52,10 +55,14 @@ function ComputerResources({ name }: { name: string }) {
   ]
   const current = scopes.find((scope) => scope.id === selected)
   return (
-    <View style={{ gap: 12 }}>
+    <View
+      style={{
+        gap: 12,
+      }}
+    >
       <SettingsGroup title={`${name}${connected ? '' : ' · Offline'}`}>
         {scopes.map((scope, index) => {
-          const resources = resourceSettingsSchema.parse(scope.item.resources ?? {})
+          const resources = decode(resourceSettingsSchema, scope.item.resources ?? {})
           const names = [...resources.mcpServers, ...resources.skills].map((entry) => entry.name)
           return (
             <SettingsRow
@@ -85,12 +92,21 @@ function ComputerResources({ name }: { name: string }) {
   )
 }
 function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
-  const { snapshot, call, connected } = useRuntime(),
+  const { snapshot, connected, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
-  const [catalog, setCatalog] = useState<'mcp' | 'skill' | null>(null)
-  const [editing, setEditing] = useState<
-    | { kind: 'mcp'; value?: McpServer; replaceName?: string; notes?: string[] }
-    | { kind: 'skill'; value?: ManagedSkill; replaceName?: string }
+  const [catalog, setCatalog] = useApplicationState<'mcp' | 'skill' | null>(null)
+  const [editing, setEditing] = useApplicationState<
+    | {
+        kind: 'mcp'
+        value?: McpServer
+        replaceName?: string
+        notes?: string[]
+      }
+    | {
+        kind: 'skill'
+        value?: ManagedSkill
+        replaceName?: string
+      }
     | null
   >(null)
   const scopes = [
@@ -108,19 +124,30 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
     })),
   ]
   const scope = scopes.find((item) => item.id === scopeId)
-  const resources = resourceSettingsSchema.parse(scope?.item.resources ?? {})
-  const save = async (update: (value: ResourceSettings) => ResourceSettings) => {
-    if (!scope) throw new Error('Choose a project or custom agent')
-    const next = resourceSettingsSchema.parse(update(resources))
-    await call(
-      '/api/workspace',
-      {
-        collection: scope.collection,
-        id: scope.item.id,
-        changes: { resources: { before: scope.item.resources ?? null, after: next } },
-      },
-      z.object({ revision: z.number() }),
-      'PATCH',
+  const resources = decode(resourceSettingsSchema, scope?.item.resources ?? {})
+  const save = (update: (value: ResourceSettings) => ResourceSettings) => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (!scope) return yield* Effect.fail(new Error('Choose a project or custom agent'))
+        const next = decode(resourceSettingsSchema, update(resources))
+        yield* callEffect(
+          '/api/workspace',
+          {
+            collection: scope.collection,
+            id: scope.item.id,
+            changes: {
+              resources: {
+                before: scope.item.resources ?? null,
+                after: next,
+              },
+            },
+          },
+          mutableStruct({
+            revision: Schema.Number.pipe(Schema.finite()),
+          }),
+          'PATCH',
+        )
+      }),
     )
   }
   return (
@@ -145,7 +172,11 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
               <Action
                 label="Add MCP server"
                 disabled={!connected || busy}
-                onPress={() => setEditing({ kind: 'mcp' })}
+                onPress={() =>
+                  setEditing({
+                    kind: 'mcp',
+                  })
+                }
               />
               <Action
                 secondary
@@ -155,9 +186,23 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
               />
             </View>
             {resources.mcpServers.map((server) => (
-              <View key={server.name} style={{ gap: 8 }}>
+              <View
+                key={server.name}
+                style={{
+                  gap: 8,
+                }}
+              >
                 <View style={styles.row}>
-                  <Text style={[styles.text, { flex: 1 }]}>{server.name}</Text>
+                  <Text
+                    style={[
+                      styles.text,
+                      {
+                        flex: 1,
+                      },
+                    ]}
+                  >
+                    {server.name}
+                  </Text>
                   <Switch
                     accessibilityLabel={`Enable MCP ${server.name}`}
                     value={server.enabled}
@@ -167,7 +212,12 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                         save((value) => ({
                           ...value,
                           mcpServers: value.mcpServers.map((item) =>
-                            item.name === server.name ? { ...item, enabled } : item,
+                            item.name === server.name
+                              ? {
+                                  ...item,
+                                  enabled,
+                                }
+                              : item,
                           ),
                         })),
                       )
@@ -183,7 +233,11 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                     secondary
                     disabled={!connected || busy}
                     onPress={() =>
-                      setEditing({ kind: 'mcp', value: server, replaceName: server.name })
+                      setEditing({
+                        kind: 'mcp',
+                        value: server,
+                        replaceName: server.name,
+                      })
                     }
                   />
                   <Action
@@ -209,7 +263,11 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
               <Action
                 label="Add skill"
                 disabled={!connected || busy}
-                onPress={() => setEditing({ kind: 'skill' })}
+                onPress={() =>
+                  setEditing({
+                    kind: 'skill',
+                  })
+                }
               />
               <Action
                 secondary
@@ -219,9 +277,23 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
               />
             </View>
             {resources.skills.map((skill) => (
-              <View key={skill.name} style={{ gap: 8 }}>
+              <View
+                key={skill.name}
+                style={{
+                  gap: 8,
+                }}
+              >
                 <View style={styles.row}>
-                  <Text style={[styles.text, { flex: 1 }]}>{skill.name}</Text>
+                  <Text
+                    style={[
+                      styles.text,
+                      {
+                        flex: 1,
+                      },
+                    ]}
+                  >
+                    {skill.name}
+                  </Text>
                   <Switch
                     accessibilityLabel={`Enable skill ${skill.name}`}
                     value={skill.enabled}
@@ -231,7 +303,12 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                         save((value) => ({
                           ...value,
                           skills: value.skills.map((item) =>
-                            item.name === skill.name ? { ...item, enabled } : item,
+                            item.name === skill.name
+                              ? {
+                                  ...item,
+                                  enabled,
+                                }
+                              : item,
                           ),
                         })),
                       )
@@ -245,7 +322,11 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                     secondary
                     disabled={!connected || busy}
                     onPress={() =>
-                      setEditing({ kind: 'skill', value: skill, replaceName: skill.name })
+                      setEditing({
+                        kind: 'skill',
+                        value: skill,
+                        replaceName: skill.name,
+                      })
                     }
                   />
                   <Action
@@ -278,25 +359,31 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
           editing={editing}
           scope={scope?.name ?? ''}
           onClose={() => setEditing(null)}
-          onSave={async (result) => {
-            await save((value) =>
-              result.kind === 'mcp'
-                ? {
-                    ...value,
-                    mcpServers: [
-                      ...value.mcpServers.filter((item) => item.name !== editing.replaceName),
-                      result.value,
-                    ],
-                  }
-                : {
-                    ...value,
-                    skills: [
-                      ...value.skills.filter((item) => item.name !== editing.replaceName),
-                      result.value,
-                    ],
-                  },
+          onSave={(result) => {
+            return runClientEffect(
+              mobileWorkflow(function* () {
+                yield* nativeEffect(() =>
+                  save((value) =>
+                    result.kind === 'mcp'
+                      ? {
+                          ...value,
+                          mcpServers: [
+                            ...value.mcpServers.filter((item) => item.name !== editing.replaceName),
+                            result.value,
+                          ],
+                        }
+                      : {
+                          ...value,
+                          skills: [
+                            ...value.skills.filter((item) => item.name !== editing.replaceName),
+                            result.value,
+                          ],
+                        },
+                  ),
+                )
+                setEditing(null)
+              }),
             )
-            setEditing(null)
           }}
         />
       )}

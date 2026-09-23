@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { MessageAction, MessageActions } from '@dovo/studio-ui'
 export function MessageCopy({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false),
-    [error, setError] = useState('')
+  const [copied, setCopied] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   useEffect(() => {
     if (!copied) return
     const timer = setTimeout(() => setCopied(false), 2000)

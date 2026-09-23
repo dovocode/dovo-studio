@@ -1,5 +1,5 @@
+import { useApplicationState } from '../runtime/application-state'
 import { useLocalSearchParams } from 'expo-router'
-import { useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import { useRuntime } from '../runtime/provider'
 import { RuntimeRoute } from '../shell/runtime-route'
@@ -10,7 +10,6 @@ import { Text } from '../ui/text'
 import { styles } from '../ui/theme'
 import { AutomationCard } from './automation-card'
 import { AutomationEditor } from './automation-editor'
-
 export function AutomationRouteScreen() {
   const { runtimeId, automationId } = useLocalSearchParams<{
     runtimeId: string
@@ -22,10 +21,9 @@ export function AutomationRouteScreen() {
     </RuntimeRoute>
   )
 }
-
 function AutomationDetail({ automationId }: { automationId: string }) {
   const { snapshot, profile } = useRuntime()
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useApplicationState(false)
   const flow = snapshot?.workspace.automations.find((flow) => flow.id === automationId)
   return (
     <View style={styles.screen}>
@@ -45,7 +43,12 @@ function AutomationDetail({ automationId }: { automationId: string }) {
         <ScrollView
           testID="Automation detail"
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[styles.content, { paddingTop: 0 }]}
+          contentContainerStyle={[
+            styles.content,
+            {
+              paddingTop: 0,
+            },
+          ]}
         >
           <AutomationCard flow={flow} onEdit={() => setEditing(true)} />
         </ScrollView>

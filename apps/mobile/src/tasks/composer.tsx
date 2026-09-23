@@ -1,8 +1,9 @@
+import { useApplicationState } from '../runtime/application-state'
 import { Glass } from '../ui/glass'
 import { MessageAttachments } from './message-attachments'
 import { ActivityIndicator, Keyboard, Linking, Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { type Task } from '@dovo/protocol'
 import { useTaskConversation } from './conversation-provider'
 import { Action } from '../ui/action'
@@ -38,9 +39,9 @@ export function Composer({ task }: { task: Task }) {
     canSend,
     patch,
   } = actions
-  const [focused, setFocused] = useState(false),
-    [settings, setSettings] = useState(false),
-    [checkout, setCheckout] = useState(false)
+  const [focused, setFocused] = useApplicationState(false),
+    [settings, setSettings] = useApplicationState(false),
+    [checkout, setCheckout] = useApplicationState(false)
   const selection = useRef<DraftSelection | undefined>(undefined)
   const showOptions = focused || hasInput || firstMessage
   const canDictate = draft.ready && !busy && !task.archived && !attaching
@@ -64,7 +65,14 @@ export function Composer({ task }: { task: Task }) {
     )
   )
     return (
-      <View style={[styles.content, { paddingVertical: 8 }]}>
+      <View
+        style={[
+          styles.content,
+          {
+            paddingVertical: 8,
+          },
+        ]}
+      >
         <Action label="Stop" disabled={!connected || stopping} onPress={stop} />
         {!!error && <Text style={styles.error}>{error}</Text>}
       </View>
@@ -82,7 +90,14 @@ export function Composer({ task }: { task: Task }) {
         },
       ]}
     >
-      <Glass style={{ borderRadius: 26, padding: 4, gap: 0 }}>
+      <Glass
+        style={{
+          borderRadius: 26,
+          padding: 3,
+          gap: 0,
+          backgroundColor: colors.elevated,
+        }}
+      >
         <MessageAttachments
           taskId={task.id}
           files={task.draftAttachments}
@@ -94,9 +109,18 @@ export function Composer({ task }: { task: Task }) {
         <View>
           <View
             testID="Composer input row"
-            style={{ flexDirection: 'row', alignItems: 'flex-end', minHeight: 44 }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'flex-end',
+              minHeight: 44,
+            }}
           >
-            <View style={{ flex: 1, minWidth: 0 }}>
+            <View
+              style={{
+                flex: 1,
+                minWidth: 0,
+              }}
+            >
               <Field
                 label="Message"
                 hideLabel
@@ -145,8 +169,17 @@ export function Composer({ task }: { task: Task }) {
             testID="Composer toolbar"
             pointerEvents="box-none"
             style={[
-              { flexDirection: 'row', alignItems: 'center', minHeight: 44 },
-              !showOptions && { position: 'absolute', left: 0, right: 0, bottom: 0 },
+              {
+                flexDirection: 'row',
+                alignItems: 'center',
+                minHeight: 44,
+              },
+              !showOptions && {
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: 0,
+              },
             ]}
           >
             <IconButton
@@ -158,12 +191,27 @@ export function Composer({ task }: { task: Task }) {
             />
             <View
               pointerEvents="box-none"
-              style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+              }}
             >
               {showOptions &&
                 !dictation.active &&
                 (task.status === 'running' && hasInput ? (
-                  <View style={[styles.row, { flex: 1, minWidth: 0, gap: 0 }]}>
+                  <View
+                    style={[
+                      styles.row,
+                      {
+                        flex: 1,
+                        minWidth: 0,
+                        gap: 0,
+                      },
+                    ]}
+                  >
                     <Action secondary label="Queue" disabled={!canSend} onPress={() => send()} />
                     <Action
                       secondary
@@ -176,7 +224,9 @@ export function Composer({ task }: { task: Task }) {
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Agent & model"
-                    accessibilityValue={{ text: taskHarnessLabel(task, agent) }}
+                    accessibilityValue={{
+                      text: taskHarnessLabel(task, agent),
+                    }}
                     accessibilityState={{
                       disabled: busy || task.status === 'running' || !!task.archived,
                     }}
@@ -197,7 +247,16 @@ export function Composer({ task }: { task: Task }) {
                         pressed || busy || task.status === 'running' || task.archived ? 0.5 : 1,
                     })}
                   >
-                    <Text numberOfLines={1} style={[styles.muted, { flexShrink: 1, fontSize: 13 }]}>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.muted,
+                        {
+                          flexShrink: 1,
+                          fontSize: 13,
+                        },
+                      ]}
+                    >
                       {taskHarnessLabel(task, agent)}
                     </Text>
                     <Icon name="down" size={10} color={colors.muted} />
@@ -211,7 +270,9 @@ export function Composer({ task }: { task: Task }) {
                   accessibilityValue={{
                     text: `${snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.name || 'Choose project'}, ${task.execution === 'worktree' ? 'New worktree' : 'Local checkout'}`,
                   }}
-                  accessibilityState={{ disabled: busy }}
+                  accessibilityState={{
+                    disabled: busy,
+                  }}
                   disabled={busy}
                   onPress={() => {
                     Keyboard.dismiss()
@@ -233,7 +294,16 @@ export function Composer({ task }: { task: Task }) {
                     size={14}
                     color={colors.muted}
                   />
-                  <Text numberOfLines={1} style={[styles.muted, { flexShrink: 1, fontSize: 13 }]}>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.muted,
+                      {
+                        flexShrink: 1,
+                        fontSize: 13,
+                      },
+                    ]}
+                  >
                     {task.execution === 'worktree' ? 'Worktree' : 'Local'}
                   </Text>
                   <Icon name="down" size={10} color={colors.muted} />
@@ -265,13 +335,30 @@ export function Composer({ task }: { task: Task }) {
           </View>
         </View>
         {!!dictationStatus && (
-          <View style={[styles.row, { paddingLeft: 12, paddingRight: 4, gap: 8, minHeight: 44 }]}>
+          <View
+            style={[
+              styles.row,
+              {
+                paddingLeft: 12,
+                paddingRight: 4,
+                gap: 8,
+                minHeight: 44,
+              },
+            ]}
+          >
             {dictation.active || dictation.state?.status === 'cleaning' ? (
               <ActivityIndicator size="small" color={colors.muted} />
             ) : null}
             <Text
               accessibilityLiveRegion="polite"
-              style={[styles.muted, { flexGrow: 1, flexShrink: 1, flexBasis: 120 }]}
+              style={[
+                styles.muted,
+                {
+                  flexGrow: 1,
+                  flexShrink: 1,
+                  flexBasis: 120,
+                },
+              ]}
             >
               {dictationStatus}
             </Text>
@@ -296,12 +383,25 @@ export function Composer({ task }: { task: Task }) {
         )}
       </Glass>
       {!!dictation.state?.error && (
-        <Text accessibilityRole="alert" style={[styles.muted, { paddingHorizontal: 8 }]}>
+        <Text
+          accessibilityRole="alert"
+          style={[
+            styles.muted,
+            {
+              paddingHorizontal: 8,
+            },
+          ]}
+        >
           {dictation.state.error}
         </Text>
       )}
       {!!dictation.error && (
-        <View style={{ gap: 4, paddingHorizontal: 8 }}>
+        <View
+          style={{
+            gap: 4,
+            paddingHorizontal: 8,
+          }}
+        >
           <Text accessibilityRole="alert" style={styles.error}>
             {dictation.error}
           </Text>
@@ -322,7 +422,14 @@ export function Composer({ task }: { task: Task }) {
             disabled={busy || !connected || !!task.workItem}
             items={snapshot?.workspace.repositories ?? []}
             onChange={(repositoryId) =>
-              act(() => patch({ repositoryId: { before: task.repositoryId, after: repositoryId } }))
+              act(() =>
+                patch({
+                  repositoryId: {
+                    before: task.repositoryId,
+                    after: repositoryId,
+                  },
+                }),
+              )
             }
           />
           <Choice
@@ -330,11 +437,24 @@ export function Composer({ task }: { task: Task }) {
             value={task.execution ?? 'main'}
             disabled={busy || !connected}
             items={[
-              { id: 'main', name: 'Local checkout' },
-              { id: 'worktree', name: 'New worktree' },
+              {
+                id: 'main',
+                name: 'Local checkout',
+              },
+              {
+                id: 'worktree',
+                name: 'New worktree',
+              },
             ]}
             onChange={(execution) =>
-              act(() => patch({ execution: { before: task.execution ?? null, after: execution } }))
+              act(() =>
+                patch({
+                  execution: {
+                    before: task.execution ?? null,
+                    after: execution,
+                  },
+                }),
+              )
             }
           />
           <Action label="Done" onPress={() => setCheckout(false)} />

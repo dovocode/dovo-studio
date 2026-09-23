@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { expect, it, vi } from 'vitest'
 import { forgePipelineDetailSchema } from '@dovo/protocol'
 import { GitForgeWork } from './forge-work-git.js'
@@ -5,7 +6,6 @@ import { AzureForgeWork } from './forge-work-azure.js'
 import { BitbucketForgeWork } from './forge-work-bitbucket.js'
 import type { ForgeHttp } from './forge-http.js'
 import type { WorkHttp } from './forge-work-types.js'
-
 const started = '2026-09-20T10:00:00Z'
 const completed = '2026-09-20T10:02:00Z'
 const gitRun = {
@@ -46,7 +46,6 @@ const gitJob = {
     },
   ],
 }
-
 it('retains GitHub workflow context and timed runner steps without inventing run completion', async () => {
   const json = vi
     .fn<WorkHttp['json']>()
@@ -58,11 +57,22 @@ it('retains GitHub workflow context and timed runner steps without inventing run
       run_attempt: 2,
       event: 'push',
       run_started_at: started,
-      head_commit: { message: 'Fix cancellation\n\nKeep retries idempotent.' },
+      head_commit: {
+        message: 'Fix cancellation\n\nKeep retries idempotent.',
+      },
     })
-    .mockResolvedValueOnce({ jobs: [gitJob] })
-  const detail = forgePipelineDetailSchema.parse(
-    await new GitForgeWork({ json }, 'github', 'me/app').pipeline('42'),
+    .mockResolvedValueOnce({
+      jobs: [gitJob],
+    })
+  const detail = decode(
+    forgePipelineDetailSchema,
+    await new GitForgeWork(
+      {
+        json,
+      },
+      'github',
+      'me/app',
+    ).pipeline('42'),
   )
   expect(detail.run).toMatchObject({
     number: '9',
@@ -86,13 +96,16 @@ it('retains GitHub workflow context and timed runner steps without inventing run
         startedAt: started,
         completedAt: completed,
       },
-      { id: '2', name: 'Publish', status: 'skipped' },
+      {
+        id: '2',
+        name: 'Publish',
+        status: 'skipped',
+      },
     ],
   })
   expect(detail.jobs[0]?.steps?.[1]?.startedAt).toBeUndefined()
   expect(json).toHaveBeenCalledTimes(2)
 })
-
 it('normalizes the Gitea workflow path and legacy attempt sentinel, preserving skipped steps', async () => {
   const json = vi
     .fn<WorkHttp['json']>()
@@ -105,9 +118,18 @@ it('normalizes the Gitea workflow path and legacy attempt sentinel, preserving s
       started_at: started,
       completed_at: completed,
     })
-    .mockResolvedValueOnce({ jobs: [gitJob] })
-  const detail = forgePipelineDetailSchema.parse(
-    await new GitForgeWork({ json }, 'gitea', 'me/app').pipeline('42'),
+    .mockResolvedValueOnce({
+      jobs: [gitJob],
+    })
+  const detail = decode(
+    forgePipelineDetailSchema,
+    await new GitForgeWork(
+      {
+        json,
+      },
+      'gitea',
+      'me/app',
+    ).pipeline('42'),
   )
   expect(detail.run).toMatchObject({
     workflow: 'ci.yml',
@@ -119,7 +141,6 @@ it('normalizes the Gitea workflow path and legacy attempt sentinel, preserving s
   expect(detail.run.attempt).toBeUndefined()
   expect(detail.jobs[0]?.steps?.map((step) => step.status)).toEqual(['failure', 'skipped'])
 })
-
 it('accepts null optional workflow metadata without dropping pending runs', async () => {
   const json = vi
     .fn<WorkHttp['json']>()
@@ -135,13 +156,30 @@ it('accepts null optional workflow metadata without dropping pending runs', asyn
       event: null,
       started_at: null,
       completed_at: null,
-      head_commit: { message: null },
+      head_commit: {
+        message: null,
+      },
     })
     .mockResolvedValueOnce({
-      jobs: [{ ...gitJob, runner_name: null, started_at: null, completed_at: null, steps: null }],
+      jobs: [
+        {
+          ...gitJob,
+          runner_name: null,
+          started_at: null,
+          completed_at: null,
+          steps: null,
+        },
+      ],
     })
-  const detail = forgePipelineDetailSchema.parse(
-    await new GitForgeWork({ json }, 'gitea', 'me/app').pipeline('42'),
+  const detail = decode(
+    forgePipelineDetailSchema,
+    await new GitForgeWork(
+      {
+        json,
+      },
+      'gitea',
+      'me/app',
+    ).pipeline('42'),
   )
   expect(detail.run.number).toBeUndefined()
   expect(detail.run.workflow).toBeUndefined()
@@ -150,7 +188,6 @@ it('accepts null optional workflow metadata without dropping pending runs', asyn
   expect(detail.jobs[0]?.runner).toBeUndefined()
   expect(detail.jobs[0]?.steps).toBeUndefined()
 })
-
 it('uses Forgejo native run timing and leaves unsupported job details absent', async () => {
   const json = vi
     .fn<WorkHttp['json']>()
@@ -169,10 +206,22 @@ it('uses Forgejo native run timing and leaves unsupported job details absent', a
       updated: completed,
     })
     .mockResolvedValueOnce([
-      { id: 43, name: 'Build', status: 'running', runs_on: ['ubuntu-latest'] },
+      {
+        id: 43,
+        name: 'Build',
+        status: 'running',
+        runs_on: ['ubuntu-latest'],
+      },
     ])
-  const detail = forgePipelineDetailSchema.parse(
-    await new GitForgeWork({ json }, 'forgejo', 'me/app').pipeline('42'),
+  const detail = decode(
+    forgePipelineDetailSchema,
+    await new GitForgeWork(
+      {
+        json,
+      },
+      'forgejo',
+      'me/app',
+    ).pipeline('42'),
   )
   expect(detail.run).toMatchObject({
     number: '9',
@@ -185,7 +234,6 @@ it('uses Forgejo native run timing and leaves unsupported job details absent', a
   expect(detail.jobs[0]?.steps).toBeUndefined()
   expect(detail.jobs[0]?.startedAt).toBeUndefined()
 })
-
 it('groups Azure tasks under their own jobs and retains ordered steps with bounded errors', async () => {
   const json = vi
     .fn<WorkHttp['json']>()
@@ -198,7 +246,10 @@ it('groups Azure tasks under their own jobs and retains ordered steps with bound
       startTime: started,
       finishTime: completed,
       reason: 'individualCI',
-      definition: { id: 5, name: 'Release' },
+      definition: {
+        id: 5,
+        name: 'Release',
+      },
     })
     .mockResolvedValueOnce({
       records: [
@@ -224,11 +275,19 @@ it('groups Azure tasks under their own jobs and retains ordered steps with bound
           startTime: started,
           finishTime: completed,
           issues: [
-            { type: 'warning', message: 'Omit warning from errors' },
-            ...Array.from({ length: 12 }, (_, i) => ({
-              type: 'error',
-              message: `Failure ${i}: ${'x'.repeat(2500)}`,
-            })),
+            {
+              type: 'warning',
+              message: 'Omit warning from errors',
+            },
+            ...Array.from(
+              {
+                length: 12,
+              },
+              (_, i) => ({
+                type: 'error',
+                message: `Failure ${i}: ${'x'.repeat(2500)}`,
+              }),
+            ),
           ],
         },
         {
@@ -241,7 +300,12 @@ it('groups Azure tasks under their own jobs and retains ordered steps with bound
           order: 1,
           startTime: started,
           finishTime: completed,
-          issues: [{ type: 'error', message: 'Build failed' }],
+          issues: [
+            {
+              type: 'error',
+              message: 'Build failed',
+            },
+          ],
         },
         {
           id: 'checkout',
@@ -278,7 +342,7 @@ it('groups Azure tasks under their own jobs and retains ordered steps with bound
     },
     'Project/repo',
   )
-  const detail = forgePipelineDetailSchema.parse(await provider.pipeline('42'))
+  const detail = decode(forgePipelineDetailSchema, await provider.pipeline('42'))
   expect(detail.run).toMatchObject({
     number: 'release-2026.9',
     workflow: 'Release',
@@ -304,7 +368,6 @@ it('groups Azure tasks under their own jobs and retains ordered steps with bound
   expect(step?.errors?.[0]).toMatch(/…$/)
   expect(step?.url).toContain('&j=job-1&t=compile')
 })
-
 it('retains Bitbucket triggers, commits, timed steps and configuration errors without fake substeps', async () => {
   const json = vi
     .fn<WorkHttp['json']>()
@@ -313,15 +376,27 @@ it('retains Bitbucket triggers, commits, timed steps and configuration errors wi
       build_number: 42,
       created_on: started,
       completed_on: completed,
-      trigger: { type: 'pipeline_trigger_manual' },
+      trigger: {
+        type: 'pipeline_trigger_manual',
+      },
       target: {
         ref_name: 'main',
-        commit: { hash: 'a'.repeat(40), message: 'Release fix' },
-        selector: { pattern: 'release' },
+        commit: {
+          hash: 'a'.repeat(40),
+          message: 'Release fix',
+        },
+        selector: {
+          pattern: 'release',
+        },
       },
       state: {
         name: 'COMPLETED',
-        result: { name: 'ERROR', error: { message: 'Configuration invalid' } },
+        result: {
+          name: 'ERROR',
+          error: {
+            message: 'Configuration invalid',
+          },
+        },
       },
     })
     .mockResolvedValueOnce({
@@ -333,14 +408,30 @@ it('retains Bitbucket triggers, commits, timed steps and configuration errors wi
           completed_on: completed,
           state: {
             name: 'COMPLETED',
-            result: { name: 'ERROR', error: { message: 'Runner unavailable' } },
+            result: {
+              name: 'ERROR',
+              error: {
+                message: 'Runner unavailable',
+              },
+            },
           },
-          script_commands: [{ name: 'Compile', command: 'pnpm build' }],
+          script_commands: [
+            {
+              name: 'Compile',
+              command: 'pnpm build',
+            },
+          ],
         },
       ],
     })
-  const detail = forgePipelineDetailSchema.parse(
-    await new BitbucketForgeWork({ json }, 'me/app').pipeline('{run-42}'),
+  const detail = decode(
+    forgePipelineDetailSchema,
+    await new BitbucketForgeWork(
+      {
+        json,
+      },
+      'me/app',
+    ).pipeline('{run-42}'),
   )
   expect(detail.run).toMatchObject({
     number: '42',
@@ -361,9 +452,8 @@ it('retains Bitbucket triggers, commits, timed steps and configuration errors wi
   expect(detail.jobs[0]?.steps).toBeUndefined()
   expect(detail.jobs[0]?.runner).toBeUndefined()
 })
-
 it('keeps previously cached minimal pipeline details valid', () => {
-  const detail = forgePipelineDetailSchema.parse({
+  const detail = decode(forgePipelineDetailSchema, {
     run: {
       id: '1',
       title: 'CI',
@@ -375,7 +465,14 @@ it('keeps previously cached minimal pipeline details valid', () => {
       createdAt: started,
       updatedAt: started,
     },
-    jobs: [{ id: '2', name: 'Build', status: 'queued', url: 'https://example.com/runs/1' }],
+    jobs: [
+      {
+        id: '2',
+        name: 'Build',
+        status: 'queued',
+        url: 'https://example.com/runs/1',
+      },
+    ],
   })
   expect(detail.run.workflow).toBeUndefined()
   expect(detail.jobs[0]?.steps).toBeUndefined()

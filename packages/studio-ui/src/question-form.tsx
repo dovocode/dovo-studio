@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useRef } from 'react'
 import { MessageCircleQuestion, LoaderCircle } from 'lucide-react'
 import {
   questionAnswerError,
@@ -18,11 +19,19 @@ export function QuestionForm({
   connected: boolean
   onAnswer: (answers: QuestionAnswers | null) => Promise<void>
 }) {
-  const [drafts, setDrafts] = useState<Record<string, QuestionDraft>>(() =>
-      Object.fromEntries(request.prompt.questions.map((q) => [q.id, { selected: [], text: '' }])),
+  const [drafts, setDrafts] = useApplicationState<Record<string, QuestionDraft>>(() =>
+      Object.fromEntries(
+        request.prompt.questions.map((q) => [
+          q.id,
+          {
+            selected: [],
+            text: '',
+          },
+        ]),
+      ),
     ),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
+    [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const submitting = useRef(false)
   const submit = async (answers: QuestionAnswers | null) => {
     if (submitting.current || !connected) return
@@ -68,7 +77,10 @@ export function QuestionForm({
             value={drafts[q.id]}
             disabled={busy || !connected}
             onChange={(draft) => {
-              setDrafts((current) => ({ ...current, [q.id]: draft }))
+              setDrafts((current) => ({
+                ...current,
+                [q.id]: draft,
+              }))
               setError('')
             }}
           />

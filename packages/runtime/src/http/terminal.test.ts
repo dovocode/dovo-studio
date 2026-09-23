@@ -20,6 +20,13 @@ it('uses one-time socket tickets and disconnects revoked devices', async () => {
     const url = `ws://127.0.0.1:${runtime.port}/ws/terminal?ticket=${ticket}`
     socket = new WebSocket(url)
     await once(socket, 'open')
+    const pong = new Promise<string>((resolve) =>
+      socket?.on('message', (data, binary) => {
+        if (binary && Buffer.isBuffer(data)) resolve(data.toString())
+      }),
+    )
+    socket.send(JSON.stringify({ type: 'ping', nonce: 'idle-check' }))
+    expect(JSON.parse(await pong)).toEqual({ type: 'pong', nonce: 'idle-check' })
     const output = new Promise<void>((resolve) =>
       socket?.on('message', (data) => {
         if (Buffer.isBuffer(data) && data.toString().includes('DOVO_SOCKET_OK')) resolve()

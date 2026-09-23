@@ -1,6 +1,5 @@
 import { hasUnviewedTaskCompletion, type Task } from '@dovo/studio-core'
 import { isSnoozed } from './task-priority'
-
 export function taskPresentation(task: Task, needsInput: boolean, now: number) {
   const latest = task.turns?.at(-1)
   const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
@@ -49,5 +48,10 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
           )
         ? state
         : time.replace(' ago', '') || state
-  return { state, time, compactLabel, label: [state, time].filter(Boolean).join(' · ') }
+  return {
+    state,
+    time,
+    compactLabel,
+    label: [state, time].filter(Boolean).join(' · '),
+  }
 }

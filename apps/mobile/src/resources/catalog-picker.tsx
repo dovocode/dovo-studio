@@ -1,4 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import { useEffect, useRef } from 'react'
 import { Linking, View } from 'react-native'
 import { Text } from '../ui/text'
 import {
@@ -27,16 +31,16 @@ export function CatalogPicker({
   onClose: () => void
   onSelect: (entry: ResourceSelection) => void
 }) {
-  const { call } = useRuntime(),
+  const { call, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
-  const [query, setQuery] = useState(''),
-    [servers, setServers] = useState<RegistryEntry[]>([]),
-    [skills, setSkills] = useState<SkillCatalogEntry[]>([]),
-    [cursor, setCursor] = useState<string>(),
-    [selected, setSelected] = useState<RegistryEntry>(),
-    [variantId, setVariantId] = useState(''),
-    [loading, setLoading] = useState(false),
-    [loadError, setLoadError] = useState('')
+  const [query, setQuery] = useApplicationState(''),
+    [servers, setServers] = useApplicationState<RegistryEntry[]>([]),
+    [skills, setSkills] = useApplicationState<SkillCatalogEntry[]>([]),
+    [cursor, setCursor] = useApplicationState<string | undefined>(undefined),
+    [selected, setSelected] = useApplicationState<RegistryEntry | undefined>(undefined),
+    [variantId, setVariantId] = useApplicationState(''),
+    [loading, setLoading] = useApplicationState(false),
+    [loadError, setLoadError] = useApplicationState('')
   const generation = useRef(0)
   useEffect(() => {
     const id = ++generation.current
@@ -49,23 +53,46 @@ export function CatalogPicker({
       return
     }
     setLoading(true)
-    const timer = setTimeout(async () => {
-      try {
-        if (kind === 'mcp') {
-          const result = await call('/api/agents/catalogs/mcp', { query }, registryCatalogSchema)
-          if (id === generation.current) {
-            setServers(result.entries)
-            setCursor(result.cursor)
-          }
-        } else {
-          const result = await call('/api/agents/catalogs/skills', { query }, skillCatalogSchema)
-          if (id === generation.current) setSkills(result.entries)
-        }
-      } catch (error) {
-        if (id === generation.current) setLoadError(String(error))
-      } finally {
-        if (id === generation.current) setLoading(false)
-      }
+    const timer = setTimeout(() => {
+      return runClientEffect(
+        mobileWorkflow(function* () {
+          return yield* mobileWorkflow(function* () {
+            if (kind === 'mcp') {
+              const result = yield* callEffect(
+                '/api/agents/catalogs/mcp',
+                {
+                  query,
+                },
+                registryCatalogSchema,
+              )
+              if (id === generation.current) {
+                setServers(result.entries)
+                setCursor(result.cursor)
+              }
+            } else {
+              const result = yield* callEffect(
+                '/api/agents/catalogs/skills',
+                {
+                  query,
+                },
+                skillCatalogSchema,
+              )
+              if (id === generation.current) setSkills(result.entries)
+            }
+          }).pipe(
+            Effect.catchAll((error) =>
+              nativeEffect(() => {
+                if (id === generation.current) setLoadError(String(error))
+              }),
+            ),
+            Effect.ensuring(
+              nativeEffect(() => {
+                if (id === generation.current) setLoading(false)
+              }).pipe(Effect.orDie),
+            ),
+          )
+        }),
+      )
     }, 350)
     return () => {
       clearTimeout(timer)
@@ -84,7 +111,10 @@ export function CatalogPicker({
           <Choice
             label="Installation variant"
             value={variantId}
-            items={selected.variants.map((item) => ({ id: item.id, name: item.label }))}
+            items={selected.variants.map((item) => ({
+              id: item.id,
+              name: item.label,
+            }))}
             onChange={setVariantId}
           />
           {variant?.notes.map((note, i) => (
@@ -97,7 +127,11 @@ export function CatalogPicker({
             disabled={!variant?.server}
             onPress={() => {
               if (variant?.server)
-                onSelect({ kind: 'mcp', value: variant.server, notes: variant.notes })
+                onSelect({
+                  kind: 'mcp',
+                  value: variant.server,
+                  notes: variant.notes,
+                })
             }}
           />
         </>
@@ -136,14 +170,19 @@ export function CatalogPicker({
                 label={`Import ${entry.name}`}
                 disabled={busy || !entry.supported}
                 onPress={() =>
-                  act(async () =>
-                    onSelect({
-                      kind: 'skill',
-                      value: await call(
-                        '/api/agents/catalogs/skills/import',
-                        { source: entry.source, skill: entry.id },
-                        managedSkillSchema,
-                      ),
+                  act(() =>
+                    mobileWorkflow(function* () {
+                      return onSelect({
+                        kind: 'skill',
+                        value: yield* callEffect(
+                          '/api/agents/catalogs/skills/import',
+                          {
+                            source: entry.source,
+                            skill: entry.id,
+                          },
+                          managedSkillSchema,
+                        ),
+                      })
                     }),
                   )
                 }
@@ -160,21 +199,26 @@ export function CatalogPicker({
               disabled={loading || busy}
               onPress={() => {
                 const id = generation.current
-                act(async () => {
-                  const result = await call(
-                    '/api/agents/catalogs/mcp',
-                    { query, cursor },
-                    registryCatalogSchema,
-                  )
-                  if (id === generation.current) {
-                    setServers((entries) => [
-                      ...new Map(
-                        [...entries, ...result.entries].map((entry) => [entry.name, entry]),
-                      ).values(),
-                    ])
-                    setCursor(result.cursor)
-                  }
-                })
+                act(() =>
+                  mobileWorkflow(function* () {
+                    const result = yield* callEffect(
+                      '/api/agents/catalogs/mcp',
+                      {
+                        query,
+                        cursor,
+                      },
+                      registryCatalogSchema,
+                    )
+                    if (id === generation.current) {
+                      setServers((entries) => [
+                        ...new Map(
+                          [...entries, ...result.entries].map((entry) => [entry.name, entry]),
+                        ).values(),
+                      ])
+                      setCursor(result.cursor)
+                    }
+                  }),
+                )
               }}
             />
           )}

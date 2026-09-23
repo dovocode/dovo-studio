@@ -1,15 +1,14 @@
+import { useApplicationState } from '../runtime/application-state'
 import {
   createContext,
   useContext,
   useMemo,
   useRef,
-  useState,
   type Dispatch,
   type RefObject,
   type SetStateAction,
   type ReactNode,
 } from 'react'
-
 type TaskListView = {
   search: string
   filter: string
@@ -24,7 +23,7 @@ const Context = createContext<{
 
 /** Aggregate list navigation survives the host-bound task screen and its editors. */
 export function TaskListViewProvider({ children }: { children: ReactNode }) {
-  const [view, setView] = useState<TaskListView>({
+  const [view, setView] = useApplicationState<TaskListView>({
     search: '',
     filter: 'active',
     source: 'all',
@@ -32,10 +31,16 @@ export function TaskListViewProvider({ children }: { children: ReactNode }) {
   })
   // Scroll events don't need to rerender the list or the surrounding native tabs.
   const scrollOffset = useRef(0)
-  const value = useMemo(() => ({ view, setView, scrollOffset }), [view])
+  const value = useMemo(
+    () => ({
+      view,
+      setView,
+      scrollOffset,
+    }),
+    [view],
+  )
   return <Context.Provider value={value}>{children}</Context.Provider>
 }
-
 export function useTaskListView() {
   const state = useContext(Context)
   if (!state) throw new Error('TaskListViewProvider required')

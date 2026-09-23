@@ -1,76 +1,115 @@
-import { z } from 'zod'
-const user = z.object({ login: z.string() }).nullable()
-export const restPull = z.object({
-  number: z.number(),
-  title: z.string(),
-  html_url: z.string(),
-  state: z.enum(['open', 'closed']),
-  merged_at: z.string().nullable(),
-  draft: z.boolean().optional(),
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { Schema } from 'effect'
+const user = Schema.NullOr(
+  mutableStruct({
+    login: Schema.String,
+  }),
+)
+export const restPull = mutableStruct({
+  number: Schema.Number.pipe(Schema.finite()),
+  title: Schema.String,
+  html_url: Schema.String,
+  state: Schema.Literal('open', 'closed'),
+  merged_at: Schema.NullOr(Schema.String),
+  draft: Schema.optional(Schema.Boolean),
   user,
-  updated_at: z.string(),
-  head: z.object({ label: z.string() }),
-  base: z.object({ label: z.string() }),
-  labels: z.array(z.object({ name: z.string() })),
+  updated_at: Schema.String,
+  head: mutableStruct({
+    label: Schema.String,
+  }),
+  base: mutableStruct({
+    label: Schema.String,
+  }),
+  labels: mutableArray(
+    mutableStruct({
+      name: Schema.String,
+    }),
+  ),
 })
-export const restDetail = restPull.extend({
-  head: z.object({ label: z.string(), sha: z.string().regex(/^[a-f0-9]{40}$/) }),
-  base: z.object({ label: z.string(), sha: z.string().regex(/^[a-f0-9]{40}$/) }),
-  body: z.string().nullable(),
-  additions: z.number(),
-  deletions: z.number(),
-  changed_files: z.number(),
-  mergeable: z.boolean().nullable(),
-  requested_teams: z.array(z.object({ slug: z.string() })).optional(),
-  requested_reviewers: z.array(z.object({ login: z.string() })),
-  assignees: z.array(z.object({ login: z.string() })),
-})
-export const restComment = z.object({
-  id: z.number(),
-  user,
-  body: z.string().nullable(),
-  html_url: z.string(),
-  created_at: z.string(),
-})
-export const restReview = z.object({
-  id: z.number(),
-  user,
-  body: z.string().nullable(),
-  html_url: z.string(),
-  submitted_at: z.string().nullish(),
-  state: z.string(),
-})
-export const restInline = restComment.extend({
-  path: z.string(),
-  line: z.number().nullable(),
-  original_line: z.number().nullable(),
-  diff_hunk: z.string(),
-  in_reply_to_id: z.number().optional(),
-})
-export const restFile = z.object({
-  filename: z.string(),
-  previous_filename: z.string().optional(),
-  status: z.string(),
-  additions: z.number(),
-  deletions: z.number(),
-  patch: z.string().optional(),
-})
-export const checkRollup = z.object({
-  statusCheckRollup: z
-    .array(
-      z.object({
-        name: z.string().optional(),
-        context: z.string().optional(),
-        status: z.string().optional(),
-        conclusion: z.string().nullable().optional(),
-        state: z.string().optional(),
-        detailsUrl: z.string().nullish(),
-        targetUrl: z.string().nullish(),
+export const restDetail = mutableStruct({
+  ...restPull.fields,
+  ...{
+    head: mutableStruct({
+      label: Schema.String,
+      sha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+    }),
+    base: mutableStruct({
+      label: Schema.String,
+      sha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+    }),
+    body: Schema.NullOr(Schema.String),
+    additions: Schema.Number.pipe(Schema.finite()),
+    deletions: Schema.Number.pipe(Schema.finite()),
+    changed_files: Schema.Number.pipe(Schema.finite()),
+    mergeable: Schema.NullOr(Schema.Boolean),
+    requested_teams: Schema.optional(
+      mutableArray(
+        mutableStruct({
+          slug: Schema.String,
+        }),
+      ),
+    ),
+    requested_reviewers: mutableArray(
+      mutableStruct({
+        login: Schema.String,
       }),
-    )
-    .nullable(),
+    ),
+    assignees: mutableArray(
+      mutableStruct({
+        login: Schema.String,
+      }),
+    ),
+  },
 })
-export function summary(p: z.infer<typeof restPull>) {
+export const restComment = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite()),
+  user,
+  body: Schema.NullOr(Schema.String),
+  html_url: Schema.String,
+  created_at: Schema.String,
+})
+export const restReview = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite()),
+  user,
+  body: Schema.NullOr(Schema.String),
+  html_url: Schema.String,
+  submitted_at: Schema.optional(Schema.NullOr(Schema.String)),
+  state: Schema.String,
+})
+export const restInline = mutableStruct({
+  ...restComment.fields,
+  ...{
+    path: Schema.String,
+    line: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
+    original_line: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
+    diff_hunk: Schema.String,
+    in_reply_to_id: Schema.optional(Schema.Number.pipe(Schema.finite())),
+  },
+})
+export const restFile = mutableStruct({
+  filename: Schema.String,
+  previous_filename: Schema.optional(Schema.String),
+  status: Schema.String,
+  additions: Schema.Number.pipe(Schema.finite()),
+  deletions: Schema.Number.pipe(Schema.finite()),
+  patch: Schema.optional(Schema.String),
+})
+export const checkRollup = mutableStruct({
+  statusCheckRollup: Schema.NullOr(
+    mutableArray(
+      mutableStruct({
+        name: Schema.optional(Schema.String),
+        context: Schema.optional(Schema.String),
+        status: Schema.optional(Schema.String),
+        conclusion: Schema.optional(Schema.NullOr(Schema.String)),
+        state: Schema.optional(Schema.String),
+        detailsUrl: Schema.optional(Schema.NullOr(Schema.String)),
+        targetUrl: Schema.optional(Schema.NullOr(Schema.String)),
+      }),
+    ),
+  ),
+})
+export function summary(p: Schema.Schema.Type<typeof restPull>) {
   return {
     number: p.number,
     title: p.title,

@@ -1,3 +1,7 @@
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
 import {
   aggregateRuntimeTasks,
   compareTasks,
@@ -6,8 +10,8 @@ import {
   resolveTaskAgent,
 } from '@dovo/protocol'
 import { useNavigation } from '../shell/navigation'
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
-import { FlatList, View } from 'react-native'
+import { useDeferredValue, useEffect, useMemo } from 'react'
+import { FlatList, Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import { useRuntime } from '../runtime/provider'
 import { FleetOverview } from '../runtime/fleet-overview'
@@ -28,13 +32,13 @@ import { useAction } from '../ui/use-action'
 import { colors, styles } from '../ui/theme'
 export default function TasksScreen() {
   const { navigate, focused } = useNavigation(),
-    { refreshAll, overviews, profiles, activeId, selectRuntime } = useRuntime(),
+    { refreshAll, overviews, profiles, activeId, selectRuntimeEffect } = useRuntime(),
     { busy, error, act } = useAction()
   const { view, setView, scrollOffset } = useTaskListView()
   const { search, filter, source, sort } = view
-  const [details, setDetails] = useState(''),
-    [filtersOpen, setFiltersOpen] = useState(false),
-    [now, setNow] = useState(Date.now())
+  const [details, setDetails] = useApplicationState(''),
+    [filtersOpen, setFiltersOpen] = useApplicationState(false),
+    [now, setNow] = useApplicationState(Date.now())
   useEffect(() => {
     if (!focused) return
     setNow(Date.now())
@@ -44,12 +48,15 @@ export default function TasksScreen() {
   useEffect(() => {
     if (source !== 'all' && !profiles.some((profile) => profile.id === source)) {
       scrollOffset.current = 0
-      setView((current) => ({ ...current, source: 'all' }))
+      setView((current) => ({
+        ...current,
+        source: 'all',
+      }))
     }
   }, [profiles, source, setView, scrollOffset])
   const query = useDeferredValue(search.trim().toLowerCase())
-  const [refreshing, setRefreshing] = useState(false)
-  const [refreshError, setRefreshError] = useState('')
+  const [refreshing, setRefreshing] = useApplicationState(false)
+  const [refreshError, setRefreshError] = useApplicationState('')
   const entries = useMemo(
     () => (source === 'all' ? overviews : overviews.filter((entry) => entry.profile.id === source)),
     [overviews, source],
@@ -84,8 +91,16 @@ export default function TasksScreen() {
       )
       .sort((a, b) => {
         // The protocol comparator sees scoped task/project IDs, even if hosts have identical data IDs.
-        const first = { ...a.task, id: a.key, repositoryId: a.key },
-          second = { ...b.task, id: b.key, repositoryId: b.key }
+        const first = {
+            ...a.task,
+            id: a.key,
+            repositoryId: a.key,
+          },
+          second = {
+            ...b.task,
+            id: b.key,
+            repositoryId: b.key,
+          }
         return compareTasks(first, second, sort, needsInput, projects)
       })
   }, [allTasks, filter, now, query, sort])
@@ -98,10 +113,12 @@ export default function TasksScreen() {
     setDetails('')
     if (item.runtimeId === activeId) navigate('tasks', item.task.id, item.runtimeId)
     else
-      act(async () => {
-        await selectRuntime(item.runtimeId)
-        navigate('tasks', item.task.id, item.runtimeId)
-      })
+      act(() =>
+        mobileWorkflow(function* () {
+          yield* selectRuntimeEffect(item.runtimeId)
+          navigate('tasks', item.task.id, item.runtimeId)
+        }),
+      )
   }
   return (
     <View style={styles.screen}>
@@ -122,7 +139,9 @@ export default function TasksScreen() {
             disabled: !overviews.some((entry) => entry.connected) || busy,
             onPress: () => {
               retainPosition()
-              router.push('/new', { withAnchor: true })
+              router.push('/new', {
+                withAnchor: true,
+              })
             },
           },
         ]}
@@ -139,33 +158,116 @@ export default function TasksScreen() {
         onRefresh={() => {
           setRefreshing(true)
           setRefreshError('')
-          void refreshAll()
-            .catch((error) =>
-              setRefreshError(error instanceof Error ? error.message : String(error)),
-            )
-            .finally(() => setRefreshing(false))
+          void runClientEffect(
+            nativeEffect(() => refreshAll())
+              .pipe(
+                Effect.catchAll((error) =>
+                  nativeEffect(() =>
+                    setRefreshError(error instanceof Error ? error.message : String(error)),
+                  ),
+                ),
+              )
+              .pipe(Effect.ensuring(nativeEffect(() => setRefreshing(false)).pipe(Effect.orDie))),
+          )
         }}
         initialNumToRender={12}
         windowSize={7}
         keyExtractor={(item) => item.key}
-        contentContainerStyle={[styles.content, { gap: 0, paddingTop: 0, flexGrow: 1 }]}
+        contentContainerStyle={[
+          styles.content,
+          {
+            gap: 0,
+            paddingTop: 0,
+            flexGrow: 1,
+          },
+        ]}
         ListHeaderComponent={
-          <View style={{ gap: 8, paddingBottom: 8 }}>
+          <View
+            style={{
+              gap: 8,
+              paddingBottom: 10,
+            }}
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 6 }}
+            >
+              {[
+                { id: 'active', label: 'All tasks' },
+                { id: 'input', label: 'Needs input' },
+                { id: 'running', label: 'Working' },
+              ].map((item) => (
+                <Pressable
+                  key={item.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.label}
+                  accessibilityState={{ selected: filter === item.id }}
+                  onPress={() => {
+                    scrollOffset.current = 0
+                    setView((current) => ({ ...current, filter: item.id }))
+                  }}
+                  style={({ pressed }) => ({
+                    minHeight: 44,
+                    justifyContent: 'center',
+                    paddingHorizontal: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: filter === item.id ? colors.accent : colors.border,
+                    backgroundColor: filter === item.id ? colors.elevated : colors.surface,
+                    opacity: pressed ? 0.7 : 1,
+                  })}
+                >
+                  <Text
+                    style={[
+                      styles.muted,
+                      {
+                        color: filter === item.id ? colors.accent : colors.muted,
+                        fontWeight: '600',
+                      },
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
             <SearchField
               label="Search tasks"
               placeholder="Search tasks"
               clearButtonMode="while-editing"
               returnKeyType="search"
               value={search}
-              onChangeText={(search) => setView((current) => ({ ...current, search }))}
+              onChangeText={(search) =>
+                setView((current) => ({
+                  ...current,
+                  search,
+                }))
+              }
             />
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={{ flex: 1, minWidth: 0 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <View
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                }}
+              >
                 <FleetOverview
                   compact
                   source={source}
                   entries={overviews}
-                  onSelectSource={(source) => setView((current) => ({ ...current, source }))}
+                  onSelectSource={(source) =>
+                    setView((current) => ({
+                      ...current,
+                      source,
+                    }))
+                  }
                 />
               </View>
               <IconButton
@@ -225,21 +327,52 @@ export default function TasksScreen() {
             label="Task filter"
             value={filter}
             items={[
-              { id: 'active', name: 'Active' },
-              { id: 'input', name: 'Needs input' },
-              { id: 'running', name: 'Working' },
-              { id: 'review', name: 'Review' },
-              { id: 'snoozed', name: 'Snoozed' },
-              { id: 'archived', name: 'Settled' },
-              { id: 'archive', name: 'Archived' },
+              {
+                id: 'active',
+                name: 'Active',
+              },
+              {
+                id: 'input',
+                name: 'Needs input',
+              },
+              {
+                id: 'running',
+                name: 'Working',
+              },
+              {
+                id: 'review',
+                name: 'Review',
+              },
+              {
+                id: 'snoozed',
+                name: 'Snoozed',
+              },
+              {
+                id: 'archived',
+                name: 'Settled',
+              },
+              {
+                id: 'archive',
+                name: 'Archived',
+              },
             ]}
-            onChange={(filter) => setView((current) => ({ ...current, filter }))}
+            onChange={(filter) =>
+              setView((current) => ({
+                ...current,
+                filter,
+              }))
+            }
           />
           <Choice
             label="Thread sort"
             value={sort}
             items={[...taskSortOptions]}
-            onChange={(sort) => setView((current) => ({ ...current, sort }))}
+            onChange={(sort) =>
+              setView((current) => ({
+                ...current,
+                sort,
+              }))
+            }
           />
           <Text style={styles.muted}>
             Pinned tasks stay first. Priority brings requests for input and failed tasks to the top.

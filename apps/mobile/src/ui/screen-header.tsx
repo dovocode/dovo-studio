@@ -14,11 +14,13 @@ export type HeaderAction = {
   onPress: () => void
   disabled?: boolean
   selected?: boolean
+  overflow?: boolean
 }
 
 /** UIKit owns navigation sizing, button grouping and back gestures on iOS. */
 export function ScreenHeader({
   title,
+  titleContent,
   subtitle,
   leading,
   actions,
@@ -29,6 +31,7 @@ export function ScreenHeader({
   hidden = false,
 }: {
   title: string
+  titleContent?: ReactNode
   subtitle?: string
   leading?: ReactNode
   actions?: ReactNode
@@ -54,6 +57,7 @@ export function ScreenHeader({
         <Stack.Screen
           options={{
             title,
+            ...(titleContent ? { headerTitle: () => titleContent } : {}),
             headerShown: true,
             headerBackVisible: !onBack,
             gestureEnabled,
@@ -68,19 +72,38 @@ export function ScreenHeader({
           </Stack.Toolbar>
         )}
         <Stack.Toolbar placement="right">
-          {buttons?.map((button) => (
-            <Stack.Toolbar.Button
-              key={button.label}
-              icon={symbols[button.icon][0]}
-              accessibilityLabel={button.label}
-              disabled={button.disabled}
-              selected={button.selected}
-              tintColor={button.selected ? colors.accent : colors.text}
-              onPress={button.onPress}
-            >
-              {button.label}
-            </Stack.Toolbar.Button>
-          ))}
+          {buttons
+            ?.filter((button) => !button.overflow)
+            .map((button) => (
+              <Stack.Toolbar.Button
+                key={button.label}
+                icon={symbols[button.icon][0]}
+                accessibilityLabel={button.label}
+                disabled={button.disabled}
+                selected={button.selected}
+                tintColor={button.selected ? colors.accent : colors.text}
+                onPress={button.onPress}
+              >
+                {button.label}
+              </Stack.Toolbar.Button>
+            ))}
+          {buttons?.some((button) => button.overflow) && (
+            <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Task tools">
+              <Stack.Toolbar.Label>Task tools</Stack.Toolbar.Label>
+              {buttons
+                .filter((button) => button.overflow)
+                .map((button) => (
+                  <Stack.Toolbar.MenuAction
+                    key={button.label}
+                    icon={symbols[button.icon][0]}
+                    onPress={button.onPress}
+                    disabled={button.disabled}
+                  >
+                    {button.label}
+                  </Stack.Toolbar.MenuAction>
+                ))}
+            </Stack.Toolbar.Menu>
+          )}
           {!!actions && (
             <Stack.Toolbar.View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>{actions}</View>
@@ -113,22 +136,26 @@ export function ScreenHeader({
     >
       {leading}
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        <Text
-          testID={testID}
-          accessibilityRole="header"
-          numberOfLines={2}
-          style={{ color: colors.text, fontSize: 22, fontWeight: '700', letterSpacing: -0.5 }}
-        >
-          {title}
-        </Text>
-        {!!subtitle && (
-          <Text
-            numberOfLines={1}
-            accessibilityLabel={subtitle}
-            style={{ color: colors.muted, fontSize: 13, lineHeight: 18 }}
-          >
-            {subtitle}
-          </Text>
+        {titleContent ?? (
+          <>
+            <Text
+              testID={testID}
+              accessibilityRole="header"
+              numberOfLines={2}
+              style={{ color: colors.text, fontSize: 22, fontWeight: '700', letterSpacing: -0.5 }}
+            >
+              {title}
+            </Text>
+            {!!subtitle && (
+              <Text
+                numberOfLines={1}
+                accessibilityLabel={subtitle}
+                style={{ color: colors.muted, fontSize: 13, lineHeight: 18 }}
+              >
+                {subtitle}
+              </Text>
+            )}
+          </>
         )}
       </View>
       {(!!actions || !!buttons?.length) && (

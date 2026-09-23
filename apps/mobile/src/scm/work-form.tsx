@@ -1,6 +1,9 @@
-import { appendUniqueRows, RequestScope } from '@dovo/client-runtime'
-import { useEffect, useRef, useState } from 'react'
-import { z } from 'zod'
+import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/application-state'
+import { decode } from '@dovo/protocol'
+import { appendUniqueRows, RequestScope, runClientEffect } from '@dovo/client-runtime'
+import { useEffect, useRef } from 'react'
+import { Schema, Effect } from 'effect'
 import {
   forgeWorkOptionsSchema,
   issueEditInput,
@@ -21,7 +24,6 @@ import { Choice } from '../ui/choice'
 import { Action } from '../ui/action'
 import { Field } from '../ui/field'
 import { Sheet } from '../ui/sheet'
-
 export function WorkForm({
   kind,
   repositoryId,
@@ -45,53 +47,68 @@ export function WorkForm({
   onClose: () => void
   onDone: (message: string, result?: ForgeWorkResult) => void
 }) {
-  const { read, connected } = useRuntime()
+  const { read, connected, readEffect } = useRuntime()
   const { focused } = useNavigation()
-  const [issue] = useState(initialIssue)
+  const [issue] = useApplicationState(initialIssue)
   const available =
     kind === 'run'
       ? options.pipelines && options.pipelineActions.includes('run')
       : options.issues &&
         (kind === 'create' || !!issue) &&
         (kind !== 'transition' || options.provider === 'jira')
-  const [title, setTitle] = useState(kind === 'edit' ? (issue?.title ?? '') : ''),
-    [body, setBody] = useState(kind === 'edit' ? (issue?.body ?? '') : '')
-  const [type, setType] = useState(
+  const [title, setTitle] = useApplicationState(kind === 'edit' ? (issue?.title ?? '') : ''),
+    [body, setBody] = useApplicationState(kind === 'edit' ? (issue?.body ?? '') : '')
+  const [type, setType] = useApplicationState(
       options.issueTypes[0] ?? (options.provider === 'jira' ? 'Task' : 'Issue'),
     ),
-    [state, setState] = useState(issue?.state ?? '')
-  const [assignees, setAssignees] = useState(issue?.assignees.join(', ') ?? ''),
-    [labels, setLabels] = useState(issue?.labels.join(', ') ?? '')
-  const [definition, setDefinition] = useState(initialDefinition ?? ''),
-    [ref, setRef] = useState(initialRef ?? ''),
-    [inputs, setInputs] = useState('{}')
-  const [definitions, setDefinitions] = useState<z.infer<typeof forgeDefinitionsSchema>>()
-  const [definitionsLoading, setDefinitionsLoading] = useState(kind === 'run')
-  const [definitionsRevision, retryDefinitions] = useState(0)
+    [state, setState] = useApplicationState(issue?.state ?? '')
+  const [assignees, setAssignees] = useApplicationState(issue?.assignees.join(', ') ?? ''),
+    [labels, setLabels] = useApplicationState(issue?.labels.join(', ') ?? '')
+  const [definition, setDefinition] = useApplicationState(initialDefinition ?? ''),
+    [ref, setRef] = useApplicationState(initialRef ?? ''),
+    [inputs, setInputs] = useApplicationState('{}')
+  const [definitions, setDefinitions] = useApplicationState<
+    Schema.Schema.Type<typeof forgeDefinitionsSchema> | undefined
+  >(undefined)
+  const [definitionsLoading, setDefinitionsLoading] = useApplicationState(kind === 'run')
+  const [definitionsRevision, retryDefinitions] = useApplicationState(0)
   const definitionRequests = useRef(new RequestScope())
   const definitionPending = useRef(false)
-  const [issueStates, setIssueStates] = useState(options.issueStates)
+  const [issueStates, setIssueStates] = useApplicationState(options.issueStates)
   useEffect(() => {
     if (kind !== 'edit' || options.provider !== 'azure-devops' || !issue) return
     let current = true
-    void read(
-      '/api/scm/work/options',
-      { repositoryId, type: issue.type, area: 'issues' },
-      forgeWorkOptionsSchema,
+    void runClientEffect(
+      readEffect(
+        '/api/scm/work/options',
+        {
+          repositoryId,
+          type: issue.type,
+          area: 'issues',
+        },
+        forgeWorkOptionsSchema,
+      )
+        .pipe(
+          Effect.flatMap((v) =>
+            nativeEffect(() => {
+              if (current) setIssueStates(v.issueStates)
+            }),
+          ),
+        )
+        .pipe(
+          Effect.catchAll((e) =>
+            nativeEffect(() => {
+              if (current) setError(String(e))
+            }),
+          ),
+        ),
     )
-      .then((v) => {
-        if (current) setIssueStates(v.issueStates)
-      })
-      .catch((e) => {
-        if (current) setError(String(e))
-      })
     return () => {
       current = false
     }
   }, [kind, options.provider, issue, repositoryId, read])
-
-  const [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+  const [error, setError] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
   useEffect(() => {
     if (kind !== 'run') return
@@ -99,114 +116,200 @@ export function WorkForm({
     definitionPending.current = true
     setDefinitionsLoading(true)
     setError('')
-    void read('/api/scm/work/pipelines/definitions', { repositoryId }, forgeDefinitionsSchema)
-      .then((value) => {
-        if (current()) {
-          setDefinitions(value)
-          setDefinition((chosen) => chosen || value.items[0]?.id || '')
-        }
-      })
-      .catch((error) => {
-        if (current()) setError(error instanceof Error ? error.message : String(error))
-      })
-      .finally(() => {
-        if (current()) {
-          definitionPending.current = false
-          setDefinitionsLoading(false)
-        }
-      })
-    return () => definitionRequests.current.cancel()
-  }, [kind, repositoryId, read, definitionsRevision])
-  const moreDefinitions = async () => {
-    if (!definitions?.next || definitionPending.current || busy || !connected) return
-    definitionPending.current = true
-    const current = definitionRequests.current.begin()
-    setDefinitionsLoading(true)
-    setError('')
-    try {
-      const value = await read(
+    void runClientEffect(
+      readEffect(
         '/api/scm/work/pipelines/definitions',
-        { repositoryId, cursor: definitions.next },
+        {
+          repositoryId,
+        },
         forgeDefinitionsSchema,
       )
-      if (current())
-        setDefinitions({ ...value, items: appendUniqueRows(definitions.items, value.items) })
-    } catch (error) {
-      if (current()) setError(error instanceof Error ? error.message : String(error))
-    } finally {
-      if (current()) {
-        definitionPending.current = false
-        setDefinitionsLoading(false)
-      }
-    }
+        .pipe(
+          Effect.flatMap((value) =>
+            nativeEffect(() => {
+              if (current()) {
+                setDefinitions(value)
+                setDefinition((chosen) => chosen || value.items[0]?.id || '')
+              }
+            }),
+          ),
+        )
+        .pipe(
+          Effect.catchAll((error) =>
+            nativeEffect(() => {
+              if (current()) setError(error instanceof Error ? error.message : String(error))
+            }),
+          ),
+        )
+        .pipe(
+          Effect.ensuring(
+            nativeEffect(() => {
+              if (current()) {
+                definitionPending.current = false
+                setDefinitionsLoading(false)
+              }
+            }).pipe(Effect.orDie),
+          ),
+        ),
+    )
+    return () => definitionRequests.current.cancel()
+  }, [kind, repositoryId, read, definitionsRevision])
+  const moreDefinitions = () => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (!definitions?.next || definitionPending.current || busy || !connected) return
+        definitionPending.current = true
+        const current = definitionRequests.current.begin()
+        setDefinitionsLoading(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          const value = yield* readEffect(
+            '/api/scm/work/pipelines/definitions',
+            {
+              repositoryId,
+              cursor: definitions.next,
+            },
+            forgeDefinitionsSchema,
+          )
+          if (current())
+            setDefinitions({
+              ...value,
+              items: appendUniqueRows(definitions.items, value.items),
+            })
+        }).pipe(
+          Effect.catchAll((error) =>
+            nativeEffect(() => {
+              if (current()) setError(error instanceof Error ? error.message : String(error))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              if (current()) {
+                definitionPending.current = false
+                setDefinitionsLoading(false)
+              }
+            }).pipe(Effect.orDie),
+          ),
+        )
+      }),
+    )
   }
   const split = (v: string) =>
     v
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
-  const submit = async () => {
-    if (
-      pending.current ||
-      ((kind === 'create' || kind === 'edit') && !title.trim()) ||
-      (kind === 'comment' && !body.trim()) ||
-      (kind === 'transition' && (!state.trim() || state === issue?.state)) ||
-      disabled ||
-      !available ||
-      !focused ||
-      !connected ||
-      (kind === 'run' && (!definitions || definitionPending.current))
+  const submit = () => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (
+          pending.current ||
+          ((kind === 'create' || kind === 'edit') && !title.trim()) ||
+          (kind === 'comment' && !body.trim()) ||
+          (kind === 'transition' && (!state.trim() || state === issue?.state)) ||
+          disabled ||
+          !available ||
+          !focused ||
+          !connected ||
+          (kind === 'run' && (!definitions || definitionPending.current))
+        )
+          return
+        pending.current = true
+        setBusy(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          const data =
+            kind === 'transition'
+              ? {
+                  action: 'edit',
+                  id: issue?.id,
+                  revision: issue?.revision,
+                  state,
+                }
+              : kind === 'run'
+                ? {
+                    action: 'run',
+                    definition,
+                    ref,
+                    inputs: decode(
+                      Schema.mutable(
+                        Schema.Record({
+                          key: Schema.String,
+                          value: Schema.String,
+                        }),
+                      ),
+                      JSON.parse(inputs),
+                    ),
+                  }
+                : kind === 'comment'
+                  ? {
+                      action: 'comment',
+                      id: issue?.id,
+                      revision: issue?.revision,
+                      body,
+                    }
+                  : kind === 'edit' && issue
+                    ? issueEditInput(issue, {
+                        title,
+                        body,
+                        state,
+                        ...(options.assignees
+                          ? {
+                              assignees: split(assignees),
+                            }
+                          : {}),
+                        ...(options.labels
+                          ? {
+                              labels: split(labels),
+                            }
+                          : {}),
+                      })
+                    : {
+                        title,
+                        body,
+                        type,
+                        assignees: split(assignees),
+                        labels: split(labels),
+                      }
+          const result = yield* readEffect(
+            '/api/scm/work/' +
+              (kind === 'run'
+                ? 'pipelines/action'
+                : kind === 'create'
+                  ? 'issues/create'
+                  : 'issues/action'),
+            {
+              ...(jiraSourceId
+                ? {
+                    jiraSourceId,
+                  }
+                : {
+                    repositoryId,
+                  }),
+              ...(kind === 'run'
+                ? decode(forgePipelineActionSchema, data)
+                : kind === 'create'
+                  ? decode(forgeIssueCreateSchema, data)
+                  : decode(forgeIssueActionSchema, data)),
+            },
+            forgeWorkResultSchema,
+          )
+          onDone(result.message, result)
+        }).pipe(
+          Effect.catchAll((e) =>
+            nativeEffect(() => {
+              setError(e instanceof Error ? e.message : String(e))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              pending.current = false
+              setBusy(false)
+            }).pipe(Effect.orDie),
+          ),
+        )
+      }),
     )
-      return
-    pending.current = true
-    setBusy(true)
-    setError('')
-    try {
-      const data =
-        kind === 'transition'
-          ? { action: 'edit', id: issue?.id, revision: issue?.revision, state }
-          : kind === 'run'
-            ? {
-                action: 'run',
-                definition,
-                ref,
-                inputs: z.record(z.string(), z.string()).parse(JSON.parse(inputs)),
-              }
-            : kind === 'comment'
-              ? { action: 'comment', id: issue?.id, revision: issue?.revision, body }
-              : kind === 'edit' && issue
-                ? issueEditInput(issue, {
-                    title,
-                    body,
-                    state,
-                    ...(options.assignees ? { assignees: split(assignees) } : {}),
-                    ...(options.labels ? { labels: split(labels) } : {}),
-                  })
-                : { title, body, type, assignees: split(assignees), labels: split(labels) }
-      const result = await read(
-        '/api/scm/work/' +
-          (kind === 'run'
-            ? 'pipelines/action'
-            : kind === 'create'
-              ? 'issues/create'
-              : 'issues/action'),
-        {
-          ...(jiraSourceId ? { jiraSourceId } : { repositoryId }),
-          ...(kind === 'run'
-            ? forgePipelineActionSchema.parse(data)
-            : kind === 'create'
-              ? forgeIssueCreateSchema.parse(data)
-              : forgeIssueActionSchema.parse(data)),
-        },
-        forgeWorkResultSchema,
-      )
-      onDone(result.message, result)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      pending.current = false
-      setBusy(false)
-    }
   }
   return (
     <Sheet
@@ -252,7 +355,12 @@ export function WorkForm({
               value={definition}
               onChange={setDefinition}
               disabled={busy}
-              items={definitions?.items.map((d) => ({ id: d.id, name: d.name })) ?? []}
+              items={
+                definitions?.items.map((d) => ({
+                  id: d.id,
+                  name: d.name,
+                })) ?? []
+              }
             />
           )}
           <Text style={styles.muted}>{definitions?.hint}</Text>
@@ -297,7 +405,10 @@ export function WorkForm({
             value={body}
             onChangeText={setBody}
             multiline
-            style={{ minHeight: 140, textAlignVertical: 'top' }}
+            style={{
+              minHeight: 140,
+              textAlignVertical: 'top',
+            }}
             editable={!busy}
           />
           {kind === 'create' && options.provider === 'jira' && options.issueTypes.length === 0 && (
@@ -315,7 +426,10 @@ export function WorkForm({
               value={type}
               onChange={setType}
               disabled={busy}
-              items={options.issueTypes.map((id) => ({ id, name: id }))}
+              items={options.issueTypes.map((id) => ({
+                id,
+                name: id,
+              }))}
             />
           )}
           {kind === 'edit' && options.provider !== 'jira' && issueStates.length > 0 && (
@@ -324,7 +438,10 @@ export function WorkForm({
               value={state}
               onChange={setState}
               disabled={busy}
-              items={issueStates.map((id) => ({ id, name: id }))}
+              items={issueStates.map((id) => ({
+                id,
+                name: id,
+              }))}
             />
           )}
           {kind !== 'comment' && options.assignees && (

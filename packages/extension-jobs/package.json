@@ -10,9 +10,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@dovo/protocol": "workspace:*",
     "@dovo/studio-core": "workspace:*",
     "@dovo/studio-ui": "workspace:*",
     "@xyflow/react": "12.11.6",
+    "effect": "^3.22.1",
     "lucide-react": "^0.577.0",
     "react": "^19.2.8"
   },

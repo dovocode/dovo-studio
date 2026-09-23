@@ -3,13 +3,27 @@ import { createServer, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
 import { opencodeAdapter } from './opencode'
 import type { AgentRun } from '../types'
-
 it.each([
-  { version: 'legacy', outcome: 'reply' },
-  { version: 'legacy', outcome: 'reject' },
-  { version: 'v2', outcome: 'reply' },
-  { version: 'v2', outcome: 'reject' },
-  { version: 'v2', outcome: 'ended' },
+  {
+    version: 'legacy',
+    outcome: 'reply',
+  },
+  {
+    version: 'legacy',
+    outcome: 'reject',
+  },
+  {
+    version: 'v2',
+    outcome: 'reply',
+  },
+  {
+    version: 'v2',
+    outcome: 'reject',
+  },
+  {
+    version: 'v2',
+    outcome: 'ended',
+  },
 ])('handles $version questions when $outcome', async ({ version, outcome }) => {
   let events: ServerResponse | undefined
   let turn: ServerResponse | undefined
@@ -20,19 +34,33 @@ it.each([
   const listening = new Promise<void>((resolve) => {
     ready = resolve
   })
-  const complete = () => turn?.end(JSON.stringify({ info: { id: 'message' }, parts: [] }))
+  const complete = () =>
+    turn?.end(
+      JSON.stringify({
+        info: {
+          id: 'message',
+        },
+        parts: [],
+      }),
+    )
   const server = createServer((request, response) => {
     const path = new URL(request.url ?? '/', 'http://localhost').pathname
     if (path === '/event') {
       events = response
-      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      response.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+      })
       response.flushHeaders()
       ready()
       return
     }
     response.setHeader('Content-Type', 'application/json')
     if (path === '/session') {
-      response.end(JSON.stringify({ id: 'session' }))
+      response.end(
+        JSON.stringify({
+          id: 'session',
+        }),
+      )
       return
     }
     if (path === '/session/session/message') {
@@ -52,8 +80,14 @@ it.each([
                     multiple: true,
                     custom: false,
                     options: [
-                      { label: 'Types', description: '' },
-                      { label: 'Tests', description: '' },
+                      {
+                        label: 'Types',
+                        description: '',
+                      },
+                      {
+                        label: 'Tests',
+                        description: '',
+                      },
                     ],
                   },
                 ],
@@ -83,17 +117,26 @@ it.each([
   if (!address || typeof address === 'string') throw new Error('No test address')
   const ask: AgentRun['ask'] = async (prompt, signal) => {
     asked++
-    expect(prompt.questions[0]).toMatchObject({ multiple: true, custom: false })
+    expect(prompt.questions[0]).toMatchObject({
+      multiple: true,
+      custom: false,
+    })
     if (outcome === 'ended') {
       complete()
       if (!signal) throw new Error('Questions must follow the event stream lifetime')
       if (!signal.aborted)
         await new Promise<void>((resolve) =>
-          signal.addEventListener('abort', () => resolve(), { once: true }),
+          signal.addEventListener('abort', () => resolve(), {
+            once: true,
+          }),
         )
       return null
     }
-    return outcome === 'reply' ? { '0': ['Types', 'Tests'] } : null
+    return outcome === 'reply'
+      ? {
+          '0': ['Types', 'Tests'],
+        }
+      : null
   }
   try {
     await opencodeAdapter.run({
@@ -122,7 +165,11 @@ it.each([
         : `${version === 'v2' ? '/api/session/session' : ''}/question/question/${outcome}`,
     )
     expect(replyBody ? JSON.parse(replyBody) : null).toEqual(
-      outcome === 'reply' ? { answers: [['Types', 'Tests']] } : null,
+      outcome === 'reply'
+        ? {
+            answers: [['Types', 'Tests']],
+          }
+        : null,
     )
   } finally {
     events?.end()

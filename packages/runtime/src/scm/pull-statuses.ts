@@ -1,21 +1,35 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import type { PullSummary } from '@dovo/protocol'
 import type { GitService } from './git.js'
 import { errorMessage } from '../errors.js'
-const status = z.object({
-  viewerDidAuthor: z.boolean().optional(),
-  reviewRequests: z
-    .object({
-      nodes: z.array(
-        z
-          .object({ requestedReviewer: z.object({ login: z.string().optional() }).nullable() })
-          .nullable(),
+const status = mutableStruct({
+  viewerDidAuthor: Schema.optional(Schema.Boolean),
+  reviewRequests: Schema.optional(
+    mutableStruct({
+      nodes: mutableArray(
+        Schema.NullOr(
+          mutableStruct({
+            requestedReviewer: Schema.NullOr(
+              mutableStruct({
+                login: Schema.optional(Schema.String),
+              }),
+            ),
+          }),
+        ),
       ),
-      pageInfo: z.object({ hasNextPage: z.boolean() }),
-    })
-    .optional(),
-  reviewDecision: z.string().nullable(),
-  statusCheckRollup: z.object({ state: z.string() }).nullable(),
+      pageInfo: mutableStruct({
+        hasNextPage: Schema.Boolean,
+      }),
+    }),
+  ),
+  reviewDecision: Schema.NullOr(Schema.String),
+  statusCheckRollup: Schema.NullOr(
+    mutableStruct({
+      state: Schema.String,
+    }),
+  ),
 })
 type SummaryStatus = Pick<
   PullSummary,
@@ -40,29 +54,37 @@ export async function pullStatuses(
     .join(' ')
   const query = `query($owner:String!,$name:String!){viewer{login} repository(owner:$owner,name:$name){${fields}}}`
   try {
-    const response = z
-      .object({
-        data: z.object({
-          viewer: z.object({ login: z.string() }).optional(),
-          repository: z.record(z.string(), status.nullable()),
+    const response = decode(
+      mutableStruct({
+        data: mutableStruct({
+          viewer: Schema.optional(
+            mutableStruct({
+              login: Schema.String,
+            }),
+          ),
+          repository: Schema.mutable(
+            Schema.Record({
+              key: Schema.String,
+              value: Schema.NullOr(status),
+            }),
+          ),
         }),
-      })
-      .parse(
-        JSON.parse(
-          await run([
-            'api',
-            '--hostname',
-            host,
-            'graphql',
-            '-f',
-            `query=${query}`,
-            '-f',
-            `owner=${owner}`,
-            '-f',
-            `name=${name}`,
-          ]),
-        ),
-      )
+      }),
+      JSON.parse(
+        await run([
+          'api',
+          '--hostname',
+          host,
+          'graphql',
+          '-f',
+          `query=${query}`,
+          '-f',
+          `owner=${owner}`,
+          '-f',
+          `name=${name}`,
+        ]),
+      ),
+    )
     for (const number of numbers) {
       const value = response.data.repository[`pr${number}`]
       result.set(
@@ -70,7 +92,9 @@ export async function pullStatuses(
         value
           ? {
               ...(value.viewerDidAuthor !== undefined
-                ? { viewerIsAuthor: value.viewerDidAuthor }
+                ? {
+                    viewerIsAuthor: value.viewerDidAuthor,
+                  }
                 : {}),
               ...(value.reviewRequests && response.data.viewer
                 ? {
@@ -90,11 +114,16 @@ export async function pullStatuses(
               checksState: value.statusCheckRollup?.state ?? null,
               reviewDecision: value.reviewDecision,
             }
-          : { statusError: 'PR status unavailable' },
+          : {
+              statusError: 'PR status unavailable',
+            },
       )
     }
   } catch (error) {
-    for (const number of numbers) result.set(number, { statusError: errorMessage(error) })
+    for (const number of numbers)
+      result.set(number, {
+        statusError: errorMessage(error),
+      })
   }
   return result
 }

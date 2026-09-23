@@ -1,19 +1,28 @@
-import { useRef, useState } from 'react'
+import { DesktopNetwork } from './desktop-network'
+import { PairingGuide } from './pairing-guide'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useRef } from 'react'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 export function DeviceManager() {
   const { snapshot, request, connected, activeRuntimeId, runtimeRegistry, refreshRuntime } =
     useWorkspace()
   const profile = runtimeRegistry.profiles.find((entry) => entry.id === activeRuntimeId)
-  const [code, setCode] = useState<{ code: string; expiresAt: string } | null>(null),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+  const [code, setCode] = useApplicationState<{
+      code: string
+      addresses?: { name: string; address: string }[]
+      expiresAt: string
+    } | null>(null),
+    [error, setError] = useApplicationState(''),
+    [notice, setNotice] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
   const act = (action: () => Promise<unknown>) => {
     if (!connected || pending.current) return
     pending.current = true
     setBusy(true)
     setError('')
+    setNotice('')
     void action()
       .then(async () => {
         if (profile) await refreshRuntime(profile)
@@ -25,7 +34,7 @@ export function DeviceManager() {
       })
   }
   return (
-    <article className="space-y-4 rounded-lg border p-5">
+    <article className="space-y-3 rounded-md border p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-medium">Trusted devices</h2>
@@ -41,29 +50,41 @@ export function DeviceManager() {
               act(async () => setCode(await request('/api/pair/code', {}, responses.pairCode)))
             }
           >
-            Generate pairing code
+            {code ? 'Generate new pairing code' : 'Connect your phone'}
           </Button>
         )}
       </div>
-      {code && (
-        <div className="rounded border bg-card p-4">
-          <p className="font-mono text-2xl tracking-widest">{code.code}</p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Single use · host approval required · expires{' '}
-            {new Date(code.expiresAt).toLocaleTimeString()}
-          </p>
-        </div>
+      {snapshot?.owner && (
+        <DesktopNetwork
+          onChanged={async () => {
+            setCode(await request('/api/pair/code', {}, responses.pairCode))
+            if (profile) await refreshRuntime(profile)
+          }}
+        />
       )}
       {snapshot?.pendingDevices.map((device) => (
         <div key={device.id} className="flex items-center justify-between gap-3 rounded border p-3">
-          <span className="text-xs">{device.name} wants to connect</span>
+          <span className="text-xs">
+            {device.name} requests full access to files, agents, and terminal commands on this
+            computer
+          </span>
           <div className="flex gap-2">
             <Button
               size="sm"
               disabled={!connected || busy}
               onClick={() =>
                 act(() =>
-                  request('/api/pair/approve', { id: device.id, allow: true }, responses.ok),
+                  request(
+                    '/api/pair/approve',
+                    {
+                      id: device.id,
+                      allow: true,
+                    },
+                    responses.ok,
+                  ).then(() => {
+                    setCode(null)
+                    setNotice('Approval sent. Finish saving the connection on your phone.')
+                  }),
                 )
               }
             >
@@ -75,7 +96,19 @@ export function DeviceManager() {
               disabled={!connected || busy}
               onClick={() =>
                 act(() =>
-                  request('/api/pair/approve', { id: device.id, allow: false }, responses.ok),
+                  request(
+                    '/api/pair/approve',
+                    {
+                      id: device.id,
+                      allow: false,
+                    },
+                    responses.ok,
+                  ).then(() => {
+                    setCode(null)
+                    setNotice(
+                      'Pairing request denied. Generate a new code if you want to try again.',
+                    )
+                  }),
                 )
               }
             >
@@ -84,6 +117,15 @@ export function DeviceManager() {
           </div>
         </div>
       ))}
+      {code && (
+        <PairingGuide
+          key={code.code}
+          code={code}
+          fallbackAddress={profile?.connection.address}
+          pending={!!snapshot?.pendingDevices.length}
+        />
+      )}
+
       {snapshot?.devices.map((device) => (
         <div
           key={device.id}
@@ -99,7 +141,15 @@ export function DeviceManager() {
               title="Remove this device’s permission to access the host"
               disabled={!connected || busy}
               onClick={() =>
-                act(() => request('/api/devices/revoke', { id: device.id }, responses.ok))
+                act(() =>
+                  request(
+                    '/api/devices/revoke',
+                    {
+                      id: device.id,
+                    },
+                    responses.ok,
+                  ),
+                )
               }
             >
               Revoke
@@ -111,6 +161,11 @@ export function DeviceManager() {
         <p className="text-xs text-muted-foreground">
           No paired devices yet. Generate a code on the desktop host, then enter it on the
           connecting device.
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {notice}
         </p>
       )}
       {error && (

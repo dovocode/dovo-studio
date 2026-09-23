@@ -13,19 +13,32 @@ export async function discoverNetworks(): Promise<NetworkAddress[]> {
     .flatMap(([name, entries]) =>
       (entries ?? [])
         .filter((entry) => !entry.internal && entry.family === 'IPv4')
-        .map((entry) => ({ name, host: entry.address })),
+        .map((entry) => ({
+          name,
+          host: entry.address,
+        })),
     )
     .filter((entry, index, all) => all.findIndex((other) => other.host === entry.host) === index)
   const results = await Promise.allSettled([
-    execute('tailscale', ['ip', '-4'], { encoding: 'utf8', timeout: 3000 }),
-    execute('netbird', ['status', '--json'], { encoding: 'utf8', timeout: 3000 }),
+    execute('tailscale', ['ip', '-4'], {
+      encoding: 'utf8',
+      timeout: 3000,
+    }),
+    execute('netbird', ['status', '--json'], {
+      encoding: 'utf8',
+      timeout: 3000,
+    }),
   ])
   const networks: NetworkAddress[] = []
   const tailscale = results[0]
   if (tailscale.status === 'fulfilled') {
     const host = tailscale.value.stdout.trim()
     if (isIP(host) === 4 && interfaces.some((entry) => entry.host === host))
-      networks.push({ network: 'tailscale', host, name: 'Tailscale' })
+      networks.push({
+        network: 'tailscale',
+        host,
+        name: 'Tailscale',
+      })
   }
   const netbird = results[1]
   if (netbird.status === 'fulfilled') {
@@ -44,14 +57,21 @@ export async function discoverNetworks(): Promise<NetworkAddress[]> {
     ) {
       const host = value.netbirdIp.split('/')[0]
       if (isIP(host) === 4 && interfaces.some((entry) => entry.host === host))
-        networks.push({ network: 'netbird', host, name: 'NetBird' })
+        networks.push({
+          network: 'netbird',
+          host,
+          name: 'NetBird',
+        })
     }
   }
   return [
     ...networks,
     ...interfaces
       .filter((entry) => !networks.some((network) => network.host === entry.host))
-      .map((entry) => ({ ...entry, network: 'local' as const })),
+      .map((entry) => ({
+        ...entry,
+        network: 'local' as const,
+      })),
   ]
 }
 export function resolveBindHost(host: string, networks: NetworkAddress[]) {
@@ -68,5 +88,8 @@ export function resolveBindHost(host: string, networks: NetworkAddress[]) {
 export function networkUrls(bindHost: string, port: string, networks: NetworkAddress[]) {
   return networks
     .filter((entry) => ['0.0.0.0', '::'].includes(bindHost) || entry.host === bindHost)
-    .map((entry) => ({ ...entry, address: `http://${entry.host}:${port}` }))
+    .map((entry) => ({
+      ...entry,
+      address: `http://${entry.host}:${port}`,
+    }))
 }

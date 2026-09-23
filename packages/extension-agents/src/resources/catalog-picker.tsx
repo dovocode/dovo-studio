@@ -1,5 +1,6 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { resourceError } from './error'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import {
   managedSkillSchema,
   registryCatalogSchema,
@@ -34,15 +35,15 @@ export function CatalogPicker({
   onSkill: (skill: ManagedSkill) => void
 }) {
   const { request } = useWorkspace()
-  const [query, setQuery] = useState('')
-  const [servers, setServers] = useState<RegistryEntry[]>([])
-  const [skills, setSkills] = useState<SkillCatalogEntry[]>([])
-  const [cursor, setCursor] = useState<string>()
-  const [selected, setSelected] = useState<RegistryEntry>()
-  const [variantId, setVariantId] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [importing, setImporting] = useState(false)
-  const [error, setError] = useState('')
+  const [query, setQuery] = useApplicationState('')
+  const [servers, setServers] = useApplicationState<RegistryEntry[]>([])
+  const [skills, setSkills] = useApplicationState<SkillCatalogEntry[]>([])
+  const [cursor, setCursor] = useApplicationState<string | undefined>(undefined)
+  const [selected, setSelected] = useApplicationState<RegistryEntry | undefined>(undefined)
+  const [variantId, setVariantId] = useApplicationState('')
+  const [loading, setLoading] = useApplicationState(false)
+  const [importing, setImporting] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   const generation = useRef(0)
   useEffect(() => {
     const id = ++generation.current
@@ -58,13 +59,25 @@ export function CatalogPicker({
     const timer = setTimeout(async () => {
       try {
         if (kind === 'mcp') {
-          const result = await request('/api/agents/catalogs/mcp', { query }, registryCatalogSchema)
+          const result = await request(
+            '/api/agents/catalogs/mcp',
+            {
+              query,
+            },
+            registryCatalogSchema,
+          )
           if (id === generation.current) {
             setServers(result.entries)
             setCursor(result.cursor)
           }
         } else {
-          const result = await request('/api/agents/catalogs/skills', { query }, skillCatalogSchema)
+          const result = await request(
+            '/api/agents/catalogs/skills',
+            {
+              query,
+            },
+            skillCatalogSchema,
+          )
           if (id === generation.current) setSkills(result.entries)
         }
       } catch (error) {
@@ -85,7 +98,10 @@ export function CatalogPicker({
     try {
       const result = await request(
         '/api/agents/catalogs/mcp',
-        { query, cursor },
+        {
+          query,
+          cursor,
+        },
         registryCatalogSchema,
       )
       if (id === generation.current) {
@@ -107,7 +123,10 @@ export function CatalogPicker({
       onSkill(
         await request(
           '/api/agents/catalogs/skills/import',
-          { source: entry.source, skill: entry.id },
+          {
+            source: entry.source,
+            skill: entry.id,
+          },
           managedSkillSchema,
         ),
       )

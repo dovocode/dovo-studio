@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
 import {
   ArrowUpRight,
   Circle,
@@ -21,12 +21,12 @@ import { Button, ChoicePicker, IconButton, Input, cn } from '@dovo/studio-ui'
 export function RuntimeOverview() {
   const { runtimes, refreshRuntimes, switchRuntime } = useWorkspace()
   const host = useStudioHost()
-  const [device, setDevice] = useState(''),
-    [query, setQuery] = useState(''),
-    [filter, setFilter] = useState('active'),
-    [sort, setSort] = useState('priority'),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
+  const [device, setDevice] = useApplicationState(''),
+    [query, setQuery] = useApplicationState(''),
+    [filter, setFilter] = useApplicationState('active'),
+    [sort, setSort] = useApplicationState('priority'),
+    [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const visible = runtimes.filter((entry) => !device || entry.profile.id === device)
   const allTasks = aggregateRuntimeTasks(visible)
   const needsInput = new Set(allTasks.filter((entry) => entry.needsInput).map((entry) => entry.key))
@@ -51,8 +51,16 @@ export function RuntimeOverview() {
     )
     .sort((a, b) =>
       compareTasks(
-        { ...a.task, id: a.key, repositoryId: `${a.runtimeId}:${a.task.repositoryId}` },
-        { ...b.task, id: b.key, repositoryId: `${b.runtimeId}:${b.task.repositoryId}` },
+        {
+          ...a.task,
+          id: a.key,
+          repositoryId: `${a.runtimeId}:${a.task.repositoryId}`,
+        },
+        {
+          ...b.task,
+          id: b.key,
+          repositoryId: `${b.runtimeId}:${b.task.repositoryId}`,
+        },
         sort,
         needsInput,
         projects,
@@ -63,7 +71,10 @@ export function RuntimeOverview() {
     setError('')
     try {
       await switchRuntime(runtimeId)
-      host.navigate({ viewId, entityId })
+      host.navigate({
+        viewId,
+        entityId,
+      })
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -72,10 +83,10 @@ export function RuntimeOverview() {
   }
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="All devices overview">
-      <header className="flex min-h-14 flex-wrap items-center gap-3 border-b px-5 py-3">
+      <header className="studio-page-header flex min-h-12 flex-wrap items-center gap-2 border-b px-4 py-2">
         <div className="mr-auto">
-          <h1 className="text-lg font-semibold tracking-tight">Overview</h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <h1 className="text-base font-semibold tracking-tight">Overview</h1>
+          <p className="text-[11px] text-muted-foreground">
             Needs attention, current work and recent outcomes.
           </p>
         </div>
@@ -115,13 +126,21 @@ export function RuntimeOverview() {
         >
           <RefreshCw size={15} className={busy ? 'animate-spin' : ''} />
         </IconButton>
-        <Button variant="outline" size="sm" onClick={() => host.navigate({ viewId: 'runtime' })}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            host.navigate({
+              viewId: 'runtime',
+            })
+          }
+        >
           <Plus size={14} className="mr-1" />
           Connect computer
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-5">
-        <div className="mx-auto max-w-6xl space-y-6">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="mx-auto max-w-6xl space-y-4">
           {error && (
             <p role="alert" className="rounded-md bg-destructive/10 p-3 text-xs text-destructive">
               {error}
@@ -138,7 +157,11 @@ export function RuntimeOverview() {
               <Button
                 className="mt-4"
                 size="sm"
-                onClick={() => host.navigate({ viewId: 'runtime' })}
+                onClick={() =>
+                  host.navigate({
+                    viewId: 'runtime',
+                  })
+                }
               >
                 Connect computer
               </Button>
@@ -146,8 +169,30 @@ export function RuntimeOverview() {
           )}
           {!!visible.length && (
             <>
-              <section aria-label="Tasks across devices" className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="studio-summary" role="group" aria-label="Focus your workspace">
+                {[
+                  { id: 'active', label: 'Active tasks', value: allTasks.length },
+                  { id: 'input', label: 'Needs your input', value: needsInput.size },
+                  {
+                    id: 'running',
+                    label: 'Working',
+                    value: allTasks.filter((entry) => entry.task.status === 'running').length,
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="studio-summary-item"
+                    aria-pressed={filter === item.id}
+                    onClick={() => setFilter(item.id)}
+                  >
+                    <span className="studio-summary-value">{item.value}</span>
+                    <span className="studio-summary-label">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+              <section aria-label="Tasks across devices" className="space-y-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <h2 className="mr-auto text-sm font-medium">
                     Tasks <span className="ml-1 text-muted-foreground">{tasks.length}</span>
                   </h2>
@@ -155,7 +200,7 @@ export function RuntimeOverview() {
                     <Search size={13} className="absolute left-2.5 top-2.5 text-muted-foreground" />
                     <Input
                       aria-label="Search all devices"
-                      className="h-8 w-full max-w-64 pl-8 text-xs"
+                      className="h-7 w-full max-w-64 pl-8 text-[11px]"
                       placeholder="Search threads, projects, devices…"
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
@@ -165,23 +210,13 @@ export function RuntimeOverview() {
                     aria-label="Overview thread sort"
                     value={sort}
                     onValueChange={setSort}
-                    className="h-8 w-auto min-w-36 shrink-0 rounded-md border px-2 text-xs"
+                    className="h-7 w-auto min-w-36 shrink-0 rounded-sm border px-2 text-[11px]"
                   >
                     {taskSortOptions.map((option) => (
                       <option key={option.id} value={option.id}>
                         {option.name}
                       </option>
                     ))}
-                  </ChoicePicker>
-                  <ChoicePicker
-                    aria-label="Overview task filter"
-                    value={filter}
-                    onValueChange={setFilter}
-                    className="h-8 w-auto min-w-36 shrink-0 rounded-md border px-2 text-xs"
-                  >
-                    <option value="active">Active threads</option>
-                    <option value="input">Needs input</option>
-                    <option value="running">Working</option>
                   </ChoicePicker>
                 </div>
                 <div className="overflow-hidden divide-y border-y">
@@ -191,11 +226,11 @@ export function RuntimeOverview() {
                       variant="ghost"
                       disabled={busy || !entry.online}
                       aria-label={`Open ${entry.task.title} on ${entry.runtimeName}`}
-                      className="h-auto w-full justify-start gap-3 rounded-none px-4 py-3 text-left font-normal"
+                      className="h-auto w-full justify-start gap-2 rounded-none px-3 py-2 text-left font-normal"
                       onClick={() => void open(entry.runtimeId, 'tasks', entry.task.id)}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="mb-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <div className="mb-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
                           <span className="truncate">{entry.projectName || 'No project'}</span>
                           {entry.task.pinned && <Pin size={11} />}
                           <span
@@ -224,10 +259,10 @@ export function RuntimeOverview() {
                                           : 'Not started'}
                           </span>
                         </div>
-                        <p className="truncate text-sm font-medium text-foreground">
+                        <p className="truncate text-xs font-medium text-foreground">
                           {entry.task.title}
                         </p>
-                        <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
                           <GitBranch size={11} />
                           <span className="min-w-0 flex-1 truncate">
                             {entry.task.checkoutBranch ||
@@ -253,7 +288,7 @@ export function RuntimeOverview() {
                   )}
                 </div>
               </section>
-              <section aria-label="Connected computers" className="space-y-3 border-t pt-6">
+              <section aria-label="Connected computers" className="space-y-2 border-t pt-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-sm font-semibold">Computers</h2>
                   <p className="text-xs text-muted-foreground">
@@ -268,12 +303,12 @@ export function RuntimeOverview() {
                     unavailable, or have more results.
                   </p>
                 )}
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   {visible.map((entry) => (
                     <article
                       key={entry.profile.id}
                       aria-label={`Computer ${entry.profile.name}`}
-                      className="min-w-0 rounded-lg border p-4"
+                      className="min-w-0 rounded-md border p-3"
                     >
                       <div className="flex items-center gap-2">
                         <Monitor size={16} className="text-muted-foreground" />
@@ -302,7 +337,11 @@ export function RuntimeOverview() {
                           size="sm"
                           className="h-7 gap-1.5 px-2 text-xs"
                           aria-label="Browse all pull requests"
-                          onClick={() => host.navigate({ viewId: 'pulls' })}
+                          onClick={() =>
+                            host.navigate({
+                              viewId: 'pulls',
+                            })
+                          }
                         >
                           <GitPullRequest size={13} />
                           {entry.pulls

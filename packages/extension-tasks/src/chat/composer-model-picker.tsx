@@ -1,4 +1,5 @@
-import { useId, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useId } from 'react'
 import { Bot, Check, ChevronDown, Search, Star, Settings2 } from 'lucide-react'
 import {
   defaultTaskHarness,
@@ -39,20 +40,20 @@ export function ComposerModelPicker({
   onChange: (next: TaskHarness) => Promise<boolean>
   onConfigure: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const [provider, setProvider] = useState(value.provider)
-  const [mode, setMode] = useState<'models' | 'favorites' | 'agents'>('models')
-  const [query, setQuery] = useState('')
-  const [active, setActive] = useState(0)
-  const [legacy, setLegacy] = useState(false)
-  const [favorites, setFavorites] = useState<string[]>(() => {
+  const [open, setOpen] = useApplicationState(false)
+  const [provider, setProvider] = useApplicationState(value.provider)
+  const [mode, setMode] = useApplicationState<'models' | 'favorites' | 'agents'>('models')
+  const [query, setQuery] = useApplicationState('')
+  const [active, setActive] = useApplicationState(0)
+  const [legacy, setLegacy] = useApplicationState(false)
+  const [favorites, setFavorites] = useApplicationState<string[]>(() => {
     try {
       return localStorage.getItem(favoritesKey)?.split('\n').filter(Boolean) ?? []
     } catch {
       return []
     }
   })
-  const [storageError, setStorageError] = useState('')
+  const [storageError, setStorageError] = useApplicationState('')
   const activeProvider = lockedProvider ?? provider
   const selectedHarness =
     activeProvider === value.provider ? value : defaultTaskHarness(activeProvider)
@@ -69,7 +70,7 @@ export function ComposerModelPicker({
         }))
       : mode === 'favorites'
         ? favorites.flatMap((key) => {
-            const provider = providerSchema.options.find((p) => key.startsWith(`${p}:`))
+            const provider = providerSchema.literals.find((p) => key.startsWith(`${p}:`))
             return provider
               ? [
                   {
@@ -82,8 +83,16 @@ export function ComposerModelPicker({
               : []
           })
         : [
-            { id: '', name: 'Provider default', provider: activeProvider, hidden: false },
-            ...(catalog?.models ?? []).map((model) => ({ ...model, provider: activeProvider })),
+            {
+              id: '',
+              name: 'Provider default',
+              provider: activeProvider,
+              hidden: false,
+            },
+            ...(catalog?.models ?? []).map((model) => ({
+              ...model,
+              provider: activeProvider,
+            })),
             ...(query.trim() && !catalog?.models.some((m) => m.id === query.trim())
               ? [
                   {
@@ -201,7 +210,7 @@ export function ComposerModelPicker({
               <Bot className="size-4" />
             </Button>
             <div className="my-1 w-full border-t" />
-            {providerSchema.options
+            {providerSchema.literals
               .filter((p) => !lockedProvider || p === lockedProvider)
               .map((p) => (
                 <Button
@@ -269,9 +278,9 @@ export function ComposerModelPicker({
                       (active + (event.key === 'ArrowDown' ? 1 : -1) + filtered.length) %
                       Math.max(filtered.length, 1)
                     setActive(next)
-                    document
-                      .getElementById(`${listId}-${next}`)
-                      ?.scrollIntoView({ block: 'nearest' })
+                    document.getElementById(`${listId}-${next}`)?.scrollIntoView({
+                      block: 'nearest',
+                    })
                   } else if (event.key === 'Enter' && filtered[active]) {
                     event.preventDefault()
                     void choose(filtered[active])

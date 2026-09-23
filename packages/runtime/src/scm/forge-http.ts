@@ -1,8 +1,11 @@
 import type { ForgeConnection } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 import { withinForgeServer } from './forge-url.js'
-
-export type ForgeHttpOptions = { method?: string; body?: unknown; contentType?: string }
+export type ForgeHttpOptions = {
+  method?: string
+  body?: unknown
+  contentType?: string
+}
 const LIMIT = 16 * 1024 * 1024
 export class ForgeHttp {
   constructor(
@@ -33,9 +36,15 @@ export class ForgeHttp {
             Accept: 'application/json',
             ...(options.body === undefined
               ? {}
-              : { 'Content-Type': options.contentType ?? 'application/json' }),
+              : {
+                  'Content-Type': options.contentType ?? 'application/json',
+                }),
           },
-          ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+          ...(options.body === undefined
+            ? {}
+            : {
+                body: JSON.stringify(options.body),
+              }),
         })
       } catch (error) {
         if (error instanceof HttpError) throw error
@@ -108,7 +117,11 @@ export class ForgeHttp {
           `${reason} (HTTP ${response.status})`,
         )
       }
-      return { text, status: response.status, headers: response.headers }
+      return {
+        text,
+        status: response.status,
+        headers: response.headers,
+      }
     }
     throw new HttpError(502, 'Too many source control redirects')
   }
@@ -123,7 +136,11 @@ export class ForgeHttp {
     } catch {
       throw new HttpError(502, 'The source control server returned invalid JSON')
     }
-    return { data, status: response.status, headers: response.headers }
+    return {
+      data,
+      status: response.status,
+      headers: response.headers,
+    }
   }
   async json(path: string, options?: ForgeHttpOptions): Promise<unknown> {
     return (await this.jsonResponse(path, options)).data

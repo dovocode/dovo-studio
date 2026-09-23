@@ -1,12 +1,17 @@
+import { decode } from '@dovo/protocol'
 import { expect, it } from 'vite-plus/test'
 import { createTask, runtimeProfile, snapshotSchema, type RuntimeOverview } from '@dovo/studio-core'
 import { collectTasks, taskCollectionKey, taskSources } from './task-collection'
-
 const task = {
-  ...createTask({ title: 'Cached title', repositoryId: 'repo', agentId: '', objective: '' }),
+  ...createTask({
+    title: 'Cached title',
+    repositoryId: 'repo',
+    agentId: '',
+    objective: '',
+  }),
   id: 'same-task',
 }
-const snapshot = snapshotSchema.parse({
+const snapshot = decode(snapshotSchema, {
   revision: 1,
   owner: false,
   runtimeHost: 'host',
@@ -16,7 +21,14 @@ const snapshot = snapshotSchema.parse({
     agents: [],
     automations: [],
     tasks: [task],
-    repositories: [{ id: 'repo', name: 'Project', path: '/project', branch: 'main' }],
+    repositories: [
+      {
+        id: 'repo',
+        name: 'Project',
+        path: '/project',
+        branch: 'main',
+      },
+    ],
   },
   approvals: [],
   questions: [],
@@ -26,7 +38,13 @@ const snapshot = snapshotSchema.parse({
   pendingDevices: [],
 })
 const runtime = (address: string, name: string): RuntimeOverview => ({
-  profile: runtimeProfile({ address, token: 'test-private-token-1234567' }, name),
+  profile: runtimeProfile(
+    {
+      address,
+      token: 'test-private-token-1234567',
+    },
+    name,
+  ),
   snapshot,
   connected: true,
   lastSeen: null,
@@ -36,11 +54,16 @@ const runtime = (address: string, name: string): RuntimeOverview => ({
 })
 const mac = runtime('http://mac.local:51464', 'Mac')
 const linux = runtime('http://linux.local:51464', 'Linux')
-
 it('uses unsent active edits once and preserves the identities of identical task and project IDs on another host', () => {
   const workspace = {
     ...snapshot.workspace,
-    tasks: [{ ...task, title: 'Unsent edit', pinned: true }],
+    tasks: [
+      {
+        ...task,
+        title: 'Unsent edit',
+        pinned: true,
+      },
+    ],
   }
   const entries = collectTasks(
     taskSources({
@@ -57,7 +80,6 @@ it('uses unsent active edits once and preserves the identities of identical task
   expect(entries[0].source.workspace).toBe(workspace)
   expect(entries[0].task.pinned).toBe(true)
 })
-
 it('keeps approvals, cached state and device labels scoped to the owning computer', () => {
   const remote = {
     ...linux,
@@ -91,25 +113,43 @@ it('keeps approvals, cached state and device labels scoped to the owning compute
     ['Linux', true, false],
   ])
 })
-
 it('retains settled and snoozed threads for filters and omits samples and unhydrated runtimes', () => {
   const tasks = [
-    { ...task, archived: true },
-    { ...task, id: 'snoozed', snoozedUntil: '2099-01-01T00:00:00Z' },
-    { ...task, id: 'sample', example: true },
+    {
+      ...task,
+      archived: true,
+    },
+    {
+      ...task,
+      id: 'snoozed',
+      snoozedUntil: '2099-01-01T00:00:00Z',
+    },
+    {
+      ...task,
+      id: 'sample',
+      example: true,
+    },
   ]
   const entries = collectTasks(
     taskSources({
-      workspace: { ...snapshot.workspace, tasks },
+      workspace: {
+        ...snapshot.workspace,
+        tasks,
+      },
       snapshot,
       activeRuntimeId: mac.profile.id,
       connected: true,
-      runtimes: [mac, { ...linux, snapshot: null }],
+      runtimes: [
+        mac,
+        {
+          ...linux,
+          snapshot: null,
+        },
+      ],
     }),
   )
   expect(entries.map((entry) => entry.task.id)).toEqual(['same-task', 'snoozed'])
 })
-
 it('keeps row and filter keys stable when the selected computer changes', () => {
   const before = taskSources({
     workspace: snapshot.workspace,

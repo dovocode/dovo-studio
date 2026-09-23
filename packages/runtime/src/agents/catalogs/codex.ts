@@ -1,29 +1,40 @@
-import { z } from 'zod'
+import { mutableArray, mutableStruct } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import { withCatalogRpc } from './rpc.js'
 import { daybreakProgram, supportsCodexDaybreak } from '../codex-modes.js'
 import { ResponseError } from 'vscode-jsonrpc/node'
-const pageSchema = z.object({
-  data: z.array(
-    z.object({
-      model: z.string(),
-      displayName: z.string(),
-      description: z.string(),
-      isDefault: z.boolean(),
-      hidden: z.boolean().optional(),
-      modelSpecialty: z.string().nullish(),
-      defaultReasoningEffort: z.string().optional(),
-      defaultServiceTier: z.string().nullish(),
-      additionalSpeedTiers: z.array(z.string()).optional(),
-      serviceTiers: z
-        .array(z.object({ id: z.string(), name: z.string(), description: z.string().optional() }))
-        .optional(),
-      supportedReasoningEfforts: z.array(
-        z.object({ reasoningEffort: z.string(), description: z.string() }),
+const pageSchema = mutableStruct({
+  data: mutableArray(
+    mutableStruct({
+      model: Schema.String,
+      displayName: Schema.String,
+      description: Schema.String,
+      isDefault: Schema.Boolean,
+      hidden: Schema.optional(Schema.Boolean),
+      modelSpecialty: Schema.optional(Schema.NullOr(Schema.String)),
+      defaultReasoningEffort: Schema.optional(Schema.String),
+      defaultServiceTier: Schema.optional(Schema.NullOr(Schema.String)),
+      additionalSpeedTiers: Schema.optional(mutableArray(Schema.String)),
+      serviceTiers: Schema.optional(
+        mutableArray(
+          mutableStruct({
+            id: Schema.String,
+            name: Schema.String,
+            description: Schema.optional(Schema.String),
+          }),
+        ),
+      ),
+      supportedReasoningEfforts: mutableArray(
+        mutableStruct({
+          reasoningEffort: Schema.String,
+          description: Schema.String,
+        }),
       ),
     }),
   ),
-  nextCursor: z.string().nullish(),
+  nextCursor: Schema.optional(Schema.NullOr(Schema.String)),
 })
 export async function codexModels(agent: AgentDiscovery): Promise<ModelCatalog> {
   return withCatalogRpc(
@@ -31,26 +42,50 @@ export async function codexModels(agent: AgentDiscovery): Promise<ModelCatalog> 
     ['app-server', '--listen', 'stdio://'],
     async (rpc) => {
       const initialized = await rpc.sendRequest('initialize', {
-        clientInfo: { name: 'dovo_studio', version: '0.1.0' },
-        capabilities: { experimentalApi: true },
+        clientInfo: {
+          name: 'dovo_studio',
+          version: '0.1.0',
+        },
+        capabilities: {
+          experimentalApi: true,
+        },
       })
       await rpc.sendNotification('initialized', {})
-      const requirements = z
-        .object({
-          requirements: z
-            .object({
-              featureRequirements: z.record(z.string(), z.boolean()).nullish(),
-            })
-            .nullish(),
-        })
-        .parse(
-          await rpc.sendRequest('configRequirements/read', {}).catch((error: unknown) => {
-            if (error instanceof ResponseError && error.code === -32601) return {}
-            throw error
-          }),
-        )
+      const requirements = decode(
+        mutableStruct({
+          requirements: Schema.optional(
+            Schema.NullOr(
+              mutableStruct({
+                featureRequirements: Schema.optional(
+                  Schema.NullOr(
+                    Schema.mutable(
+                      Schema.Record({
+                        key: Schema.String,
+                        value: Schema.Boolean,
+                      }),
+                    ),
+                  ),
+                ),
+              }),
+            ),
+          ),
+        }),
+        await rpc.sendRequest('configRequirements/read', {}).catch((error: unknown) => {
+          if (error instanceof ResponseError && error.code === -32601) return {}
+          throw error
+        }),
+      )
       const fastModeBlocked = requirements.requirements?.featureRequirements?.fast_mode === false
-      const account = z.object({ account: z.object({ type: z.string() }).nullish() }).parse(
+      const account = decode(
+        mutableStruct({
+          account: Schema.optional(
+            Schema.NullOr(
+              mutableStruct({
+                type: Schema.String,
+              }),
+            ),
+          ),
+        }),
         await rpc.sendRequest('account/read', {}).catch((error: unknown) => {
           if (error instanceof ResponseError && error.code === -32601) return {}
           throw error
@@ -61,11 +96,16 @@ export async function codexModels(agent: AgentDiscovery): Promise<ModelCatalog> 
         reasoning: ModelCatalog['reasoning'] = []
       const seen = new Set<string>()
       do {
-        const page = pageSchema.parse(
+        const page = decode(
+          pageSchema,
           await rpc.sendRequest('model/list', {
             limit: 100,
             includeHidden: true,
-            ...(cursor ? { cursor } : {}),
+            ...(cursor
+              ? {
+                  cursor,
+                }
+              : {}),
           }),
         )
         for (const model of page.data) {
@@ -110,7 +150,10 @@ export async function codexModels(agent: AgentDiscovery): Promise<ModelCatalog> 
       return {
         models,
         reasoning,
-        codex: { daybreakPrograms: [...new Set(daybreakPrograms)], fastModeBlocked },
+        codex: {
+          daybreakPrograms: [...new Set(daybreakPrograms)],
+          fastModeBlocked,
+        },
       }
     },
   )

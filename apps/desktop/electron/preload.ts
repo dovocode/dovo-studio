@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('dovo', {
   pickDirectory: (runtimeAddress: string): Promise<string | null> =>
     ipcRenderer.invoke('repositories:pick-directory', runtimeAddress),
   runtimeConnection: () => ipcRenderer.invoke('runtime:connection'),
+  runtimeNetwork: (address: string, enabled?: boolean): Promise<unknown> =>
+    ipcRenderer.invoke('runtime:network', address, enabled),
   readRuntimeRegistry: (): Promise<string | null> => ipcRenderer.invoke('runtime:registry-read'),
   writeRuntimeRegistry: (value: string): Promise<void> =>
     ipcRenderer.invoke('runtime:registry-write', value),

@@ -1,5 +1,8 @@
+import { useApplicationState } from '@dovo/studio-core/state'
+import { validationMessages } from '@dovo/protocol'
+import { decodeResult, decode } from '@dovo/protocol'
 import { CliProfilePicker } from './cli-profile-picker'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { Link2, Plus } from 'lucide-react'
 import {
   forgeConnectionInputSchema,
@@ -24,14 +27,13 @@ import {
   FormField,
   Input,
 } from '@dovo/studio-ui'
-
 export function useForgeConnections() {
   const { connected, request, readCache } = useWorkspace()
-  const [connections, setConnections] = useState<ForgeConnection[]>([])
-  const [revision, reload] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [cacheError, setCacheError] = useState('')
+  const [connections, setConnections] = useApplicationState<ForgeConnection[]>([])
+  const [revision, reload] = useApplicationState(0)
+  const [loading, setLoading] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [cacheError, setCacheError] = useApplicationState('')
   useEffect(() => {
     let current = true
     let received = false
@@ -69,9 +71,13 @@ export function useForgeConnections() {
       current = false
     }
   }, [connected, request, revision, readCache])
-  return { connections, loading, error: error || cacheError, reload: () => reload((v) => v + 1) }
+  return {
+    connections,
+    loading,
+    error: error || cacheError,
+    reload: () => reload((v) => v + 1),
+  }
 }
-
 const defaults: Record<ForgeProvider, string> = {
   github: 'https://github.com',
   bitbucket: 'https://api.bitbucket.org/2.0',
@@ -86,7 +92,6 @@ const placeholders: Record<ForgeProvider, string> = {
   gitea: 'https://git.example.com',
   'azure-devops': 'https://dev.azure.com/your-organization',
 }
-
 function ConnectionForm({
   value,
   repositoryId,
@@ -99,19 +104,19 @@ function ConnectionForm({
   onCancel: () => void
 }) {
   const { request, connected } = useWorkspace()
-  const [provider, setProvider] = useState<ForgeProvider>(value?.provider ?? 'github')
-  const [name, setName] = useState(value?.name ?? '')
-  const [baseUrl, setBaseUrl] = useState(value?.baseUrl ?? defaults.github)
-  const [username, setUsername] = useState(value?.username ?? '')
-  const [credential, setCredential] = useState<ForgeConnection['credential']>(
+  const [provider, setProvider] = useApplicationState<ForgeProvider>(value?.provider ?? 'github')
+  const [name, setName] = useApplicationState(value?.name ?? '')
+  const [baseUrl, setBaseUrl] = useApplicationState(value?.baseUrl ?? defaults.github)
+  const [username, setUsername] = useApplicationState(value?.username ?? '')
+  const [credential, setCredential] = useApplicationState<ForgeConnection['credential']>(
     value?.credential ?? 'gh',
   )
-  const [cliProfile, setCliProfile] = useState(value?.cliProfile ?? '')
-  const [cliTool, setCliTool] = useState<'fj' | 'tea'>(value?.cliTool ?? 'tea')
-  const [token, setToken] = useState('')
-  const [tokenEnv, setTokenEnv] = useState(value?.tokenEnv ?? '')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [cliProfile, setCliProfile] = useApplicationState(value?.cliProfile ?? '')
+  const [cliTool, setCliTool] = useApplicationState<'fj' | 'tea'>(value?.cliTool ?? 'tea')
+  const [token, setToken] = useApplicationState('')
+  const [tokenEnv, setTokenEnv] = useApplicationState(value?.tokenEnv ?? '')
+  const [error, setError] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
   const running = useRef(false)
   const retainsToken =
     value?.credential === 'token' &&
@@ -133,8 +138,12 @@ function ConnectionForm({
         event.preventDefault()
         event.stopPropagation()
         if (running.current) return
-        const parsed = forgeConnectionInputSchema.safeParse({
-          ...(value ? { id: value.id } : {}),
+        const parsed = decodeResult(forgeConnectionInputSchema, {
+          ...(value
+            ? {
+                id: value.id,
+              }
+            : {}),
           name: name.trim() || forgeLabels[provider],
           provider,
           baseUrl: baseUrl.trim(),
@@ -145,12 +154,24 @@ function ConnectionForm({
                 cliTool: ['gitea', 'forgejo'].includes(provider) ? cliTool : undefined,
               }
             : {}),
-          ...(username.trim() ? { username: username.trim() } : {}),
-          ...(credential === 'token' && token.trim() ? { token: token.trim() } : {}),
-          ...(credential === 'environment' ? { tokenEnv: tokenEnv.trim() } : {}),
+          ...(username.trim()
+            ? {
+                username: username.trim(),
+              }
+            : {}),
+          ...(credential === 'token' && token.trim()
+            ? {
+                token: token.trim(),
+              }
+            : {}),
+          ...(credential === 'environment'
+            ? {
+                tokenEnv: tokenEnv.trim(),
+              }
+            : {}),
         })
         if (!parsed.success) {
-          setError(parsed.error.issues[0]?.message ?? 'Check the connection details.')
+          setError(validationMessages(parsed.error)[0] ?? 'Check the connection details.')
           return
         }
         running.current = true
@@ -176,7 +197,7 @@ function ConnectionForm({
             aria-label="Source control provider"
             value={provider}
             onValueChange={(next) => {
-              const chosen = forgeProviderSchema.parse(next)
+              const chosen = decode(forgeProviderSchema, next)
               setProvider(chosen)
               setBaseUrl(defaults[chosen])
               setToken('')
@@ -186,7 +207,7 @@ function ConnectionForm({
               setError('')
             }}
           >
-            {forgeProviderSchema.options.map((kind) => (
+            {forgeProviderSchema.literals.map((kind) => (
               <option key={kind} value={kind}>
                 {forgeLabels[kind]}
               </option>
@@ -337,7 +358,6 @@ function ConnectionForm({
     </form>
   )
 }
-
 function ConnectionsContent({
   onChange,
   repositoryId,
@@ -347,10 +367,10 @@ function ConnectionsContent({
 }) {
   const { request, connected, workspace } = useWorkspace()
   const { connections, loading, error, reload } = useForgeConnections()
-  const [editing, setEditing] = useState<ForgeConnection | 'new' | null>(null)
-  const [removing, setRemoving] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState('')
+  const [editing, setEditing] = useApplicationState<ForgeConnection | 'new' | null>(null)
+  const [removing, setRemoving] = useApplicationState<string | null>(null)
+  const [busy, setBusy] = useApplicationState(false)
+  const [failure, setFailure] = useApplicationState('')
   const running = useRef(false)
   if (editing)
     return (
@@ -468,7 +488,9 @@ function ConnectionsContent({
                       setFailure('')
                       void request(
                         '/api/scm/connections/remove',
-                        { id: connection.id },
+                        {
+                          id: connection.id,
+                        },
                         responses.ok,
                       )
                         .then(() => {
@@ -506,7 +528,6 @@ function ConnectionsContent({
     </section>
   )
 }
-
 export function ForgeConnections({
   onChange,
   repositoryId,
@@ -523,7 +544,6 @@ export function ForgeConnections({
     />
   )
 }
-
 export function ForgeConnectionsButton({
   onChange,
   repositoryId,
@@ -531,7 +551,7 @@ export function ForgeConnectionsButton({
   onChange?: () => void
   repositoryId?: string
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useApplicationState(false)
   return (
     <>
       <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}>

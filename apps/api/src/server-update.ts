@@ -7,7 +7,6 @@ import { randomUUID } from 'node:crypto'
 import { managedProcessIsAlive, serverStatus, startServer, stopServer } from './server-manager.js'
 import { writePrivateJson } from './server-config.js'
 import { backupRuntimeDatabase } from '@dovo/runtime'
-
 interface ServerRelease {
   entrypoint: string
   previousEntrypoint?: string
@@ -40,7 +39,10 @@ async function execute(command: string, args: string[], cwd: string, logPath: st
   const child = spawn(command, args, {
     cwd,
     stdio: ['ignore', log, log],
-    env: { ...process.env, CI: 'true' },
+    env: {
+      ...process.env,
+      CI: 'true',
+    },
   })
   closeSync(log)
   await new Promise<void>((resolve, reject) => {
@@ -59,7 +61,10 @@ async function execute(command: string, args: string[], cwd: string, logPath: st
 // Snapshot only runtime source, manifests and lockfile. Credentials, databases, other app
 // source, Git state and the working checkout's node_modules never enter a release.
 export async function stageServerSource(root: string, target: string) {
-  await mkdir(target, { recursive: true, mode: 0o700 })
+  await mkdir(target, {
+    recursive: true,
+    mode: 0o700,
+  })
   for (const name of [
     'package.json',
     'pnpm-lock.yaml',
@@ -67,7 +72,9 @@ export async function stageServerSource(root: string, target: string) {
     'tsconfig.base.json',
     'patches',
   ])
-    await cp(join(root, name), join(target, name), { recursive: true })
+    await cp(join(root, name), join(target, name), {
+      recursive: true,
+    })
   const manifest: unknown = JSON.parse(await readFile(join(target, 'package.json'), 'utf8'))
   if (
     !manifest ||
@@ -82,7 +89,10 @@ export async function stageServerSource(root: string, target: string) {
     JSON.stringify(
       {
         ...manifest,
-        scripts: { ...manifest.scripts, postinstall: 'node scripts/prepare-pty.mjs' },
+        scripts: {
+          ...manifest.scripts,
+          postinstall: 'node scripts/prepare-pty.mjs',
+        },
       },
       null,
       2,
@@ -98,14 +108,20 @@ export async function stageServerSource(root: string, target: string) {
     'packages/client-runtime',
   ])
   for (const category of ['apps', 'packages']) {
-    for (const entry of await readdir(join(root, category), { withFileTypes: true })) {
+    for (const entry of await readdir(join(root, category), {
+      withFileTypes: true,
+    })) {
       if (!entry.isDirectory() || !existsSync(join(root, category, entry.name, 'package.json')))
         continue
       const relative = `${category}/${entry.name}`
-      await mkdir(join(target, relative), { recursive: true })
+      await mkdir(join(target, relative), {
+        recursive: true,
+      })
       await cp(join(root, relative, 'package.json'), join(target, relative, 'package.json'))
       if (runtimePackages.has(relative)) {
-        await cp(join(root, relative, 'src'), join(target, relative, 'src'), { recursive: true })
+        await cp(join(root, relative, 'src'), join(target, relative, 'src'), {
+          recursive: true,
+        })
         if (relative === 'packages/runtime')
           await cp(join(root, relative, 'native'), join(target, relative, 'native'), {
             recursive: true,
@@ -153,7 +169,11 @@ export async function updateServer(directory: string) {
   const previousEntrypoint = selectedEntrypoint(directory)
   const previousMetadata = existsSync(join(directory, 'server-release.json'))
     ? JSON.parse(readFileSync(join(directory, 'server-release.json'), 'utf8'))
-    : { entrypoint: previousEntrypoint, version: 'previous', createdAt: new Date().toISOString() }
+    : {
+        entrypoint: previousEntrypoint,
+        version: 'previous',
+        createdAt: new Date().toISOString(),
+      }
   const metadata: ServerRelease = {
     entrypoint,
     previousEntrypoint,
@@ -165,7 +185,10 @@ export async function updateServer(directory: string) {
   let backedUp = false
   try {
     if (existsSync(initial.databasePath)) {
-      await mkdir(dirname(backupPath), { recursive: true, mode: 0o700 })
+      await mkdir(dirname(backupPath), {
+        recursive: true,
+        mode: 0o700,
+      })
       await backupRuntimeDatabase(initial.databasePath, backupPath)
       backedUp = true
     }
@@ -179,8 +202,12 @@ export async function updateServer(directory: string) {
       )
     if (backedUp) {
       await cp(backupPath, initial.databasePath)
-      await rm(initial.databasePath + '-wal', { force: true })
-      await rm(initial.databasePath + '-shm', { force: true })
+      await rm(initial.databasePath + '-wal', {
+        force: true,
+      })
+      await rm(initial.databasePath + '-shm', {
+        force: true,
+      })
     }
     if (initial.running) {
       try {
@@ -200,7 +227,11 @@ export async function updateServer(directory: string) {
     version,
     release,
     updateLogPath: logPath,
-    ...(backedUp ? { backupPath } : {}),
+    ...(backedUp
+      ? {
+          backupPath,
+        }
+      : {}),
     ...(await serverStatus(directory)),
   }
 }

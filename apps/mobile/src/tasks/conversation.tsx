@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from 'react'
+import { useApplicationState } from '../runtime/application-state'
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode, decodeResult } from '@dovo/protocol'
+import { useCallback, useEffect, useRef, type PropsWithChildren } from 'react'
 import {
   FlatList,
   Pressable,
@@ -7,7 +10,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native'
 import { Text } from '../ui/text'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { attachmentSchema, activitySchema, activitySummary } from '@dovo/protocol'
 import {
   MessagePrimitive,
@@ -28,23 +31,28 @@ import { TaskActivity } from './task-activity'
 import { TaskApprovals } from './approvals'
 import { IconButton } from '../ui/icon-button'
 import { createConversationScroll } from './conversation-scroll'
-
-const checkpointSchema = z.object({
-  turnId: z.string(),
-  files: z.number(),
-  omitted: z.number(),
-  pending: z.boolean(),
-  error: z.string().optional(),
+const checkpointSchema = mutableStruct({
+  turnId: Schema.String,
+  files: Schema.Number.pipe(Schema.finite()),
+  omitted: Schema.Number.pipe(Schema.finite()),
+  pending: Schema.Boolean,
+  error: Schema.optional(Schema.String),
 })
 function AttachmentPart({ data }: DataMessagePartProps<unknown>) {
   const { task } = useTaskConversation()
-  return <MessageAttachments taskId={task.id} files={z.array(attachmentSchema).parse(data)} />
+  return (
+    <MessageAttachments taskId={task.id} files={decode(mutableArray(attachmentSchema), data)} />
+  )
 }
 function CheckpointPart({ data }: DataMessagePartProps<unknown>) {
-  const checkpoint = checkpointSchema.parse(data)
+  const checkpoint = decode(checkpointSchema, data)
   const { openCheckpoint } = useTaskConversation()
   return (
-    <View style={{ gap: 4 }}>
+    <View
+      style={{
+        gap: 4,
+      }}
+    >
       {checkpoint.pending ? (
         <Text style={styles.muted}>Snapshot saved</Text>
       ) : (
@@ -62,7 +70,14 @@ function CheckpointPart({ data }: DataMessagePartProps<unknown>) {
           })}
         >
           <Icon name="changes" size={15} color={colors.muted} />
-          <Text style={[styles.muted, { flexShrink: 1 }]}>
+          <Text
+            style={[
+              styles.muted,
+              {
+                flexShrink: 1,
+              },
+            ]}
+          >
             {checkpoint.files} {checkpoint.files === 1 ? 'file' : 'files'} changed
           </Text>
           <Icon name="next" size={12} color={colors.muted} />
@@ -75,28 +90,34 @@ function CheckpointPart({ data }: DataMessagePartProps<unknown>) {
     </View>
   )
 }
-const toolSchema = activitySchema.shape.events.element.extend({
-  status: z.string(),
-  turnId: z.string().optional(),
-  inputPayload: z.string().optional(),
+const toolSchema = mutableStruct({
+  ...activitySchema.fields.events.value.fields,
+  ...{
+    status: Schema.String,
+    turnId: Schema.optional(Schema.String),
+    inputPayload: Schema.optional(Schema.String),
+  },
 })
 function ToolPart({ artifact }: ToolCallMessagePartProps<unknown, unknown>) {
-  return <ToolActivityRow event={toolSchema.parse(artifact)} />
+  return <ToolActivityRow event={decode(toolSchema, artifact)} />
 }
 function ReasoningPart({ data }: DataMessagePartProps<unknown>) {
-  return <ReasoningActivity events={z.array(toolSchema).parse(data)} />
+  return <ReasoningActivity events={decode(mutableArray(toolSchema), data)} />
 }
 function WorkGroup({
   children,
   startIndex,
   endIndex,
-}: PropsWithChildren<{ startIndex: number; endIndex: number }>) {
+}: PropsWithChildren<{
+  startIndex: number
+  endIndex: number
+}>) {
   const { task, visible } = useTaskConversation()
   const message = useAuiState((state) => state.message)
   const id = message.id
   const groupEvents = message.content.slice(startIndex, endIndex + 1).flatMap((part) => {
     if (part.type !== 'tool-call') return []
-    const parsed = toolSchema.safeParse(part.artifact)
+    const parsed = decodeResult(toolSchema, part.artifact)
     return parsed.success ? [parsed.data] : []
   })
   const active = [...groupEvents].reverse().find((event) => pendingActivity(event.status))
@@ -106,8 +127,8 @@ function WorkGroup({
   const turn = task.turns?.find((item) => item.assistantId === id)
   const workStatus =
     turn?.status === 'running' && message.status?.type !== 'running' ? 'interrupted' : turn?.status
-  const [open, setOpen] = useState(false)
-  const [now, setNow] = useState(Date.now())
+  const [open, setOpen] = useApplicationState(false)
+  const [now, setNow] = useApplicationState(Date.now())
   useEffect(() => {
     if (!visible || !open || workStatus !== 'running') return
     const timer = setInterval(() => setNow(Date.now()), 1000)
@@ -137,19 +158,46 @@ function WorkGroup({
         accessibilityRole="button"
         accessibilityLabel={summary}
         accessibilityHint={`${count} ${count === 1 ? 'tool call' : 'tool calls'}`}
-        accessibilityState={{ expanded: open }}
+        accessibilityState={{
+          expanded: open,
+        }}
         onPress={() => {
           setNow(Date.now())
           setOpen(!open)
         }}
-        style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+        style={{
+          minHeight: 44,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+        }}
       >
         <Icon name="settings" size={14} color={colors.muted} />
-        <Text style={[styles.muted, { flex: 1, fontSize: 13, lineHeight: 18 }]}>{summary}</Text>
+        <Text
+          style={[
+            styles.muted,
+            {
+              flex: 1,
+              fontSize: 13,
+              lineHeight: 18,
+            },
+          ]}
+        >
+          {summary}
+        </Text>
         <Icon name={open ? 'down' : 'next'} size={10} color={colors.muted} />
       </Pressable>
       {turn && open && (
-        <Text style={[styles.muted, { paddingLeft: 22, fontSize: 12, paddingBottom: 4 }]}>
+        <Text
+          style={[
+            styles.muted,
+            {
+              paddingLeft: 22,
+              fontSize: 12,
+              paddingBottom: 4,
+            },
+          ]}
+        >
           {duration
             ? `${workStatus === 'running' ? 'Working' : workStatus === 'failed' ? 'Failed after' : workStatus === 'cancelled' ? 'Cancelled after' : 'Worked for'} ${duration}`
             : workStatus === 'failed'
@@ -162,7 +210,15 @@ function WorkGroup({
         </Text>
       )}
       {!open && active && <ToolActivityRow key={activityIdentity(active)} event={active} compact />}
-      {open && <View style={{ paddingBottom: 6 }}>{children}</View>}
+      {open && (
+        <View
+          style={{
+            paddingBottom: 6,
+          }}
+        >
+          {children}
+        </View>
+      )}
     </View>
   )
 }
@@ -172,7 +228,9 @@ function AssistantText({ text }: { text: string }) {
 const parts = {
   Text: AssistantText,
   ToolGroup: WorkGroup,
-  tools: { Fallback: ToolPart },
+  tools: {
+    Fallback: ToolPart,
+  },
   data: {
     by_name: {
       'dovo.attachments': AttachmentPart,
@@ -188,33 +246,54 @@ function UserText({ text }: { text: string }) {
     </Text>
   )
 }
-const userParts = { ...parts, Text: UserText }
+const userParts = {
+  ...parts,
+  Text: UserText,
+}
 function Message() {
   const user = useAuiState((state) => state.message.role === 'user')
   const createdAt = useAuiState((state) => state.message.createdAt)
   const streaming = useAuiState((state) => state.message.status?.type === 'running')
   return (
-    <MessagePrimitive.Root style={{ gap: 4, alignItems: user ? 'flex-end' : 'stretch' }}>
+    <MessagePrimitive.Root
+      style={{
+        gap: 4,
+        alignItems: user ? 'flex-end' : 'stretch',
+      }}
+    >
       <View
         style={
           user
             ? {
                 alignSelf: 'flex-end',
                 maxWidth: '88%',
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-                borderRadius: 22,
-                backgroundColor: colors.surface,
-                gap: 6,
+                paddingHorizontal: 13,
+                paddingVertical: 9,
+                borderRadius: 18,
+                backgroundColor: colors.elevated,
+                gap: 4,
               }
-            : { gap: 5 }
+            : {
+                gap: 5,
+              }
         }
       >
         <MessagePrimitive.Parts components={user ? userParts : parts} />
       </View>
       {createdAt && (user || !streaming) && (
-        <Text style={[styles.muted, { fontSize: 12, paddingHorizontal: user ? 8 : 0 }]}>
-          {createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        <Text
+          style={[
+            styles.muted,
+            {
+              fontSize: 12,
+              paddingHorizontal: user ? 8 : 0,
+            },
+          ]}
+        >
+          {createdAt.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
         </Text>
       )}
     </MessagePrimitive.Root>
@@ -223,10 +302,14 @@ function Message() {
 export function Conversation() {
   const { task, legacyEvents, activityError, followRequest } = useTaskConversation()
   const list = useRef<FlatList<ThreadMessage>>(null)
-  const [scroll] = useState(createConversationScroll)
-  const [following, setFollowing] = useState(true)
+  const [scroll] = useApplicationState(createConversationScroll)
+  const [following, setFollowing] = useApplicationState(true)
   const move = useCallback((offset: number | undefined) => {
-    if (offset !== undefined) list.current?.scrollToOffset({ offset, animated: false })
+    if (offset !== undefined)
+      list.current?.scrollToOffset({
+        offset,
+        animated: false,
+      })
   }, [])
   const latest = useCallback(() => {
     move(scroll.latest())
@@ -242,7 +325,11 @@ export function Conversation() {
     setFollowing(scroll.following)
   }
   return (
-    <ThreadPrimitive.Root style={{ flex: 1 }}>
+    <ThreadPrimitive.Root
+      style={{
+        flex: 1,
+      }}
+    >
       <ThreadPrimitive.MessagesFlatList
         ref={list}
         testID="Conversation messages"
@@ -269,20 +356,45 @@ export function Conversation() {
         scrollEventThrottle={16}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[styles.content, { gap: 16, paddingTop: 12 }]}
+        contentContainerStyle={[
+          styles.content,
+          {
+            gap: 12,
+            paddingTop: 10,
+          },
+        ]}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Icon name="chat" size={24} color={colors.muted} />
-            <Text style={[styles.title, { textAlign: 'center', fontSize: 20 }]}>
+            <Text
+              style={[
+                styles.title,
+                {
+                  textAlign: 'center',
+                  fontSize: 20,
+                },
+              ]}
+            >
               What are we building?
             </Text>
-            <Text style={[styles.muted, { textAlign: 'center' }]}>
+            <Text
+              style={[
+                styles.muted,
+                {
+                  textAlign: 'center',
+                },
+              ]}
+            >
               Describe a change or ask a question.
             </Text>
           </View>
         }
         ListFooterComponent={
-          <View style={{ gap: 10 }}>
+          <View
+            style={{
+              gap: 10,
+            }}
+          >
             <TaskActivity task={task} events={legacyEvents} error={activityError} />
             <TaskApprovals taskId={task.id} />
             {!!task.error && <Text style={styles.error}>{task.error}</Text>}
@@ -292,7 +404,13 @@ export function Conversation() {
         {() => <Message />}
       </ThreadPrimitive.MessagesFlatList>
       {!following && (
-        <View style={{ position: 'absolute', bottom: 12, alignSelf: 'center' }}>
+        <View
+          style={{
+            position: 'absolute',
+            bottom: 12,
+            alignSelf: 'center',
+          }}
+        >
           <IconButton label="Latest message" icon="down" variant="glass" onPress={latest} />
         </View>
       )}

@@ -1,3 +1,5 @@
+import { mutableStruct } from '@dovo/protocol'
+import { decodeResult, decode } from '@dovo/protocol'
 import { codexMcpServers } from '../mcp-settings.js'
 import { isImageAttachment, serviceTierValue } from '@dovo/protocol'
 import { supportsCodexDaybreak } from '../codex-modes.js'
@@ -7,17 +9,27 @@ import { formQuestions } from './form-questions.js'
 import { stopChild } from '../stop-child.js'
 import { spawn } from 'node:child_process'
 import { createMessageConnection } from 'vscode-jsonrpc/node'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import type { AgentAdapter, AgentInput } from '../types.js'
 import { executableAvailable, processEnvironment } from '../../process.js'
 import { JsonLineReader, JsonLineWriter } from './codex-transport.js'
 const turnInput = (input: Pick<AgentInput, 'prompt' | 'attachments'>) => [
-  { type: 'text', text: input.prompt, text_elements: [] },
-  ...(input.attachments ?? [])
-    .filter(isImageAttachment)
-    .map((file) => ({ type: 'localImage', path: file.path })),
+  {
+    type: 'text',
+    text: input.prompt,
+    text_elements: [],
+  },
+  ...(input.attachments ?? []).filter(isImageAttachment).map((file) => ({
+    type: 'localImage',
+    path: file.path,
+  })),
 ]
-const object = z.record(z.string(), z.unknown())
+const object = Schema.mutable(
+  Schema.Record({
+    key: Schema.String,
+    value: Schema.Unknown,
+  }),
+)
 export const codexAdapter: AgentAdapter = {
   models: codexModels,
   probe: async (agent) => ({
@@ -68,9 +80,15 @@ export const codexAdapter: AgentAdapter = {
             method.includes('command') ? 'Run command' : 'Apply file changes',
             JSON.stringify(params, null, 2),
           ))
-        return { decision: allowed ? 'accept' : 'decline' }
+        return {
+          decision: allowed ? 'accept' : 'decline',
+        }
       }
-      if (method === 'item/permissions/requestApproval') return { permissions: {}, scope: 'turn' }
+      if (method === 'item/permissions/requestApproval')
+        return {
+          permissions: {},
+          scope: 'turn',
+        }
       if (method === 'item/tool/requestUserInput' || method === 'mcpServer/elicitation/request') {
         const controller = new AbortController()
         const cancellation = token.onCancellationRequested(() => controller.abort())
@@ -78,12 +96,21 @@ export const codexAdapter: AgentAdapter = {
         try {
           if (method === 'item/tool/requestUserInput')
             return await codexQuestions(params, run, controller.signal)
-          const form = z
-            .object({ mode: z.literal('form'), message: z.string(), requestedSchema: z.unknown() })
-            .safeParse(params)
+          const form = decodeResult(
+            mutableStruct({
+              mode: Schema.Literal('form'),
+              message: Schema.String,
+              requestedSchema: Schema.Unknown,
+            }),
+            params,
+          )
           if (!form.success) {
             run.onActivity('This Codex MCP input request is not a supported form')
-            return { action: 'cancel', content: null, _meta: null }
+            return {
+              action: 'cancel',
+              content: null,
+              _meta: null,
+            }
           }
           const content = await formQuestions(
             form.data.message,
@@ -91,7 +118,11 @@ export const codexAdapter: AgentAdapter = {
             run,
             controller.signal,
           )
-          return { action: content ? 'accept' : 'decline', content, _meta: null }
+          return {
+            action: content ? 'accept' : 'decline',
+            content,
+            _meta: null,
+          }
         } finally {
           cancellation.dispose()
         }
@@ -100,7 +131,7 @@ export const codexAdapter: AgentAdapter = {
     })
     rpc.onNotification((method, params: unknown) => {
       run.onEvent?.(method, params)
-      const value = object.safeParse(params)
+      const value = decodeResult(object, params)
       if (!value.success) return
       // Child notifications feed the Agents panel, never the parent transcript or completion.
       if (threadId && typeof value.data.threadId === 'string' && value.data.threadId !== threadId)
@@ -115,15 +146,25 @@ export const codexAdapter: AgentAdapter = {
         }
       }
       if (method === 'item/started') {
-        const item = object.safeParse(value.data.item)
+        const item = decodeResult(object, value.data.item)
         if (item.success && typeof item.data.type === 'string') run.onActivity(item.data.type)
       }
       if (method === 'turn/completed') {
         turnFinished = true
         run.onSteer?.(undefined)
-        const turn = z
-          .object({ status: z.string(), error: z.object({ message: z.string() }).nullish() })
-          .parse(value.data.turn)
+        const turn = decode(
+          mutableStruct({
+            status: Schema.String,
+            error: Schema.optional(
+              Schema.NullOr(
+                mutableStruct({
+                  message: Schema.String,
+                }),
+              ),
+            ),
+          }),
+          value.data.turn,
+        )
         if (turn.status === 'completed') resolveTurn()
         else rejectTurn(new Error(turn.error?.message ?? `Turn ${turn.status}`))
       }
@@ -132,7 +173,9 @@ export const codexAdapter: AgentAdapter = {
       stopChild(child)
       rejectTurn(new Error('Task cancelled'))
     }
-    run.signal.addEventListener('abort', abort, { once: true })
+    run.signal.addEventListener('abort', abort, {
+      once: true,
+    })
     const timeout = setTimeout(() => {
       stopChild(child)
       rejectTurn(new Error('Codex initialization timed out'))
@@ -141,9 +184,15 @@ export const codexAdapter: AgentAdapter = {
     try {
       if (run.signal.aborted) throw new Error('Task cancelled')
       const initialized = await rpc.sendRequest('initialize', {
-        clientInfo: { name: 'dovo_studio', title: 'Dovo Studio', version: '0.1.0' },
+        clientInfo: {
+          name: 'dovo_studio',
+          title: 'Dovo Studio',
+          version: '0.1.0',
+        },
         // Structured request_user_input is part of the experimental app-server surface.
-        capabilities: { experimentalApi: true },
+        capabilities: {
+          experimentalApi: true,
+        },
       })
       await rpc.sendNotification('initialized', {})
       const program = run.tools === 'none' ? undefined : run.agent.cyberAccessProgram
@@ -153,20 +202,45 @@ export const codexAdapter: AgentAdapter = {
         )
       const tier = serviceTierValue(run.agent.serviceTier)
       const config = {
-        ...(['priority', 'fast'].includes(tier) ? { 'features.fast_mode': true } : {}),
+        ...(['priority', 'fast'].includes(tier)
+          ? {
+              'features.fast_mode': true,
+            }
+          : {}),
         ...(run.tools === 'none'
-          ? { 'features.shell_tool': false, web_search: 'disabled' }
+          ? {
+              'features.shell_tool': false,
+              web_search: 'disabled',
+            }
           : run.agent.resources?.mcpServers.length
-            ? { mcp_servers: codexMcpServers(run.agent.resources.mcpServers) }
+            ? {
+                mcp_servers: codexMcpServers(run.agent.resources.mcpServers),
+              }
             : {}),
       }
       const response = await rpc.sendRequest(run.sessionId ? 'thread/resume' : 'thread/start', {
-        ...(run.sessionId ? { threadId: run.sessionId } : {}),
+        ...(run.sessionId
+          ? {
+              threadId: run.sessionId,
+            }
+          : {}),
         cwd: run.cwd,
-        ...(run.agent.model ? { model: run.agent.model } : {}),
+        ...(run.agent.model
+          ? {
+              model: run.agent.model,
+            }
+          : {}),
         serviceTier: tier,
-        ...(Object.keys(config).length ? { config } : {}),
-        ...(run.tools === 'none' ? { ephemeral: true } : {}),
+        ...(Object.keys(config).length
+          ? {
+              config,
+            }
+          : {}),
+        ...(run.tools === 'none'
+          ? {
+              ephemeral: true,
+            }
+          : {}),
         developerInstructions: run.agent.instructions,
         approvalPolicy: ['read-only', 'full-access'].includes(run.agent.permission)
           ? 'never'
@@ -181,28 +255,40 @@ export const codexAdapter: AgentAdapter = {
       })
       if (
         run.agent.permission === 'auto' &&
-        !z
-          .object({ approvalsReviewer: z.enum(['auto_review', 'guardian_subagent']) })
-          .safeParse(response).success
+        !decodeResult(
+          mutableStruct({
+            approvalsReviewer: Schema.Literal('auto_review', 'guardian_subagent'),
+          }),
+          response,
+        ).success
       )
         throw new Error(
           'This Codex harness did not enable automatic approval review. Update the harness or choose another access mode.',
         )
       if (
         run.agent.permission === 'full-access' &&
-        !z
-          .object({
-            approvalPolicy: z.literal('never'),
-            sandbox: z.object({ type: z.literal('dangerFullAccess') }),
-          })
-          .safeParse(response).success
+        !decodeResult(
+          mutableStruct({
+            approvalPolicy: Schema.Literal('never'),
+            sandbox: mutableStruct({
+              type: Schema.Literal('dangerFullAccess'),
+            }),
+          }),
+          response,
+        ).success
       )
         throw new Error(
           'This Codex harness did not grant full access. Check its policy or choose another access mode.',
         )
-      const thread = z
-        .object({ thread: z.object({ id: z.string(), daybreakEnabled: z.boolean().nullish() }) })
-        .parse(response).thread
+      const thread = decode(
+        mutableStruct({
+          thread: mutableStruct({
+            id: Schema.String,
+            daybreakEnabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
+          }),
+        }),
+        response,
+      ).thread
       threadId = thread.id
       run.onSession(thread.id)
       if (
@@ -216,14 +302,28 @@ export const codexAdapter: AgentAdapter = {
       clearTimeout(timeout)
       const started = await rpc.sendRequest('turn/start', {
         threadId: thread.id,
-        ...(run.agent.reasoning ? { effort: run.agent.reasoning } : {}),
+        ...(run.agent.reasoning
+          ? {
+              effort: run.agent.reasoning,
+            }
+          : {}),
         serviceTier: tier,
-        ...(program ? { cyberAccessProgram: program } : {}),
+        ...(program
+          ? {
+              cyberAccessProgram: program,
+            }
+          : {}),
         input: turnInput(run),
       })
-      const turn = z
-        .object({ turn: z.object({ id: z.string(), status: z.string() }) })
-        .safeParse(started)
+      const turn = decodeResult(
+        mutableStruct({
+          turn: mutableStruct({
+            id: Schema.String,
+            status: Schema.String,
+          }),
+        }),
+        started,
+      )
       if (!turnFinished && turn.success && turn.data.turn.status === 'inProgress') {
         const expectedTurnId = turn.data.turn.id
         run.onSteer?.(async (input) => {

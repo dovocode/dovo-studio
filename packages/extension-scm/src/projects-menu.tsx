@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect } from 'react'
 import { FolderGit2, ChevronDown, Plus, Settings2 } from 'lucide-react'
 import { useWorkspace } from '@dovo/studio-core'
 import {
@@ -13,24 +14,30 @@ import {
 import { RepositoryDialog } from './repository-dialog'
 import { RepositoryCheckouts } from './repository-checkouts'
 import { ProjectForgeBinding } from './forge-repository'
-
 export function ProjectsMenu({
   value,
   onChange,
   allDevices = false,
+  compact = false,
   disabled = false,
 }: {
   value: string
   onChange: (id: string) => void
   allDevices?: boolean
+  compact?: boolean
   disabled?: boolean
 }) {
   const { workspace, connection, activeRuntimeId, runtimes, connected, switchRuntime } =
     useWorkspace()
-  const [adding, setAdding] = useState<{ runtimeId: string | null } | null>(null)
-  const [managing, setManaging] = useState<{ runtimeId: string | null; id: string } | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [adding, setAdding] = useApplicationState<{
+    runtimeId: string | null
+  } | null>(null)
+  const [managing, setManaging] = useApplicationState<{
+    runtimeId: string | null
+    id: string
+  } | null>(null)
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   useEffect(() => {
     if (adding && adding.runtimeId !== activeRuntimeId) setAdding(null)
     if (managing && managing.runtimeId !== activeRuntimeId) setManaging(null)
@@ -75,8 +82,15 @@ export function ProjectsMenu({
     setError('')
     try {
       if (runtimeId && runtimeId !== activeRuntimeId) await switchRuntime(runtimeId)
-      if (repositoryId) setManaging({ runtimeId, id: repositoryId })
-      else setAdding({ runtimeId })
+      if (repositoryId)
+        setManaging({
+          runtimeId,
+          id: repositoryId,
+        })
+      else
+        setAdding({
+          runtimeId,
+        })
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -91,13 +105,20 @@ export function ProjectsMenu({
         <DropdownMenu.Trigger asChild>
           <Button
             variant="ghost"
-            className="h-7 w-full justify-start gap-2 px-2 text-[11px]"
+            className={
+              compact ? 'size-7 shrink-0 px-0' : 'h-7 w-full justify-start gap-2 px-2 text-[11px]'
+            }
+            title={project?.name ?? 'Projects'}
             aria-label="Projects"
             disabled={busy || disabled}
           >
             <FolderGit2 className="size-3.5 shrink-0" />
-            <span className="min-w-0 flex-1 truncate">{project?.name ?? 'Projects'}</span>
-            <ChevronDown className="size-3" />
+            {!compact && (
+              <>
+                <span className="min-w-0 flex-1 truncate">{project?.name ?? 'Projects'}</span>
+                <ChevronDown className="size-3" />
+              </>
+            )}
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>

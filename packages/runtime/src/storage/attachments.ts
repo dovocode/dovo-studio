@@ -1,10 +1,12 @@
+import { mutableStruct } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
 import { mkdtempSync } from 'node:fs'
 import { dirname, join, resolve, basename } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileTypeFromBuffer } from 'file-type'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import {
   attachmentSchema,
   attachmentUploadSchema,
@@ -15,7 +17,11 @@ import {
 import type { WorkspaceStore } from './workspace.js'
 import type { Activity } from './activity.js'
 import { HttpError } from '../errors.js'
-const rowSchema = z.object({ task: z.string(), metadata: z.string(), data: z.instanceof(Buffer) })
+const rowSchema = mutableStruct({
+  task: Schema.String,
+  metadata: Schema.String,
+  data: Schema.instanceOf(Buffer),
+})
 export class Attachments {
   private root: string
   constructor(
@@ -34,10 +40,10 @@ export class Attachments {
   read(taskId: string, id: string) {
     const value = this.db.prepare('SELECT task,metadata,data FROM attachments WHERE id=?').get(id)
     if (!value) throw new HttpError(404, 'Attachment not found')
-    const row = rowSchema.parse(value)
+    const row = decode(rowSchema, value)
     if (row.task !== taskId) throw new HttpError(400, 'Attachment belongs to another task')
     return {
-      attachment: attachmentSchema.parse(JSON.parse(row.metadata)),
+      attachment: decode(attachmentSchema, JSON.parse(row.metadata)),
       data: row.data.toString('base64'),
     }
   }
@@ -45,7 +51,7 @@ export class Attachments {
     return ids.map((id) => this.read(taskId, id).attachment)
   }
   async upload(value: unknown) {
-    const input = attachmentUploadSchema.parse(value)
+    const input = decode(attachmentUploadSchema, value)
     const task = this.store.task(input.taskId)
     if (task.archived) throw new HttpError(409, 'Restore the task before attaching files')
     const data = Buffer.from(input.data, 'base64')
@@ -62,13 +68,16 @@ export class Attachments {
         previous.attachment.name !== basename(input.name).replaceAll('\\', '_')
       )
         throw new HttpError(409, 'Upload ID already has different contents')
-      return { attachment: previous.attachment, revision: this.store.version() }
+      return {
+        attachment: previous.attachment,
+        revision: this.store.version(),
+      }
     }
     const detected = await fileTypeFromBuffer(data).catch((error) => {
       if (error instanceof Error && error.name === 'EndOfStreamError') return undefined
       throw error
     })
-    const attachment = attachmentSchema.parse({
+    const attachment = decode(attachmentSchema, {
       id: input.id,
       name: basename(input.name).replaceAll('\\', '_'),
       mime: detected?.mime ?? 'application/octet-stream',
@@ -92,24 +101,42 @@ export class Attachments {
       }))
       this.activity.add('attachment', input.taskId, `Attached ${attachment.name}`, attachment)
     })()
-    return { attachment, revision: this.store.version() }
+    return {
+      attachment,
+      revision: this.store.version(),
+    }
   }
   removeDraft(taskId: string, id: string) {
     this.store.updateTask(taskId, (t) => ({
       ...t,
       draftAttachments: t.draftAttachments?.filter((f) => f.id !== id),
     }))
-    this.activity.add('attachment', taskId, 'Removed draft attachment', { id })
+    this.activity.add('attachment', taskId, 'Removed draft attachment', {
+      id,
+    })
   }
   async materialize(taskId: string, file: Attachment) {
     const { attachment, data } = this.read(taskId, file.id)
     const directory = join(this.root, attachment.id)
-    await mkdir(directory, { recursive: true, mode: 0o700 })
+    await mkdir(directory, {
+      recursive: true,
+      mode: 0o700,
+    })
     const path = join(directory, attachment.name)
-    await writeFile(path, Buffer.from(data, 'base64'), { mode: 0o600 })
-    return { ...attachment, path, data }
+    await writeFile(path, Buffer.from(data, 'base64'), {
+      mode: 0o600,
+    })
+    return {
+      ...attachment,
+      path,
+      data,
+    }
   }
   async dispose() {
-    if (this.db.name === ':memory:') await rm(this.root, { recursive: true, force: true })
+    if (this.db.name === ':memory:')
+      await rm(this.root, {
+        recursive: true,
+        force: true,
+      })
   }
 }

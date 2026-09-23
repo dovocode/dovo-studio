@@ -1,4 +1,6 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
+import { urlSchema, decodeResult, decode, minValue, maxValue } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { createHash } from 'node:crypto'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -21,10 +23,11 @@ import { jiraBindingSchema, jiraProjectsSchema } from '@dovo/protocol'
 import type { ForgeWorkProvider } from './forge-work-types.js'
 import { runForgeCli } from './forge-cli.js'
 import { HttpError } from '../errors.js'
-
 const require = createRequire(import.meta.url)
 const adfRequire = createRequire(require.resolve('mdast-util-from-adf'))
-const validateADF = new Ajv({ strict: false }).compile<Parameters<typeof fromADF>[0]>(
+const validateADF = new Ajv({
+  strict: false,
+}).compile<Parameters<typeof fromADF>[0]>(
   adfRequire('@atlaskit/adf-schema/json-schema/v1/full.json'),
 )
 export function jiraMarkdown(value: unknown) {
@@ -33,7 +36,9 @@ export function jiraMarkdown(value: unknown) {
   if (!validateADF(value))
     throw new HttpError(502, 'Jira returned an invalid rich-text document. Open this item in Jira.')
   try {
-    return toMarkdown(fromADF(value), { extensions: [gfmToMarkdown()] })
+    return toMarkdown(fromADF(value), {
+      extensions: [gfmToMarkdown()],
+    })
   } catch {
     throw new HttpError(
       502,
@@ -41,15 +46,28 @@ export function jiraMarkdown(value: unknown) {
     )
   }
 }
-const person = z.object({ displayName: z.string(), accountId: z.string().optional() })
-const projectSchema = z.object({
-  key: z.string(),
-  self: z.url(),
-  issueTypes: z.array(z.object({ name: z.string(), subtask: z.boolean().optional() })).nullish(),
+const person = mutableStruct({
+  displayName: Schema.String,
+  accountId: Schema.optional(Schema.String),
+})
+const projectSchema = mutableStruct({
+  key: Schema.String,
+  self: urlSchema(),
+  issueTypes: Schema.optional(
+    Schema.NullOr(
+      mutableArray(
+        mutableStruct({
+          name: Schema.String,
+          subtask: Schema.optional(Schema.Boolean),
+        }),
+      ),
+    ),
+  ),
 })
 export function jiraAccountSite(status: string) {
   const site = /^\s*Site:\s*(\S+)\s*$/m.exec(status)?.[1]
-  const parsed = jiraBindingSchema.shape.site.safeParse(
+  const parsed = decodeResult(
+    jiraBindingSchema.fields.site,
     site?.startsWith('https://') ? site : site ? `https://${site}` : undefined,
   )
   if (!parsed.success)
@@ -65,19 +83,23 @@ export async function listJiraProjects(
   run: typeof runForgeCli = runForgeCli,
 ) {
   const site = jiraAccountSite(await run(executable, ['jira', 'auth', 'status'], undefined, cwd))
-  const projects = z
-    .array(z.object({ key: z.string(), name: z.string() }))
-    .parse(
-      JSON.parse(
-        await run(
-          executable,
-          ['jira', 'project', 'list', '--limit', '201', '--json'],
-          undefined,
-          cwd,
-        ),
+  const projects = decode(
+    mutableArray(
+      mutableStruct({
+        key: Schema.String,
+        name: Schema.String,
+      }),
+    ),
+    JSON.parse(
+      await run(
+        executable,
+        ['jira', 'project', 'list', '--limit', '201', '--json'],
+        undefined,
+        cwd,
       ),
-    )
-  return jiraProjectsSchema.parse({
+    ),
+  )
+  return decode(jiraProjectsSchema, {
     site,
     projects: projects.slice(0, 200),
     truncated: projects.length > 200,
@@ -88,20 +110,21 @@ export async function listJiraProjects(
 // when the Markdown converter cannot represent them; never hide the whole issue.
 function jiraText(value: unknown): string {
   if (typeof value === 'string') return value
-  const node = z
-    .object({
-      type: z.string().optional(),
-      text: z.string().optional(),
-      attrs: z
-        .object({
-          text: z.string().optional(),
-          title: z.string().optional(),
-          url: z.string().optional(),
-        })
-        .optional(),
-      content: z.array(z.unknown()).optional(),
-    })
-    .safeParse(value)
+  const node = decodeResult(
+    mutableStruct({
+      type: Schema.optional(Schema.String),
+      text: Schema.optional(Schema.String),
+      attrs: Schema.optional(
+        mutableStruct({
+          text: Schema.optional(Schema.String),
+          title: Schema.optional(Schema.String),
+          url: Schema.optional(Schema.String),
+        }),
+      ),
+      content: Schema.optional(mutableArray(Schema.Unknown)),
+    }),
+    value,
+  )
   if (!node.success) return ''
   const data = node.data
   const text = data.text ?? data.attrs?.text ?? data.attrs?.title ?? data.attrs?.url
@@ -117,7 +140,9 @@ function jiraText(value: unknown): string {
 }
 function renderJiraBody(value: unknown) {
   try {
-    return { body: jiraMarkdown(value) }
+    return {
+      body: jiraMarkdown(value),
+    }
   } catch (error) {
     if (!(error instanceof HttpError)) throw error
     return {
@@ -129,37 +154,43 @@ function renderJiraBody(value: unknown) {
     }
   }
 }
-const rawIssue = z.object({
-  id: z.string(),
-  key: z.string(),
-  self: z.url(),
-  fields: z.object({
-    summary: z.string(),
-    description: z.unknown().optional(),
-    status: z.object({ name: z.string() }),
-    issuetype: z.object({ name: z.string() }),
-    creator: person.nullish(),
-    assignee: person.nullish(),
-    labels: z.array(z.string()).optional(),
-    updated: z.string().optional(),
-    comment: z
-      .object({
-        comments: z.array(
-          z.object({
-            id: z.string(),
-            body: z.unknown(),
-            author: person.nullish(),
-            created: z.string(),
-          }),
-        ),
-        total: z.number(),
-      })
-      .nullish(),
+const rawIssue = mutableStruct({
+  id: Schema.String,
+  key: Schema.String,
+  self: urlSchema(),
+  fields: mutableStruct({
+    summary: Schema.String,
+    description: Schema.optional(Schema.Unknown),
+    status: mutableStruct({
+      name: Schema.String,
+    }),
+    issuetype: mutableStruct({
+      name: Schema.String,
+    }),
+    creator: Schema.optional(Schema.NullOr(person)),
+    assignee: Schema.optional(Schema.NullOr(person)),
+    labels: Schema.optional(mutableArray(Schema.String)),
+    updated: Schema.optional(Schema.String),
+    comment: Schema.optional(
+      Schema.NullOr(
+        mutableStruct({
+          comments: mutableArray(
+            mutableStruct({
+              id: Schema.String,
+              body: Schema.Unknown,
+              author: Schema.optional(Schema.NullOr(person)),
+              created: Schema.String,
+            }),
+          ),
+          total: Schema.Number.pipe(Schema.finite()),
+        }),
+      ),
+    ),
   }),
 })
 export class JiraWork implements ForgeWorkProvider {
   private account?: Promise<string>
-  private verified?: Promise<z.infer<typeof projectSchema>>
+  private verified?: Promise<Schema.Schema.Type<typeof projectSchema>>
   constructor(
     private executable: string,
     readonly binding: JiraBinding,
@@ -167,7 +198,7 @@ export class JiraWork implements ForgeWorkProvider {
     private cwd?: string,
     private validateSource?: () => void,
   ) {
-    this.binding = jiraBindingSchema.parse(binding)
+    this.binding = decode(jiraBindingSchema, binding)
   }
   private execute(args: string[]) {
     this.validateSource?.()
@@ -186,7 +217,8 @@ export class JiraWork implements ForgeWorkProvider {
         409,
         'The active acli account points to another Jira site. Switch the CLI account on the runtime, then refresh.',
       )
-    const project = projectSchema.parse(
+    const project = decode(
+      projectSchema,
       await this.json(['project', 'view', '--key', this.binding.project]),
     )
     if (project.key !== this.binding.project)
@@ -220,20 +252,17 @@ export class JiraWork implements ForgeWorkProvider {
       pipelineActions: [],
     }
   }
-  private check(raw: z.infer<typeof rawIssue>) {
+  private check(raw: Schema.Schema.Type<typeof rawIssue>) {
     if (!raw.key.startsWith(this.binding.project + '-'))
       throw new HttpError(409, 'Jira returned an item outside the selected project')
   }
   private key(value: string) {
-    const key = z
-      .string()
-      .regex(/^[A-Z][A-Z0-9_]*-\d+$/)
-      .parse(value)
+    const key = decode(Schema.String.pipe(Schema.pattern(/^[A-Z][A-Z0-9_]*-\d+$/)), value)
     if (!key.startsWith(this.binding.project + '-'))
       throw new HttpError(400, 'The Jira issue belongs to another project')
     return key
   }
-  private normalize(raw: z.infer<typeof rawIssue>): ForgeIssue {
+  private normalize(raw: Schema.Schema.Type<typeof rawIssue>): ForgeIssue {
     this.check(raw)
     return {
       id: raw.key,
@@ -258,12 +287,19 @@ export class JiraWork implements ForgeWorkProvider {
     await this.verify()
     // ACLI exposes a result limit but no page token. Read a bounded prefix in the
     // server's updated order; slicing preserves that order across pages.
-    const offset = z.coerce
-      .number()
-      .int()
-      .min(0)
-      .max(9990)
-      .parse(cursor ?? '0')
+    const offset = decode(
+      maxValue(
+        minValue(
+          CoercedNumber.pipe(
+            Schema.int(),
+            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+          ),
+          0,
+        ),
+        9990,
+      ),
+      cursor ?? '0',
+    )
     const status =
       state === 'all'
         ? ''
@@ -288,7 +324,7 @@ export class JiraWork implements ForgeWorkProvider {
       '--fields',
       'key,summary,description,status,issuetype,creator,assignee,labels',
     ])
-    const rows = z.array(rawIssue).parse(result)
+    const rows = decode(mutableArray(rawIssue), result)
     return {
       items: rows.slice(offset, offset + 30).map((v) => this.normalize(v)),
       next: rows.length > offset + 30 && offset + 30 <= 9990 ? String(offset + 30) : undefined,
@@ -296,7 +332,8 @@ export class JiraWork implements ForgeWorkProvider {
   }
   private async raw(id: string) {
     await this.verify()
-    const value = rawIssue.parse(
+    const value = decode(
+      rawIssue,
       await this.json([
         'workitem',
         'view',
@@ -343,10 +380,15 @@ export class JiraWork implements ForgeWorkProvider {
     const directory = await mkdtemp(path.join(tmpdir(), 'dovo-jira-'))
     try {
       const file = path.join(directory, 'content.json')
-      await writeFile(file, JSON.stringify(markdownToAdf(value)), { mode: 0o600 })
+      await writeFile(file, JSON.stringify(markdownToAdf(value)), {
+        mode: 0o600,
+      })
       await run(file)
     } finally {
-      await rm(directory, { recursive: true, force: true })
+      await rm(directory, {
+        recursive: true,
+        force: true,
+      })
     }
   }
   async createIssue(input: ForgeIssueCreate) {
@@ -377,7 +419,12 @@ export class JiraWork implements ForgeWorkProvider {
         ...(input.labels.length ? ['--label', input.labels.join(',')] : []),
       ])
     })
-    const created = z.object({ key: z.string() }).parse(result)
+    const created = decode(
+      mutableStruct({
+        key: Schema.String,
+      }),
+      result,
+    )
     const key = this.key(created.key)
     return {
       id: key,
@@ -412,7 +459,11 @@ export class JiraWork implements ForgeWorkProvider {
         input.assignees === undefined &&
         input.labels === undefined
       )
-        return { id: current.id, url: current.url, message: 'No changes to save' }
+        return {
+          id: current.id,
+          url: current.url,
+          message: 'No changes to save',
+        }
       if (input.state !== undefined) {
         if (
           input.title !== undefined ||
@@ -432,7 +483,11 @@ export class JiraWork implements ForgeWorkProvider {
           '--yes',
           '--json',
         ])
-        return { id: current.id, url: current.url, message: 'Jira status updated' }
+        return {
+          id: current.id,
+          url: current.url,
+          message: 'Jira status updated',
+        }
       }
       if ((input.assignees?.length ?? 0) > 1) throw new HttpError(400, 'Jira supports one assignee')
       const args = [

@@ -6,23 +6,34 @@ import {
   type JiraSource,
   type RuntimeProfile,
 } from '@dovo/studio-core'
-
 export type WorkSource = Omit<RepositorySource, 'repository'> & {
   name: string
   repository?: RepositorySource['repository']
   jira?: JiraSource
   projectLinks?: Record<string, string>
-  input: { repositoryId: string } | { jiraSourceId: string }
+  input:
+    | {
+        repositoryId: string
+      }
+    | {
+        jiraSourceId: string
+      }
 }
-
 export const jiraSourceKey = (runtimeId: string, sourceId: string) =>
   JSON.stringify([runtimeId, 'jira', sourceId])
 
 /** Issue trackers and code repositories have separate identities and lifecycles. */
 export function useIssueSources(includeJira: boolean): WorkSource[] {
   const repositories = useRepositorySources()
-  const { workspace, activeRuntimeId, connected, runtimes, readRuntime, runtimeReadCache } =
-    useWorkspace()
+  const {
+    workspace,
+    activeRuntimeId,
+    connected,
+    runtimes,
+    readRuntime,
+    readRuntimeEffect,
+    runtimeReadCache,
+  } = useWorkspace()
   const descriptors = JSON.stringify(
     includeJira
       ? runtimes.flatMap((entry) => {
@@ -64,7 +75,9 @@ export function useIssueSources(includeJira: boolean): WorkSource[] {
       ...repositories.map((source) => ({
         ...source,
         name: source.repository.name,
-        input: { repositoryId: source.repository.id },
+        input: {
+          repositoryId: source.repository.id,
+        },
       })),
       ...jira.map(({ profile, jira, projectLinks, runtimeName, connected }) => ({
         key: jiraSourceKey(profile.id, jira.id),
@@ -75,9 +88,16 @@ export function useIssueSources(includeJira: boolean): WorkSource[] {
         projectLinks,
         name: jira.name || `Jira · ${jira.project}`,
         connected,
-        input: { jiraSourceId: jira.id },
+        input: {
+          jiraSourceId: jira.id,
+        },
         scope: JSON.stringify([profile.id, profile.connection, jira]),
         readCache: runtimeReadCache(profile),
+        requestEffect: <T extends Parameters<typeof readRuntimeEffect>[3]>(
+          path: string,
+          input: unknown,
+          schema: T,
+        ) => readRuntimeEffect(profile, path, input, schema),
         request: <T extends Parameters<typeof readRuntime>[3]>(
           path: string,
           input: unknown,
@@ -85,5 +105,5 @@ export function useIssueSources(includeJira: boolean): WorkSource[] {
         ) => readRuntime(profile, path, input, schema),
       })),
     ]
-  }, [descriptors, repositories, readRuntime, runtimeReadCache])
+  }, [descriptors, repositories, readRuntime, readRuntimeEffect, runtimeReadCache])
 }

@@ -1,200 +1,279 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray } from './schema.js'
+import { minValue, maxValue, refine, urlSchema } from './schema.js'
+import { Schema } from 'effect'
 import { forgeProviderSchema } from './forges.js'
-
-const id = z
-  .string()
-  .trim()
-  .min(1)
-  .max(300)
-  .refine((value) => !/[\p{Cc}]/u.test(value) && !['.', '..'].includes(value))
-const url = z.url({ protocol: /^https?$/ }).refine((value) => {
-  try {
-    const parsed = new URL(value)
-    return !parsed.username && !parsed.password
-  } catch {
-    return false
-  }
-})
+const id = refine(
+  maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 300),
+  (value) => !/[\p{Cc}]/u.test(value) && !['.', '..'].includes(value),
+)
+const url = refine(
+  urlSchema({
+    protocol: /^https?$/,
+  }),
+  (value) => {
+    try {
+      const parsed = new URL(value)
+      return !parsed.username && !parsed.password
+    } catch {
+      return false
+    }
+  },
+)
 const cached = {
-  cachedAt: z.string().optional(),
-  stale: z.boolean().optional(),
-  refreshError: z.string().optional(),
+  cachedAt: Schema.optional(Schema.String),
+  stale: Schema.optional(Schema.Boolean),
+  refreshError: Schema.optional(Schema.String),
 }
-export const forgeWorkQuerySchema = z.object({
-  cursor: z.string().max(4000).optional(),
-  query: z.string().trim().max(300).optional(),
-  state: z.string().max(100).default('open'),
-  refresh: z.boolean().default(false),
+export const forgeWorkQuerySchema = mutableStruct({
+  cursor: Schema.optional(maxValue(Schema.String, 4000)),
+  query: Schema.optional(maxValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 300)),
+  state: Schema.optionalWith(maxValue(Schema.String, 100), {
+    default: () => 'open',
+  }),
+  refresh: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
 })
-export const forgeWorkOptionsSchema = z.object({
-  provider: z.union([forgeProviderSchema, z.literal('jira')]),
-  issues: z.boolean(),
-  issueNotice: z.string().optional(),
-  issueTypes: z.array(z.string()).default([]),
-  issueStates: z.array(z.string()).default([]),
-  issueSearch: z.boolean().optional(),
-  assignees: z.boolean().default(true),
-  labels: z.boolean().default(false),
-  pipelines: z.boolean(),
-  pipelineNotice: z.string().optional(),
-  pipelineActions: z.array(z.enum(['run', 'rerun', 'cancel', 'enable', 'disable'])),
+export const forgeWorkOptionsSchema = mutableStruct({
+  provider: Schema.Union(forgeProviderSchema, Schema.Literal('jira')),
+  issues: Schema.Boolean,
+  issueNotice: Schema.optional(Schema.String),
+  issueTypes: Schema.optionalWith(mutableArray(Schema.String), {
+    default: () => [],
+  }),
+  issueStates: Schema.optionalWith(mutableArray(Schema.String), {
+    default: () => [],
+  }),
+  issueSearch: Schema.optional(Schema.Boolean),
+  assignees: Schema.optionalWith(Schema.Boolean, {
+    default: () => true,
+  }),
+  labels: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
+  pipelines: Schema.Boolean,
+  pipelineNotice: Schema.optional(Schema.String),
+  pipelineActions: mutableArray(Schema.Literal('run', 'rerun', 'cancel', 'enable', 'disable')),
 })
-export type ForgeWorkOptions = z.infer<typeof forgeWorkOptionsSchema>
-export const forgeIssueSchema = z.object({
+export type ForgeWorkOptions = Schema.Schema.Type<typeof forgeWorkOptionsSchema>
+export const forgeIssueSchema = mutableStruct({
   id,
-  title: z.string(),
-  body: z.string(),
-  state: z.string(),
-  type: z.string().default('Issue'),
+  title: Schema.String,
+  body: Schema.String,
+  state: Schema.String,
+  type: Schema.optionalWith(Schema.String, {
+    default: () => 'Issue',
+  }),
   url,
-  author: z.string(),
-  assignees: z.array(z.string()),
-  assigneeNames: z.array(z.string()).optional(),
-  labels: z.array(z.string()),
-  updatedAt: z.string(),
-  revision: z.string(),
-  bodyFormat: z.enum(['markdown', 'html']).default('markdown'),
-  preview: z.string().optional(),
-  bodyNotice: z.string().optional(),
+  author: Schema.String,
+  assignees: mutableArray(Schema.String),
+  assigneeNames: Schema.optional(mutableArray(Schema.String)),
+  labels: mutableArray(Schema.String),
+  updatedAt: Schema.String,
+  revision: Schema.String,
+  bodyFormat: Schema.optionalWith(Schema.Literal('markdown', 'html'), {
+    default: () => 'markdown',
+  }),
+  preview: Schema.optional(Schema.String),
+  bodyNotice: Schema.optional(Schema.String),
 })
-export type ForgeIssue = z.infer<typeof forgeIssueSchema>
-export const forgeIssuePageSchema = z.object({
-  items: z.array(forgeIssueSchema),
-  next: z.string().optional(),
+export type ForgeIssue = Schema.Schema.Type<typeof forgeIssueSchema>
+export const forgeIssuePageSchema = mutableStruct({
+  items: mutableArray(forgeIssueSchema),
+  next: Schema.optional(Schema.String),
   ...cached,
 })
-export const forgeIssueDetailSchema = z.object({
+export const forgeIssueDetailSchema = mutableStruct({
   issue: forgeIssueSchema,
-  discussionNotice: z.string().optional(),
-  comments: z.array(
-    z.object({
+  discussionNotice: Schema.optional(Schema.String),
+  comments: mutableArray(
+    mutableStruct({
       id,
-      body: z.string(),
-      author: z.string(),
-      createdAt: z.string(),
-      url: url.optional(),
-      bodyFormat: z.enum(['markdown', 'html']).default('markdown'),
+      body: Schema.String,
+      author: Schema.String,
+      createdAt: Schema.String,
+      url: Schema.optional(url),
+      bodyFormat: Schema.optionalWith(Schema.Literal('markdown', 'html'), {
+        default: () => 'markdown',
+      }),
     }),
   ),
-  next: z.string().optional(),
+  next: Schema.optional(Schema.String),
   ...cached,
 })
-export type ForgeIssueDetail = z.infer<typeof forgeIssueDetailSchema>
+export type ForgeIssueDetail = Schema.Schema.Type<typeof forgeIssueDetailSchema>
 const fields = {
-  title: z.string().trim().min(1).max(1000),
-  body: z.string().max(100000),
-  assignees: z.array(z.string().trim().min(1).max(300)).max(20),
-  labels: z.array(z.string().trim().min(1).max(100)).max(100),
+  title: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 1000),
+  body: maxValue(Schema.String, 100000),
+  assignees: maxValue(
+    mutableArray(maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 300)),
+    20,
+  ),
+  labels: maxValue(
+    mutableArray(maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 100)),
+    100,
+  ),
 }
-export const forgeIssueCreateSchema = z.object({
+export const forgeIssueCreateSchema = mutableStruct({
   ...fields,
-  assignees: fields.assignees.default([]),
-  labels: fields.labels.default([]),
-  type: z.string().trim().max(100).default('Issue'),
+  assignees: Schema.optionalWith(fields.assignees, {
+    default: () => [],
+  }),
+  labels: Schema.optionalWith(fields.labels, {
+    default: () => [],
+  }),
+  type: Schema.optionalWith(maxValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 100), {
+    default: () => 'Issue',
+  }),
 })
-export type ForgeIssueCreate = z.infer<typeof forgeIssueCreateSchema>
-export const forgeIssueActionSchema = z.discriminatedUnion('action', [
-  z.object({
-    action: z.literal('edit'),
-    id,
-    revision: id,
-    title: fields.title.optional(),
-    body: fields.body.optional(),
-    state: z.string().trim().min(1).max(100).optional(),
-    assignees: fields.assignees.optional(),
-    labels: fields.labels.optional(),
-  }),
-  z.object({
-    action: z.literal('comment'),
-    id,
-    revision: id,
-    body: z.string().trim().min(1).max(100000),
-  }),
-])
-export type ForgeIssueAction = z.infer<typeof forgeIssueActionSchema>
+export type ForgeIssueCreate = Schema.Schema.Type<typeof forgeIssueCreateSchema>
+export const forgeIssueActionSchema = Schema.Union(
+  ...[
+    mutableStruct({
+      action: Schema.Literal('edit'),
+      id,
+      revision: id,
+      title: Schema.optional(fields.title),
+      body: Schema.optional(fields.body),
+      state: Schema.optional(
+        maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 100),
+      ),
+      assignees: Schema.optional(fields.assignees),
+      labels: Schema.optional(fields.labels),
+    }),
+    mutableStruct({
+      action: Schema.Literal('comment'),
+      id,
+      revision: id,
+      body: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 100000),
+    }),
+  ],
+)
+export type ForgeIssueAction = Schema.Schema.Type<typeof forgeIssueActionSchema>
 const pipelineTiming = {
-  startedAt: z.string().optional(),
-  completedAt: z.string().optional(),
+  startedAt: Schema.optional(Schema.String),
+  completedAt: Schema.optional(Schema.String),
 }
-const pipelineErrors = z.array(z.string().max(2000)).max(10).optional()
-export const forgePipelineSchema = z.object({
+const pipelineErrors = Schema.optional(maxValue(mutableArray(maxValue(Schema.String, 2000)), 10))
+export const forgePipelineSchema = mutableStruct({
   id,
-  title: z.string(),
+  title: Schema.String,
   url,
-  ref: z.string(),
-  sha: z.string(),
-  actor: z.string(),
-  status: z.string(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  definition: z.string().optional(),
-  number: z.string().optional(),
-  attempt: z.number().int().positive().optional(),
-  event: z.string().optional(),
-  workflow: z.string().optional(),
-  commitMessage: z.string().optional(),
+  ref: Schema.String,
+  sha: Schema.String,
+  actor: Schema.String,
+  status: Schema.String,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  definition: Schema.optional(Schema.String),
+  number: Schema.optional(Schema.String),
+  attempt: Schema.optional(
+    Schema.Number.pipe(Schema.finite())
+      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+      .pipe(Schema.positive()),
+  ),
+  event: Schema.optional(Schema.String),
+  workflow: Schema.optional(Schema.String),
+  commitMessage: Schema.optional(Schema.String),
   errors: pipelineErrors,
   ...pipelineTiming,
 })
-export type ForgePipeline = z.infer<typeof forgePipelineSchema>
-export const forgePipelinePageSchema = z.object({
-  items: z.array(forgePipelineSchema),
-  next: z.string().optional(),
+export type ForgePipeline = Schema.Schema.Type<typeof forgePipelineSchema>
+export const forgePipelinePageSchema = mutableStruct({
+  items: mutableArray(forgePipelineSchema),
+  next: Schema.optional(Schema.String),
   ...cached,
 })
-export const forgePipelineStepSchema = z.object({
+export const forgePipelineStepSchema = mutableStruct({
   id,
-  name: z.string(),
-  status: z.string(),
-  number: z.number().int().nonnegative().optional(),
-  url: url.optional(),
+  name: Schema.String,
+  status: Schema.String,
+  number: Schema.optional(
+    Schema.Number.pipe(Schema.finite())
+      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+      .pipe(Schema.nonNegative()),
+  ),
+  url: Schema.optional(url),
   errors: pipelineErrors,
   ...pipelineTiming,
 })
-export type ForgePipelineStep = z.infer<typeof forgePipelineStepSchema>
-export const forgePipelineJobSchema = z.object({
+export type ForgePipelineStep = Schema.Schema.Type<typeof forgePipelineStepSchema>
+export const forgePipelineJobSchema = mutableStruct({
   id,
-  name: z.string(),
-  status: z.string(),
+  name: Schema.String,
+  status: Schema.String,
   url,
-  runner: z.string().optional(),
-  steps: z.array(forgePipelineStepSchema).optional(),
+  runner: Schema.optional(Schema.String),
+  steps: Schema.optional(mutableArray(forgePipelineStepSchema)),
   errors: pipelineErrors,
   ...pipelineTiming,
 })
-export type ForgePipelineJob = z.infer<typeof forgePipelineJobSchema>
-export const forgePipelineDetailSchema = z.object({
+export type ForgePipelineJob = Schema.Schema.Type<typeof forgePipelineJobSchema>
+export const forgePipelineDetailSchema = mutableStruct({
   run: forgePipelineSchema,
-  jobs: z.array(forgePipelineJobSchema),
-  next: z.string().optional(),
+  jobs: mutableArray(forgePipelineJobSchema),
+  next: Schema.optional(Schema.String),
   ...cached,
 })
-export type ForgePipelineDetail = z.infer<typeof forgePipelineDetailSchema>
-export const forgeDefinitionsSchema = z.object({
-  items: z.array(z.object({ id, name: z.string(), state: z.string().optional() })),
-  next: z.string().optional(),
-  manual: z.boolean().default(false),
-  hint: z.string().optional(),
-})
-export const forgePipelineActionSchema = z.discriminatedUnion('action', [
-  z.object({
-    action: z.literal('run'),
-    definition: id,
-    ref: id,
-    inputs: z
-      .record(z.string().min(1).max(100), z.string().max(10000))
-      .refine((v) => Object.keys(v).length <= 100, 'Use at most 100 pipeline inputs')
-      .default({}),
+export type ForgePipelineDetail = Schema.Schema.Type<typeof forgePipelineDetailSchema>
+export const forgeDefinitionsSchema = mutableStruct({
+  items: mutableArray(
+    mutableStruct({
+      id,
+      name: Schema.String,
+      state: Schema.optional(Schema.String),
+    }),
+  ),
+  next: Schema.optional(Schema.String),
+  manual: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
   }),
-  z.object({ action: z.literal('rerun'), id }),
-  z.object({ action: z.literal('cancel'), id }),
-  z.object({ action: z.literal('enable'), id }),
-  z.object({ action: z.literal('disable'), id }),
-])
-export type ForgePipelineAction = z.infer<typeof forgePipelineActionSchema>
-export const forgeWorkResultSchema = z.object({
-  id: id.optional(),
-  url: url.optional(),
-  message: z.string(),
+  hint: Schema.optional(Schema.String),
 })
-export type ForgeWorkResult = z.infer<typeof forgeWorkResultSchema>
+export const forgePipelineActionSchema = Schema.Union(
+  ...[
+    mutableStruct({
+      action: Schema.Literal('run'),
+      definition: id,
+      ref: id,
+      inputs: Schema.optionalWith(
+        refine(
+          Schema.mutable(
+            Schema.Record({
+              key: maxValue(minValue(Schema.String, 1), 100),
+              value: maxValue(Schema.String, 10000),
+            }),
+          ),
+          (v) => Object.keys(v).length <= 100,
+          'Use at most 100 pipeline inputs',
+        ),
+        {
+          default: () => ({}),
+        },
+      ),
+    }),
+    mutableStruct({
+      action: Schema.Literal('rerun'),
+      id,
+    }),
+    mutableStruct({
+      action: Schema.Literal('cancel'),
+      id,
+    }),
+    mutableStruct({
+      action: Schema.Literal('enable'),
+      id,
+    }),
+    mutableStruct({
+      action: Schema.Literal('disable'),
+      id,
+    }),
+  ],
+)
+export type ForgePipelineAction = Schema.Schema.Type<typeof forgePipelineActionSchema>
+export const forgeWorkResultSchema = mutableStruct({
+  id: Schema.optional(id),
+  url: Schema.optional(url),
+  message: Schema.String,
+})
+export type ForgeWorkResult = Schema.Schema.Type<typeof forgeWorkResultSchema>

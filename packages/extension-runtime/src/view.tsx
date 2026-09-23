@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { RuntimePreferences } from './runtime-preferences'
+import { useApplicationState } from '@dovo/studio-core/state'
 import type { RuntimeProfile } from '@dovo/studio-core'
 import { useRuntimeSources, WorkspaceScope } from '@dovo/studio-core'
 import {
@@ -15,7 +16,7 @@ import { PairingClient } from './pairing-client'
 import { DeviceManager } from './device-manager'
 export default function RuntimeView() {
   const sources = useRuntimeSources()
-  const [managing, setManaging] = useState<RuntimeProfile | null>(null)
+  const [managing, setManaging] = useApplicationState<RuntimeProfile | null>(null)
   const source = sources.find(
     (entry) =>
       entry.profile.id === managing?.id &&
@@ -24,14 +25,14 @@ export default function RuntimeView() {
   )
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <header className="shrink-0 border-b px-6 py-4">
+      <header className="studio-page-header shrink-0 border-b">
         <h1 className="text-lg font-semibold tracking-tight">Devices & runtime</h1>
         <p className="mt-1 text-xs text-muted-foreground">
           Manage every connected computer in one place.
         </p>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        <div className="mx-auto max-w-4xl space-y-6">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="mx-auto max-w-4xl space-y-4">
           <PairingClient onManage={setManaging} />
           <p className="text-xs leading-6 text-muted-foreground">
             Tasks, projects and tools appear together across your computers. Each item keeps its own
@@ -58,6 +59,7 @@ export default function RuntimeView() {
             {source ? (
               <WorkspaceScope profile={managing}>
                 <DeviceManager />
+                <RuntimePreferences />
                 <HostTools />
               </WorkspaceScope>
             ) : (
@@ -70,7 +72,7 @@ export default function RuntimeView() {
   )
 }
 function HostTools() {
-  const [panel, setPanel] = useState<'commands' | 'activity' | null>(null)
+  const [panel, setPanel] = useApplicationState<'commands' | 'activity' | null>(null)
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">

@@ -1,13 +1,15 @@
+import { mutableStruct } from '@dovo/protocol'
 import { automationSchema, jobRunSchema, type JobRunStep, type Task } from '@dovo/protocol'
-import { z } from 'zod'
-
-export const storedRunSchema = jobRunSchema.extend({
-  flow: automationSchema,
-  triggerPayload: z.unknown().optional(),
-  deliveryKey: z.string().optional(),
+import { Schema } from 'effect'
+export const storedRunSchema = mutableStruct({
+  ...jobRunSchema.fields,
+  ...{
+    flow: automationSchema,
+    triggerPayload: Schema.optional(Schema.Unknown),
+    deliveryKey: Schema.optional(Schema.String),
+  },
 })
-export type StoredRun = z.infer<typeof storedRunSchema>
-
+export type StoredRun = Schema.Schema.Type<typeof storedRunSchema>
 export function runSteps(run: StoredRun): JobRunStep[] {
   // Before step metadata existed, tasks were appended in execution order. Completed
   // nodes preserve that order; at most one additional task could be in flight.
@@ -50,7 +52,6 @@ export function runSteps(run: StoredRun): JobRunStep[] {
     }
   })
 }
-
 export function updateStep(
   run: StoredRun,
   nodeId: string,
@@ -58,10 +59,16 @@ export function updateStep(
 ): StoredRun {
   return {
     ...run,
-    steps: runSteps(run).map((step) => (step.nodeId === nodeId ? { ...step, ...changes } : step)),
+    steps: runSteps(run).map((step) =>
+      step.nodeId === nodeId
+        ? {
+            ...step,
+            ...changes,
+          }
+        : step,
+    ),
   }
 }
-
 export function reconcileCompletedTasks(run: StoredRun, tasks: Task[]): StoredRun {
   const completedNodes = [...run.completedNodes]
   const steps = runSteps(run).map((step) => {
@@ -76,5 +83,9 @@ export function reconcileCompletedTasks(run: StoredRun, tasks: Task[]): StoredRu
       error: undefined,
     }
   })
-  return { ...run, completedNodes, steps }
+  return {
+    ...run,
+    completedNodes,
+    steps,
+  }
 }

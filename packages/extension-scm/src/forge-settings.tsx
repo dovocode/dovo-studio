@@ -4,13 +4,13 @@ export default function ForgeSettings() {
   const sources = useRuntimeSources()
   return (
     <section className="min-h-0 flex-1 overflow-y-auto">
-      <header className="border-b px-6 py-4">
+      <header className="studio-page-header border-b">
         <h1 className="text-lg font-semibold tracking-tight">Source control</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Accounts across your computers. Credentials stay on their host.
         </p>
       </header>
-      <div className="mx-auto max-w-4xl space-y-8 p-6">
+      <div className="mx-auto max-w-4xl space-y-5 p-4">
         {!sources.length && (
           <p className="text-sm text-muted-foreground">
             Connect a computer to manage source-control accounts.

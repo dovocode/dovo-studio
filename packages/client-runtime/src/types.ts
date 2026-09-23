@@ -1,7 +1,8 @@
-export type MaybePromise<T> = T | Promise<T>
+import type { Effect } from 'effect'
+import type { ExtensionError, ExtensionOperation } from './operation.js'
 
 export interface Disposable {
-  dispose(): void
+  dispose(): void | Promise<void>
 }
 
 export type ActivationEvent =
@@ -17,7 +18,7 @@ export interface Command {
   category?: string
 }
 
-export type CommandHandler = (...args: readonly unknown[]) => MaybePromise<unknown>
+export type CommandHandler = (...args: readonly unknown[]) => ExtensionOperation<unknown>
 
 export interface ExtensionContribution {
   commands?: readonly Command[]
@@ -35,7 +36,7 @@ export interface ExtensionManifest {
 }
 
 export interface ExtensionState {
-  get<T>(key: string, defaultValue?: T): T | undefined
+  get(key: string, defaultValue?: unknown): unknown
   set<T>(key: string, value: T): void
 }
 
@@ -45,19 +46,22 @@ export interface ExtensionContext {
   readonly subscriptions: Disposable[]
   readonly commands: {
     registerCommand(command: string, handler: CommandHandler): Disposable
-    executeCommand<T = unknown>(command: string, ...args: readonly unknown[]): Promise<T>
+    executeCommand(
+      command: string,
+      ...args: readonly unknown[]
+    ): Effect.Effect<unknown, ExtensionError>
   }
   readonly events: {
-    on<T>(event: string, listener: (payload: T) => MaybePromise<void>): Disposable
-    emit<T>(event: string, payload: T): Promise<void>
+    on(event: string, listener: (payload: unknown) => ExtensionOperation<void>): Disposable
+    emit(event: string, payload: unknown): Effect.Effect<void, ExtensionError>
   }
   readonly state: ExtensionState
 }
 
 export interface Extension<TApi = unknown> {
   readonly manifest: ExtensionManifest
-  activate(context: ExtensionContext): MaybePromise<TApi | void>
-  deactivate?(): MaybePromise<void>
+  activate(context: ExtensionContext): ExtensionOperation<TApi | void>
+  deactivate?(): ExtensionOperation<void>
 }
 
 export interface ExtensionInfo {

@@ -1,3 +1,5 @@
+import { Schema } from 'effect'
+import { decode } from '@dovo/protocol'
 import { discoverNetworks, networkUrls } from './network.js'
 import { parseArgs } from 'node:util'
 import { responses, snapshotSchema } from '@dovo/protocol'
@@ -6,12 +8,25 @@ async function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
-      connection: { type: 'string' },
-      'public-address': { type: 'string' },
-      json: { type: 'boolean' },
-      manual: { type: 'boolean' },
-      network: { type: 'string' },
-      help: { type: 'boolean', short: 'h' },
+      connection: {
+        type: 'string',
+      },
+      'public-address': {
+        type: 'string',
+      },
+      json: {
+        type: 'boolean',
+      },
+      manual: {
+        type: 'boolean',
+      },
+      network: {
+        type: 'string',
+      },
+      help: {
+        type: 'boolean',
+        short: 'h',
+      },
     },
   })
   if (values.help) {
@@ -22,7 +37,7 @@ async function main() {
   --manual                 Require approval for a single-use code
   --json                   Print machine-readable results
 
-Codes expire after two minutes and automatically approve devices using them.
+Codes expire after two minutes and automatically approve one device. Each code is single-use.
 With --manual, approve a request with pnpm pair approve <id>.
 Bind the runtime with DOVO_HOST=0.0.0.0, a local IP, local, tailscale or netbird.
 Device listings show paired devices, not live network presence.`)
@@ -51,15 +66,19 @@ Device listings show paired devices, not live network presence.`)
   const live: Array<{
     path: string
     connection: LocalConnection
-    snapshot: ReturnType<typeof snapshotSchema.parse>
+    snapshot: Schema.Schema.Type<typeof snapshotSchema>
   }> = []
   const failures: string[] = []
   for (const path of candidates) {
     try {
       const connection = readConnection(path)
-      const snapshot = snapshotSchema.parse(await call(connection, '/api/snapshot'))
+      const snapshot = decode(snapshotSchema, await call(connection, '/api/snapshot'))
       if (!snapshot.owner) throw new Error('Owner credentials required to manage pairing')
-      live.push({ path, connection, snapshot })
+      live.push({
+        path,
+        connection,
+        snapshot,
+      })
     } catch (error) {
       failures.push(`${path}: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -90,20 +109,22 @@ Device listings show paired devices, not live network presence.`)
           ? 'Multiple matching addresses. Choose one with --public-address.'
           : `Runtime does not listen on ${values.network}. Start it with DOVO_HOST=0.0.0.0 or DOVO_HOST=${values.network}.`,
       )
-
     const result = {
       address: publicAddress?.origin ?? choices[0]?.address ?? connection.address,
       addresses,
       bindHost: connection.bindHost,
       autoApprove: !values.manual,
-      ...responses.pairCode.parse(
-        await call(connection, '/api/pair/code', { autoApprove: !values.manual }),
+      ...decode(
+        responses.pairCode,
+        await call(connection, '/api/pair/code', {
+          autoApprove: !values.manual,
+        }),
       ),
     }
     if (values.json) console.log(JSON.stringify(result))
     else {
       console.log(
-        `Runtime: ${result.address}\nPairing code: ${result.code}\nExpires: ${result.expiresAt}\n${addresses.map((entry) => `${entry.name}: ${entry.address}`).join('\n')}\n\nEnter these in the phone's Devices & runtime settings.\n${values.manual ? 'Then run pnpm pair devices and pnpm pair approve <request-id>.' : 'Devices using this code are approved automatically until it expires.'}`,
+        `Runtime: ${result.address}\nPairing code: ${result.code}\nExpires: ${result.expiresAt}\n${addresses.map((entry) => `${entry.name}: ${entry.address}`).join('\n')}\n\nEnter these in the phone's Devices & runtime settings.\n${values.manual ? 'Then run pnpm pair devices and pnpm pair approve <request-id>.' : 'This single-use code automatically approves one device.'}`,
       )
       if (['localhost', '127.0.0.1', '[::1]'].includes(new URL(result.address).hostname))
         console.log(
@@ -121,12 +142,19 @@ Device listings show paired devices, not live network presence.`)
         `Pending requests:\n${result.pending.map((device) => `${device.id}  ${device.name}  expires ${device.expiresAt}`).join('\n') || 'None'}\n\nPaired devices:\n${result.paired.map((device) => `${device.id}  ${device.name}`).join('\n') || 'None'}`,
       )
   } else {
-    responses.ok.parse(
-      await call(connection, '/api/pair/approve', { id, allow: command === 'approve' }),
+    decode(
+      responses.ok,
+      await call(connection, '/api/pair/approve', {
+        id,
+        allow: command === 'approve',
+      }),
     )
     console.log(
       values.json
-        ? JSON.stringify({ id, status: command === 'approve' ? 'approved' : 'denied' })
+        ? JSON.stringify({
+            id,
+            status: command === 'approve' ? 'approved' : 'denied',
+          })
         : `Request ${id} ${command === 'approve' ? 'approved' : 'denied'}.`,
     )
   }
@@ -134,7 +162,10 @@ Device listings show paired devices, not live network presence.`)
 async function call(connection: LocalConnection, path: string, body?: unknown): Promise<unknown> {
   const response = await fetch(connection.address + path, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${connection.token}`,
+      'Content-Type': 'application/json',
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(5000),
     redirect: 'error',

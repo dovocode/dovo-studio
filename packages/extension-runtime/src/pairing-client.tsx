@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { PAIRING_PROTOCOL_VERSION } from '@dovo/studio-core'
+import { Effect } from 'effect'
+import { runtimeRequestEffect } from '@dovo/studio-core'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useRef } from 'react'
 import type { RuntimeProfile } from '@dovo/studio-core'
 import { Monitor, Plus, Circle } from 'lucide-react'
-import { responses, runtimeRequest, useWorkspace } from '@dovo/studio-core'
+import { responses, runtimeRequest, useWorkspace, startPolling } from '@dovo/studio-core'
 import {
   Button,
   Dialog,
@@ -15,6 +19,7 @@ import {
 export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile) => void }) {
   const {
     connect,
+    cancelPairing,
     runtimeRegistry,
     runtimes,
     refreshRuntime,
@@ -23,18 +28,38 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
     discardAndReload,
     pendingSync,
   } = useWorkspace()
-  const [address, setAddress] = useState(''),
-    [name, setName] = useState('My computer'),
-    [code, setCode] = useState(''),
-    [open, setOpen] = useState(false),
-    [reloadOpen, setReloadOpen] = useState(false)
-  const [pending, setPending] = useState<{ id: string; secret: string; expiresAt: string } | null>(
-      null,
-    ),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+  const [address, setAddress] = useApplicationState(''),
+    [name, setName] = useApplicationState('My computer'),
+    [code, setCode] = useApplicationState(''),
+    [replaceId, setReplaceId] = useApplicationState<string | undefined>(undefined),
+    [open, setOpen] = useApplicationState(false),
+    [reloadOpen, setReloadOpen] = useApplicationState(false)
+  const [pending, setPending] = useApplicationState<{
+      id: string
+      secret: string
+      expiresAt: string
+    } | null>(null),
+    [error, setError] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false)
   const generation = useRef(0)
+  const pairingPhase = useRef<'waiting' | 'cancelled' | 'saving'>('waiting')
+  const connectRef = useRef(connect)
+  connectRef.current = connect
   const cancel = () => {
+    if (busy || pairingPhase.current === 'saving') return
+    if (pending) {
+      pairingPhase.current = 'cancelled'
+      setBusy(true)
+      void cancelPairing(address, pending)
+        .then(() => {
+          setPending(null)
+          setOpen(false)
+          setError('')
+        })
+        .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
+        .finally(() => setBusy(false))
+      return
+    }
     generation.current++
     setPending(null)
     setOpen(false)
@@ -43,60 +68,70 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
   }
   useEffect(() => {
     if (!pending) return
-    let stopped = false,
-      inFlight = false
-    const poll = async () => {
-      if (inFlight || stopped) return
+    pairingPhase.current = 'waiting'
+    let stopped = false
+    const poll = Effect.gen(function* () {
       if (Date.parse(pending.expiresAt) <= Date.now()) {
         setError('This pairing request expired. Generate a new code on the host.')
         setPending(null)
         return
       }
-      inFlight = true
-      try {
-        const result = await runtimeRequest(
-          null,
-          address,
-          '/api/pair/claim',
-          { id: pending.id, secret: pending.secret },
-          responses.pairClaim,
-        )
-        if (stopped) return
-        if (result.status === 'approved' && result.token) {
-          setBusy(true)
-          await connect({ address, token: result.token })
-          if (!stopped) {
-            setPending(null)
-            setOpen(false)
-            setCode('')
-            setError('')
-          }
-        } else if (result.status === 'denied') {
-          setError('The host declined this device. Generate a new code to try again.')
+      if (pairingPhase.current !== 'waiting') return
+      const result = yield* runtimeRequestEffect(
+        null,
+        address,
+        '/api/pair/claim',
+        {
+          id: pending.id,
+          secret: pending.secret,
+        },
+        responses.pairClaim,
+      )
+      if (stopped || pairingPhase.current !== 'waiting') return
+      if (result.status === 'approved' && result.token) {
+        pairingPhase.current = 'saving'
+        setBusy(true)
+        const token = result.token
+        yield* Effect.tryPromise({
+          try: () => connectRef.current({ address, token }, pending, replaceId),
+          catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+        }).pipe(Effect.uninterruptible)
+        pairingPhase.current = 'waiting'
+        if (!stopped) {
           setPending(null)
-        } else setError('')
-      } catch (error) {
+          setOpen(false)
+          setCode('')
+          setError('')
+        }
+      } else if (result.status === 'denied') {
+        setError('The host declined this device. Generate a new code to try again.')
+        setPending(null)
+      } else setError('')
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (!stopped) setBusy(false)
+        }),
+      ),
+    )
+    const polling = startPolling(poll, {
+      interval: 1500,
+      onError: (error) => {
+        if (pairingPhase.current === 'saving') pairingPhase.current = 'waiting'
         if (!stopped)
-          setError(
-            `Connection interrupted. Retrying until the code expires. ${error instanceof Error ? error.message : String(error)}`,
-          )
-      } finally {
-        inFlight = false
-        if (!stopped) setBusy(false)
-      }
-    }
-    void poll()
-    const timer = setInterval(() => void poll(), 1500)
+          setError(`Connection interrupted. Retrying until the code expires. ${error.message}`)
+      },
+    })
     const foreground = () => {
-      if (document.visibilityState === 'visible') void poll()
+      if (document.visibilityState === 'visible') polling.refresh()
     }
     document.addEventListener('visibilitychange', foreground)
     return () => {
       stopped = true
-      clearInterval(timer)
       document.removeEventListener('visibilitychange', foreground)
+      void polling.stop()
     }
-  }, [pending, address, connect])
+  }, [pending, address, replaceId])
   const act = async (work: () => Promise<void>) => {
     setError('')
     setBusy(true)
@@ -109,7 +144,7 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
     }
   }
   return (
-    <article className="space-y-4 rounded-xl border bg-card/40 p-5">
+    <article className="space-y-4 rounded-md border bg-card/40 p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-medium">Your computers</h2>
@@ -122,6 +157,9 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
           variant="outline"
           onClick={() => {
             setError('')
+            setReplaceId(undefined)
+            setAddress('')
+            setCode('')
             setOpen(true)
           }}
         >
@@ -129,6 +167,12 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
           Connect computer
         </Button>
       </div>
+      {!!runtimeRegistry.pendingPairings?.length && (
+        <p role="status" className="text-xs text-muted-foreground">
+          A connection is waiting to finish pairing. Keep the computer online; recovery retries when
+          you return to this window.
+        </p>
+      )}
       {pendingSync && (
         <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
           <div>
@@ -172,7 +216,23 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
                 {entry.profile.connection.address}
               </p>
             </div>
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
+              {!entry.snapshot?.owner && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setReplaceId(entry.profile.id)
+                    setAddress('')
+                    setCode('')
+                    setError('')
+                    setOpen(true)
+                  }}
+                >
+                  Update address
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -254,8 +314,12 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
         }}
       >
         <DialogContent className="max-w-md">
-          <DialogTitle>Connect a runtime</DialogTitle>
+          <DialogTitle>
+            {replaceId ? 'Update connection address' : 'Connect a computer'}
+          </DialogTitle>
           <DialogDescription>
+            {replaceId &&
+              'Pair the new address using a fresh code from the same computer. The saved connection stays unchanged until pairing succeeds. '}
             On the host, generate a pairing code in Devices & runtime or run the pair command. Use
             an address reachable from this device.
           </DialogDescription>
@@ -270,7 +334,11 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
                 null,
                 address,
                 '/api/pair/request',
-                { code, name },
+                {
+                  protocolVersion: PAIRING_PROTOCOL_VERSION,
+                  code,
+                  name,
+                },
                 responses.pairRequest,
               )
                 .then((result) => {

@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
 import { createTask, useWorkspace, type Automation } from '@dovo/studio-core'
 import { validateGraph } from './graph'
 export function useAutomation(automationId: string) {
   const { workspace, setWorkspace } = useWorkspace()
-  const [selectedNode, selectNode] = useState<string | null>(null)
-  const [messages, setMessages] = useState<string[]>([])
+  const [selectedNode, selectNode] = useApplicationState<string | null>(null)
+  const [messages, setMessages] = useApplicationState<string[]>([])
   const flow = workspace.automations.find((item) => item.id === automationId)
   function update(transform: (current: Automation) => Automation) {
     if (!flow) return
@@ -35,7 +35,10 @@ export function useAutomation(automationId: string) {
           execution: node.data.execution,
         }),
       )
-    setWorkspace((current) => ({ ...current, tasks: [...tasks, ...current.tasks] }))
+    setWorkspace((current) => ({
+      ...current,
+      tasks: [...tasks, ...current.tasks],
+    }))
     setMessages([
       `Created ${tasks.length} task draft${tasks.length === 1 ? '' : 's'}. No work has executed; graph order and review gates apply when a runtime is connected.`,
     ])

@@ -17,8 +17,8 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         },
-        "UIFileSharingEnabled": true,
-        "LSSupportsOpeningDocumentsInPlace": true,
+        "UIFileSharingEnabled": false,
+        "LSSupportsOpeningDocumentsInPlace": false,
         "NSSupportsLiveActivities": true
       },
       "entitlements": {
@@ -39,7 +39,7 @@
           }
         }
       ],
-      "./plugins/with-scenes.cjs",
+      "./plugins/with-scenes.ts",
       "expo-sharing",
       "expo-router",
       "expo-status-bar",

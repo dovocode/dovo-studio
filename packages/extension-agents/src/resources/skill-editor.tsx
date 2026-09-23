@@ -1,5 +1,6 @@
+import { useApplicationState } from '@dovo/studio-core/state'
+import { decode } from '@dovo/protocol'
 import { resourceError } from './error'
-import { useState } from 'react'
 import { managedSkillSchema, useWorkspace, type ManagedSkill } from '@dovo/studio-core'
 import {
   Button,
@@ -24,19 +25,32 @@ export function SkillEditor({
   onClose: () => void
 }) {
   const { request } = useWorkspace()
-  const [draft, setDraft] = useState<ManagedSkill>(
-    initial ?? { name: '', description: '', content: '', enabled: true },
+  const [draft, setDraft] = useApplicationState<ManagedSkill>(
+    initial ?? {
+      name: '',
+      description: '',
+      content: '',
+      enabled: true,
+    },
   )
-  const [path, setPath] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [path, setPath] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   const perform = async (importing: boolean) => {
     setBusy(true)
     setError('')
     try {
       if (importing)
-        setDraft(await request('/api/agents/skills/import', { path }, managedSkillSchema))
-      else await onSave(managedSkillSchema.parse(draft))
+        setDraft(
+          await request(
+            '/api/agents/skills/import',
+            {
+              path,
+            },
+            managedSkillSchema,
+          ),
+        )
+      else await onSave(decode(managedSkillSchema, draft))
     } catch (error) {
       setError(resourceError(error))
     } finally {
@@ -88,14 +102,24 @@ export function SkillEditor({
               <Input
                 required
                 value={draft.name}
-                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    name: event.target.value,
+                  })
+                }
               />
             </FormField>
             <FormField label="When to use">
               <Textarea
                 required
                 value={draft.description}
-                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    description: event.target.value,
+                  })
+                }
               />
             </FormField>
             <FormField label="Instructions">
@@ -103,7 +127,12 @@ export function SkillEditor({
                 required
                 className="min-h-48"
                 value={draft.content}
-                onChange={(event) => setDraft({ ...draft, content: event.target.value })}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    content: event.target.value,
+                  })
+                }
               />
             </FormField>
             {draft.sourceUrl && (

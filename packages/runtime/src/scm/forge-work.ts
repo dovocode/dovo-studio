@@ -1,7 +1,9 @@
+import { mutableStruct } from '@dovo/protocol'
+import { decodeResult, urlSchema, decode, maxValue, minValue } from '@dovo/protocol'
 import { homedir } from 'node:os'
 import { isDeepStrictEqual } from 'node:util'
 import { JiraWork } from './jira.js'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import type Database from 'better-sqlite3'
 import {
   forgeIssueActionSchema,
@@ -42,9 +44,10 @@ export class ForgeWork {
       'CREATE TABLE IF NOT EXISTS forge_work_cache (key TEXT PRIMARY KEY, source TEXT NOT NULL, value TEXT NOT NULL, updated INTEGER NOT NULL)',
     )
   }
-  private async target(
-    repositoryId: string,
-  ): Promise<{ cwd: string; provider?: ForgeWorkProvider }> {
+  private async target(repositoryId: string): Promise<{
+    cwd: string
+    provider?: ForgeWorkProvider
+  }> {
     const repo = this.store.get().repositories.find((v) => v.id === repositoryId)
     if (!repo) throw new HttpError(404, 'Project not found')
     const connection = repo.forge ? this.forges.get(repo.forge.connectionId) : undefined
@@ -61,22 +64,42 @@ export class ForgeWork {
               : new GitForgeWork(http, connection.provider, repository),
       }
     }
-    let remote: { nameWithOwner: string; url: string }
-    if (repo.forge) remote = { nameWithOwner: repo.forge.repository, url: connection!.baseUrl }
+    let remote: {
+      nameWithOwner: string
+      url: string
+    }
+    if (repo.forge)
+      remote = {
+        nameWithOwner: repo.forge.repository,
+        url: connection!.baseUrl,
+      }
     else {
       let result: string
       try {
         result = await this.git.github(repo.path, ['repo', 'view', '--json', 'nameWithOwner,url'])
       } catch (error) {
-        const stderr = z.object({ stderr: z.string() }).safeParse(error)
+        const stderr = decodeResult(
+          mutableStruct({
+            stderr: Schema.String,
+          }),
+          error,
+        )
         const diagnostic = stderr.success ? stderr.data.stderr : errorMessage(error)
         // gh has no source to inspect for a local-only repository. Auth, network,
         // missing-directory and other Git failures must continue to surface.
         if (/^(?:Command failed: [^\r\n]+\r?\n)?no git remotes found\s*$/i.test(diagnostic.trim()))
-          return { cwd: repo.path }
+          return {
+            cwd: repo.path,
+          }
         throw error
       }
-      remote = z.object({ nameWithOwner: z.string(), url: z.url() }).parse(JSON.parse(result))
+      remote = decode(
+        mutableStruct({
+          nameWithOwner: Schema.String,
+          url: urlSchema(),
+        }),
+        JSON.parse(result),
+      )
     }
     const host = new URL(remote.url).hostname
     return {
@@ -130,14 +153,20 @@ export class ForgeWork {
     const { cwd, provider } = await this.target(repositoryId)
     if (!provider) {
       if (operation === 'options')
-        return forgeWorkOptionsSchema.parse({
+        return decode(forgeWorkOptionsSchema, {
           provider: 'github',
           issues: false,
           pipelines: false,
           pipelineActions: [],
         })
-      if (operation === 'issues/list') return forgeIssuePageSchema.parse({ items: [] })
-      if (operation === 'pipelines/list') return forgePipelinePageSchema.parse({ items: [] })
+      if (operation === 'issues/list')
+        return decode(forgeIssuePageSchema, {
+          items: [],
+        })
+      if (operation === 'pipelines/list')
+        return decode(forgePipelinePageSchema, {
+          items: [],
+        })
       throw new HttpError(404, 'This project has no remote source.')
     }
     return this.execute(provider, cwd, ['repository', repositoryId], operation, input, () => {
@@ -162,7 +191,6 @@ export class ForgeWork {
     const provider = new JiraWork(this.commands().acli, selected, undefined, cwd, validateSource)
     return this.execute(provider, cwd, ['jira', sourceId], operation, input, validateSource)
   }
-
   private async execute(
     provider: ForgeWorkProvider,
     cwd: string,
@@ -171,15 +199,21 @@ export class ForgeWork {
     input: unknown,
     validateSource: () => void,
   ) {
-    const data = z
-      .object({
-        id: z.string().max(300).optional(),
-        type: z.string().max(100).optional(),
-        area: z.enum(['issues', 'pipelines']).optional(),
-      })
-      .passthrough()
-      .parse(input)
-    const query = forgeWorkQuerySchema.parse(input)
+    const data = decode(
+      Schema.Struct(
+        mutableStruct({
+          id: Schema.optional(maxValue(Schema.String, 300)),
+          type: Schema.optional(maxValue(Schema.String, 100)),
+          area: Schema.optional(Schema.Literal('issues', 'pipelines')),
+        }).fields,
+        {
+          key: Schema.String,
+          value: Schema.Unknown,
+        },
+      ),
+      input,
+    )
+    const query = decode(forgeWorkQuerySchema, input)
     const area =
       operation === 'options'
         ? (data.area ?? 'issues')
@@ -188,7 +222,7 @@ export class ForgeWork {
           : 'issues'
     validateSource()
     if (operation === 'options') {
-      const result = forgeWorkOptionsSchema.parse(await provider.options(data.type, area))
+      const result = decode(forgeWorkOptionsSchema, await provider.options(data.type, area))
       validateSource()
       return result
     }
@@ -199,7 +233,7 @@ export class ForgeWork {
         : await this.pulls.identity(cwd, query.refresh),
     ])
     validateSource()
-    const id = () => z.string().min(1).max(300).parse(data.id)
+    const id = () => decode(maxValue(minValue(Schema.String, 1), 300), data.id)
     if (
       operation === 'issues/create' ||
       operation === 'issues/action' ||
@@ -207,27 +241,39 @@ export class ForgeWork {
     ) {
       const result =
         operation === 'issues/create'
-          ? await provider.createIssue(forgeIssueCreateSchema.parse(data))
+          ? await provider.createIssue(decode(forgeIssueCreateSchema, data))
           : operation === 'issues/action'
-            ? await provider.actOnIssue(forgeIssueActionSchema.parse(data))
-            : await provider.actOnPipeline(forgePipelineActionSchema.parse(data))
+            ? await provider.actOnIssue(decode(forgeIssueActionSchema, data))
+            : await provider.actOnPipeline(decode(forgePipelineActionSchema, data))
       this.versions.set(source, (this.versions.get(source) ?? 0) + 1)
       this.db.prepare('DELETE FROM forge_work_cache WHERE source=?').run(source)
-      return forgeWorkResultSchema.parse(result)
+      return decode(forgeWorkResultSchema, result)
     }
     const key = JSON.stringify([source, operation, data.id, query.state, query.cursor, query.query])
-    const read = async <T extends { cachedAt?: string; stale?: boolean; refreshError?: string }>(
-      schema: z.ZodType<T>,
+    const read = async <
+      T extends {
+        cachedAt?: string
+        stale?: boolean
+        refreshError?: string
+      },
+      I,
+    >(
+      schema: Schema.Schema<T, I>,
       load: () => Promise<T>,
     ) => {
-      const row = z
-        .object({ value: z.string(), updated: z.number() })
-        .optional()
-        .parse(this.db.prepare('SELECT value,updated FROM forge_work_cache WHERE key=?').get(key))
+      const row = decode(
+        Schema.UndefinedOr(
+          mutableStruct({
+            value: Schema.String,
+            updated: Schema.Number.pipe(Schema.finite()),
+          }),
+        ),
+        this.db.prepare('SELECT value,updated FROM forge_work_cache WHERE key=?').get(key),
+      )
       let cached: T | undefined
       if (row) {
         try {
-          const result = schema.safeParse(JSON.parse(row.value))
+          const result = decodeResult(schema, JSON.parse(row.value))
           if (result.success) cached = result.data
         } catch {
           // Cache entries are disposable; invalid persisted JSON must not block the provider.
@@ -235,10 +281,13 @@ export class ForgeWork {
         if (!cached) this.db.prepare('DELETE FROM forge_work_cache WHERE key=?').run(key)
       }
       if (row && cached && !query.refresh && Date.now() - row.updated < 30000)
-        return { ...cached, cachedAt: new Date(row.updated).toISOString() }
+        return {
+          ...cached,
+          cachedAt: new Date(row.updated).toISOString(),
+        }
       const version = this.versions.get(source) ?? 0
       try {
-        const result = schema.parse(await load()),
+        const result = decode(schema, await load()),
           updated = Date.now()
         validateSource()
         if (version === (this.versions.get(source) ?? 0)) {
@@ -281,7 +330,7 @@ export class ForgeWork {
     if (operation === 'pipelines/detail')
       return read(forgePipelineDetailSchema, () => provider.pipeline(id(), query.cursor))
     if (operation === 'pipelines/definitions')
-      return forgeDefinitionsSchema.parse(await provider.definitions(query.cursor))
+      return decode(forgeDefinitionsSchema, await provider.definitions(query.cursor))
     throw new HttpError(404, 'Source control operation not found')
   }
 }

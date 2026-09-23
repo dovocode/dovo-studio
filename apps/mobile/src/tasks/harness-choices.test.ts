@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { expect, it } from 'vite-plus/test'
 import { defaultTaskHarness, resolveTaskAgent, taskSchema, type Agent } from '@dovo/protocol'
 import {
@@ -7,12 +8,19 @@ import {
   taskHarnessLabel,
   taskHarnessSelection,
 } from './harness-choices'
-
 const agents: Agent[] = [
-  { ...defaultTaskHarness('codex'), id: 'builder', name: 'Builder' },
-  { ...defaultTaskHarness('claude'), id: 'reviewer', name: 'Reviewer' },
+  {
+    ...defaultTaskHarness('codex'),
+    id: 'builder',
+    name: 'Builder',
+  },
+  {
+    ...defaultTaskHarness('claude'),
+    id: 'reviewer',
+    name: 'Reviewer',
+  },
 ]
-const draft = taskSchema.parse({
+const draft = decode(taskSchema, {
   id: 'task',
   repositoryId: 'repo',
   agentId: '',
@@ -27,9 +35,14 @@ const draft = taskSchema.parse({
 })
 const sent = {
   ...draft,
-  messages: [{ id: 'first', role: 'user' as const, text: 'Build a screen' }],
+  messages: [
+    {
+      id: 'first',
+      role: 'user' as const,
+      text: 'Build a screen',
+    },
+  ],
 }
-
 it('offers all providers and custom agents before the first input', () => {
   expect(taskHarnessChoices(draft, agents).map((choice) => choice.id)).toEqual([
     'harness:codex',
@@ -69,23 +82,45 @@ it('uses the provider that ran the first turn for historical threads', () => {
 it('locks a queued first input and preserves the lock after it is removed', () => {
   const queued = {
     ...draft,
-    queue: [{ id: 'queue', role: 'user' as const, text: 'Build', createdAt: draft.createdAt }],
+    queue: [
+      {
+        id: 'queue',
+        role: 'user' as const,
+        text: 'Build',
+        createdAt: draft.createdAt,
+      },
+    ],
   }
   expect(taskHarnessChoices(queued, agents).every((choice) => choice.provider === 'codex')).toBe(
     true,
   )
   expect(
-    taskHarnessChoices({ ...draft, providerLock: 'codex' }, agents).every(
-      (choice) => choice.provider === 'codex',
-    ),
+    taskHarnessChoices(
+      {
+        ...draft,
+        providerLock: 'codex',
+      },
+      agents,
+    ).every((choice) => choice.provider === 'codex'),
   ).toBe(true)
 })
 it('removes a custom agent if its provider changes while a task editor is open', () => {
   const updated = agents.map((agent) =>
-    agent.id === 'builder' ? { ...agent, provider: 'claude' as const } : agent,
+    agent.id === 'builder'
+      ? {
+          ...agent,
+          provider: 'claude' as const,
+        }
+      : agent,
   )
   expect(
-    taskHarnessChoices({ ...sent, providerLock: 'codex' }, updated).map((choice) => choice.id),
+    taskHarnessChoices(
+      {
+        ...sent,
+        providerLock: 'codex',
+      },
+      updated,
+    ).map((choice) => choice.id),
   ).toEqual(['harness:codex'])
 })
 it('does not restrict same-provider model, speed, reasoning or access changes', () => {
@@ -101,19 +136,31 @@ it('does not restrict same-provider model, speed, reasoning or access changes', 
   }
   expect(taskHarnessChoices(configured, agents)).toEqual(taskHarnessChoices(sent, agents))
 })
-
 it('shows the custom name alongside its provider and model', () => {
   expect(
     taskHarnessChoices(draft, agents).find((choice) => choice.id === 'agent:builder')?.name,
   ).toBe('Builder · Codex')
-  const custom = { ...draft, harness: null, agentId: 'builder' }
-  expect(taskHarnessLabel(custom, { ...agents[0], model: 'gpt-test' })).toBe('Builder · gpt-test')
-  expect(taskHarnessLabel(draft, { ...agents[0], model: 'gpt-test' })).toBe('gpt-test')
+  const custom = {
+    ...draft,
+    harness: null,
+    agentId: 'builder',
+  }
+  expect(
+    taskHarnessLabel(custom, {
+      ...agents[0],
+      model: 'gpt-test',
+    }),
+  ).toBe('Builder · gpt-test')
+  expect(
+    taskHarnessLabel(draft, {
+      ...agents[0],
+      model: 'gpt-test',
+    }),
+  ).toBe('gpt-test')
   expect(taskHarnessLabel(draft, agents[0])).toBe('Codex')
 })
-
 it('re-selects the active custom agent without losing task model and access overrides', () => {
-  const custom = taskSchema.parse({
+  const custom = decode(taskSchema, {
     ...draft,
     harness: null,
     agentId: 'builder',
@@ -132,7 +179,6 @@ it('re-selects the active custom agent without losing task model and access over
     serviceTier: 'fast',
   })
 })
-
 it('keeps custom instructions and resources when applying task-specific model settings', () => {
   const builder: Agent = {
     ...agents[0],
@@ -142,7 +188,12 @@ it('keeps custom instructions and resources when applying task-specific model se
     resources: {
       mcpServers: [],
       skills: [
-        { name: 'review', description: 'Review work', content: 'Review the diff.', enabled: true },
+        {
+          name: 'review',
+          description: 'Review work',
+          content: 'Review the diff.',
+          enabled: true,
+        },
       ],
     },
   }
@@ -153,7 +204,7 @@ it('keeps custom instructions and resources when applying task-specific model se
     reasoning: 'high',
     permission: 'workspace-write',
   })
-  const updated = taskSchema.parse({
+  const updated = decode(taskSchema, {
     ...draft,
     agentId: changes.agentId.after,
     harness: changes.harness.after,
@@ -171,13 +222,16 @@ it('keeps custom instructions and resources when applying task-specific model se
   expect(builder.model).toBe('saved-model')
   expect(builder.permission).toBe('ask')
 })
-
 it('clears the custom binding and overrides when selecting a built-in agent', () => {
-  const custom = taskSchema.parse({
+  const custom = decode(taskSchema, {
     ...draft,
     harness: null,
     agentId: 'builder',
-    agentOverrides: { model: 'task-model', serviceTier: null, cyberAccessProgram: null },
+    agentOverrides: {
+      model: 'task-model',
+      serviceTier: null,
+      cyberAccessProgram: null,
+    },
   })
   const claude = selectedTaskHarness(custom, agents, 'harness:claude')!
   const changes = taskHarnessChanges(custom, 'harness:claude', claude)
@@ -185,6 +239,13 @@ it('clears the custom binding and overrides when selecting a built-in agent', ()
   expect(changes.agentOverrides.after).toBeNull()
   expect(changes.harness.after).toEqual(defaultTaskHarness('claude'))
   expect(
-    selectedTaskHarness({ ...custom, messages: sent.messages }, agents, 'harness:claude'),
+    selectedTaskHarness(
+      {
+        ...custom,
+        messages: sent.messages,
+      },
+      agents,
+      'harness:claude',
+    ),
   ).toBeUndefined()
 })

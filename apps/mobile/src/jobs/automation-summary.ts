@@ -1,13 +1,15 @@
 import type { JobRun } from '@dovo/protocol'
-
 export function automationRuns(automationId: string, runs: readonly JobRun[]) {
   const history = runs
     .filter((run) => run.automationId === automationId)
     .sort((a, b) => Date.parse(b.updatedAt ?? b.createdAt) - Date.parse(a.updatedAt ?? a.createdAt))
   const active = history.find((run) => run.status === 'running' || run.status === 'waiting')
-  return { history, active, latest: active ?? history[0] }
+  return {
+    history,
+    active,
+    latest: active ?? history[0],
+  }
 }
-
 export function automationRunSummary(run: JobRun, inputTasks: ReadonlySet<string>) {
   const steps = run.steps?.filter((step) => step.kind !== 'trigger')
   const current = steps?.find(

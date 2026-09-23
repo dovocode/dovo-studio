@@ -4,11 +4,18 @@ import { JiraWork, jiraMarkdown, listJiraProjects } from './jira'
 import type { runForgeCli } from './forge-cli'
 const auth =
   '✓ Authenticated\n  Site: team.atlassian.net\n  Email: user@example.com\n  Authentication Type: oauth'
-const binding = { site: 'https://team.atlassian.net', project: 'TEAM' }
+const binding = {
+  site: 'https://team.atlassian.net',
+  project: 'TEAM',
+}
 const project = {
   key: 'TEAM',
   self: 'https://team.atlassian.net/rest/api/3/project/1',
-  issueTypes: [{ name: 'Task' }],
+  issueTypes: [
+    {
+      name: 'Task',
+    },
+  ],
 }
 const raw = {
   id: '100',
@@ -23,23 +30,46 @@ const raw = {
         {
           type: 'paragraph',
           content: [
-            { type: 'text', text: 'Hello', marks: [{ type: 'strong' }] },
-            { type: 'text', text: ' world' },
+            {
+              type: 'text',
+              text: 'Hello',
+              marks: [
+                {
+                  type: 'strong',
+                },
+              ],
+            },
+            {
+              type: 'text',
+              text: ' world',
+            },
           ],
         },
       ],
     },
-    status: { name: 'To Do' },
-    issuetype: { name: 'Task' },
+    status: {
+      name: 'To Do',
+    },
+    issuetype: {
+      name: 'Task',
+    },
     labels: [],
     updated: '2026-09-20T10:00:00Z',
   },
 }
 it('renders ADF text and marks as Markdown with schema validation', () => {
   expect(jiraMarkdown(raw.fields.description)).toContain('**Hello**')
-  expect(() => jiraMarkdown({ type: 'doc', version: 1, content: [{ type: 'text' }] })).toThrow(
-    'invalid rich-text',
-  )
+  expect(() =>
+    jiraMarkdown({
+      type: 'doc',
+      version: 1,
+      content: [
+        {
+          type: 'text',
+        },
+      ],
+    }),
+  ).toThrow('invalid rich-text')
 })
 it('checks the active CLI site before a write instead of switching accounts', async () => {
   const run = vi
@@ -62,7 +92,17 @@ it('keeps Jira independent of any repository provider and paginates with scoped 
     .mockResolvedValueOnce(auth)
     .mockResolvedValueOnce(JSON.stringify(project))
     .mockResolvedValueOnce(
-      JSON.stringify(Array.from({ length: 31 }, (_, i) => ({ ...raw, key: `TEAM-${100 - i}` }))),
+      JSON.stringify(
+        Array.from(
+          {
+            length: 31,
+          },
+          (_, i) => ({
+            ...raw,
+            key: `TEAM-${100 - i}`,
+          }),
+        ),
+      ),
     )
   const page = await new JiraWork('acli', binding, run).issues('all')
   expect(page.items).toHaveLength(30)
@@ -109,7 +149,13 @@ it('distinguishes partial Jira discussion from a failed refresh', async () => {
     .mockResolvedValueOnce(
       JSON.stringify({
         ...raw,
-        fields: { ...raw.fields, comment: { total: 4, comments: [] } },
+        fields: {
+          ...raw.fields,
+          comment: {
+            total: 4,
+            comments: [],
+          },
+        },
       }),
     )
   const detail = await new JiraWork('acli', binding, run).issue(raw.key)
@@ -125,7 +171,10 @@ it('writes comments through a private temporary file and never places the body i
     .mockResolvedValueOnce(JSON.stringify(raw))
     .mockImplementationOnce(async (_cmd, args) => {
       file = args[args.indexOf('--body-file') + 1]!
-      expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ version: 1, type: 'doc' })
+      expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({
+        version: 1,
+        type: 'doc',
+      })
       expect(args.join(' ')).not.toContain('private comment')
       return '{}'
     })
@@ -153,7 +202,6 @@ it('rejects stale Jira edits before issuing a mutation', async () => {
   ).rejects.toThrow('changed')
   expect(run).toHaveBeenCalledTimes(3)
 })
-
 it('transitions Jira status as a single explicit CLI operation', async () => {
   const run = vi
     .fn<typeof runForgeCli>()
@@ -223,31 +271,50 @@ it('refuses a combined Jira edit and transition instead of partially applying it
   ).rejects.toThrow('separately')
   expect(run).toHaveBeenCalledTimes(3)
 })
-
 it('accepts OAuth gateway self links while checking the authenticated site', async () => {
   const gateway = 'https://jira-prod-eu-13-3.prod.atl-paas.net/rest/api/3'
   const run = vi
     .fn<typeof runForgeCli>()
     .mockResolvedValueOnce(auth)
     .mockResolvedValueOnce(
-      JSON.stringify({ ...project, self: `${gateway}/project/1`, issueTypes: null }),
+      JSON.stringify({
+        ...project,
+        self: `${gateway}/project/1`,
+        issueTypes: null,
+      }),
     )
-    .mockResolvedValueOnce(JSON.stringify({ ...raw, self: `${gateway}/issue/100` }))
+    .mockResolvedValueOnce(
+      JSON.stringify({
+        ...raw,
+        self: `${gateway}/issue/100`,
+      }),
+    )
   const jira = new JiraWork('acli', binding, run)
   expect((await jira.options()).issueTypes).toEqual([])
   const detail = await jira.issue(raw.key)
   expect(detail.issue.url).toBe('https://team.atlassian.net/browse/TEAM-1')
   expect(run).toHaveBeenCalledTimes(3)
 })
-
 it('discovers projects from the signed-in checkout without exposing account details', async () => {
   const run = vi
     .fn<typeof runForgeCli>()
     .mockResolvedValueOnce(auth)
-    .mockResolvedValueOnce(JSON.stringify([{ key: 'TEAM', name: 'Developer Experience' }]))
+    .mockResolvedValueOnce(
+      JSON.stringify([
+        {
+          key: 'TEAM',
+          name: 'Developer Experience',
+        },
+      ]),
+    )
   expect(await listJiraProjects('acli-custom', '/checkout', run)).toEqual({
     site: 'https://team.atlassian.net',
-    projects: [{ key: 'TEAM', name: 'Developer Experience' }],
+    projects: [
+      {
+        key: 'TEAM',
+        name: 'Developer Experience',
+      },
+    ],
     truncated: false,
   })
   expect(
@@ -255,22 +322,30 @@ it('discovers projects from the signed-in checkout without exposing account deta
   ).toBe(true)
   expect(run.mock.calls[1]?.[1]).toEqual(['jira', 'project', 'list', '--limit', '201', '--json'])
 })
-
 it('rejects an unidentifiable account before reading projects', async () => {
   const run = vi.fn<typeof runForgeCli>().mockResolvedValue('not authenticated')
   await expect(listJiraProjects('acli', '/checkout', run)).rejects.toThrow('acli jira auth login')
   expect(run).toHaveBeenCalledTimes(1)
 })
-
 it('reads supported search fields without inventing a date or revision', async () => {
   const { updated: _updated, ...fields } = raw.fields
   const run = vi
     .fn<typeof runForgeCli>()
     .mockResolvedValueOnce(auth)
     .mockResolvedValueOnce(JSON.stringify(project))
-    .mockResolvedValueOnce(JSON.stringify([{ ...raw, fields }]))
+    .mockResolvedValueOnce(
+      JSON.stringify([
+        {
+          ...raw,
+          fields,
+        },
+      ]),
+    )
   const page = await new JiraWork('acli', binding, run).issues('open')
-  expect(page.items[0]).toMatchObject({ updatedAt: '', revision: '' })
+  expect(page.items[0]).toMatchObject({
+    updatedAt: '',
+    revision: '',
+  })
   const args = run.mock.calls[2]![1]
   expect(args[args.indexOf('--fields') + 1]).toBe(
     'key,summary,description,status,issuetype,creator,assignee,labels',
@@ -279,14 +354,23 @@ it('reads supported search fields without inventing a date or revision', async (
     'project = TEAM AND statusCategory != Done ORDER BY updated DESC, key DESC',
   )
 })
-
 it('paginates recently updated issues and searches by key with project scope intact', async () => {
   const run = vi
     .fn<typeof runForgeCli>()
     .mockResolvedValueOnce(auth)
     .mockResolvedValueOnce(JSON.stringify(project))
     .mockResolvedValueOnce(
-      JSON.stringify(Array.from({ length: 61 }, (_, i) => ({ ...raw, key: `TEAM-${100 - i}` }))),
+      JSON.stringify(
+        Array.from(
+          {
+            length: 61,
+          },
+          (_, i) => ({
+            ...raw,
+            key: `TEAM-${100 - i}`,
+          }),
+        ),
+      ),
     )
   const page = await new JiraWork('acli', binding, run).issues('closed', '30', 'team-40')
   expect(page.items).toHaveLength(30)
@@ -298,7 +382,6 @@ it('paginates recently updated issues and searches by key with project scope int
     'project = TEAM AND statusCategory = Done AND key = "TEAM-40" ORDER BY updated DESC, key DESC',
   )
 })
-
 it('keeps exact custom states and escapes search text as a JQL literal', async () => {
   const run = vi
     .fn<typeof runForgeCli>()
@@ -317,7 +400,6 @@ it('keeps exact custom states and escapes search text as a JQL literal', async (
     '"deploy \\"OR\\" project = OTHER"',
   )
 })
-
 it('keeps readable content and a notice when one ADF extension is unsupported', async () => {
   const description = {
     type: 'doc',
@@ -326,8 +408,18 @@ it('keeps readable content and a notice when one ADF extension is unsupported', 
       {
         type: 'paragraph',
         content: [
-          { type: 'text', text: 'Ship the fix: ' },
-          { type: 'status', attrs: { text: 'IN REVIEW', color: 'blue', localId: 'status-1' } },
+          {
+            type: 'text',
+            text: 'Ship the fix: ',
+          },
+          {
+            type: 'status',
+            attrs: {
+              text: 'IN REVIEW',
+              color: 'blue',
+              localId: 'status-1',
+            },
+          },
         ],
       },
     ],
@@ -342,10 +434,20 @@ it('keeps readable content and a notice when one ADF extension is unsupported', 
         fields: {
           ...raw.fields,
           description,
-          assignee: { displayName: 'Sam Developer', accountId: '712:opaque-account' },
+          assignee: {
+            displayName: 'Sam Developer',
+            accountId: '712:opaque-account',
+          },
           comment: {
             total: 1,
-            comments: [{ id: '1', body: description, author: null, created: raw.fields.updated }],
+            comments: [
+              {
+                id: '1',
+                body: description,
+                author: null,
+                created: raw.fields.updated,
+              },
+            ],
           },
         },
       }),
@@ -362,14 +464,18 @@ it('keeps readable content and a notice when one ADF extension is unsupported', 
     body: expect.stringContaining('IN REVIEW'),
   })
 })
-
 it('requires a real detail revision before any write', async () => {
   const { updated: _updated, ...fields } = raw.fields
   const run = vi
     .fn<typeof runForgeCli>()
     .mockResolvedValueOnce(auth)
     .mockResolvedValueOnce(JSON.stringify(project))
-    .mockResolvedValueOnce(JSON.stringify({ ...raw, fields }))
+    .mockResolvedValueOnce(
+      JSON.stringify({
+        ...raw,
+        fields,
+      }),
+    )
   await expect(
     new JiraWork('acli', binding, run).actOnIssue({
       action: 'edit',

@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { expect, it } from 'vite-plus/test'
 import {
   repositorySchema,
@@ -11,8 +12,7 @@ import {
   projectSourceKey,
   retainProjectPages,
 } from './collection-sources'
-
-const repository = repositorySchema.parse({
+const repository = decode(repositorySchema, {
   id: 'shared-project',
   name: 'App',
   path: '/projects/app',
@@ -21,10 +21,13 @@ const repository = repositorySchema.parse({
 function overview(host: string, connected = true): RuntimeOverview {
   return {
     profile: runtimeProfile(
-      { address: `http://${host}:51464`, token: `${host}-device-credential` },
+      {
+        address: `http://${host}:51464`,
+        token: `${host}-device-credential`,
+      },
       host,
     ),
-    snapshot: snapshotSchema.parse({
+    snapshot: decode(snapshotSchema, {
       revision: 1,
       owner: false,
       workspace: {
@@ -49,27 +52,37 @@ function overview(host: string, connected = true): RuntimeOverview {
     pullError: null,
   }
 }
-
 it('keeps identical project IDs separate across computers, including saved offline work', () => {
   const first = overview('laptop'),
     second = overview('workstation', false)
   const sources = collectionSources([first, second])
   expect(sources).toHaveLength(2)
   expect(new Set(sources.map((source) => source.key)).size).toBe(2)
-  expect(sources[1]).toMatchObject({ connected: false, repository: { id: 'shared-project' } })
+  expect(sources[1]).toMatchObject({
+    connected: false,
+    repository: {
+      id: 'shared-project',
+    },
+  })
   expect(sources[1].key).toBe(projectSourceKey(second.profile.id, repository.id))
 })
-
 it('does not reload source collections for unrelated live snapshot activity', () => {
   const entry = overview('laptop')
   const before = collectionSourceIdentity(collectionSources([entry]))
   expect(
     collectionSourceIdentity(
-      collectionSources([{ ...entry, snapshot: { ...entry.snapshot!, revision: 3 } }]),
+      collectionSources([
+        {
+          ...entry,
+          snapshot: {
+            ...entry.snapshot!,
+            revision: 3,
+          },
+        },
+      ]),
     ),
   ).toBe(before)
 })
-
 it('retains other computers and saved rows when a computer goes offline or is renamed', () => {
   const first = overview('laptop'),
     second = overview('workstation')
@@ -78,18 +91,29 @@ it('retains other computers and saved rows when a computer goes offline or is re
     items: [source.profile.name],
   }))
   const after = collectionSources([
-    { ...first, connected: false, profile: { ...first.profile, name: 'Travel laptop' } },
+    {
+      ...first,
+      connected: false,
+      profile: {
+        ...first.profile,
+        name: 'Travel laptop',
+      },
+    },
     second,
   ])
   const retained = retainProjectPages(pages, after)
   expect(retained).toHaveLength(2)
   expect(retained[0]).toMatchObject({
-    source: { connected: false, profile: { name: 'Travel laptop' } },
+    source: {
+      connected: false,
+      profile: {
+        name: 'Travel laptop',
+      },
+    },
     items: ['laptop'],
   })
   expect(retained[1].items).toEqual(['workstation'])
 })
-
 it('immediately removes forgotten or reauthenticated sources without removing another computer', () => {
   const first = overview('laptop'),
     second = overview('workstation')
@@ -104,7 +128,10 @@ it('immediately removes forgotten or reauthenticated sources without removing an
     ...first,
     profile: {
       ...first.profile,
-      connection: { ...first.profile.connection, token: 'replacement-credential' },
+      connection: {
+        ...first.profile.connection,
+        token: 'replacement-credential',
+      },
     },
   }
   expect(
@@ -113,13 +140,23 @@ it('immediately removes forgotten or reauthenticated sources without removing an
     ),
   ).toEqual(['workstation'])
 })
-
 it('drops rows when a checkout changes its provider or path while keeping its ID', () => {
   const source = collectionSources([overview('laptop')])[0]
-  const pages = [{ source, items: ['old source'] }]
+  const pages = [
+    {
+      source,
+      items: ['old source'],
+    },
+  ]
   expect(
     retainProjectPages(pages, [
-      { ...source, repository: { ...source.repository, path: '/different/app' } },
+      {
+        ...source,
+        repository: {
+          ...source.repository,
+          path: '/different/app',
+        },
+      },
     ]),
   ).toEqual([])
   expect(
@@ -128,7 +165,10 @@ it('drops rows when a checkout changes its provider or path while keeping its ID
         ...source,
         repository: {
           ...source.repository,
-          forge: { connectionId: 'new-account', repository: 'org/app' },
+          forge: {
+            connectionId: 'new-account',
+            repository: 'org/app',
+          },
         },
       },
     ]),

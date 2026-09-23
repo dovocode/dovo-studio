@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect } from 'react'
 import {
   commandFields,
   commandSettingsResponse,
@@ -8,11 +9,11 @@ import {
 import { Button, FormField, Input, Textarea } from '@dovo/studio-ui'
 export function CommandSettings() {
   const { request, connected } = useWorkspace()
-  const [settings, setSettings] = useState<Settings | null>(null)
-  const [defaultShell, setDefaultShell] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [settings, setSettings] = useApplicationState<Settings | null>(null)
+  const [defaultShell, setDefaultShell] = useApplicationState('')
+  const [error, setError] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [saved, setSaved] = useApplicationState(false)
   useEffect(() => {
     let stopped = false
     setSettings(null)
@@ -52,7 +53,10 @@ export function CommandSettings() {
             setSaved(false)
             void request(
               '/api/commands/save',
-              { ...settings, shellArgs: settings.shellArgs.filter(Boolean) },
+              {
+                ...settings,
+                shellArgs: settings.shellArgs.filter(Boolean),
+              },
               commandSettingsResponse,
             )
               .then((result) => {
@@ -70,7 +74,12 @@ export function CommandSettings() {
                   aria-label={field.label}
                   value={settings[field.id]}
                   placeholder={field.id === 'shell' ? defaultShell : field.placeholder}
-                  onChange={(event) => change({ ...settings, [field.id]: event.target.value })}
+                  onChange={(event) =>
+                    change({
+                      ...settings,
+                      [field.id]: event.target.value,
+                    })
+                  }
                 />
               </FormField>
             ))}
@@ -79,7 +88,10 @@ export function CommandSettings() {
                 aria-label="Shell arguments"
                 value={settings.shellArgs.join('\n')}
                 onChange={(event) =>
-                  change({ ...settings, shellArgs: event.target.value.split('\n') })
+                  change({
+                    ...settings,
+                    shellArgs: event.target.value.split('\n'),
+                  })
                 }
               />
             </FormField>

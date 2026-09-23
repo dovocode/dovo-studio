@@ -1,3 +1,4 @@
+import { Effect, Fiber } from 'effect'
 import type { PullDetail } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { openDatabase } from '../storage/database'
@@ -126,7 +127,7 @@ it('returns cached discussion immediately while a new thread refresh is still pe
   )
   db.prepare('UPDATE pull_cache SET updated=?').run(Date.now() - 61000)
   expect((await cache.detail('/repo', 7)).pull.body).toBe('Description')
-  expect(load).toHaveBeenCalledTimes(2)
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
   finish({
     ...detail,
     comments: [],
@@ -193,10 +194,39 @@ it('does not mark a response that started before a mutation as fresh', async () 
       }),
   )
   const pending = cache.list('/repo', 'open', 1)
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
   cache.invalidate('/repo', 7)
   finish({ pulls: [], page: 1, hasMore: false })
   expect((await pending).stale).toBe(true)
   load.mockResolvedValue({ pulls: [], page: 1, hasMore: false })
   await cache.list('/repo', 'open', 1)
-  expect(load).toHaveBeenCalledTimes(2)
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+})
+
+it('keeps a shared refresh alive after a caller leaves and drains it before disposal', async () => {
+  const { cache, pulls, db } = setup()
+  let finish: (value: { pulls: []; page: number; hasMore: boolean }) => void = () => {
+    throw new Error('Not started')
+  }
+  const load = vi.spyOn(pulls, 'list').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  const caller = Effect.runFork(cache.listEffect('/repo', 'open', 1))
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+  await Effect.runPromise(Fiber.interrupt(caller))
+  let disposed = false
+  const closing = cache.dispose().then(() => {
+    disposed = true
+  })
+  await Promise.resolve()
+  expect(disposed).toBe(false)
+  finish({ pulls: [], page: 1, hasMore: false })
+  await closing
+  expect(db.prepare('SELECT COUNT(*) AS count FROM pull_cache').get()).toEqual({ count: 1 })
+  expect((await cache.list('/repo', 'open', 1)).page).toBe(1)
+  await expect(cache.list('/repo', 'open', 1, true)).rejects.toThrow('Pull cache is closed')
+  expect(load).toHaveBeenCalledTimes(1)
 })

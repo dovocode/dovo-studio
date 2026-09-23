@@ -1,13 +1,19 @@
+import { mutableStruct } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import type { AgentRun } from '../types'
 import { codexAdapter } from './codex'
 const cleanups: string[] = []
 afterEach(async () => {
-  for (const dir of cleanups.splice(0)) await rm(dir, { recursive: true, force: true })
+  for (const dir of cleanups.splice(0))
+    await rm(dir, {
+      recursive: true,
+      force: true,
+    })
 })
 async function fixture(version = '0.155.1', savedDaybreak = false) {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-codex-modes-'))
@@ -28,7 +34,9 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
  send({id:m.id,result});
  if(m.method==='turn/start')send({method:'turn/completed',params:{turn:{status:'completed'}}});
 });`,
-    { mode: 0o700 },
+    {
+      mode: 0o700,
+    },
   )
   const run: AgentRun = {
     agent: {
@@ -54,11 +62,23 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
       .trim()
       .split('\n')
       .map((line) =>
-        z
-          .object({ method: z.string(), params: z.record(z.string(), z.unknown()) })
-          .parse(JSON.parse(line)),
+        decode(
+          mutableStruct({
+            method: Schema.String,
+            params: Schema.mutable(
+              Schema.Record({
+                key: Schema.String,
+                value: Schema.Unknown,
+              }),
+            ),
+          }),
+          JSON.parse(line),
+        ),
       )
-  return { run, requests }
+  return {
+    run,
+    requests,
+  }
 }
 it('enables advertised Fast per run, then explicitly resets a resumed thread and turn to Standard', async () => {
   const { run, requests } = await fixture()
@@ -70,7 +90,9 @@ it('enables advertised Fast per run, then explicitly resets a resumed thread and
   const rows = await requests()
   expect(rows.find((row) => row.method === 'thread/start')?.params).toMatchObject({
     serviceTier: 'priority',
-    config: { 'features.fast_mode': true },
+    config: {
+      'features.fast_mode': true,
+    },
   })
   expect(rows.find((row) => row.method === 'thread/resume')?.params).toMatchObject({
     serviceTier: 'default',
@@ -118,7 +140,6 @@ it('fails before a turn on older harnesses that could silently ignore Daybreak',
   await expect(codexAdapter.run(run)).rejects.toThrow('Daybreak mode requires Codex 0.155.1')
   expect((await requests()).some((row) => row.method === 'turn/start')).toBe(false)
 })
-
 it('clears an old persisted Daybreak choice when a resumed task returns to Automatic', async () => {
   const { run, requests } = await fixture('0.155.1', true)
   run.sessionId = 'thread'

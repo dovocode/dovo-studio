@@ -1,8 +1,12 @@
+import { nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
 import { usePullDetail } from './use-pull-detail'
 import { Markdown } from '../ui/markdown'
 import { router } from 'expo-router'
 import { pipelineRunsHref } from '../shell/source-route'
-import { useState, useRef } from 'react'
+import { useRef } from 'react'
 import { Linking, Pressable, RefreshControl, ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import {
@@ -46,14 +50,18 @@ export function PullDetail({
     invalidate()
     invalidatePullList(readCache, repositoryId)
   }
-  const [starting, setStarting] = useState(false),
-    [tab, setTab] = useState('overview'),
-    [changesOpened, setChangesOpened] = useState(false),
-    [metadataOpen, setMetadataOpen] = useState(false)
-  const [action, setAction] = useState<PullActionTarget | null>(null)
-  const [lineComment, setLineComment] = useState<string | null>(null)
+  const [starting, setStarting] = useApplicationState(false),
+    [tab, setTab] = useApplicationState('overview'),
+    [changesOpened, setChangesOpened] = useApplicationState(false),
+    [metadataOpen, setMetadataOpen] = useApplicationState(false)
+  const [action, setAction] = useApplicationState<PullActionTarget | null>(null)
+  const [lineComment, setLineComment] = useApplicationState<string | null>(null)
   const open = (url: string) => {
-    void Linking.openURL(url).catch((error) => setError(String(error)))
+    void runClientEffect(
+      nativeEffect(() => Linking.openURL(url)).pipe(
+        Effect.catchAll((error) => nativeEffect(() => setError(String(error)))),
+      ),
+    )
   }
   const discussion = detail?.comments.filter((comment) => comment.kind !== 'inline') ?? []
   const fileBaseURL =
@@ -111,14 +119,29 @@ export function PullDetail({
             value={tab}
             onChange={(value) => {
               setTab(value)
-              body.current?.scrollTo({ y: 0, animated: false })
+              body.current?.scrollTo({
+                y: 0,
+                animated: false,
+              })
               if (value === 'changes') setChangesOpened(true)
             }}
             items={[
-              { id: 'overview', name: 'Overview' },
-              { id: 'changes', name: 'Files' },
-              { id: 'discussion', name: 'Activity' },
-              { id: 'checks', name: 'Checks' },
+              {
+                id: 'overview',
+                name: 'Overview',
+              },
+              {
+                id: 'changes',
+                name: 'Files',
+              },
+              {
+                id: 'discussion',
+                name: 'Activity',
+              },
+              {
+                id: 'checks',
+                name: 'Checks',
+              },
             ]}
           />
           <ScrollView
@@ -157,19 +180,43 @@ export function PullDetail({
                 {warning}
               </Text>
             ))}
-            <View style={{ display: tab === 'overview' ? 'flex' : 'none', gap: 20 }}>
-              <View style={{ gap: 8 }}>
+            <View
+              style={{
+                display: tab === 'overview' ? 'flex' : 'none',
+                gap: 20,
+              }}
+            >
+              <View
+                style={{
+                  gap: 8,
+                }}
+              >
                 <Text
                   selectable
                   accessibilityRole="header"
-                  style={[styles.title, { fontSize: 22, lineHeight: 28 }]}
+                  style={[
+                    styles.title,
+                    {
+                      fontSize: 22,
+                      lineHeight: 28,
+                    },
+                  ]}
                 >
                   {detail.pull.title}
                 </Text>
                 <View style={styles.row}>
                   <Signal signal={pullState(detail.pull)} emphasis />
                   <Text style={styles.muted}>·</Text>
-                  <Text style={[styles.muted, { flexShrink: 1 }]}>{detail.pull.author}</Text>
+                  <Text
+                    style={[
+                      styles.muted,
+                      {
+                        flexShrink: 1,
+                      },
+                    ]}
+                  >
+                    {detail.pull.author}
+                  </Text>
                 </View>
                 <Text selectable style={styles.muted}>
                   {detail.pull.head} → {detail.pull.base}
@@ -182,7 +229,13 @@ export function PullDetail({
                   <Signal signal={pullMergeability(detail.pull)} />
                 </View>
               </View>
-              <View style={{ borderTopWidth: 0.5, borderColor: colors.border, paddingTop: 16 }}>
+              <View
+                style={{
+                  borderTopWidth: 0.5,
+                  borderColor: colors.border,
+                  paddingTop: 16,
+                }}
+              >
                 <Markdown
                   text={detail.pull.body || 'No description provided.'}
                   baseURL={detail.pull.url}
@@ -190,22 +243,48 @@ export function PullDetail({
                   preserveLineBreaks
                 />
               </View>
-              <View style={{ borderTopWidth: 0.5, borderColor: colors.border }}>
+              <View
+                style={{
+                  borderTopWidth: 0.5,
+                  borderColor: colors.border,
+                }}
+              >
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="People and labels"
-                  accessibilityState={{ expanded: metadataOpen }}
+                  accessibilityState={{
+                    expanded: metadataOpen,
+                  }}
                   onPress={() => setMetadataOpen((value) => !value)}
                   style={({ pressed }) => [
                     styles.row,
-                    { flexWrap: 'nowrap', minHeight: 44, opacity: pressed ? 0.55 : 1 },
+                    {
+                      flexWrap: 'nowrap',
+                      minHeight: 44,
+                      opacity: pressed ? 0.55 : 1,
+                    },
                   ]}
                 >
-                  <Text style={[styles.text, { flex: 1, fontSize: 15 }]}>People and labels</Text>
+                  <Text
+                    style={[
+                      styles.text,
+                      {
+                        flex: 1,
+                        fontSize: 15,
+                      },
+                    ]}
+                  >
+                    People and labels
+                  </Text>
                   <Icon name={metadataOpen ? 'down' : 'next'} size={13} color={colors.muted} />
                 </Pressable>
                 {metadataOpen && (
-                  <View style={{ gap: 8, paddingBottom: 12 }}>
+                  <View
+                    style={{
+                      gap: 8,
+                      paddingBottom: 12,
+                    }}
+                  >
                     <Text style={styles.muted}>Requested reviewers</Text>
                     <Text style={styles.text}>{detail.pull.reviewers.join(', ') || 'None'}</Text>
                     <Text style={styles.muted}>Assignees</Text>
@@ -216,8 +295,16 @@ export function PullDetail({
                 )}
               </View>
             </View>
-            <View style={{ display: tab === 'discussion' ? 'flex' : 'none' }}>
-              <View style={{ gap: 12 }}>
+            <View
+              style={{
+                display: tab === 'discussion' ? 'flex' : 'none',
+              }}
+            >
+              <View
+                style={{
+                  gap: 12,
+                }}
+              >
                 <Text style={styles.muted}>
                   {discussion.filter((comment) => comment.kind === 'review').length} reviews ·{' '}
                   {discussion.filter((comment) => comment.kind === 'comment').length} discussion
@@ -232,7 +319,11 @@ export function PullDetail({
                 />
               </View>
             </View>
-            <View style={{ display: tab === 'checks' ? 'flex' : 'none' }}>
+            <View
+              style={{
+                display: tab === 'checks' ? 'flex' : 'none',
+              }}
+            >
               <Action
                 secondary
                 label="View pipeline runs for this commit"
@@ -246,7 +337,11 @@ export function PullDetail({
               />
               <PullStatus detail={detail} onOpen={open} />
             </View>
-            <View style={{ display: tab === 'changes' ? 'flex' : 'none' }}>
+            <View
+              style={{
+                display: tab === 'changes' ? 'flex' : 'none',
+              }}
+            >
               {changesOpened && (
                 <PullChanges
                   key={detail.pull.headSha}

@@ -1,4 +1,6 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { parse as parseVersion } from 'semver'
 import {
   forgeRepositorySchema,
@@ -29,18 +31,19 @@ import {
   forgeFile,
   forgeCombinedStatus,
 } from './forge-gitea-schemas.js'
-
 type Transport = Pick<ForgeHttp, 'connection' | 'json' | 'text'>
-type Pull = z.infer<typeof forgePull>
-type Repository = z.infer<typeof forgeRepository>
-type Review = z.infer<typeof forgeReview>
+type Pull = Schema.Schema.Type<typeof forgePull>
+type Repository = Schema.Schema.Type<typeof forgeRepository>
+type Review = Schema.Schema.Type<typeof forgeReview>
 const pageSize = 50
-
 export class GiteaForge implements ForgeAdapter {
   private readonly repositoryPath: string
   private readonly provider: 'forgejo' | 'gitea'
-  private versionRequest?: Promise<{ major: number; minor: number; warning?: string }>
-
+  private versionRequest?: Promise<{
+    major: number
+    minor: number
+    warning?: string
+  }>
   constructor(
     private readonly http: Transport,
     repository: string,
@@ -59,20 +62,30 @@ export class GiteaForge implements ForgeAdapter {
       ? `/api/v1/repos/${segments.map(encodeURIComponent).join('/')}`
       : ''
   }
-
   private get path() {
     if (!this.repositoryPath) throw new HttpError(400, 'Choose a repository first.')
     return this.repositoryPath
   }
-
-  private version(): Promise<{ major: number; minor: number; warning?: string }> {
+  private version(): Promise<{
+    major: number
+    minor: number
+    warning?: string
+  }> {
     return (this.versionRequest ??= this.http
       .json('/api/v1/version')
       .then((value) => {
-        const parsed = z.object({ version: z.string() }).parse(value)
+        const parsed = decode(
+          mutableStruct({
+            version: Schema.String,
+          }),
+          value,
+        )
         const version = parseVersion(parsed.version.replace(/^v/, ''))
         if (!version) throw new Error('The server did not return a recognized version.')
-        return { major: version.major, minor: version.minor }
+        return {
+          major: version.major,
+          minor: version.minor,
+        }
       })
       .catch((error: unknown) => ({
         major: 0,
@@ -80,7 +93,6 @@ export class GiteaForge implements ForgeAdapter {
         warning: `Server version unavailable; optional review features are disabled. ${errorMessage(error)}`,
       })))
   }
-
   private async capabilities(repo?: Repository): Promise<ForgeCapabilities> {
     const version = await this.version()
     const modernGitea = this.provider === 'gitea' && version.major === 1
@@ -108,13 +120,11 @@ export class GiteaForge implements ForgeAdapter {
       draft: false,
     }
   }
-
   private async rawRepository() {
-    return forgeRepository.parse(await this.http.json(this.path))
+    return decode(forgeRepository, await this.http.json(this.path))
   }
-
   private mapRepository(repo: Repository) {
-    return forgeRepositorySchema.parse({
+    return decode(forgeRepositorySchema, {
       id: String(repo.id),
       name: repo.name,
       fullName: repo.full_name,
@@ -123,20 +133,18 @@ export class GiteaForge implements ForgeAdapter {
       defaultBranch: repo.default_branch,
     })
   }
-
   async repository() {
     return this.mapRepository(await this.rawRepository())
   }
-
   private pagePath(path: string, page: number) {
     return `${path}${path.includes('?') ? '&' : '?'}limit=${pageSize}&page=${page}`
   }
 
   // Some instances cap limit below 50. An empty next page, rather than its size, proves the end.
-  private async all<T>(path: string, schema: z.ZodType<T>): Promise<T[]> {
+  private async all<T, I>(path: string, schema: Schema.Schema<T, I>): Promise<T[]> {
     const values: T[] = []
     for (let page = 1; page <= 100; page++) {
-      const rows = z.array(schema).parse(await this.http.json(this.pagePath(path, page)))
+      const rows = decode(mutableArray(schema), await this.http.json(this.pagePath(path, page)))
       if (!rows.length) return values
       values.push(...rows)
     }
@@ -145,24 +153,32 @@ export class GiteaForge implements ForgeAdapter {
       'The server returned too many pages. Open the remaining data on the server.',
     )
   }
-
   async repositories(page: number) {
-    z.number().int().positive().parse(page)
+    decode(
+      Schema.Number.pipe(Schema.finite())
+        .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+        .pipe(Schema.positive()),
+      page,
+    )
     const path = '/api/v1/user/repos'
-    const repos = z.array(forgeRepository).parse(await this.http.json(this.pagePath(path, page)))
+    const repos = decode(
+      mutableArray(forgeRepository),
+      await this.http.json(this.pagePath(path, page)),
+    )
     const next = repos.length
-      ? z.array(forgeRepository).parse(await this.http.json(this.pagePath(path, page + 1)))
+      ? decode(mutableArray(forgeRepository), await this.http.json(this.pagePath(path, page + 1)))
       : []
-    return forgeRepositoryPageSchema.parse({
+    return decode(forgeRepositoryPageSchema, {
       repositories: repos.map((r) => this.mapRepository(r)),
       page,
       hasMore: next.length > 0,
     })
   }
-
   private async viewer() {
     try {
-      return { login: forgeUser.parse(await this.http.json('/api/v1/user')).login }
+      return {
+        login: decode(forgeUser, await this.http.json('/api/v1/user')).login,
+      }
     } catch (error) {
       return {
         login: undefined,
@@ -170,7 +186,6 @@ export class GiteaForge implements ForgeAdapter {
       }
     }
   }
-
   private summary(pull: Pull, viewer?: string): PullSummary {
     return {
       provider: this.provider,
@@ -195,7 +210,6 @@ export class GiteaForge implements ForgeAdapter {
         : {}),
     }
   }
-
   private reviewDecision(reviews: Review[]) {
     const latest = new Map<string, Review>()
     for (const review of [...reviews].sort((a, b) =>
@@ -212,18 +226,25 @@ export class GiteaForge implements ForgeAdapter {
       ? 'CHANGES_REQUESTED'
       : null
   }
-
   async list(state: 'open' | 'closed' | 'all', page: number) {
-    z.number().int().positive().parse(page)
-    z.enum(['open', 'closed', 'all']).parse(state)
+    decode(
+      Schema.Number.pipe(Schema.finite())
+        .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+        .pipe(Schema.positive()),
+      page,
+    )
+    decode(Schema.Literal('open', 'closed', 'all'), state)
     const path = `${this.path}/pulls?state=${state}&sort=recentupdate`
     const [raw, viewer] = await Promise.all([
       this.http.json(this.pagePath(path, page)),
       this.viewer(),
     ])
-    const rows = z.array(forgePull.nullable()).parse(raw)
+    const rows = decode(mutableArray(Schema.NullOr(forgePull)), raw)
     const next = rows.length
-      ? z.array(forgePull.nullable()).parse(await this.http.json(this.pagePath(path, page + 1)))
+      ? decode(
+          mutableArray(Schema.NullOr(forgePull)),
+          await this.http.json(this.pagePath(path, page + 1)),
+        )
       : []
     const pulls: PullSummary[] = []
     const valid = rows.filter((row): row is Pull => row !== null)
@@ -237,7 +258,7 @@ export class GiteaForge implements ForgeAdapter {
             const [status, reviews] = await Promise.allSettled([
               this.http
                 .json(`${this.path}/commits/${pull.head.sha}/status`)
-                .then((v) => forgeCombinedStatus.parse(v)),
+                .then((v) => decode(forgeCombinedStatus, v)),
               this.all(`${this.path}/pulls/${pull.number}/reviews`, forgeReview),
             ])
             const errors = [
@@ -253,13 +274,17 @@ export class GiteaForge implements ForgeAdapter {
                   : null,
               reviewDecision:
                 reviews.status === 'fulfilled' ? this.reviewDecision(reviews.value) : null,
-              ...(errors.length ? { statusError: errors.join(' ') } : {}),
+              ...(errors.length
+                ? {
+                    statusError: errors.join(' '),
+                  }
+                : {}),
             }
           }),
         )),
       )
     }
-    return pullPageSchema.parse({
+    return decode(pullPageSchema, {
       pulls,
       page,
       hasMore: next.length > 0,
@@ -271,30 +296,31 @@ export class GiteaForge implements ForgeAdapter {
         : {}),
     })
   }
-
   private async pull(number: number) {
-    z.number().int().positive().parse(number)
-    return forgePull.parse(await this.http.json(`${this.path}/pulls/${number}`))
+    decode(
+      Schema.Number.pipe(Schema.finite())
+        .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+        .pipe(Schema.positive()),
+      number,
+    )
+    return decode(forgePull, await this.http.json(`${this.path}/pulls/${number}`))
   }
-
   private async current(number: number, headSha: string) {
     const pull = await this.pull(number)
     if (pull.head.sha !== headSha)
       throw new HttpError(409, 'This PR changed. Refresh before submitting this action.')
     return pull
   }
-
   private async allChecks(sha: string) {
     const path = `${this.path}/commits/${sha}/status`
-    const combined = forgeCombinedStatus.parse(await this.http.json(this.pagePath(path, 1)))
+    const combined = decode(forgeCombinedStatus, await this.http.json(this.pagePath(path, 1)))
     for (let page = 2; combined.statuses.length < combined.total_count && page <= 100; page++) {
-      const next = forgeCombinedStatus.parse(await this.http.json(this.pagePath(path, page)))
+      const next = decode(forgeCombinedStatus, await this.http.json(this.pagePath(path, page)))
       if (!next.statuses.length) break
       combined.statuses.push(...next.statuses)
     }
     return combined
   }
-
   async detail(number: number) {
     const [pull, repo, version, viewer] = await Promise.all([
       this.pull(number),
@@ -307,7 +333,7 @@ export class GiteaForge implements ForgeAdapter {
     const results = await Promise.allSettled([
       this.http
         .json(`${this.path}/issues/${number}/comments`)
-        .then((v) => z.array(forgeComment).parse(v)),
+        .then((v) => decode(mutableArray(forgeComment), v)),
       this.all(`${this.path}/pulls/${number}/reviews`, forgeReview),
       this.all(`${this.path}/pulls/${number}/files`, forgeFile),
       this.http.text(`${this.path}/pulls/${number}.diff`).then(parseForgeDiff),
@@ -354,11 +380,10 @@ export class GiteaForge implements ForgeAdapter {
         const batch = reviews.value.slice(index, index + 4).filter((r) => r.comments_count > 0)
         const inline = await Promise.allSettled(
           batch.map(async (review) =>
-            z
-              .array(forgeInline)
-              .parse(
-                await this.http.json(`${this.path}/pulls/${number}/reviews/${review.id}/comments`),
-              ),
+            decode(
+              mutableArray(forgeInline),
+              await this.http.json(`${this.path}/pulls/${number}/reviews/${review.id}/comments`),
+            ),
           ),
         )
         for (const result of inline) {
@@ -411,14 +436,18 @@ export class GiteaForge implements ForgeAdapter {
         ? status.value.statuses.map((s) => ({
             name: s.context,
             status: s.status,
-            ...(s.target_url ? { url: s.target_url } : {}),
+            ...(s.target_url
+              ? {
+                  url: s.target_url,
+                }
+              : {}),
           }))
         : []
     if (status.status === 'fulfilled' && status.value.total_count > status.value.statuses.length)
       warnings.push(
         'Only part of the check list was returned. Open the PR on the server for all checks.',
       )
-    return pullDetailSchema.parse({
+    return decode(pullDetailSchema, {
       capabilities,
       fileBaseUrl: `${pull.head.repo?.html_url ?? repo.html_url}/src/commit/${pull.head.sha}/`,
       pull: {
@@ -451,9 +480,8 @@ export class GiteaForge implements ForgeAdapter {
       warnings,
     })
   }
-
-  async comment(value: z.infer<typeof pullLineCommentSchema>) {
-    const input = pullLineCommentSchema.parse(value)
+  async comment(value: Schema.Schema.Type<typeof pullLineCommentSchema>) {
+    const input = decode(pullLineCommentSchema, value)
     const capabilities = await this.capabilities()
     if (input.start !== input.end && !capabilities.inlineRange)
       throw new HttpError(
@@ -461,7 +489,8 @@ export class GiteaForge implements ForgeAdapter {
         'This server only supports single-line review comments. Select one line.',
       )
     await this.current(input.number, input.headSha)
-    const review = forgeReview.parse(
+    const review = decode(
+      forgeReview,
       await this.http.json(`${this.path}/pulls/${input.number}/reviews`, {
         method: 'POST',
         body: {
@@ -473,43 +502,52 @@ export class GiteaForge implements ForgeAdapter {
               path: input.path,
               new_position: input.side === 'additions' ? input.start : 0,
               old_position: input.side === 'deletions' ? input.start : 0,
-              ...(input.end !== input.start ? { extra_lines_count: input.end - input.start } : {}),
+              ...(input.end !== input.start
+                ? {
+                    extra_lines_count: input.end - input.start,
+                  }
+                : {}),
             },
           ],
         },
       }),
     )
-    return { url: review.html_url }
+    return {
+      url: review.html_url,
+    }
   }
-
   async create(value: PullCreate) {
-    const input = pullCreateSchema.parse(value)
+    const input = decode(pullCreateSchema, value)
     if (input.draft)
       throw new HttpError(
         400,
         'This server does not expose draft creation through its API. Create the PR, then mark it as a draft on the server.',
       )
-    const pull = forgePull.parse(
+    const pull = decode(
+      forgePull,
       await this.http.json(`${this.path}/pulls`, {
         method: 'POST',
-        body: { title: input.title, body: input.body, head: input.head, base: input.base },
+        body: {
+          title: input.title,
+          body: input.body,
+          head: input.head,
+          base: input.base,
+        },
       }),
     )
-    return pullActionResultSchema.parse({
+    return decode(pullActionResultSchema, {
       number: pull.number,
       url: pull.html_url,
       status: 'created',
     })
   }
-
   private commentId(value: string) {
     const match = /^(?:inline-)?([1-9]\d*)$/.exec(value)
     if (!match) throw new HttpError(400, 'Choose a review comment from this PR.')
     return match[1]
   }
-
   async act(value: PullAction) {
-    const input = pullActionSchema.parse(value)
+    const input = decode(pullActionSchema, value)
     const pull = await this.current(input.number, input.headSha)
     const path = `${this.path}/pulls/${input.number}`
     let status: 'updated' | 'submitted' | 'merged' = 'updated'
@@ -517,7 +555,9 @@ export class GiteaForge implements ForgeAdapter {
       case 'comment':
         await this.http.json(`${this.path}/issues/${input.number}/comments`, {
           method: 'POST',
-          body: { body: input.body },
+          body: {
+            body: input.body,
+          },
         })
         status = 'submitted'
         break
@@ -544,7 +584,9 @@ export class GiteaForge implements ForgeAdapter {
           )
         await this.http.json(`${path}/comments/${this.commentId(input.commentId)}/replies`, {
           method: 'POST',
-          body: { body: input.body },
+          body: {
+            body: input.body,
+          },
         })
         status = 'submitted'
         break
@@ -561,9 +603,10 @@ export class GiteaForge implements ForgeAdapter {
         let belongs = false
         for (const review of reviews) {
           if (!review.comments_count) continue
-          const comments = z
-            .array(forgeInline)
-            .parse(await this.http.json(`${path}/reviews/${review.id}/comments`))
+          const comments = decode(
+            mutableArray(forgeInline),
+            await this.http.json(`${path}/reviews/${review.id}/comments`),
+          )
           if (comments.some((c) => String(c.id) === id)) {
             belongs = true
             break
@@ -573,7 +616,9 @@ export class GiteaForge implements ForgeAdapter {
           throw new HttpError(400, 'This review comment does not belong to the selected PR.')
         await this.http.json(
           `${this.path}/pulls/comments/${id}/${input.resolved ? 'resolve' : 'unresolve'}`,
-          { method: 'POST' },
+          {
+            method: 'POST',
+          },
         )
         break
       }
@@ -583,15 +628,26 @@ export class GiteaForge implements ForgeAdapter {
           body: {
             title: input.title,
             body: input.body,
-            ...(input.base ? { base: input.base } : {}),
-            ...(pull.content_version != null ? { content_version: pull.content_version } : {}),
+            ...(input.base
+              ? {
+                  base: input.base,
+                }
+              : {}),
+            ...(pull.content_version != null
+              ? {
+                  content_version: pull.content_version,
+                }
+              : {}),
           },
         })
         break
       case 'reviewers': {
         await this.http.json(`${path}/requested_reviewers`, {
           method: input.operation === 'remove' ? 'DELETE' : 'POST',
-          body: { reviewers: input.reviewers, team_reviewers: input.teams },
+          body: {
+            reviewers: input.reviewers,
+            team_reviewers: input.teams,
+          },
         })
         break
       }
@@ -613,7 +669,9 @@ export class GiteaForge implements ForgeAdapter {
             [snakeCase ? 'do' : 'Do']: input.method,
             head_commit_id: input.headSha,
             ...(input.message !== undefined
-              ? { [snakeCase ? 'merge_message_field' : 'MergeMessageField']: input.message }
+              ? {
+                  [snakeCase ? 'merge_message_field' : 'MergeMessageField']: input.message,
+                }
               : {}),
           },
         })
@@ -630,10 +688,16 @@ export class GiteaForge implements ForgeAdapter {
       case 'reopen':
         await this.http.json(path, {
           method: 'PATCH',
-          body: { state: input.action === 'close' ? 'closed' : 'open' },
+          body: {
+            state: input.action === 'close' ? 'closed' : 'open',
+          },
         })
         break
     }
-    return pullActionResultSchema.parse({ number: input.number, url: pull.html_url, status })
+    return decode(pullActionResultSchema, {
+      number: input.number,
+      url: pull.html_url,
+      status,
+    })
   }
 }

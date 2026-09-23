@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from './application-state'
+import { useEffect } from 'react'
 import { Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import { useRuntime } from './provider'
@@ -7,12 +8,11 @@ import { Icon } from '../ui/icon'
 import { Sheet } from '../ui/sheet'
 import { useAction } from '../ui/use-action'
 import { colors, styles } from '../ui/theme'
-
 export function ConnectionStatus({ onSettings }: { onSettings: () => void }) {
   const runtime = useRuntime()
   const { busy, error, act } = useAction()
-  const [visible, setVisible] = useState(false)
-  const [details, setDetails] = useState(false)
+  const [visible, setVisible] = useApplicationState(false)
+  const [details, setDetails] = useApplicationState(false)
   const unavailable = runtime.overviews.filter((entry) => !entry.connected)
   const offline = runtime.ready && !!unavailable.length
   useEffect(() => {
@@ -45,7 +45,9 @@ export function ConnectionStatus({ onSettings }: { onSettings: () => void }) {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Connection details"
-          accessibilityValue={{ text: summary }}
+          accessibilityValue={{
+            text: summary,
+          }}
           testID="Connection details"
           onPress={() => setDetails(true)}
           style={({ pressed }) => ({
@@ -58,7 +60,15 @@ export function ConnectionStatus({ onSettings }: { onSettings: () => void }) {
           })}
         >
           <Icon name="device" size={15} color={colors.muted} />
-          <Text numberOfLines={2} style={[styles.muted, { flex: 1 }]}>
+          <Text
+            numberOfLines={2}
+            style={[
+              styles.muted,
+              {
+                flex: 1,
+              },
+            ]}
+          >
             {summary}
           </Text>
           <Icon name="next" size={10} color={colors.muted} />
@@ -79,7 +89,12 @@ export function ConnectionStatus({ onSettings }: { onSettings: () => void }) {
             commands there.
           </Text>
           {unavailable.map((entry) => (
-            <View key={entry.profile.id} style={{ gap: 8 }}>
+            <View
+              key={entry.profile.id}
+              style={{
+                gap: 8,
+              }}
+            >
               <Text style={styles.title}>{entry.profile.name}</Text>
               <Text selectable style={styles.muted}>
                 {entry.profile.connection.address}

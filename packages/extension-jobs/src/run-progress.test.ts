@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vite-plus/test'
 import type { JobRun } from '@dovo/studio-core'
 import { createWorkspace } from '../../studio-core/src/workspace/seed'
 import { elapsed, runSteps } from './run-progress'
-
 const flow = createWorkspace().automations[0]
 const run: JobRun = {
   id: 'history',
@@ -24,12 +23,22 @@ const run: JobRun = {
 }
 describe('automation run presentation', () => {
   it('keeps historical steps, labels and task links when the author changes the graph', () => {
-    expect(runSteps(run, { ...flow, nodes: [] })).toEqual(run.steps)
+    expect(
+      runSteps(run, {
+        ...flow,
+        nodes: [],
+      }),
+    ).toEqual(run.steps)
     expect(runSteps(run, flow)[0].taskId).toBe('retained-task')
   })
   it('uses only known legacy completion and waiting information without inventing task associations', () => {
     const steps = runSteps(
-      { ...run, steps: undefined, waitingNodeId: 'review', status: 'waiting' },
+      {
+        ...run,
+        steps: undefined,
+        waitingNodeId: 'review',
+        status: 'waiting',
+      },
       flow,
     )
     expect(steps.find((step) => step.nodeId === 'trigger')?.status).toBe('completed')

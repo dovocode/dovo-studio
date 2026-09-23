@@ -1,3 +1,5 @@
+import { Effect } from 'effect'
+import { runtimeFailure } from '../errors'
 import { afterEach, expect, it, vi } from 'vitest'
 import { writeFile, readFile, rm } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
@@ -145,7 +147,9 @@ it('rejects changed PRs before creating a task, and keeps tasks whose startup fa
     }),
   ).rejects.toThrow('This PR changed')
   expect(s.store.get().tasks).toHaveLength(0)
-  vi.spyOn(s.tasks, 'start').mockRejectedValue(new Error('Fetch denied'))
+  vi.spyOn(s.tasks, 'startEffect').mockReturnValue(
+    Effect.fail(runtimeFailure(new Error('Fetch denied'))),
+  )
   const result = await createPullTask(s, 'repo', f.directory, {
     number: 7,
     headSha: sha,
@@ -173,7 +177,7 @@ it('opens a PR draft without configured agents and allows choosing its agent bef
     sha = 'a'.repeat(40)
   s.store.update((workspace) => ({ ...workspace, agents: [] }))
   vi.spyOn(s.pulls, 'detail').mockResolvedValue(detail(sha, 'b'.repeat(40)))
-  const start = vi.spyOn(s.tasks, 'start')
+  const start = vi.spyOn(s.tasks, 'startEffect')
   const { id } = await createPullTask(s, 'repo', f.directory, {
     number: 7,
     headSha: sha,

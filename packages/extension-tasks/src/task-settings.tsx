@@ -1,3 +1,5 @@
+import { useApplicationState } from '@dovo/studio-core/state'
+import { decode } from '@dovo/protocol'
 import { HarnessFields } from './harness-fields'
 import {
   defaultTaskHarness,
@@ -10,7 +12,7 @@ import { accessModes, supportsAccess, accessLabel } from '@dovo/studio-core'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { agentSchema, branchesSchema } from '@dovo/studio-core'
 import { BranchPicker } from '@dovo/studio-ui'
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import {
   modelCatalogSchema,
   updateTask,
@@ -43,15 +45,20 @@ export function TaskSettings({
 }) {
   const { workspace, setWorkspace, request, connected, flush } = useWorkspace()
   const providerLock = lockedTaskProvider(task, workspace.agents)
-  const [title, setTitle] = useState(task.title),
-    [agentId, setAgentId] = useState(task.agentId),
-    [overrides, setOverrides] = useState(task.agentOverrides),
-    [harness, setHarness] = useState(task.harness ?? null),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
+  const [title, setTitle] = useApplicationState(task.title),
+    [agentId, setAgentId] = useApplicationState(task.agentId),
+    [overrides, setOverrides] = useApplicationState(task.agentOverrides),
+    [harness, setHarness] = useApplicationState(task.harness ?? null),
+    [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const base = workspace.agents.find((a) => a.id === agentId)
   const agent = resolveTaskAgent(
-    { ...task, agentId, harness, agentOverrides: overrides },
+    {
+      ...task,
+      agentId,
+      harness,
+      agentOverrides: overrides,
+    },
     workspace.agents,
   )
   const load = useCallback(
@@ -64,11 +71,22 @@ export function TaskSettings({
     setError('')
     try {
       if (onSave) {
-        const changes = { title: title.trim(), agentId, agentOverrides: overrides, harness }
+        const changes = {
+          title: title.trim(),
+          agentId,
+          agentOverrides: overrides,
+          harness,
+        }
         const provider = lockedTaskProvider(task, workspace.agents)
         if (
           provider &&
-          resolveTaskAgent({ ...task, ...changes }, workspace.agents)?.provider !== provider
+          resolveTaskAgent(
+            {
+              ...task,
+              ...changes,
+            },
+            workspace.agents,
+          )?.provider !== provider
         )
           throw new Error(
             `This conversation uses ${providers[provider].short}. Start a new task to use another provider.`,
@@ -81,7 +99,13 @@ export function TaskSettings({
         updateTask(w, task.id, (t) => {
           if (t.status === 'running')
             throw new Error('Stop the current turn before changing its settings.')
-          const next = { ...t, title: title.trim(), agentId, agentOverrides: overrides, harness }
+          const next = {
+            ...t,
+            title: title.trim(),
+            agentId,
+            agentOverrides: overrides,
+            harness,
+          }
           const provider = lockedTaskProvider(t, w.agents)
           if (provider && resolveTaskAgent(next, w.agents)?.provider !== provider)
             throw new Error(
@@ -110,14 +134,21 @@ export function TaskSettings({
           load={() =>
             request(
               '/api/scm/branches',
-              { repositoryId: task.repositoryId, taskId: task.id },
+              {
+                repositoryId: task.repositoryId,
+                taskId: task.id,
+              },
               branchesSchema,
             )
           }
           change={(input) =>
             request(
               '/api/scm/branch',
-              { repositoryId: task.repositoryId, taskId: task.id, ...input },
+              {
+                repositoryId: task.repositoryId,
+                taskId: task.id,
+                ...input,
+              },
               branchesSchema,
             )
           }
@@ -137,7 +168,7 @@ export function TaskSettings({
               onValueChange={(selection) => {
                 if (selection === (harness ? `harness:${harness.provider}` : agentId)) return
                 if (selection.startsWith('harness:')) {
-                  const provider = providerSchema.parse(selection.slice(8))
+                  const provider = decode(providerSchema, selection.slice(8))
                   if (providerLock && provider !== providerLock) return
                   setHarness(defaultTaskHarness(provider))
                   setAgentId('')
@@ -150,7 +181,7 @@ export function TaskSettings({
                 setOverrides(undefined)
               }}
             >
-              {providerSchema.options
+              {providerSchema.literals
                 .filter((provider) => !providerLock || provider === providerLock)
                 .map((provider) => (
                   <option key={provider} value={`harness:${provider}`}>
@@ -209,7 +240,9 @@ export function TaskSettings({
                     setOverrides({
                       ...overrides,
                       permission:
-                        value === 'inherit' ? undefined : agentSchema.shape.permission.parse(value),
+                        value === 'inherit'
+                          ? undefined
+                          : decode(agentSchema.fields.permission, value),
                     })
                   }
                 >

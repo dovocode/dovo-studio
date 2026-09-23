@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { useCallback } from 'react'
 import {
   providers,
@@ -34,11 +35,11 @@ export function HarnessFields({
           value={value.provider}
           disabled={!!lockedProvider && value.provider === lockedProvider}
           onValueChange={(provider) => {
-            const next = providerSchema.parse(provider)
+            const next = decode(providerSchema, provider)
             if (!lockedProvider || next === lockedProvider) onChange(defaultTaskHarness(next))
           }}
         >
-          {providerSchema.options
+          {providerSchema.literals
             .filter(
               (provider) =>
                 !lockedProvider || provider === lockedProvider || provider === value.provider,
@@ -61,7 +62,11 @@ export function HarnessFields({
         </p>
       )}
       <ModelSettings
-        agent={{ ...value, id: 'task-harness', name: providers[value.provider].short }}
+        agent={{
+          ...value,
+          id: 'task-harness',
+          name: providers[value.provider].short,
+        }}
         connected={connected}
         loadModels={load}
         onChange={(next) =>
@@ -79,7 +84,10 @@ export function HarnessFields({
           aria-label="Harness access"
           value={value.permission}
           onValueChange={(permission) =>
-            onChange({ ...value, permission: agentSchema.shape.permission.parse(permission) })
+            onChange({
+              ...value,
+              permission: decode(agentSchema.fields.permission, permission),
+            })
           }
         >
           {accessModes.map((mode) => (
@@ -105,7 +113,12 @@ export function HarnessFields({
             <Input
               aria-label="Harness endpoint"
               value={value.endpoint}
-              onChange={(e) => onChange({ ...value, endpoint: e.target.value })}
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  endpoint: e.target.value,
+                })
+              }
               placeholder={
                 value.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Use runtime default'
               }
@@ -117,7 +130,10 @@ export function HarnessFields({
                 aria-label="Harness arguments"
                 value={(value.args ?? []).join('\n')}
                 onChange={(e) =>
-                  onChange({ ...value, args: e.target.value.split('\n').filter(Boolean) })
+                  onChange({
+                    ...value,
+                    args: e.target.value.split('\n').filter(Boolean),
+                  })
                 }
               />
             </FormField>
@@ -126,7 +142,12 @@ export function HarnessFields({
             <Textarea
               aria-label="Harness instructions"
               value={value.instructions}
-              onChange={(e) => onChange({ ...value, instructions: e.target.value })}
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  instructions: e.target.value,
+                })
+              }
               placeholder="Optional instructions for this task"
             />
           </FormField>

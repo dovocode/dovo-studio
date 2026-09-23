@@ -1,8 +1,9 @@
+import { useApplicationState } from '../runtime/application-state'
 import { requireOptionalNativeModule } from 'expo'
 import type { ExpoSpeechRecognitionModule } from 'expo-speech-recognition'
 import type { Locale } from 'expo-localization'
 import { AppState, Platform } from 'react-native'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import { createDictation, type DictationCallbacks, type DictationDriver } from './dictation'
 
 // Optional loading keeps old native builds and web usable until the native module is installed.
@@ -12,7 +13,9 @@ const native =
     : null
 const localization =
   Platform.OS === 'ios' || Platform.OS === 'android'
-    ? requireOptionalNativeModule<{ getLocales: () => Locale[] }>('ExpoLocalization')
+    ? requireOptionalNativeModule<{
+        getLocales: () => Locale[]
+      }>('ExpoLocalization')
     : null
 const preferredLocales = () =>
   localization?.getLocales().map((locale) => locale.languageTag) ?? [
@@ -48,9 +51,8 @@ const driver: DictationDriver | null = native
       },
     }
   : null
-
 export function useDictation(callbacks: DictationCallbacks) {
-  const [dictation] = useState(() =>
+  const [dictation] = useApplicationState(() =>
     createDictation(
       driver,
       preferredLocales,

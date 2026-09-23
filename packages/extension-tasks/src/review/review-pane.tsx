@@ -1,5 +1,5 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { DiskActions } from './disk-actions'
-import { useState } from 'react'
 import { FileDiff, PanelRightClose } from 'lucide-react'
 import { useWorkspace, responses, updateTask, type Task } from '@dovo/studio-core'
 import { EmptyState, IconButton, ErrorBoundary } from '@dovo/studio-ui'
@@ -8,7 +8,7 @@ import { PierreEditor } from './pierre-editor'
 import { ReviewFeedback } from './review-feedback'
 export function ReviewPane({ task, onClose }: { task: Task; onClose?: () => void }) {
   const { setWorkspace, request } = useWorkspace()
-  const [selected, setSelected] = useState(task.files[0]?.path ?? '')
+  const [selected, setSelected] = useApplicationState(task.files[0]?.path ?? '')
   const file = task.files.find((f) => f.path === selected) ?? task.files[0]
   return (
     <aside className="flex h-full min-w-0 flex-col bg-background">
@@ -39,7 +39,13 @@ export function ReviewPane({ task, onClose }: { task: Task; onClose?: () => void
                   .join('\n')
                 await request(
                   '/api/tasks/feedback',
-                  { id: task.id, path: file.path, body, excerpt, ...range },
+                  {
+                    id: task.id,
+                    path: file.path,
+                    body,
+                    excerpt,
+                    ...range,
+                  },
                   responses.ok,
                 )
               }}

@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import { useEffect, useRef } from 'react'
 import { Keyboard } from 'react-native'
 import { useDictation } from './use-dictation'
 import { DictationDraftEdit, type DraftSelection } from './dictation-draft'
-
 type Cleanup = {
   status: 'cleaning' | 'failed' | 'done'
   raw: string
@@ -10,19 +13,29 @@ type Cleanup = {
   cleaned?: string
   error?: string
 }
-
 export function useComposerDictation({
   draft,
   cleanup,
   connected,
 }: {
-  draft: { text: string; update: (text: string) => void }
-  cleanup: (text: string) => Promise<string>
+  draft: {
+    text: string
+    update: (text: string) => void
+  }
+  cleanup: (text: string) => Effect.Effect<string, Error>
   connected: boolean
 }) {
-  const [state, setState] = useState<Cleanup | null>(null)
-  const latest = useRef({ draft, cleanup, connected })
-  latest.current = { draft, cleanup, connected }
+  const [state, setState] = useApplicationState<Cleanup | null>(null)
+  const latest = useRef({
+    draft,
+    cleanup,
+    connected,
+  })
+  latest.current = {
+    draft,
+    cleanup,
+    connected,
+  }
   const currentText = useRef(draft.text)
   currentText.current = draft.text
   const edit = useRef<DictationDraftEdit | null>(null)
@@ -36,34 +49,55 @@ export function useComposerDictation({
     edit.current = null
     setState(null)
   }
-  const clean = async (transaction: DictationDraftEdit, transcript: string, raw: string) => {
-    if (!latest.current.connected) {
-      setState({
-        status: 'failed',
-        raw,
-        transcript,
-        error: 'Connect your computer to clean up the transcript.',
-      })
-      return
-    }
-    setState({ status: 'cleaning', raw, transcript })
-    try {
-      const cleaned = await latest.current.cleanup(transcript)
-      if (!mounted.current || edit.current !== transaction) return
-      const next = transaction.clean(currentText.current, cleaned)
-      if (next === null) return
-      write(next)
-      setState(next === raw ? null : { status: 'done', raw, transcript, cleaned: next })
-    } catch (error) {
-      // Speech is already saved locally; a model/network failure must never lose it.
-      if (mounted.current && edit.current === transaction)
+  const clean = (transaction: DictationDraftEdit, transcript: string, raw: string) => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (!latest.current.connected) {
+          setState({
+            status: 'failed',
+            raw,
+            transcript,
+            error: 'Connect your computer to clean up the transcript.',
+          })
+          return
+        }
         setState({
-          status: 'failed',
+          status: 'cleaning',
           raw,
           transcript,
-          error: error instanceof Error ? error.message : String(error),
         })
-    }
+        return yield* mobileWorkflow(function* () {
+          const cleaned = yield* latest.current.cleanup(transcript)
+          if (!mounted.current || edit.current !== transaction) return
+          const next = transaction.clean(currentText.current, cleaned)
+          if (next === null) return
+          write(next)
+          setState(
+            next === raw
+              ? null
+              : {
+                  status: 'done',
+                  raw,
+                  transcript,
+                  cleaned: next,
+                },
+          )
+        }).pipe(
+          Effect.catchAll((error) =>
+            nativeEffect(() => {
+              // Speech is already saved locally; a model/network failure must never lose it.
+              if (mounted.current && edit.current === transaction)
+                setState({
+                  status: 'failed',
+                  raw,
+                  transcript,
+                  error: error instanceof Error ? error.message : String(error),
+                })
+            }),
+          ),
+        )
+      }),
+    )
   }
   const speech = useDictation({
     onResult: (transcript) => {
@@ -89,11 +123,15 @@ export function useComposerDictation({
     ...speech,
     state,
     active: speech.isRecording || speech.isStarting || speech.isStopping,
-    start: async (selection?: DraftSelection) => {
-      reset()
-      edit.current = new DictationDraftEdit(currentText.current, selection)
-      Keyboard.dismiss()
-      await speech.start()
+    start: (selection?: DraftSelection) => {
+      return runClientEffect(
+        mobileWorkflow(function* () {
+          reset()
+          edit.current = new DictationDraftEdit(currentText.current, selection)
+          Keyboard.dismiss()
+          yield* nativeEffect(() => speech.start())
+        }),
+      )
     },
     update: (text: string) => {
       reset()

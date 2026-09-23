@@ -1,8 +1,9 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { selectedPatchCode } from './selected-code'
 import { LineCommentForm } from '@dovo/studio-ui'
 import { reviewPatch } from './review-patch'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { getFiletypeFromFileName, parsePatchFiles, preloadHighlighter } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { PullDetail } from '@dovo/studio-core'
@@ -21,38 +22,54 @@ export function PullPatch({
   reviewContext?: boolean
   onComment?: (
     body: string,
-    range: { start: number; end: number; side: 'additions' | 'deletions' },
+    range: {
+      start: number
+      end: number
+      side: 'additions' | 'deletions'
+    },
     destination: 'github' | 'agent',
   ) => Promise<void>
   provider?: ForgeProvider
   allowInlineComment?: boolean
   allowInlineRange?: boolean
 }) {
-  const [selection, setSelection] = useState<{
+  const [selection, setSelection] = useApplicationState<{
     start: number
     end: number
     side: 'additions' | 'deletions'
   } | null>(null)
-  const [destination, setDestination] = useState<'github' | 'agent'>('agent')
-  const [ready, setReady] = useState(false),
-    [error, setError] = useState('')
+  const [destination, setDestination] = useApplicationState<'github' | 'agent'>('agent')
+  const [ready, setReady] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const parsed = useMemo(() => {
     try {
       const diff = parsePatchFiles(
         pullFilePatch(
-          reviewContext && file.patch ? { ...file, patch: reviewPatch(file.patch) } : file,
+          reviewContext && file.patch
+            ? {
+                ...file,
+                patch: reviewPatch(file.patch),
+              }
+            : file,
         ),
         undefined,
         true,
       )[0]?.files[0]
       return {
         diff: diff
-          ? { ...diff, name: file.path, prevName: file.previousPath ?? diff.prevName }
+          ? {
+              ...diff,
+              name: file.path,
+              prevName: file.previousPath ?? diff.prevName,
+            }
           : undefined,
         error: '',
       }
     } catch (error) {
-      return { diff: undefined, error: String(error) }
+      return {
+        diff: undefined,
+        error: String(error),
+      }
     }
   }, [file, reviewContext])
   useEffect(() => {
@@ -89,7 +106,12 @@ export function PullPatch({
       </p>
     )
   return (
-    <div className="min-w-0 overflow-auto" style={{ fontSize: 12 }}>
+    <div
+      className="min-w-0 overflow-auto"
+      style={{
+        fontSize: 12,
+      }}
+    >
       {onComment && (
         <p className="py-2 text-[10px] text-muted-foreground">
           Drag line numbers or Shift-click for a range. Click + for a single line.
@@ -103,7 +125,16 @@ export function PullPatch({
       {ready ? (
         <FileDiff
           fileDiff={parsed.diff}
-          lineAnnotations={selection ? [{ lineNumber: selection.end, side: selection.side }] : []}
+          lineAnnotations={
+            selection
+              ? [
+                  {
+                    lineNumber: selection.end,
+                    side: selection.side,
+                  },
+                ]
+              : []
+          }
           renderAnnotation={() =>
             selection &&
             onComment && (
@@ -146,7 +177,6 @@ export function PullPatch({
               </LineCommentForm>
             )
           }
-
           options={{
             theme: 'pierre-dark',
             themeType: 'dark',

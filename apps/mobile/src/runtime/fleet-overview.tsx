@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useApplicationState } from './application-state'
 import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import { aggregateRuntimeTasks, type RuntimeOverview } from '@dovo/protocol'
@@ -7,11 +7,9 @@ import { colors, styles } from '../ui/theme'
 import { Icon } from '../ui/icon'
 import { Sheet } from '../ui/sheet'
 import { Action } from '../ui/action'
-
 function status(entry: RuntimeOverview) {
   return entry.connected ? 'Online' : entry.lastSeen || entry.error ? 'Offline' : 'Connecting'
 }
-
 function activity(entry: RuntimeOverview) {
   if (!entry.snapshot) return entry.error ? 'Activity unavailable' : 'Loading activity…'
   const tasks = aggregateRuntimeTasks([entry])
@@ -26,7 +24,6 @@ function activity(entry: RuntimeOverview) {
     .filter(Boolean)
     .join(' · ')
 }
-
 export function FleetOverview({
   entries,
   onSelectSource,
@@ -39,9 +36,9 @@ export function FleetOverview({
   source?: string
 }) {
   const { navigate } = useNavigation()
-  const [viewportWidth, setViewportWidth] = useState(0)
-  const [selected, setSelected] = useState('')
-  const [open, setOpen] = useState(false)
+  const [viewportWidth, setViewportWidth] = useApplicationState(0)
+  const [selected, setSelected] = useApplicationState('')
+  const [open, setOpen] = useApplicationState(false)
   const detail = entries.find((entry) => entry.profile.id === selected)
   const sourceEntry =
     source === 'all'
@@ -73,16 +70,50 @@ export function FleetOverview({
         opacity: pressed ? 0.6 : 1,
       })}
     >
-      <View style={[styles.row, { flexWrap: 'nowrap', gap: 6 }]}>
+      <View
+        style={[
+          styles.row,
+          {
+            flexWrap: 'nowrap',
+            gap: 6,
+          },
+        ]}
+      >
         <Icon name="device" size={15} color={entry.connected ? colors.accent : colors.muted} />
-        <Text numberOfLines={1} style={[styles.muted, { flex: 1, color: colors.text }]}>
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.muted,
+            {
+              flex: 1,
+              color: colors.text,
+            },
+          ]}
+        >
           {entry.profile.name}
         </Text>
-        <Text style={[styles.muted, { fontSize: 12 }]}>{status(entry)}</Text>
+        <Text
+          style={[
+            styles.muted,
+            {
+              fontSize: 12,
+            },
+          ]}
+        >
+          {status(entry)}
+        </Text>
         <Icon name="next" size={11} color={colors.muted} />
       </View>
       {!compact && (
-        <Text numberOfLines={2} style={[styles.muted, { fontSize: 12 }]}>
+        <Text
+          numberOfLines={2}
+          style={[
+            styles.muted,
+            {
+              fontSize: 12,
+            },
+          ]}
+        >
           {activity(entry)}
         </Text>
       )}
@@ -95,16 +126,30 @@ export function FleetOverview({
           testID="Device overview"
           accessibilityRole="button"
           accessibilityLabel="Device overview"
-          accessibilityValue={{ text: compactSummary }}
+          accessibilityValue={{
+            text: compactSummary,
+          }}
           accessibilityHint="Show activity across your computers."
           onPress={() => setOpen(true)}
           style={({ pressed }) => [
             styles.row,
-            { minHeight: 44, flexWrap: 'nowrap', opacity: pressed ? 0.6 : 1 },
+            {
+              minHeight: 44,
+              flexWrap: 'nowrap',
+              opacity: pressed ? 0.6 : 1,
+            },
           ]}
         >
           <Icon name="device" size={14} color={colors.muted} />
-          <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.muted,
+              {
+                flex: 1,
+              },
+            ]}
+          >
             {compactSummary}
           </Text>
           <Icon name="next" size={11} color={colors.muted} />
@@ -115,7 +160,9 @@ export function FleetOverview({
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8 }}
+          contentContainerStyle={{
+            gap: 8,
+          }}
         >
           {entries.map((entry) => summary(entry, false))}
         </ScrollView>
@@ -149,7 +196,11 @@ export function FleetOverview({
                 style={({ pressed }) => [
                   styles.listItem,
                   styles.row,
-                  { minHeight: 64, flexWrap: 'nowrap', opacity: pressed ? 0.6 : 1 },
+                  {
+                    minHeight: 64,
+                    flexWrap: 'nowrap',
+                    opacity: pressed ? 0.6 : 1,
+                  },
                 ]}
               >
                 <Icon
@@ -157,7 +208,13 @@ export function FleetOverview({
                   size={20}
                   color={entry.connected ? colors.accent : colors.muted}
                 />
-                <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+                <View
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    gap: 3,
+                  }}
+                >
                   <Text style={styles.text}>{entry.profile.name}</Text>
                   <Text style={styles.muted}>
                     {status(entry)} · {activity(entry)}
@@ -167,11 +224,23 @@ export function FleetOverview({
               </Pressable>
             ))
           ) : (
-            <View style={{ gap: 12 }} testID="Runtime details">
+            <View
+              style={{
+                gap: 12,
+              }}
+              testID="Runtime details"
+            >
               {compact && (
                 <Action label="All computers" secondary onPress={() => setSelected('')} />
               )}
-              <View style={[styles.row, { flexWrap: 'nowrap' }]}>
+              <View
+                style={[
+                  styles.row,
+                  {
+                    flexWrap: 'nowrap',
+                  },
+                ]}
+              >
                 <Icon
                   name="device"
                   size={22}
@@ -201,10 +270,23 @@ export function FleetOverview({
                   setOpen(false)
                   navigate('pulls')
                 }}
-                style={[styles.row, { minHeight: 48, flexWrap: 'nowrap' }]}
+                style={[
+                  styles.row,
+                  {
+                    minHeight: 48,
+                    flexWrap: 'nowrap',
+                  },
+                ]}
               >
                 <Icon name="pulls" size={18} color={colors.accent} />
-                <Text style={[styles.text, { flex: 1 }]}>
+                <Text
+                  style={[
+                    styles.text,
+                    {
+                      flex: 1,
+                    },
+                  ]}
+                >
                   {detail.pulls
                     ? `${detail.pulls.needsAttention} PRs need action · ${detail.pulls.total} open${detail.pulls.partial ? '+' : ''}`
                     : 'Pull requests'}

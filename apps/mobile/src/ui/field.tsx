@@ -14,6 +14,8 @@ export function SearchField({ label, style, ...props }: TextInputProps & { label
         minHeight: 44,
         backgroundColor: colors.surface,
         borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
       }}
     >
       <Icon name="search" size={17} color={colors.muted} />
@@ -46,9 +48,10 @@ export function SearchField({ label, style, ...props }: TextInputProps & { label
 export function Field({
   label,
   hideLabel = false,
+  error,
   style,
   ...props
-}: TextInputProps & { label: string; hideLabel?: boolean }) {
+}: TextInputProps & { label: string; hideLabel?: boolean; error?: string }) {
   return (
     <View style={{ gap: 6 }}>
       {!hideLabel && <Text style={styles.muted}>{label}</Text>}
@@ -61,6 +64,11 @@ export function Field({
         style={[styles.input, style]}
         {...props}
       />
+      {!!error && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
+      )}
     </View>
   )
 }

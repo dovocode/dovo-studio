@@ -5,7 +5,6 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { readConnection, type LocalConnection } from './connection.js'
 import { discoverNetworks, networkUrls } from './network.js'
 import { readServerConfig, writePrivateJson } from './server-config.js'
-
 interface ManagedProcess {
   pid: number
   startedAt: string
@@ -29,7 +28,10 @@ function managedProcess(directory: string): ManagedProcess | undefined {
     typeof value.startedAt !== 'string'
   )
     throw new Error(`Invalid managed process file: ${path}`)
-  return { pid: value.pid, startedAt: value.startedAt }
+  return {
+    pid: value.pid,
+    startedAt: value.startedAt,
+  }
 }
 export function processExists(pid: number) {
   try {
@@ -42,7 +44,9 @@ export function processExists(pid: number) {
 }
 async function accessible(connection: LocalConnection, timeout = 5000) {
   const response = await fetch(`${connection.address}/api/snapshot`, {
-    headers: { Authorization: `Bearer ${connection.token}` },
+    headers: {
+      Authorization: `Bearer ${connection.token}`,
+    },
     redirect: 'error',
     signal: AbortSignal.timeout(timeout),
   })
@@ -172,7 +176,10 @@ export async function stopServer(directory: string) {
       throw new Error(
         'This runtime is owned by another launcher. Stop it there; server stop only stops a process started with server start.',
       )
-    return { stopped: true, alreadyStopped: true }
+    return {
+      stopped: true,
+      alreadyStopped: true,
+    }
   }
   if (!status.running || !status.managed || status.pid !== managed.pid)
     throw new Error(
@@ -184,7 +191,10 @@ export async function stopServer(directory: string) {
     if (!processExists(managed.pid)) {
       const path = join(directory, 'server-process.json')
       if (managedProcess(directory)?.pid === managed.pid) unlinkSync(path)
-      return { stopped: true, alreadyStopped: false }
+      return {
+        stopped: true,
+        alreadyStopped: false,
+      }
     }
     await delay(100)
   }

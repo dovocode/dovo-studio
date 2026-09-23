@@ -1,8 +1,14 @@
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vite-plus/test'
 import type { RuntimeReadCache } from '@dovo/protocol'
 import { acknowledgePullList, invalidatePullList, pullListRevision } from './pull-list-invalidation'
 
 const cache = (): RuntimeReadCache => ({
+  readEffect: () => Effect.succeed(null),
+  writeEffect: () => Effect.void,
+  removeEffect: () => Effect.void,
+  clearEffect: () => Effect.void,
+  closeEffect: () => Effect.void,
   read: async () => null,
   write: async () => {},
   remove: async () => {},

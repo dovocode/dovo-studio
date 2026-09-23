@@ -1,9 +1,9 @@
-const { withAppDelegate, withInfoPlist } = require('expo/config-plugins')
-const { readFileSync } = require('node:fs')
-const { join } = require('node:path')
+import { withAppDelegate, withInfoPlist, type ConfigPlugin } from 'expo/config-plugins'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // SDK 57's template predates the scene lifecycle required by the iOS 27 SDK.
-module.exports = function withScenes(config) {
+const withScenes: ConfigPlugin = (config) => {
   config = withInfoPlist(config, (config) => {
     config.modResults.UIApplicationSceneManifest = {
       UIApplicationSupportsMultipleScenes: false,
@@ -43,3 +43,5 @@ module.exports = function withScenes(config) {
     return config
   })
 }
+
+export default withScenes

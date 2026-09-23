@@ -1,35 +1,45 @@
-import { useEffect, useState } from 'react'
-import { activitySchema, useWorkspace } from '@dovo/studio-core'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { Effect, Schema } from 'effect'
+import { useEffect } from 'react'
+import { activitySchema, useWorkspace, startPolling } from '@dovo/studio-core'
 import { Button, Input } from '@dovo/studio-ui'
 export function ActivityLog() {
-  const { request, connected } = useWorkspace(),
-    [query, setQuery] = useState(''),
-    [offset, setOffset] = useState(0),
-    [data, setData] = useState<ReturnType<typeof activitySchema.parse>>({ events: [] }),
-    [error, setError] = useState('')
+  const { requestEffect: request, connected } = useWorkspace(),
+    [query, setQuery] = useApplicationState(''),
+    [offset, setOffset] = useApplicationState(0),
+    [data, setData] = useApplicationState<Schema.Schema.Type<typeof activitySchema>>({
+      events: [],
+    }),
+    [error, setError] = useApplicationState('')
   useEffect(() => {
     let stopped = false
-    const load = () => {
-      if (connected)
-        void request('/api/activity', { query, offset }, activitySchema)
-          .then((v) => {
-            if (!stopped) {
-              setData(v)
-              setError('')
-            }
-          })
-          .catch((e) => {
-            if (!stopped) setError(String(e))
-          })
-    }
-    const initial = setTimeout(load, 200),
-      timer = setInterval(load, 10000)
+    let first = true
+    const load = Effect.gen(function* () {
+      if (first) {
+        first = false
+        yield* Effect.sleep(200)
+      }
+      if (!connected || document.visibilityState !== 'visible') return
+      const value = yield* request('/api/activity', { query, offset }, activitySchema)
+      if (!stopped) {
+        setData(value)
+        setError('')
+      }
+    })
+    const polling = startPolling(load, {
+      interval: 10000,
+      onError: (error) => {
+        if (!stopped) setError(error.message)
+      },
+    })
+    document.addEventListener('visibilitychange', polling.refresh)
     return () => {
       stopped = true
-      clearTimeout(initial)
-      clearInterval(timer)
+      document.removeEventListener('visibilitychange', polling.refresh)
+      void polling.stop()
     }
   }, [request, connected, query, offset])
+
   return (
     <section className="space-y-2">
       <h2 className="text-sm font-medium">Activity & message history</h2>

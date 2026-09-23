@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
 import { ExternalLink, GitPullRequest, Unlink } from 'lucide-react'
 import { pullDetailSchema, updateTask, useWorkspace, type Task } from '@dovo/studio-core'
 import {
@@ -11,15 +11,19 @@ import {
   Input,
 } from '@dovo/studio-ui'
 import { pullReference, taskPullLinks, verifyPullUrl } from './task-pull-links'
-
 export function TaskPullLinkDialog({ task, onClose }: { task: Task; onClose: () => void }) {
   const { request, connected, setWorkspace, flush, workspace } = useWorkspace()
-  const [reference, setReference] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [reference, setReference] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   const links = taskPullLinks(task)
   const save = async (links: NonNullable<Task['linkedPullRequests']>) => {
-    setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, linkedPullRequests: links })))
+    setWorkspace((w) =>
+      updateTask(w, task.id, (t) => ({
+        ...t,
+        linkedPullRequests: links,
+      })),
+    )
     await flush()
   }
   const link = async () => {

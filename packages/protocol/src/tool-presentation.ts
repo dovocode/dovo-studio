@@ -1,8 +1,14 @@
-import { z } from 'zod'
+import { mutableArray, mutableStruct } from './schema.js'
+import { decodeResult } from './schema.js'
+import { Schema } from 'effect'
 import type { recentTools } from './activity.js'
-
-const record = z.record(z.string(), z.unknown())
-const object = (value: unknown) => record.safeParse(value).data ?? {}
+const record = Schema.mutable(
+  Schema.Record({
+    key: Schema.String,
+    value: Schema.Unknown,
+  }),
+)
+const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const parse = (value: string): unknown => {
   try {
     return JSON.parse(value)
@@ -20,7 +26,12 @@ const text = (value: unknown): string => {
 }
 const argument = (value: unknown) => object(typeof value === 'string' ? parse(value) : value)
 export type ToolKind = 'computer' | 'command' | 'web' | 'file' | 'tool' | 'reasoning'
-export type ToolPresentation = { title: string; input: string; output: string; kind: ToolKind }
+export type ToolPresentation = {
+  title: string
+  input: string
+  output: string
+  kind: ToolKind
+}
 
 /** Extract displayable tool data without exposing transport envelopes or image blobs. */
 export function toolPresentation(
@@ -29,17 +40,28 @@ export function toolPresentation(
   inputPayload?: string,
 ): ToolPresentation {
   const parsed = parse(payload)
-  if (parsed === undefined) return { title: summary, input: '', output: payload, kind: 'tool' }
+  if (parsed === undefined)
+    return {
+      title: summary,
+      input: '',
+      output: payload,
+      kind: 'tool',
+    }
   const envelope = object(parsed)
   const reasoning = object(envelope.reasoning)
   if (typeof reasoning.text === 'string')
-    return { title: 'Reasoning', input: '', output: reasoning.text, kind: 'reasoning' }
+    return {
+      title: 'Reasoning',
+      input: '',
+      output: reasoning.text,
+      kind: 'reasoning',
+    }
   const event = object(envelope.event)
   const item = object(event.item)
   const part = object(object(event.properties).part)
   const state = object(part.state)
   const update = object(event.update)
-  const blocks = z.array(record).safeParse(object(event.message).content).data ?? []
+  const blocks = decodeResult(mutableArray(record), object(event.message).content).data ?? []
   const tool = blocks.find((block) => block.type === 'tool_use')
   const args = {
     ...argument(item.arguments),
@@ -68,7 +90,14 @@ export function toolPresentation(
             /^(?:read|edit|write|apply_patch|read_file|edit_file|write_file)$/i.test(name)
           ? 'file'
           : 'tool'
-  const changes = z.array(z.object({ path: z.string() })).safeParse(item.changes).data
+  const changes = decodeResult(
+    mutableArray(
+      mutableStruct({
+        path: Schema.String,
+      }),
+    ),
+    item.changes,
+  ).data
   const output =
     text(item.aggregatedOutput) ||
     text(item.output) ||
@@ -95,7 +124,12 @@ export function toolPresentation(
     text(args.url) ||
     text(args.patch) ||
     text(args.input)
-  const result = { title, input, output, kind }
+  const result = {
+    title,
+    input,
+    output,
+    kind,
+  }
   if (!inputPayload || inputPayload === payload) return result
   const start = toolPresentation(inputPayload, summary)
   return {
@@ -107,7 +141,6 @@ export function toolPresentation(
     input: input || start.input,
   }
 }
-
 export function activitySummary(tools: ReturnType<typeof recentTools>): string {
   const counts: Record<ToolKind, number> = {
     computer: 0,

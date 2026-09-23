@@ -1,7 +1,8 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 // Adapted from Vercel AI Elements (MIT), packages/elements/src/conversation.tsx.
 import { ArrowDown } from 'lucide-react'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
-import { useEffect, useState, type ComponentProps } from 'react'
+import { useEffect, type ComponentProps } from 'react'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
@@ -21,7 +22,7 @@ export function ConversationContent({
   className,
   ...props
 }: ComponentProps<typeof StickToBottom.Content>) {
-  return <StickToBottom.Content className={cn('flex flex-col gap-6 p-6', className)} {...props} />
+  return <StickToBottom.Content className={cn('flex flex-col gap-4 p-4', className)} {...props} />
 }
 export function ConversationScrollButton() {
   const { isAtBottom, scrollToBottom } = useStickToBottomContext()
@@ -52,8 +53,8 @@ export function ConversationRail({
   }>
 }) {
   const { scrollRef, stopScroll } = useStickToBottomContext()
-  const [hovered, setHovered] = useState<number | null>(null)
-  const [visible, setVisible] = useState<Set<string>>(new Set())
+  const [hovered, setHovered] = useApplicationState<number | null>(null)
+  const [visible, setVisible] = useApplicationState<Set<string>>(new Set())
   useEffect(() => {
     const root = scrollRef.current
     if (!root) return
@@ -68,7 +69,10 @@ export function ConversationRail({
           return next
         })
       },
-      { root, threshold: 0 },
+      {
+        root,
+        threshold: 0,
+      },
     )
     for (const item of items) {
       const element = document.getElementById(item.id)
@@ -95,7 +99,9 @@ export function ConversationRail({
                 aria-label={`Jump to turn ${index + 1}: ${item.label}`}
                 aria-current={visible.has(item.id) ? 'location' : undefined}
                 className="group flex min-h-[6px] w-5 flex-1 items-center justify-center rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                style={{ maxHeight: 7 }}
+                style={{
+                  maxHeight: 7,
+                }}
                 onClick={() => {
                   const root = scrollRef.current
                   const target = document.getElementById(item.id)

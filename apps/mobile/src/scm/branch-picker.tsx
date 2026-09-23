@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { useApplicationState } from '../runtime/application-state'
 import { View } from 'react-native'
 import { Text } from '../ui/text'
 import { branchesSchema } from '@dovo/protocol'
-import type { z } from 'zod'
+import { Schema, Effect } from 'effect'
 import { useRuntime } from '../runtime/provider'
 import { Action } from '../ui/action'
 import { Choice } from '../ui/choice'
@@ -17,44 +19,59 @@ export function BranchPicker({
   taskId?: string
   onChanged?: () => void
 }) {
-  const { call, connected } = useRuntime()
-  const [open, setOpen] = useState(false),
-    [data, setData] = useState<z.infer<typeof branchesSchema> | null>(null),
-    [selected, setSelected] = useState(''),
-    [name, setName] = useState(''),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
-  const act = async (action?: 'switch' | 'create') => {
-    setBusy(true)
-    setError('')
-    try {
-      const result = await call(
-        action ? '/api/scm/branch' : '/api/scm/branches',
-        {
-          repositoryId,
-          taskId,
-          ...(action
-            ? {
-                action,
-                name: action === 'create' ? name.trim() : selected,
-                revision: data?.revision,
-              }
-            : {}),
-        },
-        branchesSchema,
-      )
-      setData(result)
-      setSelected('')
-      setName('')
-      if (action) onChanged?.()
-    } catch (error) {
-      setError(String(error))
-    } finally {
-      setBusy(false)
-    }
+  const { connected, callEffect } = useRuntime()
+  const [open, setOpen] = useApplicationState(false),
+    [data, setData] = useApplicationState<Schema.Schema.Type<typeof branchesSchema> | null>(null),
+    [selected, setSelected] = useApplicationState(''),
+    [name, setName] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
+  const act = (action?: 'switch' | 'create') => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        setBusy(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          const result = yield* callEffect(
+            action ? '/api/scm/branch' : '/api/scm/branches',
+            {
+              repositoryId,
+              taskId,
+              ...(action
+                ? {
+                    action,
+                    name: action === 'create' ? name.trim() : selected,
+                    revision: data?.revision,
+                  }
+                : {}),
+            },
+            branchesSchema,
+          )
+          setData(result)
+          setSelected('')
+          setName('')
+          if (action) onChanged?.()
+        }).pipe(
+          Effect.catchAll((error) =>
+            nativeEffect(() => {
+              setError(String(error))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              setBusy(false)
+            }).pipe(Effect.orDie),
+          ),
+        )
+      }),
+    )
   }
   return (
-    <View style={{ gap: 8 }}>
+    <View
+      style={{
+        gap: 8,
+      }}
+    >
       <Action
         secondary
         label="Branches"
@@ -65,17 +82,30 @@ export function BranchPicker({
         }}
       />
       {open && (
-        <View style={[styles.card, { gap: 8 }]}>
+        <View
+          style={[
+            styles.card,
+            {
+              gap: 8,
+            },
+          ]}
+        >
           <Text style={styles.text}>Current: {data?.current ?? 'Loading…'}</Text>
           <Choice
             label="Target branch"
             value={selected}
             onChange={setSelected}
             items={[
-              { id: '', name: 'Choose branch' },
+              {
+                id: '',
+                name: 'Choose branch',
+              },
               ...(data?.branches ?? [])
                 .filter((b) => b.remote || !b.checkedOut)
-                .map((b) => ({ id: b.ref, name: `${b.name}${b.remote ? ' · remote' : ''}` })),
+                .map((b) => ({
+                  id: b.ref,
+                  name: `${b.name}${b.remote ? ' · remote' : ''}`,
+                })),
             ]}
           />
           <Action

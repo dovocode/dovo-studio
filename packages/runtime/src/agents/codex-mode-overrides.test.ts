@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -6,7 +7,6 @@ import { resolveTaskAgent, snapshotSchema } from '@dovo/protocol'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import type { AgentAdapter } from './types'
-
 it('keeps explicit Automatic and speed resets through the workspace API, restart, and task execution', async () => {
   const f = await fixture()
   const storage = await mkdtemp(join(tmpdir(), 'dovo-mode-overrides-'))
@@ -38,7 +38,11 @@ it('keeps explicit Automatic and speed resets through the workspace API, restart
         changes: {
           agentOverrides: {
             before: null,
-            after: { model: 'other-model', serviceTier: null, cyberAccessProgram: null },
+            after: {
+              model: 'other-model',
+              serviceTier: null,
+              cyberAccessProgram: null,
+            },
           },
         },
       }),
@@ -46,10 +50,13 @@ it('keeps explicit Automatic and speed resets through the workspace API, restart
     expect(response.status).toBe(200)
     await runtime.close()
     runtime = await startRuntime(options)
-    const snapshot = snapshotSchema.parse(
+    const snapshot = decode(
+      snapshotSchema,
       await (
         await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot`, {
-          headers: { Authorization: `Bearer ${options.ownerToken}` },
+          headers: {
+            Authorization: `Bearer ${options.ownerToken}`,
+          },
         })
       ).json(),
     )
@@ -82,7 +89,10 @@ it('keeps explicit Automatic and speed resets through the workspace API, restart
   } finally {
     await runtime.close()
     await f.cleanup()
-    await rm(storage, { recursive: true, force: true })
+    await rm(storage, {
+      recursive: true,
+      force: true,
+    })
     vi.restoreAllMocks()
   }
 })

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useRef } from 'react'
 import {
   ArrowLeft,
   CircleDot,
@@ -26,7 +27,6 @@ import { PipelineState } from './pipeline-detail'
 import { WorkContent, WorkForm } from './work-detail'
 import { SourcePicker } from './source-picker'
 import { useWorkSources } from './use-work-sources'
-
 type Mode = 'issues' | 'pipelines'
 export default function IssuesView({ entityId }: StudioViewProps) {
   return <WorkView mode="issues" entityId={entityId} />
@@ -36,27 +36,27 @@ export function PipelinesView({ entityId }: StudioViewProps) {
 }
 function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
   const { activeRuntimeId, switchRuntime, connected, request } = useWorkspace()
-  const [project, setProject] = useState('')
-  const [search, setSearch] = useState('')
-  const [query, setQuery] = useState('')
+  const [project, setProject] = useApplicationState('')
+  const [search, setSearch] = useApplicationState('')
+  const [query, setQuery] = useApplicationState('')
   useEffect(() => {
     const timer = setTimeout(() => setQuery(mode === 'issues' ? search.trim() : ''), 300)
     return () => clearTimeout(timer)
   }, [mode, search])
   const { sources, pages, busy, refresh, more } = useWorkSources(mode, query)
-  const [state, setState] = useState('all')
-  const [sort, setSort] = useState('updated')
-  const [linked, setLinked] = useState('all')
-  const [selected, setSelected] = useState<{
+  const [state, setState] = useApplicationState('all')
+  const [sort, setSort] = useApplicationState('updated')
+  const [linked, setLinked] = useApplicationState('all')
+  const [selected, setSelected] = useApplicationState<{
     source: WorkSource
     id: string
     url?: string
   } | null>(null)
-  const [picking, setPicking] = useState(false)
-  const [creating, setCreating] = useState<WorkSource | null>(null)
-  const [settings, setSettings] = useState(false)
-  const [opening, setOpening] = useState(false)
-  const [error, setError] = useState('')
+  const [picking, setPicking] = useApplicationState(false)
+  const [creating, setCreating] = useApplicationState<WorkSource | null>(null)
+  const [settings, setSettings] = useApplicationState(false)
+  const [opening, setOpening] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   const pending = useRef(false)
   const lastTarget = useRef<string | undefined>(undefined)
   const selectedSource = sources.find(
@@ -83,7 +83,15 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
     lastTarget.current = entityId
     setProject(source.key)
     setSearch(target.sha ?? '')
-    setSelected(target.id ? { source, id: target.id, url: target.url } : null)
+    setSelected(
+      target.id
+        ? {
+            source,
+            id: target.id,
+            url: target.url,
+          }
+        : null,
+    )
   }, [entityId, activeRuntimeId, sources])
   const open = async (source: WorkSource, id: string, url: string) => {
     if (pending.current) return
@@ -92,7 +100,11 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
     setError('')
     try {
       if (activeRuntimeId !== source.runtimeId) await switchRuntime(source.runtimeId)
-      setSelected({ source, id, url })
+      setSelected({
+        source,
+        id,
+        url,
+      })
     } catch (error) {
       setError(String(error))
     } finally {
@@ -186,7 +198,7 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       {!selected && (
-        <header className="space-y-3 border-b px-5 py-4">
+        <header className="studio-page-header space-y-3 border-b">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="mr-2 text-lg font-semibold tracking-tight">
               {mode === 'issues' ? 'Issues' : 'Pipelines'}
@@ -568,7 +580,11 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
             setCreating(null)
             refresh()
             if (mode === 'issues' && result?.id)
-              setSelected({ source: createPage.source, id: result.id, url: result.url })
+              setSelected({
+                source: createPage.source,
+                id: result.id,
+                url: result.url,
+              })
           }}
         />
       )}

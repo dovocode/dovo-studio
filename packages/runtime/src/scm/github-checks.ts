@@ -1,47 +1,54 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { urlSchema, decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import type { PullDetail } from '@dovo/protocol'
 import { githubApi, type GithubJSON, type GithubLocation } from './github-api.js'
 import { errorMessage } from '../errors.js'
-
-const check = z.object({
-  id: z.number().int().positive(),
-  name: z.string(),
-  status: z.string(),
-  conclusion: z.string().nullable(),
-  html_url: z.url().nullish(),
-  details_url: z.url().nullish(),
-  started_at: z.string().nullish(),
-  completed_at: z.string().nullish(),
-  output: z
-    .object({
-      summary: z.string().nullable(),
-      text: z.string().nullish(),
-      annotations_count: z.number().int().nonnegative(),
-    })
-    .optional(),
+const check = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.positive()),
+  name: Schema.String,
+  status: Schema.String,
+  conclusion: Schema.NullOr(Schema.String),
+  html_url: Schema.optional(Schema.NullOr(urlSchema())),
+  details_url: Schema.optional(Schema.NullOr(urlSchema())),
+  started_at: Schema.optional(Schema.NullOr(Schema.String)),
+  completed_at: Schema.optional(Schema.NullOr(Schema.String)),
+  output: Schema.optional(
+    mutableStruct({
+      summary: Schema.NullOr(Schema.String),
+      text: Schema.optional(Schema.NullOr(Schema.String)),
+      annotations_count: Schema.Number.pipe(Schema.finite())
+        .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+        .pipe(Schema.nonNegative()),
+    }),
+  ),
 })
-const annotation = z.object({
-  path: z.string(),
-  start_line: z.number(),
-  end_line: z.number(),
-  annotation_level: z.string(),
-  message: z.string(),
-  title: z.string().nullish(),
+const annotation = mutableStruct({
+  path: Schema.String,
+  start_line: Schema.Number.pipe(Schema.finite()),
+  end_line: Schema.Number.pipe(Schema.finite()),
+  annotation_level: Schema.String,
+  message: Schema.String,
+  title: Schema.optional(Schema.NullOr(Schema.String)),
 })
-
 export async function githubChecks(json: GithubJSON, repo: GithubLocation, headSha: string) {
-  const pages = z
-    .array(z.object({ check_runs: z.array(check) }))
-    .parse(
-      await json([
-        'api',
-        '--hostname',
-        repo.host,
-        `${repo.path}/commits/${headSha}/check-runs?per_page=100`,
-        '--paginate',
-        '--slurp',
-      ]),
-    )
+  const pages = decode(
+    mutableArray(
+      mutableStruct({
+        check_runs: mutableArray(check),
+      }),
+    ),
+    await json([
+      'api',
+      '--hostname',
+      repo.host,
+      `${repo.path}/commits/${headSha}/check-runs?per_page=100`,
+      '--paginate',
+      '--slurp',
+    ]),
+  )
   const checks: PullDetail['checks'] = []
   const warnings: string[] = []
   const runs = pages.flatMap((page) => page.check_runs)
@@ -56,34 +63,54 @@ export async function githubChecks(json: GithubJSON, repo: GithubLocation, headS
             name: run.name,
             status: run.conclusion || run.status,
             ...(run.details_url || run.html_url
-              ? { url: run.details_url || run.html_url || undefined }
+              ? {
+                  url: run.details_url || run.html_url || undefined,
+                }
               : {}),
-            ...(run.output?.summary ? { summary: run.output.summary } : {}),
-            ...(run.output?.text ? { details: run.output.text } : {}),
-            ...(run.started_at ? { startedAt: run.started_at } : {}),
-            ...(run.completed_at ? { completedAt: run.completed_at } : {}),
+            ...(run.output?.summary
+              ? {
+                  summary: run.output.summary,
+                }
+              : {}),
+            ...(run.output?.text
+              ? {
+                  details: run.output.text,
+                }
+              : {}),
+            ...(run.started_at
+              ? {
+                  startedAt: run.started_at,
+                }
+              : {}),
+            ...(run.completed_at
+              ? {
+                  completedAt: run.completed_at,
+                }
+              : {}),
           }
           if (run.output?.annotations_count) {
             try {
-              const annotations = z
-                .array(z.array(annotation))
-                .parse(
-                  await githubApi(
-                    json,
-                    repo,
-                    `check-runs/${run.id}/annotations?per_page=100`,
-                    'GET',
-                    ['--paginate', '--slurp'],
-                  ),
-                )
-                .flat()
+              const annotations = decode(
+                mutableArray(mutableArray(annotation)),
+                await githubApi(
+                  json,
+                  repo,
+                  `check-runs/${run.id}/annotations?per_page=100`,
+                  'GET',
+                  ['--paginate', '--slurp'],
+                ),
+              ).flat()
               value.annotations = annotations.map((item) => ({
                 path: item.path,
                 startLine: item.start_line,
                 endLine: item.end_line,
                 level: item.annotation_level,
                 message: item.message,
-                ...(item.title ? { title: item.title } : {}),
+                ...(item.title
+                  ? {
+                      title: item.title,
+                    }
+                  : {}),
               }))
               if (annotations.length < run.output.annotations_count)
                 warnings.push(`${run.name}: GitHub returned only part of this check’s annotations.`)
@@ -96,5 +123,8 @@ export async function githubChecks(json: GithubJSON, repo: GithubLocation, headS
       )),
     )
   }
-  return { checks, warnings }
+  return {
+    checks,
+    warnings,
+  }
 }

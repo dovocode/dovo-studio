@@ -34,8 +34,7 @@ appId: com.dovo.studio
 - tapOn:
     id: Task mobile-task
 - assertVisible: Review this change from your phone.
-- assertVisible:
-    text: Chat
+- assertVisible: Task tools
 - assertVisible:
     text: Terminal
 - tapOn:
@@ -46,6 +45,7 @@ appId: com.dovo.studio
 - tapOn:
     text: Terminal
 - assertVisible: New terminal
+- tapOn: Task tools
 - tapOn:
     text: Chat
 - assertVisible:
@@ -99,6 +99,7 @@ appId: com.dovo.studio
 - tapOn:
     text: Changes \(.*\)
 - assertVisible: Change history
+- tapOn: Task tools
 - tapOn:
     text: Chat
 - assertVisible: Fixture interrupted reply. Retry this message.

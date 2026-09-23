@@ -33,7 +33,13 @@ it('returns snoozed tasks at their deadline and supports clearing snooze', () =>
   }
   expect(isSnoozed(snoozed, Date.parse('2026-09-12T11:59:59Z'))).toBe(true)
   expect(isSnoozed(snoozed, Date.parse('2026-09-12T12:00:00Z'))).toBe(false)
-  expect(isSnoozed({ ...snoozed, snoozedUntil: null }, Date.parse('2026-09-12T11:00:00Z'))).toBe(
-    false,
-  )
+  expect(
+    isSnoozed(
+      {
+        ...snoozed,
+        snoozedUntil: null,
+      },
+      Date.parse('2026-09-12T11:00:00Z'),
+    ),
+  ).toBe(false)
 })

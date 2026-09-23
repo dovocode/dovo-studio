@@ -37,7 +37,7 @@ export * from './workspace/schema'
 export * from './workspace/provider'
 export * from './workspace/actions'
 export * from './runtime/client'
-export { responses, snapshotSchema, connectionSchema } from '@dovo/protocol'
+export { PAIRING_PROTOCOL_VERSION, responses, snapshotSchema, connectionSchema } from '@dovo/protocol'
 export type {
   RuntimeConnection,
   RuntimeProfile,
@@ -155,3 +155,10 @@ export { toolPresentation, activitySummary } from '@dovo/protocol'
 export type { ToolKind, ToolPresentation } from '@dovo/protocol'
 
 export { subagentElapsed, subagentMetadata } from '@dovo/protocol'
+
+export {
+  startPolling,
+  startReconnecting,
+  startSocketHeartbeat,
+  clientTaskScope,
+} from '@dovo/client-runtime'

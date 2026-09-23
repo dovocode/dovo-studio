@@ -55,7 +55,8 @@ export function ActivityBar({
           className={cn('studio-navigation-item', selected && 'is-active')}
           onClick={select}
         >
-          <Icon size={19} strokeWidth={1.7} aria-hidden="true" />
+          <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
+          <span className="studio-navigation-label">{label}</span>
         </Button>
       </TooltipTrigger>
       <TooltipContent side="right" sideOffset={10}>
@@ -64,7 +65,10 @@ export function ActivityBar({
     </Tooltip>
   )
   return (
-    <nav className="studio-navigation overflow-y-auto" aria-label="Main navigation">
+    <nav className="studio-navigation" aria-label="Main navigation">
+      <span className="studio-navigation-heading" aria-hidden="true">
+        Workspace
+      </span>
       {item('overview', 'Overview', LayoutDashboard, activeId === 'overview', () =>
         onSelect('overview'),
       )}
@@ -75,7 +79,7 @@ export function ActivityBar({
             onSelect(view.id),
           ),
         )}
-      <div className="mt-auto space-y-1 pt-6">
+      <div className="studio-navigation-settings">
         {!!settings.length &&
           item('settings', 'Settings', Settings, settingsActive, () => onSelect(settings[0].id))}
         {item('help', 'Walkthrough', CircleHelp, false, onHelp)}

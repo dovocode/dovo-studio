@@ -1,8 +1,8 @@
+import { decode } from '@dovo/protocol'
 import { createRuntimeReadCache, type CacheStorage, type RuntimeConnection } from '@dovo/protocol'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { workspaceOutboxSchema, type WorkspaceOutbox } from '../runtime/synchronization'
-
 let database: Promise<IDBDatabase> | undefined
 function open() {
   return (database ??= new Promise<IDBDatabase>((resolve, reject) => {
@@ -69,11 +69,13 @@ export async function readWorkspaceOutbox(connection: RuntimeConnection) {
   const raw = await storage.getItem(outboxKey(connection))
   if (raw === null) return null
   try {
-    return workspaceOutboxSchema.parse(JSON.parse(raw))
+    return decode(workspaceOutboxSchema, JSON.parse(raw))
   } catch (error) {
     throw new Error(
       'Saved pending changes could not be read. They have been preserved; recover this workspace outbox before reconnecting.',
-      { cause: error },
+      {
+        cause: error,
+      },
     )
   }
 }

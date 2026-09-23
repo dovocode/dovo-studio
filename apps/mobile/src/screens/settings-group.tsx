@@ -15,11 +15,19 @@ export function SettingsGroup({
 }) {
   return (
     <View style={{ gap: 6 }}>
-      {title && <Text style={[styles.muted, { paddingHorizontal: 14 }]}>{title}</Text>}
-      <View style={{ backgroundColor: colors.surface, borderRadius: 12, overflow: 'hidden' }}>
+      {title && <Text style={[styles.muted, { paddingHorizontal: 10 }]}>{title}</Text>}
+      <View
+        style={{
+          backgroundColor: colors.surface,
+          borderRadius: 10,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.border,
+          overflow: 'hidden',
+        }}
+      >
         {children}
       </View>
-      {footer && <Text style={[styles.muted, { paddingHorizontal: 14 }]}>{footer}</Text>}
+      {footer && <Text style={[styles.muted, { paddingHorizontal: 10 }]}>{footer}</Text>}
     </View>
   )
 }
@@ -59,24 +67,24 @@ export function SettingsRow({
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
-        paddingLeft: 14,
-        gap: 10,
-        minHeight: subtitle ? 60 : 48,
+        paddingLeft: 10,
+        gap: 8,
+        minHeight: subtitle ? 56 : 44,
         opacity: disabled ? 0.45 : 1,
         backgroundColor: pressed ? '#ffffff12' : 'transparent',
       })}
     >
       <View
         style={{
-          width: 28,
-          height: 28,
-          borderRadius: 7,
+          width: 24,
+          height: 24,
+          borderRadius: 6,
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: `${tint}20`,
         }}
       >
-        <Icon name={icon} size={18} color={tint} />
+        <Icon name={icon} size={16} color={tint} />
       </View>
       <View
         style={{
@@ -84,15 +92,15 @@ export function SettingsRow({
           minWidth: 0,
           flexDirection: 'row',
           alignItems: 'center',
-          gap: 10,
-          paddingVertical: 10,
-          paddingRight: 14,
+          gap: 8,
+          paddingVertical: 6,
+          paddingRight: 10,
           borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
           borderColor: colors.border,
         }}
       >
         <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-          <Text numberOfLines={2} style={[styles.text, { fontSize: 16, lineHeight: 22 }]}>
+          <Text numberOfLines={2} style={[styles.text, { fontSize: 15, lineHeight: 20 }]}>
             {title}
           </Text>
           {subtitle && (

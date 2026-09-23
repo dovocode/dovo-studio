@@ -1,13 +1,13 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskLifecycleActions } from './task-lifecycle-actions'
-import { useState } from 'react'
 import { Ellipsis, Pin, Settings2 } from 'lucide-react'
 import { updateTask, useWorkspace, type Task } from '@dovo/studio-core'
 import { IconButton, Popover } from '@dovo/studio-ui'
 import { TaskSettings } from './task-settings'
 export function TaskActions({ task }: { task: Task }) {
   const { setWorkspace } = useWorkspace(),
-    [settings, setSettings] = useState(false),
-    [actionsOpen, setActionsOpen] = useState(false)
+    [settings, setSettings] = useApplicationState(false),
+    [actionsOpen, setActionsOpen] = useApplicationState(false)
   return (
     <>
       <Popover.Root open={actionsOpen} onOpenChange={setActionsOpen}>
@@ -28,7 +28,12 @@ export function TaskActions({ task }: { task: Task }) {
               aria-pressed={!!task.pinned}
               className="size-7"
               onClick={() =>
-                setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, pinned: !t.pinned })))
+                setWorkspace((w) =>
+                  updateTask(w, task.id, (t) => ({
+                    ...t,
+                    pinned: !t.pinned,
+                  })),
+                )
               }
             >
               <Pin size={13} />

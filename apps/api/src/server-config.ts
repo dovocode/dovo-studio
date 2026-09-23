@@ -2,7 +2,6 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { isIP } from 'node:net'
-
 export interface ServerConfig {
   version: 1
   host: string
@@ -74,7 +73,9 @@ export function validateServerConfig(value: unknown, directory: string): ServerC
     port: value.port,
     databasePath,
     ...('publicAddress' in value && typeof value.publicAddress === 'string'
-      ? { publicAddress: publicOrigin(value.publicAddress) }
+      ? {
+          publicAddress: publicOrigin(value.publicAddress),
+        }
       : {}),
   }
 }
@@ -87,15 +88,25 @@ export function readServerConfig(directory: string): ServerConfig {
   return validateServerConfig(JSON.parse(readFileSync(path, 'utf8')), directory)
 }
 export function writePrivateJson(path: string, value: unknown) {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  mkdirSync(dirname(path), {
+    recursive: true,
+    mode: 0o700,
+  })
   const temporary = `${path}.${process.pid}.tmp`
-  writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 })
+  writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', {
+    mode: 0o600,
+  })
   chmodSync(temporary, 0o600)
   renameSync(temporary, path)
 }
 export function setupServer(
   directory: string,
-  options: { host?: string; port?: string; database?: string; publicAddress?: string } = {},
+  options: {
+    host?: string
+    port?: string
+    database?: string
+    publicAddress?: string
+  } = {},
 ) {
   let saved: Partial<ServerConfig> = {}
   if (existsSync(join(directory, 'server.json'))) saved = readServerConfig(directory)

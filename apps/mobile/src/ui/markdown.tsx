@@ -1,19 +1,57 @@
+import { nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
 import { memo } from 'react'
 import { Alert, Linking, Platform } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { resolveMarkdownLink } from '@dovo/protocol'
 import { colors, styles } from './theme'
-
 const monospace = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
-const heading = { color: colors.text, fontWeight: '700', marginTop: 20, marginBottom: 8 }
+const heading = {
+  color: colors.text,
+  fontWeight: '700',
+  marginTop: 20,
+  marginBottom: 8,
+}
 const markdownStyle: MarkdownStyle = {
-  paragraph: { color: colors.text, fontSize: 17, lineHeight: 26, marginTop: 0, marginBottom: 12 },
-  h1: { ...heading, fontSize: 27, lineHeight: 34 },
-  h2: { ...heading, fontSize: 23, lineHeight: 30 },
-  h3: { ...heading, fontSize: 20, lineHeight: 27 },
-  h4: { ...heading, fontSize: 18, lineHeight: 25 },
-  h5: { ...heading, fontSize: 17, lineHeight: 24 },
-  h6: { ...heading, fontSize: 16, lineHeight: 23, color: colors.muted },
+  paragraph: {
+    color: colors.text,
+    fontSize: 17,
+    lineHeight: 26,
+    marginTop: 0,
+    marginBottom: 12,
+  },
+  h1: {
+    ...heading,
+    fontSize: 27,
+    lineHeight: 34,
+  },
+  h2: {
+    ...heading,
+    fontSize: 23,
+    lineHeight: 30,
+  },
+  h3: {
+    ...heading,
+    fontSize: 20,
+    lineHeight: 27,
+  },
+  h4: {
+    ...heading,
+    fontSize: 18,
+    lineHeight: 25,
+  },
+  h5: {
+    ...heading,
+    fontSize: 17,
+    lineHeight: 24,
+  },
+  h6: {
+    ...heading,
+    fontSize: 16,
+    lineHeight: 23,
+    color: colors.muted,
+  },
   list: {
     color: colors.text,
     fontSize: 17,
@@ -69,8 +107,13 @@ const markdownStyle: MarkdownStyle = {
       attribute: '#ebd79c',
     },
   },
-  link: { color: colors.accent, underline: true },
-  strong: { color: '#ffffff' },
+  link: {
+    color: colors.accent,
+    underline: true,
+  },
+  strong: {
+    color: '#ffffff',
+  },
   image: {
     maxHeight: 360,
     resizeMode: 'contain',
@@ -78,7 +121,12 @@ const markdownStyle: MarkdownStyle = {
     marginTop: 8,
     marginBottom: 14,
   },
-  thematicBreak: { color: colors.border, height: 1, marginTop: 16, marginBottom: 16 },
+  thematicBreak: {
+    color: colors.border,
+    height: 1,
+    marginTop: 16,
+    marginBottom: 16,
+  },
   table: {
     color: colors.text,
     fontSize: 14,
@@ -105,17 +153,56 @@ const markdownStyle: MarkdownStyle = {
     checkedStrikethrough: false,
   },
 }
-
 const chatMarkdownStyle: MarkdownStyle = {
   ...markdownStyle,
-  paragraph: { ...markdownStyle.paragraph, ...styles.chatText, marginBottom: 10 },
-  h1: { ...heading, fontSize: 25, lineHeight: 30, marginTop: 16 },
-  h2: { ...heading, fontSize: 21, lineHeight: 26, marginTop: 16 },
-  h3: { ...heading, fontSize: 18, lineHeight: 23, marginTop: 16 },
-  h4: { ...heading, fontSize: 16, lineHeight: 22, marginTop: 16 },
-  h5: { ...heading, fontSize: 15, lineHeight: 22, marginTop: 16 },
-  h6: { ...heading, fontSize: 15, lineHeight: 22, marginTop: 16, color: colors.muted },
-  list: { ...markdownStyle.list, ...styles.chatText, marginBottom: 10, itemSpacing: 3 },
+  paragraph: {
+    ...markdownStyle.paragraph,
+    ...styles.chatText,
+    marginBottom: 10,
+  },
+  h1: {
+    ...heading,
+    fontSize: 25,
+    lineHeight: 30,
+    marginTop: 16,
+  },
+  h2: {
+    ...heading,
+    fontSize: 21,
+    lineHeight: 26,
+    marginTop: 16,
+  },
+  h3: {
+    ...heading,
+    fontSize: 18,
+    lineHeight: 23,
+    marginTop: 16,
+  },
+  h4: {
+    ...heading,
+    fontSize: 16,
+    lineHeight: 22,
+    marginTop: 16,
+  },
+  h5: {
+    ...heading,
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 16,
+  },
+  h6: {
+    ...heading,
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 16,
+    color: colors.muted,
+  },
+  list: {
+    ...markdownStyle.list,
+    ...styles.chatText,
+    marginBottom: 10,
+    itemSpacing: 3,
+  },
   blockquote: {
     ...markdownStyle.blockquote,
     ...styles.chatText,
@@ -124,7 +211,6 @@ const chatMarkdownStyle: MarkdownStyle = {
     marginBottom: 12,
   },
 }
-
 export const Markdown = memo(function Markdown({
   text,
   baseURL,
@@ -147,13 +233,25 @@ export const Markdown = memo(function Markdown({
       allowFontScaling
       lineBreakStrategyIOS="standard"
       enableTaskListItemToggle={false}
-      md4cFlags={{ latexMath: false, hardSoftBreaks: preserveLineBreaks }}
-      containerStyle={{ width: '100%', maxWidth: '100%', minWidth: 0, flexShrink: 1 }}
+      md4cFlags={{
+        latexMath: false,
+        hardSoftBreaks: preserveLineBreaks,
+      }}
+      containerStyle={{
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        flexShrink: 1,
+      }}
       onLinkPress={({ url }) => {
         const target = resolveMarkdownLink(url, baseURL, fileBaseURL)
         if (target) {
-          void Linking.openURL(target).catch((error) =>
-            Alert.alert('Could not open link', String(error)),
+          void runClientEffect(
+            nativeEffect(() => Linking.openURL(target)).pipe(
+              Effect.catchAll((error) =>
+                nativeEffect(() => Alert.alert('Could not open link', String(error))),
+              ),
+            ),
           )
         } else {
           Alert.alert('Desktop link', 'Open this file or link on your desktop.')

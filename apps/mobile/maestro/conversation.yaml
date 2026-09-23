@@ -62,15 +62,15 @@ appId: com.dovo.studio
 - extendedWaitUntil:
     visible: '.*Verified fixture response.*'
     timeout: 20000
-- tapOn: Work details
+- tapOn: Ran 1 command
 - scrollUntilVisible:
     element:
-      text: '.*git status --short.*completed.*'
+      text: 'git status --short'
     direction: DOWN
-- tapOn: '.*git status --short.*completed.*'
+- tapOn: 'git status --short'
 - assertVisible: '.*Fixture worktree is clean.*'
 - takeScreenshot: dovo-assistant-tool-output
-- tapOn: '.*git status --short.*completed.*'
+- tapOn: 'git status --short'
 - scrollUntilVisible:
     element:
       id: Turn changes · 1 file
@@ -80,6 +80,7 @@ appId: com.dovo.studio
 - assertVisible: Snapshot diff for this turn. Select Current changes to edit files.
 - assertVisible: '.*checkpoint-fixture.txt.*'
 - takeScreenshot: dovo-assistant-checkpoint
+- tapOn: Task tools
 - tapOn: Chat
 - assertVisible: '.*Verified fixture response.*'
 - tapOn: Back

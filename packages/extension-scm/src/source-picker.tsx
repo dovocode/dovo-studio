@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useRef } from 'react'
 import { type RepositorySource, useWorkspace } from '@dovo/studio-core'
 import {
   Button,
@@ -14,10 +15,11 @@ import { Monitor } from 'lucide-react'
 // Choose an execution destination only when an action needs one, never to browse a collection.
 type SourceChoice = Pick<RepositorySource, 'key' | 'runtimeId' | 'runtimeName' | 'connected'> & {
   name?: string
-  repository?: { name: string }
+  repository?: {
+    name: string
+  }
 }
 const sourceName = (source: SourceChoice) => source.name ?? source.repository?.name ?? 'Source'
-
 export function SourcePicker<T extends SourceChoice>({
   sources,
   title,
@@ -30,9 +32,9 @@ export function SourcePicker<T extends SourceChoice>({
   onClose: () => void
 }) {
   const { activeRuntimeId, switchRuntime } = useWorkspace()
-  const [search, setSearch] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [search, setSearch] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   const pending = useRef(false)
   const visibleSources = sources.filter((source) =>
     `${sourceName(source)} ${source.runtimeName}`

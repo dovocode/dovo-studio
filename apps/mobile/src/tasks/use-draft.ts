@@ -1,22 +1,23 @@
-import { useEffect, useRef, useState } from 'react'
+import { Effect } from 'effect'
+import { clientTaskScope, runClientEffect } from '@dovo/client-runtime'
+import { useApplicationState } from '../runtime/application-state'
+import { useEffect, useRef } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useRuntime } from '../runtime/provider'
 import { createDraftStorage } from './draft-storage'
-
 const drafts = createDraftStorage(AsyncStorage)
-
 export function useDraft(taskId: string, initial = '') {
   const { activeId, legacyDraftRuntimeId } = useRuntime()
   const key = `dovo.draft.${encodeURIComponent(activeId ?? '')}.${taskId}`
   const migrateLegacy = !!activeId && activeId === legacyDraftRuntimeId
-  const [text, setText] = useState(''),
-    [ready, setReady] = useState(false),
-    [error, setError] = useState('')
+  const [text, setText] = useApplicationState(''),
+    [ready, setReady] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const initialText = useRef(initial)
   const activeKey = useRef<string | null>(null)
   useEffect(() => {
-    let stopped = false,
-      edited = false
+    const commands = clientTaskScope()
+    let edited = false
     activeKey.current = key
     setReady(false)
     setError('')
@@ -24,28 +25,39 @@ export function useDraft(taskId: string, initial = '') {
       edited = true
       setText(value)
     })
-    void drafts
-      .read(key, migrateLegacy ? `dovo.draft.${taskId}` : undefined)
-      .then((value) => {
-        if (!stopped) {
-          if (!edited) setText(value ?? initialText.current)
-          setReady(true)
-        }
-      })
-      .catch((error) => {
-        if (!stopped) setError(String(error))
-      })
+    void commands.run(
+      drafts.readEffect(key, migrateLegacy ? `dovo.draft.${taskId}` : undefined).pipe(
+        Effect.tap((value) =>
+          Effect.sync(() => {
+            if (!edited) setText(value ?? initialText.current)
+            setReady(true)
+          }),
+        ),
+        Effect.catchAll((error) => Effect.sync(() => setError(String(error)))),
+      ),
+    )
     return () => {
-      stopped = true
+      void commands.stop()
       activeKey.current = null
       unsubscribe()
     }
   }, [taskId, key, migrateLegacy])
   const update = (value: string) => {
     if (activeKey.current === key) setText(value)
-    void drafts.write(key, value).catch((error) => {
-      if (activeKey.current === key) setError(String(error))
-    })
+    void runClientEffect(
+      drafts.writeEffect(key, value).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            if (activeKey.current === key) setError(String(error))
+          }),
+        ),
+      ),
+    )
   }
-  return { text, update, ready, error }
+  return {
+    text,
+    update,
+    ready,
+    error,
+  }
 }

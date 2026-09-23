@@ -1,8 +1,11 @@
+import { useApplicationState } from '@dovo/studio-core/state'
+import { mutableStruct } from '@dovo/protocol'
+import { decodeResult, decode } from '@dovo/protocol'
 import { accessModes, lockedTaskProvider, supportsAccess } from '@dovo/studio-core'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { ModelSettings } from './model-settings'
-import { useRef, useState } from 'react'
-import { z } from 'zod'
+import { useRef } from 'react'
+import { Schema } from 'effect'
 import { agentSchema, providers, useWorkspace, type Agent } from '@dovo/studio-core'
 import {
   Button,
@@ -30,9 +33,9 @@ export function AgentEditor({
 }) {
   const { workspace, request, connected } = useWorkspace()
   const pending = useRef(false)
-  const [busy, setBusy] = useState(false)
-  const [agent, setAgent] = useState(initial)
-  const [error, setError] = useState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [agent, setAgent] = useApplicationState(initial)
+  const [error, setError] = useApplicationState('')
   const storedProvider = workspace.agents.find((saved) => saved.id === initial.id)?.provider
   const lockedProviders = creating
     ? []
@@ -62,7 +65,10 @@ export function AgentEditor({
           className="grid gap-4"
           onSubmit={(e) => {
             e.preventDefault()
-            const result = agentSchema.safeParse({ ...agent, name: agent.name.trim() })
+            const result = decodeResult(agentSchema, {
+              ...agent,
+              name: agent.name.trim(),
+            })
             if (!result.success) {
               setError('Enter an agent name.')
               return
@@ -77,21 +83,52 @@ export function AgentEditor({
             pending.current = true
             setBusy(true)
             setError('')
-            const before = z.record(z.string(), z.unknown()).parse(initial)
-            const after = z.record(z.string(), z.unknown()).parse(result.data)
-            const changes: Record<string, { before: unknown; after: unknown }> = {}
+            const before = decode(
+              Schema.mutable(
+                Schema.Record({
+                  key: Schema.String,
+                  value: Schema.Unknown,
+                }),
+              ),
+              initial,
+            )
+            const after = decode(
+              Schema.mutable(
+                Schema.Record({
+                  key: Schema.String,
+                  value: Schema.Unknown,
+                }),
+              ),
+              result.data,
+            )
+            const changes: Record<
+              string,
+              {
+                before: unknown
+                after: unknown
+              }
+            > = {}
             for (const key of new Set([...Object.keys(before), ...Object.keys(after)]))
               if (key !== 'id' && JSON.stringify(before[key]) !== JSON.stringify(after[key]))
-                changes[key] = { before: before[key] ?? null, after: after[key] ?? null }
+                changes[key] = {
+                  before: before[key] ?? null,
+                  after: after[key] ?? null,
+                }
             void request(
               '/api/workspace',
               {
                 collection: 'agents',
                 id: initial.id,
                 changes,
-                ...(creating ? { create: result.data } : {}),
+                ...(creating
+                  ? {
+                      create: result.data,
+                    }
+                  : {}),
               },
-              z.object({ revision: z.number() }),
+              mutableStruct({
+                revision: Schema.Number.pipe(Schema.finite()),
+              }),
               'PATCH',
             )
               .then(onClose)
@@ -109,7 +146,12 @@ export function AgentEditor({
               <Input
                 required
                 value={agent.name}
-                onChange={(e) => setAgent({ ...agent, name: e.target.value })}
+                onChange={(e) =>
+                  setAgent({
+                    ...agent,
+                    name: e.target.value,
+                  })
+                }
               />
             </FormField>
             <FormField label="Icon">
@@ -129,7 +171,10 @@ export function AgentEditor({
                         aria-label={label}
                         checked={(agent.icon ?? 'bot') === id}
                         onChange={() =>
-                          setAgent({ ...agent, icon: agentSchema.shape.icon.parse(id) })
+                          setAgent({
+                            ...agent,
+                            icon: decode(agentSchema.fields.icon.from, id),
+                          })
                         }
                         className="peer sr-only"
                       />
@@ -151,7 +196,7 @@ export function AgentEditor({
                   if (!availableProviders.some(([id]) => id === selection)) return
                   setAgent({
                     ...agent,
-                    provider: agentSchema.shape.provider.parse(selection),
+                    provider: decode(agentSchema.fields.provider, selection),
                     model: '',
                     reasoning: '',
                     serviceTier: undefined,
@@ -192,7 +237,7 @@ export function AgentEditor({
                 onValueChange={(selection) =>
                   setAgent({
                     ...agent,
-                    permission: agentSchema.shape.permission.parse(selection),
+                    permission: decode(agentSchema.fields.permission, selection),
                   })
                 }
               >
@@ -222,7 +267,12 @@ export function AgentEditor({
             >
               <Input
                 value={agent.endpoint}
-                onChange={(e) => setAgent({ ...agent, endpoint: e.target.value })}
+                onChange={(e) =>
+                  setAgent({
+                    ...agent,
+                    endpoint: e.target.value,
+                  })
+                }
                 placeholder={
                   agent.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Managed by runtime'
                 }
@@ -233,7 +283,10 @@ export function AgentEditor({
                 <Textarea
                   value={(agent.args ?? []).join('\n')}
                   onChange={(event) =>
-                    setAgent({ ...agent, args: event.target.value.split('\n').filter(Boolean) })
+                    setAgent({
+                      ...agent,
+                      args: event.target.value.split('\n').filter(Boolean),
+                    })
                   }
                   placeholder="--acp"
                 />
@@ -242,7 +295,12 @@ export function AgentEditor({
             <FormField label="Instructions">
               <Textarea
                 value={agent.instructions}
-                onChange={(e) => setAgent({ ...agent, instructions: e.target.value })}
+                onChange={(e) =>
+                  setAgent({
+                    ...agent,
+                    instructions: e.target.value,
+                  })
+                }
                 className="min-h-24"
               />
             </FormField>

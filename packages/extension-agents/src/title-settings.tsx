@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { decode } from '@dovo/protocol'
+import { useCallback, useEffect } from 'react'
 import {
   titleGenerationSettingsSchema,
   modelCatalogSchema,
@@ -12,11 +14,11 @@ import {
 import { Button, ChoicePicker, FormField, ModelSettings, Input, Textarea } from '@dovo/studio-ui'
 export function TitleSettings() {
   const { workspace, request, connected } = useWorkspace()
-  const [open, setOpen] = useState(false)
-  const [settings, setSettings] = useState<Settings | null>(null)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [open, setOpen] = useApplicationState(false)
+  const [settings, setSettings] = useApplicationState<Settings | null>(null)
+  const [error, setError] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [saved, setSaved] = useApplicationState(false)
   useEffect(() => {
     let stopped = false
     if (!open || !connected) return
@@ -98,7 +100,10 @@ export function TitleSettings() {
                         ...settings,
                         agentId: agentId.startsWith('harness:') ? '' : agentId,
                         harness: agentId.startsWith('harness:')
-                          ? { provider: providerSchema.parse(agentId.slice(8)), endpoint: '' }
+                          ? {
+                              provider: decode(providerSchema, agentId.slice(8)),
+                              endpoint: '',
+                            }
                           : undefined,
                         model: '',
                         reasoning: '',
@@ -107,7 +112,7 @@ export function TitleSettings() {
                     }}
                   >
                     <option value="">Default harness</option>
-                    {providerSchema.options.map((provider) => (
+                    {providerSchema.literals.map((provider) => (
                       <option key={provider} value={`harness:${provider}`}>
                         {providers[provider].short}
                       </option>
@@ -132,7 +137,10 @@ export function TitleSettings() {
                             if (settings.harness)
                               setSettings({
                                 ...settings,
-                                harness: { ...settings.harness, endpoint: e.target.value },
+                                harness: {
+                                  ...settings.harness,
+                                  endpoint: e.target.value,
+                                },
                               })
                           }}
                           placeholder="Use runtime default"
@@ -161,7 +169,11 @@ export function TitleSettings() {
                 {harness && (
                   <ModelSettings
                     modes={false}
-                    agent={{ ...harness, model: settings.model, reasoning: settings.reasoning }}
+                    agent={{
+                      ...harness,
+                      model: settings.model,
+                      reasoning: settings.reasoning,
+                    }}
                     onChange={(agent) => {
                       setSettings({
                         ...settings,

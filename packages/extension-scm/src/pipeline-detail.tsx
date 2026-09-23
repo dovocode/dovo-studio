@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect } from 'react'
 import {
   CheckCircle2,
   ChevronDown,
@@ -16,7 +17,6 @@ import {
 } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { WorkTaskLinks } from './work-task-links'
-
 export function PipelineDetail({
   detail,
   notice,
@@ -33,7 +33,7 @@ export function PipelineDetail({
   onMore: () => void
 }) {
   const { run, jobs } = detail
-  const [now, setNow] = useState(Date.now)
+  const [now, setNow] = useApplicationState(Date.now)
   const active = pipelineSignal(run.status).phase === 'active'
   useEffect(() => {
     if (!active) return
@@ -163,10 +163,9 @@ export function PipelineDetail({
     </article>
   )
 }
-
 function PipelineJob({ job, now }: { job: ForgePipelineJob; now: number }) {
   const failed = pipelineSignal(job.status).tone === 'danger' || !!job.errors?.length
-  const [expanded, setExpanded] = useState(failed)
+  const [expanded, setExpanded] = useApplicationState(failed)
   useEffect(() => {
     if (failed) setExpanded(true)
   }, [failed])
@@ -248,7 +247,6 @@ function PipelineJob({ job, now }: { job: ForgePipelineJob; now: number }) {
     </section>
   )
 }
-
 function PipelineErrors({ errors }: { errors?: string[] }) {
   return errors?.length ? (
     <div
@@ -266,7 +264,6 @@ function PipelineErrors({ errors }: { errors?: string[] }) {
     </div>
   ) : null
 }
-
 function formatPipelineDate(value?: string) {
   if (!value) return undefined
   const date = new Date(value)
@@ -280,7 +277,6 @@ function formatPipelineDate(value?: string) {
         second: '2-digit',
       })
 }
-
 export function PipelineState({ status }: { status: string }) {
   const signal = pipelineSignal(status)
   const Icon =

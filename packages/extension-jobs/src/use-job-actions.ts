@@ -1,18 +1,20 @@
-import { useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useRef } from 'react'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import {
   acknowledgeAutomationStart,
   automationStartRequest,
   pendingAutomationStart,
 } from './automation-starts'
-
 export function useJobActions() {
   const { request, flush, connection } = useWorkspace()
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [webhook, setWebhook] = useState<{ scope: string; path: string; secret: string } | null>(
-    null,
-  )
+  const [error, setError] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [webhook, setWebhook] = useApplicationState<{
+    scope: string
+    path: string
+    secret: string
+  } | null>(null)
   const lock = useRef(false)
   const latestConnection = useRef(connection)
   latestConnection.current = connection
@@ -44,22 +46,62 @@ export function useJobActions() {
       act(async () => {
         if (!connection) throw new Error('Connect to this computer before starting an automation.')
         const requestId = automationStartRequest(connection, id)
-        const run = await request('/api/jobs/run', { id, requestId }, responses.job)
+        const run = await request(
+          '/api/jobs/run',
+          {
+            id,
+            requestId,
+          },
+          responses.job,
+        )
         acknowledgeAutomationStart(connection, id, requestId)
         select(run.id)
       }),
     retry: (id: string, select: (id: string) => void) =>
       act(async () => {
-        const run = await request('/api/jobs/retry', { id }, responses.job)
+        const run = await request(
+          '/api/jobs/retry',
+          {
+            id,
+          },
+          responses.job,
+        )
         select(run.id)
       }),
     review: (id: string, allow: boolean) =>
-      act(() => request('/api/jobs/review', { id, allow }, responses.ok)),
-    cancel: (id: string) => act(() => request('/api/jobs/cancel', { id }, responses.ok)),
+      act(() =>
+        request(
+          '/api/jobs/review',
+          {
+            id,
+            allow,
+          },
+          responses.ok,
+        ),
+      ),
+    cancel: (id: string) =>
+      act(() =>
+        request(
+          '/api/jobs/cancel',
+          {
+            id,
+          },
+          responses.ok,
+        ),
+      ),
     rotateWebhook: (id: string) =>
       act(async () => {
-        const credential = await request('/api/jobs/webhook-secret', { id }, responses.webhook)
-        setWebhook({ scope: key(id), ...credential })
+        const credential = await request(
+          '/api/jobs/webhook-secret',
+          {
+            id,
+          },
+          responses.webhook,
+        )
+        setWebhook({
+          scope: key(id),
+          ...credential,
+        })
       }),
   }
 }

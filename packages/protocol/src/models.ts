@@ -1,35 +1,46 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray } from './schema.js'
+import { Schema } from 'effect'
 import { agentSchema } from './workspace.js'
-export const agentDiscoverySchema = agentSchema.pick({
-  provider: true,
-  endpoint: true,
-  args: true,
-  model: true,
+export const agentDiscoverySchema = agentSchema.pick('provider', 'endpoint', 'args', 'model')
+const choiceSchema = mutableStruct({
+  id: Schema.String,
+  name: Schema.String,
 })
-const choiceSchema = z.object({ id: z.string(), name: z.string() })
-export const modelCatalogSchema = z.object({
-  models: z.array(
-    choiceSchema.extend({
-      description: z.string().optional(),
-      hidden: z.boolean().optional(),
-      specialty: z.string().optional(),
-      defaultReasoning: z.string().optional(),
-      defaultServiceTier: z.string().optional(),
-      isDefault: z.boolean().optional(),
-      serviceTiers: z.array(choiceSchema.extend({ description: z.string().optional() })).optional(),
-      reasoning: z.array(choiceSchema).optional(),
+export const modelCatalogSchema = mutableStruct({
+  models: mutableArray(
+    mutableStruct({
+      ...choiceSchema.fields,
+      ...{
+        description: Schema.optional(Schema.String),
+        hidden: Schema.optional(Schema.Boolean),
+        specialty: Schema.optional(Schema.String),
+        defaultReasoning: Schema.optional(Schema.String),
+        defaultServiceTier: Schema.optional(Schema.String),
+        isDefault: Schema.optional(Schema.Boolean),
+        serviceTiers: Schema.optional(
+          mutableArray(
+            mutableStruct({
+              ...choiceSchema.fields,
+              ...{
+                description: Schema.optional(Schema.String),
+              },
+            }),
+          ),
+        ),
+        reasoning: Schema.optional(mutableArray(choiceSchema)),
+      },
     }),
   ),
-  reasoning: z.array(choiceSchema),
-  codex: z
-    .object({
-      daybreakPrograms: z.array(z.enum(['daybreakBlue', 'daybreakRed'])),
-      fastModeBlocked: z.boolean(),
-    })
-    .optional(),
+  reasoning: mutableArray(choiceSchema),
+  codex: Schema.optional(
+    mutableStruct({
+      daybreakPrograms: mutableArray(Schema.Literal('daybreakBlue', 'daybreakRed')),
+      fastModeBlocked: Schema.Boolean,
+    }),
+  ),
 })
-export type AgentDiscovery = z.infer<typeof agentDiscoverySchema>
-export type ModelCatalog = z.infer<typeof modelCatalogSchema>
+export type AgentDiscovery = Schema.Schema.Type<typeof agentDiscoverySchema>
+export type ModelCatalog = Schema.Schema.Type<typeof modelCatalogSchema>
 
 /** The empty legacy value represented Standard. Send an explicit tier to clear sticky Fast. */
 export function serviceTierValue(value: string | undefined) {
@@ -45,7 +56,11 @@ export function modelServiceTiers(
 ) {
   const tiers = selectedCatalogModel(catalog, model)?.serviceTiers ?? []
   return [
-    { id: 'default', name: 'Standard', description: 'Standard speed and usage' },
+    {
+      id: 'default',
+      name: 'Standard',
+      description: 'Standard speed and usage',
+    },
     ...tiers.filter((tier) => tier.id !== 'default'),
     ...(saved && saved !== 'default' && !tiers.some((tier) => tier.id === saved)
       ? [
@@ -68,11 +83,25 @@ export function daybreakChoices(
   saved?: keyof typeof daybreakLabels,
 ) {
   return [
-    { id: '', name: 'Automatic' },
-    { id: 'standard', name: 'Off' },
-    ...(catalog?.codex?.daybreakPrograms ?? []).map((id) => ({ id, name: daybreakLabels[id] })),
+    {
+      id: '',
+      name: 'Automatic',
+    },
+    {
+      id: 'standard',
+      name: 'Off',
+    },
+    ...(catalog?.codex?.daybreakPrograms ?? []).map((id) => ({
+      id,
+      name: daybreakLabels[id],
+    })),
     ...(saved && saved !== 'standard' && !catalog?.codex?.daybreakPrograms.includes(saved)
-      ? [{ id: saved, name: `${daybreakLabels[saved]} (saved; unavailable)` }]
+      ? [
+          {
+            id: saved,
+            name: `${daybreakLabels[saved]} (saved; unavailable)`,
+          },
+        ]
       : []),
   ]
 }

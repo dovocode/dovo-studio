@@ -1,4 +1,7 @@
-import { useId, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { validationMessages } from '@dovo/protocol'
+import { decodeResult, decode } from '@dovo/protocol'
+import { useId, useRef } from 'react'
 import { FolderOpen } from 'lucide-react'
 import { DirectoryPicker } from './directory-picker'
 import { GithubRepositoryPicker } from './github-repository-picker'
@@ -29,15 +32,18 @@ function RepositoryDialogContent({
 }) {
   const { setWorkspace, connection, connected, request } = useWorkspace()
   const { pickDirectory } = useStudioHost()
-  const [source, setSource] = useState<'local' | 'github' | 'forge'>('local')
-  const [name, setName] = useState('')
-  const [path, setPath] = useState('')
-  const [repository, setRepository] = useState('')
-  const [directory, setDirectory] = useState('')
-  const [forge, setForge] = useState({ connectionId: '', repository: '' })
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [picker, setPicker] = useState<'directory' | 'github' | null>(null)
+  const [source, setSource] = useApplicationState<'local' | 'github' | 'forge'>('local')
+  const [name, setName] = useApplicationState('')
+  const [path, setPath] = useApplicationState('')
+  const [repository, setRepository] = useApplicationState('')
+  const [directory, setDirectory] = useApplicationState('')
+  const [forge, setForge] = useApplicationState({
+    connectionId: '',
+    repository: '',
+  })
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [picker, setPicker] = useApplicationState<'directory' | 'github' | null>(null)
   const running = useRef(false)
   const pathId = useId()
   const act = async (work: () => Promise<void>) => {
@@ -115,17 +121,31 @@ function RepositoryDialogContent({
               void act(async () => {
                 const input =
                   source === 'local'
-                    ? { source, name, path }
+                    ? {
+                        source,
+                        name,
+                        path,
+                      }
                     : source === 'forge'
-                      ? { source, name, directory, forge }
-                      : { source, name, repository, directory }
-                const parsed = addRepositorySchema.safeParse(input)
+                      ? {
+                          source,
+                          name,
+                          directory,
+                          forge,
+                        }
+                      : {
+                          source,
+                          name,
+                          repository,
+                          directory,
+                        }
+                const parsed = decodeResult(addRepositorySchema, input)
                 if (!parsed.success)
-                  throw new Error(parsed.error.issues[0]?.message ?? 'Invalid repository')
+                  throw new Error(validationMessages(parsed.error)[0] ?? 'Invalid repository')
                 if (connection) {
                   await request('/api/scm/repositories/add', input, repositorySchema)
                 } else if (parsed.data.source === 'local') {
-                  const draft = repositorySchema.parse({
+                  const draft = decode(repositorySchema, {
                     id: crypto.randomUUID(),
                     name: parsed.data.name,
                     path: parsed.data.path,
@@ -311,7 +331,6 @@ function RepositoryDialogContent({
     </Dialog>
   )
 }
-
 export function RepositoryDialog(props: { onClose: () => void; projectLabels?: boolean }) {
   const { connection } = useWorkspace()
   return <RepositoryDialogContent key={clientScopeKey(connection)} {...props} />

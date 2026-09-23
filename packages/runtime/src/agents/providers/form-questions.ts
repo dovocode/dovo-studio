@@ -1,28 +1,40 @@
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import { Ajv } from 'ajv'
 import addFormats from 'ajv-formats'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { questionPromptSchema, type QuestionAnswers } from '@dovo/protocol'
 import { HttpError } from '../../errors.js'
 import type { AgentRun } from '../types.js'
-const ajv = new Ajv({ allErrors: true, strict: false })
+const ajv = new Ajv({
+  allErrors: true,
+  strict: false,
+})
 addFormats(ajv)
 ajv.addFormat('password', true)
-const option = z.object({ const: z.string(), title: z.string().optional() })
-const choices = z.object({
-  enum: z.array(z.string()).optional(),
-  enumNames: z.array(z.string()).optional(),
-  oneOf: z.array(option).optional(),
-  anyOf: z.array(option).optional(),
+const option = mutableStruct({
+  const: Schema.String,
+  title: Schema.optional(Schema.String),
 })
-const field = z
-  .object({
-    type: z.enum(['string', 'number', 'integer', 'boolean', 'array']),
-    title: z.string().optional(),
-    description: z.string().optional(),
-    format: z.string().optional(),
-    items: z.unknown().optional(),
-  })
-  .passthrough()
+const choices = mutableStruct({
+  enum: Schema.optional(mutableArray(Schema.String)),
+  enumNames: Schema.optional(mutableArray(Schema.String)),
+  oneOf: Schema.optional(mutableArray(option)),
+  anyOf: Schema.optional(mutableArray(option)),
+})
+const field = Schema.Struct(
+  mutableStruct({
+    type: Schema.Literal('string', 'number', 'integer', 'boolean', 'array'),
+    title: Schema.optional(Schema.String),
+    description: Schema.optional(Schema.String),
+    format: Schema.optional(Schema.String),
+    items: Schema.optional(Schema.Unknown),
+  }).fields,
+  {
+    key: Schema.String,
+    value: Schema.Unknown,
+  },
+)
 // ACP permits null for omitted annotations; JSON Schema expects those keys to be absent.
 function withoutNulls(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutNulls)
@@ -40,24 +52,50 @@ export async function formQuestions(
   run: AgentRun,
   signal?: AbortSignal,
 ) {
-  const raw = z.record(z.string(), z.unknown()).parse(withoutNulls(schema))
-  const form = z
-    .object({ properties: z.record(z.string(), field), required: z.array(z.string()).optional() })
-    .parse(raw)
+  const raw = decode(
+    Schema.mutable(
+      Schema.Record({
+        key: Schema.String,
+        value: Schema.Unknown,
+      }),
+    ),
+    withoutNulls(schema),
+  )
+  const form = decode(
+    mutableStruct({
+      properties: Schema.mutable(
+        Schema.Record({
+          key: Schema.String,
+          value: field,
+        }),
+      ),
+      required: Schema.optional(mutableArray(Schema.String)),
+    }),
+    raw,
+  )
   const entries = Object.entries(form.properties)
-  const jsonSchema = { ...raw, type: 'object' }
+  const jsonSchema = {
+    ...raw,
+    type: 'object',
+  }
   const validate = ajv.compile(jsonSchema)
   // The validator lives with this pending request; do not retain every provider schema globally.
   ajv.removeSchema(jsonSchema)
-  const prompt = questionPromptSchema.parse({
+  const prompt = decode(questionPromptSchema, {
     title: message,
     questions: entries.map(([name, f], index) => {
-      const select = choices.parse(f.type === 'array' ? f.items : f)
+      const select = decode(choices, f.type === 'array' ? f.items : f)
       const options =
         f.type === 'boolean'
           ? [
-              { value: 'true', label: 'Yes' },
-              { value: 'false', label: 'No' },
+              {
+                value: 'true',
+                label: 'Yes',
+              },
+              {
+                value: 'false',
+                label: 'No',
+              },
             ]
           : ((
               select.oneOf ??
@@ -66,7 +104,10 @@ export async function formQuestions(
                 const: value,
                 title: select.enumNames?.[i] ?? value,
               }))
-            )?.map((value) => ({ value: value.const, label: value.title ?? value.const })) ?? [])
+            )?.map((value) => ({
+              value: value.const,
+              label: value.title ?? value.const,
+            })) ?? [])
       if (f.type === 'array' && !options.length)
         throw new Error('Form arrays must provide selectable options')
       return {

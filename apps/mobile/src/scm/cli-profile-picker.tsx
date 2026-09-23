@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react'
+import { nativeEffect } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/application-state'
+import { decodeResult } from '@dovo/protocol'
+import { useEffect } from 'react'
 import { View } from 'react-native'
-import { z } from 'zod'
-import { cliProfileOptions } from '@dovo/client-runtime'
+import { Schema, Effect } from 'effect'
+import { cliProfileOptions, runClientEffect } from '@dovo/client-runtime'
 import {
   forgeCliProfileQuerySchema,
   forgeCliProfilesSchema,
@@ -13,7 +16,6 @@ import { Field } from '../ui/field'
 import { Action } from '../ui/action'
 import { Text } from '../ui/text'
 import { styles } from '../ui/theme'
-
 export function CliProfilePicker({
   provider,
   baseUrl,
@@ -31,25 +33,27 @@ export function CliProfilePicker({
   onChange: (value: string) => void
   disabled: boolean
 }) {
-  const { read, connected, snapshot } = useRuntime()
+  const { read, connected, snapshot, readEffect } = useRuntime()
   const repositories = snapshot?.workspace.repositories ?? []
-  const [repositoryId, setRepositoryId] = useState(
+  const [repositoryId, setRepositoryId] = useApplicationState(
     () =>
       repositories.find((repo) => connectionId && repo.forge?.connectionId === connectionId)?.id ??
       '',
   )
-  const [result, setResult] = useState<z.infer<typeof forgeCliProfilesSchema>>()
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [revision, reload] = useState(0)
-  const [manual, setManual] = useState(false)
+  const [result, setResult] = useApplicationState<
+    Schema.Schema.Type<typeof forgeCliProfilesSchema> | undefined
+  >(undefined)
+  const [loading, setLoading] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [revision, reload] = useApplicationState(0)
+  const [manual, setManual] = useApplicationState(false)
   useEffect(() => {
     let current = true
     setResult(undefined)
     setError('')
     setLoading(false)
     if (!connected) return
-    const query = forgeCliProfileQuerySchema.safeParse({
+    const query = decodeResult(forgeCliProfileQuerySchema, {
       provider,
       baseUrl: baseUrl.trim(),
       cliTool,
@@ -58,16 +62,30 @@ export function CliProfilePicker({
     if (!query.success) return
     setLoading(true)
     const timer = setTimeout(() => {
-      void read('/api/scm/cli-profiles/read', query.data, forgeCliProfilesSchema)
-        .then((value) => {
-          if (current) setResult(value)
-        })
-        .catch((error: unknown) => {
-          if (current) setError(error instanceof Error ? error.message : String(error))
-        })
-        .finally(() => {
-          if (current) setLoading(false)
-        })
+      void runClientEffect(
+        readEffect('/api/scm/cli-profiles/read', query.data, forgeCliProfilesSchema)
+          .pipe(
+            Effect.flatMap((value) =>
+              nativeEffect(() => {
+                if (current) setResult(value)
+              }),
+            ),
+          )
+          .pipe(
+            Effect.catchAll((error: unknown) =>
+              nativeEffect(() => {
+                if (current) setError(error instanceof Error ? error.message : String(error))
+              }),
+            ),
+          )
+          .pipe(
+            Effect.ensuring(
+              nativeEffect(() => {
+                if (current) setLoading(false)
+              }).pipe(Effect.orDie),
+            ),
+          ),
+      )
     }, 300)
     return () => {
       current = false
@@ -77,7 +95,11 @@ export function CliProfilePicker({
   const optional = provider === 'github' || provider === 'azure-devops' || cliTool === 'fj'
   const label = provider === 'azure-devops' ? 'CLI tenant' : 'CLI profile'
   return (
-    <View style={{ gap: 10 }}>
+    <View
+      style={{
+        gap: 10,
+      }}
+    >
       <Choice
         row
         label="Discover in"
@@ -85,8 +107,14 @@ export function CliProfilePicker({
         onChange={setRepositoryId}
         disabled={disabled}
         items={[
-          { id: '', name: 'Runtime default' },
-          ...repositories.map((repo) => ({ id: repo.id, name: `${repo.name} · Project checkout` })),
+          {
+            id: '',
+            name: 'Runtime default',
+          },
+          ...repositories.map((repo) => ({
+            id: repo.id,
+            name: `${repo.name} · Project checkout`,
+          })),
         ]}
       />
       {!manual && (
@@ -115,7 +143,13 @@ export function CliProfilePicker({
           }
         />
       )}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: 8,
+        }}
+      >
         <Action
           secondary
           label={loading ? 'Finding profiles…' : 'Refresh profiles'}

@@ -1,15 +1,21 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
 import { responses, useWorkspace, type Agent, type ProviderStatus } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 export function ProviderCheck({ agent }: { agent: Agent }) {
   const { connected, request } = useWorkspace()
-  const [result, setResult] = useState<ProviderStatus | null>(null)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useApplicationState<ProviderStatus | null>(null)
+  const [error, setError] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
   function check() {
     setBusy(true)
     setError('')
-    void request('/api/agents/probe', { id: agent.id }, responses.provider)
+    void request(
+      '/api/agents/probe',
+      {
+        id: agent.id,
+      },
+      responses.provider,
+    )
       .then(setResult)
       .catch((error) => setError(String(error)))
       .finally(() => setBusy(false))

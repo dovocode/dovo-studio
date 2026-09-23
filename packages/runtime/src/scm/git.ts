@@ -1,7 +1,9 @@
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode, urlSchema } from '@dovo/protocol'
 import { readFile, writeFile, stat, mkdir, mkdtemp, rm, copyFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { commandsSchema, REPOSITORY_CLONE_TIMEOUT_MS, type CommandSettings } from '@dovo/protocol'
 import type { ChangedFile } from '@dovo/protocol'
 import type { Task } from '@dovo/protocol'
@@ -10,8 +12,14 @@ import { HttpError, errorMessage } from '../errors.js'
 import { repositoryPath, safeFile } from './paths.js'
 export class GitService {
   constructor(
-    private settings: () => CommandSettings = () => commandsSchema.parse({}),
-    private audit?: (cwd: string, args: string[], result?: { error?: string }) => void,
+    private settings: () => CommandSettings = () => decode(commandsSchema, {}),
+    private audit?: (
+      cwd: string,
+      args: string[],
+      result?: {
+        error?: string
+      },
+    ) => void,
     private forgeAuthorization?: (
       connectionId: string,
       remote: string,
@@ -37,7 +45,9 @@ export class GitService {
       this.audit?.(cwd, [executable, ...args], {})
       return result.stdout
     } catch (error) {
-      this.audit?.(cwd, [executable, ...args], { error: errorMessage(error) })
+      this.audit?.(cwd, [executable, ...args], {
+        error: errorMessage(error),
+      })
       throw error
     }
   }
@@ -48,9 +58,18 @@ export class GitService {
     const cwd = await repositoryPath(path)
     const root = (await this.command(cwd, ['rev-parse', '--show-toplevel'])).replace(/\r?\n$/, '')
     const branch = (await this.command(cwd, ['branch', '--show-current'])).trim() || 'detached HEAD'
-    return { path: root, branch }
+    return {
+      path: root,
+      branch,
+    }
   }
-  async cloneGithub(repository: { name: string; url: string }, directory: string) {
+  async cloneGithub(
+    repository: {
+      name: string
+      url: string
+    },
+    directory: string,
+  ) {
     const parent = await repositoryPath(directory).catch((error: unknown) => {
       throw new HttpError(
         400,
@@ -84,7 +103,11 @@ export class GitService {
         ],
         REPOSITORY_CLONE_TIMEOUT_MS,
         12 * 1024 * 1024,
-        { ...processEnvironment(), GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
+        {
+          ...processEnvironment(),
+          GIT_TERMINAL_PROMPT: '0',
+          GCM_INTERACTIVE: 'never',
+        },
       )
       return await this.inspect(destination)
     } catch (error) {
@@ -127,7 +150,10 @@ export class GitService {
     }
   }
   async cloneRemote(
-    repository: { name: string; cloneUrl: string },
+    repository: {
+      name: string
+      cloneUrl: string
+    },
     directory: string,
     authorization?: string,
     github = false,
@@ -222,7 +248,13 @@ export class GitService {
         if (exists) before = await this.command(root, ['show', `HEAD:${name}`])
       }
       if (before.includes('\0') || after.includes('\0')) continue
-      files.push({ path: name, before, after, diskContents: after, viewed: false })
+      files.push({
+        path: name,
+        before,
+        after,
+        diskContents: after,
+        viewed: false,
+      })
     }
     return files
   }
@@ -249,7 +281,10 @@ export class GitService {
       await this.command(cwd, ['update-ref', ref, tree])
       return tree
     } finally {
-      await rm(directory, { recursive: true, force: true })
+      await rm(directory, {
+        recursive: true,
+        force: true,
+      })
     }
   }
   async checkpointChanges(cwd: string, before: string, after: string) {
@@ -300,9 +335,18 @@ export class GitService {
         contents.push(content)
       }
       if (!supported) omitted.push(name)
-      else files.push({ path: name, before: contents[0], after: contents[1], viewed: false })
+      else
+        files.push({
+          path: name,
+          before: contents[0],
+          after: contents[1],
+          viewed: false,
+        })
     }
-    return { files, omitted }
+    return {
+      files,
+      omitted,
+    }
   }
   async save(path: string, name: string, expected: string, contents: string) {
     const { path: root } = await this.inspect(path)
@@ -404,9 +448,15 @@ export class GitService {
   }
   githubAccount(
     args: string[],
-    limits?: { timeout: number; maxBuffer: number },
+    limits?: {
+      timeout: number
+      maxBuffer: number
+    },
     cwd?: string,
-    account?: { host: string; token: string },
+    account?: {
+      host: string
+      token: string
+    },
   ) {
     // Account discovery must work before any local checkout has been registered.
     return this.run(
@@ -437,16 +487,17 @@ export class GitService {
       '--json',
       'number,title,url,state,headRefName',
     ])
-    return z
-      .array(
-        z.object({
-          number: z.number(),
-          title: z.string(),
-          url: z.string().url(),
-          state: z.string(),
-          headRefName: z.string(),
+    return decode(
+      mutableArray(
+        mutableStruct({
+          number: Schema.Number.pipe(Schema.finite()),
+          title: Schema.String,
+          url: Schema.String.pipe(Schema.compose(urlSchema())),
+          state: Schema.String,
+          headRefName: Schema.String,
         }),
-      )
-      .parse(JSON.parse(result))
+      ),
+      JSON.parse(result),
+    )
   }
 }

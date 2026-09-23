@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 const require = createRequire(new URL('../apps/mobile/package.json', import.meta.url))
 const result = await build({
-  entryPoints: [new URL('../apps/mobile/terminal/client.js', import.meta.url).pathname],
+  entryPoints: [new URL('../apps/mobile/terminal/client.ts', import.meta.url).pathname],
   bundle: true,
   write: false,
   minify: true,

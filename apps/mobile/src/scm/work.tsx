@@ -1,5 +1,6 @@
+import { useApplicationState } from '../runtime/application-state'
 import { router } from 'expo-router'
-import { useDeferredValue, useEffect, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useRef } from 'react'
 import { FlatList, Keyboard, Pressable, View } from 'react-native'
 import {
   issueLabel,
@@ -35,7 +36,6 @@ import { WorkSignal } from './pipeline-details'
 import { useListScroll } from '../ui/use-list-scroll'
 import { useWorkCollection, type WorkPage } from './use-work-collection'
 import { matchesPipelineCommit } from './work-list'
-
 type Mode = 'issues' | 'pipelines'
 export function WorkScreen({
   mode,
@@ -54,25 +54,28 @@ export function WorkScreen({
 }) {
   const { overviews, activeId } = useRuntime()
   const { focused, workTarget } = useNavigation()
-  const [state, setState] = useState('all')
-  const [search, setSearch] = useState('')
+  const [state, setState] = useApplicationState('all')
+  const [search, setSearch] = useApplicationState('')
   const query = useDeferredValue(search)
-  const [serverQuery, setServerQuery] = useState('')
+  const [serverQuery, setServerQuery] = useApplicationState('')
   useEffect(() => {
     const timer = setTimeout(() => setServerQuery(search.trim()), 300)
     return () => clearTimeout(timer)
   }, [search])
-  const [sort, setSort] = useState('updated')
-  const [filters, setFilters] = useState(false)
-  const [sourcesOpen, setSourcesOpen] = useState(false)
-  const [sourceBusy, setSourceBusy] = useState(false)
-  const [jiraConnection, setJiraConnection] = useState<{
-    profile: RuntimeProfile
-    source?: JiraSource
-  }>()
-  const [creating, setCreating] = useState(false)
-  const [formSource, setFormSource] = useState<WorkSource>()
-  const [message, setMessage] = useState('')
+  const [sort, setSort] = useApplicationState('updated')
+  const [filters, setFilters] = useApplicationState(false)
+  const [sourcesOpen, setSourcesOpen] = useApplicationState(false)
+  const [sourceBusy, setSourceBusy] = useApplicationState(false)
+  const [jiraConnection, setJiraConnection] = useApplicationState<
+    | {
+        profile: RuntimeProfile
+        source?: JiraSource
+      }
+    | undefined
+  >(undefined)
+  const [creating, setCreating] = useApplicationState(false)
+  const [formSource, setFormSource] = useApplicationState<WorkSource | undefined>(undefined)
+  const [message, setMessage] = useApplicationState('')
   const { pages, busy, refresh, more } = useWorkCollection(
     mode,
     repositoryId,
@@ -94,7 +97,12 @@ export function WorkScreen({
     listOffset.current = 0
   }, [workTarget, mode, activeId, onRepositoryChange])
   const visible = pages
-    .flatMap((page) => page.items.map((row) => ({ page, row })))
+    .flatMap((page) =>
+      page.items.map((row) => ({
+        page,
+        row,
+      })),
+    )
     .filter(({ row, page }) => {
       if (mode === 'pipelines' && !matchesPipelineCommit(row, commitSha)) return false
       if (mode === 'issues' && page.searched && serverQuery) return true
@@ -175,7 +183,14 @@ export function WorkScreen({
         {...listScroll}
         testID="Work list"
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={[styles.content, { paddingTop: 0, gap: 0, flexGrow: 1 }]}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop: 0,
+            gap: 0,
+            flexGrow: 1,
+          },
+        ]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         initialNumToRender={12}
@@ -184,7 +199,12 @@ export function WorkScreen({
         refreshing={busy}
         onRefresh={connected ? refresh : undefined}
         ListHeaderComponent={
-          <View style={{ gap: 6, paddingBottom: 4 }}>
+          <View
+            style={{
+              gap: 6,
+              paddingBottom: 4,
+            }}
+          >
             <SearchField
               label={`Search ${mode}`}
               value={search}
@@ -193,8 +213,21 @@ export function WorkScreen({
               placeholder={mode === 'issues' ? 'Search issues…' : 'Search runs…'}
             />
             {mode === 'issues' && (
-              <View style={[styles.row, { flexWrap: 'nowrap', justifyContent: 'space-between' }]}>
-                <View style={{ flex: 1, minWidth: 0 }}>
+              <View
+                style={[
+                  styles.row,
+                  {
+                    flexWrap: 'nowrap',
+                    justifyContent: 'space-between',
+                  },
+                ]}
+              >
+                <View
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
                   <Choice
                     compact
                     hideLabel
@@ -202,7 +235,10 @@ export function WorkScreen({
                     value={state}
                     onChange={setState}
                     items={[
-                      { id: 'all', name: 'All states' },
+                      {
+                        id: 'all',
+                        name: 'All states',
+                      },
                       ...[
                         ...new Set(
                           pages.flatMap((page) => [
@@ -212,7 +248,10 @@ export function WorkScreen({
                               : []),
                           ]),
                         ),
-                      ].map((id) => ({ id, name: id })),
+                      ].map((id) => ({
+                        id,
+                        name: id,
+                      })),
                     ]}
                   />
                 </View>
@@ -227,7 +266,16 @@ export function WorkScreen({
                     opacity: pressed ? 0.55 : 1,
                   })}
                 >
-                  <Text style={[styles.muted, { color: colors.accent }]}>Sources</Text>
+                  <Text
+                    style={[
+                      styles.muted,
+                      {
+                        color: colors.accent,
+                      },
+                    ]}
+                  >
+                    Sources
+                  </Text>
                 </Pressable>
               </View>
             )}
@@ -261,13 +309,36 @@ export function WorkScreen({
               opacity: pressed ? 0.55 : 1,
             })}
           >
-            <View style={[styles.row, { flexWrap: 'nowrap' }]}>
+            <View
+              style={[
+                styles.row,
+                {
+                  flexWrap: 'nowrap',
+                },
+              ]}
+            >
               <Icon name={mode === 'issues' ? 'tasks' : 'jobs'} size={14} color={colors.muted} />
-              <Text numberOfLines={1} style={[styles.muted, { flex: 1, minWidth: 0 }]}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.muted,
+                  {
+                    flex: 1,
+                    minWidth: 0,
+                  },
+                ]}
+              >
                 {'state' in row ? issueLabel(row.id) : `Run ${row.number ?? row.id}`} ·{' '}
                 {workSourceName(page.source)}
               </Text>
-              <Text style={[styles.muted, { flexShrink: 0 }]}>
+              <Text
+                style={[
+                  styles.muted,
+                  {
+                    flexShrink: 0,
+                  },
+                ]}
+              >
                 {row.updatedAt && !Number.isNaN(Date.parse(row.updatedAt))
                   ? new Date(row.updatedAt).toLocaleDateString(undefined, {
                       month: 'short',
@@ -276,10 +347,24 @@ export function WorkScreen({
                   : ''}
               </Text>
             </View>
-            <View style={[styles.row, { flexWrap: 'nowrap' }]}>
+            <View
+              style={[
+                styles.row,
+                {
+                  flexWrap: 'nowrap',
+                },
+              ]}
+            >
               <Text
                 numberOfLines={2}
-                style={[styles.text, { flex: 1, minWidth: 0, fontWeight: '600' }]}
+                style={[
+                  styles.text,
+                  {
+                    flex: 1,
+                    minWidth: 0,
+                    fontWeight: '600',
+                  },
+                ]}
               >
                 {row.title}
               </Text>
@@ -294,7 +379,15 @@ export function WorkScreen({
             ) : (
               <WorkSignal status={row.status} />
             )}
-            <Text numberOfLines={1} style={[styles.muted, { fontSize: 12 }]}>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.muted,
+                {
+                  fontSize: 12,
+                },
+              ]}
+            >
               {page.options?.provider === 'jira'
                 ? `Jira · ${(page.source.kind === 'jira' ? page.source.jiraSource.project : '') ?? ''} · `
                 : ''}
@@ -307,14 +400,29 @@ export function WorkScreen({
           !busy ? (
             <View style={styles.empty}>
               <Icon name={mode === 'issues' ? 'tasks' : 'jobs'} size={28} color={colors.muted} />
-              <Text style={[styles.text, { textAlign: 'center', fontWeight: '600' }]}>
+              <Text
+                style={[
+                  styles.text,
+                  {
+                    textAlign: 'center',
+                    fontWeight: '600',
+                  },
+                ]}
+              >
                 {query
                   ? 'No matching results'
                   : mode === 'issues'
                     ? 'No issues found'
                     : 'No runs found for this commit'}
               </Text>
-              <Text style={[styles.muted, { textAlign: 'center' }]}>
+              <Text
+                style={[
+                  styles.muted,
+                  {
+                    textAlign: 'center',
+                  },
+                ]}
+              >
                 {!connected
                   ? 'Connect to a computer to load work. Saved results stay available offline.'
                   : mode === 'issues'
@@ -327,7 +435,12 @@ export function WorkScreen({
           ) : null
         }
         ListFooterComponent={
-          <View style={{ gap: 12, paddingTop: 12 }}>
+          <View
+            style={{
+              gap: 12,
+              paddingTop: 12,
+            }}
+          >
             {pages
               .filter(
                 (page) =>
@@ -338,7 +451,12 @@ export function WorkScreen({
                     : page.options?.pipelineNotice),
               )
               .map((page) => (
-                <View key={page.source.key} style={{ gap: 8 }}>
+                <View
+                  key={page.source.key}
+                  style={{
+                    gap: 8,
+                  }}
+                >
                   {!!page.error && (
                     <Text accessibilityRole="alert" style={styles.error}>
                       {workSourceName(page.source)} · {page.source.profile.name}: {page.error}
@@ -372,7 +490,10 @@ export function WorkScreen({
             value={repositoryId}
             onChange={(id) => onRepositoryChange?.(id)}
             items={[
-              { id: '', name: 'All sources' },
+              {
+                id: '',
+                name: 'All sources',
+              },
               ...sources.map((source) => ({
                 id: source.key,
                 name: `${workSourceName(source)} · ${source.profile.name}`,
@@ -384,8 +505,14 @@ export function WorkScreen({
             value={sort}
             onChange={setSort}
             items={[
-              { id: 'updated', name: 'Recently updated' },
-              { id: 'title', name: 'Title' },
+              {
+                id: 'updated',
+                name: 'Recently updated',
+              },
+              {
+                id: 'title',
+                name: 'Title',
+              },
             ]}
           />
           <Action
@@ -431,13 +558,21 @@ export function WorkScreen({
               {sources
                 .filter((source) => source.kind === 'jira')
                 .map((source) => (
-                  <View key={source.key} style={{ gap: 4 }}>
+                  <View
+                    key={source.key}
+                    style={{
+                      gap: 4,
+                    }}
+                  >
                     <Action
                       secondary
                       label={`${workSourceName(source)} · ${source.profile.name}`}
                       disabled={!source.connected}
                       onPress={() =>
-                        setJiraConnection({ profile: source.profile, source: source.jiraSource })
+                        setJiraConnection({
+                          profile: source.profile,
+                          source: source.jiraSource,
+                        })
                       }
                     />
                     <Text style={styles.muted}>
@@ -446,14 +581,27 @@ export function WorkScreen({
                     </Text>
                   </View>
                 ))}
-              <Text style={[styles.text, { fontWeight: '600' }]}>Connect Jira</Text>
+              <Text
+                style={[
+                  styles.text,
+                  {
+                    fontWeight: '600',
+                  },
+                ]}
+              >
+                Connect Jira
+              </Text>
               {overviews.map((entry) => (
                 <Action
                   key={entry.profile.id}
                   secondary
                   label={`Add Jira · ${entry.profile.name}`}
                   disabled={!entry.connected}
-                  onPress={() => setJiraConnection({ profile: entry.profile })}
+                  onPress={() =>
+                    setJiraConnection({
+                      profile: entry.profile,
+                    })
+                  }
                 />
               ))}
               {!overviews.length && (

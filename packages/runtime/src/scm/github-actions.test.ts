@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 /// <reference types="node" />
 import { afterEach, expect, it, vi } from 'vitest'
 import { PullRequests } from './pulls.js'
@@ -8,7 +9,6 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { commandsSchema } from '@dovo/protocol'
-
 const sha = 'a'.repeat(40)
 const repo: GithubLocation = {
   nameWithOwner: 'team/project',
@@ -17,10 +17,18 @@ const repo: GithubLocation = {
   repository: 'github.example.com/team/project',
   path: 'repos/team/project',
 }
-const current = { number: 7, html_url: `${repo.url}/pull/7`, head: { sha } }
-const scope = { number: 7, headSha: sha }
+const current = {
+  number: 7,
+  html_url: `${repo.url}/pull/7`,
+  head: {
+    sha,
+  },
+}
+const scope = {
+  number: 7,
+  headSha: sha,
+}
 afterEach(() => vi.restoreAllMocks())
-
 it('creates a draft with explicit branches and exact multiline body, without pushing or forking', async () => {
   const json = vi.fn<GithubJSON>().mockResolvedValue(current)
   expect(
@@ -31,7 +39,11 @@ it('creates a draft with explicit branches and exact multiline body, without pus
       base: 'main',
       draft: true,
     }),
-  ).toEqual({ number: 7, url: current.html_url, status: 'created' })
+  ).toEqual({
+    number: 7,
+    url: current.html_url,
+    status: 'created',
+  })
   expect(json).toHaveBeenCalledExactlyOnceWith([
     'api',
     '--hostname',
@@ -51,34 +63,54 @@ it('creates a draft with explicit branches and exact multiline body, without pus
     'draft=true',
   ])
 })
-
 it('pins review decisions to the displayed commit, allows empty approvals and requires text for other reviews', async () => {
   const json = vi
     .fn<GithubJSON>()
     .mockResolvedValueOnce(current)
-    .mockResolvedValueOnce({ html_url: current.html_url + '#review-2' })
+    .mockResolvedValueOnce({
+      html_url: current.html_url + '#review-2',
+    })
   await expect(
-    actOnGithubPull(json, repo, { ...scope, action: 'review', body: '', event: 'approve' }),
-  ).resolves.toMatchObject({ status: 'submitted' })
+    actOnGithubPull(json, repo, {
+      ...scope,
+      action: 'review',
+      body: '',
+      event: 'approve',
+    }),
+  ).resolves.toMatchObject({
+    status: 'submitted',
+  })
   expect(json).toHaveBeenLastCalledWith(
     expect.arrayContaining(['POST', 'event=APPROVE', `commit_id=${sha}`, 'body=']),
   )
   json.mockClear()
   for (const event of ['comment', 'request-changes'] as const)
     await expect(
-      actOnGithubPull(json, repo, { ...scope, action: 'review', body: '', event }),
+      actOnGithubPull(json, repo, {
+        ...scope,
+        action: 'review',
+        body: '',
+        event,
+      }),
     ).rejects.toThrow('Write a review')
   expect(json).not.toHaveBeenCalled()
 })
-
 it('rejects every mutation before writing when the displayed head is stale', async () => {
-  const json = vi.fn<GithubJSON>().mockResolvedValue({ ...current, head: { sha: 'b'.repeat(40) } })
+  const json = vi.fn<GithubJSON>().mockResolvedValue({
+    ...current,
+    head: {
+      sha: 'b'.repeat(40),
+    },
+  })
   await expect(
-    actOnGithubPull(json, repo, { ...scope, action: 'comment', body: 'Please retry.' }),
+    actOnGithubPull(json, repo, {
+      ...scope,
+      action: 'comment',
+      body: 'Please retry.',
+    }),
   ).rejects.toThrow('This PR changed')
   expect(json).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining(['GET']))
 })
-
 it('routes a reply through its root review comment and rejects comments from another PR', async () => {
   const json = vi
     .fn<GithubJSON>()
@@ -88,7 +120,9 @@ it('routes a reply through its root review comment and rejects comments from ano
       in_reply_to_id: 4,
       pull_request_url: `https://github.example.com/api/v3/${repo.path}/pulls/7`,
     })
-    .mockResolvedValueOnce({ html_url: current.html_url + '#reply' })
+    .mockResolvedValueOnce({
+      html_url: current.html_url + '#reply',
+    })
   await actOnGithubPull(json, repo, {
     ...scope,
     action: 'reply',
@@ -115,21 +149,36 @@ it('routes a reply through its root review comment and rejects comments from ano
   ).rejects.toThrow('another pull request')
   expect(json).toHaveBeenCalledTimes(2)
 })
-
 it('checks thread ownership and permissions before resolving, and treats its existing state as success', async () => {
   const thread = {
     __typename: 'PullRequestReviewThread',
     isResolved: false,
     viewerCanResolve: true,
     viewerCanUnresolve: false,
-    pullRequest: { number: 7, repository: { nameWithOwner: repo.nameWithOwner } },
+    pullRequest: {
+      number: 7,
+      repository: {
+        nameWithOwner: repo.nameWithOwner,
+      },
+    },
   }
   const json = vi
     .fn<GithubJSON>()
     .mockResolvedValueOnce(current)
-    .mockResolvedValueOnce({ data: { node: thread } })
     .mockResolvedValueOnce({
-      data: { resolveReviewThread: { thread: { id: 'thread-1', isResolved: true } } },
+      data: {
+        node: thread,
+      },
+    })
+    .mockResolvedValueOnce({
+      data: {
+        resolveReviewThread: {
+          thread: {
+            id: 'thread-1',
+            isResolved: true,
+          },
+        },
+      },
     })
   await actOnGithubPull(json, repo, {
     ...scope,
@@ -143,7 +192,14 @@ it('checks thread ownership and permissions before resolving, and treats its exi
   json
     .mockReset()
     .mockResolvedValueOnce(current)
-    .mockResolvedValueOnce({ data: { node: { ...thread, viewerCanResolve: false } } })
+    .mockResolvedValueOnce({
+      data: {
+        node: {
+          ...thread,
+          viewerCanResolve: false,
+        },
+      },
+    })
   await expect(
     actOnGithubPull(json, repo, {
       ...scope,
@@ -156,7 +212,14 @@ it('checks thread ownership and permissions before resolving, and treats its exi
   json
     .mockReset()
     .mockResolvedValueOnce(current)
-    .mockResolvedValueOnce({ data: { node: { ...thread, isResolved: true } } })
+    .mockResolvedValueOnce({
+      data: {
+        node: {
+          ...thread,
+          isResolved: true,
+        },
+      },
+    })
   await expect(
     actOnGithubPull(json, repo, {
       ...scope,
@@ -164,7 +227,9 @@ it('checks thread ownership and permissions before resolving, and treats its exi
       threadId: 'thread-1',
       resolved: true,
     }),
-  ).resolves.toMatchObject({ status: 'updated' })
+  ).resolves.toMatchObject({
+    status: 'updated',
+  })
   expect(json).toHaveBeenCalledTimes(2)
   json
     .mockReset()
@@ -173,7 +238,12 @@ it('checks thread ownership and permissions before resolving, and treats its exi
       data: {
         node: {
           ...thread,
-          pullRequest: { number: 7, repository: { nameWithOwner: 'elsewhere/project' } },
+          pullRequest: {
+            number: 7,
+            repository: {
+              nameWithOwner: 'elsewhere/project',
+            },
+          },
         },
       },
     })
@@ -186,7 +256,6 @@ it('checks thread ownership and permissions before resolving, and treats its exi
     }),
   ).rejects.toThrow('another pull request')
 })
-
 it('requests users and teams separately and preserves merge refusal instead of reporting success', async () => {
   const json = vi.fn<GithubJSON>().mockResolvedValueOnce(current).mockResolvedValueOnce({})
   await actOnGithubPull(json, repo, {
@@ -199,44 +268,61 @@ it('requests users and teams separately and preserves merge refusal instead of r
   expect(json).toHaveBeenLastCalledWith(
     expect.arrayContaining(['reviewers[]=dominic', 'team_reviewers[]=maintainers']),
   )
-  json
-    .mockReset()
-    .mockResolvedValueOnce(current)
-    .mockResolvedValueOnce({ merged: false, message: 'Required checks are pending.' })
+  json.mockReset().mockResolvedValueOnce(current).mockResolvedValueOnce({
+    merged: false,
+    message: 'Required checks are pending.',
+  })
   await expect(
-    actOnGithubPull(json, repo, { ...scope, action: 'merge', method: 'squash' }),
+    actOnGithubPull(json, repo, {
+      ...scope,
+      action: 'merge',
+      method: 'squash',
+    }),
   ).rejects.toThrow('Required checks are pending')
   expect(json).toHaveBeenLastCalledWith(
     expect.arrayContaining(['PUT', `sha=${sha}`, 'merge_method=squash']),
   )
 })
-
 it.each(['close', 'reopen'] as const)(
   'writes explicit %s state after the head check',
   async (action) => {
     const json = vi.fn<GithubJSON>().mockResolvedValueOnce(current).mockResolvedValueOnce({})
-    await actOnGithubPull(json, repo, { ...scope, action })
+    await actOnGithubPull(json, repo, {
+      ...scope,
+      action,
+    })
     expect(json).toHaveBeenLastCalledWith(
       expect.arrayContaining(['PATCH', `state=${action === 'close' ? 'closed' : 'open'}`]),
     )
   },
 )
-
 it('targets a saved GitHub host and repository instead of the checkout default remote', async () => {
   const git = new GitService()
   const run = vi.spyOn(git, 'githubAccount').mockResolvedValue(JSON.stringify(current))
-  await new PullRequests(git, { host: repo.host, repository: repo.nameWithOwner }).create(
-    '/checkout',
-    { title: 'Fix', body: '', head: 'fix', base: 'main', draft: false },
-  )
+  await new PullRequests(git, {
+    host: repo.host,
+    repository: repo.nameWithOwner,
+  }).create('/checkout', {
+    title: 'Fix',
+    body: '',
+    head: 'fix',
+    base: 'main',
+    draft: false,
+  })
   expect(run).toHaveBeenCalledExactlyOnceWith(
     expect.arrayContaining(['--hostname', repo.host, `${repo.path}/pulls`]),
-    { timeout: 60000, maxBuffer: 32 * 1024 * 1024 },
+    {
+      timeout: 60000,
+      maxBuffer: 32 * 1024 * 1024,
+    },
     '/checkout',
     undefined,
   )
   await expect(
-    new PullRequests(git, { host: repo.host, repository: '../project' }).create('/checkout', {
+    new PullRequests(git, {
+      host: repo.host,
+      repository: '../project',
+    }).create('/checkout', {
       title: 'Fix',
       body: '',
       head: 'fix',
@@ -245,7 +331,6 @@ it('targets a saved GitHub host and repository instead of the checkout default r
     }),
   ).rejects.toThrow('Use a GitHub owner/repository name')
 })
-
 it('runs a saved GitHub connection from the selected directory without inspecting a Git checkout', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-github-account-'))
   try {
@@ -253,25 +338,39 @@ it('runs a saved GitHub connection from the selected directory without inspectin
     await writeFile(
       command,
       `#!/usr/bin/env node\nif(process.cwd() !== require('node:fs').realpathSync(${JSON.stringify(directory)}) || !process.argv.includes('repos/team/project/pulls'))process.exit(9);\nprocess.stdout.write(${JSON.stringify(JSON.stringify(current))});\n`,
-      { mode: 0o700 },
+      {
+        mode: 0o700,
+      },
     )
-    const git = new GitService(() => commandsSchema.parse({ gh: command }))
+    const git = new GitService(() =>
+      decode(commandsSchema, {
+        gh: command,
+      }),
+    )
     const inspect = vi.spyOn(git, 'inspect')
     await expect(
-      new PullRequests(git, { host: repo.host, repository: repo.nameWithOwner }).create(directory, {
+      new PullRequests(git, {
+        host: repo.host,
+        repository: repo.nameWithOwner,
+      }).create(directory, {
         title: 'From non-checkout',
         body: '',
         head: 'fix',
         base: 'main',
         draft: false,
       }),
-    ).resolves.toMatchObject({ status: 'created', number: 7 })
+    ).resolves.toMatchObject({
+      status: 'created',
+      number: 7,
+    })
     expect(inspect).not.toHaveBeenCalled()
   } finally {
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, {
+      recursive: true,
+      force: true,
+    })
   }
 })
-
 it('removes only explicitly selected review requests using the removal endpoint', async () => {
   const json = vi.fn<GithubJSON>().mockResolvedValueOnce(current).mockResolvedValueOnce({})
   await actOnGithubPull(json, repo, {
@@ -285,7 +384,6 @@ it('removes only explicitly selected review requests using the removal endpoint'
     expect.arrayContaining(['DELETE', 'reviewers[]=reviewer', 'team_reviewers[]=maintainers']),
   )
 })
-
 it('uses the selected GitHub profile only in the command environment from its checkout', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-github-profile-'))
   const originalToken = process.env.GH_TOKEN
@@ -301,21 +399,38 @@ if (process.env.GH_TOKEN !== ${JSON.stringify(token)} || process.env.GH_ENTERPRI
 if (process.argv.some(arg => arg.includes(${JSON.stringify(token)}))) process.exit(11);
 process.stdout.write(${JSON.stringify(JSON.stringify(current))});
 `,
-      { mode: 0o700 },
+      {
+        mode: 0o700,
+      },
     )
     const audit = vi.fn<NonNullable<ConstructorParameters<typeof GitService>[1]>>()
-    const git = new GitService(() => commandsSchema.parse({ gh: command }), audit)
+    const git = new GitService(
+      () =>
+        decode(commandsSchema, {
+          gh: command,
+        }),
+      audit,
+    )
     const profileToken = vi.fn<(cwd: string) => Promise<string>>().mockResolvedValue(token)
     await new PullRequests(git, {
       host: repo.host,
       repository: repo.nameWithOwner,
       profile: 'selected-user',
       token: profileToken,
-    }).create(directory, { title: 'Fix', body: '', head: 'fix', base: 'main', draft: false })
+    }).create(directory, {
+      title: 'Fix',
+      body: '',
+      head: 'fix',
+      base: 'main',
+      draft: false,
+    })
     expect(profileToken).toHaveBeenCalledExactlyOnceWith(directory)
     expect(JSON.stringify(audit.mock.calls)).not.toContain(token)
     expect(process.env.GH_TOKEN).toBe(originalToken)
   } finally {
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, {
+      recursive: true,
+      force: true,
+    })
   }
 })

@@ -1,6 +1,8 @@
+import { useApplicationState } from '@dovo/studio-core/state'
+import { mutableStruct } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import { resourceError } from './error'
-import { useState } from 'react'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import {
   resourceSettingsSchema,
@@ -18,8 +20,8 @@ import { SkillEditor } from './skill-editor'
 export default function ResourcesView() {
   const sources = useRuntimeSources()
   return (
-    <section className="min-h-0 flex-1 overflow-y-auto p-6">
-      <h1 className="text-lg font-semibold">MCP servers & skills</h1>
+    <section className="min-h-0 flex-1 overflow-y-auto p-4">
+      <h1 className="text-base font-semibold">MCP servers & skills</h1>
       <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">
         Resources across all projects and agents. Agent entries override matching project names.
         Changes apply on the next turn.
@@ -29,7 +31,7 @@ export default function ResourcesView() {
           Connect a computer to manage its project and agent resources.
         </p>
       )}
-      <div className="mt-6 space-y-6">
+      <div className="mt-4 space-y-4">
         {sources.map((source) => (
           <WorkspaceScope key={source.scope} profile={source.profile}>
             <section aria-label={`Resources on ${source.name}`}>
@@ -55,7 +57,11 @@ function ComputerResources() {
       collection: 'repositories' as const,
       label: 'Project',
     })),
-    ...workspace.agents.map((item) => ({ item, collection: 'agents' as const, label: 'Agent' })),
+    ...workspace.agents.map((item) => ({
+      item,
+      collection: 'agents' as const,
+      label: 'Agent',
+    })),
   ]
   return (
     <div className="space-y-3">
@@ -65,11 +71,11 @@ function ComputerResources() {
         </p>
       )}
       {scopes.map(({ item, collection, label }) => {
-        const resources = resourceSettingsSchema.parse(item.resources ?? {})
+        const resources = decode(resourceSettingsSchema, item.resources ?? {})
         return (
           <details
             key={`${collection}:${item.id}`}
-            className="rounded-xl border"
+            className="rounded-md border"
             open={resources.mcpServers.length + resources.skills.length > 0 || undefined}
           >
             <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
@@ -93,33 +99,53 @@ function ResourceScopeView({
   id: string
 }) {
   const { workspace, request, connected, syncError } = useWorkspace()
-  const [editing, setEditing] = useState<
-    | { kind: 'mcp'; value?: McpServer; notes?: string[]; imported?: boolean }
-    | { kind: 'skill'; value?: ManagedSkill; imported?: boolean }
+  const [editing, setEditing] = useApplicationState<
+    | {
+        kind: 'mcp'
+        value?: McpServer
+        notes?: string[]
+        imported?: boolean
+      }
+    | {
+        kind: 'skill'
+        value?: ManagedSkill
+        imported?: boolean
+      }
     | null
   >(null)
-  const [catalog, setCatalog] = useState<'mcp' | 'skill' | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [catalog, setCatalog] = useApplicationState<'mcp' | 'skill' | null>(null)
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   const item = workspace[collection].find((item) => item.id === id)
   const scope = item
-    ? { item, collection, label: `${collection === 'agents' ? 'Agent' : 'Project'} · ${item.name}` }
+    ? {
+        item,
+        collection,
+        label: `${collection === 'agents' ? 'Agent' : 'Project'} · ${item.name}`,
+      }
     : undefined
-  const settings = resourceSettingsSchema.parse(scope?.item.resources ?? {})
+  const settings = decode(resourceSettingsSchema, scope?.item.resources ?? {})
   const change = async (update: (value: ResourceSettings) => ResourceSettings) => {
     if (!scope) throw new Error('Choose a scope')
     setBusy(true)
     setError('')
     try {
-      const resources = resourceSettingsSchema.parse(update(settings))
+      const resources = decode(resourceSettingsSchema, update(settings))
       await request(
         '/api/workspace',
         {
           collection: scope.collection,
           id: scope.item.id,
-          changes: { resources: { before: scope.item.resources ?? null, after: resources } },
+          changes: {
+            resources: {
+              before: scope.item.resources ?? null,
+              after: resources,
+            },
+          },
         },
-        z.object({ revision: z.number() }),
+        mutableStruct({
+          revision: Schema.Number.pipe(Schema.finite()),
+        }),
         'PATCH',
       )
     } catch (error) {
@@ -153,14 +179,18 @@ function ResourceScopeView({
             </p>
           )}
           <div className="grid gap-6 xl:grid-cols-2">
-            <section className="rounded-xl border p-4">
+            <section className="rounded-md border p-4">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-sm font-medium">MCP servers</h3>
                 <Button
                   size="sm"
                   variant="outline"
                   disabled={!connected || busy}
-                  onClick={() => setEditing({ kind: 'mcp' })}
+                  onClick={() =>
+                    setEditing({
+                      kind: 'mcp',
+                    })
+                  }
                 >
                   <Plus className="size-3" />
                   Add MCP server
@@ -190,7 +220,12 @@ function ResourceScopeView({
                       act((value) => ({
                         ...value,
                         mcpServers: value.mcpServers.map((item) =>
-                          item.name === server.name ? { ...item, enabled: checked === true } : item,
+                          item.name === server.name
+                            ? {
+                                ...item,
+                                enabled: checked === true,
+                              }
+                            : item,
                         ),
                       }))
                     }
@@ -206,7 +241,12 @@ function ResourceScopeView({
                     variant="ghost"
                     aria-label={`Edit MCP ${server.name}`}
                     disabled={!connected || busy}
-                    onClick={() => setEditing({ kind: 'mcp', value: server })}
+                    onClick={() =>
+                      setEditing({
+                        kind: 'mcp',
+                        value: server,
+                      })
+                    }
                   >
                     <Pencil className="size-3.5" />
                   </Button>
@@ -227,14 +267,18 @@ function ResourceScopeView({
                 </div>
               ))}
             </section>
-            <section className="rounded-xl border p-4">
+            <section className="rounded-md border p-4">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-sm font-medium">Skills</h3>
                 <Button
                   size="sm"
                   variant="outline"
                   disabled={!connected || busy}
-                  onClick={() => setEditing({ kind: 'skill' })}
+                  onClick={() =>
+                    setEditing({
+                      kind: 'skill',
+                    })
+                  }
                 >
                   <Plus className="size-3" />
                   Add skill
@@ -262,7 +306,12 @@ function ResourceScopeView({
                       act((value) => ({
                         ...value,
                         skills: value.skills.map((item) =>
-                          item.name === skill.name ? { ...item, enabled: checked === true } : item,
+                          item.name === skill.name
+                            ? {
+                                ...item,
+                                enabled: checked === true,
+                              }
+                            : item,
                         ),
                       }))
                     }
@@ -278,7 +327,12 @@ function ResourceScopeView({
                     variant="ghost"
                     aria-label={`Edit skill ${skill.name}`}
                     disabled={!connected || busy}
-                    onClick={() => setEditing({ kind: 'skill', value: skill })}
+                    onClick={() =>
+                      setEditing({
+                        kind: 'skill',
+                        value: skill,
+                      })
+                    }
                   >
                     <Pencil className="size-3.5" />
                   </Button>
@@ -309,11 +363,20 @@ function ResourceScopeView({
           onClose={() => setCatalog(null)}
           onServer={(server, notes) => {
             setCatalog(null)
-            setEditing({ kind: 'mcp', value: server, notes, imported: true })
+            setEditing({
+              kind: 'mcp',
+              value: server,
+              notes,
+              imported: true,
+            })
           }}
           onSkill={(skill) => {
             setCatalog(null)
-            setEditing({ kind: 'skill', value: skill, imported: true })
+            setEditing({
+              kind: 'skill',
+              value: skill,
+              imported: true,
+            })
           }}
         />
       )}

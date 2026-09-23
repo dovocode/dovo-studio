@@ -1,5 +1,5 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { usePullDetail } from './use-pull-detail'
-import { useState } from 'react'
 import {
   useWorkspace,
   pullState,
@@ -35,11 +35,15 @@ export function PullDetail({
     invalidate()
     onChanged()
   }
-  const [starting, setStarting] = useState(false)
-  const [tab, setTab] = useState<'overview' | 'changes' | 'discussion' | 'checks'>('overview')
-  const [changesOpened, setChangesOpened] = useState(false)
-  const [objective, setObjective] = useState<string>()
-  const [discussionFilter, setDiscussionFilter] = useState<'all' | 'review' | 'comment'>('all')
+  const [starting, setStarting] = useApplicationState(false)
+  const [tab, setTab] = useApplicationState<'overview' | 'changes' | 'discussion' | 'checks'>(
+    'overview',
+  )
+  const [changesOpened, setChangesOpened] = useApplicationState(false)
+  const [objective, setObjective] = useApplicationState<string | undefined>(undefined)
+  const [discussionFilter, setDiscussionFilter] = useApplicationState<'all' | 'review' | 'comment'>(
+    'all',
+  )
   const discussion = detail?.comments.filter((comment) => comment.kind !== 'inline') ?? []
   const reviews = latestPullReviews(discussion)
   const selectTab = (value: typeof tab) => {
@@ -149,10 +153,22 @@ export function PullDetail({
           >
             {(
               [
-                { id: 'overview', label: 'Overview' },
-                { id: 'changes', label: `Files (${detail.files.length})` },
-                { id: 'discussion', label: `Activity (${discussion.length})` },
-                { id: 'checks', label: `Checks (${detail.checks.length})` },
+                {
+                  id: 'overview',
+                  label: 'Overview',
+                },
+                {
+                  id: 'changes',
+                  label: `Files (${detail.files.length})`,
+                },
+                {
+                  id: 'discussion',
+                  label: `Activity (${discussion.length})`,
+                },
+                {
+                  id: 'checks',
+                  label: `Checks (${detail.checks.length})`,
+                },
               ] as const
             ).map((item) => (
               <button
@@ -298,7 +314,11 @@ export function PullDetail({
                 <h3 className="mr-auto text-sm font-medium">Activity</h3>
                 {(
                   [
-                    { id: 'all', label: 'All activity', count: discussion.length },
+                    {
+                      id: 'all',
+                      label: 'All activity',
+                      count: discussion.length,
+                    },
                     {
                       id: 'review',
                       label: 'Reviews',
@@ -326,7 +346,11 @@ export function PullDetail({
                 fileBaseURL={
                   detail.fileBaseUrl ?? `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
                 }
-                actionContext={{ repositoryId, detail, onDone: changed }}
+                actionContext={{
+                  repositoryId,
+                  detail,
+                  onDone: changed,
+                }}
                 comments={discussion.filter(
                   (comment) => discussionFilter === 'all' || comment.kind === discussionFilter,
                 )}

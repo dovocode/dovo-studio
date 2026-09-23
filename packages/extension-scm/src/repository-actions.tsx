@@ -1,6 +1,6 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { branchesSchema, encodeWorkTarget } from '@dovo/studio-core'
 import { BranchPicker } from '@dovo/studio-ui'
-import { useState } from 'react'
 import {
   responses,
   useWorkspace,
@@ -12,12 +12,19 @@ import { Button, Input } from '@dovo/studio-ui'
 export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?: string }) {
   const host = useStudioHost()
   const { request, connected } = useWorkspace(),
-    [checkout, setCheckout] = useState(''),
-    [files, setFiles] = useState<ChangedFile[]>([]),
-    [message, setMessage] = useState(''),
-    [status, setStatus] = useState(''),
-    [busy, setBusy] = useState(false)
-  const input = { repositoryId: repo.id, ...(taskId ? { taskId } : {}) }
+    [checkout, setCheckout] = useApplicationState(''),
+    [files, setFiles] = useApplicationState<ChangedFile[]>([]),
+    [message, setMessage] = useApplicationState(''),
+    [status, setStatus] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false)
+  const input = {
+    repositoryId: repo.id,
+    ...(taskId
+      ? {
+          taskId,
+        }
+      : {}),
+  }
   const act = (fn: () => Promise<void>) => {
     setBusy(true)
     setStatus('')
@@ -32,7 +39,14 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
         disabled={!connected || busy}
         load={() => request('/api/scm/branches', input, branchesSchema)}
         change={async (value) => {
-          const result = await request('/api/scm/branch', { ...input, ...value }, branchesSchema)
+          const result = await request(
+            '/api/scm/branch',
+            {
+              ...input,
+              ...value,
+            },
+            branchesSchema,
+          )
           setCheckout(result.current)
           setFiles([])
           return result
@@ -62,7 +76,12 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
           size="sm"
           variant="outline"
           disabled={!connected || busy}
-          onClick={() => host.navigate({ viewId: 'pulls', entityId: repo.id })}
+          onClick={() =>
+            host.navigate({
+              viewId: 'pulls',
+              entityId: repo.id,
+            })
+          }
         >
           Pull requests
         </Button>
@@ -73,7 +92,9 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
           onClick={() =>
             host.navigate({
               viewId: 'issues',
-              entityId: encodeWorkTarget({ repositoryId: repo.id }),
+              entityId: encodeWorkTarget({
+                repositoryId: repo.id,
+              }),
             })
           }
         >
@@ -87,7 +108,10 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
             act(async () => {
               await request(
                 '/api/scm/stage',
-                { ...input, paths: files.map((file) => file.path) },
+                {
+                  ...input,
+                  paths: files.map((file) => file.path),
+                },
                 responses.ok,
               )
               setStatus('Listed changes staged.')
@@ -109,7 +133,14 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
         onSubmit={(event) => {
           event.preventDefault()
           act(async () => {
-            const result = await request('/api/scm/commit', { ...input, message }, responses.commit)
+            const result = await request(
+              '/api/scm/commit',
+              {
+                ...input,
+                message,
+              },
+              responses.commit,
+            )
             setStatus(`Committed ${result.commit.slice(0, 8)}`)
             setMessage('')
           })

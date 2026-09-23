@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { useApplicationState } from '../runtime/application-state'
+import { useEffect, useRef } from 'react'
 import { Image, Linking, Platform, ScrollView, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import {
@@ -29,12 +32,27 @@ export function BrowserPane({
   onExpand: (value: boolean) => void
 }) {
   const { profile } = useRuntime()
-  const [mode, setMode] = useState('remote')
+  const [mode, setMode] = useApplicationState('remote')
   const scope = `${profile?.id}:${taskId}`
   return (
-    <View style={{ flex: 1 }}>
-      <View style={{ paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-        <View style={{ flex: 1 }}>
+    <View
+      style={{
+        flex: 1,
+      }}
+    >
+      <View
+        style={{
+          paddingHorizontal: 8,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 4,
+        }}
+      >
+        <View
+          style={{
+            flex: 1,
+          }}
+        >
           {!expanded && (
             <Choice
               label="Browser mode"
@@ -42,9 +60,18 @@ export function BrowserPane({
               hideLabel
               value={mode}
               items={[
-                { id: 'remote', name: 'Host browser' },
-                { id: 'web', name: 'Direct preview' },
-                { id: 'devices', name: 'Devices' },
+                {
+                  id: 'remote',
+                  name: 'Host browser',
+                },
+                {
+                  id: 'web',
+                  name: 'Direct preview',
+                },
+                {
+                  id: 'devices',
+                  name: 'Devices',
+                },
               ]}
               onChange={setMode}
             />
@@ -76,38 +103,54 @@ function BrowserContent({
   mode: string
   expanded: boolean
 }) {
-  const { profile, call, connected } = useRuntime(),
+  const { profile, connected, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
-  const [input, setInput] = useState(addresses.get(scope) ?? 'http://localhost:3000'),
-    [url, setUrl] = useState(addresses.get(scope) ?? '')
-  const [preset, setPreset] = useState('fill'),
-    [landscape, setLandscape] = useState(false)
-  const [devices, setDevices] = useState<PreviewDevice[]>([]),
-    [diagnostics, setDiagnostics] = useState<string[]>([])
-  const [liveDevice, setLiveDevice] = useState<PreviewDevice>()
-  const [setupDevice, setSetupDevice] = useState<PreviewDevice>()
-  const [image, setImage] = useState(''),
-    [loadError, setLoadError] = useState('')
+  const [input, setInput] = useApplicationState(addresses.get(scope) ?? 'http://localhost:3000'),
+    [url, setUrl] = useApplicationState(addresses.get(scope) ?? '')
+  const [preset, setPreset] = useApplicationState('fill'),
+    [landscape, setLandscape] = useApplicationState(false)
+  const [devices, setDevices] = useApplicationState<PreviewDevice[]>([]),
+    [diagnostics, setDiagnostics] = useApplicationState<string[]>([])
+  const [liveDevice, setLiveDevice] = useApplicationState<PreviewDevice | undefined>(undefined)
+  const [setupDevice, setSetupDevice] = useApplicationState<PreviewDevice | undefined>(undefined)
+  const [image, setImage] = useApplicationState(''),
+    [loadError, setLoadError] = useApplicationState('')
   const web = useRef<WebView>(null)
-  const [history, setHistory] = useState({ back: false, forward: false, url: '' })
+  const [history, setHistory] = useApplicationState({
+    back: false,
+    forward: false,
+    url: '',
+  })
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
-  const load = async () => {
-    const result = await call('/api/previews/devices', { taskId }, previewDevicesSchema)
-    setDevices(result.devices)
-    setDiagnostics(result.diagnostics)
+  const load = () => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        const result = yield* callEffect(
+          '/api/previews/devices',
+          {
+            taskId,
+          },
+          previewDevicesSchema,
+        )
+        setDevices(result.devices)
+        setDiagnostics(result.diagnostics)
+      }),
+    )
   }
   useEffect(() => {
     if (mode === 'devices' && connected) act(load)
   }, [mode, connected])
   const navigate = () =>
-    act(async () => {
-      const target = previewUrl(input, profile?.connection.address)
-      if (target === url) web.current?.reload()
-      setUrl(target)
-      setInput(target)
-      addresses.set(scope, target)
-      setLoadError('')
-    })
+    act(() =>
+      nativeEffect(() => {
+        const target = previewUrl(input, profile?.connection.address)
+        if (target === url) web.current?.reload()
+        setUrl(target)
+        setInput(target)
+        addresses.set(scope, target)
+        setLoadError('')
+      }),
+    )
   const deviceAction = (
     device: PreviewDevice,
     action:
@@ -119,15 +162,22 @@ function BrowserContent({
       | 'accessibility'
       | 'screen-recording',
   ) =>
-    act(async () => {
-      const result = await call(
-        '/api/previews/action',
-        { taskId, id: device.id, action, url: input },
-        previewResultSchema,
-      )
-      if (result.image) setImage(result.image)
-      await load()
-    })
+    act(() =>
+      mobileWorkflow(function* () {
+        const result = yield* callEffect(
+          '/api/previews/action',
+          {
+            taskId,
+            id: device.id,
+            action,
+            url: input,
+          },
+          previewResultSchema,
+        )
+        if (result.image) setImage(result.image)
+        yield* nativeEffect(() => load())
+      }),
+    )
   const setup = setupDevice ? (
     <PhysicalControls
       taskId={taskId}
@@ -137,7 +187,11 @@ function BrowserContent({
   ) : null
   if (mode === 'devices' && liveDevice)
     return (
-      <View style={{ flex: 1 }}>
+      <View
+        style={{
+          flex: 1,
+        }}
+      >
         {setup}
         <View
           style={{
@@ -154,7 +208,15 @@ function BrowserContent({
             label="Back to devices"
             onPress={() => setLiveDevice(undefined)}
           />
-          <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.muted,
+              {
+                flex: 1,
+              },
+            ]}
+          >
             {liveDevice.name}
           </Text>
           {liveDevice.kind === 'physical' && (
@@ -174,7 +236,11 @@ function BrowserContent({
       </View>
     )
   return (
-    <View style={{ flex: 1 }}>
+    <View
+      style={{
+        flex: 1,
+      }}
+    >
       <View
         style={{
           display: expanded ? 'none' : 'flex',
@@ -195,7 +261,14 @@ function BrowserContent({
           onSubmitEditing={navigate}
         />
         {mode === 'web' && (
-          <View style={[styles.row, { justifyContent: 'space-between' }]}>
+          <View
+            style={[
+              styles.row,
+              {
+                justifyContent: 'space-between',
+              },
+            ]}
+          >
             <IconButton
               label="Back"
               icon="back"
@@ -227,13 +300,27 @@ function BrowserContent({
           </View>
         )}
         {mode === 'web' && (
-          <View style={[styles.row, { flexWrap: 'wrap' }]}>
-            <View style={{ flex: 1 }}>
+          <View
+            style={[
+              styles.row,
+              {
+                flexWrap: 'wrap',
+              },
+            ]}
+          >
+            <View
+              style={{
+                flex: 1,
+              }}
+            >
               <Choice
                 label="Preview mode"
                 hideLabel
                 value={preset}
-                items={previewPresets.map((p) => ({ id: p.id, name: p.name }))}
+                items={previewPresets.map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                }))}
                 onChange={setPreset}
               />
             </View>
@@ -246,15 +333,29 @@ function BrowserContent({
           </View>
         )}
         {(error || loadError) && (
-          <Text accessibilityRole="alert" style={{ color: colors.error }}>
+          <Text
+            accessibilityRole="alert"
+            style={{
+              color: colors.error,
+            }}
+          >
             {error || loadError}
           </Text>
         )}
       </View>
       {mode === 'web' ? (
         url ? (
-          <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-            <ScrollView horizontal contentContainerStyle={{ flexGrow: 1 }}>
+          <ScrollView
+            contentContainerStyle={{
+              flexGrow: 1,
+            }}
+          >
+            <ScrollView
+              horizontal
+              contentContainerStyle={{
+                flexGrow: 1,
+              }}
+            >
               <View
                 style={
                   size.width
@@ -262,18 +363,29 @@ function BrowserContent({
                         width: landscape ? size.height : size.width,
                         height: landscape ? size.width : size.height,
                       }
-                    : { flex: 1, minWidth: 1 }
+                    : {
+                        flex: 1,
+                        minWidth: 1,
+                      }
                 }
               >
                 {Platform.OS === 'web' ? (
-                  <View style={{ padding: 16 }}>
+                  <View
+                    style={{
+                      padding: 16,
+                    }}
+                  >
                     <Text style={styles.text}>Open this preview externally in Safari.</Text>
                   </View>
                 ) : (
                   <WebView
                     ref={web}
-                    source={{ uri: url }}
-                    style={{ flex: 1 }}
+                    source={{
+                      uri: url,
+                    }}
+                    style={{
+                      flex: 1,
+                    }}
                     originWhitelist={['http://*', 'https://*']}
                     setSupportMultipleWindows={false}
                     allowsInlineMediaPlayback
@@ -302,7 +414,12 @@ function BrowserContent({
             </ScrollView>
           </ScrollView>
         ) : (
-          <View style={{ padding: 20, gap: 12 }}>
+          <View
+            style={{
+              padding: 20,
+              gap: 12,
+            }}
+          >
             <Text style={styles.text}>Start your project’s server, then enter its address.</Text>
             <Text style={styles.muted}>
               Localhost uses your runtime’s hostname. The server must accept connections from your
@@ -311,7 +428,12 @@ function BrowserContent({
           </View>
         )
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+        <ScrollView
+          contentContainerStyle={{
+            padding: 16,
+            gap: 16,
+          }}
+        >
           <Action
             secondary
             label={busy ? 'Working…' : 'Refresh devices'}
@@ -340,7 +462,15 @@ function BrowserContent({
               }}
             >
               {(index === 0 || devices[index - 1].kind !== device.kind) && (
-                <Text style={[styles.muted, { fontWeight: '600', paddingBottom: 4 }]}>
+                <Text
+                  style={[
+                    styles.muted,
+                    {
+                      fontWeight: '600',
+                      paddingBottom: 4,
+                    },
+                  ]}
+                >
                   {device.kind === 'physical'
                     ? 'Connected phones and tablets'
                     : 'Simulators and emulators'}
@@ -353,7 +483,14 @@ function BrowserContent({
                   : `Simulator · ${device.state}`}
                 {device.kind === 'physical' && device.platform === 'ios' && ' · Direct control'}
               </Text>
-              <View style={[styles.row, { flexWrap: 'wrap' }]}>
+              <View
+                style={[
+                  styles.row,
+                  {
+                    flexWrap: 'wrap',
+                  },
+                ]}
+              >
                 <Action
                   label={device.kind === 'physical' ? 'Control device' : 'Live preview'}
                   disabled={
@@ -412,10 +549,15 @@ function BrowserContent({
             <>
               <Text style={styles.muted}>Captured screenshot · refresh with Screenshot</Text>
               <Image
-                source={{ uri: image }}
+                source={{
+                  uri: image,
+                }}
                 accessibilityLabel="Simulator screenshot"
                 resizeMode="contain"
-                style={{ width: '100%', height: 540 }}
+                style={{
+                  width: '100%',
+                  height: 540,
+                }}
               />
             </>
           )}

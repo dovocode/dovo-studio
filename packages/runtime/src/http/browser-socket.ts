@@ -1,3 +1,4 @@
+import { decodeResult, decode } from '@dovo/protocol'
 import { WebSocket } from 'ws'
 import {
   encodeBrowserFrame,
@@ -7,7 +8,6 @@ import {
 import type { BrowserFrame, BrowserOutput } from '../previews/browser.js'
 import type { Services } from '../services.js'
 import { errorMessage } from '../errors.js'
-
 export function attachBrowserSocket(
   client: WebSocket,
   taskId: string,
@@ -47,7 +47,10 @@ export function attachBrowserSocket(
         client.send(encodeBrowserFrame(message, id))
       } else
         client.send(
-          JSON.stringify({ ...message, data: Buffer.from(message.data).toString('base64') }),
+          JSON.stringify({
+            ...message,
+            data: Buffer.from(message.data).toString('base64'),
+          }),
         )
     } else client.send(JSON.stringify(message))
     if (message.type === 'closed') client.close(1000, 'Browser session closed')
@@ -83,7 +86,10 @@ export function attachBrowserSocket(
       else detach = dispose
     })
     .catch((error) => {
-      send({ type: 'error', message: errorMessage(error) })
+      send({
+        type: 'error',
+        message: errorMessage(error),
+      })
       client.close(1011, 'Browser connection failed')
     })
   const authorize = () => {
@@ -102,7 +108,7 @@ export function attachBrowserSocket(
           ? raw
           : Buffer.from(raw)
       const value: unknown = JSON.parse(data.toString())
-      const ack = remoteBrowserFrameAckSchema.safeParse(value)
+      const ack = decodeResult(remoteBrowserFrameAckSchema, value)
       if (binary && ack.success) {
         if (!inFlight.delete(ack.data.sequence))
           throw new Error('Invalid browser frame acknowledgement')
@@ -114,9 +120,12 @@ export function attachBrowserSocket(
         windowStart = Date.now()
       }
       if (++count > 200) throw new Error('Too many browser commands')
-      const input = remoteBrowserInputSchema.parse(value)
+      const input = decode(remoteBrowserInputSchema, value)
       void source.input(resourceId, input, authorize).catch((error) => {
-        send({ type: 'error', message: errorMessage(error) })
+        send({
+          type: 'error',
+          message: errorMessage(error),
+        })
       })
     } catch {
       client.close(1008, 'Invalid browser command or revoked device')

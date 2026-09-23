@@ -1,7 +1,7 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { TitleSettings } from './title-settings'
 import { accessLabel } from '@dovo/studio-core'
 import { ProviderCheck } from './provider-check'
-import { useState } from 'react'
 import { Plus, SlidersHorizontal } from 'lucide-react'
 import {
   useWorkspace,
@@ -16,13 +16,13 @@ export default function AgentsView() {
   const sources = useRuntimeSources()
   return (
     <section className="min-h-0 flex-1 overflow-y-auto">
-      <header className="border-b px-6 py-4">
+      <header className="studio-page-header border-b">
         <h1 className="text-lg font-semibold tracking-tight">Agents</h1>
         <p className="mt-1 text-xs text-muted-foreground">
           Reusable agents, titles and dictation across your computers.
         </p>
       </header>
-      <div className="mx-auto max-w-4xl space-y-8 p-6">
+      <div className="mx-auto max-w-4xl space-y-5 p-4">
         {!sources.length && (
           <p className="text-sm text-muted-foreground">
             Connect a computer in Devices & runtime to configure agents.
@@ -39,7 +39,10 @@ export default function AgentsView() {
 }
 function ComputerAgents({ name }: { name: string }) {
   const { workspace, connected } = useWorkspace()
-  const [editing, setEditing] = useState<{ agent: Agent; creating: boolean } | null>(null)
+  const [editing, setEditing] = useApplicationState<{
+    agent: Agent
+    creating: boolean
+  } | null>(null)
   return (
     <section className="min-w-0" aria-label={`Agents on ${name}`}>
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 pb-3">
@@ -94,7 +97,12 @@ function ComputerAgents({ name }: { name: string }) {
                     size="sm"
                     variant="outline"
                     disabled={!connected}
-                    onClick={() => setEditing({ agent, creating: false })}
+                    onClick={() =>
+                      setEditing({
+                        agent,
+                        creating: false,
+                      })
+                    }
                   >
                     <SlidersHorizontal size={13} /> Configure
                   </Button>

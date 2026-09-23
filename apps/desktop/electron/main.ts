@@ -1,10 +1,17 @@
+import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { registerUpdates } from './updates.js'
 import { registerBrowser } from './browser.js'
-import { startLocalRuntime, stopLocalRuntime } from './local-runtime.js'
+import {
+  startLocalRuntime,
+  stopLocalRuntime,
+  prepareLocalRuntimeUpdate,
+  localRuntimeNetwork,
+  setLocalRuntimeNetwork,
+} from './local-runtime.js'
 import { registerConnectionStorage } from './connection-storage.js'
 import { desktopProfile, selectDesktopDataDirectory } from './data-directory.js'
 import { dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { Effect } from 'effect'
@@ -18,6 +25,7 @@ import {
 } from './runtime.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const rendererPath = join(__dirname, '../dist/index.html')
 const currentDirectory = app.getPath('userData')
 const dataDirectory = selectDesktopDataDirectory({
   packaged: app.isPackaged,
@@ -44,7 +52,7 @@ function createWindow(): void {
     ...(process.platform === 'darwin'
       ? { trafficLightPosition: { x: 16, y: 15 } }
       : {
-          titleBarOverlay: { color: '#0c0c0c', symbolColor: '#a3a3a3', height: 44 },
+          titleBarOverlay: { color: '#080808', symbolColor: '#a3a3a3', height: 44 },
           autoHideMenuBar: true,
         }),
     webPreferences: {
@@ -53,6 +61,14 @@ function createWindow(): void {
       preload: join(__dirname, 'preload.mjs'),
     },
   })
+
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  const guardNavigation = (event: Electron.Event, url: string) => {
+    if (!trustedRendererUrl(url, rendererPath, process.env.VITE_DEV_SERVER_URL))
+      event.preventDefault()
+  }
+  window.webContents.on('will-navigate', guardNavigation)
+  window.webContents.on('will-redirect', guardNavigation)
 
   if (process.env.VITE_DEV_SERVER_URL) {
     void window.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -67,7 +83,19 @@ app.on('second-instance', () => {
   window?.focus()
 })
 
-ipcMain.handle('runtime:connection', () => startLocalRuntime(__dirname))
+ipcMain.handle('runtime:connection', (event) => {
+  requireTrustedRenderer(event, rendererPath)
+  return startLocalRuntime(__dirname)
+})
+
+ipcMain.handle('runtime:network', (event, address: unknown, enabled?: unknown) => {
+  requireTrustedRenderer(event, rendererPath)
+  if (typeof address !== 'string' || (enabled !== undefined && typeof enabled !== 'boolean'))
+    throw new Error('Invalid runtime network settings')
+  return enabled === undefined
+    ? localRuntimeNetwork(__dirname, address)
+    : setLocalRuntimeNetwork(__dirname, address, enabled)
+})
 
 ipcMain.handle('repositories:pick-directory', (event, runtimeAddress: unknown) =>
   runDesktop(
@@ -76,12 +104,7 @@ ipcMain.handle('repositories:pick-directory', (event, runtimeAddress: unknown) =
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window || event.senderFrame !== event.sender.mainFrame)
           throw new Error('Folder picker is only available from the desktop window')
-        const senderUrl = new URL(event.senderFrame.url)
-        const trusted = process.env.VITE_DEV_SERVER_URL
-          ? senderUrl.origin === new URL(process.env.VITE_DEV_SERVER_URL).origin
-          : senderUrl.protocol === 'file:' &&
-            senderUrl.pathname === pathToFileURL(join(__dirname, '../dist/index.html')).pathname
-        if (!trusted) throw new Error('Untrusted folder picker request')
+        requireTrustedRenderer(event, rendererPath)
         const local = await startLocalRuntime(__dirname)
         if (runtimeAddress !== local.address)
           throw new Error(
@@ -99,9 +122,14 @@ ipcMain.handle('repositories:pick-directory', (event, runtimeAddress: unknown) =
   ),
 )
 
-ipcMain.handle('runtime:list-extensions', () => runDesktop(listExtensions))
+ipcMain.handle('runtime:list-extensions', (event) => {
+  requireTrustedRenderer(event, rendererPath)
+  return runDesktop(listExtensions)
+})
 
-ipcMain.handle('runtime:activate', async (_event, id: string) => {
+ipcMain.handle('runtime:activate', async (event, id: unknown) => {
+  requireTrustedRenderer(event, rendererPath)
+  if (typeof id !== 'string' || id.length > 200) throw new Error('Invalid extension identifier')
   return runDesktop(activateExtension(id))
 })
 
@@ -113,14 +141,25 @@ const startup = Effect.gen(function* () {
   yield* Effect.tryPromise({
     try: () => startLocalRuntime(__dirname),
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-  })
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.sync(() => {
+        // Keep the window and updater available; the workspace displays connection errors.
+        console.error('Local runtime needs attention:', error.message)
+      }),
+    ),
+  )
   yield* activateOnStartup
   yield* Effect.sync(() => {
     if (!app.isPackaged && process.platform === 'darwin')
       app.dock?.setIcon(join(__dirname, '../build/icon.png'))
     registerUpdates(__dirname, async () => {
-      await Promise.all([stopLocalRuntime(), runDesktop(disposeRuntime)])
+      const restore = await prepareLocalRuntimeUpdate(__dirname)
       quitting = true
+      return async () => {
+        quitting = false
+        await restore()
+      }
     })
     createWindow()
   })

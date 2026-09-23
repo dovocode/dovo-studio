@@ -1,9 +1,13 @@
+import { mobileWorkflow } from '../runtime/native-effect'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import { validationMessages } from '@dovo/protocol'
+import { decodeResult } from '@dovo/protocol'
 import { Sheet } from '../ui/sheet'
 import { useNavigation } from '../shell/navigation'
 import { RepositoryCheckouts } from '../scm/repository-checkouts'
 import { DirectoryPicker } from '../scm/directory-picker'
 import { GithubRepositoryPicker } from '../scm/github-repository-picker'
-import { useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import { addRepositorySchema, repositorySchema } from '@dovo/protocol'
@@ -19,7 +23,7 @@ import { IconButton } from '../ui/icon-button'
 export default function RepositoriesScreen() {
   const { navigate } = useNavigation()
   const { overviews } = useRuntime()
-  const [adding, setAdding] = useState(false)
+  const [adding, setAdding] = useApplicationState(false)
   return (
     <View style={styles.screen}>
       <ScreenHeader
@@ -32,7 +36,13 @@ export default function RepositoriesScreen() {
             onPress={() => navigate('tasks')}
           />
         }
-        buttons={[{ label: 'Add repository', icon: 'add', onPress: () => setAdding(true) }]}
+        buttons={[
+          {
+            label: 'Add repository',
+            icon: 'add',
+            onPress: () => setAdding(true),
+          },
+        ]}
       />
       <ScrollView
         contentContainerStyle={styles.content}
@@ -60,17 +70,15 @@ export default function RepositoriesScreen() {
     </View>
   )
 }
-
 function AddProject({ onClose }: { onClose: () => void }) {
-  const { profile, connected, connection, call } = useRuntime(),
+  const { profile, connected, connection, callEffect } = useRuntime(),
     { busy, error, act } = useAction(),
-    [name, setName] = useState(''),
-    [path, setPath] = useState(''),
-    [source, setSource] = useState<'local' | 'github'>('local'),
-    [repository, setRepository] = useState(''),
-    [directory, setDirectory] = useState(''),
-    [picker, setPicker] = useState<'directory' | 'github' | null>(null)
-
+    [name, setName] = useApplicationState(''),
+    [path, setPath] = useApplicationState(''),
+    [source, setSource] = useApplicationState<'local' | 'github'>('local'),
+    [repository, setRepository] = useApplicationState(''),
+    [directory, setDirectory] = useApplicationState(''),
+    [picker, setPicker] = useApplicationState<'directory' | 'github' | null>(null)
   return (
     <Sheet
       scrollable={picker !== 'directory'}
@@ -185,21 +193,34 @@ function AddProject({ onClose }: { onClose: () => void }) {
               !(source === 'local' ? path.trim() : directory.trim() && repository.trim())
             }
             onPress={() =>
-              act(async () => {
-                const input =
-                  source === 'local'
-                    ? { source, name, path }
-                    : { source, name, repository, directory }
-                const parsed = addRepositorySchema.safeParse(input)
-                if (!parsed.success)
-                  throw new Error(parsed.error.issues[0]?.message ?? 'Invalid repository')
-                await call('/api/scm/repositories/add', input, repositorySchema)
-                onClose()
-                setName('')
-                setPath('')
-                setRepository('')
-                setDirectory('')
-              })
+              act(() =>
+                mobileWorkflow(function* () {
+                  const input =
+                    source === 'local'
+                      ? {
+                          source,
+                          name,
+                          path,
+                        }
+                      : {
+                          source,
+                          name,
+                          repository,
+                          directory,
+                        }
+                  const parsed = decodeResult(addRepositorySchema, input)
+                  if (!parsed.success)
+                    return yield* Effect.fail(
+                      new Error(validationMessages(parsed.error)[0] ?? 'Invalid repository'),
+                    )
+                  yield* callEffect('/api/scm/repositories/add', input, repositorySchema)
+                  onClose()
+                  setName('')
+                  setPath('')
+                  setRepository('')
+                  setDirectory('')
+                }),
+              )
             }
           />
         </>

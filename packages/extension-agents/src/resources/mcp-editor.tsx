@@ -1,5 +1,14 @@
+import { CredentialEditor } from './credential-editor'
+import {
+  credentialFields,
+  credentialValues,
+  ValidationError,
+  safeValidationIssues,
+  RuntimeRequestError,
+} from '@dovo/protocol'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { decode } from '@dovo/protocol'
 import { resourceError } from './error'
-import { useState } from 'react'
 import {
   mcpServerSchema,
   mcpTestResultSchema,
@@ -46,7 +55,7 @@ export function McpEditor({
   onClose: () => void
 }) {
   const { request } = useWorkspace()
-  const [draft, setDraft] = useState<McpServer>(
+  const [draft, setDraft] = useApplicationState<McpServer>(
     initial ?? {
       name: '',
       enabled: true,
@@ -59,28 +68,31 @@ export function McpEditor({
       bearerTokenEnv: '',
     },
   )
-  const [args, setArgs] = useState(initial?.args.join('\n') ?? '')
-  const [env, setEnv] = useState(lines(initial?.env ?? {}))
-  const [headers, setHeaders] = useState(lines(initial?.headerEnv ?? {}))
-  const [envValues, setEnvValues] = useState(JSON.stringify(initial?.envValues ?? {}, null, 2))
-  const [headerValues, setHeaderValues] = useState(
-    JSON.stringify(initial?.headerValues ?? {}, null, 2),
+  const [args, setArgs] = useApplicationState(initial?.args.join('\n') ?? '')
+  const [env, setEnv] = useApplicationState(lines(initial?.env ?? {}))
+  const [headers, setHeaders] = useApplicationState(lines(initial?.headerEnv ?? {}))
+  const [envValues, setEnvValues] = useApplicationState(credentialFields(initial?.envValues ?? {}))
+  const [headerValues, setHeaderValues] = useApplicationState(
+    credentialFields(initial?.headerValues ?? {}),
   )
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [result, setResult] = useState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [issues, setIssues] = useApplicationState<readonly { path: string; message: string }[]>([])
+  const fieldError = (path: string) => issues.find((issue) => issue.path === path)?.message
+  const [result, setResult] = useApplicationState('')
   const perform = async (test: boolean) => {
     setBusy(true)
     setError('')
+    setIssues([])
     setResult('')
     try {
-      const server = mcpServerSchema.parse({
+      const server = decode(mcpServerSchema, {
         ...draft,
         args: args.split('\n').filter(Boolean),
         env: bindings(env),
         headerEnv: bindings(headers),
-        envValues: JSON.parse(envValues),
-        headerValues: JSON.parse(headerValues),
+        envValues: credentialValues(envValues),
+        headerValues: credentialValues(headerValues),
       })
       if ([server.url, ...server.args].some((value) => value.includes('__CONFIGURE_')))
         throw new Error('Replace the __CONFIGURE_…__ placeholders before saving or testing.')
@@ -91,6 +103,13 @@ export function McpEditor({
         )
       } else await onSave(server)
     } catch (error) {
+      setIssues(
+        error instanceof ValidationError
+          ? safeValidationIssues(error)
+          : error instanceof RuntimeRequestError
+            ? (error.issues ?? [])
+            : [],
+      )
       setError(resourceError(error))
     } finally {
       setBusy(false)
@@ -132,11 +151,16 @@ export function McpEditor({
                 ))}
               </ul>
             )}
-            <FormField label="Name">
+            <FormField label="Name" error={fieldError('name')}>
               <Input
                 required
                 value={draft.name}
-                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    name: event.target.value,
+                  })
+                }
               />
             </FormField>
             <FormField label="Transport">
@@ -144,7 +168,10 @@ export function McpEditor({
                 aria-label="Transport"
                 value={draft.transport}
                 onValueChange={(value) =>
-                  setDraft({ ...draft, transport: value === 'http' ? 'http' : 'stdio' })
+                  setDraft({
+                    ...draft,
+                    transport: value === 'http' ? 'http' : 'stdio',
+                  })
                 }
               >
                 <option value="stdio">Local command (stdio)</option>
@@ -153,12 +180,17 @@ export function McpEditor({
             </FormField>
             {draft.transport === 'stdio' ? (
               <>
-                <FormField label="Executable">
+                <FormField label="Executable" error={fieldError('command')}>
                   <Input
                     required
                     placeholder="npx"
                     value={draft.command}
-                    onChange={(event) => setDraft({ ...draft, command: event.target.value })}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        command: event.target.value,
+                      })
+                    }
                   />
                 </FormField>
                 <FormField label="Arguments (one per line)">
@@ -174,20 +206,33 @@ export function McpEditor({
               </>
             ) : (
               <>
-                <FormField label="Server URL">
+                <FormField label="Server URL" error={fieldError('url')}>
                   <Input
                     required
                     type="url"
                     placeholder="https://example.com/mcp"
                     value={draft.url}
-                    onChange={(event) => setDraft({ ...draft, url: event.target.value })}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        url: event.target.value,
+                      })
+                    }
                   />
                 </FormField>
-                <FormField label="Bearer token environment variable">
+                <FormField
+                  label="Bearer token environment variable"
+                  error={fieldError('bearerTokenEnv')}
+                >
                   <Input
                     placeholder="MY_API_TOKEN"
                     value={draft.bearerTokenEnv}
-                    onChange={(event) => setDraft({ ...draft, bearerTokenEnv: event.target.value })}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        bearerTokenEnv: event.target.value,
+                      })
+                    }
                   />
                 </FormField>
                 <FormField label="Header bindings">
@@ -201,20 +246,17 @@ export function McpEditor({
             )}
             <details>
               <summary className="cursor-pointer text-xs text-muted-foreground">
-                Static values (non-secret)
+                Values stored on the runtime
               </summary>
               <FormField
                 label={
-                  draft.transport === 'stdio' ? 'Environment values (JSON)' : 'Header values (JSON)'
+                  draft.transport === 'stdio' ? 'Environment credentials' : 'Header credentials'
                 }
               >
-                <Textarea
-                  value={draft.transport === 'stdio' ? envValues : headerValues}
-                  onChange={(event) =>
-                    draft.transport === 'stdio'
-                      ? setEnvValues(event.target.value)
-                      : setHeaderValues(event.target.value)
-                  }
+                <CredentialEditor
+                  fields={draft.transport === 'stdio' ? envValues : headerValues}
+                  onChange={draft.transport === 'stdio' ? setEnvValues : setHeaderValues}
+                  disabled={busy}
                 />
               </FormField>
             </details>

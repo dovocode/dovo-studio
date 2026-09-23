@@ -1,9 +1,11 @@
+import { Effect, Option } from 'effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
 import type {
   ExpoSpeechRecognitionErrorEvent,
   ExpoSpeechRecognitionResultEvent,
   ExpoSpeechRecognitionOptions,
 } from 'expo-speech-recognition'
-
 export type DictationCallbacks = {
   onResult: (text: string) => void
   onFinish: (text: string) => void
@@ -30,8 +32,14 @@ export type DictationDriver = {
   available: () => boolean
   supportsOnDevice: () => boolean
   inactive: () => Promise<boolean>
-  locales: () => Promise<{ locales: string[]; installedLocales: string[] | null }>
-  permissions: (onDevice: boolean) => Promise<{ granted: boolean; restricted?: boolean }>
+  locales: () => Promise<{
+    locales: string[]
+    installedLocales: string[] | null
+  }>
+  permissions: (onDevice: boolean) => Promise<{
+    granted: boolean
+    restricted?: boolean
+  }>
   listen: (events: DictationEvents) => () => void
   start: (options: ExpoSpeechRecognitionOptions) => void
   stop: () => void
@@ -83,7 +91,6 @@ export function resolveDictationLocale(preferred: readonly string[], supported: 
   // An unavailable catalog must not block a service that can still recognize online.
   return preferences[0] ?? 'en-US'
 }
-
 export function dictationError(event: ExpoSpeechRecognitionErrorEvent): string {
   switch (event.error) {
     case 'not-allowed':
@@ -131,11 +138,17 @@ export function createDictation(
   const subscribers = new Set<() => void>()
   const update = (patch: Partial<DictationState>) => {
     if (disposed) return
-    state = { ...state, ...patch }
+    state = {
+      ...state,
+      ...patch,
+    }
     subscribers.forEach((notify) => notify())
   }
   const fail = (message: string, session?: Session, permissionDenied = false) => {
-    update({ error: message, permissionDenied })
+    update({
+      error: message,
+      permissionDenied,
+    })
     if (!disposed && session && !session.canceled) session.callbacks.onError?.(message)
   }
   const finish = (session: Session) => {
@@ -143,48 +156,68 @@ export function createDictation(
     current = null
     session.remove?.()
     if (driver && owners.get(driver) === session) owners.delete(driver)
-    update({ isRecording: false, isStarting: false, isStopping: false })
+    update({
+      isRecording: false,
+      isStarting: false,
+      isStopping: false,
+    })
     if (!disposed && !session.canceled && session.nativeStarted)
       session.callbacks.onFinish(session.text)
   }
-  const inspect = async () => {
-    if (!driver) return
-    try {
-      const available = driver.available()
-      const supported = driver.supportsOnDevice()
-      update({ available, onDeviceAvailable: supported ? null : false })
-      // Language support is advisory; a service that cannot report it can still recognize online.
-      // Some Android recognition services don't answer capability queries. Don't let
-      // optional offline-language discovery block recording indefinitely.
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const result = await Promise.race([
-        driver.locales().catch(() => null),
-        new Promise<null>((resolve) => {
-          timer = setTimeout(() => resolve(null), 3000)
-        }),
-      ]).finally(() => clearTimeout(timer))
-      const locale = resolveDictationLocale(preferredLocales(), result?.locales ?? [])
-      const onDevice = !supported
-        ? false
-        : result?.installedLocales
-          ? result.installedLocales.some(
-              (item) => normalizeLocale(item) === normalizeLocale(locale),
+  const inspectEffect = () => {
+    return mobileWorkflow(function* () {
+      if (!driver) return
+      return yield* mobileWorkflow(function* () {
+        const available = driver.available()
+        const supported = driver.supportsOnDevice()
+        update({
+          available,
+          onDeviceAvailable: supported ? null : false,
+        })
+        // Language support is advisory; a service that cannot report it can still recognize online.
+        // Some Android recognition services don't answer capability queries. Don't let
+        // optional offline-language discovery block recording indefinitely.
+        const result = yield* nativeEffect(() => driver.locales()).pipe(
+          Effect.timeoutOption('3 seconds'),
+          Effect.map(Option.getOrNull),
+          Effect.catchAll(() => Effect.succeed(null)),
+        )
+        const locale = resolveDictationLocale(preferredLocales(), result?.locales ?? [])
+        const onDevice = !supported
+          ? false
+          : result?.installedLocales
+            ? result.installedLocales.some(
+                (item) => normalizeLocale(item) === normalizeLocale(locale),
+              )
+            : null
+        update({
+          locale,
+          onDeviceAvailable: onDevice,
+          available: available || onDevice === true,
+        })
+      }).pipe(
+        Effect.catchAll((error) =>
+          nativeEffect(() => {
+            fail(
+              error instanceof Error
+                ? error.message
+                : 'Speech recognition is unavailable on this device.',
             )
-          : null
-      update({ locale, onDeviceAvailable: onDevice, available: available || onDevice === true })
-    } catch (error) {
-      fail(
-        error instanceof Error
-          ? error.message
-          : 'Speech recognition is unavailable on this device.',
+          }),
+        ),
       )
-    }
+    })
   }
+  const inspect = () => runClientEffect(inspectEffect())
   const cancel = () => {
     const session = current
     if (!session || !driver) return
     session.canceled = true
-    update({ isRecording: false, isStarting: false, isStopping: true })
+    update({
+      isRecording: false,
+      isStarting: false,
+      isStopping: true,
+    })
     if (session.nativeStarted) {
       try {
         driver.abort()
@@ -202,7 +235,11 @@ export function createDictation(
       return
     }
     if (state.isStopping) return
-    update({ isRecording: false, isStarting: false, isStopping: true })
+    update({
+      isRecording: false,
+      isStarting: false,
+      isStopping: true,
+    })
     try {
       driver.stop()
     } catch (error) {
@@ -214,124 +251,163 @@ export function createDictation(
       }
     }
   }
-  const start = async (callbacks: DictationCallbacks) => {
-    if (disposed || current) return
-    if (!driver) {
-      fail(
-        'Dictation requires the native Dovo app with speech recognition support. Install the latest app build.',
-      )
-      return
-    }
-    if (owners.has(driver)) {
-      fail('Another dictation is still finishing. Try again in a moment.')
-      return
-    }
-    const session: Session = {
-      callbacks,
-      final: [],
-      interim: '',
-      text: '',
-      canceled: false,
-      nativeStarted: false,
-    }
-    current = session
-    owners.set(driver, session)
-    update({ isStarting: true, error: null, permissionDenied: false })
-    try {
-      await inspect()
-      if (session.canceled || disposed) {
-        finish(session)
-        return
-      }
-      if (!state.available)
-        throw new Error(
-          'Speech recognition is unavailable. Enable dictation or a speech recognition service in system settings.',
-        )
-      const permission = await driver.permissions(state.onDeviceAvailable === true)
-      if (session.canceled || disposed) {
-        finish(session)
-        return
-      }
-      if (!permission.granted) {
-        fail(
-          permission.restricted
-            ? 'Speech recognition is restricted by your device settings.'
-            : 'Allow microphone and speech recognition for Dovo Studio in Settings.',
-          session,
-          true,
-        )
-        finish(session)
-        return
-      }
-      session.remove = driver.listen({
-        start: () => {
-          if (current === session && !session.canceled)
-            update({ isStarting: false, isRecording: true })
-        },
-        result: (event) => {
-          if (disposed || current !== session || session.canceled) return
-          const text = event.results[0]?.transcript.trim()
-          if (!text) return // iOS can emit an empty final after the final speech segment.
-          if (event.isFinal) {
-            session.final.push(text)
-            session.interim = ''
-          } else session.interim = text
-          session.text = [...session.final, session.interim].filter(Boolean).join(' ')
-          session.callbacks.onResult(session.text)
-        },
-        error: (event) => {
-          if (current !== session || session.canceled) return
-          fail(dictationError(event), session, event.error === 'not-allowed')
-          // iOS can fail while constructing its recognizer and emit error without end.
-          // Release ownership only once native teardown is confirmed, never on error alone.
-          void driver.inactive().then(
-            (inactive) => {
-              if (inactive) finish(session)
+  const start = (callbacks: DictationCallbacks) => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (disposed || current) return
+        if (!driver) {
+          fail(
+            'Dictation requires the native Dovo app with speech recognition support. Install the latest app build.',
+          )
+          return
+        }
+        if (owners.has(driver)) {
+          fail('Another dictation is still finishing. Try again in a moment.')
+          return
+        }
+        const session: Session = {
+          callbacks,
+          final: [],
+          interim: '',
+          text: '',
+          canceled: false,
+          nativeStarted: false,
+        }
+        current = session
+        owners.set(driver, session)
+        update({
+          isStarting: true,
+          error: null,
+          permissionDenied: false,
+        })
+        return yield* mobileWorkflow(function* () {
+          yield* inspectEffect()
+          if (session.canceled || disposed) {
+            finish(session)
+            return
+          }
+          if (!state.available)
+            return yield* Effect.fail(
+              new Error(
+                'Speech recognition is unavailable. Enable dictation or a speech recognition service in system settings.',
+              ),
+            )
+          const permission = yield* nativeEffect(() =>
+            driver.permissions(state.onDeviceAvailable === true),
+          )
+          if (session.canceled || disposed) {
+            finish(session)
+            return
+          }
+          if (!permission.granted) {
+            fail(
+              permission.restricted
+                ? 'Speech recognition is restricted by your device settings.'
+                : 'Allow microphone and speech recognition for Dovo Studio in Settings.',
+              session,
+              true,
+            )
+            finish(session)
+            return
+          }
+          session.remove = driver.listen({
+            start: () => {
+              if (current === session && !session.canceled)
+                update({
+                  isStarting: false,
+                  isRecording: true,
+                })
             },
-            (error: unknown) => {
+            result: (event) => {
+              if (disposed || current !== session || session.canceled) return
+              const text = event.results[0]?.transcript.trim()
+              if (!text) return // iOS can emit an empty final after the final speech segment.
+              if (event.isFinal) {
+                session.final.push(text)
+                session.interim = ''
+              } else session.interim = text
+              session.text = [...session.final, session.interim].filter(Boolean).join(' ')
+              session.callbacks.onResult(session.text)
+            },
+            error: (event) => {
               if (current !== session || session.canceled) return
-              fail(
-                `${dictationError(event)} Could not check whether dictation stopped: ${error instanceof Error ? error.message : 'native speech service unavailable'}`,
-                session,
-                event.error === 'not-allowed',
+              fail(dictationError(event), session, event.error === 'not-allowed')
+              // iOS can fail while constructing its recognizer and emit error without end.
+              // Release ownership only once native teardown is confirmed, never on error alone.
+              void runClientEffect(
+                nativeEffect(() => driver.inactive()).pipe(
+                  Effect.matchEffect({
+                    onSuccess: (inactive) =>
+                      nativeEffect(() => {
+                        if (inactive) finish(session)
+                      }),
+                    onFailure: (error: unknown) =>
+                      nativeEffect(() => {
+                        if (current !== session || session.canceled) return
+                        fail(
+                          `${dictationError(event)} Could not check whether dictation stopped: ${error instanceof Error ? error.message : 'native speech service unavailable'}`,
+                          session,
+                          event.error === 'not-allowed',
+                        )
+                      }),
+                  }),
+                ),
               )
             },
-          )
-        },
-        audioend: () => {
-          if (current === session)
-            update({ isRecording: false, isStarting: false, isStopping: true })
-        },
-        end: () => finish(session),
-      })
-      session.nativeStarted = true
-      driver.start({
-        lang: state.locale,
-        interimResults: true,
-        continuous,
-        maxAlternatives: 1,
-        addsPunctuation: true,
-        requiresOnDeviceRecognition: state.onDeviceAvailable === true,
-        recordingOptions: { persist: false },
-        iosTaskHint: 'dictation',
-      })
-    } catch (error) {
-      if (!session.canceled && current === session)
-        fail(error instanceof Error ? error.message : 'Could not start dictation.', session)
-      finish(session)
-    }
+            audioend: () => {
+              if (current === session)
+                update({
+                  isRecording: false,
+                  isStarting: false,
+                  isStopping: true,
+                })
+            },
+            end: () => finish(session),
+          })
+          session.nativeStarted = true
+          driver.start({
+            lang: state.locale,
+            interimResults: true,
+            continuous,
+            maxAlternatives: 1,
+            addsPunctuation: true,
+            requiresOnDeviceRecognition: state.onDeviceAvailable === true,
+            recordingOptions: {
+              persist: false,
+            },
+            iosTaskHint: 'dictation',
+          })
+        }).pipe(
+          Effect.catchAll((error) =>
+            nativeEffect(() => {
+              if (!session.canceled && current === session)
+                fail(error instanceof Error ? error.message : 'Could not start dictation.', session)
+              finish(session)
+            }),
+          ),
+        )
+      }),
+    )
   }
   return {
     activate: () => {
       // React StrictMode replays effect setup/cleanup with the same controller instance.
       disposed = false
-      update({ isStarting: false, isRecording: false, isStopping: !!current })
+      update({
+        isStarting: false,
+        isRecording: false,
+        isStopping: !!current,
+      })
     },
     inspect,
     start,
     stop,
     cancel,
-    clearError: () => update({ error: null, permissionDenied: false }),
+    clearError: () =>
+      update({
+        error: null,
+        permissionDenied: false,
+      }),
     getSnapshot: () => state,
     subscribe: (notify: () => void) => {
       subscribers.add(notify)

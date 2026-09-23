@@ -1,7 +1,11 @@
-import { useEffect, useState } from 'react'
+import { mobileWorkflow } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/application-state'
+import { mutableStruct } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
+import { useEffect } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/text'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import {
   accessModes,
   defaultTaskHarness,
@@ -39,15 +43,15 @@ export function HarnessSettings({
   inline?: boolean
   onBusyChange?: (busy: boolean) => void
 }) {
-  const { snapshot, call, connected } = useRuntime(),
+  const { snapshot, connected, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   useEffect(() => {
     // An inline editor must keep its enclosing sheet mounted until saving finishes.
     onBusyChange?.(busy)
     return () => onBusyChange?.(false)
   }, [busy, onBusyChange])
-  const [selection, setSelection] = useState(() => taskHarnessSelection(task))
-  const [agent, setAgent] = useState<Agent>(
+  const [selection, setSelection] = useApplicationState(() => taskHarnessSelection(task))
+  const [agent, setAgent] = useApplicationState<Agent>(
     () =>
       resolveTaskAgent(task, snapshot?.workspace.agents ?? []) ?? {
         ...defaultTaskHarness('codex'),
@@ -104,9 +108,15 @@ export function HarnessSettings({
         disabled={controlsDisabled || !selectionAllowed}
         items={accessModes
           .filter((mode) => supportsAccess(agent.provider, mode.id))
-          .map((mode) => ({ id: mode.id, name: mode.name }))}
+          .map((mode) => ({
+            id: mode.id,
+            name: mode.name,
+          }))}
         onChange={(value) =>
-          setAgent({ ...agent, permission: agentSchema.shape.permission.parse(value) })
+          setAgent({
+            ...agent,
+            permission: decode(agentSchema.fields.permission, value),
+          })
         }
       />
       <Text style={styles.muted}>
@@ -117,7 +127,12 @@ export function HarnessSettings({
           label={agent.provider === 'acp' ? 'ACP executable' : 'OpenCode server URL'}
           value={agent.endpoint}
           editable={!controlsDisabled && selectionAllowed}
-          onChangeText={(endpoint) => setAgent({ ...agent, endpoint })}
+          onChangeText={(endpoint) =>
+            setAgent({
+              ...agent,
+              endpoint,
+            })
+          }
         />
       )}
       {!custom && agent.provider === 'acp' && (
@@ -126,7 +141,12 @@ export function HarnessSettings({
           value={agent.args?.join('\n') ?? ''}
           multiline
           editable={!controlsDisabled && selectionAllowed}
-          onChangeText={(value) => setAgent({ ...agent, args: value.split('\n').filter(Boolean) })}
+          onChangeText={(value) =>
+            setAgent({
+              ...agent,
+              args: value.split('\n').filter(Boolean),
+            })
+          }
         />
       )}
       {task.status === 'running' ? (
@@ -157,26 +177,36 @@ export function HarnessSettings({
           !supportsAccess(agent.provider, agent.permission)
         }
         onPress={() =>
-          act(async () => {
-            if (controlsDisabled || !selectionAllowed) return
-            await call(
-              '/api/workspace',
-              {
-                collection: 'tasks',
-                id: task.id,
-                changes: taskHarnessChanges(task, selection, agent),
-              },
-              z.object({ revision: z.number() }),
-              'PATCH',
-            )
-            onClose()
-          })
+          act(() =>
+            mobileWorkflow(function* () {
+              if (controlsDisabled || !selectionAllowed) return
+              yield* callEffect(
+                '/api/workspace',
+                {
+                  collection: 'tasks',
+                  id: task.id,
+                  changes: taskHarnessChanges(task, selection, agent),
+                },
+                mutableStruct({
+                  revision: Schema.Number.pipe(Schema.finite()),
+                }),
+                'PATCH',
+              )
+              onClose()
+            }),
+          )
         }
       />
     </>
   )
   return inline ? (
-    <View style={{ gap: 12 }}>{content}</View>
+    <View
+      style={{
+        gap: 12,
+      }}
+    >
+      {content}
+    </View>
   ) : (
     <Sheet title="Agent & model" onClose={onClose} busy={busy}>
       {content}

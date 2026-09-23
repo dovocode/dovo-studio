@@ -1,21 +1,22 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { githubRepositoryListRequestSchema, type GithubRepositoryPage } from '@dovo/protocol'
 import type { GitService } from './git.js'
 import { HttpError, errorMessage } from '../errors.js'
-
-const repositoriesSchema = z.array(
-  z.object({
-    name: z.string(),
-    full_name: z.string(),
-    description: z.string().nullable(),
-    private: z.boolean(),
+const repositoriesSchema = mutableArray(
+  mutableStruct({
+    name: Schema.String,
+    full_name: Schema.String,
+    description: Schema.NullOr(Schema.String),
+    private: Schema.Boolean,
   }),
 )
 export async function listGithubRepositories(
   git: GitService,
   value: unknown,
 ): Promise<GithubRepositoryPage> {
-  const { page } = githubRepositoryListRequestSchema.parse(value)
+  const { page } = decode(githubRepositoryListRequestSchema, value)
   try {
     const result = await git.githubAccount([
       'api',
@@ -35,7 +36,7 @@ export async function listGithubRepositories(
       '-f',
       `page=${page}`,
     ])
-    const repositories = repositoriesSchema.parse(JSON.parse(result))
+    const repositories = decode(repositoriesSchema, JSON.parse(result))
     return {
       repositories: repositories.map((repo) => ({
         name: repo.name,

@@ -1,7 +1,11 @@
+import { mobileWorkflow } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { useApplicationState } from '../runtime/application-state'
+import { mutableStruct } from '@dovo/protocol'
 import { Keyboard } from 'react-native'
 import { randomUUID } from 'expo-crypto'
-import { useEffect, useRef, useState } from 'react'
-import { z } from 'zod'
+import { useEffect, useRef } from 'react'
+import { Schema, Effect } from 'effect'
 import {
   responses,
   generatedTitleSchema,
@@ -16,37 +20,53 @@ import { useDraft } from './use-draft'
 import { useAttachmentPicker } from './attachment-picker'
 import { useComposerDictation } from './use-composer-dictation'
 import { createSendAttempts, type SendAttempt } from './send-attempts'
-
 const sendAttempts = createSendAttempts(randomUUID)
-
 export function useConversationActions(task: Task) {
-  const { call, read, connected, snapshot, activeId } = useRuntime(),
+  const { call, connected, snapshot, activeId, readEffect, callEffect } = useRuntime(),
     storedDraft = useDraft(task.id, task.draft),
     action = useAction(),
     cancellation = useAction()
   const { busy } = action
   const failedSend = useRef<SendAttempt | null>(null)
-  const run = (work: () => Promise<unknown>) => {
+  const run = (work: () => Promise<unknown> | Effect.Effect<unknown, unknown>) => {
     failedSend.current = null
     return action.run(work)
   }
-  const act = (work: () => Promise<unknown>) => {
+  const act = (work: () => Promise<unknown> | Effect.Effect<unknown, unknown>) => {
     void run(work)
   }
-  const scope = { runtimeId: activeId ?? '', taskId: task.id }
+  const scope = {
+    runtimeId: activeId ?? '',
+    taskId: task.id,
+  }
   const updateDraft = (text: string) => {
     sendAttempts.textChanged(scope, text)
     storedDraft.update(text)
   }
   const dictation = useComposerDictation({
-    draft: { ...storedDraft, update: updateDraft },
+    draft: {
+      ...storedDraft,
+      update: updateDraft,
+    },
     connected,
-    cleanup: async (text) =>
-      (await read('/api/tasks/dictation/cleanup', { text }, cleanedDictationSchema)).text,
+    cleanup: (text) => {
+      return mobileWorkflow(function* () {
+        return (yield* readEffect(
+          '/api/tasks/dictation/cleanup',
+          {
+            text,
+          },
+          cleanedDictationSchema,
+        )).text
+      })
+    },
   })
-  const draft = { ...storedDraft, update: dictation.update }
+  const draft = {
+    ...storedDraft,
+    update: dictation.update,
+  }
   const attachmentPicker = useAttachmentPicker(task.id)
-  const [attachmentPreviewBusy, setAttaching] = useState(false)
+  const [attachmentPreviewBusy, setAttaching] = useApplicationState(false)
   const attaching = attachmentPreviewBusy || attachmentPicker.busy
   useEffect(() => {
     if (!storedDraft.ready) return
@@ -76,24 +96,44 @@ export function useConversationActions(task: Task) {
     !task.example &&
     !!task.repositoryId &&
     !!agent
-  const patch = (changes: Record<string, { before: unknown; after: unknown }>) =>
-    call(
+  const patchEffect = (
+    changes: Record<
+      string,
+      {
+        before: unknown
+        after: unknown
+      }
+    >,
+  ) =>
+    callEffect(
       '/api/workspace',
-      { collection: 'tasks', id: task.id, changes },
-      z.object({ revision: z.number() }),
+      {
+        collection: 'tasks',
+        id: task.id,
+        changes,
+      },
+      mutableStruct({
+        revision: Schema.Number.pipe(Schema.finite()),
+      }),
       'PATCH',
     )
-  const submit = async (mode: 'queue' | 'steer' = 'queue', input = draft.text) => {
-    Keyboard.dismiss()
-    dictation.reset()
-    const text = input.trim(),
-      attachmentIds = task.draftAttachments?.map((file) => file.id) ?? []
-    const attempt = sendAttempts.begin(scope, { text, attachmentIds, mode })
-    if (firstMessage) {
-      const title =
-        attempt.title ??
-        (
-          await call(
+  const patch = (changes: Parameters<typeof patchEffect>[0]) =>
+    runClientEffect(patchEffect(changes))
+  const submit = (mode: 'queue' | 'steer' = 'queue', input = draft.text) => {
+    return mobileWorkflow(function* () {
+      Keyboard.dismiss()
+      dictation.reset()
+      const text = input.trim(),
+        attachmentIds = task.draftAttachments?.map((file) => file.id) ?? []
+      const attempt = sendAttempts.begin(scope, {
+        text,
+        attachmentIds,
+        mode,
+      })
+      if (firstMessage) {
+        const title =
+          attempt.title ??
+          (yield* callEffect(
             '/api/tasks/title',
             {
               text:
@@ -101,29 +141,54 @@ export function useConversationActions(task: Task) {
                 `Work with attached files: ${task.draftAttachments?.map((file) => file.name).join(', ')}`,
             },
             generatedTitleSchema,
-          )
-        ).title
-      sendAttempts.setTitle(scope, attempt.id, title)
-      await patch({ title: { before: task.title, after: title } })
-    }
-    try {
-      const clearDraft = await sendAttempts.deliver(scope, attempt, () =>
-        call(
-          mode === 'steer' ? '/api/tasks/steer' : '/api/tasks/message',
-          { id: task.id, messageId: attempt.id, text, attachmentIds },
-          responses.ok,
+          )).title
+        sendAttempts.setTitle(scope, attempt.id, title)
+        yield* patchEffect({
+          title: {
+            before: task.title,
+            after: title,
+          },
+        })
+      }
+      return yield* mobileWorkflow(function* () {
+        const clearDraft = yield* sendAttempts.deliverEffect(
+          scope,
+          attempt,
+          callEffect(
+            mode === 'steer' ? '/api/tasks/steer' : '/api/tasks/message',
+            {
+              id: task.id,
+              messageId: attempt.id,
+              text,
+              attachmentIds,
+            },
+            responses.ok,
+          ),
+        )
+        if (clearDraft) draft.update('')
+      }).pipe(
+        Effect.catchAll((error) =>
+          mobileWorkflow(function* () {
+            failedSend.current = attempt
+            return yield* Effect.fail(error)
+          }),
         ),
       )
-      if (clearDraft) draft.update('')
-    } catch (error) {
-      failedSend.current = attempt
-      throw error
-    }
+    })
   }
   return {
     call,
     stopping: cancellation.busy,
-    stop: () => cancellation.run(() => call('/api/tasks/cancel', { id: task.id }, responses.ok)),
+    stop: () =>
+      cancellation.run(() =>
+        callEffect(
+          '/api/tasks/cancel',
+          {
+            id: task.id,
+          },
+          responses.ok,
+        ),
+      ),
     connected,
     snapshot,
     draft,

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { Schema } from 'effect'
 import { Check, ChevronDown, Folder, GitBranch } from 'lucide-react'
 import {
   branchesSchema,
@@ -12,13 +13,15 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
   const { workspace, setWorkspace, request, connected } = useWorkspace()
   const editable = canChangeTaskCheckout(task)
   const repository = workspace.repositories.find((repo) => repo.id === task.repositoryId)
-  const [branches, setBranches] = useState<ReturnType<typeof branchesSchema.parse> | null>(null)
-  const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [branches, setBranches] = useApplicationState<Schema.Schema.Type<
+    typeof branchesSchema
+  > | null>(null)
+  const [open, setOpen] = useApplicationState(false)
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   const itemClass =
     'flex cursor-default items-center justify-between gap-4 rounded-md px-3 py-2 text-xs outline-none focus:bg-accent data-[state=checked]:bg-accent'
-  const act = async (operation: () => Promise<ReturnType<typeof branchesSchema.parse>>) => {
+  const act = async (operation: () => Promise<Schema.Schema.Type<typeof branchesSchema>>) => {
     setBusy(true)
     setError('')
     try {
@@ -30,7 +33,7 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
     }
   }
   return (
-    <div className="relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[744px] flex-wrap items-center gap-x-2 gap-y-1 rounded-b-2xl border border-t-0 bg-muted/20 px-2 pb-1.5 pt-4 text-muted-foreground">
+    <div className="relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[744px] flex-wrap items-center gap-x-2 gap-y-1 rounded-b-md border border-t-0 bg-muted/20 px-2 pb-1.5 pt-4 text-muted-foreground">
       {editable ? (
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
@@ -61,7 +64,12 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
                   if (execution === 'main' || execution === 'worktree')
                     setWorkspace((w) =>
                       updateTask(w, task.id, (t) =>
-                        canChangeTaskCheckout(t) ? { ...t, execution } : t,
+                        canChangeTaskCheckout(t)
+                          ? {
+                              ...t,
+                              execution,
+                            }
+                          : t,
                       ),
                     )
                 }}
@@ -126,7 +134,10 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
                     setWorkspace((w) =>
                       updateTask(w, task.id, (t) =>
                         canChangeTaskCheckout(t) && !t.workItem
-                          ? { ...t, repositoryId: repo.id }
+                          ? {
+                              ...t,
+                              repositoryId: repo.id,
+                            }
                           : t,
                       ),
                     )
@@ -147,7 +158,10 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
             void act(() =>
               request(
                 '/api/scm/branches',
-                { repositoryId: task.repositoryId, taskId: task.id },
+                {
+                  repositoryId: task.repositoryId,
+                  taskId: task.id,
+                },
                 branchesSchema,
               ),
             )

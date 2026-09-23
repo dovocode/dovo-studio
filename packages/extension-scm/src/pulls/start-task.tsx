@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
 import { pullTaskResponse, useStudioHost, useWorkspace, type PullDetail } from '@dovo/studio-core'
 import {
   Button,
@@ -24,8 +24,8 @@ export function StartPullTask({
   const objective =
     initialObjective ??
     'Review this PR for correctness, regressions, and missing tests. Report concrete findings without changing files.'
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
+  const [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const create = async () => {
     if (busy || !connected) return
     setBusy(true)
@@ -33,10 +33,19 @@ export function StartPullTask({
     try {
       const result = await request(
         '/api/scm/pulls/task',
-        { repositoryId, number: pull.number, headSha: pull.headSha, objective, run: false },
+        {
+          repositoryId,
+          number: pull.number,
+          headSha: pull.headSha,
+          objective,
+          run: false,
+        },
         pullTaskResponse,
       )
-      host.navigate({ viewId: 'tasks', entityId: result.id })
+      host.navigate({
+        viewId: 'tasks',
+        entityId: result.id,
+      })
       onClose()
     } catch (e) {
       setError(String(e))

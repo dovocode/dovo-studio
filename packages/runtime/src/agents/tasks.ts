@@ -1,3 +1,6 @@
+import { Cause, Deferred, Effect, Fiber, Layer, ManagedRuntime } from 'effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { decode } from '@dovo/protocol'
 import type { Attachments } from '../storage/attachments.js'
 import { TaskTurnRunner } from './run-turn.js'
 import { TaskQueue } from './task-queue.js'
@@ -12,14 +15,23 @@ import { WorkspaceStore } from '../storage/workspace.js'
 import { GitService } from '../scm/git.js'
 import { AgentRegistry } from './registry.js'
 import { Approvals } from './approvals.js'
-import { HttpError, errorMessage } from '../errors.js'
+import {
+  HttpError,
+  errorMessage,
+  runtimeFailure,
+  runtimeOperation,
+  type RuntimeFailure,
+} from '../errors.js'
 type Running = {
   controller: AbortController
-  done: Promise<void>
+  fiber?: Fiber.RuntimeFiber<void, RuntimeFailure>
   cwd?: string
   steer?: (messageId: string) => Promise<void>
 }
 export class Tasks {
+  private readonly executor = ManagedRuntime.make(Layer.empty)
+  private stopping = false
+  private restartLease: { id: string; expiresAt: number } | undefined
   private steering = new Map<string, symbol>()
   private checkoutMutations = new Set<string>()
   private running = new Map<string, Running>()
@@ -54,7 +66,7 @@ export class Tasks {
       throw new HttpError(409, 'Stop the active turn before archiving or deleting this thread.')
   }
   feedback(value: unknown) {
-    const input = taskFeedbackSchema.parse(value)
+    const input = decode(taskFeedbackSchema, value)
     const task = this.store.task(input.id)
     const file = task.files.find((f) => f.path === input.path)
     const lines = (input.side === 'additions' ? file?.after : file?.before)?.split('\n')
@@ -78,205 +90,409 @@ export class Tasks {
         },
       ],
     }))
-    return { ok: true }
-  }
-  async send(id: string, messageId: string, text: string, attachmentIds: string[] = []) {
-    this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds))
-    const queued = this.store.task(id).queue?.some((m) => m.id === messageId)
-    if (queued && !this.running.has(id) && !this.store.task(id).queuePaused) {
-      try {
-        await this.start(id)
-      } catch {
-        /* Accepted input remains queued; task.error explains why execution paused. */
-      }
+    return {
+      ok: true,
     }
-    return { ok: true }
   }
-  async steer(id: string, messageId: string, text: string, attachmentIds: string[] = []) {
-    const task = this.store.task(id)
-    if ([...task.messages, ...(task.queue ?? [])].some((m) => m.id === messageId)) {
+  sendEffect(id: string, messageId: string, text: string, attachmentIds: string[] = []) {
+    return runtimeOperation(() => {
       this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds))
-      return { ok: true }
-    }
-    if (this.steering.has(id))
-      throw new HttpError(409, 'A steering request is already being applied')
-    const run = this.running.get(id)
-    if (!run) throw new HttpError(409, 'The turn finished. Send this as a follow-up instead.')
-    const nativeSteer = run.steer
-    const paused = this.store.task(id).queuePaused ?? false
-    if (!this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds)))
-      return { ok: true }
-    const token = Symbol()
-    this.steering.set(id, token)
-    this.store.updateTask(id, (t) => ({
-      ...t,
-      queuePaused: nativeSteer ? t.queuePaused : true,
-      queue: [
-        ...(t.queue ?? []).filter((m) => m.id === messageId),
-        ...(t.queue ?? []).filter((m) => m.id !== messageId),
-      ],
-    }))
-    if (nativeSteer) {
-      try {
-        await nativeSteer(messageId)
-      } catch (error) {
-        // Keep unconfirmed input queued and paused; never silently replay it into the harness.
-        this.store.updateTask(id, (t) => ({
-          ...t,
-          queuePaused: true,
-          error: `Steering was not confirmed. Your message is queued: ${errorMessage(error)}`,
-        }))
-      } finally {
-        if (this.steering.get(id) === token) this.steering.delete(id)
+      return (
+        this.store.task(id).queue?.some((message) => message.id === messageId) &&
+        !this.running.has(id) &&
+        !this.store.task(id).queuePaused
+      )
+    }).pipe(
+      Effect.flatMap((start) =>
+        start
+          ? this.startEffect(id).pipe(
+              // Input is accepted durably; start failures are persisted on the task.
+              Effect.catchAll(() => Effect.void),
+              Effect.asVoid,
+            )
+          : Effect.void,
+      ),
+      Effect.as({ ok: true }),
+    )
+  }
+  send(id: string, messageId: string, text: string, attachmentIds: string[] = []) {
+    return runClientEffect(this.sendEffect(id, messageId, text, attachmentIds))
+  }
+  steerEffect(id: string, messageId: string, text: string, attachmentIds: string[] = []) {
+    return runtimeOperation(() => {
+      const task = this.store.task(id)
+      if ([...task.messages, ...(task.queue ?? [])].some((message) => message.id === messageId)) {
+        this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds))
+        return null
       }
-      return { ok: true }
-    }
-    run.controller.abort(new Error('Interrupted to apply steering'))
-    try {
-      await run.done.catch(() => {
-        /* The interrupted turn records its checkpoint and status. */
-      })
-      if (this.steering.get(id) === token && this.store.task(id).queue?.[0]?.id === messageId)
-        await this.start(id, paused)
-      return { ok: true }
-    } finally {
-      if (this.steering.get(id) === token) this.steering.delete(id)
-    }
+      if (this.steering.has(id))
+        throw new HttpError(409, 'A steering request is already being applied')
+      const run = this.running.get(id)
+      if (!run) throw new HttpError(409, 'The turn finished. Send this as a follow-up instead.')
+      const nativeSteer = run.steer
+      const paused = this.store.task(id).queuePaused ?? false
+      if (!this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds)))
+        return null
+      const token = Symbol()
+      this.steering.set(id, token)
+      this.store.updateTask(id, (task) => ({
+        ...task,
+        queuePaused: nativeSteer ? task.queuePaused : true,
+        queue: [
+          ...(task.queue ?? []).filter((message) => message.id === messageId),
+          ...(task.queue ?? []).filter((message) => message.id !== messageId),
+        ],
+      }))
+      return { run, nativeSteer, paused, token }
+    }).pipe(
+      Effect.flatMap((prepared) => {
+        if (!prepared) return Effect.succeed({ ok: true })
+        const { run, nativeSteer, paused, token } = prepared
+        const operation = nativeSteer
+          ? runtimeOperation(() => nativeSteer(messageId)).pipe(
+              Effect.catchAll((error) =>
+                Effect.sync(() =>
+                  this.store.updateTask(id, (task) => ({
+                    ...task,
+                    queuePaused: true,
+                    error: `Steering was not confirmed. Your message is queued: ${errorMessage(error)}`,
+                  })),
+                ),
+              ),
+              Effect.asVoid,
+            )
+          : Effect.gen(this, function* () {
+              run.controller.abort(new Error('Interrupted to apply steering'))
+              if (run.fiber) yield* Fiber.await(run.fiber)
+              if (
+                this.steering.get(id) === token &&
+                this.store.task(id).queue?.[0]?.id === messageId
+              )
+                yield* this.startEffect(id, paused)
+            })
+        return operation.pipe(
+          Effect.as({ ok: true }),
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (this.steering.get(id) === token) this.steering.delete(id)
+            }),
+          ),
+        )
+      }),
+      Effect.uninterruptible,
+    )
+  }
+  steer(id: string, messageId: string, text: string, attachmentIds: string[] = []) {
+    return runClientEffect(this.steerEffect(id, messageId, text, attachmentIds))
+  }
+  prepareRestart() {
+    if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
+      throw new HttpError(409, 'A runtime restart is already in progress')
+    if (this.running.size)
+      throw new HttpError(409, 'Finish or stop running tasks before changing network access.')
+    this.restartLease = { id: randomUUID(), expiresAt: Date.now() + 60000 }
+    return { id: this.restartLease.id }
+  }
+  cancelRestart(id: string) {
+    if (this.restartLease?.id === id) this.restartLease = undefined
+    return { ok: true }
+  }
+  startEffect(
+    id: string,
+    pauseQueue = false,
+    admit?: () => boolean,
+  ): Effect.Effect<{ completion: Effect.Effect<void, RuntimeFailure> }, RuntimeFailure> {
+    return Effect.suspend(() => {
+      if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
+        return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
+      return runtimeOperation(() => this.store.task(id)).pipe(
+        Effect.flatMap((task) => {
+          // The native boundary above yields. Admission must be rechecked in the
+          // same synchronous turn that registers the worker with its executor.
+          if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
+            return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
+          if (admit && !admit()) {
+            const completion: Effect.Effect<void, RuntimeFailure> = Effect.void
+            return Effect.succeed({ completion })
+          }
+          if (task.example || task.archived)
+            return Effect.fail(new HttpError(400, 'Restore this task before running it'))
+          if (this.running.has(id))
+            return Effect.fail(new HttpError(409, 'This task is already running'))
+          let recoveringQueue = task.restartRecovery?.kind === 'queue'
+          const recoveringTurn = task.restartRecovery?.kind === 'turn'
+          let resumeInterruptedTurn = recoveringTurn
+          const ready = Effect.runSync(Deferred.make<void, RuntimeFailure>())
+          const run: Running = { controller: new AbortController() }
+          this.store.updateTask(id, (task) => ({
+            ...task,
+            status: 'running',
+            restartRecovery: undefined,
+            queuePaused: pauseQueue,
+            error: undefined,
+            activity: 'Preparing checkout',
+          }))
+          this.running.set(id, run)
+          const work = Effect.gen(this, function* () {
+            const cwd = yield* runtimeOperation(() => this.checkouts.directory(id))
+            yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
+            if ([...this.running.values()].some((other) => other !== run && other.cwd === cwd))
+              return yield* Effect.fail(
+                new HttpError(
+                  409,
+                  'Another task is running in this repository. Wait or cancel it first.',
+                ),
+              )
+            if (this.checkoutMutations.has(cwd))
+              return yield* Effect.fail(
+                new HttpError(
+                  409,
+                  'This checkout is switching branches. Try again after it finishes.',
+                ),
+              )
+            run.cwd = cwd
+            yield* Deferred.succeed(ready, undefined)
+            do {
+              yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
+              if (recoveringQueue && !this.store.task(id).queue?.length) {
+                this.store.updateTask(id, (current) => ({
+                  ...current,
+                  status: task.status,
+                  activity: undefined,
+                  queuePaused: true,
+                }))
+                return
+              }
+              recoveringQueue = false
+              const continuing = resumeInterruptedTurn
+              if (!resumeInterruptedTurn) this.queue.take(id)
+              resumeInterruptedTurn = false
+              yield* this.runner.runEffect(
+                id,
+                cwd,
+                run.controller,
+                (steer) => {
+                  run.steer = steer
+                },
+                (prompt) => {
+                  // Message forms outlive the turn; Stop and runtime shutdown still dismiss them.
+                  const deliver = async (
+                    answers: import('@dovo/protocol').QuestionAnswers | null,
+                  ) => {
+                    try {
+                      const text = answers
+                        ? prompt.questions
+                            .map((q) => `${q.question}\n${(answers[q.id] ?? []).join('\n')}`)
+                            .join('\n\n')
+                        : `The user declined to answer:\n${prompt.questions.map((q) => q.question).join('\n')}`
+                      const messageId = randomUUID()
+                      if (this.running.get(id)?.steer && !this.steering.has(id))
+                        await this.steer(id, messageId, text)
+                      else await this.send(id, messageId, text)
+                    } catch (error) {
+                      this.store.updateTask(id, (t) => ({
+                        ...t,
+                        error: `Could not deliver the form answer: ${errorMessage(error)}`,
+                      }))
+                    }
+                  }
+                  void this.questions.request(
+                    id,
+                    prompt,
+                    run.controller.signal,
+                    undefined,
+                    (answers) => {
+                      void deliver(answers)
+                    },
+                  )
+                },
+                continuing,
+              )
+            } while (!this.store.task(id).queuePaused && this.store.task(id).queue?.length)
+          }).pipe(
+            Effect.tapErrorCause((cause) =>
+              Effect.gen(this, function* () {
+                const error = runtimeFailure(Cause.squash(cause))
+                this.store.updateTask(id, (task) => ({
+                  ...task,
+                  status: run.controller.signal.aborted ? 'cancelled' : 'failed',
+                  queuePaused: true,
+                  restartRecovery:
+                    !run.controller.signal.aborted && recoveringTurn
+                      ? { kind: 'turn', automatic: false }
+                      : task.restartRecovery,
+                  activity: undefined,
+                  error: errorMessage(run.controller.signal.reason ?? error),
+                }))
+                yield* Deferred.fail(ready, error)
+              }),
+            ),
+            Effect.ensuring(
+              Effect.gen(this, function* () {
+                // Let already-delivered input enqueue before releasing this task's ownership.
+                yield* Effect.yieldNow()
+                this.running.delete(id)
+                const next = this.store.task(id)
+                if (
+                  !this.stopping &&
+                  !run.controller.signal.aborted &&
+                  !next.queuePaused &&
+                  next.queue?.length
+                ) {
+                  const resumed = yield* this.startEffect(id).pipe(Effect.orDie)
+                  yield* resumed.completion.pipe(Effect.orDie)
+                }
+              }),
+            ),
+            // Provider SDKs use AbortSignal. Stop aborts that signal, then we await their
+            // checkpoint and cleanup before allowing the database scope to close.
+            Effect.uninterruptible,
+          )
+          const fiber = this.executor.runFork(work)
+          run.fiber = fiber
+          // The executor can fail a worker before its program starts. Never leave
+          // an accepted request waiting on a Deferred only that program can settle.
+          fiber.addObserver((exit) => {
+            if (exit._tag === 'Failure') Effect.runSync(Deferred.failCause(ready, exit.cause))
+          })
+          return Deferred.await(ready).pipe(Effect.as({ completion: Fiber.join(fiber) }))
+        }),
+      )
+    })
   }
   async start(id: string, pauseQueue = false): Promise<{ done: Promise<void> }> {
-    const task = this.store.task(id)
-    if (task.example || task.archived)
-      throw new HttpError(400, 'Restore this task before running it')
-    if (this.running.has(id)) throw new HttpError(409, 'This task is already running')
-    let resolveReady = () => {},
-      rejectReady = (_error: unknown) => {}
-    const ready = new Promise<void>((resolve, reject) => {
-      resolveReady = resolve
-      rejectReady = reject
-    })
-    const run: Running = { controller: new AbortController(), done: Promise.resolve() }
-    this.running.set(id, run)
-    this.store.updateTask(id, (t) => ({
-      ...t,
-      status: 'running',
-      queuePaused: pauseQueue,
-      error: undefined,
-      activity: 'Preparing checkout',
-    }))
-    run.done = Promise.resolve()
-      .then(async () => {
-        const cwd = await this.checkouts.directory(id)
-        run.controller.signal.throwIfAborted()
-        if ([...this.running.values()].some((other) => other !== run && other.cwd === cwd))
-          throw new HttpError(
-            409,
-            'Another task is running in this repository. Wait or cancel it first.',
-          )
-        if (this.checkoutMutations.has(cwd))
-          throw new HttpError(
-            409,
-            'This checkout is switching branches. Try again after it finishes.',
-          )
-        run.cwd = cwd
-        resolveReady()
-        do {
-          run.controller.signal.throwIfAborted()
-          this.queue.take(id)
-          await this.runner.run(
-            id,
-            cwd,
-            run.controller,
-            (steer) => {
-              run.steer = steer
-            },
-            (prompt) => {
-              // Message forms outlive the turn; Stop and runtime shutdown still dismiss them.
-              const deliver = async (answers: import('@dovo/protocol').QuestionAnswers | null) => {
-                try {
-                  const text = answers
-                    ? prompt.questions
-                        .map((q) => `${q.question}\n${(answers[q.id] ?? []).join('\n')}`)
-                        .join('\n\n')
-                    : `The user declined to answer:\n${prompt.questions.map((q) => q.question).join('\n')}`
-                  const messageId = randomUUID()
-                  if (this.running.get(id)?.steer && !this.steering.has(id))
-                    await this.steer(id, messageId, text)
-                  else await this.send(id, messageId, text)
-                } catch (error) {
-                  this.store.updateTask(id, (t) => ({
-                    ...t,
-                    error: `Could not deliver the form answer: ${errorMessage(error)}`,
-                  }))
-                }
-              }
-              void this.questions.request(
-                id,
-                prompt,
-                run.controller.signal,
-                undefined,
-                (answers) => {
-                  void deliver(answers)
-                },
-              )
-            },
-          )
-        } while (!this.store.task(id).queuePaused && this.store.task(id).queue?.length)
-      })
-      .catch((error) => {
-        this.store.updateTask(id, (t) => ({
-          ...t,
-          status: run.controller.signal.aborted ? 'cancelled' : 'failed',
-          queuePaused: true,
-          activity: undefined,
-          error: errorMessage(run.controller.signal.reason ?? error),
-        }))
-        rejectReady(error)
-        throw error
-      })
-      .finally(async () => {
-        this.running.delete(id)
-        // A message can arrive between the last queue check and releasing the running task.
-        const next = this.store.task(id)
-        if (!run.controller.signal.aborted && !next.queuePaused && next.queue?.length) {
-          const resumed = await this.start(id)
-          await resumed.done
-        }
-      })
-    void run.done.catch(() => {
-      /* Failure is persisted on the task. */
-    })
-    await ready
-    return { done: run.done }
+    const { completion } = await runClientEffect(this.startEffect(id, pauseQueue))
+    const done = runClientEffect(completion)
+    // Task failures are persisted by the owning fiber; API callers choose whether to wait.
+    void done.catch(() => undefined)
+    return { done }
   }
-  async withCheckoutMutation<T>(cwd: string, action: () => Promise<T>): Promise<T> {
-    if (
-      this.checkoutMutations.has(cwd) ||
-      [...this.running.values()].some((run) => !run.cwd || run.cwd === cwd)
+  withCheckoutMutationEffect<A, E>(cwd: string, action: Effect.Effect<A, E>) {
+    return Effect.acquireUseRelease(
+      Effect.try({
+        try: () => {
+          if (
+            this.checkoutMutations.has(cwd) ||
+            [...this.running.values()].some((run) => !run.cwd || run.cwd === cwd)
+          )
+            throw new HttpError(
+              409,
+              'Wait for the running agent or checkout operation to finish before switching branches.',
+            )
+          this.checkoutMutations.add(cwd)
+        },
+        catch: runtimeFailure,
+      }),
+      () => action,
+      () =>
+        Effect.sync(() => {
+          this.checkoutMutations.delete(cwd)
+        }),
     )
-      throw new HttpError(
-        409,
-        'Wait for the running agent or checkout operation to finish before switching branches.',
-      )
-    this.checkoutMutations.add(cwd)
-    try {
-      return await action()
-    } finally {
-      this.checkoutMutations.delete(cwd)
-    }
+  }
+  withCheckoutMutation<A>(cwd: string, action: () => Promise<A>): Promise<A> {
+    return runClientEffect(this.withCheckoutMutationEffect(cwd, runtimeOperation(action)))
   }
   cancel(id: string) {
     this.steering.delete(id)
     const run = this.running.get(id)
     if (!run) throw new HttpError(409, 'Task is not running')
-    this.store.updateTask(id, (t) => ({ ...t, queuePaused: true }))
+    this.store.updateTask(id, (t) => ({
+      ...t,
+      queuePaused: true,
+      restartRecovery: undefined,
+    }))
     this.questions.cancelTask(id)
     run.controller.abort(new Error('Cancelled by user'))
   }
-  async dispose() {
-    this.steering.clear()
-    for (const run of this.running.values())
-      run.controller.abort(new Error('Runtime shutting down'))
-    await Promise.allSettled([...this.running.values()].map((run) => run.done))
+  /** Startup work is owned by this executor, so shutdown also drains its current task. */
+  continueAfterRestart(
+    enabled: () => boolean,
+    automationOwns: (id: string) => boolean = () => false,
+  ) {
+    const ids = this.store
+      .get()
+      .tasks.filter((task) => task.restartRecovery)
+      .map((task) => task.id)
+    this.executor.runFork(
+      Effect.gen(this, function* () {
+        for (const id of ids) {
+          if (this.stopping) break
+          const task = this.store.get().tasks.find((item) => item.id === id)
+          if (!task?.restartRecovery) continue
+          if (
+            !enabled() ||
+            !task.restartRecovery.automatic ||
+            task.archived ||
+            automationOwns(id)
+          ) {
+            this.store.updateTask(id, (task) => ({
+              ...task,
+              restartRecovery: task.restartRecovery
+                ? { ...task.restartRecovery, automatic: false }
+                : undefined,
+            }))
+            continue
+          }
+          const interruptedTurn = task.restartRecovery.kind === 'turn'
+          const pendingInput = task.queue?.[0]?.id
+          this.activity?.add('task', id, 'Continuing after runtime restart')
+          yield* this.startEffect(
+            id,
+            false,
+            () =>
+              enabled() &&
+              this.store.task(id).restartRecovery?.automatic === true &&
+              !this.store.task(id).archived,
+          ).pipe(
+            Effect.flatMap((run) => run.completion),
+            Effect.catchAll((error) =>
+              Effect.sync(() => {
+                if (this.stopping || this.store.task(id).status === 'cancelled') return
+                // A failed startup stays actionable; it must not silently retry forever.
+                this.store.updateTask(id, (task) => ({
+                  ...task,
+                  status: 'failed',
+                  queuePaused: true,
+                  restartRecovery: {
+                    kind:
+                      interruptedTurn || !task.queue?.some((message) => message.id === pendingInput)
+                        ? 'turn'
+                        : 'queue',
+                    automatic: false,
+                  },
+                  error: `Could not continue after restart. ${errorMessage(error)}`,
+                }))
+              }),
+            ),
+          )
+        }
+      }),
+    )
+  }
+  disposeEffect() {
+    return Effect.gen(this, function* () {
+      this.stopping = true
+      this.steering.clear()
+      const running = [...this.running.values()]
+      for (const [id, run] of this.running) {
+        const task = this.store.task(id)
+        if (!run.controller.signal.aborted && task.status === 'running')
+          this.store.updateTask(id, (task) => ({
+            ...task,
+            restartRecovery: { kind: 'turn', automatic: !task.queuePaused },
+          }))
+        run.controller.abort(new Error('Runtime shutting down'))
+      }
+      yield* Effect.forEach(running, (run) => (run.fiber ? Fiber.await(run.fiber) : Effect.void), {
+        concurrency: 'unbounded',
+        discard: true,
+      })
+      yield* Effect.promise(() => this.executor.dispose())
+    })
+  }
+  dispose() {
+    return runClientEffect(this.disposeEffect())
   }
   create(
     input: Pick<Task, 'title' | 'agentId' | 'repositoryId' | 'execution' | 'pullRequest'> & {
@@ -289,12 +505,21 @@ export class Tasks {
       ...input,
       status: 'draft',
       createdAt: new Date().toISOString(),
-      messages: [{ id: randomUUID(), role: 'user', text: input.objective }],
+      messages: [
+        {
+          id: randomUUID(),
+          role: 'user',
+          text: input.objective,
+        },
+      ],
       files: [],
       draft: '',
       example: false,
     }
-    this.store.update((w) => ({ ...w, tasks: [...w.tasks, task] }))
+    this.store.update((w) => ({
+      ...w,
+      tasks: [...w.tasks, task],
+    }))
     return task
   }
 }

@@ -30,19 +30,13 @@ export const listExtensions = Effect.gen(function* () {
 
 export const activateOnStartup = Effect.gen(function* () {
   const { host } = yield* DesktopRuntimeTag
-  yield* Effect.tryPromise({
-    try: () => host.activateByEvent('onStartupFinished'),
-    catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-  })
+  yield* host.activateByEventEffect('onStartupFinished')
 })
 
 export const activateExtension = (id: string) =>
   Effect.gen(function* () {
     const { host } = yield* DesktopRuntimeTag
-    yield* Effect.tryPromise({
-      try: () => host.activate(id),
-      catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-    })
+    yield* host.activateEffect(id)
     const info = host.get(id)
     if (!info) return yield* Effect.fail(new Error(`Extension is not registered: ${id}`))
     return info
@@ -50,10 +44,7 @@ export const activateExtension = (id: string) =>
 
 export const disposeRuntime = Effect.gen(function* () {
   const { host } = yield* DesktopRuntimeTag
-  yield* Effect.tryPromise({
-    try: () => host.dispose(),
-    catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-  })
+  yield* host.disposeEffect()
 })
 
 export type { ExtensionInfo }

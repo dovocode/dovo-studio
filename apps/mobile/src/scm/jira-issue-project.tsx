@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { mobileWorkflow } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/application-state'
 import { View } from 'react-native'
 import { responses } from '@dovo/protocol'
 import { useRuntime } from '../runtime/provider'
@@ -8,7 +9,6 @@ import { Sheet } from '../ui/sheet'
 import { Text } from '../ui/text'
 import { styles } from '../ui/theme'
 import { useAction } from '../ui/use-action'
-
 export function JiraIssueProject({
   sourceId,
   issueId,
@@ -18,17 +18,21 @@ export function JiraIssueProject({
   issueId: string
   disabled: boolean
 }) {
-  const { snapshot, call } = useRuntime()
+  const { snapshot, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useApplicationState(false)
   const link = snapshot?.workspace.jiraIssueLinks?.find(
     (link) => link.sourceId === sourceId && link.issueId === issueId,
   )
   const projects = snapshot?.workspace.repositories ?? []
   const project = projects.find((project) => project.id === link?.repositoryId)
-  const [selected, setSelected] = useState('')
+  const [selected, setSelected] = useApplicationState('')
   return (
-    <View style={{ gap: 6 }}>
+    <View
+      style={{
+        gap: 6,
+      }}
+    >
       <Text style={styles.muted}>Dovo project · {project?.name ?? 'Not linked'}</Text>
       <Action
         secondary
@@ -50,8 +54,14 @@ export function JiraIssueProject({
             onChange={setSelected}
             disabled={busy}
             items={[
-              { id: '', name: 'No project' },
-              ...projects.map((project) => ({ id: project.id, name: project.name })),
+              {
+                id: '',
+                name: 'No project',
+              },
+              ...projects.map((project) => ({
+                id: project.id,
+                name: project.name,
+              })),
             ]}
           />
           {!projects.length && (
@@ -68,14 +78,20 @@ export function JiraIssueProject({
             label={busy ? 'Saving…' : 'Save link'}
             disabled={disabled || busy}
             onPress={() =>
-              act(async () => {
-                await call(
-                  '/api/scm/jira/issues/link',
-                  { sourceId, issueId, repositoryId: selected || null },
-                  responses.ok,
-                )
-                setOpen(false)
-              })
+              act(() =>
+                mobileWorkflow(function* () {
+                  yield* callEffect(
+                    '/api/scm/jira/issues/link',
+                    {
+                      sourceId,
+                      issueId,
+                      repositoryId: selected || null,
+                    },
+                    responses.ok,
+                  )
+                  setOpen(false)
+                }),
+              )
             }
           />
         </Sheet>

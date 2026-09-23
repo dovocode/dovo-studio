@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useApplicationState } from '../runtime/application-state'
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
 import { AssistantRuntimeProvider } from '@assistant-ui/react-native'
 import { useExternalStoreRuntime } from '@assistant-ui/core/react'
 import { type Task } from '@dovo/protocol'
@@ -6,7 +7,6 @@ import { useConversationActions } from './use-conversation-actions'
 import { useToolActivity } from './use-tool-activity'
 import { conversationMessages } from './conversation-messages'
 import { taskToolEvents, type ToolEvents } from './task-tool-events'
-
 type Conversation = {
   visible: boolean
   task: Task
@@ -36,7 +36,7 @@ export function ConversationProvider({
   children: ReactNode
 }) {
   const actions = useConversationActions(task)
-  const [followRequest, setFollowRequest] = useState(0)
+  const [followRequest, setFollowRequest] = useApplicationState(0)
   const { active: dictating, stop: finishDictation } = actions.dictation
   const answeringQuestion = actions.snapshot?.questions.some(
     (question) => question.taskId === task.id && question.prompt.blocking !== false,
@@ -97,8 +97,17 @@ export function ConversationProvider({
             setFollowRequest((revision) => revision + 1)
             runtime.thread.append({
               role: 'user',
-              content: [{ type: 'text', text: actions.draft.text }],
-              runConfig: { custom: { mode } },
+              content: [
+                {
+                  type: 'text',
+                  text: actions.draft.text,
+                },
+              ],
+              runConfig: {
+                custom: {
+                  mode,
+                },
+              },
             })
           }
         },

@@ -1,6 +1,8 @@
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import type { Workspace } from '@dovo/protocol'
 export function redact(value: unknown): unknown {
   if (Array.isArray(value))
@@ -15,9 +17,13 @@ export function redact(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value).map(([k, v]) => [
         k,
-        /token|secret|password|authorization|ticket|^(?:code|pairingCode|apiKey)$/i.test(k)
+        /token|secret|password|authorization|ticket|apikey|^(?:code|pairingcode|env|headerenv|envvalues|headervalues)$/i.test(
+          k.replace(/[^a-z0-9]/gi, ''),
+        )
           ? '[redacted]'
-          : redact(v),
+          : k === 'error' && typeof v === 'string' && /Expected[\s\S]*, actual /.test(v)
+            ? '[redacted validation error]'
+            : redact(v),
       ]),
     )
   if (typeof value === 'string')
@@ -27,19 +33,33 @@ export function redact(value: unknown): unknown {
       .replace(/((?:token|secret|password|authorization)=)[^\s]+/gi, '$1[redacted]')
   return value
 }
-const record = z.object({
-  id: z.string(),
-  time: z.string(),
-  kind: z.string(),
-  scope: z.string(),
-  summary: z.string(),
-  payload: z.string(),
+const record = mutableStruct({
+  id: Schema.String,
+  time: Schema.String,
+  kind: Schema.String,
+  scope: Schema.String,
+  summary: Schema.String,
+  payload: Schema.String,
 })
 export class Activity {
   constructor(private db: Database.Database) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY,time TEXT NOT NULL,kind TEXT NOT NULL,scope TEXT NOT NULL,summary TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS activity_time ON activity(time DESC)',
     )
+    // Remove previously recorded literal MCP values and API-key fields once per database.
+    if (!db.prepare('SELECT value FROM documents WHERE id=?').get('activity-redaction-v3')) {
+      db.transaction(() => {
+        const rows = decode(mutableArray(record), db.prepare('SELECT * FROM activity').all())
+        const update = db.prepare('UPDATE activity SET payload=?,summary=? WHERE id=?')
+        for (const row of rows)
+          update.run(
+            JSON.stringify(redact(JSON.parse(row.payload))),
+            String(redact(row.summary)),
+            row.id,
+          )
+        db.prepare('INSERT INTO documents VALUES (?, ?)').run('activity-redaction-v3', 'done')
+      })()
+    }
   }
   add(
     kind: string,
@@ -89,15 +109,14 @@ export class Activity {
   }
   list(query: string, kind: string, offset: number, scope = '') {
     return {
-      events: z
-        .array(record)
-        .parse(
-          this.db
-            .prepare(
-              "SELECT * FROM activity WHERE (?='' OR scope=?) AND (?='' OR kind=? OR (?='task-activity' AND kind IN ('tool','reasoning'))) AND (summary LIKE ? OR payload LIKE ? OR scope LIKE ?) ORDER BY time DESC,id DESC LIMIT 100 OFFSET ?",
-            )
-            .all(scope, scope, kind, kind, kind, `%${query}%`, `%${query}%`, `%${query}%`, offset),
-        ),
+      events: decode(
+        mutableArray(record),
+        this.db
+          .prepare(
+            "SELECT * FROM activity WHERE (?='' OR scope=?) AND (?='' OR kind=? OR (?='task-activity' AND kind IN ('tool','reasoning'))) AND (summary LIKE ? OR payload LIKE ? OR scope LIKE ?) ORDER BY time DESC,id DESC LIMIT 100 OFFSET ?",
+          )
+          .all(scope, scope, kind, kind, kind, `%${query}%`, `%${query}%`, `%${query}%`, offset),
+      ),
     }
   }
 }

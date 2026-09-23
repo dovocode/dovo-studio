@@ -124,6 +124,7 @@
 - tapOn: Terminal
 - assertVisible: New terminal
 - takeScreenshot: dovo-mobile-walkthrough-terminal
+- tapOn: Task tools
 - tapOn: Chat
 - tapOn:
     id: Task settings

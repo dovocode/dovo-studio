@@ -1,3 +1,8 @@
+import { mobileWorkflow } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { useApplicationState } from '../runtime/application-state'
+import { mutableStruct } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import {
   accessModes,
   supportsAccess,
@@ -5,11 +10,10 @@ import {
   lockedTaskProvider,
 } from '@dovo/protocol'
 import { ModelSettings } from './model-settings'
-import { useState } from 'react'
 import { View } from 'react-native'
 import { Sheet } from '../ui/sheet'
 import { Text } from '../ui/text'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { agentSchema, providerSchema, type Agent } from '@dovo/protocol'
 import { useRuntime } from '../runtime/provider'
 import { Action } from '../ui/action'
@@ -26,9 +30,9 @@ export function AgentEditor({
   creating: boolean
   onClose: () => void
 }) {
-  const { call, connected, profile, snapshot } = useRuntime(),
+  const { connected, profile, snapshot, callEffect } = useRuntime(),
     { busy, error, act } = useAction(),
-    [draft, setDraft] = useState(original)
+    [draft, setDraft] = useApplicationState(original)
   const lockedTasks = creating
     ? []
     : (snapshot?.workspace.tasks ?? []).filter(
@@ -44,22 +48,65 @@ export function AgentEditor({
   ]
   const requiredProvider = providerLocks.length === 1 ? providerLocks[0] : original.provider
   const providerAllowed = !providerLocked || draft.provider === requiredProvider
-  const save = async () => {
-    if (!providerAllowed) return
-    const valid = agentSchema.parse({ ...draft, name: draft.name.trim() }),
-      changes: Record<string, { before: unknown; after: unknown }> = {}
-    const before = z.record(z.string(), z.unknown()).parse(original),
-      after = z.record(z.string(), z.unknown()).parse(valid)
-    for (const key of new Set([...Object.keys(before), ...Object.keys(after)]))
-      if (key !== 'id' && JSON.stringify(before[key]) !== JSON.stringify(after[key]))
-        changes[key] = { before: before[key] ?? null, after: after[key] ?? null }
-    await call(
-      '/api/workspace',
-      { collection: 'agents', id: valid.id, changes, ...(creating ? { create: valid } : {}) },
-      z.object({ revision: z.number() }),
-      'PATCH',
+  const save = () => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (!providerAllowed) return
+        const valid = decode(agentSchema, {
+            ...draft,
+            name: draft.name.trim(),
+          }),
+          changes: Record<
+            string,
+            {
+              before: unknown
+              after: unknown
+            }
+          > = {}
+        const before = decode(
+            Schema.mutable(
+              Schema.Record({
+                key: Schema.String,
+                value: Schema.Unknown,
+              }),
+            ),
+            original,
+          ),
+          after = decode(
+            Schema.mutable(
+              Schema.Record({
+                key: Schema.String,
+                value: Schema.Unknown,
+              }),
+            ),
+            valid,
+          )
+        for (const key of new Set([...Object.keys(before), ...Object.keys(after)]))
+          if (key !== 'id' && JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+            changes[key] = {
+              before: before[key] ?? null,
+              after: after[key] ?? null,
+            }
+        yield* callEffect(
+          '/api/workspace',
+          {
+            collection: 'agents',
+            id: valid.id,
+            changes,
+            ...(creating
+              ? {
+                  create: valid,
+                }
+              : {}),
+          },
+          mutableStruct({
+            revision: Schema.Number.pipe(Schema.finite()),
+          }),
+          'PATCH',
+        )
+        onClose()
+      }),
     )
-    onClose()
   }
   return (
     <Sheet
@@ -71,13 +118,18 @@ export function AgentEditor({
         label="Name"
         editable={!busy}
         value={draft.name}
-        onChangeText={(name) => setDraft({ ...draft, name })}
+        onChangeText={(name) =>
+          setDraft({
+            ...draft,
+            name,
+          })
+        }
       />
       <Choice
         label="Provider"
         disabled={busy || (providerLocked && providerAllowed)}
         value={draft.provider}
-        items={(providerLocked ? [requiredProvider] : providerSchema.options).map((id) => ({
+        items={(providerLocked ? [requiredProvider] : providerSchema.literals).map((id) => ({
           id,
           name: id,
         }))}
@@ -85,7 +137,7 @@ export function AgentEditor({
           if (providerLocked && value !== requiredProvider) return
           setDraft({
             ...draft,
-            provider: providerSchema.parse(value),
+            provider: decode(providerSchema, value),
             model: '',
             reasoning: '',
             serviceTier: undefined,
@@ -113,14 +165,24 @@ export function AgentEditor({
         }
         value={draft.endpoint}
         editable={!busy}
-        onChangeText={(endpoint) => setDraft({ ...draft, endpoint })}
+        onChangeText={(endpoint) =>
+          setDraft({
+            ...draft,
+            endpoint,
+          })
+        }
       />
       {draft.provider === 'acp' && (
         <Field
           label="Arguments · one per line"
           editable={!busy}
           value={(draft.args ?? []).join('\n')}
-          onChangeText={(value) => setDraft({ ...draft, args: value.split('\n').filter(Boolean) })}
+          onChangeText={(value) =>
+            setDraft({
+              ...draft,
+              args: value.split('\n').filter(Boolean),
+            })
+          }
           multiline
         />
       )}
@@ -130,9 +192,15 @@ export function AgentEditor({
         value={draft.permission}
         items={accessModes
           .filter((mode) => supportsAccess(draft.provider, mode.id))
-          .map((mode) => ({ id: mode.id, name: mode.name }))}
+          .map((mode) => ({
+            id: mode.id,
+            name: mode.name,
+          }))}
         onChange={(value) =>
-          setDraft({ ...draft, permission: agentSchema.shape.permission.parse(value) })
+          setDraft({
+            ...draft,
+            permission: decode(agentSchema.fields.permission, value),
+          })
         }
       />
       <Field
@@ -140,8 +208,19 @@ export function AgentEditor({
         editable={!busy}
         multiline
         value={draft.instructions}
-        onChangeText={(instructions) => setDraft({ ...draft, instructions })}
-        style={[styles.input, { minHeight: 150, textAlignVertical: 'top' }]}
+        onChangeText={(instructions) =>
+          setDraft({
+            ...draft,
+            instructions,
+          })
+        }
+        style={[
+          styles.input,
+          {
+            minHeight: 150,
+            textAlignVertical: 'top',
+          },
+        ]}
       />
       <View style={styles.row}>
         <Action

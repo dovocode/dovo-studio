@@ -1,9 +1,12 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { nativeEffect } from '../runtime/native-effect'
+import { Effect } from 'effect'
+import { clientTaskScope, startPolling, runClientEffect } from '@dovo/client-runtime'
+import { useApplicationState } from '../runtime/application-state'
+import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { AppState, Platform } from 'react-native'
 import { requireOptionalNativeModule } from 'expo'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useRuntime } from '../runtime/provider'
-import type { createActivityController } from './controller'
 const preferenceKey = 'dovo.live-activities.enabled'
 const Context = createContext({
   enabled: true,
@@ -13,78 +16,109 @@ const Context = createContext({
 })
 export const useLiveActivities = () => useContext(Context)
 export function LiveActivityProvider({ children }: { children: ReactNode }) {
-  const { overviews, readRuntime, ready } = useRuntime()
-  const [enabled, updateEnabled] = useState(true),
-    [error, setError] = useState('')
-  const [supported] = useState(
+  const { overviews, readRuntimeEffect, ready } = useRuntime()
+  const [enabled, updateEnabled, enabledRef] = useApplicationState(true),
+    [error, setError] = useApplicationState('')
+  const [supported] = useApplicationState(
     () => Platform.OS === 'ios' && !!requireOptionalNativeModule('ExpoWidgets'),
   )
-  const latest = useRef({ overviews, readRuntime, enabled, ready })
-  latest.current = { overviews, readRuntime, enabled, ready }
-  const controller = useRef<Awaited<ReturnType<typeof createActivityController>> | null>(null)
+  const latest = useRef({
+    overviews,
+    readRuntimeEffect,
+    ready,
+  })
+  latest.current = {
+    overviews,
+    readRuntimeEffect,
+    ready,
+  }
   useEffect(() => {
     if (!supported) return
-    let stopped = false,
-      busy = false,
-      retryAfter = 0
-    const sync = async () => {
-      if (
-        !controller.current ||
-        !latest.current.ready ||
-        busy ||
-        stopped ||
-        AppState.currentState !== 'active' ||
-        Date.now() < retryAfter
-      )
-        return
-      busy = true
-      try {
-        const value = latest.current
-        await controller.current.sync(value.overviews, value.readRuntime, value.enabled)
-      } catch {
-        setError(
-          'Live Activities could not update. Check iOS Live Activity permissions and your connection.',
-        )
-        retryAfter = Date.now() + 60_000
-      } finally {
-        busy = false
-      }
-    }
-    void AsyncStorage.getItem(preferenceKey)
-      .then(async (value) => {
-        if (stopped) return
-        latest.current.enabled = value !== 'false'
-        updateEnabled(value !== 'false')
-        const { createActivityController } = await import('./controller')
-        const next = await createActivityController(setError)
-        if (stopped) next.dispose()
-        else {
-          controller.current = next
-          void sync()
-        }
+    const commands = clientTaskScope()
+    let disposed = false
+    const native = <A,>(run: () => Promise<A>) =>
+      Effect.tryPromise({
+        try: run,
+        catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
       })
-      .catch(() => setError('Could not initialize Live Activities. Reopen the app to try again.'))
-    const timer = setInterval(() => void sync(), 3000)
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void sync()
-    })
+    const program = Effect.scoped(
+      Effect.gen(function* () {
+        const value = yield* native(() => AsyncStorage.getItem(preferenceKey))
+        if (disposed) return
+        updateEnabled(value !== 'false')
+        const { createActivityController } = yield* native(() => import('./controller'))
+        const controller = yield* Effect.acquireRelease(
+          createActivityController((message) => {
+            if (!disposed) setError(message)
+          }),
+          (controller) => Effect.promise(() => controller.dispose()),
+        )
+        let retryAfter = 0
+        const sync = Effect.gen(function* () {
+          if (
+            !latest.current.ready ||
+            AppState.currentState !== 'active' ||
+            Date.now() < retryAfter
+          )
+            return
+          const value = latest.current
+          yield* controller.sync(value.overviews, value.readRuntimeEffect, enabledRef.current)
+        }).pipe(Effect.uninterruptible)
+        const polling = startPolling(sync, {
+          interval: 3000,
+          onError: () => {
+            if (!disposed)
+              setError(
+                'Live Activities could not update. Check iOS Live Activity permissions and your connection.',
+              )
+            retryAfter = Date.now() + 60_000
+          },
+        })
+        yield* Effect.addFinalizer(() => Effect.promise(() => polling.stop()))
+        yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            AppState.addEventListener('change', (state) => {
+              if (state === 'active') polling.refresh()
+            }),
+          ),
+          (subscription) => Effect.sync(() => subscription.remove()),
+        )
+        yield* Effect.never
+      }),
+    ).pipe(
+      Effect.catchAll(() =>
+        Effect.sync(() => {
+          if (!disposed)
+            setError('Could not initialize Live Activities. Reopen the app to try again.')
+        }),
+      ),
+    )
+    void commands.run(program)
     return () => {
-      stopped = true
-      clearInterval(timer)
-      subscription.remove()
-      controller.current?.dispose()
-      controller.current = null
+      disposed = true
+      void commands.stop()
     }
   }, [supported])
   const setEnabled = (value: boolean) => {
     updateEnabled(value)
     setError('')
-    void AsyncStorage.setItem(preferenceKey, String(value)).catch(() =>
-      setError('Could not save Live Activity preferences.'),
+    void runClientEffect(
+      nativeEffect(() => AsyncStorage.setItem(preferenceKey, String(value))).pipe(
+        Effect.catchAll(() =>
+          nativeEffect(() => setError('Could not save Live Activity preferences.')),
+        ),
+      ),
     )
   }
   return (
-    <Context.Provider value={{ enabled, supported, error, setEnabled }}>
+    <Context.Provider
+      value={{
+        enabled,
+        supported,
+        error,
+        setEnabled,
+      }}
+    >
       {children}
     </Context.Provider>
   )

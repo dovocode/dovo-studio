@@ -1,4 +1,9 @@
-import { useRef, useState } from 'react'
+import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import { decode } from '@dovo/protocol'
+import { useRef } from 'react'
 import { pullLineCommentSchema, pullLineCommentResponse, type PullDetail } from '@dovo/protocol'
 import { useRuntime } from '../runtime/provider'
 import { Sheet } from '../ui/sheet'
@@ -20,39 +25,57 @@ export function LineComment({
   onClose: () => void
   onDone: () => void
 }) {
-  const { read: call, connected } = useRuntime()
-  const [headSha] = useState(detail.pull.headSha),
-    [line, setLine] = useState(''),
-    [end, setEnd] = useState(''),
-    [side, setSide] = useState('additions'),
-    [body, setBody] = useState(''),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
+  const { connected, callEffect } = useRuntime()
+  const [headSha] = useApplicationState(detail.pull.headSha),
+    [line, setLine] = useApplicationState(''),
+    [end, setEnd] = useApplicationState(''),
+    [side, setSide] = useApplicationState('additions'),
+    [body, setBody] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const pending = useRef(false)
-  const submit = async () => {
-    if (pending.current) return
-    pending.current = true
-    setBusy(true)
-    setError('')
-    try {
-      const input = pullLineCommentSchema.parse({
-        number: detail.pull.number,
-        headSha,
-        path,
-        side,
-        start: Number(line),
-        end: Number(end || line),
-        body,
-      })
-      await call('/api/scm/pulls/comment', { repositoryId, ...input }, pullLineCommentResponse)
-      onDone()
-      onClose()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      pending.current = false
-      setBusy(false)
-    }
+  const submit = () => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (pending.current) return
+        pending.current = true
+        setBusy(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          const input = decode(pullLineCommentSchema, {
+            number: detail.pull.number,
+            headSha,
+            path,
+            side,
+            start: Number(line),
+            end: Number(end || line),
+            body,
+          })
+          yield* callEffect(
+            '/api/scm/pulls/comment',
+            {
+              repositoryId,
+              ...input,
+            },
+            pullLineCommentResponse,
+          )
+          onDone()
+          onClose()
+        }).pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              setError(cause instanceof Error ? cause.message : String(cause))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              pending.current = false
+              setBusy(false)
+            }).pipe(Effect.orDie),
+          ),
+        )
+      }),
+    )
   }
   return (
     <Sheet title="Comment on code" onClose={onClose} busy={busy}>
@@ -65,8 +88,14 @@ export function LineComment({
         onChange={setSide}
         disabled={busy}
         items={[
-          { id: 'additions', name: 'New version' },
-          { id: 'deletions', name: 'Old version' },
+          {
+            id: 'additions',
+            name: 'New version',
+          },
+          {
+            id: 'deletions',
+            name: 'Old version',
+          },
         ]}
       />
       <Field
@@ -91,7 +120,10 @@ export function LineComment({
         onChangeText={setBody}
         multiline
         editable={!busy}
-        style={{ minHeight: 130, textAlignVertical: 'top' }}
+        style={{
+          minHeight: 130,
+          textAlignVertical: 'top',
+        }}
       />
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>

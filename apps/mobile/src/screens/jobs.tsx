@@ -1,5 +1,9 @@
+import { nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
 import { AutomationRow } from '../jobs/automation-row'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { FlatList, Keyboard, View } from 'react-native'
 import { router } from 'expo-router'
 import { Text } from '../ui/text'
@@ -16,10 +20,10 @@ import { useNavigation } from '../shell/navigation'
 export default function JobsScreen() {
   const { overviews, refreshAll } = useRuntime()
   const connected = overviews.some((entry) => entry.connected)
-  const [refreshing, setRefreshing] = useState(false)
+  const [refreshing, setRefreshing] = useApplicationState(false)
   const { focused } = useNavigation()
-  const [creating, setCreating] = useState(false)
-  const [query, setQuery] = useState('')
+  const [creating, setCreating] = useApplicationState(false)
+  const [query, setQuery] = useApplicationState('')
   const flows = overviews.flatMap((entry) =>
     entry.snapshot
       ? entry.snapshot.workspace.automations.map((flow) => ({
@@ -64,14 +68,30 @@ export default function JobsScreen() {
         refreshing={refreshing}
         onRefresh={() => {
           setRefreshing(true)
-          void refreshAll().finally(() => setRefreshing(false))
+          void runClientEffect(
+            nativeEffect(() => refreshAll()).pipe(
+              Effect.ensuring(nativeEffect(() => setRefreshing(false)).pipe(Effect.orDie)),
+            ),
+          )
         }}
         scrollEventThrottle={32}
-        contentContainerStyle={[styles.content, { paddingTop: 0, gap: 0, flexGrow: 1 }]}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop: 0,
+            gap: 0,
+            flexGrow: 1,
+          },
+        ]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         ListHeaderComponent={
-          <View style={{ gap: 8, paddingBottom: 8 }}>
+          <View
+            style={{
+              gap: 8,
+              paddingBottom: 8,
+            }}
+          >
             <Text style={styles.muted}>All computers</Text>
             <SearchField
               label="Search automations"
@@ -98,10 +118,33 @@ export default function JobsScreen() {
         )}
         ListEmptyComponent={
           !flows.length ? (
-            <View style={[styles.empty, { paddingVertical: 36 }]}>
+            <View
+              style={[
+                styles.empty,
+                {
+                  paddingVertical: 36,
+                },
+              ]}
+            >
               <Icon name="jobs" size={28} color={colors.muted} />
-              <Text style={[styles.title, { fontSize: 18 }]}>Create an automation</Text>
-              <Text style={[styles.muted, { textAlign: 'center' }]}>
+              <Text
+                style={[
+                  styles.title,
+                  {
+                    fontSize: 18,
+                  },
+                ]}
+              >
+                Create an automation
+              </Text>
+              <Text
+                style={[
+                  styles.muted,
+                  {
+                    textAlign: 'center',
+                  },
+                ]}
+              >
                 Run repeatable tasks manually or on a schedule, with review steps when you need
                 them.
               </Text>

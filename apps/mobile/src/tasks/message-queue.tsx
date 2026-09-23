@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useApplicationState } from '../runtime/application-state'
 import { Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import { responses, type Task } from '@dovo/protocol'
@@ -11,16 +11,30 @@ import { IconButton } from '../ui/icon-button'
 import { colors, styles } from '../ui/theme'
 import { useTaskConversation } from './conversation-provider'
 export function MessageQueue({ task }: { task: Task }) {
-  const { call, connected } = useRuntime(),
+  const { connected, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   const { actions } = useTaskConversation()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useApplicationState(false)
   const queue = task.queue ?? []
   const change = (action: string, messageId?: string) =>
-    act(() => call('/api/tasks/queue', { id: task.id, action, messageId }, responses.ok))
+    act(() =>
+      callEffect(
+        '/api/tasks/queue',
+        {
+          id: task.id,
+          action,
+          messageId,
+        },
+        responses.ok,
+      ),
+    )
   if (!queue.length && !open) return null
   return (
-    <View style={{ paddingHorizontal: 16 }}>
+    <View
+      style={{
+        paddingHorizontal: 16,
+      }}
+    >
       {!!queue.length && (
         <Pressable
           testID="Queued messages"
@@ -39,7 +53,14 @@ export function MessageQueue({ task }: { task: Task }) {
           })}
         >
           <Icon name="jobs" size={15} color={colors.muted} />
-          <Text style={[styles.muted, { flex: 1 }]}>
+          <Text
+            style={[
+              styles.muted,
+              {
+                flex: 1,
+              },
+            ]}
+          >
             {queue.length} queued · {task.queuePaused ? 'Paused' : 'After this turn'}
           </Text>
           <Icon name="next" size={12} color={colors.muted} />
@@ -58,9 +79,22 @@ export function MessageQueue({ task }: { task: Task }) {
           {queue.map((message, index) => (
             <View
               key={message.id}
-              style={[styles.listItem, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}
+              style={[
+                styles.listItem,
+                {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                },
+              ]}
             >
-              <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+              <View
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  gap: 4,
+                }}
+              >
                 <Text style={styles.muted}>Message {index + 1}</Text>
                 <Text style={styles.text}>
                   {message.text || message.attachments?.map((file) => file.name).join(', ')}

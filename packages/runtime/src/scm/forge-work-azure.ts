@@ -1,4 +1,6 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import TurndownService from 'turndown'
 import { pipelineActionAllowed } from '@dovo/protocol'
 import type {
@@ -13,38 +15,53 @@ import type { ForgeWorkProvider } from './forge-work-types.js'
 import type { ForgeHttp } from './forge-http.js'
 import { HttpError } from '../errors.js'
 import { pipelineErrors, pipelineTime } from './forge-work-details.js'
-const person = z.object({ displayName: z.string(), uniqueName: z.string().optional() })
-const item = z.object({
-  id: z.number(),
-  rev: z.number(),
-  fields: z.object({
-    'System.Title': z.string(),
-    'System.TeamProject': z.string(),
-    'System.State': z.string(),
-    'System.WorkItemType': z.string(),
-    'System.Description': z.string().optional(),
-    'System.AssignedTo': person.optional(),
-    'System.CreatedBy': person.optional(),
-    'System.ChangedDate': z.string(),
-    'System.Tags': z.string().optional(),
+const person = mutableStruct({
+  displayName: Schema.String,
+  uniqueName: Schema.optional(Schema.String),
+})
+const item = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite()),
+  rev: Schema.Number.pipe(Schema.finite()),
+  fields: mutableStruct({
+    'System.Title': Schema.String,
+    'System.TeamProject': Schema.String,
+    'System.State': Schema.String,
+    'System.WorkItemType': Schema.String,
+    'System.Description': Schema.optional(Schema.String),
+    'System.AssignedTo': Schema.optional(person),
+    'System.CreatedBy': Schema.optional(person),
+    'System.ChangedDate': Schema.String,
+    'System.Tags': Schema.optional(Schema.String),
   }),
-  multilineFieldsFormat: z.record(z.string(), z.string()).optional(),
+  multilineFieldsFormat: Schema.optional(
+    Schema.mutable(
+      Schema.Record({
+        key: Schema.String,
+        value: Schema.String,
+      }),
+    ),
+  ),
 })
-const build = z.object({
-  id: z.number(),
-  buildNumber: z.string(),
-  status: z.string(),
-  result: z.string().optional(),
-  sourceBranch: z.string().optional(),
-  sourceVersion: z.string().optional(),
-  queueTime: z.string(),
-  startTime: z.string().nullish(),
-  finishTime: z.string().nullish(),
-  reason: z.string().nullish(),
-  requestedFor: person.optional(),
-  definition: z.object({ id: z.number(), name: z.string() }),
+const build = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite()),
+  buildNumber: Schema.String,
+  status: Schema.String,
+  result: Schema.optional(Schema.String),
+  sourceBranch: Schema.optional(Schema.String),
+  sourceVersion: Schema.optional(Schema.String),
+  queueTime: Schema.String,
+  startTime: Schema.optional(Schema.NullOr(Schema.String)),
+  finishTime: Schema.optional(Schema.NullOr(Schema.String)),
+  reason: Schema.optional(Schema.NullOr(Schema.String)),
+  requestedFor: Schema.optional(person),
+  definition: mutableStruct({
+    id: Schema.Number.pipe(Schema.finite()),
+    name: Schema.String,
+  }),
 })
-const markdown = new TurndownService({ codeBlockStyle: 'fenced' })
+const markdown = new TurndownService({
+  codeBlockStyle: 'fenced',
+})
 export class AzureForgeWork implements ForgeWorkProvider {
   private project: string
   private projectName: string
@@ -67,21 +84,33 @@ export class AzureForgeWork implements ForgeWorkProvider {
     const types =
       area === 'pipelines'
         ? []
-        : z
-            .object({
-              value: z.array(z.object({ name: z.string(), isDisabled: z.boolean().optional() })),
-            })
-            .parse(await this.get('wit/workitemtypes'))
+        : decode(
+            mutableStruct({
+              value: mutableArray(
+                mutableStruct({
+                  name: Schema.String,
+                  isDisabled: Schema.optional(Schema.Boolean),
+                }),
+              ),
+            }),
+            await this.get('wit/workitemtypes'),
+          )
             .value.filter((v) => !v.isDisabled)
             .map((v) => v.name)
     let states: string[] = []
     if (type) {
       if (!types.includes(type))
         throw new HttpError(400, 'Select a work item type available in this project')
-      states = z
-        .object({ value: z.array(z.object({ name: z.string() })) })
-        .parse(await this.get(`wit/workitemtypes/${encodeURIComponent(type)}/states`))
-        .value.map((v) => v.name)
+      states = decode(
+        mutableStruct({
+          value: mutableArray(
+            mutableStruct({
+              name: Schema.String,
+            }),
+          ),
+        }),
+        await this.get(`wit/workitemtypes/${encodeURIComponent(type)}/states`),
+      ).value.map((v) => v.name)
     }
     return {
       provider: 'azure-devops',
@@ -97,7 +126,7 @@ export class AzureForgeWork implements ForgeWorkProvider {
       pipelineActions: ['run', 'rerun', 'cancel'],
     }
   }
-  private normalize(value: z.infer<typeof item>): ForgeIssue {
+  private normalize(value: Schema.Schema.Type<typeof item>): ForgeIssue {
     if (
       value.fields['System.TeamProject'].toLocaleLowerCase() !==
       this.projectName.toLocaleLowerCase()
@@ -132,7 +161,15 @@ export class AzureForgeWork implements ForgeWorkProvider {
     }
   }
   async issues(state: string, cursor?: string, query?: string) {
-    const before = cursor ? z.coerce.number().int().positive().parse(cursor) : undefined
+    const before = cursor
+      ? decode(
+          CoercedNumber.pipe(
+            Schema.int(),
+            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+          ).pipe(Schema.positive()),
+          cursor,
+        )
+      : undefined
     // Project/state values are WIQL literals, never fragments of query syntax.
     const quote = (v: string) => `'${v.replaceAll("'", "''")}'`
     const filter = state === 'all' ? '' : ` AND [System.State] = ${quote(state)}`
@@ -142,7 +179,14 @@ export class AzureForgeWork implements ForgeWorkProvider {
       : /^#?\d+$/.test(text)
         ? ` AND [System.Id] = ${Number(text.replace(/^#/, ''))}`
         : ` AND ([System.Title] CONTAINS ${quote(text)} OR [System.Description] CONTAINS ${quote(text)})`
-    const data = z.object({ workItems: z.array(z.object({ id: z.number() })) }).parse(
+    const data = decode(
+      mutableStruct({
+        workItems: mutableArray(
+          mutableStruct({
+            id: Schema.Number.pipe(Schema.finite()),
+          }),
+        ),
+      }),
       await this.get('wit/wiql?$top=31', {
         method: 'POST',
         body: {
@@ -152,9 +196,12 @@ export class AzureForgeWork implements ForgeWorkProvider {
     )
     const ids = data.workItems.slice(0, 30).map((v) => v.id)
     const values = ids.length
-      ? z
-          .object({ value: z.array(item) })
-          .parse(await this.get(`wit/workitems?ids=${ids.join(',')}`)).value
+      ? decode(
+          mutableStruct({
+            value: mutableArray(item),
+          }),
+          await this.get(`wit/workitems?ids=${ids.join(',')}`),
+        ).value
       : []
     const byId = new Map(values.map((value) => [value.id, value]))
     return {
@@ -167,29 +214,36 @@ export class AzureForgeWork implements ForgeWorkProvider {
     }
   }
   async issue(id: string, cursor?: string) {
-    const n = z.coerce.number().int().positive().parse(id)
-    const raw = item.parse(await this.get(`wit/workitems/${n}`)),
+    const n = decode(
+      CoercedNumber.pipe(
+        Schema.int(),
+        Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+      ).pipe(Schema.positive()),
+      id,
+    )
+    const raw = decode(item, await this.get(`wit/workitems/${n}`)),
       current = this.normalize(raw)
-    const comments = z
-      .object({
-        comments: z.array(
-          z.object({
-            id: z.number(),
-            text: z.string(),
+    const comments = decode(
+      mutableStruct({
+        comments: mutableArray(
+          mutableStruct({
+            id: Schema.Number.pipe(Schema.finite()),
+            text: Schema.String,
             createdBy: person,
-            createdDate: z.string(),
-            format: z.union([z.string(), z.number()]).optional(),
+            createdDate: Schema.String,
+            format: Schema.optional(
+              Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite())),
+            ),
           }),
         ),
-        continuationToken: z.string().nullish(),
-      })
-      .parse(
-        await this.get(
-          `wit/workItems/${n}/comments?$top=50${cursor ? `&continuationToken=${encodeURIComponent(cursor)}` : ''}`,
-          undefined,
-          '7.1-preview.4',
-        ),
-      )
+        continuationToken: Schema.optional(Schema.NullOr(Schema.String)),
+      }),
+      await this.get(
+        `wit/workItems/${n}/comments?$top=50${cursor ? `&continuationToken=${encodeURIComponent(cursor)}` : ''}`,
+        undefined,
+        '7.1-preview.4',
+      ),
+    )
     return {
       issue: current,
       comments: comments.comments.map((v) => ({
@@ -213,9 +267,14 @@ export class AzureForgeWork implements ForgeWorkProvider {
       'System.Title': input.title,
       'System.Description': input.body,
       'System.Tags': input.labels.join('; '),
-      ...(input.assignees[0] ? { 'System.AssignedTo': input.assignees[0] } : {}),
+      ...(input.assignees[0]
+        ? {
+            'System.AssignedTo': input.assignees[0],
+          }
+        : {}),
     }
-    const result = item.parse(
+    const result = decode(
+      item,
       await this.get(`wit/workitems/$${encodeURIComponent(input.type)}`, {
         method: 'POST',
         contentType: 'application/json-patch+json',
@@ -225,22 +284,41 @@ export class AzureForgeWork implements ForgeWorkProvider {
             path: `/fields/${name}`,
             value,
           })),
-          { op: 'add', path: '/multilineFieldsFormat/System.Description', value: 'Markdown' },
+          {
+            op: 'add',
+            path: '/multilineFieldsFormat/System.Description',
+            value: 'Markdown',
+          },
         ],
       }),
     )
-    return { id: String(result.id), url: this.normalize(result).url, message: 'Work item created' }
+    return {
+      id: String(result.id),
+      url: this.normalize(result).url,
+      message: 'Work item created',
+    }
   }
   async actOnIssue(input: ForgeIssueAction) {
-    const id = z.coerce.number().int().positive().parse(input.id),
-      raw = item.parse(await this.get(`wit/workitems/${id}`)),
+    const id = decode(
+        CoercedNumber.pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ).pipe(Schema.positive()),
+        input.id,
+      ),
+      raw = decode(item, await this.get(`wit/workitems/${id}`)),
       current = this.normalize(raw)
     if (current.revision !== input.revision)
       throw new HttpError(409, 'This work item changed. Refresh before submitting.')
     if (input.action === 'comment')
       await this.get(
         `wit/workItems/${id}/comments?format=markdown`,
-        { method: 'POST', body: { text: input.body } },
+        {
+          method: 'POST',
+          body: {
+            text: input.body,
+          },
+        },
         '7.1-preview.4',
       )
     else {
@@ -249,17 +327,41 @@ export class AzureForgeWork implements ForgeWorkProvider {
       if (input.state && !(await this.options(current.type)).issueStates.includes(input.state))
         throw new HttpError(400, 'This state is unavailable for this work item type')
       const fields: Record<string, unknown> = {
-        ...(input.title === undefined ? {} : { 'System.Title': input.title }),
-        ...(input.body === undefined ? {} : { 'System.Description': input.body }),
-        ...(input.state === undefined ? {} : { 'System.State': input.state }),
-        ...(input.assignees === undefined ? {} : { 'System.AssignedTo': input.assignees[0] ?? '' }),
-        ...(input.labels === undefined ? {} : { 'System.Tags': input.labels.join('; ') }),
+        ...(input.title === undefined
+          ? {}
+          : {
+              'System.Title': input.title,
+            }),
+        ...(input.body === undefined
+          ? {}
+          : {
+              'System.Description': input.body,
+            }),
+        ...(input.state === undefined
+          ? {}
+          : {
+              'System.State': input.state,
+            }),
+        ...(input.assignees === undefined
+          ? {}
+          : {
+              'System.AssignedTo': input.assignees[0] ?? '',
+            }),
+        ...(input.labels === undefined
+          ? {}
+          : {
+              'System.Tags': input.labels.join('; '),
+            }),
       }
       await this.get(`wit/workitems/${id}`, {
         method: 'PATCH',
         contentType: 'application/json-patch+json',
         body: [
-          { op: 'test', path: '/rev', value: raw.rev },
+          {
+            op: 'test',
+            path: '/rev',
+            value: raw.rev,
+          },
           ...Object.entries(fields).map(([key, value]) => ({
             op: 'add',
             path: `/fields/${key}`,
@@ -274,7 +376,7 @@ export class AzureForgeWork implements ForgeWorkProvider {
       message: input.action === 'comment' ? 'Comment posted' : 'Work item updated',
     }
   }
-  private normalizeRun(value: z.infer<typeof build>): ForgePipeline {
+  private normalizeRun(value: Schema.Schema.Type<typeof build>): ForgePipeline {
     return {
       id: String(value.id),
       title: `${value.definition.name} · ${value.buildNumber}`,
@@ -305,14 +407,22 @@ export class AzureForgeWork implements ForgeWorkProvider {
   async definitions(cursor?: string) {
     const { data, next } = await this.page('definitions', cursor)
     return {
-      items: z
-        .object({
-          value: z.array(
-            z.object({ id: z.number(), name: z.string(), queueStatus: z.string().optional() }),
+      items: decode(
+        mutableStruct({
+          value: mutableArray(
+            mutableStruct({
+              id: Schema.Number.pipe(Schema.finite()),
+              name: Schema.String,
+              queueStatus: Schema.optional(Schema.String),
+            }),
           ),
-        })
-        .parse(data)
-        .value.map((v) => ({ id: String(v.id), name: v.name, state: v.queueStatus })),
+        }),
+        data,
+      ).value.map((v) => ({
+        id: String(v.id),
+        name: v.name,
+        state: v.queueStatus,
+      })),
       next,
       manual: false,
     }
@@ -320,35 +430,62 @@ export class AzureForgeWork implements ForgeWorkProvider {
   async pipelines(cursor?: string) {
     const { data, next } = await this.page('builds', cursor)
     return {
-      items: z
-        .object({ value: z.array(build) })
-        .parse(data)
-        .value.map((v) => this.normalizeRun(v)),
+      items: decode(
+        mutableStruct({
+          value: mutableArray(build),
+        }),
+        data,
+      ).value.map((v) => this.normalizeRun(v)),
       next,
     }
   }
   async pipeline(id: string) {
-    const n = z.coerce.number().int().positive().parse(id),
-      current = build.parse(await this.get(`build/builds/${n}`))
-    const timeline = z
-      .object({
-        records: z.array(
-          z.object({
-            id: z.string(),
-            name: z.string().nullish(),
-            type: z.string(),
-            state: z.string(),
-            result: z.string().nullish(),
-            parentId: z.string().nullish(),
-            order: z.number().int().nonnegative().nullish(),
-            startTime: z.string().nullish(),
-            finishTime: z.string().nullish(),
-            workerName: z.string().nullish(),
-            issues: z.array(z.object({ type: z.string(), message: z.string() })).nullish(),
+    const n = decode(
+        CoercedNumber.pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ).pipe(Schema.positive()),
+        id,
+      ),
+      current = decode(build, await this.get(`build/builds/${n}`))
+    const timeline = decode(
+      mutableStruct({
+        records: mutableArray(
+          mutableStruct({
+            id: Schema.String,
+            name: Schema.optional(Schema.NullOr(Schema.String)),
+            type: Schema.String,
+            state: Schema.String,
+            result: Schema.optional(Schema.NullOr(Schema.String)),
+            parentId: Schema.optional(Schema.NullOr(Schema.String)),
+            order: Schema.optional(
+              Schema.NullOr(
+                Schema.Number.pipe(Schema.finite())
+                  .pipe(
+                    Schema.int(),
+                    Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+                  )
+                  .pipe(Schema.nonNegative()),
+              ),
+            ),
+            startTime: Schema.optional(Schema.NullOr(Schema.String)),
+            finishTime: Schema.optional(Schema.NullOr(Schema.String)),
+            workerName: Schema.optional(Schema.NullOr(Schema.String)),
+            issues: Schema.optional(
+              Schema.NullOr(
+                mutableArray(
+                  mutableStruct({
+                    type: Schema.String,
+                    message: Schema.String,
+                  }),
+                ),
+              ),
+            ),
           }),
         ),
-      })
-      .parse(await this.get(`build/builds/${n}/timeline`))
+      }),
+      await this.get(`build/builds/${n}/timeline`),
+    )
     const run = this.normalizeRun(current)
     return {
       run,
@@ -390,23 +527,42 @@ export class AzureForgeWork implements ForgeWorkProvider {
   }
   async actOnPipeline(input: ForgePipelineAction) {
     if (input.action === 'run') {
-      const id = z.coerce.number().int().positive().parse(input.definition)
-      const value = build.parse(
+      const id = decode(
+        CoercedNumber.pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ).pipe(Schema.positive()),
+        input.definition,
+      )
+      const value = decode(
+        build,
         await this.get('build/builds', {
           method: 'POST',
           body: {
-            definition: { id },
+            definition: {
+              id,
+            },
             sourceBranch: input.ref.startsWith('refs/') ? input.ref : `refs/heads/${input.ref}`,
             templateParameters: input.inputs,
           },
         }),
       )
-      return { id: String(value.id), url: this.normalizeRun(value).url, message: 'Build queued' }
+      return {
+        id: String(value.id),
+        url: this.normalizeRun(value).url,
+        message: 'Build queued',
+      }
     }
     if (input.action === 'enable' || input.action === 'disable')
       throw new HttpError(400, 'Manage Azure pipeline definitions on the server')
-    const id = z.coerce.number().int().positive().parse(input.id)
-    const current = build.parse(await this.get(`build/builds/${id}`))
+    const id = decode(
+      CoercedNumber.pipe(
+        Schema.int(),
+        Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+      ).pipe(Schema.positive()),
+      input.id,
+    )
+    const current = decode(build, await this.get(`build/builds/${id}`))
     if (!pipelineActionAllowed(input.action, current.status))
       throw new HttpError(
         409,
@@ -414,7 +570,12 @@ export class AzureForgeWork implements ForgeWorkProvider {
       )
     await this.get(`build/builds/${id}${input.action === 'rerun' ? '?retry=true' : ''}`, {
       method: 'PATCH',
-      body: input.action === 'cancel' ? { status: 'cancelling' } : {},
+      body:
+        input.action === 'cancel'
+          ? {
+              status: 'cancelling',
+            }
+          : {},
     })
     return {
       id: String(id),

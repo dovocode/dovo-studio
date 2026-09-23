@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowLeft, Ellipsis, Monitor, Plus, Workflow, X } from 'lucide-react'
 import { useWorkspace } from '@dovo/studio-core'
 import {
@@ -21,7 +21,6 @@ import { newNode, validateGraph } from './graph'
 import { useAutomation } from './use-automation'
 import { useJobActions } from './use-job-actions'
 import { RunDetails } from './run-details'
-
 export function AutomationDetail({
   automationId,
   onBack,
@@ -36,9 +35,9 @@ export function AutomationDetail({
   const { snapshot, connected } = useWorkspace()
   const compact = useCompactLayout()
   const actions = useJobActions()
-  const [runId, setRunId] = useState<string | null>(null)
-  const [surface, setSurface] = useState<'runs' | 'canvas' | 'triggers'>(initialSurface)
-  const [inspectorOpen, setInspectorOpen] = useState(false)
+  const [runId, setRunId] = useApplicationState<string | null>(null)
+  const [surface, setSurface] = useApplicationState<'runs' | 'canvas' | 'triggers'>(initialSurface)
+  const [inspectorOpen, setInspectorOpen] = useApplicationState(false)
   const runs = (snapshot?.runs.filter((run) => run.automationId === flow?.id) ?? []).sort(
     (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
   )
@@ -56,7 +55,10 @@ export function AutomationDetail({
   const addStep = (kind: 'trigger' | 'task' | 'review') => {
     if (!flow) return
     const next = newNode(kind, workspace, flow.nodes.length)
-    update((current) => ({ ...current, nodes: [...current.nodes, next] }))
+    update((current) => ({
+      ...current,
+      nodes: [...current.nodes, next],
+    }))
     configure(next.id)
   }
   const triggers = flow?.nodes.filter((item) => item.data.kind === 'trigger') ?? []
@@ -69,7 +71,14 @@ export function AutomationDetail({
       onChange={(data) =>
         update((current) => ({
           ...current,
-          nodes: current.nodes.map((item) => (item.id === node.id ? { ...item, data } : item)),
+          nodes: current.nodes.map((item) =>
+            item.id === node.id
+              ? {
+                  ...item,
+                  data,
+                }
+              : item,
+          ),
         }))
       }
       onDelete={() => {
@@ -135,7 +144,12 @@ export function AutomationDetail({
             actions={actions}
             onRun={selectRun}
             configuringTriggers={surface === 'triggers'}
-            onEnabled={(enabled) => update((current) => ({ ...current, enabled }))}
+            onEnabled={(enabled) =>
+              update((current) => ({
+                ...current,
+                enabled,
+              }))
+            }
           >
             <div
               role="group"
@@ -207,7 +221,10 @@ export function AutomationDetail({
                     onBlur={(event) => {
                       const name = event.currentTarget.value.trim() || 'Untitled automation'
                       event.currentTarget.value = name
-                      update((current) => ({ ...current, name }))
+                      update((current) => ({
+                        ...current,
+                        name,
+                      }))
                     }}
                   />
                   <DropdownMenu.Root>

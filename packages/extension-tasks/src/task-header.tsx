@@ -1,12 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect } from 'react'
 import { TaskPullLinkDialog } from './task-pull-link-dialog'
 import { taskPullLinks } from './task-pull-links'
 import { TaskActions } from './task-actions'
 import { useWorkspace, useStudioHost, encodeWorkTarget, issueLabel } from '@dovo/studio-core'
 import {
   Bot,
-  CircleCheck,
-  CircleX,
   Globe,
   Files,
   GitBranch,
@@ -14,36 +13,30 @@ import {
   MessageSquare,
   Monitor,
   PanelLeft,
-  PanelRight,
   Terminal,
 } from 'lucide-react'
 import type { Task } from '@dovo/studio-core'
 import { Badge, Button, IconButton, cn } from '@dovo/studio-ui'
 import { taskPresentation } from './task-presentation'
-
 export type TaskSurface = 'chat' | 'changes' | 'terminal' | 'browser' | 'agents'
 export function TaskHeader({
   task,
   onSidebar,
   surface,
   onSurface,
-  split,
-  onSplit,
   compact,
 }: {
   task: Task
   onSidebar: () => void
   surface: TaskSurface
   onSurface: (surface: TaskSurface) => void
-  split: boolean
-  onSplit: () => void
   compact: boolean
 }) {
   const { workspace, snapshot, connected } = useWorkspace()
   const host = useStudioHost()
-  const [linking, setLinking] = useState(false)
+  const [linking, setLinking] = useApplicationState(false)
   const linkedPulls = taskPullLinks(task)
-  const [now, setNow] = useState(Date.now)
+  const [now, setNow] = useApplicationState(Date.now)
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), task.status === 'running' ? 1000 : 60000)
     return () => clearInterval(timer)
@@ -58,18 +51,31 @@ export function TaskHeader({
     snapshot?.terminals.filter((session) => session.taskId === task.id && !session.exited).length ??
     0
   return (
-    <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3">
-      <IconButton label="Toggle task sidebar" className="size-8 shrink-0" onClick={onSidebar}>
-        <PanelLeft size={16} />
+    <header className="flex min-h-11 shrink-0 items-center gap-2 border-b px-2.5 py-1.5">
+      <IconButton label="Show tasks" className="size-7 shrink-0" onClick={onSidebar}>
+        <PanelLeft size={14} />
       </IconButton>
-      <div className="min-w-40 flex-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <h1 className="min-w-0 truncate text-sm font-medium">{task.title}</h1>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-1 text-[11px]">
+          <span className="max-w-40 truncate text-muted-foreground" title={repo?.path}>
+            {repo?.name ?? 'Choose a project'}
+          </span>
+          <span aria-hidden="true" className="text-muted-foreground/50">
+            /
+          </span>
+          <h1 className="min-w-0 truncate font-medium">{task.title}</h1>
+          {task.example && (
+            <Badge variant="secondary" className="hidden text-[9px] font-normal sm:inline-flex">
+              Example
+            </Badge>
+          )}
+        </div>
+        <div className="flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
           <span
             className={cn(
-              'inline-flex items-center gap-1 text-[11px]',
+              'truncate',
               presentation.state === 'Needs input'
-                ? 'text-amber-500'
+                ? 'text-amber-400'
                 : presentation.state === 'Failed'
                   ? 'text-destructive'
                   : presentation.state === 'Done'
@@ -77,41 +83,23 @@ export function TaskHeader({
                     : 'text-muted-foreground',
             )}
           >
-            {presentation.state === 'Done' && (
-              <CircleCheck aria-hidden="true" className="size-3 shrink-0" />
-            )}
-            {presentation.state === 'Failed' && (
-              <CircleX aria-hidden="true" className="size-3 shrink-0" />
-            )}
             {presentation.label}
           </span>
-        </div>
-        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-          <span className="max-w-64 truncate" title={repo?.path}>
-            {repo?.name ?? 'Choose a project'}
+          <span
+            className="hidden items-center gap-1 truncate sm:inline-flex"
+            title={`Runs on ${executionHost ?? 'the selected computer'}${!connected ? ' · offline' : ''}`}
+          >
+            <Monitor size={10} className="shrink-0" />
+            {executionHost ?? 'Selected computer'}
+            {!connected ? ' · Offline' : ''}
           </span>
           <span
-            className="inline-flex min-w-0 max-w-56 items-center gap-1"
-            title={`Runs on ${executionHost ?? 'the selected computer'}`}
+            className="hidden items-center gap-1 truncate md:inline-flex"
+            title={task.checkoutBranch || repo?.branch}
           >
-            <Monitor size={11} className="shrink-0" />
-            <span className="sr-only">
-              {executionHost ?? 'Selected computer'}
-              {!connected ? ' · offline' : ''}
-            </span>
-          </span>
-          <span
-            className="inline-flex min-w-0 max-w-48 items-center gap-1"
-            title={task.execution === 'worktree' ? 'Worktree checkout' : 'Local checkout'}
-          >
-            <GitBranch size={12} className="shrink-0" aria-hidden="true" />
-            <span className="sr-only">
-              {task.execution === 'worktree' ? 'Worktree checkout' : 'Local checkout'} ·{' '}
-            </span>
-            <span className="truncate">
-              {task.checkoutBranch ||
-                (task.execution === 'worktree' ? 'Worktree' : repo?.branch || 'Local checkout')}
-            </span>
+            <GitBranch size={10} className="shrink-0" />
+            {task.checkoutBranch ||
+              (task.execution === 'worktree' ? 'Worktree' : repo?.branch || 'Local checkout')}
           </span>
           {task.workItem && (
             <Button
@@ -125,8 +113,12 @@ export function TaskHeader({
                   viewId: task.workItem.kind === 'issue' ? 'issues' : 'pipelines',
                   entityId: encodeWorkTarget({
                     ...(task.workItem.kind === 'issue' && task.workItem.jiraSourceId
-                      ? { jiraSourceId: task.workItem.jiraSourceId }
-                      : { repositoryId: task.repositoryId }),
+                      ? {
+                          jiraSourceId: task.workItem.jiraSourceId,
+                        }
+                      : {
+                          repositoryId: task.repositoryId,
+                        }),
                     id: task.workItem.id,
                     url: task.workItem.url,
                   }),
@@ -139,7 +131,7 @@ export function TaskHeader({
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 gap-1 px-1 text-[11px] text-muted-foreground"
+            className="h-5 shrink-0 gap-1 px-1 text-[10px] text-muted-foreground"
             aria-label="Manage linked pull requests"
             onClick={() => setLinking(true)}
           >
@@ -148,60 +140,47 @@ export function TaskHeader({
               ? `#${linkedPulls[0]!.number}${linkedPulls.length > 1 ? ` +${linkedPulls.length - 1}` : ''}`
               : 'Link PR'}
           </Button>
-          {task.example && (
-            <Badge variant="secondary" className="text-[10px] font-normal">
-              Example
-            </Badge>
-          )}
         </div>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1">
-        {compact && (
-          <div
-            role="group"
-            aria-label="Task workspace"
-            className="flex rounded-lg border bg-muted/35 p-0.5"
-          >
-            {(
-              [
-                ['chat', 'Chat', MessageSquare, 0],
-                ['changes', 'Changes', Files, task.files.length],
-                ['agents', 'Agents', Bot, task.subagents?.length ?? 0],
-                ['terminal', 'Terminal', Terminal, terminals],
-                ['browser', 'Browser', Globe, 0],
-              ] as const
-            ).map(([id, label, Icon, count]) => (
-              <Button
-                key={id}
-                size="sm"
-                variant="ghost"
-                aria-label={label}
-                aria-pressed={surface === id}
-                onClick={() => onSurface(id)}
-                className={cn(
-                  'h-8 gap-1.5 rounded-md px-2.5 text-xs',
-                  surface === id && 'bg-background text-foreground shadow-sm',
-                )}
-              >
-                <Icon className="size-3.5" />
-                {label}
-                {count > 0 && (
-                  <span className="text-[10px] tabular-nums text-muted-foreground">{count}</span>
-                )}
-              </Button>
-            ))}
-          </div>
-        )}
-        {!compact && (
-          <IconButton
-            label={split ? 'Hide workspace sidebar' : 'Show workspace sidebar'}
-            aria-pressed={split}
-            className={cn('size-8', split && 'bg-accent')}
-            onClick={onSplit}
-          >
-            <PanelRight size={16} />
-          </IconButton>
-        )}
+        <div
+          role="group"
+          aria-label="Task workspace"
+          className="flex items-center rounded-md border border-border/70 bg-muted/20 p-0.5"
+        >
+          {(
+            [
+              ['chat', 'Chat', MessageSquare, 0],
+              ['changes', 'Diff', Files, task.files.length],
+              ['agents', 'Agents', Bot, task.subagents?.length ?? 0],
+              ['terminal', 'Terminal', Terminal, terminals],
+              ['browser', 'Preview', Globe, 0],
+            ] as const
+          ).map(([id, label, Icon, count]) => (
+            <Button
+              key={id}
+              size="sm"
+              variant="ghost"
+              aria-label={label}
+              title={label}
+              aria-pressed={surface === id}
+              onClick={() => onSurface(id)}
+              className={cn(
+                'gap-1 rounded-sm text-[10px]',
+                compact ? 'size-7 px-1.5' : 'size-7 sm:h-7 sm:w-auto sm:px-2',
+                surface === id && 'bg-background text-foreground shadow-sm',
+              )}
+            >
+              <Icon className="size-3.5" />
+              {!compact && <span className="hidden sm:inline">{label}</span>}
+              {count > 0 && (
+                <span className="hidden text-[9px] tabular-nums text-muted-foreground md:inline">
+                  {count}
+                </span>
+              )}
+            </Button>
+          ))}
+        </div>
         <TaskActions key={task.id} task={task} />
       </div>
       {linking && (

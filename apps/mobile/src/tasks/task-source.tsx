@@ -1,20 +1,33 @@
+import { nativeEffect } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
 import { Linking, View } from 'react-native'
-import { useState } from 'react'
 import { type Task, issueLabel } from '@dovo/protocol'
 import { useNavigation } from '../shell/navigation'
 import { Action } from '../ui/action'
 import { IconButton } from '../ui/icon-button'
 import { Text } from '../ui/text'
 import { styles } from '../ui/theme'
-
 export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () => void }) {
   const { openWork } = useNavigation()
-  const [error, setError] = useState('')
+  const [error, setError] = useApplicationState('')
   const source = task.workItem
   if (!source) return null
   return (
-    <View style={{ gap: 4 }}>
-      <View style={[styles.row, { justifyContent: 'space-between' }]}>
+    <View
+      style={{
+        gap: 4,
+      }}
+    >
+      <View
+        style={[
+          styles.row,
+          {
+            justifyContent: 'space-between',
+          },
+        ]}
+      >
         <Action
           secondary
           label={
@@ -27,7 +40,9 @@ export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () =
             openWork({
               repositoryId: task.repositoryId,
               ...(source.kind === 'issue' && source.jiraSourceId
-                ? { jiraSourceId: source.jiraSourceId }
+                ? {
+                    jiraSourceId: source.jiraSourceId,
+                  }
                 : {}),
               kind: source.kind,
               id: source.id,
@@ -38,7 +53,13 @@ export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () =
         <IconButton
           icon="web"
           label="Open source on server"
-          onPress={() => void Linking.openURL(source.url).catch((cause) => setError(String(cause)))}
+          onPress={() =>
+            void runClientEffect(
+              nativeEffect(() => Linking.openURL(source.url)).pipe(
+                Effect.catchAll((cause) => nativeEffect(() => setError(String(cause)))),
+              ),
+            )
+          }
         />
       </View>
       {!!error && (

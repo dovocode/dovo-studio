@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { decode } from '@dovo/protocol'
 import {
   defaultTaskHarness,
   lockedTaskProvider,
@@ -22,12 +23,12 @@ import { HarnessFields } from './harness-fields'
 export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => void }) {
   const { workspace, setWorkspace, flush } = useWorkspace()
   const providerLock = lockedTaskProvider(task, workspace.agents)
-  const [value, setValue] = useState(() => {
+  const [value, setValue] = useApplicationState(() => {
     const agent = resolveTaskAgent(task, workspace.agents)
-    return agent ? taskHarnessSchema.parse(agent) : defaultTaskHarness(providerLock ?? 'codex')
+    return agent ? decode(taskHarnessSchema, agent) : defaultTaskHarness(providerLock ?? 'codex')
   })
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
+  const [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const save = async () => {
     if (busy || task.status === 'running') return
     setBusy(true)
@@ -42,7 +43,12 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
             throw new Error(
               `This conversation uses ${providers[provider].short}. Start a new task to use another provider.`,
             )
-          return { ...current, harness: value, agentId: '', agentOverrides: undefined }
+          return {
+            ...current,
+            harness: value,
+            agentId: '',
+            agentOverrides: undefined,
+          }
         }),
       )
       await flush()

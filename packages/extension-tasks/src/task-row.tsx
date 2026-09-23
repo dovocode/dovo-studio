@@ -4,21 +4,10 @@ import { resolveTaskAgent } from '@dovo/studio-core'
 import { TaskLifecycleActions } from './task-lifecycle-actions'
 import { isSnoozed } from './task-priority'
 import { taskPresentation } from './task-presentation'
-import {
-  Bot,
-  CircleCheck,
-  CircleX,
-  FolderGit2,
-  GitBranch,
-  GitPullRequest,
-  LoaderCircle,
-  Monitor,
-  Pin,
-} from 'lucide-react'
+import { Bot, FolderGit2, GitBranch, GitPullRequest, Monitor, Pin } from 'lucide-react'
 import { providers, type Task } from '@dovo/studio-core'
 import { Button, cn, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
 import type { TaskSource } from './task-collection'
-
 export function TaskRow({
   task,
   selected,
@@ -57,17 +46,6 @@ export function TaskRow({
   const presentation = taskPresentation(task, !!needsInput, now)
   const status = !source.online && source.runtimeId ? 'Offline · Cached' : presentation.label
   const compactStatus = !source.online && source.runtimeId ? 'Offline' : presentation.compactLabel
-  const projectName = repository?.name ?? 'No repository'
-  const initials =
-    projectName
-      .split('/')
-      .at(-1)
-      ?.split(/[-_\s]+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0])
-      .join('')
-      .toUpperCase() || 'P'
   const statusDetail = [
     status,
     Number.isFinite(finished) ? `Finished ${new Date(finished).toLocaleString()}` : '',
@@ -76,21 +54,6 @@ export function TaskRow({
   ]
     .filter(Boolean)
     .join(' · ')
-  const projectColors = [
-    'text-cyan-400',
-    'text-violet-400',
-    'text-emerald-400',
-    'text-amber-400',
-    'text-rose-400',
-    'text-sky-400',
-  ]
-  const projectColor =
-    projectColors[
-      Array.from(task.repositoryId).reduce(
-        (hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0,
-        0,
-      ) % projectColors.length
-    ]
   const agentName = agent?.name ?? (provider ? providers[provider].short : 'Unassigned agent')
   const agentDetail = `${agentName}${provider ? ` · ${providers[provider].name}` : ''}`
   const terminals = snapshot?.terminals.filter((t) => t.taskId === task.id && !t.exited).length ?? 0
@@ -102,119 +65,72 @@ export function TaskRow({
             variant="ghost"
             aria-current={selected ? 'true' : undefined}
             className={cn(
-              'mb-1 h-auto w-full min-w-0 flex-col items-stretch gap-1 whitespace-normal rounded-xl px-2.5 py-2.5 text-left font-normal',
+              'mb-px h-auto min-h-11 w-full min-w-0 flex-col items-stretch gap-0.5 whitespace-normal rounded-md border border-transparent px-2 py-1.5 text-left font-normal',
               selected
-                ? 'bg-accent/65 hover:bg-accent/75 group-hover/task:bg-accent/75'
-                : 'group-hover/task:bg-accent/45',
+                ? 'border-border/60 bg-accent/60 hover:bg-accent/70 group-hover/task:bg-accent/70'
+                : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
             )}
             onClick={onSelect}
             disabled={disabled}
           >
             <span
               className={cn(
-                'flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground transition-[padding] duration-150 ease-out motion-reduce:transition-none',
+                'flex min-w-0 items-center gap-1.5 text-[10px] leading-4 text-muted-foreground',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}
             >
               <span
+                className={cn(
+                  'size-1.5 shrink-0 rounded-full',
+                  !source.online && source.runtimeId
+                    ? 'bg-muted-foreground'
+                    : presentation.state === 'Needs input'
+                      ? 'bg-amber-400'
+                      : presentation.state === 'Working'
+                        ? 'bg-sky-400'
+                        : presentation.state === 'Done'
+                          ? 'bg-emerald-400'
+                          : presentation.state === 'Failed'
+                            ? 'bg-destructive'
+                            : 'bg-muted-foreground/60',
+                )}
                 aria-hidden="true"
-                className={cn(
-                  'flex size-4 shrink-0 items-center justify-center rounded bg-current/10 text-[8px] font-semibold',
-                  projectColor,
-                )}
-              >
-                {initials}
+              />
+              <span className="min-w-0 flex-1 truncate" title={`${statusDetail} · ${agentDetail}`}>
+                {repository?.name ?? 'No project'}
               </span>
-              <span className="min-w-0 flex-1 truncate" title={repository?.path}>
-                {repository?.name ?? 'No repository'}
-              </span>
-              {task.pinned && <Pin aria-label="Pinned" className="size-[11px] shrink-0" />}
-              <span
-                className={cn(
-                  'inline-flex max-w-40 shrink-0 items-center gap-1 whitespace-nowrap overflow-hidden text-[11px] tabular-nums transition-[max-width,opacity] duration-150 ease-out motion-reduce:transition-none',
-                  editable &&
-                    'group-hover/task:max-w-0 group-hover/task:opacity-0 group-has-[:focus-visible]/task:max-w-0 group-has-[:focus-visible]/task:opacity-0 group-has-[[data-state=open]]/task:max-w-0 group-has-[[data-state=open]]/task:opacity-0',
-                  presentation.state === 'Needs input'
-                    ? 'text-amber-400'
-                    : presentation.state === 'Working'
-                      ? 'text-sky-400'
-                      : presentation.state === 'Done'
-                        ? 'text-emerald-400'
-                        : presentation.state === 'Failed'
-                          ? 'text-destructive'
-                          : '',
-                )}
-                title={statusDetail}
-                aria-label={statusDetail}
-              >
-                {source.online && presentation.state === 'Working' && (
-                  <LoaderCircle
-                    aria-hidden="true"
-                    className="size-3 shrink-0 motion-safe:animate-spin"
-                  />
-                )}
-                {source.online && presentation.state === 'Done' && (
-                  <CircleCheck aria-hidden="true" className="size-3 shrink-0" />
-                )}
-                {source.online && presentation.state === 'Failed' && (
-                  <CircleX aria-hidden="true" className="size-3 shrink-0" />
-                )}
-                {compactStatus}
-              </span>
-            </span>
-            <span className="block truncate text-[13px] font-medium leading-4">{task.title}</span>
-            <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-              {task.execution === 'worktree' && (
-                <span
-                  role="img"
-                  aria-label="Worktree checkout"
-                  title="Worktree checkout"
-                  className="inline-flex shrink-0"
-                >
-                  <GitBranch aria-hidden="true" className="size-3" />
-                </span>
-              )}
-              <span className="min-w-0 flex-1 truncate" title={branch}>
-                {branch || (task.execution === 'worktree' ? 'Worktree pending' : 'Unknown branch')}
-              </span>
+              <span className="shrink-0 text-[10px]">{compactStatus}</span>
+              {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
               {!!linkedPulls.length && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-0.5 text-violet-300"
+                  className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground"
                   title={linkedPulls.map((pull) => `#${pull.number} · ${pull.title}`).join(' · ')}
-                  aria-label={`Linked pull requests: ${linkedPulls.map((pull) => `#${pull.number}`).join(', ')}`}
                 >
-                  <GitPullRequest className="size-[11px]" />
+                  <GitPullRequest className="size-3" />
                   {linkedPulls[0]!.number}
-                  {linkedPulls.length > 1 && (
-                    <span className="text-[9px]">+{linkedPulls.length - 1}</span>
-                  )}
                 </span>
               )}
-              <span
-                className="inline-flex shrink-0 items-center"
-                title={`Runs on ${host} · ${source.online ? 'Online' : 'Offline'}`}
-                aria-label={`Runs on ${host} · ${source.online ? 'Online' : 'Offline'}`}
-              >
-                <span className="relative shrink-0">
-                  <Monitor className="size-[11px]" />
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'absolute -bottom-0.5 -right-0.5 size-1 rounded-full border border-sidebar',
-                      source.online ? 'bg-emerald-400' : 'bg-muted-foreground',
-                    )}
-                  />
-                </span>
-              </span>
-              <span className="inline-flex shrink-0" title={agentDetail} aria-label={agentDetail}>
-                {provider ? (
-                  <AgentAvatar provider={provider} customIcon={customIcon} />
-                ) : (
-                  <Bot className="size-3" />
-                )}
-                <span className="sr-only">{agentName}</span>
-              </span>
+              {task.execution === 'worktree' && (
+                <GitBranch className="size-3 shrink-0" aria-label="Worktree checkout" />
+              )}
+            </span>
+            <span
+              className={cn(
+                'block w-full truncate text-[12px] font-medium leading-[17px]',
+                editable &&
+                  'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
+              )}
+            >
+              {task.title}
+            </span>
+            <span className="flex min-w-0 items-center gap-1 text-[10px] leading-4 text-muted-foreground">
+              <GitBranch className="size-3 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
+              <Monitor className="size-3 shrink-0" aria-label={host ?? 'Unknown host'} />
+              {provider && (
+                <AgentAvatar provider={provider} customIcon={customIcon} className="size-3.5" />
+              )}
             </span>
           </Button>
         </TooltipTrigger>
@@ -222,7 +138,7 @@ export function TaskRow({
           side="right"
           align="start"
           sideOffset={8}
-          className="w-72 rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg"
+          className="w-72 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg"
         >
           <p className="mb-3 text-sm font-medium leading-5">{task.title}</p>
           <div className="space-y-2 text-xs text-muted-foreground">

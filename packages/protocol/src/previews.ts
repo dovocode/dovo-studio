@@ -1,5 +1,6 @@
-import { z } from 'zod'
-
+import { mutableStruct, mutableArray } from './schema.js'
+import { minValue, maxValue, urlSchema } from './schema.js'
+import { Schema } from 'effect'
 export function previewUrl(input: string, runtimeAddress?: string): string {
   const text = input.trim()
   if (
@@ -17,31 +18,51 @@ export function previewUrl(input: string, runtimeAddress?: string): string {
   return url.href
 }
 export const previewPresets = [
-  { id: 'fill', name: 'Fit window', width: 0, height: 0 },
-  { id: 'phone', name: 'Phone · 390 × 844', width: 390, height: 844 },
-  { id: 'tablet', name: 'Tablet · 820 × 1180', width: 820, height: 1180 },
-  { id: 'desktop', name: 'Desktop · 1440 × 900', width: 1440, height: 900 },
+  {
+    id: 'fill',
+    name: 'Fit window',
+    width: 0,
+    height: 0,
+  },
+  {
+    id: 'phone',
+    name: 'Phone · 390 × 844',
+    width: 390,
+    height: 844,
+  },
+  {
+    id: 'tablet',
+    name: 'Tablet · 820 × 1180',
+    width: 820,
+    height: 1180,
+  },
+  {
+    id: 'desktop',
+    name: 'Desktop · 1440 × 900',
+    width: 1440,
+    height: 900,
+  },
 ] as const
-export const previewDeviceSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  kind: z.enum(['simulator', 'physical']).optional(),
-  connection: z.string().optional(),
-  liveSupported: z.boolean().optional(),
-  platform: z.enum(['ios', 'android']),
-  state: z.enum(['booted', 'stopped', 'starting']),
-  runtime: z.string(),
+export const previewDeviceSchema = mutableStruct({
+  id: Schema.String,
+  name: Schema.String,
+  kind: Schema.optional(Schema.Literal('simulator', 'physical')),
+  connection: Schema.optional(Schema.String),
+  liveSupported: Schema.optional(Schema.Boolean),
+  platform: Schema.Literal('ios', 'android'),
+  state: Schema.Literal('booted', 'stopped', 'starting'),
+  runtime: Schema.String,
 })
-export type PreviewDevice = z.infer<typeof previewDeviceSchema>
-export const previewDevicesSchema = z.object({
-  host: z.string(),
-  devices: z.array(previewDeviceSchema),
-  diagnostics: z.array(z.string()),
+export type PreviewDevice = Schema.Schema.Type<typeof previewDeviceSchema>
+export const previewDevicesSchema = mutableStruct({
+  host: Schema.String,
+  devices: mutableArray(previewDeviceSchema),
+  diagnostics: mutableArray(Schema.String),
 })
-export const previewActionSchema = z.object({
-  taskId: z.string().min(1).max(200),
-  id: z.string().min(1).max(200),
-  action: z.enum([
+export const previewActionSchema = mutableStruct({
+  taskId: maxValue(minValue(Schema.String, 1), 200),
+  id: maxValue(minValue(Schema.String, 1), 200),
+  action: Schema.Literal(
     'boot',
     'shutdown',
     'open',
@@ -56,45 +77,108 @@ export const previewActionSchema = z.object({
     'landscape',
     'light',
     'dark',
-  ]),
-  url: z.string().max(4096).optional(),
-  bundleId: z
-    .string()
-    .min(1)
-    .max(255)
-    .regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/)
-    .optional(),
+  ),
+  url: Schema.optional(maxValue(Schema.String, 4096)),
+  bundleId: Schema.optional(
+    maxValue(minValue(Schema.String, 1), 255).pipe(Schema.pattern(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/)),
+  ),
 })
-export const previewResultSchema = z.object({
-  ok: z.literal(true),
-  image: z.string().optional(),
-  apps: z.array(z.object({ name: z.string(), bundleId: z.string() })).optional(),
+export const previewResultSchema = mutableStruct({
+  ok: Schema.Literal(true),
+  image: Schema.optional(Schema.String),
+  apps: Schema.optional(
+    mutableArray(
+      mutableStruct({
+        name: Schema.String,
+        bundleId: Schema.String,
+      }),
+    ),
+  ),
 })
-export const browserCommandSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('external'), key: z.string().min(1).max(500), url: z.url() }),
-  z.object({
-    action: z.literal('show'),
-    key: z.string().min(1).max(500),
-    url: z.url(),
-    viewport: z
-      .object({
-        width: z.number().int().min(1).max(2000),
-        height: z.number().int().min(1).max(2000),
-      })
-      .optional(),
-    bounds: z.object({
-      x: z.number().int().min(0),
-      y: z.number().int().min(0),
-      width: z.number().int().min(1).max(5000),
-      height: z.number().int().min(1).max(5000),
+export const browserCommandSchema = Schema.Union(
+  ...[
+    mutableStruct({
+      action: Schema.Literal('external'),
+      key: maxValue(minValue(Schema.String, 1), 500),
+      url: urlSchema(),
     }),
-  }),
-  z.object({
-    action: z.enum(['hide', 'back', 'forward', 'reload', 'status']),
-    key: z.string().min(1).max(500),
-  }),
-])
-export type BrowserCommand = z.infer<typeof browserCommandSchema>
-export type BrowserBridge = (
-  command: BrowserCommand,
-) => Promise<{ url: string; back: boolean; forward: boolean } | undefined>
+    mutableStruct({
+      action: Schema.Literal('show'),
+      key: maxValue(minValue(Schema.String, 1), 500),
+      url: urlSchema(),
+      viewport: Schema.optional(
+        mutableStruct({
+          width: maxValue(
+            minValue(
+              Schema.Number.pipe(Schema.finite()).pipe(
+                Schema.int(),
+                Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+              ),
+              1,
+            ),
+            2000,
+          ),
+          height: maxValue(
+            minValue(
+              Schema.Number.pipe(Schema.finite()).pipe(
+                Schema.int(),
+                Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+              ),
+              1,
+            ),
+            2000,
+          ),
+        }),
+      ),
+      bounds: mutableStruct({
+        x: minValue(
+          Schema.Number.pipe(Schema.finite()).pipe(
+            Schema.int(),
+            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+          ),
+          0,
+        ),
+        y: minValue(
+          Schema.Number.pipe(Schema.finite()).pipe(
+            Schema.int(),
+            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+          ),
+          0,
+        ),
+        width: maxValue(
+          minValue(
+            Schema.Number.pipe(Schema.finite()).pipe(
+              Schema.int(),
+              Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+            ),
+            1,
+          ),
+          5000,
+        ),
+        height: maxValue(
+          minValue(
+            Schema.Number.pipe(Schema.finite()).pipe(
+              Schema.int(),
+              Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+            ),
+            1,
+          ),
+          5000,
+        ),
+      }),
+    }),
+    mutableStruct({
+      action: Schema.Literal('hide', 'back', 'forward', 'reload', 'status'),
+      key: maxValue(minValue(Schema.String, 1), 500),
+    }),
+  ],
+)
+export type BrowserCommand = Schema.Schema.Type<typeof browserCommandSchema>
+export type BrowserBridge = (command: BrowserCommand) => Promise<
+  | {
+      url: string
+      back: boolean
+      forward: boolean
+    }
+  | undefined
+>

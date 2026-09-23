@@ -1,11 +1,11 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { ChoicePicker } from './choice-picker'
-import { useState } from 'react'
 import { GitBranch } from 'lucide-react'
 import { branchesSchema } from '@dovo/protocol'
-import type { z } from 'zod'
+import { Schema } from 'effect'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
-type Branches = z.infer<typeof branchesSchema>
+type Branches = Schema.Schema.Type<typeof branchesSchema>
 export function BranchPicker({
   current,
   disabled,
@@ -21,12 +21,12 @@ export function BranchPicker({
     revision: string
   }) => Promise<Branches>
 }) {
-  const [open, setOpen] = useState(false),
-    [data, setData] = useState<Branches | null>(null),
-    [selected, setSelected] = useState(''),
-    [name, setName] = useState(''),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
+  const [open, setOpen] = useApplicationState(false),
+    [data, setData] = useApplicationState<Branches | null>(null),
+    [selected, setSelected] = useApplicationState(''),
+    [name, setName] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const act = async (operation: () => Promise<Branches>) => {
     setBusy(true)
     setError('')
@@ -102,7 +102,11 @@ export function BranchPicker({
               onClick={() =>
                 data &&
                 void act(() =>
-                  change({ action: 'switch', name: selected, revision: data.revision }),
+                  change({
+                    action: 'switch',
+                    name: selected,
+                    revision: data.revision,
+                  }),
                 )
               }
             >
@@ -123,7 +127,11 @@ export function BranchPicker({
               onClick={() =>
                 data &&
                 void act(() =>
-                  change({ action: 'create', name: name.trim(), revision: data.revision }),
+                  change({
+                    action: 'create',
+                    name: name.trim(),
+                    revision: data.revision,
+                  }),
                 )
               }
             >

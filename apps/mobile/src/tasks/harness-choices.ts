@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import {
   canChangeTaskProvider,
   defaultTaskHarness,
@@ -7,7 +8,6 @@ import {
   type Agent,
   type Task,
 } from '@dovo/protocol'
-
 export const harnessNames: Record<Agent['provider'], string> = {
   codex: 'Codex',
   claude: 'Claude',
@@ -30,11 +30,9 @@ export function taskHarnessChoices(task: Task, agents: Agent[]) {
     })),
   ].filter((choice) => unlocked || choice.provider === provider)
 }
-
 export function taskHarnessSelection(task: Task) {
   return task.harness ? `harness:${task.harness.provider}` : `agent:${task.agentId}`
 }
-
 export function selectedTaskHarness(task: Task, agents: Agent[], selection: string) {
   const choice = taskHarnessChoices(task, agents).find((choice) => choice.id === selection)
   if (!choice) return undefined
@@ -42,16 +40,22 @@ export function selectedTaskHarness(task: Task, agents: Agent[], selection: stri
   if (selection === taskHarnessSelection(task)) return resolveTaskAgent(task, agents)
   return selection.startsWith('agent:')
     ? agents.find((agent) => agent.id === selection.slice(6))
-    : { ...defaultTaskHarness(choice.provider), id: 'task', name: harnessNames[choice.provider] }
+    : {
+        ...defaultTaskHarness(choice.provider),
+        id: 'task',
+        name: harnessNames[choice.provider],
+      }
 }
-
 export function taskHarnessChanges(task: Task, selection: string, agent: Agent) {
   const custom = selection.startsWith('agent:')
   return {
-    agentId: { before: task.agentId, after: custom ? selection.slice(6) : '' },
+    agentId: {
+      before: task.agentId,
+      after: custom ? selection.slice(6) : '',
+    },
     harness: {
       before: task.harness ?? null,
-      after: custom ? null : taskHarnessSchema.parse(agent),
+      after: custom ? null : decode(taskHarnessSchema, agent),
     },
     agentOverrides: {
       before: task.agentOverrides ?? null,
@@ -67,7 +71,6 @@ export function taskHarnessChanges(task: Task, selection: string, agent: Agent) 
     },
   }
 }
-
 export function taskHarnessLabel(task: Task, agent: Agent | undefined) {
   if (!agent) return 'Choose agent'
   const name = task.harness ? harnessNames[agent.provider] : agent.name

@@ -1,12 +1,18 @@
-import { useMemo, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useMemo } from 'react'
 import { canConnect } from './graph'
 import { addEdge, applyEdgeChanges, applyNodeChanges, ReactFlowProvider } from '@xyflow/react'
 import type { Automation } from '@dovo/studio-core'
 import { Canvas, Controls } from '@dovo/studio-ui'
 import { AutomationNodeView, type FlowNode } from './automation-node'
 import type { RunStep } from './run-progress'
-const fitViewOptions = { maxZoom: 1, padding: 0.2 }
-const nodeTypes = { automation: AutomationNodeView }
+const fitViewOptions = {
+  maxZoom: 1,
+  padding: 0.2,
+}
+const nodeTypes = {
+  automation: AutomationNodeView,
+}
 export function AutomationCanvas({
   flow,
   steps,
@@ -20,16 +26,33 @@ export function AutomationCanvas({
   onSelect: (id: string | null) => void
   update: (transform: (flow: Automation) => Automation) => void
 }) {
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
-  const [measurements, setMeasurements] = useState<
-    Record<string, { width: number; height: number }>
+  const [positions, setPositions] = useApplicationState<
+    Record<
+      string,
+      {
+        x: number
+        y: number
+      }
+    >
   >({})
-  const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set())
+  const [measurements, setMeasurements] = useApplicationState<
+    Record<
+      string,
+      {
+        width: number
+        height: number
+      }
+    >
+  >({})
+  const [selectedEdges, setSelectedEdges] = useApplicationState<Set<string>>(new Set())
   const nodes = useMemo(
     () =>
       flow.nodes.map((node) => ({
         ...node,
-        data: { ...node.data, runStep: steps.find((step) => step.nodeId === node.id) },
+        data: {
+          ...node.data,
+          runStep: steps.find((step) => step.nodeId === node.id),
+        },
         position: positions[node.id] ?? node.position,
         measured: measurements[node.id],
         selected: node.id === selectedNode,
@@ -40,7 +63,10 @@ export function AutomationCanvas({
     <ReactFlowProvider key={flow.id}>
       <Canvas<FlowNode>
         nodes={nodes}
-        edges={flow.edges.map((edge) => ({ ...edge, selected: selectedEdges.has(edge.id) }))}
+        edges={flow.edges.map((edge) => ({
+          ...edge,
+          selected: selectedEdges.has(edge.id),
+        }))}
         isValidConnection={(connection) => canConnect(flow, connection.source, connection.target)}
         nodeTypes={nodeTypes}
         colorMode="dark"
@@ -57,7 +83,9 @@ export function AutomationCanvas({
             onSelect(null)
           if (changes.some((change) => change.type === 'dimensions'))
             setMeasurements((current) => {
-              const next = { ...current }
+              const next = {
+                ...current,
+              }
               let changed = false
               for (const change of changes)
                 if (
@@ -73,7 +101,9 @@ export function AutomationCanvas({
             })
           if (changes.some((change) => change.type === 'position' || change.type === 'remove'))
             setPositions((current) => {
-              const next = { ...current }
+              const next = {
+                ...current,
+              }
               for (const change of changes)
                 if (change.type === 'position' && change.position) {
                   if (change.dragging) next[change.id] = change.position
@@ -90,7 +120,12 @@ export function AutomationCanvas({
           if (!edits.length) return
           update((current) => {
             const nodes = applyNodeChanges<FlowNode>(edits, current.nodes).map(
-              ({ id, position, data }) => ({ id, type: 'automation' as const, position, data }),
+              ({ id, position, data }) => ({
+                id,
+                type: 'automation' as const,
+                position,
+                data,
+              }),
             )
             const ids = new Set(nodes.map((node) => node.id))
             return {

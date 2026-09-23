@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { decode } from '@dovo/protocol'
+import { useEffect, useRef } from 'react'
 import {
   jiraBindingSchema,
   jiraProjectsSchema,
@@ -28,9 +30,15 @@ export function JiraSourcesDialog({
 }) {
   const { workspace, activeRuntimeId, switchRuntime, refreshRuntime } = useWorkspace()
   const runtimes = useRuntimeSources()
-  const [selected, setSelected] = useState<{ runtimeId: string; source?: JiraSource }>()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [selected, setSelected] = useApplicationState<
+    | {
+        runtimeId: string
+        source?: JiraSource
+      }
+    | undefined
+  >(undefined)
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   const pending = useRef(false)
   const choose = async (runtimeId: string, source?: JiraSource) => {
     if (pending.current) return
@@ -39,7 +47,10 @@ export function JiraSourcesDialog({
     setError('')
     try {
       if (runtimeId !== activeRuntimeId) await switchRuntime(runtimeId)
-      setSelected({ runtimeId, source })
+      setSelected({
+        runtimeId,
+        source,
+      })
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -154,7 +165,6 @@ export function JiraSourcesDialog({
     </Dialog>
   )
 }
-
 function JiraForm({
   initial,
   onDone,
@@ -167,19 +177,25 @@ function JiraForm({
   setBusy: (value: boolean) => void
 }) {
   const { request, connected } = useWorkspace()
-  const [site, setSite] = useState(initial?.site ?? ''),
-    [project, setProject] = useState(initial?.project ?? '')
-  const [name, setName] = useState(initial?.name ?? '')
-  const [error, setError] = useState('')
-  const [discovery, setDiscovery] = useState<{
-    site: string
-    projects: Array<{ key: string; name: string }>
-    truncated: boolean
-  }>()
-  const [discoveryError, setDiscoveryError] = useState('')
-  const [manualProject, setManualProject] = useState(false)
-  const [loadingProjects, setLoadingProjects] = useState(false)
-  const [revision, retry] = useState(0)
+  const [site, setSite] = useApplicationState(initial?.site ?? ''),
+    [project, setProject] = useApplicationState(initial?.project ?? '')
+  const [name, setName] = useApplicationState(initial?.name ?? '')
+  const [error, setError] = useApplicationState('')
+  const [discovery, setDiscovery] = useApplicationState<
+    | {
+        site: string
+        projects: Array<{
+          key: string
+          name: string
+        }>
+        truncated: boolean
+      }
+    | undefined
+  >(undefined)
+  const [discoveryError, setDiscoveryError] = useApplicationState('')
+  const [manualProject, setManualProject] = useApplicationState(false)
+  const [loadingProjects, setLoadingProjects] = useApplicationState(false)
+  const [revision, retry] = useApplicationState(0)
   useEffect(() => {
     if (!connected) return
     let current = true
@@ -209,13 +225,19 @@ function JiraForm({
     setError('')
     try {
       if (remove && initial) {
-        await request('/api/scm/jira/sources/remove', { sourceId: initial.id }, responses.ok)
+        await request(
+          '/api/scm/jira/sources/remove',
+          {
+            sourceId: initial.id,
+          },
+          responses.ok,
+        )
       } else {
         await request(
           '/api/scm/jira/sources/save',
           {
             source: {
-              ...jiraBindingSchema.parse({
+              ...decode(jiraBindingSchema, {
                 site: site.trim(),
                 project: project.trim().toUpperCase(),
               }),

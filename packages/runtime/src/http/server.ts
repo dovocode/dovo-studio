@@ -1,10 +1,15 @@
+import { pairingAddresses } from './pairing-addresses.js'
+import { ValidationError, safeValidationIssues, safeValidationMessage } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import { completeRequest } from './request-activity.js'
 import { createServer, type IncomingMessage } from 'node:http'
 import type { Socket } from 'node:net'
 import { WebSocketServer, WebSocket } from 'ws'
-import { ZodError } from 'zod'
+
 import { terminalInputSchema } from '@dovo/protocol'
-import type { Services } from '../services.js'
+import { RuntimeServices, type Services } from '../services.js'
+import { Effect } from 'effect'
+import { runClientEffect } from '@dovo/client-runtime'
 import { route } from './routes.js'
 import { json } from './body.js'
 import { HttpError, errorMessage } from '../errors.js'
@@ -25,7 +30,9 @@ export function createRuntimeServer(services: Services) {
   }
   const server = createServer((request, response) => {
     if (stopping) {
-      response.writeHead(503, { Connection: 'close' })
+      response.writeHead(503, {
+        Connection: 'close',
+      })
       response.end('Runtime is shutting down')
       return
     }
@@ -53,7 +60,11 @@ export function createRuntimeServer(services: Services) {
         } catch {
           throw new HttpError(400, 'Invalid request URL')
         }
-        return route(request, url, services)
+        return runClientEffect(
+          route(request, url, () => pairingAddresses(server.address())).pipe(
+            Effect.provideService(RuntimeServices, services),
+          ),
+        )
       })
       .then((result) => {
         completeRequest(request, 200)
@@ -61,9 +72,15 @@ export function createRuntimeServer(services: Services) {
       })
       .catch((error: unknown) => {
         const status =
-          error instanceof HttpError ? error.status : error instanceof ZodError ? 400 : 500
-        completeRequest(request, status, errorMessage(error))
-        return json(request, response, status, { error: errorMessage(error) })
+          error instanceof HttpError ? error.status : error instanceof ValidationError ? 400 : 500
+        // Schema diagnostics can embed entire submitted values, including credentials.
+        const message =
+          error instanceof ValidationError ? safeValidationMessage(error) : errorMessage(error)
+        completeRequest(request, status, message)
+        return json(request, response, status, {
+          error: message,
+          ...(error instanceof ValidationError ? { issues: safeValidationIssues(error) } : {}),
+        })
       })
     const done = Promise.all([handled, finished])
       .then(() => {})
@@ -79,7 +96,10 @@ export function createRuntimeServer(services: Services) {
     socket.once('close', () => connections.delete(socket))
     if (stopping) socket.destroy()
   })
-  const sockets = new WebSocketServer({ noServer: true, maxPayload: 128 * 1024 })
+  const sockets = new WebSocketServer({
+    noServer: true,
+    maxPayload: 128 * 1024,
+  })
   const authenticated = new Map<WebSocket, string>()
   server.on('upgrade', (request, socket, head) => {
     if (stopping) {
@@ -136,7 +156,8 @@ export function createRuntimeServer(services: Services) {
         client.on('message', (raw) => {
           try {
             services.devices.authenticate(ticket.token)
-            const input = terminalInputSchema.parse(
+            const input = decode(
+              terminalInputSchema,
               JSON.parse(
                 (Array.isArray(raw)
                   ? Buffer.concat(raw)
@@ -146,7 +167,10 @@ export function createRuntimeServer(services: Services) {
                 ).toString(),
               ),
             )
-            if (input.type === 'input') {
+            if (input.type === 'ping') {
+              // Binary control frames cannot be confused with raw terminal text.
+              client.send(JSON.stringify({ type: 'pong', nonce: input.nonce }), { binary: true })
+            } else if (input.type === 'input') {
               services.activity.add('terminal', ticket.resourceId, 'Terminal input', {
                 characters: input.data.length,
               })

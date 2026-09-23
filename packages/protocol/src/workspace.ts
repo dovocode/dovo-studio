@@ -1,14 +1,15 @@
+import { mutableArray, mutableStruct } from './schema.js'
+import { minValue, maxValue, refine, urlSchema, isoDateTime } from './schema.js'
 import { subagentSchema } from './subagents.js'
 import { jiraBindingSchema, jiraSourceSchema, jiraIssueLinkSchema } from './jira.js'
 import { taskWorkItemSchema } from './work-task.js'
 import { resourceSettingsSchema } from './resources.js'
 import { attachmentSchema, MAX_ATTACHMENTS } from './attachments.js'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { forgeBindingSchema, forgeProviderSchema } from './forges.js'
-
-export const executionSchema = z.enum(['main', 'worktree'])
-export const providerSchema = z.enum(['codex', 'opencode', 'claude', 'acp'])
-export const agentIconSchema = z.enum([
+export const executionSchema = Schema.Literal('main', 'worktree')
+export const providerSchema = Schema.Literal('codex', 'opencode', 'claude', 'acp')
+export const agentIconSchema = Schema.Literal(
   'bot',
   'code',
   'wrench',
@@ -20,205 +21,241 @@ export const agentIconSchema = z.enum([
   'pen',
   'brain',
   'flask',
-])
-export const agentSchema = z.object({
-  icon: agentIconSchema.optional(),
-  resources: resourceSettingsSchema.optional(),
-  id: z.string(),
-  name: z.string().min(1),
+)
+export const agentSchema = mutableStruct({
+  icon: Schema.optional(agentIconSchema),
+  resources: Schema.optional(resourceSettingsSchema),
+  id: Schema.String,
+  name: minValue(Schema.String, 1),
   provider: providerSchema,
-  model: z.string(),
-  reasoning: z.string().max(100).optional(),
-  serviceTier: z.string().max(100).optional(),
-  cyberAccessProgram: z.enum(['standard', 'daybreakBlue', 'daybreakRed']).optional(),
-  instructions: z.string(),
-  permission: z.enum(['ask', 'read-only', 'workspace-write', 'auto', 'full-access']),
-  endpoint: z.string(),
-  args: z.array(z.string()).optional(),
+  model: Schema.String,
+  reasoning: Schema.optional(maxValue(Schema.String, 100)),
+  serviceTier: Schema.optional(maxValue(Schema.String, 100)),
+  cyberAccessProgram: Schema.optional(Schema.Literal('standard', 'daybreakBlue', 'daybreakRed')),
+  instructions: Schema.String,
+  permission: Schema.Literal('ask', 'read-only', 'workspace-write', 'auto', 'full-access'),
+  endpoint: Schema.String,
+  args: Schema.optional(mutableArray(Schema.String)),
 })
-export const taskHarnessSchema = agentSchema.omit({ id: true, name: true, icon: true })
-export type TaskHarness = z.infer<typeof taskHarnessSchema>
-export const repositorySchema = z.object({
-  forge: forgeBindingSchema.optional(),
-  jira: jiraBindingSchema.optional(),
-  resources: resourceSettingsSchema.optional(),
-  id: z.string(),
-  name: z.string().min(1),
-  path: z.string().min(1),
-  branch: z.string(),
+export const taskHarnessSchema = agentSchema.omit('id', 'name', 'icon')
+export type TaskHarness = Schema.Schema.Type<typeof taskHarnessSchema>
+export const repositorySchema = mutableStruct({
+  forge: Schema.optional(forgeBindingSchema),
+  jira: Schema.optional(jiraBindingSchema),
+  resources: Schema.optional(resourceSettingsSchema),
+  id: Schema.String,
+  name: minValue(Schema.String, 1),
+  path: minValue(Schema.String, 1),
+  branch: Schema.String,
 })
-export const fileSchema = z.object({
-  path: z.string(),
-  before: z.string(),
-  after: z.string(),
-  viewed: z.boolean(),
-  diskContents: z.string().optional(),
+export const fileSchema = mutableStruct({
+  path: Schema.String,
+  before: Schema.String,
+  after: Schema.String,
+  viewed: Schema.Boolean,
+  diskContents: Schema.optional(Schema.String),
 })
-export const diffCommentSchema = z.object({
-  side: z.enum(['additions', 'deletions']),
-  start: z.number().int().positive(),
-  end: z.number().int().positive(),
-  excerpt: z.string(),
-  body: z.string().trim().min(1).max(10000),
+export const diffCommentSchema = mutableStruct({
+  side: Schema.Literal('additions', 'deletions'),
+  start: Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.positive()),
+  end: Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.positive()),
+  excerpt: Schema.String,
+  body: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 10000),
 })
-export const taskFeedbackSchema = diffCommentSchema
-  .extend({ id: z.string().min(1), path: z.string().min(1) })
-  .refine((v) => v.end >= v.start, 'Invalid line range')
-export const messageSchema = z.object({
-  id: z.string(),
-  role: z.enum(['user', 'assistant']),
-  text: z.string(),
-  file: z.string().optional(),
-  attachments: z.array(attachmentSchema).max(MAX_ATTACHMENTS).optional(),
-  diffComment: diffCommentSchema.optional(),
-  createdAt: z.string().optional(),
+export const taskFeedbackSchema = refine(
+  mutableStruct({
+    ...diffCommentSchema.fields,
+    ...{
+      id: minValue(Schema.String, 1),
+      path: minValue(Schema.String, 1),
+    },
+  }),
+  (v) => v.end >= v.start,
+  'Invalid line range',
+)
+export const messageSchema = mutableStruct({
+  id: Schema.String,
+  role: Schema.Literal('user', 'assistant'),
+  text: Schema.String,
+  file: Schema.optional(Schema.String),
+  attachments: Schema.optional(maxValue(mutableArray(attachmentSchema), MAX_ATTACHMENTS)),
+  diffComment: Schema.optional(diffCommentSchema),
+  createdAt: Schema.optional(Schema.String),
 })
-export const taskPullSchema = z.object({
-  provider: forgeProviderSchema.optional(),
-  connectionId: z.string().optional(),
-  headRef: z.string().optional(),
-  cloneUrl: z.url({ protocol: /^https?$/ }).optional(),
-  number: z.number().int().positive(),
-  url: z.url({ protocol: /^https?$/ }),
-  repositoryUrl: z.url({ protocol: /^https?$/ }),
-  headSha: z.string().regex(/^[a-f0-9]{40}$/),
-  baseSha: z.string().regex(/^[a-f0-9]{40}$/),
+export const taskPullSchema = mutableStruct({
+  provider: Schema.optional(forgeProviderSchema),
+  connectionId: Schema.optional(Schema.String),
+  headRef: Schema.optional(Schema.String),
+  cloneUrl: Schema.optional(
+    urlSchema({
+      protocol: /^https?$/,
+    }),
+  ),
+  number: Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.positive()),
+  url: urlSchema({
+    protocol: /^https?$/,
+  }),
+  repositoryUrl: urlSchema({
+    protocol: /^https?$/,
+  }),
+  headSha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+  baseSha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
 })
-export const queuedMessageSchema = messageSchema.extend({
-  role: z.literal('user'),
-  createdAt: z.string(),
+export const queuedMessageSchema = mutableStruct({
+  ...messageSchema.fields,
+  ...{
+    role: Schema.Literal('user'),
+    createdAt: Schema.String,
+  },
 })
-export const turnCheckpointSchema = z.object({
-  before: z.string(),
-  after: z.string().optional(),
-  files: z.array(fileSchema),
-  omitted: z.array(z.string()),
-  error: z.string().optional(),
+export const turnCheckpointSchema = mutableStruct({
+  before: Schema.String,
+  after: Schema.optional(Schema.String),
+  files: mutableArray(fileSchema),
+  omitted: mutableArray(Schema.String),
+  error: Schema.optional(Schema.String),
 })
-export const turnSchema = z.object({
-  runtimeHost: z.string().optional(),
-  branch: z.string().optional(),
-  id: z.string(),
-  assistantId: z.string(),
-  checkpoint: turnCheckpointSchema.optional(),
-  agentId: z.string(),
+export const turnSchema = mutableStruct({
+  runtimeHost: Schema.optional(Schema.String),
+  branch: Schema.optional(Schema.String),
+  id: Schema.String,
+  assistantId: Schema.String,
+  checkpoint: Schema.optional(turnCheckpointSchema),
+  agentId: Schema.String,
   provider: providerSchema,
-  model: z.string(),
-  reasoning: z.string().optional(),
-  startedAt: z.string(),
-  finishedAt: z.string().optional(),
-  status: z.enum(['running', 'completed', 'failed', 'cancelled']),
-  error: z.string().optional(),
+  model: Schema.String,
+  reasoning: Schema.optional(Schema.String),
+  startedAt: Schema.String,
+  finishedAt: Schema.optional(Schema.String),
+  status: Schema.Literal('running', 'completed', 'failed', 'cancelled'),
+  error: Schema.optional(Schema.String),
 })
-export const taskModelSchema = agentSchema
-  .pick({
-    model: true,
-    reasoning: true,
-    permission: true,
-    serviceTier: true,
-    cyberAccessProgram: true,
-  })
-  .partial()
-  .extend({
-    // Omission inherits the custom agent; null explicitly clears a task override.
-    serviceTier: agentSchema.shape.serviceTier.nullable(),
-    cyberAccessProgram: agentSchema.shape.cyberAccessProgram.nullable(),
-  })
-export const taskSchema = z.object({
-  checkoutBranch: z.string().optional(),
-  checkoutLocked: z.boolean().optional(),
+export const taskModelSchema = mutableStruct({
+  model: Schema.optional(agentSchema.fields.model),
+  reasoning: agentSchema.fields.reasoning,
+  permission: Schema.optional(agentSchema.fields.permission),
+  serviceTier: Schema.optional(Schema.NullOr(agentSchema.fields.serviceTier.from)),
+  cyberAccessProgram: Schema.optional(Schema.NullOr(agentSchema.fields.cyberAccessProgram.from)),
+})
+export const taskSchema = mutableStruct({
+  checkoutBranch: Schema.optional(Schema.String),
+  checkoutLocked: Schema.optional(Schema.Boolean),
   // Captured on the first submitted input; queued input keeps the lock after removal.
-  providerLock: providerSchema.optional(),
-  id: z.string(),
-  title: z.string().min(1),
-  repositoryId: z.string(),
-  execution: executionSchema.optional(),
-  agentId: z.string(),
-  status: z.enum(['draft', 'running', 'review', 'done', 'failed', 'cancelled']),
-  createdAt: z.string(),
-  messages: z.array(messageSchema),
-  files: z.array(fileSchema),
-  draft: z.string(),
-  draftAttachments: z.array(attachmentSchema).max(MAX_ATTACHMENTS).optional(),
-  example: z.boolean(),
-  origin: z.string().optional(),
-  pullRequest: taskPullSchema.optional(),
+  providerLock: Schema.optional(providerSchema),
+  id: Schema.String,
+  title: minValue(Schema.String, 1),
+  repositoryId: Schema.String,
+  execution: Schema.optional(executionSchema),
+  agentId: Schema.String,
+  status: Schema.Literal('draft', 'running', 'review', 'done', 'failed', 'cancelled'),
+  createdAt: Schema.String,
+  messages: mutableArray(messageSchema),
+  files: mutableArray(fileSchema),
+  draft: Schema.String,
+  draftAttachments: Schema.optional(maxValue(mutableArray(attachmentSchema), MAX_ATTACHMENTS)),
+  example: Schema.Boolean,
+  origin: Schema.optional(Schema.String),
+  pullRequest: Schema.optional(taskPullSchema),
   // Informational links never select or change the checkout used for execution.
-  linkedPullRequests: z
-    .array(
-      taskPullSchema
-        .pick({ number: true, url: true, provider: true, repositoryUrl: true })
-        .extend({ title: z.string() }),
-    )
-    .max(20)
-    .optional(),
-  workItem: taskWorkItemSchema.optional(),
-  sessionId: z.string().optional(),
-  sessionAgentId: z.string().optional(),
-  error: z.string().optional(),
-  activity: z.string().optional(),
-  updatedAt: z.string().optional(),
-  lastViewedTurnId: z.string().min(1).max(200).optional(),
-  viewedRevision: z.number().int().nonnegative().optional(),
-  pinned: z.boolean().optional(),
+  linkedPullRequests: Schema.optional(
+    maxValue(
+      mutableArray(
+        mutableStruct({
+          ...taskPullSchema.pick('number', 'url', 'provider', 'repositoryUrl').fields,
+          ...{
+            title: Schema.String,
+          },
+        }),
+      ),
+      20,
+    ),
+  ),
+  workItem: Schema.optional(taskWorkItemSchema),
+  sessionId: Schema.optional(Schema.String),
+  sessionAgentId: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+  activity: Schema.optional(Schema.String),
+  updatedAt: Schema.optional(Schema.String),
+  lastViewedTurnId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  viewedRevision: Schema.optional(
+    Schema.Number.pipe(Schema.finite())
+      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+      .pipe(Schema.nonNegative()),
+  ),
+  pinned: Schema.optional(Schema.Boolean),
   // Legacy archived flag means Settled; archivedAt hides the thread from normal lists.
-  archived: z.boolean().optional(),
-  archivedAt: z.string().datetime().nullable().optional(),
-  subagents: z.array(subagentSchema).optional(),
-  snoozedUntil: z.string().datetime().nullable().optional(),
-  agentOverrides: taskModelSchema.optional(),
-  harness: taskHarnessSchema.nullable().optional(),
-  queue: z.array(queuedMessageSchema).optional(),
-  queuePaused: z.boolean().optional(),
-  turns: z.array(turnSchema).optional(),
-  consumedMessageIds: z.array(z.string()).optional(),
+  archived: Schema.optional(Schema.Boolean),
+  archivedAt: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
+  subagents: Schema.optional(mutableArray(subagentSchema)),
+  snoozedUntil: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
+  agentOverrides: Schema.optional(taskModelSchema),
+  harness: Schema.optional(Schema.NullOr(taskHarnessSchema)),
+  queue: Schema.optional(mutableArray(queuedMessageSchema)),
+  queuePaused: Schema.optional(Schema.Boolean),
+  restartRecovery: Schema.optional(
+    mutableStruct({ kind: Schema.Literal('turn', 'queue'), automatic: Schema.Boolean }),
+  ),
+  turns: Schema.optional(mutableArray(turnSchema)),
+  consumedMessageIds: Schema.optional(mutableArray(Schema.String)),
 })
-export const nodeDataSchema = z.object({
-  kind: z.enum(['trigger', 'task', 'review']),
-  label: z.string(),
-  trigger: z.enum(['manual', 'schedule', 'webhook']),
-  schedule: z.string(),
-  timezone: z.string(),
-  objective: z.string(),
-  agentId: z.string(),
-  repositoryId: z.string(),
-  execution: executionSchema.optional(),
+export const nodeDataSchema = mutableStruct({
+  kind: Schema.Literal('trigger', 'task', 'review'),
+  label: Schema.String,
+  trigger: Schema.Literal('manual', 'schedule', 'webhook'),
+  schedule: Schema.String,
+  timezone: Schema.String,
+  objective: Schema.String,
+  agentId: Schema.String,
+  repositoryId: Schema.String,
+  execution: Schema.optional(executionSchema),
 })
-export const flowNodeSchema = z.object({
-  id: z.string(),
-  type: z.literal('automation'),
-  position: z.object({ x: z.number(), y: z.number() }),
+export const flowNodeSchema = mutableStruct({
+  id: Schema.String,
+  type: Schema.Literal('automation'),
+  position: mutableStruct({
+    x: Schema.Number.pipe(Schema.finite()),
+    y: Schema.Number.pipe(Schema.finite()),
+  }),
   data: nodeDataSchema,
 })
-export const flowEdgeSchema = z.object({ id: z.string(), source: z.string(), target: z.string() })
-export const automationSchema = z.object({
-  id: z.string(),
-  name: z.string().min(1),
-  nodes: z.array(flowNodeSchema),
-  edges: z.array(flowEdgeSchema),
-  enabled: z.boolean().optional(),
+export const flowEdgeSchema = mutableStruct({
+  id: Schema.String,
+  source: Schema.String,
+  target: Schema.String,
 })
-export const workspaceSchema = z.object({
-  version: z.literal(1),
-  agents: z.array(agentSchema),
-  repositories: z.array(repositorySchema),
-  tasks: z.array(taskSchema),
-  automations: z.array(automationSchema),
-  runtimeAddress: z.string(),
-  jiraSources: z.array(jiraSourceSchema).optional(),
-  jiraIssueLinks: z.array(jiraIssueLinkSchema).optional(),
+export const automationSchema = mutableStruct({
+  id: Schema.String,
+  name: minValue(Schema.String, 1),
+  nodes: mutableArray(flowNodeSchema),
+  edges: mutableArray(flowEdgeSchema),
+  enabled: Schema.optional(Schema.Boolean),
 })
-export type Agent = z.infer<typeof agentSchema>
-export type Repository = z.infer<typeof repositorySchema>
-export type Task = z.infer<typeof taskSchema>
-export type ChangedFile = z.infer<typeof fileSchema>
-export type ChatMessage = z.infer<typeof messageSchema>
-export type Automation = z.infer<typeof automationSchema>
-export type AutomationData = z.infer<typeof nodeDataSchema>
-export type AutomationNode = z.infer<typeof flowNodeSchema>
-export type Workspace = z.infer<typeof workspaceSchema>
-
-export type TaskTurn = z.infer<typeof turnSchema>
+export const workspaceSchema = mutableStruct({
+  version: Schema.Literal(1),
+  agents: mutableArray(agentSchema),
+  repositories: mutableArray(repositorySchema),
+  tasks: mutableArray(taskSchema),
+  automations: mutableArray(automationSchema),
+  runtimeAddress: Schema.String,
+  jiraSources: Schema.optional(mutableArray(jiraSourceSchema)),
+  jiraIssueLinks: Schema.optional(mutableArray(jiraIssueLinkSchema)),
+})
+export type Agent = Schema.Schema.Type<typeof agentSchema>
+export type Repository = Schema.Schema.Type<typeof repositorySchema>
+export type Task = Schema.Schema.Type<typeof taskSchema>
+export type ChangedFile = Schema.Schema.Type<typeof fileSchema>
+export type ChatMessage = Schema.Schema.Type<typeof messageSchema>
+export type Automation = Schema.Schema.Type<typeof automationSchema>
+export type AutomationData = Schema.Schema.Type<typeof nodeDataSchema>
+export type AutomationNode = Schema.Schema.Type<typeof flowNodeSchema>
+export type Workspace = Schema.Schema.Type<typeof workspaceSchema>
+export type TaskTurn = Schema.Schema.Type<typeof turnSchema>
 
 /** Only the newest successful, idle turn can be presented as a completed task. */
 export function latestCompletedTaskTurn(task: Task): TaskTurn | undefined {
@@ -226,7 +263,6 @@ export function latestCompletedTaskTurn(task: Task): TaskTurn | undefined {
   const turn = task.turns?.at(-1)
   return turn?.status === 'completed' ? turn : undefined
 }
-
 export function hasUnviewedTaskCompletion(task: Task): boolean {
   if (task.archived) return false
   const turn = latestCompletedTaskTurn(task)
@@ -273,16 +309,22 @@ export function lockedTaskProvider(
     (canChangeTaskProvider(task) ? undefined : resolveTaskAgent(task, agents)?.provider)
   )
 }
-
 export function resolveTaskAgent(
   task: Pick<Task, 'id' | 'agentId' | 'agentOverrides' | 'harness'>,
   agents: readonly Agent[],
 ): Agent | undefined {
   const base = task.harness
-    ? { ...task.harness, id: `task:${task.id}`, name: task.harness.provider }
+    ? {
+        ...task.harness,
+        id: `task:${task.id}`,
+        name: task.harness.provider,
+      }
     : agents.find((agent) => agent.id === task.agentId)
   if (!base) return undefined
-  const merged = { ...base, ...task.agentOverrides }
+  const merged = {
+    ...base,
+    ...task.agentOverrides,
+  }
   return {
     ...merged,
     serviceTier: merged.serviceTier ?? undefined,
@@ -290,5 +332,12 @@ export function resolveTaskAgent(
   }
 }
 export function defaultTaskHarness(provider: TaskHarness['provider']): TaskHarness {
-  return { provider, model: '', reasoning: '', instructions: '', permission: 'ask', endpoint: '' }
+  return {
+    provider,
+    model: '',
+    reasoning: '',
+    instructions: '',
+    permission: 'ask',
+    endpoint: '',
+  }
 }

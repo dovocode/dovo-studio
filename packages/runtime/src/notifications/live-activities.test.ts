@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { activityPayload, LiveActivities } from './live-activities'
 import { Apns } from './apns'
@@ -15,7 +16,7 @@ function setup() {
   const store = new WorkspaceStore(db)
   const devices = new Devices(db, 'owner-secret')
   const device = devices.add('Phone', 'phone-secret')
-  const task = taskSchema.parse({
+  const task = decode(taskSchema, {
     id: 'task',
     example: false,
     draft: '',
@@ -40,7 +41,10 @@ function setup() {
       },
     ],
   })
-  store.update((w) => ({ ...w, tasks: [task] }))
+  store.update((w) => ({
+    ...w,
+    tasks: [task],
+  }))
   const apns = new Apns({
     keyPath: '',
     keyId: '',
@@ -82,13 +86,22 @@ it('sends Expo-compatible state changes and an end event, without duplicate snap
   expect(f.send.mock.calls[1]?.[1]).toMatchObject({
     aps: {
       event: 'update',
-      'content-state': { name: 'DovoTask', props: expect.stringContaining('Needs input') },
+      'content-state': {
+        name: 'DovoTask',
+        props: expect.stringContaining('Needs input'),
+      },
     },
   })
-  f.store.updateTask('task', (t) => ({ ...t, status: 'review' }))
+  f.store.updateTask('task', (t) => ({
+    ...t,
+    status: 'review',
+  }))
   await f.service.flush()
   expect(f.send.mock.calls[2]?.[1]).toMatchObject({
-    aps: { event: 'end', 'dismissal-date': expect.any(Number) },
+    aps: {
+      event: 'end',
+      'dismissal-date': expect.any(Number),
+    },
   })
   await f.service.flush()
   expect(f.send).toHaveBeenCalledTimes(3)
@@ -107,9 +120,12 @@ it('stops delivery after revocation and expires invalid push tokens', async () =
 })
 it('rejects old turns and makes unregister scoped to the authenticated device', async () => {
   const f = setup()
-  expect(() => f.service.register(f.device, { ...f.registration, turnId: 'old' })).toThrow(
-    'no longer running',
-  )
+  expect(() =>
+    f.service.register(f.device, {
+      ...f.registration,
+      turnId: 'old',
+    }),
+  ).toThrow('no longer running')
   f.service.register(f.device, f.registration)
   f.service.remove('other-phone', 'activity')
   await f.service.flush()
@@ -123,13 +139,29 @@ it('keeps a failed delivery for the next scheduled attempt and reports its statu
   await f.service.flush()
   expect(f.send).toHaveBeenCalledTimes(1)
   expect(f.service.status().error).toContain('APNs')
-  expect(f.db.prepare('SELECT count(*) as count FROM live_activities').get()).toEqual({ count: 1 })
+  expect(f.db.prepare('SELECT count(*) as count FROM live_activities').get()).toEqual({
+    count: 1,
+  })
 })
 it('bounds push content and uses Unix seconds for stale and dismissal dates', () => {
   const f = setup()
-  const props = liveTaskProps({ ...f.task, title: 'x'.repeat(1000) }, 'Mac', 'Project', false)
+  const props = liveTaskProps(
+    {
+      ...f.task,
+      title: 'x'.repeat(1000),
+    },
+    'Mac',
+    'Project',
+    false,
+  )
   expect(props.title).toHaveLength(100)
   const payload = activityPayload(props, false, 100_000)
-  expect(payload.aps).toMatchObject({ timestamp: 100, 'stale-date': 220 })
-  expect(payload.aps['content-state']).toEqual({ name: 'DovoTask', props: JSON.stringify(props) })
+  expect(payload.aps).toMatchObject({
+    timestamp: 100,
+    'stale-date': 220,
+  })
+  expect(payload.aps['content-state']).toEqual({
+    name: 'DovoTask',
+    props: JSON.stringify(props),
+  })
 })

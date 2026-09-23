@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { existsSync } from 'node:fs'
 import {
   chromium,
@@ -14,19 +15,39 @@ import {
   type RemoteBrowserMessage,
 } from '@dovo/protocol'
 import { HttpError, errorMessage } from '../errors.js'
-
-export type BrowserFrame = { type: 'frame'; data: Uint8Array; width: number; height: number }
-export type BrowserOutput = Exclude<RemoteBrowserMessage, { type: 'frame' }> | BrowserFrame
+export type BrowserFrame = {
+  type: 'frame'
+  data: Uint8Array
+  width: number
+  height: number
+}
+export type BrowserOutput =
+  | Exclude<
+      RemoteBrowserMessage,
+      {
+        type: 'frame'
+      }
+    >
+  | BrowserFrame
 type Listener = (message: BrowserOutput) => void
 const unrestrictedInput = () => {}
-type QueuedInput = { input: RemoteBrowserInput; authorize: () => void; operation?: Promise<void> }
+type QueuedInput = {
+  input: RemoteBrowserInput
+  authorize: () => void
+  operation?: Promise<void>
+}
 type Session = {
   context: BrowserContext
   page: Page
   cdp: CDPSession
   pendingInput?: QueuedInput
   statePending: boolean
-  state: Extract<RemoteBrowserMessage, { type: 'state' }>
+  state: Extract<
+    RemoteBrowserMessage,
+    {
+      type: 'state'
+    }
+  >
   touching: boolean
   stateTimer?: ReturnType<typeof setTimeout>
   listeners: Set<Listener>
@@ -40,12 +61,10 @@ type Session = {
   dialog?: Dialog
 }
 const idleMs = 5 * 60 * 1000
-
 export class RemoteBrowsers {
   private browser?: Promise<Browser>
   private sessions = new Map<string, Promise<Session>>()
   private disposed = false
-
   private launch() {
     if (!this.browser) {
       const bundled = chromium.executablePath()
@@ -66,7 +85,11 @@ export class RemoteBrowsers {
           'Install Chrome on the host, or run pnpm --filter @dovo/runtime exec playwright install chromium. Then reconnect the browser.',
         )
       this.browser = chromium
-        .launch({ executablePath, headless: true, chromiumSandbox: true })
+        .launch({
+          executablePath,
+          headless: true,
+          chromiumSandbox: true,
+        })
         .then((browser) => {
           browser.once('disconnected', () => {
             this.browser = undefined
@@ -80,7 +103,6 @@ export class RemoteBrowsers {
     }
     return this.browser
   }
-
   async open(taskId: string): Promise<void> {
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
     let pending = this.sessions.get(taskId)
@@ -96,11 +118,13 @@ export class RemoteBrowsers {
     const session = await pending
     if (!session.listeners.size) this.scheduleClose(taskId, session)
   }
-
   private async create(taskId: string) {
     const browser = await this.launch()
     const context = await browser.newContext({
-      viewport: { width: 1280, height: 800 },
+      viewport: {
+        width: 1280,
+        height: 800,
+      },
       deviceScaleFactor: 2,
       acceptDownloads: false,
       serviceWorkers: 'block',
@@ -143,7 +167,7 @@ export class RemoteBrowsers {
         session.dialog = dialog
         this.emit(
           session,
-          remoteBrowserDialogSchema.parse({
+          decode(remoteBrowserDialogSchema, {
             type: 'dialog',
             kind: dialog.type(),
             message: dialog.message(),
@@ -159,7 +183,10 @@ export class RemoteBrowsers {
           .close()
           .then(async () => {
             if (/^https?:\/\//i.test(target))
-              await this.input(taskId, { type: 'navigate', url: target })
+              await this.input(taskId, {
+                type: 'navigate',
+                url: target,
+              })
             else
               this.emit(session, {
                 type: 'error',
@@ -196,13 +223,15 @@ export class RemoteBrowsers {
       throw error
     }
   }
-
   private emit(session: Session, message: BrowserOutput) {
     for (const listener of session.listeners) listener(message)
   }
   private report(session: Session, error: unknown) {
     if (!session.page.isClosed())
-      this.emit(session, { type: 'error', message: errorMessage(error) })
+      this.emit(session, {
+        type: 'error',
+        message: errorMessage(error),
+      })
   }
   private scheduleClose(taskId: string, session: Session) {
     clearTimeout(session.idle)
@@ -219,9 +248,10 @@ export class RemoteBrowsers {
     }
     session.statePending = true
     try {
-      const history: { currentIndex: number; entries: unknown[] } = await session.cdp.send(
-        'Page.getNavigationHistory',
-      )
+      const history: {
+        currentIndex: number
+        entries: unknown[]
+      } = await session.cdp.send('Page.getNavigationHistory')
       const info = await session.page.evaluate(() => ({
         title: document.title,
         editable:
@@ -253,12 +283,14 @@ export class RemoteBrowsers {
         !message.includes('Execution context was destroyed')
       )
         throw error
-      this.emit(session, { ...session.state, loading: session.loading })
+      this.emit(session, {
+        ...session.state,
+        loading: session.loading,
+      })
     } finally {
       session.statePending = false
     }
   }
-
   private scheduleState(session: Session) {
     if (session.stateTimer) return
     session.stateTimer = setTimeout(() => {
@@ -266,7 +298,6 @@ export class RemoteBrowsers {
       void this.state(session).catch((error) => this.report(session, error))
     }, 50)
   }
-
   async attach(taskId: string, listener: Listener) {
     const pending = this.sessions.get(taskId)
     if (!pending)
@@ -304,14 +335,16 @@ export class RemoteBrowsers {
       }
     }
   }
-
   private syncStream(session: Session) {
     const operation = session.stream.then(async () => {
       if (session.page.isClosed()) return
       if (session.listeners.size && !session.streaming) {
         await session.page.screencast.start({
           quality: 85,
-          size: { width: 1920, height: 1920 },
+          size: {
+            width: 1920,
+            height: 1920,
+          },
           onFrame: (frame) => {
             session.frame = {
               type: 'frame',
@@ -331,7 +364,6 @@ export class RemoteBrowsers {
     session.stream = operation.catch((error) => this.report(session, error))
     return operation
   }
-
   async input(
     taskId: string,
     input: RemoteBrowserInput,
@@ -370,7 +402,10 @@ export class RemoteBrowsers {
         return previous.operation
       }
     }
-    const command: QueuedInput = { input, authorize }
+    const command: QueuedInput = {
+      input,
+      authorize,
+    }
     if (session.queued >= 100)
       throw new HttpError(
         429,
@@ -391,13 +426,29 @@ export class RemoteBrowsers {
       ) {
         const url = input.type === 'navigate' ? previewUrl(input.url) : undefined
         session.loading = true
-        session.state = { ...session.state, url: url ?? session.state.url, loading: true }
+        session.state = {
+          ...session.state,
+          url: url ?? session.state.url,
+          loading: true,
+        }
         this.emit(session, session.state)
         try {
-          if (url) await page.goto(url, { waitUntil: 'domcontentloaded' })
-          if (input.type === 'back') await page.goBack({ waitUntil: 'domcontentloaded' })
-          if (input.type === 'forward') await page.goForward({ waitUntil: 'domcontentloaded' })
-          if (input.type === 'reload') await page.reload({ waitUntil: 'domcontentloaded' })
+          if (url)
+            await page.goto(url, {
+              waitUntil: 'domcontentloaded',
+            })
+          if (input.type === 'back')
+            await page.goBack({
+              waitUntil: 'domcontentloaded',
+            })
+          if (input.type === 'forward')
+            await page.goForward({
+              waitUntil: 'domcontentloaded',
+            })
+          if (input.type === 'reload')
+            await page.reload({
+              waitUntil: 'domcontentloaded',
+            })
         } finally {
           session.loading = false
           this.scheduleState(session)
@@ -405,7 +456,10 @@ export class RemoteBrowsers {
       } else if (input.type === 'resize') {
         const size = page.viewportSize()
         if (size?.width === input.width && size.height === input.height) return
-        await page.setViewportSize({ width: input.width, height: input.height })
+        await page.setViewportSize({
+          width: input.width,
+          height: input.height,
+        })
         // Chromium may suppress identical screencast pixels (for example a scrolled
         // blank area). A resize must still publish its new geometry immediately.
         const data = await page.screenshot({
@@ -425,13 +479,28 @@ export class RemoteBrowsers {
         await session.cdp.send('Input.dispatchTouchEvent', {
           type:
             input.phase === 'down' ? 'touchStart' : input.phase === 'up' ? 'touchEnd' : 'touchMove',
-          touchPoints: input.phase === 'up' ? [] : [{ x: input.x, y: input.y, id: 0 }],
+          touchPoints:
+            input.phase === 'up'
+              ? []
+              : [
+                  {
+                    x: input.x,
+                    y: input.y,
+                    id: 0,
+                  },
+                ],
         })
         session.touching = input.phase !== 'up'
       } else if (input.type === 'pointer') {
         await page.mouse.move(input.x, input.y)
-        if (input.phase === 'down') await page.mouse.down({ button: input.button })
-        if (input.phase === 'up') await page.mouse.up({ button: input.button })
+        if (input.phase === 'down')
+          await page.mouse.down({
+            button: input.button,
+          })
+        if (input.phase === 'up')
+          await page.mouse.up({
+            button: input.button,
+          })
       } else if (input.type === 'scroll') {
         await page.mouse.move(input.x, input.y)
         await page.mouse.wheel(input.deltaX, input.deltaY)
@@ -448,7 +517,6 @@ export class RemoteBrowsers {
       })
     await operation
   }
-
   async close(taskId: string) {
     const pending = this.sessions.get(taskId)
     if (!pending) return

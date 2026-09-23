@@ -1,36 +1,71 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray } from './schema.js'
+import { isoDateTime, decode } from './schema.js'
+import { Data, Effect, Either, Schema } from 'effect'
 import type { RuntimeConnection } from './runtime.js'
 import { snapshotSchema } from './runtime.js'
-
-export const runtimeSnapshotCacheSchema = z.object({
+export const runtimeSnapshotCacheSchema = mutableStruct({
   snapshot: snapshotSchema,
-  lastSeen: z.iso.datetime().nullable(),
-  pulls: z
-    .object({
-      total: z.number(),
-      needsAttention: z.number(),
-      reviewRequested: z.number(),
-      partial: z.boolean(),
-    })
-    .nullable(),
+  lastSeen: Schema.NullOr(isoDateTime(Schema.String)),
+  pulls: Schema.NullOr(
+    mutableStruct({
+      total: Schema.Number.pipe(Schema.finite()),
+      needsAttention: Schema.Number.pipe(Schema.finite()),
+      reviewRequested: Schema.Number.pipe(Schema.finite()),
+      partial: Schema.Boolean,
+    }),
+  ),
 })
-
 export interface CacheStorage {
   getItem(key: string): Promise<string | null>
   setItem(key: string, value: string): Promise<unknown>
   removeItem(key: string): Promise<unknown>
   removePrefix(prefix: string): Promise<void>
 }
-export type CachedRead<T> = { value: T; cachedAt: string }
+export type CachedRead<T> = {
+  value: T
+  cachedAt: string
+}
+export class ReadCacheError extends Data.TaggedError('ReadCacheError')<{
+  readonly cause: unknown
+}> {
+  get message() {
+    return this.cause instanceof Error ? this.cause.message : String(this.cause)
+  }
+}
 export interface RuntimeReadCache {
-  read<T extends z.ZodType>(key: string, schema: T): Promise<CachedRead<z.output<T>> | null>
+  readEffect<T extends Schema.Schema.AnyNoContext>(
+    key: string,
+    schema: T,
+  ): Effect.Effect<CachedRead<Schema.Schema.Type<T>> | null, ReadCacheError>
+  writeEffect(key: string, value: unknown): Effect.Effect<void, ReadCacheError>
+  removeEffect(key: string): Effect.Effect<void, ReadCacheError>
+  clearEffect(): Effect.Effect<void, ReadCacheError>
+  closeEffect(): Effect.Effect<void, ReadCacheError>
+  read<T extends Schema.Schema.AnyNoContext>(
+    key: string,
+    schema: T,
+  ): Promise<CachedRead<Schema.Schema.Type<T>> | null>
   write(key: string, value: unknown): Promise<void>
   remove(key: string): Promise<void>
   clear(): Promise<void>
   close(): Promise<void>
 }
-const instances = new WeakMap<CacheStorage, Map<string, Set<{ close: () => Promise<void> }>>>()
-const envelope = z.object({ version: z.literal(1), cachedAt: z.iso.datetime(), value: z.unknown() })
+const instances = new WeakMap<
+  CacheStorage,
+  Map<string, Set<{ closeEffect: () => Effect.Effect<void, ReadCacheError> }>>
+>()
+const storageEffect = <A>(run: () => Promise<A>) =>
+  Effect.tryPromise({ try: run, catch: (cause) => new ReadCacheError({ cause }) })
+const runCache = async <A>(effect: Effect.Effect<A, ReadCacheError>): Promise<A> => {
+  const result = await Effect.runPromise(Effect.either(effect))
+  if (Either.isLeft(result)) throw result.left
+  return result.right
+}
+const envelope = mutableStruct({
+  version: Schema.Literal(1),
+  cachedAt: isoDateTime(Schema.String),
+  value: Schema.Unknown,
+})
 
 /** Disposable read replicas only. Credentials and pending mutations never belong here. */
 export function createRuntimeReadCache(
@@ -49,76 +84,120 @@ export function createRuntimeReadCache(
     clients = new Set()
     hosts.set(origin, clients)
   }
-  const scope = Promise.all([
-    digest(new URL(connection.address).origin),
-    digest(connection.token),
-  ]).then(([host, credential]) => ({
-    host: `dovo.read-cache.v1.${host}.`,
-    prefix: `dovo.read-cache.v1.${host}.${credential}.`,
-  }))
+  // Memoize only successful initialization. A cancelled reader must not poison
+  // every subsequent read/write with a cached interrupted Exit.
+  let namespace: { host: string; prefix: string } | undefined
+  const scope = Effect.suspend(() =>
+    namespace
+      ? Effect.succeed(namespace)
+      : Effect.all(
+          [storageEffect(() => digest(origin)), storageEffect(() => digest(connection.token))],
+          { concurrency: 2 },
+        ).pipe(
+          Effect.map(([host, credential]) => {
+            namespace = {
+              host: `dovo.read-cache.v1.${host}.`,
+              prefix: `dovo.read-cache.v1.${host}.${credential}.`,
+            }
+            return namespace
+          }),
+        ),
+  )
   let closed = false
-  let pending = Promise.resolve()
+  const writer = Effect.runSync(Effect.makeSemaphore(1))
   const lifecycle = {
-    close: () => {
-      closed = true
-      return pending.finally(() => clients.delete(lifecycle))
-    },
+    closeEffect: (): Effect.Effect<void, ReadCacheError> =>
+      Effect.suspend(() => {
+        closed = true
+        return writer.withPermits(1)(
+          Effect.sync(() => {
+            clients.delete(lifecycle)
+          }),
+        )
+      }).pipe(Effect.uninterruptible),
   }
   clients.add(lifecycle)
-  const enqueue = (operation: () => Promise<void>) => {
-    const result = pending.then(operation)
-    pending = result.catch(() => undefined)
-    return result
-  }
-  return {
-    async read(key, schema) {
+  const readEffect: RuntimeReadCache['readEffect'] = (key, schema) =>
+    Effect.gen(function* () {
       if (closed) return null
-      const { prefix } = await scope
-      const raw = await storage.getItem(prefix + key)
+      const { prefix } = yield* scope
+      const raw = yield* storageEffect(() => storage.getItem(prefix + key))
       if (!raw || closed) return null
-      try {
-        const cached = envelope.parse(JSON.parse(raw))
-        return { value: schema.parse(cached.value), cachedAt: cached.cachedAt }
-      } catch {
-        await storage.removeItem(prefix + key)
-        return null
-      }
-    },
-    write(key, value) {
-      return enqueue(async () => {
-        if (closed) return
-        const { prefix } = await scope
-        await storage.setItem(
-          prefix + key,
-          JSON.stringify({ version: 1, cachedAt: new Date().toISOString(), value }),
+      const parsed = yield* Effect.either(
+        Effect.try(() => {
+          const cached = decode(envelope, JSON.parse(raw))
+          return { value: decode(schema, cached.value), cachedAt: cached.cachedAt }
+        }),
+      )
+      if (Either.isRight(parsed)) return parsed.right
+      yield* writer
+        .withPermits(1)(
+          Effect.gen(function* () {
+            // A newer write may have replaced the corrupt value while this read was decoding.
+            const current = yield* storageEffect(() => storage.getItem(prefix + key))
+            if (current === raw) yield* storageEffect(() => storage.removeItem(prefix + key))
+          }),
         )
-        // Keep the workspace plus the most recently written 100 read results per credential.
-        if (key === 'snapshot') return
-        const raw = await storage.getItem(prefix + '_index')
-        let keys: string[] = []
-        try {
-          keys = z.array(z.string()).parse(JSON.parse(raw ?? '[]'))
-        } catch {
-          /* A disposable index can be rebuilt. */
-        }
-        keys = [...keys.filter((item) => item !== key), key]
-        for (const old of keys.slice(0, -100)) await storage.removeItem(prefix + old)
-        await storage.setItem(prefix + '_index', JSON.stringify(keys.slice(-100)))
+        .pipe(Effect.uninterruptible)
+      return null
+    })
+  const writeEffect = (key: string, value: unknown) =>
+    writer
+      .withPermits(1)(
+        Effect.gen(function* () {
+          if (closed) return
+          const { prefix } = yield* scope
+          const encoded = yield* Effect.try({
+            try: () => JSON.stringify({ version: 1, cachedAt: new Date().toISOString(), value }),
+            catch: (cause) => new ReadCacheError({ cause }),
+          })
+          yield* storageEffect(() => storage.setItem(prefix + key, encoded))
+          if (key === 'snapshot') return
+          const raw = yield* storageEffect(() => storage.getItem(prefix + '_index'))
+          const parsed = yield* Effect.either(
+            Effect.try(() => decode(mutableArray(Schema.String), JSON.parse(raw ?? '[]'))),
+          )
+          const previous = Either.isRight(parsed) ? parsed.right : []
+          const keys = [...previous.filter((item) => item !== key), key]
+          yield* Effect.forEach(
+            keys.slice(0, -100),
+            (old) => storageEffect(() => storage.removeItem(prefix + old)),
+            { discard: true },
+          )
+          yield* storageEffect(() =>
+            storage.setItem(prefix + '_index', JSON.stringify(keys.slice(-100))),
+          )
+        }),
+      )
+      .pipe(Effect.uninterruptible)
+  const removeEffect = (key: string) =>
+    writer
+      .withPermits(1)(
+        Effect.gen(function* () {
+          const { prefix } = yield* scope
+          yield* storageEffect(() => storage.removeItem(prefix + key))
+        }),
+      )
+      .pipe(Effect.uninterruptible)
+  const clearEffect = () =>
+    Effect.gen(function* () {
+      yield* Effect.forEach([...clients], (client) => client.closeEffect(), {
+        concurrency: 'unbounded',
+        discard: true,
       })
-    },
-    remove(key) {
-      return enqueue(async () => {
-        const { prefix } = await scope
-        await storage.removeItem(prefix + key)
-      })
-    },
-    clear() {
-      const writers = [...clients].map((client) => client.close())
-      return Promise.all(writers).then(async () => {
-        const { host } = await scope
-        await storage.removePrefix(host)
-      })
-    },
-    close: lifecycle.close,
+      const { host } = yield* scope
+      yield* storageEffect(() => storage.removePrefix(host))
+    }).pipe(Effect.uninterruptible)
+  return {
+    readEffect,
+    writeEffect,
+    removeEffect,
+    clearEffect,
+    closeEffect: lifecycle.closeEffect,
+    read: (key, schema) => runCache(readEffect(key, schema)),
+    write: (key, value) => runCache(writeEffect(key, value)),
+    remove: (key) => runCache(removeEffect(key)),
+    clear: () => runCache(clearEffect()),
+    close: () => runCache(lifecycle.closeEffect()),
   }
 }

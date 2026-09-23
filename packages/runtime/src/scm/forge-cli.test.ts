@@ -3,7 +3,6 @@ import { captureForgeCli, runForgeCli, runForgeCliText } from './forge-cli'
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-
 it('passes credential-helper text unchanged over stdin and preserves split UTF-8 output', async () => {
   const input = 'protocol=https\nhost=forge.example\n\n'
   const result = await runForgeCliText(
@@ -22,9 +21,11 @@ it('passes credential-helper text unchanged over stdin and preserves split UTF-8
   )
   expect(result).toBe(input + 'héllo')
 })
-
 it('retains JSON stdin semantics for existing provider writes', async () => {
-  const body = { description: 'line one\nline two', enabled: true }
+  const body = {
+    description: 'line one\nline two',
+    enabled: true,
+  }
   const result = await captureForgeCli(
     process.execPath,
     ['--eval', 'process.stdin.pipe(process.stdout); process.stderr.write("diagnostic");'],
@@ -33,7 +34,6 @@ it('retains JSON stdin semantics for existing provider writes', async () => {
   expect(JSON.parse(result.stdout)).toEqual(body)
   expect(result.stderr).toBe('diagnostic')
 })
-
 it('redacts private output when a CLI exits unsuccessfully', async () => {
   await expect(
     runForgeCli(process.execPath, [
@@ -44,7 +44,6 @@ it('redacts private output when a CLI exits unsuccessfully', async () => {
     'The source control CLI rejected the request. Check host, login, permissions and submitted fields. Refresh before retrying a write.',
   )
 })
-
 it('runs in the selected project checkout with account environment limited to that process', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-cli-checkout-'))
   const previous = process.env.GH_TOKEN
@@ -57,7 +56,9 @@ it('runs in the selected project checkout with account environment limited to th
       ],
       undefined,
       directory,
-      { GH_TOKEN: 'fixture-selected-token' },
+      {
+        GH_TOKEN: 'fixture-selected-token',
+      },
     )
     expect(JSON.parse(output)).toEqual({
       cwd: await realpath(directory),
@@ -65,6 +66,9 @@ it('runs in the selected project checkout with account environment limited to th
     })
     expect(process.env.GH_TOKEN).toBe(previous)
   } finally {
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, {
+      recursive: true,
+      force: true,
+    })
   }
 })

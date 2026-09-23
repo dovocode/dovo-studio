@@ -1,14 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '../runtime/application-state'
+import { useEffect } from 'react'
 import { ScrollView, View, Pressable } from 'react-native'
 import { subagentElapsed, subagentMetadata, type Task } from '@dovo/protocol'
 import { Text } from '../ui/text'
 import { colors, styles } from '../ui/theme'
 import { useRuntime } from '../runtime/provider'
-
 export function TaskAgents({ task }: { task: Task }) {
   const { connected } = useRuntime()
-  const [now, setNow] = useState(Date.now)
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [now, setNow] = useApplicationState(Date.now)
+  const [expanded, setExpanded] = useApplicationState<string | null>(null)
   const agents = task.subagents ?? []
   const live = connected && task.status === 'running'
   const working = live ? agents.filter((agent) => agent.status === 'working').length : 0
@@ -18,9 +18,28 @@ export function TaskAgents({ task }: { task: Task }) {
     return () => clearInterval(timer)
   }, [working])
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 4 }}>
-        <Text style={[styles.muted, { fontSize: 11, marginBottom: 12 }]}>SPAWNED AGENTS</Text>
+    <View
+      style={{
+        flex: 1,
+      }}
+    >
+      <ScrollView
+        contentContainerStyle={{
+          padding: 16,
+          gap: 4,
+        }}
+      >
+        <Text
+          style={[
+            styles.muted,
+            {
+              fontSize: 11,
+              marginBottom: 12,
+            },
+          ]}
+        >
+          SPAWNED AGENTS
+        </Text>
         {!agents.length && (
           <Text style={styles.muted}>
             No subagents yet. Agents spawned by a supported harness appear here as they work.
@@ -39,11 +58,22 @@ export function TaskAgents({ task }: { task: Task }) {
             <Pressable
               key={key}
               accessibilityRole="button"
-              accessibilityState={{ expanded: expanded === key }}
+              accessibilityState={{
+                expanded: expanded === key,
+              }}
               onPress={() => setExpanded(expanded === key ? null : key)}
-              style={{ paddingVertical: 12, gap: 5 }}
+              style={{
+                paddingVertical: 12,
+                gap: 5,
+              }}
             >
-              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  gap: 8,
+                  alignItems: 'center',
+                }}
+              >
                 <View
                   style={{
                     width: 6,
@@ -56,26 +86,65 @@ export function TaskAgents({ task }: { task: Task }) {
                         : colors.muted,
                   }}
                 />
-                <Text numberOfLines={1} style={{ flex: 1, fontSize: 14, fontWeight: '600' }}>
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    flex: 1,
+                    fontSize: 14,
+                    fontWeight: '600',
+                  }}
+                >
                   {agent.name}
                 </Text>
-                <Text style={[styles.muted, { fontSize: 11 }]}>
+                <Text
+                  style={[
+                    styles.muted,
+                    {
+                      fontSize: 11,
+                    },
+                  ]}
+                >
                   {subagentElapsed(
                     active
                       ? agent
-                      : { ...agent, status: agent.status === 'working' ? 'unknown' : agent.status },
+                      : {
+                          ...agent,
+                          status: agent.status === 'working' ? 'unknown' : agent.status,
+                        },
                     now,
                   )}
                 </Text>
               </View>
-              <Text numberOfLines={1} style={[styles.muted, { marginLeft: 14 }]}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.muted,
+                  {
+                    marginLeft: 14,
+                  },
+                ]}
+              >
                 {active ? agent.activity || 'Working' : state}
               </Text>
-              <Text style={[styles.muted, { marginLeft: 14, fontSize: 11 }]}>
+              <Text
+                style={[
+                  styles.muted,
+                  {
+                    marginLeft: 14,
+                    fontSize: 11,
+                  },
+                ]}
+              >
                 {subagentMetadata(agent) || agent.provider}
               </Text>
               {expanded === key && (
-                <View style={{ gap: 8, paddingLeft: 14, paddingTop: 8 }}>
+                <View
+                  style={{
+                    gap: 8,
+                    paddingLeft: 14,
+                    paddingTop: 8,
+                  }}
+                >
                   {!!agent.prompt && (
                     <Text selectable style={styles.muted}>
                       {agent.prompt}
@@ -86,7 +155,15 @@ export function TaskAgents({ task }: { task: Task }) {
                       {agent.activity}
                     </Text>
                   )}
-                  <Text selectable style={[styles.muted, { fontSize: 10 }]}>
+                  <Text
+                    selectable
+                    style={[
+                      styles.muted,
+                      {
+                        fontSize: 10,
+                      },
+                    ]}
+                  >
                     {agent.id}
                   </Text>
                 </View>
@@ -96,7 +173,14 @@ export function TaskAgents({ task }: { task: Task }) {
         })}
       </ScrollView>
       <Text
-        style={[styles.muted, { padding: 16, borderTopWidth: 0.5, borderTopColor: colors.border }]}
+        style={[
+          styles.muted,
+          {
+            padding: 16,
+            borderTopWidth: 0.5,
+            borderTopColor: colors.border,
+          },
+        ]}
       >
         {working} working · {agents.length} total{!connected ? ' · Offline · saved state' : ''}
       </Text>

@@ -1,6 +1,7 @@
+import { decode } from '@dovo/protocol'
 import { claudeMcpServers } from '../mcp-settings.js'
 import { claudeInput } from './claude-input.js'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { claudeModels } from '../catalogs/claude.js'
 import { claudeQuestions } from './claude-questions.js'
 import { formQuestions } from './form-questions.js'
@@ -17,7 +18,9 @@ export const claudeAdapter: AgentAdapter = {
   async run(run) {
     const controller = new AbortController(),
       abort = () => controller.abort()
-    run.signal.addEventListener('abort', abort, { once: true })
+    run.signal.addEventListener('abort', abort, {
+      once: true,
+    })
     if (run.signal.aborted) abort()
     const stream = query({
       prompt: run.attachments?.length ? claudeInput(run) : run.prompt,
@@ -25,16 +28,37 @@ export const claudeAdapter: AgentAdapter = {
         cwd: run.cwd,
         env: processEnvironment(),
         abortController: controller,
-        ...(run.sessionId ? { resume: run.sessionId } : {}),
-        ...(run.agent.model ? { model: run.agent.model } : {}),
-        ...(run.agent.reasoning
-          ? { effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).parse(run.agent.reasoning) }
+        ...(run.sessionId
+          ? {
+              resume: run.sessionId,
+            }
           : {}),
-        ...(run.agent.endpoint ? { pathToClaudeCodeExecutable: run.agent.endpoint } : {}),
+        ...(run.agent.model
+          ? {
+              model: run.agent.model,
+            }
+          : {}),
+        ...(run.agent.reasoning
+          ? {
+              effort: decode(
+                Schema.Literal('low', 'medium', 'high', 'xhigh', 'max'),
+                run.agent.reasoning,
+              ),
+            }
+          : {}),
+        ...(run.agent.endpoint
+          ? {
+              pathToClaudeCodeExecutable: run.agent.endpoint,
+            }
+          : {}),
         systemPrompt:
           run.tools === 'none'
             ? run.agent.instructions
-            : { type: 'preset', preset: 'claude_code', append: run.agent.instructions },
+            : {
+                type: 'preset',
+                preset: 'claude_code',
+                append: run.agent.instructions,
+              },
         permissionMode:
           run.agent.permission === 'full-access'
             ? 'bypassPermissions'
@@ -44,19 +68,29 @@ export const claudeAdapter: AgentAdapter = {
                 ? 'acceptEdits'
                 : 'default',
         ...(run.agent.permission === 'full-access'
-          ? { allowDangerouslySkipPermissions: true }
+          ? {
+              allowDangerouslySkipPermissions: true,
+            }
           : {}),
         ...(run.tools === 'none'
-          ? { tools: [], strictMcpConfig: true, mcpServers: {} }
+          ? {
+              tools: [],
+              strictMcpConfig: true,
+              mcpServers: {},
+            }
           : run.agent.resources?.mcpServers.length
-            ? { mcpServers: claudeMcpServers(run.agent.resources.mcpServers) }
+            ? {
+                mcpServers: claudeMcpServers(run.agent.resources.mcpServers),
+              }
             : {}),
         settingSources: [],
         includePartialMessages: true,
         onElicitation: async (request, options) => {
           if (request.mode !== 'form' && request.mode !== undefined) {
             run.onActivity('This Claude MCP input request is not a supported form')
-            return { action: 'cancel' }
+            return {
+              action: 'cancel',
+            }
           }
           const content = await formQuestions(
             request.message,
@@ -64,22 +98,40 @@ export const claudeAdapter: AgentAdapter = {
             run,
             options.signal,
           )
-          return content ? { action: 'accept', content } : { action: 'decline' }
+          return content
+            ? {
+                action: 'accept',
+                content,
+              }
+            : {
+                action: 'decline',
+              }
         },
         ...(run.tools !== 'none' && run.agent.permission === 'read-only'
-          ? { tools: ['Read', 'Glob', 'Grep', 'AskUserQuestion'] }
+          ? {
+              tools: ['Read', 'Glob', 'Grep', 'AskUserQuestion'],
+            }
           : {}),
         canUseTool: async (name, input, options) => {
           if (run.tools === 'none')
-            return { behavior: 'deny', message: 'Tools are disabled for text cleanup' }
+            return {
+              behavior: 'deny',
+              message: 'Tools are disabled for text cleanup',
+            }
           if (name === 'AskUserQuestion') return claudeQuestions(input, run, options.signal)
           const allowed =
             run.agent.permission === 'read-only'
               ? ['Read', 'Glob', 'Grep'].includes(name)
               : await run.approve(name, JSON.stringify(input, null, 2))
           return allowed
-            ? { behavior: 'allow', updatedInput: input }
-            : { behavior: 'deny', message: 'Permission denied in Dovo Studio' }
+            ? {
+                behavior: 'allow',
+                updatedInput: input,
+              }
+            : {
+                behavior: 'deny',
+                message: 'Permission denied in Dovo Studio',
+              }
         },
       },
     })

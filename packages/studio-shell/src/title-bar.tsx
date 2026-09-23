@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect } from 'react'
 import { Layers2, Monitor, Search } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@dovo/studio-ui'
-
 export type DesktopPlatform = 'darwin' | 'win32' | 'linux'
-
 export function TitleBar({
   platform,
   section,
@@ -19,7 +18,7 @@ export function TitleBar({
   onDevices: () => void
   onSearch: () => void
 }) {
-  const [focused, setFocused] = useState(
+  const [focused, setFocused] = useApplicationState(
     () => typeof document === 'undefined' || document.hasFocus(),
   )
   useEffect(() => {

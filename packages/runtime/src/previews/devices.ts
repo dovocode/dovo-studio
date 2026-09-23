@@ -1,24 +1,38 @@
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
 import { hostname, homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { previewUrl, type PreviewDevice, type previewActionSchema } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 const exec = promisify(execFile)
 const run = async (file: string, args: string[]) =>
-  (await exec(file, args, { timeout: 30000, maxBuffer: 12 * 1024 * 1024 })).stdout.trim()
-const iosSchema = z.object({
-  devices: z.record(
-    z.string(),
-    z.array(
-      z.object({ udid: z.string(), name: z.string(), state: z.string(), isAvailable: z.boolean() }),
-    ),
+  (
+    await exec(file, args, {
+      timeout: 30000,
+      maxBuffer: 12 * 1024 * 1024,
+    })
+  ).stdout.trim()
+const iosSchema = mutableStruct({
+  devices: Schema.mutable(
+    Schema.Record({
+      key: Schema.String,
+      value: mutableArray(
+        mutableStruct({
+          udid: Schema.String,
+          name: Schema.String,
+          state: Schema.String,
+          isAvailable: Schema.Boolean,
+        }),
+      ),
+    }),
   ),
 })
 export function parseIosDevices(raw: string): PreviewDevice[] {
-  return Object.entries(iosSchema.parse(JSON.parse(raw)).devices)
+  return Object.entries(decode(iosSchema, JSON.parse(raw)).devices)
     .filter(([runtime]) => runtime.includes('iOS'))
     .flatMap(([runtime, devices]) =>
       devices
@@ -37,36 +51,61 @@ export function parseIosDevices(raw: string): PreviewDevice[] {
         })),
     )
 }
-const physicalIosSchema = z.object({
-  result: z.object({
-    devices: z.array(
-      z.object({
-        identifier: z.string(),
-        hardwareProperties: z
-          .object({ reality: z.string(), platform: z.string(), udid: z.string() })
-          .optional(),
-        deviceProperties: z
-          .object({ name: z.string(), osVersionNumber: z.string().optional() })
-          .optional(),
-        connectionProperties: z
-          .object({ tunnelState: z.string(), pairingState: z.string().optional() })
-          .optional(),
-        properties: z
-          .object({
-            hardware: z.object({ reality: z.string(), platform: z.string(), udid: z.string() }),
-            state: z.object({ name: z.string() }),
-            connection: z.object({ state: z.string(), pairingState: z.string().optional() }),
-            software: z
-              .object({ osVersionNumber: z.object({ stringValue: z.string() }).optional() })
-              .optional(),
-          })
-          .optional(),
+const physicalIosSchema = mutableStruct({
+  result: mutableStruct({
+    devices: mutableArray(
+      mutableStruct({
+        identifier: Schema.String,
+        hardwareProperties: Schema.optional(
+          mutableStruct({
+            reality: Schema.String,
+            platform: Schema.String,
+            udid: Schema.String,
+          }),
+        ),
+        deviceProperties: Schema.optional(
+          mutableStruct({
+            name: Schema.String,
+            osVersionNumber: Schema.optional(Schema.String),
+          }),
+        ),
+        connectionProperties: Schema.optional(
+          mutableStruct({
+            tunnelState: Schema.String,
+            pairingState: Schema.optional(Schema.String),
+          }),
+        ),
+        properties: Schema.optional(
+          mutableStruct({
+            hardware: mutableStruct({
+              reality: Schema.String,
+              platform: Schema.String,
+              udid: Schema.String,
+            }),
+            state: mutableStruct({
+              name: Schema.String,
+            }),
+            connection: mutableStruct({
+              state: Schema.String,
+              pairingState: Schema.optional(Schema.String),
+            }),
+            software: Schema.optional(
+              mutableStruct({
+                osVersionNumber: Schema.optional(
+                  mutableStruct({
+                    stringValue: Schema.String,
+                  }),
+                ),
+              }),
+            ),
+          }),
+        ),
       }),
     ),
   }),
 })
 export function parsePhysicalIosDevices(raw: string): PreviewDevice[] {
-  return physicalIosSchema.parse(JSON.parse(raw)).result.devices.flatMap((device) => {
+  return decode(physicalIosSchema, JSON.parse(raw)).result.devices.flatMap((device) => {
     const hardware = device.properties?.hardware ?? device.hardwareProperties
     if (hardware?.reality !== 'physical' || hardware.platform !== 'iOS') return []
     const state =
@@ -168,7 +207,10 @@ export async function previewDevices() {
         'Physical iPhones: connect and trust this Mac, enable Developer Mode, and use Xcode 15 or newer.',
       )
     } finally {
-      await rm(directory, { recursive: true, force: true })
+      await rm(directory, {
+        recursive: true,
+        force: true,
+      })
     }
   } else diagnostics.push('iOS simulators require a macOS runtime with Xcode.')
   try {
@@ -206,7 +248,11 @@ export async function previewDevices() {
       'Android: install SDK Platform Tools and Emulator, then create an AVD in Android Studio. Set ANDROID_HOME if needed.',
     )
   }
-  const priority = { booted: 0, starting: 1, stopped: 2 }
+  const priority = {
+    booted: 0,
+    starting: 1,
+    stopped: 2,
+  }
   devices.sort(
     (a, b) =>
       Number(b.kind === 'physical') - Number(a.kind === 'physical') ||
@@ -214,10 +260,14 @@ export async function previewDevices() {
       a.name.localeCompare(b.name),
   )
   diagnostics.push(...launchErrors.values())
-  return { host: hostname(), devices, diagnostics }
+  return {
+    host: hostname(),
+    devices,
+    diagnostics,
+  }
 }
 const pending = new Set<string>()
-export async function previewDeviceAction(input: z.infer<typeof previewActionSchema>) {
+export async function previewDeviceAction(input: Schema.Schema.Type<typeof previewActionSchema>) {
   if (pending.has(input.id))
     throw new HttpError(409, 'This device already has an operation in progress.')
   pending.add(input.id)
@@ -236,7 +286,9 @@ export async function previewDeviceAction(input: z.infer<typeof previewActionSch
             ? 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
             : 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
         ])
-      return { ok: true as const }
+      return {
+        ok: true as const,
+      }
     }
     if (device.kind === 'physical' && ['boot', 'shutdown'].includes(input.action))
       throw new HttpError(409, 'Start and stop are only available for simulators.')
@@ -252,17 +304,26 @@ export async function previewDeviceAction(input: z.infer<typeof previewActionSch
           '--json-output',
           '-',
         ])
-        const result = z
-          .object({
-            result: z.object({
-              apps: z.array(z.object({ name: z.string(), bundleIdentifier: z.string() })),
+        const result = decode(
+          mutableStruct({
+            result: mutableStruct({
+              apps: mutableArray(
+                mutableStruct({
+                  name: Schema.String,
+                  bundleIdentifier: Schema.String,
+                }),
+              ),
             }),
-          })
-          .parse(JSON.parse(output))
+          }),
+          JSON.parse(output),
+        )
         return {
           ok: true as const,
           apps: result.result.apps
-            .map((app) => ({ name: app.name, bundleId: app.bundleIdentifier }))
+            .map((app) => ({
+              name: app.name,
+              bundleId: app.bundleIdentifier,
+            }))
             .sort((a, b) => a.name.localeCompare(b.name)),
         }
       }
@@ -278,7 +339,9 @@ export async function previewDeviceAction(input: z.infer<typeof previewActionSch
           ...(input.action === 'open' ? ['--payload-url', previewUrl(input.url ?? '')] : []),
           input.action === 'open' ? 'com.apple.mobilesafari' : input.bundleId!,
         ])
-        return { ok: true as const }
+        return {
+          ok: true as const,
+        }
       }
       if (['portrait', 'landscape'].includes(input.action)) {
         await run('xcrun', [
@@ -288,13 +351,16 @@ export async function previewDeviceAction(input: z.infer<typeof previewActionSch
           ...target,
           input.action === 'portrait' ? 'portrait' : 'landscapeLeft',
         ])
-        return { ok: true as const }
+        return {
+          ok: true as const,
+        }
       }
       if (['light', 'dark'].includes(input.action)) {
         await run('xcrun', [...native, 'settings', 'appearance', ...target, '--mode', input.action])
-        return { ok: true as const }
+        return {
+          ok: true as const,
+        }
       }
-
       if (input.action !== 'screenshot')
         throw new HttpError(409, 'Open this phone with Device Hub to interact with it.')
       const directory = await mkdtemp(join(tmpdir(), 'dovo-phone-'))
@@ -315,7 +381,10 @@ export async function previewDeviceAction(input: z.infer<typeof previewActionSch
           image: `data:image/png;base64,${(await readFile(file)).toString('base64')}`,
         }
       } finally {
-        await rm(directory, { recursive: true, force: true })
+        await rm(directory, {
+          recursive: true,
+          force: true,
+        })
       }
     }
     if (
@@ -325,7 +394,10 @@ export async function previewDeviceAction(input: z.infer<typeof previewActionSch
     )
       throw new HttpError(409, 'These controls require a physical iPhone or iPad.')
     const id = input.id.slice(input.id.indexOf(':') + 1)
-    if (input.action === 'boot' && device.state !== 'stopped') return { ok: true as const }
+    if (input.action === 'boot' && device.state !== 'stopped')
+      return {
+        ok: true as const,
+      }
     if (input.action !== 'boot' && device.state !== 'booted')
       throw new HttpError(409, 'Start the device and wait until it is ready.')
     if (device.platform === 'ios') {
@@ -343,7 +415,10 @@ export async function previewDeviceAction(input: z.infer<typeof previewActionSch
             image: `data:image/png;base64,${(await readFile(file)).toString('base64')}`,
           }
         } finally {
-          await rm(dir, { recursive: true, force: true })
+          await rm(dir, {
+            recursive: true,
+            force: true,
+          })
         }
       }
     } else {
@@ -402,10 +477,15 @@ export async function previewDeviceAction(input: z.infer<typeof previewActionSch
           timeout: 30000,
           maxBuffer: 12 * 1024 * 1024,
         })
-        return { ok: true as const, image: `data:image/png;base64,${stdout.toString('base64')}` }
+        return {
+          ok: true as const,
+          image: `data:image/png;base64,${stdout.toString('base64')}`,
+        }
       }
     }
-    return { ok: true as const }
+    return {
+      ok: true as const,
+    }
   } finally {
     pending.delete(input.id)
   }

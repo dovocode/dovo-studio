@@ -1,9 +1,12 @@
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/application-state'
+import { mutableStruct } from '@dovo/protocol'
 import { Choice } from '../ui/choice'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import { createTwoFilesPatch, FILE_HEADERS_ONLY } from 'diff'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import { responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../runtime/provider'
 import { Action } from '../ui/action'
@@ -18,13 +21,17 @@ export function TaskReview({
   task: Task
   initialCheckpoint?: string
 }) {
-  const { call, connected } = useRuntime(),
+  const { call, connected, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
-  const [checkpoint, setCheckpoint] = useState(initialCheckpoint)
+  const [checkpoint, setCheckpoint] = useApplicationState(initialCheckpoint)
   const history = task.turns?.find((turn) => turn.id === checkpoint)?.checkpoint
   const files = checkpoint ? (history?.files ?? []) : task.files
-  const [path, setPath] = useState(''),
-    [edit, setEdit] = useState<{ path: string; contents: string; expected: string } | null>(null)
+  const [path, setPath] = useApplicationState(''),
+    [edit, setEdit] = useApplicationState<{
+      path: string
+      contents: string
+      expected: string
+    } | null>(null)
   const file = files.find((file) => file.path === path) ?? files[0]
   const patch = useMemo(
     () =>
@@ -36,16 +43,33 @@ export function TaskReview({
     [file],
   )
   const refresh = () =>
-    call('/api/scm/changes', { repositoryId: task.repositoryId, taskId: task.id }, responses.files)
+    call(
+      '/api/scm/changes',
+      {
+        repositoryId: task.repositoryId,
+        taskId: task.id,
+      },
+      responses.files,
+    )
   return (
     <View style={styles.screen}>
-      <View style={[styles.content, { paddingVertical: 8 }]}>
+      <View
+        style={[
+          styles.content,
+          {
+            paddingVertical: 8,
+          },
+        ]}
+      >
         <Choice
           label="Change history"
           value={checkpoint}
           disabled={!!edit}
           items={[
-            { id: '', name: 'Current changes' },
+            {
+              id: '',
+              name: 'Current changes',
+            },
             ...(task.turns ?? [])
               .filter((turn) => turn.checkpoint)
               .map((turn, index) => ({
@@ -99,7 +123,7 @@ export function TaskReview({
               disabled={!connected || busy || !!checkpoint}
               onPress={() =>
                 act(() =>
-                  call(
+                  callEffect(
                     '/api/workspace',
                     {
                       collection: 'tasks',
@@ -108,12 +132,19 @@ export function TaskReview({
                         files: {
                           before: task.files,
                           after: task.files.map((f) =>
-                            f.path === file.path ? { ...f, viewed: !f.viewed } : f,
+                            f.path === file.path
+                              ? {
+                                  ...f,
+                                  viewed: !f.viewed,
+                                }
+                              : f,
                           ),
                         },
                       },
                     },
-                    z.object({ revision: z.number() }),
+                    mutableStruct({
+                      revision: Schema.Number.pipe(Schema.finite()),
+                    }),
                     'PATCH',
                   ),
                 )
@@ -123,7 +154,12 @@ export function TaskReview({
         </View>
       </View>
       {!!files.length && (
-        <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingBottom: 8,
+          }}
+        >
           <Choice
             label="Changed file"
             value={file?.path ?? ''}
@@ -147,33 +183,44 @@ export function TaskReview({
           <Field
             label={edit.path}
             value={edit.contents}
-            onChangeText={(contents) => setEdit({ ...edit, contents })}
+            onChangeText={(contents) =>
+              setEdit({
+                ...edit,
+                contents,
+              })
+            }
             multiline
             autoCorrect={false}
             style={[
               styles.input,
-              { minHeight: 300, fontFamily: 'monospace', textAlignVertical: 'top' },
+              {
+                minHeight: 300,
+                fontFamily: 'monospace',
+                textAlignVertical: 'top',
+              },
             ]}
           />
           <Action
             label="Apply to disk"
             disabled={busy || !connected || task.example}
             onPress={() =>
-              act(async () => {
-                await call(
-                  '/api/scm/apply',
-                  {
-                    repositoryId: task.repositoryId,
-                    taskId: task.id,
-                    path: edit.path,
-                    expected: edit.expected,
-                    contents: edit.contents,
-                  },
-                  responses.ok,
-                )
-                setEdit(null)
-                await refresh()
-              })
+              act(() =>
+                mobileWorkflow(function* () {
+                  yield* callEffect(
+                    '/api/scm/apply',
+                    {
+                      repositoryId: task.repositoryId,
+                      taskId: task.id,
+                      path: edit.path,
+                      expected: edit.expected,
+                      contents: edit.contents,
+                    },
+                    responses.ok,
+                  )
+                  setEdit(null)
+                  yield* nativeEffect(() => refresh())
+                }),
+              )
             }
           />
           <Text style={styles.muted}>
@@ -183,7 +230,18 @@ export function TaskReview({
       ) : (
         <DiffView patch={patch} />
       )}
-      {!!error && <Text style={[styles.error, { padding: 16 }]}>{error}</Text>}
+      {!!error && (
+        <Text
+          style={[
+            styles.error,
+            {
+              padding: 16,
+            },
+          ]}
+        >
+          {error}
+        </Text>
+      )}
     </View>
   )
 }

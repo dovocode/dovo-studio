@@ -1,3 +1,5 @@
+import { mutableStruct } from '@dovo/protocol'
+import { maxValue, minValue } from '@dovo/protocol'
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
 import { androidTool } from './devices.js'
@@ -6,22 +8,26 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import type { PreviewDevice, RemoteBrowserInput } from '@dovo/protocol'
 import type { BrowserFrame } from './browser.js'
 import { SimulatorRpc } from './simulator-rpc.js'
 import { androidProtocol, iosProtocol } from './simulator-protocols.js'
 import { HttpError } from '../errors.js'
-
 export interface NativeSimulator {
   start(frame: (frame: BrowserFrame) => void, error: (error: Error) => void): () => void
   input(input: RemoteBrowserInput): Promise<void>
   release(): Promise<void>
   close(): Promise<void>
 }
-const empty = z.object({})
-const pixels = z.number().int().positive().max(8192)
-const bytes = z.instanceof(Uint8Array)
+const empty = mutableStruct({})
+const pixels = maxValue(
+  Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.positive()),
+  8192,
+)
+const bytes = Schema.instanceOf(Uint8Array)
 
 // idb's MINICAP output has a bounded header and length-prefixed JPEG frames.
 // This is framing only; JPEG decoding/dimensions are handled by libvips.
@@ -50,7 +56,6 @@ export class MinicapFrames {
     }
   }
 }
-
 async function stopChild(child: ChildProcess) {
   if (child.exitCode !== null || child.signalCode !== null || !child.pid) return
   const exited = once(child, 'exit')
@@ -112,18 +117,33 @@ export const specialKeys: Record<string, number> = {
   Alt: 226,
   Shift: 225,
 }
-export function asciiKey(char: string): { code: number; shift: boolean } | undefined {
+export function asciiKey(char: string):
+  | {
+      code: number
+      shift: boolean
+    }
+  | undefined {
   if (/^[a-z]$/i.test(char))
-    return { code: char.toLowerCase().charCodeAt(0) - 93, shift: char !== char.toLowerCase() }
+    return {
+      code: char.toLowerCase().charCodeAt(0) - 93,
+      shift: char !== char.toLowerCase(),
+    }
   const plain = "1234567890\n\x1b\b\t -=[]\\\x00;'`,./"
   const shifted = '!@#$%^&*()\n\x1b\b\t _+{}|\x00:"~<>?'
   const index = plain.indexOf(char)
-  if (index >= 0) return { code: 30 + index, shift: false }
+  if (index >= 0)
+    return {
+      code: 30 + index,
+      shift: false,
+    }
   const upper = shifted.indexOf(char)
-  if (upper >= 0) return { code: 30 + upper, shift: true }
+  if (upper >= 0)
+    return {
+      code: 30 + upper,
+      shift: true,
+    }
   return undefined
 }
-
 export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulator> {
   const udid = device.id.slice(4)
   const directory = await mkdtemp(join(tmpdir(), 'dovo-sim-'))
@@ -132,7 +152,9 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
   const child = spawn(
     process.env.DOVO_IDB_COMPANION || 'idb_companion',
     ['--udid', udid, '--only', 'simulator', '--grpc-domain-sock', socket, '--log-level', 'info'],
-    { stdio: ['ignore', 'ignore', 'pipe'] },
+    {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    },
   )
   child.stderr?.on('data', (chunk: Buffer) => {
     diagnostic = (diagnostic + chunk.toString()).slice(-3000)
@@ -149,10 +171,13 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
       'idb.Empty',
       'idb.Description',
       {},
-      z.object({
-        targetDescription: z.object({
-          udid: z.string(),
-          screenDimensions: z.object({ widthPoints: pixels, heightPoints: pixels }),
+      mutableStruct({
+        targetDescription: mutableStruct({
+          udid: Schema.String,
+          screenDimensions: mutableStruct({
+            widthPoints: pixels,
+            heightPoints: pixels,
+          }),
         }),
       }),
     )
@@ -160,7 +185,12 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
     const size = description.targetDescription.screenDimensions
     let width = size.widthPoints,
       height = size.heightPoints
-    let touch: { x: number; y: number } | undefined
+    let touch:
+      | {
+          x: number
+          y: number
+        }
+      | undefined
     let hidError: Error | null = null
     const hid = rpc.writeStream('hid', 'idb.HIDEvent', 'idb.Empty', empty, (error) => {
       hidError = error
@@ -177,7 +207,16 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
         hid.write(event, (error: Error | null | undefined) => (error ? reject(error) : resolve()))
       })
     const key = async (code: number, down: boolean) =>
-      write({ press: { direction: down ? 0 : 1, action: { key: { keycode: code } } } })
+      write({
+        press: {
+          direction: down ? 0 : 1,
+          action: {
+            key: {
+              keycode: code,
+            },
+          },
+        },
+      })
     const press = async (code: number) => {
       await key(code, true)
       await key(code, false)
@@ -186,7 +225,16 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
       if (!touch) return
       const point = touch
       touch = undefined
-      await write({ press: { direction: 1, action: { touch: { point } } } })
+      await write({
+        press: {
+          direction: 1,
+          action: {
+            touch: {
+              point,
+            },
+          },
+        },
+      })
     }
     let stop: (() => void) | undefined
     return {
@@ -196,7 +244,15 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
           'video_stream',
           'idb.VideoRequest',
           'idb.VideoResponse',
-          z.object({ payload: z.object({ data: bytes }).nullable().optional() }),
+          mutableStruct({
+            payload: Schema.optional(
+              Schema.NullOr(
+                mutableStruct({
+                  data: bytes,
+                }),
+              ),
+            ),
+          }),
         )
         let stopped = false
         const encoder = latest<Buffer>(
@@ -209,7 +265,12 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
             height = landscape
               ? Math.min(size.widthPoints, size.heightPoints)
               : Math.max(size.widthPoints, size.heightPoints)
-            return { type: 'frame', data, width, height }
+            return {
+              type: 'frame',
+              data,
+              width,
+              height,
+            }
           },
           publish,
           report,
@@ -231,7 +292,14 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
         stream.on('end', () => {
           if (!stopped) report(new Error('Simulator stream ended'))
         })
-        stream.write({ start: { fps: 30, format: 3, compressionQuality: 0.75, scaleFactor: 0.5 } })
+        stream.write({
+          start: {
+            fps: 30,
+            format: 3,
+            compressionQuality: 0.75,
+            scaleFactor: 0.5,
+          },
+        })
         stop = () => {
           stopped = true
           encoder.stop()
@@ -242,10 +310,20 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
       async input(input) {
         if (input.type === 'pointer') {
           if (input.phase === 'move' && !touch) return
-          const point = { x: Math.min(width - 1, input.x), y: Math.min(height - 1, input.y) }
+          const point = {
+            x: Math.min(width - 1, input.x),
+            y: Math.min(height - 1, input.y),
+          }
           touch = input.phase === 'up' ? undefined : point
           await write({
-            press: { direction: input.phase === 'up' ? 1 : 0, action: { touch: { point } } },
+            press: {
+              direction: input.phase === 'up' ? 1 : 0,
+              action: {
+                touch: {
+                  point,
+                },
+              },
+            },
           })
         } else if (input.type === 'text') {
           const keys = Array.from(input.text).map(asciiKey)
@@ -280,8 +358,26 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
               }
         } else if (input.type === 'key') {
           if (input.key === 'Home') {
-            await write({ press: { direction: 0, action: { button: { button: 1 } } } })
-            await write({ press: { direction: 1, action: { button: { button: 1 } } } })
+            await write({
+              press: {
+                direction: 0,
+                action: {
+                  button: {
+                    button: 1,
+                  },
+                },
+              },
+            })
+            await write({
+              press: {
+                direction: 1,
+                action: {
+                  button: {
+                    button: 1,
+                  },
+                },
+              },
+            })
           } else {
             const parts = input.key.split('+'),
               final = parts.pop() ?? ''
@@ -296,7 +392,10 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
         } else if (input.type === 'scroll') {
           await write({
             swipe: {
-              start: { x: input.x, y: input.y },
+              start: {
+                x: input.x,
+                y: input.y,
+              },
               end: {
                 x: Math.max(1, Math.min(width - 1, input.x - input.deltaX)),
                 y: Math.max(1, Math.min(height - 1, input.y - input.deltaY)),
@@ -313,20 +412,25 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
         hid.end()
         rpc.close()
         await stopChild(child)
-        await rm(directory, { recursive: true, force: true })
+        await rm(directory, {
+          recursive: true,
+          force: true,
+        })
       },
     }
   } catch (error) {
     rpc.close()
     await stopChild(child)
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, {
+      recursive: true,
+      force: true,
+    })
     throw new HttpError(
       503,
       `iOS live preview requires idb_companion and a booted simulator. ${startupError?.message ?? (error instanceof Error ? error.message : String(error))} ${diagnostic}`,
     )
   }
 }
-
 export async function emulatorEndpoint(device: PreviewDevice) {
   const directories = [
     join(homedir(), 'Library/Caches/TemporaryItems/avd/running'),
@@ -362,7 +466,10 @@ export async function emulatorEndpoint(device: PreviewDevice) {
           409,
           'Restart this emulator using Dovo Start to enable authenticated live preview.',
         )
-      return { address: `127.0.0.1:${port}`, token: data['grpc.token'] }
+      return {
+        address: `127.0.0.1:${port}`,
+        token: data['grpc.token'],
+      }
     }
   }
   throw new HttpError(
@@ -370,7 +477,6 @@ export async function emulatorEndpoint(device: PreviewDevice) {
     'No authenticated emulator control endpoint. Start this emulator using Dovo or with -grpc-use-token.',
   )
 }
-
 export async function androidSimulator(device: PreviewDevice): Promise<NativeSimulator> {
   const endpoint = await emulatorEndpoint(device)
   const rpc = new SimulatorRpc(
@@ -436,14 +542,22 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
         codes.length > 1 ? 'keycombination' : 'keyevent',
         ...codes.map(String),
       ],
-      { timeout: 10000, maxBuffer: 1024 * 1024 },
+      {
+        timeout: 10000,
+        maxBuffer: 1024 * 1024,
+      },
     )
   }
   const release = async () => {
     if (!touching) return
     touching = false
     await unary('sendTouch', 'android.emulation.control.TouchEvent', {
-      touches: [{ identifier: 0, pressure: 0 }],
+      touches: [
+        {
+          identifier: 0,
+          pressure: 0,
+        },
+      ],
     })
   }
   let stop: (() => void) | undefined
@@ -462,10 +576,28 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
   })
   return {
     start(publish, report) {
-      const schema = z.object({
-        format: z.object({
-          width: z.number().int().min(0).max(8192),
-          height: z.number().int().min(0).max(8192),
+      const schema = mutableStruct({
+        format: mutableStruct({
+          width: maxValue(
+            minValue(
+              Schema.Number.pipe(Schema.finite()).pipe(
+                Schema.int(),
+                Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+              ),
+              0,
+            ),
+            8192,
+          ),
+          height: maxValue(
+            minValue(
+              Schema.Number.pipe(Schema.finite()).pipe(
+                Schema.int(),
+                Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+              ),
+              0,
+            ),
+            8192,
+          ),
         }),
         image: bytes,
       })
@@ -473,11 +605,13 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
         'streamScreenshot',
         'android.emulation.control.ImageFormat',
         'android.emulation.control.Image',
-        { format: 2 },
+        {
+          format: 2,
+        },
         schema,
       )
       let stopped = false
-      const encoder = latest<z.infer<typeof schema>>(
+      const encoder = latest<Schema.Schema.Type<typeof schema>>(
         async (value) => {
           const w = value.format.width,
             h = value.format.height
@@ -491,14 +625,30 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
             value.image.byteLength,
           )
           const data = await sharp(pixels, {
-            raw: { width: w, height: h, channels: 3 },
+            raw: {
+              width: w,
+              height: h,
+              channels: 3,
+            },
           })
-            .resize({ width: 960, height: 1600, fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 75 })
+            .resize({
+              width: 960,
+              height: 1600,
+              fit: 'inside',
+              withoutEnlargement: true,
+            })
+            .jpeg({
+              quality: 75,
+            })
             .toBuffer()
           width = w
           height = h
-          return { type: 'frame', data, width: Math.round(w / 2), height: Math.round(h / 2) }
+          return {
+            type: 'frame',
+            data,
+            width: Math.round(w / 2),
+            height: Math.round(h / 2),
+          }
         },
         publish,
         report,
@@ -543,7 +693,9 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
           })
         } else {
           // Android's shell keyboard map cannot represent arbitrary Unicode.
-          await unary('setClipboard', 'android.emulation.control.ClipData', { text: input.text })
+          await unary('setClipboard', 'android.emulation.control.ClipData', {
+            text: input.text,
+          })
           await execute(adb, ['-s', device.runtime, 'shell', 'input', 'keyevent', '279'], {
             timeout: 10000,
             maxBuffer: 1024 * 1024,
@@ -553,7 +705,10 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
         if (wheelError) throw wheelError
         await new Promise<void>((resolve, reject) =>
           wheel.write(
-            { dx: -Math.round(input.deltaX), dy: -Math.round(input.deltaY) },
+            {
+              dx: -Math.round(input.deltaX),
+              dy: -Math.round(input.deltaY),
+            },
             (error: Error | null | undefined) => (error ? reject(error) : resolve()),
           ),
         )

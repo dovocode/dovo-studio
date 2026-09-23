@@ -1,8 +1,9 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { generatedTitleSchema, resolveTaskAgent } from '@dovo/studio-core'
 import { AttachmentPicker } from './attachment-picker'
 import { MessageAttachments } from './message-attachments'
 import { useAttachments } from './use-attachments'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { ArrowUp, LoaderCircle, ListPlus, Square, CornerUpRight } from 'lucide-react'
 import { useWorkspace, updateTask, responses, type Task } from '@dovo/studio-core'
 import {
@@ -19,9 +20,9 @@ import { ComposerWorkspace } from './composer-workspace'
 export function Composer({ task }: { task: Task }) {
   const { workspace, setWorkspace, request, connected, connection, flush, snapshot } =
     useWorkspace()
-  const [error, setError] = useState(''),
-    [sending, setSending] = useState(false),
-    [stopping, setStopping] = useState(false)
+  const [error, setError] = useApplicationState(''),
+    [sending, setSending] = useApplicationState(false),
+    [stopping, setStopping] = useApplicationState(false)
   const sendingRequest = useRef(false)
   const attachments = useAttachments(task)
   const pendingQuestion = !!snapshot?.questions.some(
@@ -41,7 +42,13 @@ export function Composer({ task }: { task: Task }) {
     setStopping(true)
     setError('')
     try {
-      await request('/api/tasks/cancel', { id: task.id }, responses.ok)
+      await request(
+        '/api/tasks/cancel',
+        {
+          id: task.id,
+        },
+        responses.ok,
+      )
     } catch (e) {
       setError(String(e))
     } finally {
@@ -69,7 +76,12 @@ export function Composer({ task }: { task: Task }) {
       attempt.current?.text !== text ||
       JSON.stringify(attempt.current.attachmentIds) !== JSON.stringify(attachmentIds)
     )
-      attempt.current = { id: crypto.randomUUID(), text, attachmentIds, mode }
+      attempt.current = {
+        id: crypto.randomUUID(),
+        text,
+        attachmentIds,
+        mode,
+      }
     try {
       await flush()
       if (firstMessage) {
@@ -87,24 +99,44 @@ export function Composer({ task }: { task: Task }) {
             )
           ).title
         attempt.current.title = title
-        setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, title })))
+        setWorkspace((w) =>
+          updateTask(w, task.id, (t) => ({
+            ...t,
+            title,
+          })),
+        )
         await flush()
       }
       if (connection)
         await request(
           mode === 'steer' ? '/api/tasks/steer' : '/api/tasks/message',
-          { id: task.id, messageId: attempt.current.id, text, attachmentIds },
+          {
+            id: task.id,
+            messageId: attempt.current.id,
+            text,
+            attachmentIds,
+          },
           responses.ok,
         )
       else
         setWorkspace((w) =>
           updateTask(w, task.id, (t) => ({
             ...t,
-            messages: [...t.messages, { id: crypto.randomUUID(), role: 'user', text }],
+            messages: [
+              ...t.messages,
+              {
+                id: crypto.randomUUID(),
+                role: 'user',
+                text,
+              },
+            ],
           })),
         )
       setWorkspace((w) =>
-        updateTask(w, task.id, (t) => ({ ...t, draft: t.draft === task.draft ? '' : t.draft })),
+        updateTask(w, task.id, (t) => ({
+          ...t,
+          draft: t.draft === task.draft ? '' : t.draft,
+        })),
       )
       attempt.current = null
     } catch (e) {
@@ -115,9 +147,9 @@ export function Composer({ task }: { task: Task }) {
     }
   }
   return (
-    <div className="shrink-0 px-4 pb-3 pt-2">
+    <div className="shrink-0 px-3 pb-2 pt-1">
       <PromptInput
-        className="relative z-10 mx-auto max-w-3xl rounded-[22px] border-border/60 bg-card shadow-none"
+        className="relative z-10 mx-auto max-w-3xl rounded-xl border-border/70 bg-card shadow-none"
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes('Files')) event.preventDefault()
         }}
@@ -149,11 +181,16 @@ export function Composer({ task }: { task: Task }) {
         <PromptInputTextarea
           autoFocus={firstMessage}
           aria-label="Message task"
-          className={cn('min-h-24 px-4 pt-4 pb-3', pendingQuestion && 'hidden')}
+          className={cn('min-h-12 px-3 pt-2 pb-1', pendingQuestion && 'hidden')}
           value={task.draft}
           disabled={sending || task.archived || pendingQuestion}
           onChange={(e) =>
-            setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, draft: e.target.value })))
+            setWorkspace((w) =>
+              updateTask(w, task.id, (t) => ({
+                ...t,
+                draft: e.target.value,
+              })),
+            )
           }
           placeholder={
             task.archived
@@ -165,7 +202,7 @@ export function Composer({ task }: { task: Task }) {
                   : 'Ask for changes or share context…'
           }
         />
-        <PromptInputFooter className="flex-wrap items-center gap-2 px-3 pb-3 pt-2">
+        <PromptInputFooter className="flex-wrap items-center gap-1.5 px-2.5 pb-2 pt-1">
           <PromptInputTools className={cn('flex-wrap gap-0.5', pendingQuestion && 'hidden')}>
             <ComposerHarnessControls task={task} disabled={sending || !!task.archived} />
           </PromptInputTools>
@@ -210,7 +247,7 @@ export function Composer({ task }: { task: Task }) {
                 className={
                   task.status === 'running'
                     ? 'h-8 w-auto gap-1.5 rounded-md bg-muted px-2 text-[11px] text-foreground hover:bg-accent'
-                    : 'size-9 rounded-full bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-35'
+                    : 'size-8 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-35'
                 }
                 title={
                   task.status === 'running' || task.queuePaused

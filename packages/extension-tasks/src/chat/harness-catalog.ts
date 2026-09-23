@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect } from 'react'
 import {
   modelCatalogSchema,
   useWorkspace,
@@ -7,9 +8,12 @@ import {
 } from '@dovo/studio-core'
 export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
   const { request, connected } = useWorkspace()
-  const [catalog, setCatalog] = useState<{ key: string; value: ModelCatalog } | null>(null)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [catalog, setCatalog] = useApplicationState<{
+    key: string
+    value: ModelCatalog
+  } | null>(null)
+  const [error, setError] = useApplicationState('')
+  const [loading, setLoading] = useApplicationState(false)
   const { provider, endpoint, args, model } = harness
   const argsKey = JSON.stringify(args ?? [])
   const discoveryModel = provider === 'acp' ? model : ''
@@ -23,11 +27,20 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
     if (!connected) return
     void request(
       '/api/agents/models',
-      { provider, endpoint, args: JSON.parse(argsKey), model: discoveryModel },
+      {
+        provider,
+        endpoint,
+        args: JSON.parse(argsKey),
+        model: discoveryModel,
+      },
       modelCatalogSchema,
     )
       .then((value) => {
-        if (!stopped) setCatalog({ key, value })
+        if (!stopped)
+          setCatalog({
+            key,
+            value,
+          })
       })
       .catch((error) => {
         if (!stopped) setError(String(error))
@@ -39,5 +52,9 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
       stopped = true
     }
   }, [active, provider, endpoint, argsKey, discoveryModel, connected, request, key])
-  return { catalog: catalog?.key === key ? catalog.value : null, error, loading }
+  return {
+    catalog: catalog?.key === key ? catalog.value : null,
+    error,
+    loading,
+  }
 }

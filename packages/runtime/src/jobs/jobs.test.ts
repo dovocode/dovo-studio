@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import type { AgentAdapter } from '../agents/types'
 import { afterEach, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
@@ -11,7 +12,9 @@ afterEach(async () => {
 })
 it(
   'persists review gates across restart and deduplicates external deliveries',
-  { timeout: 15000 },
+  {
+    timeout: 15000,
+  },
   async () => {
     const f = await fixture()
     cleanups.push(f.cleanup)
@@ -23,7 +26,10 @@ it(
     let runtime = await startRuntime(options)
     cleanups.push(() => runtime.close())
     const flow = createFlow()
-    runtime.services.store.update(() => ({ ...f.workspace, automations: [flow] }))
+    runtime.services.store.update(() => ({
+      ...f.workspace,
+      automations: [flow],
+    }))
     vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
       probe: vi.fn<AgentAdapter['probe']>(),
       run: async (run) => run.onText('Done'),
@@ -56,7 +62,6 @@ it(
     expect(() => runtime.services.jobs.start('flow', 'delivery-1')).toThrow('already delivered')
   },
 )
-
 function createFlow(): Automation {
   const base: AutomationData = {
     kind: 'trigger',
@@ -74,22 +79,39 @@ function createFlow(): Automation {
     nodes: ['trigger', 'task', 'review'].map((id, index) => ({
       id,
       type: 'automation',
-      position: { x: index * 100, y: 0 },
-      data: { ...base, kind: index === 0 ? 'trigger' : index === 1 ? 'task' : 'review' },
+      position: {
+        x: index * 100,
+        y: 0,
+      },
+      data: {
+        ...base,
+        kind: index === 0 ? 'trigger' : index === 1 ? 'task' : 'review',
+      },
     })),
     edges: [
-      { id: 'one', source: 'trigger', target: 'task' },
-      { id: 'two', source: 'task', target: 'review' },
+      {
+        id: 'one',
+        source: 'trigger',
+        target: 'task',
+      },
+      {
+        id: 'two',
+        source: 'task',
+        target: 'review',
+      },
     ],
   }
   return flow
 }
-
 it('fires due schedules and authenticates webhook payload delivery', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const token = 'test-owner-token-with-at-least-32-characters'
-  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: token,
+    port: 0,
+  })
   cleanups.push(() => runtime.close())
   const s = runtime.services
   s.jobs.dispose()
@@ -97,7 +119,10 @@ it('fires due schedules and authenticates webhook payload delivery', async () =>
   flow.enabled = true
   flow.nodes[0].data.trigger = 'schedule'
   flow.nodes[0].data.schedule = '* * * * *'
-  s.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  s.store.update(() => ({
+    ...f.workspace,
+    automations: [flow],
+  }))
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
     run: async () => {},
@@ -116,7 +141,15 @@ it('fires due schedules and authenticates webhook payload delivery', async () =>
     automations: w.automations.map((a) => ({
       ...a,
       nodes: a.nodes.map((n) =>
-        n.data.kind === 'trigger' ? { ...n, data: { ...n.data, trigger: 'webhook' } } : n,
+        n.data.kind === 'trigger'
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                trigger: 'webhook',
+              },
+            }
+          : n,
       ),
     })),
   }))
@@ -130,19 +163,35 @@ it('fires due schedules and authenticates webhook payload delivery', async () =>
       },
       body: JSON.stringify(payload),
     })
-  const hook = responses.webhook.parse(
-    await (await post('/api/jobs/webhook-secret', token, { id: flow.id })).json(),
+  const hook = decode(
+    responses.webhook,
+    await (
+      await post('/api/jobs/webhook-secret', token, {
+        id: flow.id,
+      })
+    ).json(),
   )
   expect((await post(hook.path, 'wrong', {})).status).toBe(401)
-  expect((await post(hook.path, hook.secret, { issue: 42 })).status).toBe(200)
+  expect(
+    (
+      await post(hook.path, hook.secret, {
+        issue: 42,
+      })
+    ).status,
+  ).toBe(200)
   expect(s.activity.list('Webhook received', 'integration', 0).events[0].payload).toContain('42')
   await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('waiting'))
   expect(s.store.task(s.jobs.list()[0].taskIds[0]).messages[0].text).toContain('"issue": 42')
   s.jobs.approve(s.jobs.list()[0].id, true)
   await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('completed'))
-  expect((await post(hook.path, hook.secret, { issue: 42 })).status).toBe(409)
+  expect(
+    (
+      await post(hook.path, hook.secret, {
+        issue: 42,
+      })
+    ).status,
+  ).toBe(409)
 })
-
 it('isolates broken schedules and resets due times when trigger modes change', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -161,7 +210,10 @@ it('isolates broken schedules and resets due times when trigger modes change', a
   const broken = structuredClone(valid)
   broken.id = 'broken'
   broken.nodes[0].data.schedule = 'invalid'
-  s.store.update(() => ({ ...f.workspace, automations: [broken, valid] }))
+  s.store.update(() => ({
+    ...f.workspace,
+    automations: [broken, valid],
+  }))
   const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
@@ -185,7 +237,15 @@ it('isolates broken schedules and resets due times when trigger modes change', a
           ? {
               ...flow,
               nodes: flow.nodes.map((node) =>
-                node.data.kind === 'trigger' ? { ...node, data: { ...node.data, trigger } } : node,
+                node.data.kind === 'trigger'
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        trigger,
+                      },
+                    }
+                  : node,
               ),
             }
           : flow,
@@ -200,7 +260,6 @@ it('isolates broken schedules and resets due times when trigger modes change', a
   await vi.waitFor(() => expect(s.jobs.list()[0]?.status).toBe('waiting'))
   expect(s.jobs.list()).toHaveLength(2)
 })
-
 it('does not advance a cancelled task into a review gate', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -211,12 +270,17 @@ it('does not advance a cancelled task into a review gate', async () => {
   })
   cleanups.push(() => runtime.close())
   const s = runtime.services
-  s.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+  s.store.update(() => ({
+    ...f.workspace,
+    automations: [createFlow()],
+  }))
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
     run: async (run) =>
       new Promise<void>((_resolve, reject) =>
-        run.signal.addEventListener('abort', () => reject(run.signal.reason), { once: true }),
+        run.signal.addEventListener('abort', () => reject(run.signal.reason), {
+          once: true,
+        }),
       ),
   })
   const id = s.jobs.start('flow')
@@ -230,7 +294,6 @@ it('does not advance a cancelled task into a review gate', async () => {
   expect(s.jobs.list()[0].status).toBe('cancelled')
   expect(s.jobs.list()[0].completedNodes).not.toContain('task')
 })
-
 it('retries only the failed task, retaining successful steps and approved reviews', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -249,21 +312,47 @@ it('retries only the failed task, retaining successful steps and approved review
     {
       ...structuredClone(flow.nodes[2]),
       id: 'middle-review',
-      data: { ...flow.nodes[2].data, label: 'Approve first step' },
+      data: {
+        ...flow.nodes[2].data,
+        label: 'Approve first step',
+      },
     },
     {
       ...structuredClone(flow.nodes[1]),
       id: 'second-task',
-      data: { ...flow.nodes[1].data, label: 'Second step', objective: 'Second step' },
+      data: {
+        ...flow.nodes[1].data,
+        label: 'Second step',
+        objective: 'Second step',
+      },
     },
   )
   flow.edges = [
-    { id: 'one', source: 'trigger', target: 'task' },
-    { id: 'two', source: 'task', target: 'middle-review' },
-    { id: 'three', source: 'middle-review', target: 'second-task' },
-    { id: 'four', source: 'second-task', target: 'review' },
+    {
+      id: 'one',
+      source: 'trigger',
+      target: 'task',
+    },
+    {
+      id: 'two',
+      source: 'task',
+      target: 'middle-review',
+    },
+    {
+      id: 'three',
+      source: 'middle-review',
+      target: 'second-task',
+    },
+    {
+      id: 'four',
+      source: 'second-task',
+      target: 'review',
+    },
   ]
-  s.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  s.store.update(() => ({
+    ...f.workspace,
+    automations: [flow],
+  }))
   let fail = true
   const execute = vi.fn<AgentAdapter['run']>(async (run) => {
     if (run.prompt.includes('Second step') && fail) {
@@ -320,7 +409,6 @@ it('retries only the failed task, retaining successful steps and approved review
   s.jobs.approve(id, true)
   await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('completed'))
 })
-
 it('cancels during checkout preparation and retries the same unfinished task', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -331,7 +419,10 @@ it('cancels during checkout preparation and retries the same unfinished task', a
   })
   cleanups.push(() => runtime.close())
   const s = runtime.services
-  s.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+  s.store.update(() => ({
+    ...f.workspace,
+    automations: [createFlow()],
+  }))
   let release: () => void = () => {}
   const gate = new Promise<void>((resolve) => {
     release = resolve
@@ -364,20 +455,34 @@ it('cancels during checkout preparation and retries the same unfinished task', a
   expect(s.jobs.list()[0].taskIds).toEqual([taskId])
   expect(execute).toHaveBeenCalledTimes(1)
 })
-
 it('accepts manual requests atomically and returns the same run after response loss or restart', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const token = 'test-owner-token-with-at-least-32-characters'
-  const options = { databasePath: join(f.directory, 'manual.sqlite'), ownerToken: token, port: 0 }
+  const options = {
+    databasePath: join(f.directory, 'manual.sqlite'),
+    ownerToken: token,
+    port: 0,
+  }
   let runtime = await startRuntime(options)
   cleanups.push(() => runtime.close())
   const flow = createFlow()
   flow.edges = [
-    { id: 'one', source: 'trigger', target: 'review' },
-    { id: 'two', source: 'review', target: 'task' },
+    {
+      id: 'one',
+      source: 'trigger',
+      target: 'review',
+    },
+    {
+      id: 'two',
+      source: 'review',
+      target: 'task',
+    },
   ]
-  runtime.services.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  runtime.services.store.update(() => ({
+    ...f.workspace,
+    automations: [flow],
+  }))
   runtime.services.db.exec(
     "CREATE TRIGGER fail_job_acceptance BEFORE INSERT ON job_runs BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END",
   )
@@ -390,8 +495,14 @@ it('accepts manual requests atomically and returns the same run after response l
   const post = () =>
     fetch(`http://127.0.0.1:${runtime.port}/api/jobs/run`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: 'flow', requestId: 'request' }),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: 'flow',
+        requestId: 'request',
+      }),
     })
   const responses = await Promise.all([post(), post()])
   expect(responses.map((response) => response.status)).toEqual([200, 200])
@@ -409,7 +520,6 @@ it('accepts manual requests atomically and returns the same run after response l
   expect(runtime.services.jobs.list()[0].status).toBe('waiting')
   expect(runtime.services.store.get().tasks).toHaveLength(0)
 })
-
 it('shuts down running jobs before storage closes and resumes interrupted work explicitly', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -420,11 +530,16 @@ it('shuts down running jobs before storage closes and resumes interrupted work e
   }
   let runtime = await startRuntime(options)
   cleanups.push(() => runtime.close())
-  runtime.services.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+  runtime.services.store.update(() => ({
+    ...f.workspace,
+    automations: [createFlow()],
+  }))
   const execute = vi.fn<AgentAdapter['run']>(
     async (run) =>
       new Promise<void>((_resolve, reject) => {
-        run.signal.addEventListener('abort', () => reject(run.signal.reason), { once: true })
+        run.signal.addEventListener('abort', () => reject(run.signal.reason), {
+          once: true,
+        })
       }),
   )
   vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
@@ -454,15 +569,21 @@ it('shuts down running jobs before storage closes and resumes interrupted work e
   })
   const response = await fetch(`http://127.0.0.1:${runtime.port}/api/jobs/retry`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${options.ownerToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id }),
+    headers: {
+      Authorization: `Bearer ${options.ownerToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      id,
+    }),
   })
   expect(response.status).toBe(200)
-  expect(await response.json()).toEqual({ id })
+  expect(await response.json()).toEqual({
+    id,
+  })
   await vi.waitFor(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
   expect(runtime.services.jobs.list()[0].taskIds).toEqual([taskId])
 })
-
 it.each([false, true])(
   'recovers completed tasks without rerunning them after a crash (legacy metadata: %s)',
   async (legacy) => {
@@ -475,7 +596,10 @@ it.each([false, true])(
     }
     let runtime = await startRuntime(options)
     cleanups.push(() => runtime.close())
-    runtime.services.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+    runtime.services.store.update(() => ({
+      ...f.workspace,
+      automations: [createFlow()],
+    }))
     vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
       probe: vi.fn<AgentAdapter['probe']>(),
       run: async () => {},
@@ -525,7 +649,6 @@ it.each([false, true])(
     expect(execute).not.toHaveBeenCalled()
   },
 )
-
 it('rolls back task creation when persisting its step association fails', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -536,7 +659,10 @@ it('rolls back task creation when persisting its step association fails', async 
   })
   cleanups.push(() => runtime.close())
   const s = runtime.services
-  s.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+  s.store.update(() => ({
+    ...f.workspace,
+    automations: [createFlow()],
+  }))
   s.db.exec(
     "CREATE TRIGGER fail_task_link BEFORE UPDATE OF value ON job_runs WHEN json_array_length(NEW.value, '$.taskIds') > 0 BEGIN SELECT RAISE(ABORT, 'fixture task link failure'); END",
   )

@@ -1,9 +1,13 @@
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/application-state'
+import { mutableStruct } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import { ScreenHeader } from '../ui/screen-header'
 import { CliProfilePicker } from './cli-profile-picker'
-import { useEffect, useRef, useState } from 'react'
-import { clientScopeKey } from '@dovo/client-runtime'
+import { useEffect, useRef } from 'react'
+import { clientScopeKey, runClientEffect } from '@dovo/client-runtime'
 import { ScrollView, View } from 'react-native'
-import { z } from 'zod'
+import { Schema, Effect } from 'effect'
 import {
   forgeLabels,
   forgeProviderSchema,
@@ -24,7 +28,6 @@ import { Text } from '../ui/text'
 import { styles } from '../ui/theme'
 import { SettingsGroup, SettingsRow } from '../screens/settings-group'
 import { DirectoryPicker } from './directory-picker'
-
 const defaults: Record<ForgeProvider, string> = {
   github: 'https://github.com',
   bitbucket: 'https://api.bitbucket.org/2.0',
@@ -32,7 +35,9 @@ const defaults: Record<ForgeProvider, string> = {
   gitea: 'https://gitea.example.com',
   'azure-devops': 'https://dev.azure.com/organization',
 }
-const ok = z.object({ ok: z.boolean() })
+const ok = mutableStruct({
+  ok: Schema.Boolean,
+})
 export default function SourceControlSettings() {
   const { overviews } = useRuntime()
   return (
@@ -46,7 +51,11 @@ export default function SourceControlSettings() {
       )}
       {overviews.map((entry) => (
         <RuntimeScope key={clientScopeKey(entry.profile.connection)} runtimeId={entry.profile.id}>
-          <View style={{ gap: 12 }}>
+          <View
+            style={{
+              gap: 12,
+            }}
+          >
             <Text style={styles.text}>
               {entry.profile.name}
               {entry.connected ? '' : ' · Offline'}
@@ -59,40 +68,64 @@ export default function SourceControlSettings() {
   )
 }
 function ConnectionsContent() {
-  const { read, call, connected, snapshot, readCache } = useRuntime()
-  const [connections, setConnections] = useState<ForgeConnection[]>([]),
-    [error, setError] = useState(''),
-    [revision, setRevision] = useState(0)
-  const [editing, setEditing] = useState<ForgeConnection | 'new' | null>(null),
-    [project, setProject] = useState<string | null>(null)
+  const { read, connected, snapshot, readCache, callEffect, readEffect } = useRuntime()
+  const [connections, setConnections] = useApplicationState<ForgeConnection[]>([]),
+    [error, setError] = useApplicationState(''),
+    [revision, setRevision] = useApplicationState(0)
+  const [editing, setEditing] = useApplicationState<ForgeConnection | 'new' | null>(null),
+    [project, setProject] = useApplicationState<string | null>(null)
   useEffect(() => {
     let active = true
     let received = false
     setError('')
-    void readCache
-      ?.read('scm-connections', forgeConnectionsSchema)
-      .then((cached) => {
-        if (active && !received && cached) setConnections(cached.value.connections)
-      })
-      .catch(() => {
-        if (active) setError('Could not load saved accounts.')
-      })
+    if (readCache)
+      void runClientEffect(
+        readCache.readEffect('scm-connections', forgeConnectionsSchema).pipe(
+          Effect.tap((cached) =>
+            Effect.sync(() => {
+              if (active && !received && cached) setConnections(cached.value.connections)
+            }),
+          ),
+          Effect.catchAll(() =>
+            Effect.sync(() => {
+              if (active) setError('Could not load saved accounts.')
+            }),
+          ),
+        ),
+      )
     if (connected)
-      void read('/api/scm/connections/read', {}, forgeConnectionsSchema)
-        .then(async (result) => {
-          received = true
-          if (!active) return
-          setConnections(result.connections)
-          setError('')
-          try {
-            await readCache?.write('scm-connections', result)
-          } catch {
-            if (active) setError('Accounts loaded, but could not be saved for offline access.')
-          }
-        })
-        .catch((cause) => {
-          if (active) setError(String(cause))
-        })
+      void runClientEffect(
+        readEffect('/api/scm/connections/read', {}, forgeConnectionsSchema)
+          .pipe(
+            Effect.flatMap((result) =>
+              mobileWorkflow(function* () {
+                received = true
+                if (!active) return
+                setConnections(result.connections)
+                setError('')
+                return yield* mobileWorkflow(function* () {
+                  yield* (
+                    readCache?.writeEffect('scm-connections', result) ?? Effect.succeed(undefined)
+                  )
+                }).pipe(
+                  Effect.catchAll((_error) =>
+                    nativeEffect(() => {
+                      if (active)
+                        setError('Accounts loaded, but could not be saved for offline access.')
+                    }),
+                  ),
+                )
+              }),
+            ),
+          )
+          .pipe(
+            Effect.catchAll((cause) =>
+              nativeEffect(() => {
+                if (active) setError(String(cause))
+              }),
+            ),
+          ),
+      )
     return () => {
       active = false
     }
@@ -102,17 +135,39 @@ function ConnectionsContent() {
     setProject(null)
     setRevision((value) => value + 1)
   }
-  const remove = async (connection: ForgeConnection) => {
-    try {
-      await call('/api/scm/connections/remove', { id: connection.id }, ok)
-      done()
-    } catch (cause) {
-      setError(String(cause))
-    }
+  const remove = (connection: ForgeConnection) => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        return yield* mobileWorkflow(function* () {
+          yield* callEffect(
+            '/api/scm/connections/remove',
+            {
+              id: connection.id,
+            },
+            ok,
+          )
+          done()
+        }).pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              setError(String(cause))
+            }),
+          ),
+        )
+      }),
+    )
   }
   return (
-    <View style={{ gap: 12 }}>
-      <View style={{ gap: 12 }}>
+    <View
+      style={{
+        gap: 12,
+      }}
+    >
+      <View
+        style={{
+          gap: 12,
+        }}
+      >
         {!connected && (
           <Text style={styles.muted}>
             Offline · Showing saved accounts. Reconnect this computer to make changes.
@@ -200,7 +255,6 @@ function ConnectionsContent() {
     </View>
   )
 }
-
 function ConnectionForm({
   initial,
   onClose,
@@ -212,51 +266,70 @@ function ConnectionForm({
   onDone: () => void
   onRemove?: () => void
 }) {
-  const { call, connected } = useRuntime()
-  const [provider, setProvider] = useState<ForgeProvider>(initial?.provider ?? 'github'),
-    [name, setName] = useState(initial?.name ?? 'GitHub'),
-    [baseUrl, setBaseUrl] = useState(initial?.baseUrl ?? defaults.github)
-  const [username, setUsername] = useState(initial?.username ?? ''),
-    [token, setToken] = useState(''),
-    [tokenEnv, setTokenEnv] = useState(initial?.tokenEnv ?? '')
-  const [cliProfile, setCliProfile] = useState(initial?.cliProfile ?? '')
-  const [cliTool, setCliTool] = useState<'fj' | 'tea'>(initial?.cliTool ?? 'tea')
-  const [credential, setCredential] = useState(initial?.credential ?? 'gh'),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false),
-    [confirmRemove, setConfirmRemove] = useState(false)
+  const { connected, callEffect } = useRuntime()
+  const [provider, setProvider] = useApplicationState<ForgeProvider>(initial?.provider ?? 'github'),
+    [name, setName] = useApplicationState(initial?.name ?? 'GitHub'),
+    [baseUrl, setBaseUrl] = useApplicationState(initial?.baseUrl ?? defaults.github)
+  const [username, setUsername] = useApplicationState(initial?.username ?? ''),
+    [token, setToken] = useApplicationState(''),
+    [tokenEnv, setTokenEnv] = useApplicationState(initial?.tokenEnv ?? '')
+  const [cliProfile, setCliProfile] = useApplicationState(initial?.cliProfile ?? '')
+  const [cliTool, setCliTool] = useApplicationState<'fj' | 'tea'>(initial?.cliTool ?? 'tea')
+  const [credential, setCredential] = useApplicationState(initial?.credential ?? 'gh'),
+    [error, setError] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false),
+    [confirmRemove, setConfirmRemove] = useApplicationState(false)
   const pending = useRef(false)
-  const submit = async () => {
-    if (pending.current) return
-    pending.current = true
-    setBusy(true)
-    setError('')
-    try {
-      const input = forgeConnectionInputSchema.parse({
-        id: initial?.id,
-        provider,
-        name,
-        baseUrl,
-        username: username || undefined,
-        credential,
-        ...(credential === 'cli' || credential === 'gh'
-          ? {
-              cliProfile: cliProfile.trim() || undefined,
-              cliTool: ['gitea', 'forgejo'].includes(provider) ? cliTool : undefined,
-            }
-          : {}),
-        ...(credential === 'token' && token.trim() ? { token: token.trim() } : {}),
-        ...(credential === 'environment' ? { tokenEnv: tokenEnv.trim() } : {}),
-      })
-      await call('/api/scm/connections/save', input, forgeConnectionSchema)
-      setToken('')
-      onDone()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      pending.current = false
-      setBusy(false)
-    }
+  const submit = () => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (pending.current) return
+        pending.current = true
+        setBusy(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          const input = decode(forgeConnectionInputSchema, {
+            id: initial?.id,
+            provider,
+            name,
+            baseUrl,
+            username: username || undefined,
+            credential,
+            ...(credential === 'cli' || credential === 'gh'
+              ? {
+                  cliProfile: cliProfile.trim() || undefined,
+                  cliTool: ['gitea', 'forgejo'].includes(provider) ? cliTool : undefined,
+                }
+              : {}),
+            ...(credential === 'token' && token.trim()
+              ? {
+                  token: token.trim(),
+                }
+              : {}),
+            ...(credential === 'environment'
+              ? {
+                  tokenEnv: tokenEnv.trim(),
+                }
+              : {}),
+          })
+          yield* callEffect('/api/scm/connections/save', input, forgeConnectionSchema)
+          setToken('')
+          onDone()
+        }).pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              setError(cause instanceof Error ? cause.message : String(cause))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              pending.current = false
+              setBusy(false)
+            }).pipe(Effect.orDie),
+          ),
+        )
+      }),
+    )
   }
   return (
     <Sheet title={initial ? 'Edit account' : 'Connect account'} onClose={onClose} busy={busy}>
@@ -264,7 +337,7 @@ function ConnectionForm({
         label="Provider"
         value={provider}
         onChange={(value) => {
-          const next = forgeProviderSchema.parse(value)
+          const next = decode(forgeProviderSchema, value)
           setProvider(next)
           setUsername('')
           setBaseUrl(defaults[next])
@@ -274,7 +347,10 @@ function ConnectionForm({
           setCredential(next === 'github' ? 'gh' : 'cli')
         }}
         disabled={busy}
-        items={forgeProviderSchema.options.map((id) => ({ id, name: forgeLabels[id] }))}
+        items={forgeProviderSchema.literals.map((id) => ({
+          id,
+          name: forgeLabels[id],
+        }))}
       />
       <Field label="Account name" value={name} onChangeText={setName} editable={!busy} />
       <Field
@@ -320,9 +396,18 @@ function ConnectionForm({
             }}
             disabled={busy}
             items={[
-              { id: 'cli', name: 'Signed-in CLI account' },
-              { id: 'token', name: 'API token on runtime' },
-              { id: 'environment', name: 'Runtime environment variable' },
+              {
+                id: 'cli',
+                name: 'Signed-in CLI account',
+              },
+              {
+                id: 'token',
+                name: 'API token on runtime',
+              },
+              {
+                id: 'environment',
+                name: 'Runtime environment variable',
+              },
             ]}
           />
           {credential === 'cli' ? (
@@ -334,8 +419,14 @@ function ConnectionForm({
                   onChange={(v) => setCliTool(v === 'fj' ? 'fj' : 'tea')}
                   disabled={busy}
                   items={[
-                    { id: 'fj', name: 'Forgejo CLI (fj)' },
-                    { id: 'tea', name: 'Gitea CLI (tea)' },
+                    {
+                      id: 'fj',
+                      name: 'Forgejo CLI (fj)',
+                    },
+                    {
+                      id: 'tea',
+                      name: 'Gitea CLI (tea)',
+                    },
                   ]}
                 />
               )}
@@ -413,7 +504,6 @@ function ConnectionForm({
     </Sheet>
   )
 }
-
 function ProjectConnection({
   projectId,
   connections,
@@ -425,73 +515,123 @@ function ProjectConnection({
   onClose: () => void
   onDone: () => void
 }) {
-  const { snapshot, call, read, connected } = useRuntime()
+  const { snapshot, connected, readEffect, callEffect } = useRuntime()
   const project = snapshot?.workspace.repositories.find((repo) => repo.id === projectId)
-  const [connectionId, setConnection] = useState(
+  const [connectionId, setConnection] = useApplicationState(
       project?.forge?.connectionId ?? connections[0]?.id ?? '',
     ),
-    [repository, setRepository] = useState(project?.forge?.repository ?? '')
-  const [directory, setDirectory] = useState(''),
-    [name, setName] = useState(''),
-    [browsing, setBrowsing] = useState(false),
-    [choices, setChoices] = useState<Array<{ id: string; name: string }>>([])
-  const [page, setPage] = useState(1),
-    [hasMore, setMore] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
+    [repository, setRepository] = useApplicationState(project?.forge?.repository ?? '')
+  const [directory, setDirectory] = useApplicationState(''),
+    [name, setName] = useApplicationState(''),
+    [browsing, setBrowsing] = useApplicationState(false),
+    [choices, setChoices] = useApplicationState<
+      Array<{
+        id: string
+        name: string
+      }>
+    >([])
+  const [page, setPage] = useApplicationState(1),
+    [hasMore, setMore] = useApplicationState(false),
+    [busy, setBusy] = useApplicationState(false),
+    [error, setError] = useApplicationState('')
   const pending = useRef(false)
-  const browse = async (next = 1) => {
-    if (pending.current) return
-    pending.current = true
-    setBusy(true)
-    setError('')
-    try {
-      const result = await read(
-        '/api/scm/repositories/forge/read',
-        { connectionId, repository, page: next, ...(project ? { repositoryId: project.id } : {}) },
-        forgeRepositoryPageSchema,
-      )
-      const rows = result.repositories.map((repo) => ({ id: repo.fullName, name: repo.fullName }))
-      setChoices((current) => (next === 1 ? rows : [...current, ...rows]))
-      setPage(next)
-      setMore(result.hasMore)
-    } catch (cause) {
-      setError(String(cause))
-    } finally {
-      pending.current = false
-      setBusy(false)
-    }
+  const browse = (next = 1) => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (pending.current) return
+        pending.current = true
+        setBusy(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          const result = yield* readEffect(
+            '/api/scm/repositories/forge/read',
+            {
+              connectionId,
+              repository,
+              page: next,
+              ...(project
+                ? {
+                    repositoryId: project.id,
+                  }
+                : {}),
+            },
+            forgeRepositoryPageSchema,
+          )
+          const rows = result.repositories.map((repo) => ({
+            id: repo.fullName,
+            name: repo.fullName,
+          }))
+          setChoices((current) => (next === 1 ? rows : [...current, ...rows]))
+          setPage(next)
+          setMore(result.hasMore)
+        }).pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              setError(String(cause))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              pending.current = false
+              setBusy(false)
+            }).pipe(Effect.orDie),
+          ),
+        )
+      }),
+    )
   }
-  const submit = async (clear = false) => {
-    if (pending.current) return
-    pending.current = true
-    setBusy(true)
-    setError('')
-    try {
-      if (project)
-        await call(
-          '/api/scm/repositories/forge/bind',
-          { repositoryId: project.id, forge: clear ? null : { connectionId, repository } },
-          ok,
+  const submit = (clear = false) => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (pending.current) return
+        pending.current = true
+        setBusy(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          if (project)
+            yield* callEffect(
+              '/api/scm/repositories/forge/bind',
+              {
+                repositoryId: project.id,
+                forge: clear
+                  ? null
+                  : {
+                      connectionId,
+                      repository,
+                    },
+              },
+              ok,
+            )
+          else
+            yield* callEffect(
+              '/api/scm/repositories/add',
+              {
+                source: 'forge',
+                forge: {
+                  connectionId,
+                  repository,
+                },
+                name: name.trim() || repository.split('/').at(-1),
+                directory,
+              },
+              repositorySchema,
+            )
+          onDone()
+        }).pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              setError(String(cause))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              pending.current = false
+              setBusy(false)
+            }).pipe(Effect.orDie),
+          ),
         )
-      else
-        await call(
-          '/api/scm/repositories/add',
-          {
-            source: 'forge',
-            forge: { connectionId, repository },
-            name: name.trim() || repository.split('/').at(-1),
-            directory,
-          },
-          repositorySchema,
-        )
-      onDone()
-    } catch (cause) {
-      setError(String(cause))
-    } finally {
-      pending.current = false
-      setBusy(false)
-    }
+      }),
+    )
   }
   return (
     <Sheet
@@ -522,7 +662,10 @@ function ProjectConnection({
               setRepository('')
             }}
             disabled={busy}
-            items={connections.map((connection) => ({ id: connection.id, name: connection.name }))}
+            items={connections.map((connection) => ({
+              id: connection.id,
+              name: connection.name,
+            }))}
           />
           <Field
             label="Repository"

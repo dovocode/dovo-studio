@@ -1,5 +1,6 @@
-import { z } from 'zod'
-
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 export type GithubJSON = (args: string[]) => Promise<unknown>
 export type GithubLocation = {
   nameWithOwner: string
@@ -8,7 +9,6 @@ export type GithubLocation = {
   repository: string
   path: string
 }
-
 export function githubApi(
   json: GithubJSON,
   repo: GithubLocation,
@@ -26,7 +26,6 @@ export function githubApi(
     ...fields,
   ])
 }
-
 export async function githubGraphql(
   json: GithubJSON,
   repo: GithubLocation,
@@ -42,9 +41,18 @@ export async function githubGraphql(
     `query=${query}`,
     ...fields,
   ])
-  const envelope = z
-    .object({ errors: z.array(z.object({ message: z.string() })).optional() })
-    .parse(result)
+  const envelope = decode(
+    mutableStruct({
+      errors: Schema.optional(
+        mutableArray(
+          mutableStruct({
+            message: Schema.String,
+          }),
+        ),
+      ),
+    }),
+    result,
+  )
   if (envelope.errors?.length)
     throw new Error(envelope.errors.map((error) => error.message).join('; '))
   return result

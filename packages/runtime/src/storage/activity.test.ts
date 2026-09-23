@@ -87,3 +87,30 @@ it('reads tools and reasoning together while excluding raw diagnostics and other
     db.close()
   }
 })
+
+it('redacts historical literal credentials when upgrading the activity database', () => {
+  const db = openDatabase(':memory:')
+  try {
+    new Activity(db)
+    db.prepare('DELETE FROM documents WHERE id=?').run('activity-redaction-v3')
+    db.prepare('INSERT INTO activity VALUES (?, ?, ?, ?, ?, ?)').run(
+      'old',
+      new Date().toISOString(),
+      'request',
+      'mcp',
+      'Old request',
+      JSON.stringify({
+        envValues: { CUSTOM_VALUE: 'historical-secret' },
+        'X-API-Key': 'historical-key',
+        error: 'env.KEY: Expected string, actual "historical-error-secret"',
+      }),
+    )
+    const upgraded = new Activity(db)
+    const encoded = JSON.stringify(upgraded.list('', '', 0))
+    expect(encoded).not.toContain('historical-secret')
+    expect(encoded).not.toContain('historical-key')
+    expect(encoded).not.toContain('historical-error-secret')
+  } finally {
+    db.close()
+  }
+})

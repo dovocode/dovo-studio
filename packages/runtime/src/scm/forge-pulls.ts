@@ -1,6 +1,8 @@
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
 import { dirname } from 'node:path'
 import { homedir } from 'node:os'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import {
   forgeRepositorySchema,
   pullLineCommentSchema,
@@ -18,7 +20,6 @@ import type { ForgeAdapter } from './forge-types.js'
 import type { GitService } from './git.js'
 import type { WorkspaceStore } from '../storage/workspace.js'
 import { HttpError } from '../errors.js'
-
 export class ForgePullRequests {
   private github: PullRequests
   private githubTargets = new Map<string, PullRequests>()
@@ -80,21 +81,26 @@ export class ForgePullRequests {
           ['api', '--hostname', host, path],
           undefined,
           directory,
-          token ? { host, token } : undefined,
+          token
+            ? {
+                host,
+                token,
+              }
+            : undefined,
         ),
       ) as unknown
     }
-    const repoSchema = z.object({
-      id: z.number(),
-      name: z.string(),
-      full_name: z.string(),
-      html_url: z.string(),
-      clone_url: z.string(),
-      default_branch: z.string(),
+    const repoSchema = mutableStruct({
+      id: Schema.Number.pipe(Schema.finite()),
+      name: Schema.String,
+      full_name: Schema.String,
+      html_url: Schema.String,
+      clone_url: Schema.String,
+      default_branch: Schema.String,
     })
     const normalize = (value: unknown) => {
-      const repo = repoSchema.parse(value)
-      return forgeRepositorySchema.parse({
+      const repo = decode(repoSchema, value)
+      return decode(forgeRepositorySchema, {
         id: String(repo.id),
         name: repo.name,
         fullName: repo.full_name,
@@ -107,10 +113,15 @@ export class ForgePullRequests {
       repository: async () =>
         normalize(await api(`repos/${repository.split('/').map(encodeURIComponent).join('/')}`)),
       repositories: async (page): Promise<ForgeRepositoryPage> => {
-        const repos = z
-          .array(z.unknown())
-          .parse(await api(`user/repos?sort=updated&per_page=50&page=${page}`))
-        return { repositories: repos.map(normalize), page, hasMore: repos.length === 50 }
+        const repos = decode(
+          mutableArray(Schema.Unknown),
+          await api(`user/repos?sort=updated&per_page=50&page=${page}`),
+        )
+        return {
+          repositories: repos.map(normalize),
+          page,
+          hasMore: repos.length === 50,
+        }
       },
       list: (state, page) => github.list(directory, state, page),
       detail: (number) => github.detail(directory, number),
@@ -182,7 +193,7 @@ export class ForgePullRequests {
     return detail
   }
   async comment(cwd: string, value: unknown) {
-    const input = pullLineCommentSchema.parse(value)
+    const input = decode(pullLineCommentSchema, value)
     return (await this.target(cwd))?.comment(input) ?? this.github.comment(cwd, input)
   }
   async create(cwd: string, input: PullCreate) {

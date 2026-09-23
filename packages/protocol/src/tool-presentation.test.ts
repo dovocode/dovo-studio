@@ -1,7 +1,8 @@
+import { Schema } from 'effect'
 import { expect, it } from 'vitest'
 import { recentTools, activitySchema } from './activity'
 import { activitySummary, toolPresentation } from './tool-presentation'
-type Event = ReturnType<typeof activitySchema.parse>['events'][number]
+type Event = Schema.Schema.Type<typeof activitySchema>['events'][number]
 const event = (
   id: string,
   toolId: string,

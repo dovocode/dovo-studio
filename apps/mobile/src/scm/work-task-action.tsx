@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from '../runtime/application-state'
+import { decode } from '@dovo/protocol'
+import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import {
@@ -16,7 +21,6 @@ import { styles } from '../ui/theme'
 import { WorkMenu } from './work-menu'
 import { Sheet } from '../ui/sheet'
 import { Choice } from '../ui/choice'
-
 export function WorkTaskAction({
   repositoryId,
   jiraSourceId,
@@ -25,16 +29,24 @@ export function WorkTaskAction({
 }: {
   repositoryId?: string
   jiraSourceId?: string
-  source: { kind: 'issue'; item: ForgeIssue } | { kind: 'pipeline'; item: ForgePipeline }
+  source:
+    | {
+        kind: 'issue'
+        item: ForgeIssue
+      }
+    | {
+        kind: 'pipeline'
+        item: ForgePipeline
+      }
   disabled: boolean
 }) {
-  const { call, refresh, snapshot, activeId } = useRuntime()
+  const { snapshot, activeId, callEffect, refreshEffect } = useRuntime()
   const { navigate, focused } = useNavigation()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [created, setCreated] = useState('')
-  const [choosing, setChoosing] = useState(false)
-  const [destination, setDestination] = useState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [created, setCreated] = useApplicationState('')
+  const [choosing, setChoosing] = useApplicationState(false)
+  const [destination, setDestination] = useApplicationState('')
   const projects = snapshot?.workspace.repositories ?? []
   const pending = useRef(false)
   const attempt = useRef<WorkTaskInput | undefined>(undefined)
@@ -60,52 +72,87 @@ export function WorkTaskAction({
       navigate('tasks', created, activeId ?? undefined)
     }
   }, [created, snapshot, navigate, activeId, focused])
-  const create = async (targetId = repositoryId) => {
-    if (pending.current || disabled || !focused) return
-    if (!targetId && !attempt.current && !created) {
-      setDestination(projects.length === 1 ? projects[0]!.id : '')
-      setChoosing(true)
-      return
-    }
-    pending.current = true
-    setBusy(true)
-    setError('')
-    try {
-      if (created) {
-        await refresh()
-        return
-      }
-      const input =
-        attempt.current ??
-        workTaskInputSchema.parse({
-          repositoryId: targetId,
-          ...(jiraSourceId ? { jiraSourceId } : {}),
-          requestId: randomUUID(),
-          kind: source.kind,
-          id: source.item.id,
-          url: source.item.url,
-          ...(source.kind === 'issue'
-            ? { revision: source.item.revision }
-            : { sha: source.item.sha }),
-        })
-      attempt.current = input
-      const result = await call('/api/scm/work/task', input, workTaskResponseSchema)
-      attempt.current = undefined
-      if (!current.current) return
-      setChoosing(false)
-      setCreated(result.id)
-      await refresh()
-    } catch (cause) {
-      if (current.current) setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      pending.current = false
-      if (current.current) setBusy(false)
-    }
+  const create = (targetId = repositoryId) => {
+    return runClientEffect(
+      mobileWorkflow(function* () {
+        if (pending.current || disabled || !focused) return
+        if (!targetId && !attempt.current && !created) {
+          setDestination(projects.length === 1 ? projects[0]!.id : '')
+          setChoosing(true)
+          return
+        }
+        pending.current = true
+        setBusy(true)
+        setError('')
+        return yield* mobileWorkflow(function* () {
+          if (created) {
+            yield* refreshEffect()
+            return
+          }
+          const input =
+            attempt.current ??
+            decode(workTaskInputSchema, {
+              repositoryId: targetId,
+              ...(jiraSourceId
+                ? {
+                    jiraSourceId,
+                  }
+                : {}),
+              requestId: randomUUID(),
+              kind: source.kind,
+              id: source.item.id,
+              url: source.item.url,
+              ...(source.kind === 'issue'
+                ? {
+                    revision: source.item.revision,
+                  }
+                : {
+                    sha: source.item.sha,
+                  }),
+            })
+          attempt.current = input
+          const result = yield* callEffect('/api/scm/work/task', input, workTaskResponseSchema)
+          attempt.current = undefined
+          if (!current.current) return
+          setChoosing(false)
+          setCreated(result.id)
+          yield* refreshEffect()
+        }).pipe(
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              if (current.current) setError(cause instanceof Error ? cause.message : String(cause))
+            }),
+          ),
+          Effect.ensuring(
+            nativeEffect(() => {
+              pending.current = false
+              if (current.current) setBusy(false)
+            }).pipe(Effect.orDie),
+          ),
+        )
+      }),
+    )
   }
   return (
-    <View style={{ gap: 4 }}>
-      <View style={[styles.row, { flexWrap: 'nowrap' }]}>
-        <View style={{ flex: 1, minWidth: 0 }}>
+    <View
+      style={{
+        gap: 4,
+      }}
+    >
+      <View
+        style={[
+          styles.row,
+          {
+            flexWrap: 'nowrap',
+          },
+        ]}
+      >
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
           {linked[0] ? (
             <Action label="Open linked task" onPress={() => navigate('tasks', linked[0]!.id)} />
           ) : (
@@ -156,8 +203,14 @@ export function WorkTaskAction({
             onChange={setDestination}
             disabled={busy || !!attempt.current}
             items={[
-              { id: '', name: 'Choose a project…' },
-              ...projects.map((project) => ({ id: project.id, name: project.name })),
+              {
+                id: '',
+                name: 'Choose a project…',
+              },
+              ...projects.map((project) => ({
+                id: project.id,
+                name: project.name,
+              })),
             ]}
           />
           {!projects.length && (

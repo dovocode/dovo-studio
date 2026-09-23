@@ -61,6 +61,7 @@ appId: com.dovo.studio
 - inputText: printf mobile-terminal-ok > terminal-proof.txt
 - pressKey: Enter
 - takeScreenshot: dovo-mobile-terminal-keyboard
+- tapOn: Task tools
 - tapOn: Chat
 - tapOn: Terminal
 - assertVisible: Close shell

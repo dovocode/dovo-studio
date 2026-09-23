@@ -1,4 +1,5 @@
-import { Children, isValidElement, useId, useState, type ReactNode } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { Children, isValidElement, useId, type ReactNode } from 'react'
 import { Check, ChevronsUpDown, Search } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
@@ -10,11 +11,12 @@ import {
   DialogTrigger,
 } from './components/ui/dialog'
 import { cn } from './lib/utils'
-
 function textContent(children: ReactNode): string {
   return Children.toArray(children)
     .map((child) =>
-      isValidElement<{ children?: ReactNode }>(child)
+      isValidElement<{
+        children?: ReactNode
+      }>(child)
         ? textContent(child.props.children)
         : typeof child === 'string' || typeof child === 'number' || typeof child === 'bigint'
           ? String(child)
@@ -22,9 +24,19 @@ function textContent(children: ReactNode): string {
     )
     .join('')
 }
-function choices(children: ReactNode): { value: string; label: string; disabled: boolean }[] {
+function choices(children: ReactNode): {
+  value: string
+  label: string
+  disabled: boolean
+}[] {
   return Children.toArray(children).flatMap((child) => {
-    if (!isValidElement<{ value?: string; disabled?: boolean; children?: ReactNode }>(child))
+    if (
+      !isValidElement<{
+        value?: string
+        disabled?: boolean
+        children?: ReactNode
+      }>(child)
+    )
       return []
     if (child.type !== 'option') return choices(child.props.children)
     return [
@@ -53,9 +65,9 @@ export function ChoicePicker({
   className?: string
   'aria-label'?: string
 }) {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  const [active, setActive] = useState('')
+  const [open, setOpen] = useApplicationState(false)
+  const [query, setQuery] = useApplicationState('')
+  const [active, setActive] = useApplicationState('')
   const id = useId()
   const options = choices(children)
   const filtered = options.filter((option) =>
@@ -127,9 +139,9 @@ export function ChoicePicker({
                 const option = available[next]
                 if (option) {
                   setActive(option.value)
-                  document
-                    .getElementById(`${id}-${options.indexOf(option)}`)
-                    ?.scrollIntoView({ block: 'nearest' })
+                  document.getElementById(`${id}-${options.indexOf(option)}`)?.scrollIntoView({
+                    block: 'nearest',
+                  })
                 }
               }
               if (event.key === 'Enter') {

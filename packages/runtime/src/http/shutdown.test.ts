@@ -112,3 +112,50 @@ it.each(['connected', 'disconnected'])(
     expect(services.db.open).toBe(false)
   },
 )
+
+it('releases remaining resources and SQLite when one service cleanup fails', async () => {
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  const released = vi.spyOn(runtime.services.agents, 'dispose')
+  vi.spyOn(runtime.services.browsers, 'dispose').mockRejectedValueOnce(
+    new Error('browser cleanup failed'),
+  )
+  await expect(runtime.close()).rejects.toThrow('browser cleanup failed')
+  expect(released).toHaveBeenCalledOnce()
+  expect(runtime.services.db.open).toBe(false)
+})
+
+it('aborts a title worker while its accepted HTTP request is draining', async () => {
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  let entered = () => {}
+  const started = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  let aborted = false
+  vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+    probe: async () => ({ provider: 'codex', available: true, detail: 'Fixture' }),
+    run: async ({ signal }) => {
+      entered()
+      await new Promise<void>((resolve) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            aborted = true
+            resolve()
+          },
+          { once: true },
+        )
+      })
+    },
+  })
+  const response = fetch(`http://127.0.0.1:${runtime.port}/api/tasks/title`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'A title request held until shutdown' }),
+  })
+  await started
+  await runtime.close()
+  expect(aborted).toBe(true)
+  expect((await response).ok).toBe(false)
+  expect(runtime.services.db.open).toBe(false)
+})

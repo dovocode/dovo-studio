@@ -1,4 +1,8 @@
-import { useState } from 'react'
+import { CredentialEditor } from './credential-editor'
+import { credentialFields, credentialValues } from '@dovo/protocol'
+import { mobileWorkflow } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/application-state'
+import { decode } from '@dovo/protocol'
 import { Linking } from 'react-native'
 import { Text } from '../ui/text'
 import {
@@ -16,8 +20,15 @@ import { Field } from '../ui/field'
 import { styles } from '../ui/theme'
 import { useAction } from '../ui/use-action'
 export type ResourceSelection =
-  | { kind: 'mcp'; value: McpServer; notes?: string[] }
-  | { kind: 'skill'; value: ManagedSkill }
+  | {
+      kind: 'mcp'
+      value: McpServer
+      notes?: string[]
+    }
+  | {
+      kind: 'skill'
+      value: ManagedSkill
+    }
 export function ResourceEditor({
   editing,
   scope,
@@ -25,15 +36,22 @@ export function ResourceEditor({
   onSave,
 }: {
   editing:
-    | { kind: 'mcp'; value?: McpServer; notes?: string[] }
-    | { kind: 'skill'; value?: ManagedSkill }
+    | {
+        kind: 'mcp'
+        value?: McpServer
+        notes?: string[]
+      }
+    | {
+        kind: 'skill'
+        value?: ManagedSkill
+      }
   scope: string
   onClose: () => void
   onSave: (selection: ResourceSelection) => Promise<void>
 }) {
-  const { call, connected } = useRuntime(),
-    { act, busy, error } = useAction()
-  const [server, setServer] = useState<McpServer>(
+  const { connected, callEffect } = useRuntime(),
+    { act, busy, error, fieldError } = useAction()
+  const [server, setServer] = useApplicationState<McpServer>(
     editing.kind === 'mcp' && editing.value
       ? editing.value
       : {
@@ -48,26 +66,33 @@ export function ResourceEditor({
           bearerTokenEnv: '',
         },
   )
-  const [skill, setSkill] = useState<ManagedSkill>(
+  const [skill, setSkill] = useApplicationState<ManagedSkill>(
     editing.kind === 'skill' && editing.value
       ? editing.value
-      : { name: '', description: '', content: '', enabled: true },
+      : {
+          name: '',
+          description: '',
+          content: '',
+          enabled: true,
+        },
   )
-  const [args, setArgs] = useState(server.args.join('\n')),
-    [env, setEnv] = useState(JSON.stringify(server.env, null, 2)),
-    [headers, setHeaders] = useState(JSON.stringify(server.headerEnv, null, 2)),
-    [envValues, setEnvValues] = useState(JSON.stringify(server.envValues ?? {}, null, 2)),
-    [headerValues, setHeaderValues] = useState(JSON.stringify(server.headerValues ?? {}, null, 2)),
-    [path, setPath] = useState(''),
-    [result, setResult] = useState('')
+  const [args, setArgs] = useApplicationState(server.args.join('\n')),
+    [env, setEnv] = useApplicationState(JSON.stringify(server.env, null, 2)),
+    [headers, setHeaders] = useApplicationState(JSON.stringify(server.headerEnv, null, 2)),
+    [envValues, setEnvValues] = useApplicationState(credentialFields(server.envValues ?? {})),
+    [headerValues, setHeaderValues] = useApplicationState(
+      credentialFields(server.headerValues ?? {}),
+    ),
+    [path, setPath] = useApplicationState(''),
+    [result, setResult] = useApplicationState('')
   const parseServer = () => {
-    const value = mcpServerSchema.parse({
+    const value = decode(mcpServerSchema, {
       ...server,
       args: args.split('\n').filter(Boolean),
       env: JSON.parse(env),
       headerEnv: JSON.parse(headers),
-      envValues: JSON.parse(envValues),
-      headerValues: JSON.parse(headerValues),
+      envValues: credentialValues(envValues),
+      headerValues: credentialValues(headerValues),
     })
     if ([value.url, ...value.args].some((item) => item.includes('__CONFIGURE_')))
       throw new Error('Replace the __CONFIGURE_…__ placeholders before saving or testing.')
@@ -93,29 +118,50 @@ export function ResourceEditor({
           ))}
           <Field
             label="Server name"
+            error={fieldError('name')}
             value={server.name}
             editable={!busy}
-            onChangeText={(name) => setServer({ ...server, name })}
+            onChangeText={(name) =>
+              setServer({
+                ...server,
+                name,
+              })
+            }
           />
           <Choice
             label="Transport"
             value={server.transport}
             disabled={busy}
             items={[
-              { id: 'stdio', name: 'Local command (stdio)' },
-              { id: 'http', name: 'Streamable HTTP' },
+              {
+                id: 'stdio',
+                name: 'Local command (stdio)',
+              },
+              {
+                id: 'http',
+                name: 'Streamable HTTP',
+              },
             ]}
             onChange={(transport) =>
-              setServer({ ...server, transport: transport === 'http' ? 'http' : 'stdio' })
+              setServer({
+                ...server,
+                transport: transport === 'http' ? 'http' : 'stdio',
+              })
             }
           />
           {server.transport === 'stdio' ? (
             <>
               <Field
                 label="Executable"
+                error={fieldError('command')}
                 value={server.command}
                 editable={!busy}
-                onChangeText={(command) => setServer({ ...server, command })}
+                onChangeText={(command) =>
+                  setServer({
+                    ...server,
+                    command,
+                  })
+                }
               />
               <Field
                 label="Arguments (one per line)"
@@ -131,27 +177,33 @@ export function ResourceEditor({
                 editable={!busy}
                 onChangeText={setEnv}
               />
-              <Field
-                label="Static environment values (JSON, non-secret)"
-                multiline
-                value={envValues}
-                editable={!busy}
-                onChangeText={setEnvValues}
-              />
+              <CredentialEditor fields={envValues} onChange={setEnvValues} disabled={busy} />
             </>
           ) : (
             <>
               <Field
                 label="Server URL"
+                error={fieldError('url')}
                 value={server.url}
                 editable={!busy}
-                onChangeText={(url) => setServer({ ...server, url })}
+                onChangeText={(url) =>
+                  setServer({
+                    ...server,
+                    url,
+                  })
+                }
               />
               <Field
                 label="Bearer token environment variable"
+                error={fieldError('bearerTokenEnv')}
                 value={server.bearerTokenEnv}
                 editable={!busy}
-                onChangeText={(bearerTokenEnv) => setServer({ ...server, bearerTokenEnv })}
+                onChangeText={(bearerTokenEnv) =>
+                  setServer({
+                    ...server,
+                    bearerTokenEnv,
+                  })
+                }
               />
               <Field
                 label="Header bindings (JSON)"
@@ -160,34 +212,32 @@ export function ResourceEditor({
                 editable={!busy}
                 onChangeText={setHeaders}
               />
-              <Field
-                label="Static header values (JSON, non-secret)"
-                multiline
-                value={headerValues}
-                editable={!busy}
-                onChangeText={setHeaderValues}
-              />
+              <CredentialEditor fields={headerValues} onChange={setHeaderValues} disabled={busy} />
             </>
           )}
           <Text style={styles.muted}>
             Bindings map names to environment variable names on the runtime host, for example{' '}
-            {JSON.stringify({ API_KEY: 'MY_API_KEY' })}. Testing starts the server and lists its
-            tools.
+            {JSON.stringify({
+              API_KEY: 'MY_API_KEY',
+            })}
+            . Testing starts the server and lists its tools.
           </Text>
           <Action
             secondary
             label="Test connection"
             disabled={busy || !connected}
             onPress={() =>
-              act(async () => {
-                setResult('')
-                const result = await call(
-                  '/api/agents/mcp/test',
-                  parseServer(),
-                  mcpTestResultSchema,
-                )
-                setResult(`Connected to ${result.server} · ${result.tools.length} tools`)
-              })
+              act(() =>
+                mobileWorkflow(function* () {
+                  setResult('')
+                  const result = yield* callEffect(
+                    '/api/agents/mcp/test',
+                    parseServer(),
+                    mcpTestResultSchema,
+                  )
+                  setResult(`Connected to ${result.server} · ${result.tools.length} tools`)
+                }),
+              )
             }
           />
         </>
@@ -204,31 +254,65 @@ export function ResourceEditor({
             label="Import SKILL.md"
             disabled={busy || !connected || !path.trim()}
             onPress={() =>
-              act(async () =>
-                setSkill(await call('/api/agents/skills/import', { path }, managedSkillSchema)),
+              act(() =>
+                mobileWorkflow(function* () {
+                  return setSkill(
+                    yield* callEffect(
+                      '/api/agents/skills/import',
+                      {
+                        path,
+                      },
+                      managedSkillSchema,
+                    ),
+                  )
+                }),
               )
             }
           />
           <Field
             label="Skill name"
+            error={fieldError('name')}
             value={skill.name}
             editable={!busy}
-            onChangeText={(name) => setSkill({ ...skill, name })}
+            onChangeText={(name) =>
+              setSkill({
+                ...skill,
+                name,
+              })
+            }
           />
           <Field
             label="When to use"
+            error={fieldError('description')}
             value={skill.description}
             multiline
             editable={!busy}
-            onChangeText={(description) => setSkill({ ...skill, description })}
+            onChangeText={(description) =>
+              setSkill({
+                ...skill,
+                description,
+              })
+            }
           />
           <Field
             label="Skill instructions"
+            error={fieldError('content')}
             value={skill.content}
             multiline
             editable={!busy}
-            style={[styles.input, { minHeight: 180, textAlignVertical: 'top' }]}
-            onChangeText={(content) => setSkill({ ...skill, content })}
+            style={[
+              styles.input,
+              {
+                minHeight: 180,
+                textAlignVertical: 'top',
+              },
+            ]}
+            onChangeText={(content) =>
+              setSkill({
+                ...skill,
+                content,
+              })
+            }
           />
           {skill.sourcePath && (
             <Text selectable style={styles.muted}>
@@ -250,8 +334,14 @@ export function ResourceEditor({
           act(() =>
             onSave(
               editing.kind === 'mcp'
-                ? { kind: 'mcp', value: parseServer() }
-                : { kind: 'skill', value: managedSkillSchema.parse(skill) },
+                ? {
+                    kind: 'mcp',
+                    value: parseServer(),
+                  }
+                : {
+                    kind: 'skill',
+                    value: decode(managedSkillSchema, skill),
+                  },
             ),
           )
         }

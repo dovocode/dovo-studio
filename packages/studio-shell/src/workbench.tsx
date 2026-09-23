@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ApplicationStateProvider, useApplicationState } from '@dovo/studio-core/state'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   StudioHostProvider,
   WorkspaceProvider,
@@ -15,7 +16,6 @@ import { ActivityBar } from './activity-bar'
 import { CommandPalette } from './command-palette'
 import { Walkthrough, walkthroughSteps } from './walkthrough'
 import { TitleBar, type DesktopPlatform } from './title-bar'
-
 type WorkbenchProps = {
   extensions: readonly StudioExtension[]
   pickDirectory?: StudioHostApi['pickDirectory']
@@ -24,11 +24,13 @@ type WorkbenchProps = {
 }
 export function Workbench(props: WorkbenchProps) {
   return (
-    <WorkspaceProvider>
-      <TooltipProvider delayDuration={350}>
-        <WorkbenchContent {...props} />
-      </TooltipProvider>
-    </WorkspaceProvider>
+    <ApplicationStateProvider>
+      <WorkspaceProvider>
+        <TooltipProvider delayDuration={350}>
+          <WorkbenchContent {...props} />
+        </TooltipProvider>
+      </WorkspaceProvider>
+    </ApplicationStateProvider>
   )
 }
 function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform }: WorkbenchProps) {
@@ -43,15 +45,15 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
     pendingSync,
     retrySync,
   } = useWorkspace()
-  const [switchError, setSwitchError] = useState('')
-  const [switching, setSwitching] = useState(false)
-  const [target, navigate] = useState<StudioNavigation>({
+  const [switchError, setSwitchError] = useApplicationState('')
+  const [switching, setSwitching] = useApplicationState(false)
+  const [target, navigate] = useApplicationState<StudioNavigation>({
     viewId: extensions[0]?.views[0]?.id ?? '',
   })
-  const [palette, setPalette] = useState(false)
-  const [tour, setTour] = useState<number | null>(null)
+  const [palette, setPalette] = useApplicationState(false)
+  const [tour, setTour] = useApplicationState<number | null>(null)
   const commands = useRef(new Map<string, StudioCommand>())
-  const [, refreshCommands] = useState(0)
+  const [, refreshCommands] = useApplicationState(0)
   const registerCommand = useCallback((command: StudioCommand) => {
     if (commands.current.has(command.id)) throw new Error(`Duplicate command: ${command.id}`)
     commands.current.set(command.id, command)
@@ -62,7 +64,12 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
     }
   }, [])
   const api = useMemo<StudioHostApi>(
-    () => ({ navigate, registerCommand, pickDirectory, browser }),
+    () => ({
+      navigate,
+      registerCommand,
+      pickDirectory,
+      browser,
+    }),
     [registerCommand, pickDirectory, browser],
   )
   const catalog = useMemo(() => createExtensionCatalog(extensions, api), [extensions, api])
@@ -121,11 +128,16 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
     .map((view) => ({
       id: `${view.extensionId}.open.${view.id}`,
       title: `Open ${view.title}`,
-      run: () => navigate({ viewId: view.id }),
+      run: () =>
+        navigate({
+          viewId: view.id,
+        }),
     }))
   const setStep = (step: number) => {
     setTour(step)
-    navigate({ viewId: walkthroughSteps[step].view })
+    navigate({
+      viewId: walkthroughSteps[step].view,
+    })
   }
   return (
     <StudioHostProvider api={api}>
@@ -141,7 +153,11 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
           }
           online={runtimes.filter((runtime) => runtime.connected).length}
           devices={runtimeRegistry.profiles.length}
-          onDevices={() => navigate({ viewId: 'runtime' })}
+          onDevices={() =>
+            navigate({
+              viewId: 'runtime',
+            })
+          }
           onSearch={() => setPalette(true)}
         />
         {tour !== null && (
@@ -171,7 +187,15 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
                 >
                   Retry sync
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => navigate({ viewId: 'runtime' })}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    navigate({
+                      viewId: 'runtime',
+                    })
+                  }
+                >
                   Resolve edits
                 </Button>
               </>
@@ -182,7 +206,11 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
           <ActivityBar
             views={catalog.views}
             activeId={target.viewId}
-            onSelect={(viewId) => navigate({ viewId })}
+            onSelect={(viewId) =>
+              navigate({
+                viewId,
+              })
+            }
             onHelp={() => setStep(0)}
           />
           <main className="studio-main" tabIndex={-1}>
@@ -203,7 +231,11 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
                     size="sm"
                     variant={target.viewId === view.id ? 'secondary' : 'ghost'}
                     aria-current={target.viewId === view.id ? 'page' : undefined}
-                    onClick={() => navigate({ viewId: view.id })}
+                    onClick={() =>
+                      navigate({
+                        viewId: view.id,
+                      })
+                    }
                   >
                     {view.title}
                   </Button>
@@ -225,7 +257,7 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
             </ErrorBoundary>
           </main>
         </div>
-        <footer className="flex min-h-7 shrink-0 flex-wrap items-center justify-between gap-x-3 border-t bg-sidebar px-3 py-1 text-[11px] text-muted-foreground">
+        <footer className="studio-footer">
           <span>
             {connected
               ? pendingSync
@@ -251,7 +283,10 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
                 {
                   id: 'studio.overview',
                   title: 'Overview · all computers',
-                  run: () => navigate({ viewId: 'overview' }),
+                  run: () =>
+                    navigate({
+                      viewId: 'overview',
+                    }),
                 },
                 ...navigationCommands,
                 ...commands.current.values(),

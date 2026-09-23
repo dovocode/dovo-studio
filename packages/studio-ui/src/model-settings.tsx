@@ -1,5 +1,7 @@
+import { useApplicationState } from '@dovo/studio-core/state'
+import { decode } from '@dovo/protocol'
 import { ChoicePicker } from './choice-picker'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import {
   agentSchema,
   daybreakChoices,
@@ -26,11 +28,11 @@ export function ModelSettings({
   connected: boolean
   modes?: boolean
 }) {
-  const [catalog, setCatalog] = useState<ModelCatalog | null>(null),
-    [error, setError] = useState(''),
-    [loading, setLoading] = useState(false),
-    [refresh, setRefresh] = useState(0),
-    [custom, setCustom] = useState(false)
+  const [catalog, setCatalog] = useApplicationState<ModelCatalog | null>(null),
+    [error, setError] = useApplicationState(''),
+    [loading, setLoading] = useApplicationState(false),
+    [refresh, setRefresh] = useApplicationState(0),
+    [custom, setCustom] = useApplicationState(false)
   const key = JSON.stringify({
     provider: agent.provider,
     endpoint: agent.endpoint,
@@ -114,7 +116,12 @@ export function ModelSettings({
           aria-label="Reasoning level"
           className="h-9 rounded-md border bg-background px-2 text-xs"
           value={agent.reasoning ?? ''}
-          onValueChange={(selection) => onChange({ ...agent, reasoning: selection })}
+          onValueChange={(selection) =>
+            onChange({
+              ...agent,
+              reasoning: selection,
+            })
+          }
         >
           <option value="">Provider default</option>
           {agent.reasoning && !efforts.some((e) => e.id === agent.reasoning) && (
@@ -133,7 +140,12 @@ export function ModelSettings({
             <ChoicePicker
               aria-label="Service tier"
               value={serviceTierValue(agent.serviceTier)}
-              onValueChange={(serviceTier) => onChange({ ...agent, serviceTier })}
+              onValueChange={(serviceTier) =>
+                onChange({
+                  ...agent,
+                  serviceTier,
+                })
+              }
             >
               {modelServiceTiers(catalog, agent.model, agent.serviceTier).map((tier) => (
                 <option key={tier.id} value={tier.id}>
@@ -157,7 +169,7 @@ export function ModelSettings({
                 onChange({
                   ...agent,
                   cyberAccessProgram: program
-                    ? agentSchema.shape.cyberAccessProgram.parse(program)
+                    ? decode(agentSchema.fields.cyberAccessProgram.from, program)
                     : undefined,
                 })
               }

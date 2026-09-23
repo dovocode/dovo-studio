@@ -1,4 +1,6 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
+import { minValue, maxValue, decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { pipelineActionAllowed } from '@dovo/protocol'
 import type {
   ForgeIssue,
@@ -11,85 +13,113 @@ import type {
 import type { ForgeWorkProvider, WorkHttp } from './forge-work-types.js'
 import { HttpError } from '../errors.js'
 import { pipelineTime } from './forge-work-details.js'
-const user = z.object({ login: z.string() })
-const issue = z.object({
-  number: z.number(),
-  title: z.string(),
-  body: z.string().nullish(),
-  state: z.string(),
-  html_url: z.string(),
-  user: user.nullish(),
-  assignees: z.array(user).nullish(),
-  labels: z.array(z.object({ name: z.string() })).default([]),
-  updated_at: z.string(),
-  pull_request: z.unknown().optional(),
-  content_version: z.number().optional(),
+const user = mutableStruct({
+  login: Schema.String,
 })
-const comment = z.object({
-  id: z.number(),
-  body: z.string(),
-  user: user.nullish(),
-  created_at: z.string(),
-  html_url: z.string().optional(),
+const issue = mutableStruct({
+  number: Schema.Number.pipe(Schema.finite()),
+  title: Schema.String,
+  body: Schema.optional(Schema.NullOr(Schema.String)),
+  state: Schema.String,
+  html_url: Schema.String,
+  user: Schema.optional(Schema.NullOr(user)),
+  assignees: Schema.optional(Schema.NullOr(mutableArray(user))),
+  labels: Schema.optionalWith(
+    mutableArray(
+      mutableStruct({
+        name: Schema.String,
+      }),
+    ),
+    {
+      default: () => [],
+    },
+  ),
+  updated_at: Schema.String,
+  pull_request: Schema.optional(Schema.Unknown),
+  content_version: Schema.optional(Schema.Number.pipe(Schema.finite())),
 })
-const run = z.object({
-  id: z.number(),
-  name: z.string().nullish(),
-  display_title: z.string().optional(),
-  title: z.string().optional(),
-  html_url: z.string(),
-  head_branch: z.string().optional(),
-  head_sha: z.string().optional(),
-  prettyref: z.string().optional(),
-  commit_sha: z.string().optional(),
-  status: z.string(),
-  conclusion: z.string().nullish(),
-  actor: user.optional(),
-  trigger_user: user.optional(),
-  created_at: z.string().optional(),
-  created: z.string().optional(),
-  started_at: z.string().nullish(),
-  completed_at: z.string().nullish(),
-  updated_at: z.string().optional(),
-  updated: z.string().optional(),
-  path: z.string().nullish(),
-  workflow_id: z.union([z.string(), z.number()]).nullish(),
-  run_number: z.number().nullish(),
-  index_in_repo: z.number().nullish(),
-  run_attempt: z.number().nullish(),
-  event: z.string().nullish(),
-  trigger_event: z.string().nullish(),
-  run_started_at: z.string().nullish(),
-  started: z.string().nullish(),
-  stopped: z.string().nullish(),
-  head_commit: z.object({ message: z.string().nullish() }).nullish(),
+const comment = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite()),
+  body: Schema.String,
+  user: Schema.optional(Schema.NullOr(user)),
+  created_at: Schema.String,
+  html_url: Schema.optional(Schema.String),
 })
-const step = z.object({
-  number: z.number().int().nonnegative(),
-  name: z.string(),
-  status: z.string(),
-  conclusion: z.string().nullish(),
-  started_at: z.string().nullish(),
-  completed_at: z.string().nullish(),
+const run = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite()),
+  name: Schema.optional(Schema.NullOr(Schema.String)),
+  display_title: Schema.optional(Schema.String),
+  title: Schema.optional(Schema.String),
+  html_url: Schema.String,
+  head_branch: Schema.optional(Schema.String),
+  head_sha: Schema.optional(Schema.String),
+  prettyref: Schema.optional(Schema.String),
+  commit_sha: Schema.optional(Schema.String),
+  status: Schema.String,
+  conclusion: Schema.optional(Schema.NullOr(Schema.String)),
+  actor: Schema.optional(user),
+  trigger_user: Schema.optional(user),
+  created_at: Schema.optional(Schema.String),
+  created: Schema.optional(Schema.String),
+  started_at: Schema.optional(Schema.NullOr(Schema.String)),
+  completed_at: Schema.optional(Schema.NullOr(Schema.String)),
+  updated_at: Schema.optional(Schema.String),
+  updated: Schema.optional(Schema.String),
+  path: Schema.optional(Schema.NullOr(Schema.String)),
+  workflow_id: Schema.optional(
+    Schema.NullOr(Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite()))),
+  ),
+  run_number: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
+  index_in_repo: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
+  run_attempt: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
+  event: Schema.optional(Schema.NullOr(Schema.String)),
+  trigger_event: Schema.optional(Schema.NullOr(Schema.String)),
+  run_started_at: Schema.optional(Schema.NullOr(Schema.String)),
+  started: Schema.optional(Schema.NullOr(Schema.String)),
+  stopped: Schema.optional(Schema.NullOr(Schema.String)),
+  head_commit: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        message: Schema.optional(Schema.NullOr(Schema.String)),
+      }),
+    ),
+  ),
 })
-const job = z.object({
-  id: z.number(),
-  name: z.string(),
-  status: z.string(),
-  conclusion: z.string().nullish(),
-  html_url: z.string().optional(),
-  runner_name: z.string().nullish(),
-  started_at: z.string().nullish(),
-  completed_at: z.string().nullish(),
-  steps: z.array(step).nullish(),
+const step = mutableStruct({
+  number: Schema.Number.pipe(Schema.finite())
+    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+    .pipe(Schema.nonNegative()),
+  name: Schema.String,
+  status: Schema.String,
+  conclusion: Schema.optional(Schema.NullOr(Schema.String)),
+  started_at: Schema.optional(Schema.NullOr(Schema.String)),
+  completed_at: Schema.optional(Schema.NullOr(Schema.String)),
+})
+const job = mutableStruct({
+  id: Schema.Number.pipe(Schema.finite()),
+  name: Schema.String,
+  status: Schema.String,
+  conclusion: Schema.optional(Schema.NullOr(Schema.String)),
+  html_url: Schema.optional(Schema.String),
+  runner_name: Schema.optional(Schema.NullOr(Schema.String)),
+  started_at: Schema.optional(Schema.NullOr(Schema.String)),
+  completed_at: Schema.optional(Schema.NullOr(Schema.String)),
+  steps: Schema.optional(Schema.NullOr(mutableArray(step))),
 })
 export function workPage(cursor?: string) {
-  return z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(10000)
-    .parse(cursor ?? '1')
+  return decode(
+    maxValue(
+      minValue(
+        CoercedNumber.pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ),
+        1,
+      ),
+      10000,
+    ),
+    cursor ?? '1',
+  )
 }
 export class GitForgeWork implements ForgeWorkProvider {
   private path: string
@@ -109,9 +139,12 @@ export class GitForgeWork implements ForgeWorkProvider {
     let pipelineNotice: string | undefined
     if (this.provider === 'github') actions.push('cancel', 'enable', 'disable')
     else {
-      const { version } = z
-        .object({ version: z.string() })
-        .parse(await this.http.json('api/v1/version'))
+      const { version } = decode(
+        mutableStruct({
+          version: Schema.String,
+        }),
+        await this.http.json('api/v1/version'),
+      )
       const match = /^(\d+)\.(\d+)/.exec(version)
       const major = Number(match?.[1]),
         minor = Number(match?.[2])
@@ -136,7 +169,7 @@ export class GitForgeWork implements ForgeWorkProvider {
       pipelineActions: pipelines ? actions : [],
     }
   }
-  private normalize(raw: z.infer<typeof issue>): ForgeIssue {
+  private normalize(raw: Schema.Schema.Type<typeof issue>): ForgeIssue {
     return {
       id: String(raw.number),
       title: raw.title,
@@ -152,13 +185,13 @@ export class GitForgeWork implements ForgeWorkProvider {
       bodyFormat: 'markdown',
     }
   }
-  private revision(raw: z.infer<typeof issue>) {
+  private revision(raw: Schema.Schema.Type<typeof issue>) {
     return raw.content_version === undefined
       ? raw.updated_at
       : `${raw.updated_at}:${raw.content_version}`
   }
   async issues(state: string, cursor?: string, query?: string) {
-    const selected = z.enum(['open', 'closed', 'all']).parse(state),
+    const selected = decode(Schema.Literal('open', 'closed', 'all'), state),
       page = workPage(cursor)
     if (query?.trim() && this.provider === 'github') {
       // Quote user words, so repository/state scope cannot be overridden by a
@@ -169,42 +202,48 @@ export class GitForgeWork implements ForgeWorkProvider {
         .map((word) => JSON.stringify(word))
         .join(' ')
       const search = `repo:${this.repository} is:issue${selected === 'all' ? '' : ` is:${selected}`} ${text}`
-      const result = z
-        .object({ items: z.array(issue), total_count: z.number() })
-        .parse(
-          await this.http.json(
-            `search/issues?q=${encodeURIComponent(search)}&sort=updated&order=desc&per_page=30&page=${page}`,
-          ),
-        )
+      const result = decode(
+        mutableStruct({
+          items: mutableArray(issue),
+          total_count: Schema.Number.pipe(Schema.finite()),
+        }),
+        await this.http.json(
+          `search/issues?q=${encodeURIComponent(search)}&sort=updated&order=desc&per_page=30&page=${page}`,
+        ),
+      )
       return {
         items: result.items.filter((v) => !v.pull_request).map((v) => this.normalize(v)),
         next: page * 30 < Math.min(result.total_count, 1000) ? String(page + 1) : undefined,
       }
     }
-    const values = z
-      .array(issue)
-      .parse(
-        await this.get(
-          `issues?state=${selected}&${this.provider === 'github' ? 'per_page' : 'limit'}=30&page=${page}${this.provider === 'github' ? '&sort=updated&direction=desc' : this.provider === 'forgejo' ? '&type=issues&sort=recentupdate' : '&type=issues'}${query?.trim() ? `&q=${encodeURIComponent(query.trim())}` : ''}`,
-        ),
-      )
+    const values = decode(
+      mutableArray(issue),
+      await this.get(
+        `issues?state=${selected}&${this.provider === 'github' ? 'per_page' : 'limit'}=30&page=${page}${this.provider === 'github' ? '&sort=updated&direction=desc' : this.provider === 'forgejo' ? '&type=issues&sort=recentupdate' : '&type=issues'}${query?.trim() ? `&q=${encodeURIComponent(query.trim())}` : ''}`,
+      ),
+    )
     return {
       items: values.filter((v) => !v.pull_request).map((v) => this.normalize(v)),
       next: values.length === 30 ? String(page + 1) : undefined,
     }
   }
   async issue(id: string, cursor?: string) {
-    const n = z.coerce.number().int().positive().parse(id),
+    const n = decode(
+        CoercedNumber.pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ).pipe(Schema.positive()),
+        id,
+      ),
       page = workPage(cursor)
-    const raw = issue.parse(await this.get(`issues/${n}`))
+    const raw = decode(issue, await this.get(`issues/${n}`))
     if (raw.pull_request) throw new HttpError(400, 'This item is a pull request. Use the PR view.')
-    const comments = z
-      .array(comment)
-      .parse(
-        await this.get(
-          `issues/${n}/comments?${this.provider === 'github' ? 'per_page' : 'limit'}=50&page=${page}`,
-        ),
-      )
+    const comments = decode(
+      mutableArray(comment),
+      await this.get(
+        `issues/${n}/comments?${this.provider === 'github' ? 'per_page' : 'limit'}=50&page=${page}`,
+      ),
+    )
     return {
       issue: this.normalize(raw),
       comments: comments.map((v) => ({
@@ -224,29 +263,49 @@ export class GitForgeWork implements ForgeWorkProvider {
         400,
         'Manage repository label IDs on the server; label names cannot be sent to this API.',
       )
-    const value = issue.parse(
+    const value = decode(
+      issue,
       await this.get('issues', {
         method: 'POST',
         body: {
           title: input.title,
           body: input.body,
           assignees: input.assignees,
-          ...(this.provider === 'github' ? { labels: input.labels } : {}),
+          ...(this.provider === 'github'
+            ? {
+                labels: input.labels,
+              }
+            : {}),
         },
       }),
     )
-    return { id: String(value.number), url: value.html_url, message: 'Issue created' }
+    return {
+      id: String(value.number),
+      url: value.html_url,
+      message: 'Issue created',
+    }
   }
   async actOnIssue(input: ForgeIssueAction) {
-    const id = z.coerce.number().int().positive().parse(input.id)
-    const current = issue.parse(await this.get(`issues/${id}`))
+    const id = decode(
+      CoercedNumber.pipe(
+        Schema.int(),
+        Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+      ).pipe(Schema.positive()),
+      input.id,
+    )
+    const current = decode(issue, await this.get(`issues/${id}`))
     if (current.pull_request) throw new HttpError(400, 'Use the PR view for this item')
     if (this.revision(current) !== input.revision)
       throw new HttpError(409, 'This issue changed. Refresh before submitting your changes.')
     if (input.action === 'comment')
-      await this.get(`issues/${id}/comments`, { method: 'POST', body: { body: input.body } })
+      await this.get(`issues/${id}/comments`, {
+        method: 'POST',
+        body: {
+          body: input.body,
+        },
+      })
     else {
-      if (input.state) z.enum(['open', 'closed']).parse(input.state)
+      if (input.state) decode(Schema.Literal('open', 'closed'), input.state)
       if (input.labels !== undefined && this.provider !== 'github')
         throw new HttpError(400, 'Editing label names is unavailable for this server')
       await this.get(`issues/${id}`, {
@@ -259,7 +318,9 @@ export class GitForgeWork implements ForgeWorkProvider {
           labels: input.labels,
           ...(current.content_version === undefined
             ? {}
-            : { content_version: current.content_version }),
+            : {
+                content_version: current.content_version,
+              }),
         },
       })
     }
@@ -269,7 +330,7 @@ export class GitForgeWork implements ForgeWorkProvider {
       message: input.action === 'comment' ? 'Comment posted' : 'Issue updated',
     }
   }
-  private normalizeRun(value: z.infer<typeof run>): ForgePipeline {
+  private normalizeRun(value: Schema.Schema.Type<typeof run>): ForgePipeline {
     return {
       id: String(value.id),
       title: value.display_title || value.title || value.name || `Run ${value.id}`,
@@ -312,23 +373,25 @@ export class GitForgeWork implements ForgeWorkProvider {
         hint: 'Enter the workflow filename from .forgejo/workflows, for example ci.yaml. The workflow must declare workflow_dispatch.',
       }
     const page = workPage(cursor)
-    const raw = z
-      .object({
-        workflows: z.array(
-          z.object({
-            id: z.union([z.string(), z.number()]),
-            name: z.string(),
-            state: z.string().optional(),
+    const raw = decode(
+      mutableStruct({
+        workflows: mutableArray(
+          mutableStruct({
+            id: Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite())),
+            name: Schema.String,
+            state: Schema.optional(Schema.String),
           }),
         ),
-      })
-      .parse(
-        await this.get(
-          `actions/workflows${this.provider === 'github' ? `?per_page=30&page=${page}` : ''}`,
-        ),
-      )
+      }),
+      await this.get(
+        `actions/workflows${this.provider === 'github' ? `?per_page=30&page=${page}` : ''}`,
+      ),
+    )
     return {
-      items: raw.workflows.map((v) => ({ ...v, id: String(v.id) })),
+      items: raw.workflows.map((v) => ({
+        ...v,
+        id: String(v.id),
+      })),
       // Gitea returns all workflows; it has no page/limit contract for this endpoint.
       next:
         this.provider === 'github' && raw.workflows.length === 30 ? String(page + 1) : undefined,
@@ -340,23 +403,39 @@ export class GitForgeWork implements ForgeWorkProvider {
     const data = await this.get(
       `actions/runs?${this.provider === 'github' ? 'per_page' : 'limit'}=30&page=${page}`,
     )
-    const raw = z.object({ workflow_runs: z.array(run) }).parse(data).workflow_runs
+    const raw = decode(
+      mutableStruct({
+        workflow_runs: mutableArray(run),
+      }),
+      data,
+    ).workflow_runs
     return {
       items: raw.map((v) => this.normalizeRun(v)),
       next: raw.length === 30 ? String(page + 1) : undefined,
     }
   }
   async pipeline(id: string, cursor?: string) {
-    const n = z.coerce.number().int().positive().parse(id),
+    const n = decode(
+        CoercedNumber.pipe(
+          Schema.int(),
+          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        ).pipe(Schema.positive()),
+        id,
+      ),
       page = workPage(cursor)
-    const current = run.parse(await this.get(`actions/runs/${n}`))
+    const current = decode(run, await this.get(`actions/runs/${n}`))
     const data = await this.get(
       `actions/runs/${n}/jobs?${this.provider === 'github' ? 'per_page' : 'limit'}=50&page=${page}`,
     )
     const jobs =
       this.provider === 'forgejo'
-        ? z.array(job).parse(data)
-        : z.object({ jobs: z.array(job) }).parse(data).jobs
+        ? decode(mutableArray(job), data)
+        : decode(
+            mutableStruct({
+              jobs: mutableArray(job),
+            }),
+            data,
+          ).jobs
     return {
       run: this.normalizeRun(current),
       jobs: jobs.map((v) => ({
@@ -389,24 +468,39 @@ export class GitForgeWork implements ForgeWorkProvider {
     if (input.action === 'run') {
       await this.get(`actions/workflows/${encodeURIComponent(input.definition)}/dispatches`, {
         method: 'POST',
-        body: { ref: input.ref, inputs: input.inputs },
+        body: {
+          ref: input.ref,
+          inputs: input.inputs,
+        },
       })
-      return { message: 'Workflow dispatch accepted. Refresh runs to see its status.' }
+      return {
+        message: 'Workflow dispatch accepted. Refresh runs to see its status.',
+      }
     }
     if (input.action === 'enable' || input.action === 'disable') {
       await this.get(`actions/workflows/${encodeURIComponent(input.id)}/${input.action}`, {
         method: 'PUT',
       })
-      return { message: `Workflow ${input.action === 'enable' ? 'enabled' : 'disabled'}` }
+      return {
+        message: `Workflow ${input.action === 'enable' ? 'enabled' : 'disabled'}`,
+      }
     }
-    const id = z.coerce.number().int().positive().parse(input.id)
-    const current = run.parse(await this.get(`actions/runs/${id}`))
+    const id = decode(
+      CoercedNumber.pipe(
+        Schema.int(),
+        Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+      ).pipe(Schema.positive()),
+      input.id,
+    )
+    const current = decode(run, await this.get(`actions/runs/${id}`))
     if (!pipelineActionAllowed(input.action, current.status))
       throw new HttpError(
         409,
         'This run cannot be changed in its current state. Refresh its status.',
       )
-    await this.get(`actions/runs/${id}/${input.action}`, { method: 'POST' })
+    await this.get(`actions/runs/${id}/${input.action}`, {
+      method: 'POST',
+    })
     return {
       id: String(id),
       url: current.html_url,

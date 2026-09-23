@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useRef } from 'react'
 import {
   attachmentUploadResultSchema,
   attachmentMutationSchema,
@@ -9,9 +10,9 @@ import { useWorkspace } from '@dovo/studio-core'
 export function useAttachments(task: Task) {
   const { request, snapshot, connected } = useWorkspace()
   const lock = useRef(false)
-  const [working, setWorking] = useState(false),
-    [error, setError] = useState(''),
-    [pending, setPending] = useState<number | null>(null)
+  const [working, setWorking] = useApplicationState(false),
+    [error, setError] = useApplicationState(''),
+    [pending, setPending] = useApplicationState<number | null>(null)
   const files =
     (snapshot?.workspace.tasks.find((t) => t.id === task.id) ?? task).draftAttachments ?? []
   useEffect(() => {
@@ -40,7 +41,12 @@ export function useAttachments(task: Task) {
         })
         const { revision } = await request(
           '/api/attachments/upload',
-          { taskId: task.id, id: crypto.randomUUID(), name: file.name, data },
+          {
+            taskId: task.id,
+            id: crypto.randomUUID(),
+            name: file.name,
+            data,
+          },
           attachmentUploadResultSchema,
         )
         setPending(revision)
@@ -60,7 +66,10 @@ export function useAttachments(task: Task) {
     try {
       const result = await request(
         '/api/attachments/remove',
-        { taskId: task.id, id },
+        {
+          taskId: task.id,
+          id,
+        },
         attachmentMutationSchema,
       )
       setPending(result.revision)

@@ -6,7 +6,7 @@ import { Action } from '../ui/action'
 import { styles } from '../ui/theme'
 import { useAction } from '../ui/use-action'
 export function TaskApprovals({ taskId }: { taskId: string }) {
-  const { snapshot, call, connected, profile } = useRuntime(),
+  const { snapshot, connected, profile, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
   return (
     <>
@@ -17,7 +17,16 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
             <Text style={styles.muted}>
               Permission request · {profile?.name ?? snapshot?.runtimeHost ?? 'Connected computer'}
             </Text>
-            <Text style={[styles.text, { fontWeight: '600' }]}>{item.title}</Text>
+            <Text
+              style={[
+                styles.text,
+                {
+                  fontWeight: '600',
+                },
+              ]}
+            >
+              {item.title}
+            </Text>
             <Text selectable style={styles.muted}>
               {item.detail}
             </Text>
@@ -29,7 +38,16 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
                   secondary={!allow}
                   disabled={busy || !connected}
                   onPress={() =>
-                    act(() => call('/api/approvals', { id: item.id, allow }, responses.ok))
+                    act(() =>
+                      callEffect(
+                        '/api/approvals',
+                        {
+                          id: item.id,
+                          allow,
+                        },
+                        responses.ok,
+                      ),
+                    )
                   }
                 />
               ))}

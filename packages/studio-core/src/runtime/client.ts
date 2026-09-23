@@ -1,1 +1,1 @@
-export { runtimeRequest } from '@dovo/protocol'
+export { runtimeRequest, runtimeRequestEffect } from '@dovo/protocol'

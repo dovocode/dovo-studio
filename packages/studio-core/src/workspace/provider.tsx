@@ -1,3 +1,7 @@
+import { recoverRuntimePairings } from '@dovo/protocol'
+import { useApplicationState } from '../runtime/application-state'
+import { mutableStruct } from '@dovo/protocol'
+import { decode, decodeResult } from '@dovo/protocol'
 import {
   createContext,
   useCallback,
@@ -10,8 +14,12 @@ import {
   type ReactNode,
   type SetStateAction,
 } from 'react'
-import { z } from 'zod'
+import { Effect, Either, Schema } from 'effect'
+import { startPolling, runClientEffect, clientTaskScope } from '@dovo/client-runtime'
 import {
+  saveRuntimePairing,
+  cancelRuntimePairing,
+  type PairingProof,
   connectionSchema,
   snapshotSchema,
   runtimeSnapshotCacheSchema,
@@ -19,7 +27,8 @@ import {
   runtimeProfile,
   upsertRuntime,
   removeRuntime,
-  loadRuntimeOverview,
+  loadRuntimeOverviewEffect,
+  runtimeRequestEffect,
   clearRuntimeRequestCache,
   getRuntimeSnapshotTag,
   type RuntimeConnection,
@@ -44,12 +53,20 @@ import {
   writeWorkspaceOutbox,
 } from './read-cache'
 const snapshotKey = 'dovo.runtime-snapshots.v1'
-type Request = <T extends z.ZodType>(
+type Request = <T extends Schema.Schema.AnyNoContext>(
   path: string,
   input: unknown,
   schema: T,
   method?: 'GET' | 'POST' | 'PATCH',
-) => Promise<z.output<T>>
+) => Promise<Schema.Schema.Type<T>>
+type RequestEffect = <T extends Schema.Schema.AnyNoContext>(
+  path: string,
+  input: unknown,
+  schema: T,
+  method?: 'GET' | 'POST' | 'PATCH',
+) => Effect.Effect<Schema.Schema.Type<T>, Error>
+const connectionError = (cause: unknown): Error =>
+  cause instanceof Error ? cause : new Error(String(cause))
 type Store = {
   workspace: Workspace
   setWorkspace: Dispatch<SetStateAction<Workspace>>
@@ -59,9 +76,15 @@ type Store = {
   snapshot: RuntimeSnapshot | null
   connected: boolean
   syncError: string | null
-  connect: (connection: RuntimeConnection) => Promise<void>
+  connect: (
+    connection: RuntimeConnection,
+    proof?: PairingProof,
+    replaceId?: string,
+  ) => Promise<void>
+  cancelPairing: (address: string, proof: PairingProof) => Promise<void>
   disconnect: () => Promise<void>
   request: Request
+  requestEffect: RequestEffect
   flush: () => Promise<void>
   runtimeRegistry: RuntimeRegistry
   activeRuntimeId: string | null
@@ -74,13 +97,20 @@ type Store = {
   discardAndReload: () => Promise<void>
   pendingSync: boolean
   readCache: RuntimeReadCache | null
-  readRuntime: <T extends z.ZodType>(
+  readRuntime: <T extends Schema.Schema.AnyNoContext>(
     profile: RuntimeProfile,
     path: string,
     input: unknown,
     schema: T,
     method?: 'GET' | 'POST' | 'PATCH',
-  ) => Promise<z.output<T>>
+  ) => Promise<Schema.Schema.Type<T>>
+  readRuntimeEffect: <T extends Schema.Schema.AnyNoContext>(
+    profile: RuntimeProfile,
+    path: string,
+    input: unknown,
+    schema: T,
+    method?: 'GET' | 'POST' | 'PATCH',
+  ) => Effect.Effect<Schema.Schema.Type<T>, Error>
   runtimeReadCache: (profile: RuntimeProfile) => RuntimeReadCache
 }
 const WorkspaceContext = createContext<Store | null>(null)
@@ -97,34 +127,66 @@ const idleOverview = (
   pullError: null,
 })
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [workspace, setState] = useState(createWorkspace),
-    current = useRef(workspace)
-  const [ready, setReady] = useState(false),
-    [storageError, setStorageError] = useState<string | null>(null),
+  const [workspace, setState, current] = useApplicationState(createWorkspace)
+  const [ready, setReady] = useApplicationState(false),
+    [storageError, setStorageError] = useApplicationState<string | null>(null),
     writable = useRef(true)
-  const [connection, setConnection] = useState<RuntimeConnection | null>(null),
-    connectionRef = useRef(connection)
-  const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null),
-    [connected, setConnected] = useState(false),
-    [syncError, setSyncError] = useState<string | null>(null)
-  const [runtimeRegistry, setRegistry] = useState(emptyRegistry),
-    registryRef = useRef(runtimeRegistry)
-  const [overviews, setOverviews] = useState<Record<string, RuntimeOverview>>({}),
-    overviewsRef = useRef(overviews)
+  const [connection, setConnection, connectionRef] = useApplicationState<RuntimeConnection | null>(
+    null,
+  )
+  const [snapshot, setSnapshot] = useApplicationState<RuntimeSnapshot | null>(null),
+    [connected, setConnected] = useApplicationState(false),
+    [syncError, setSyncError] = useApplicationState<string | null>(null)
+  const [runtimeRegistry, setRegistry, registryRef] = useApplicationState(emptyRegistry)
+  const [overviews, setOverviews, overviewsRef] = useApplicationState<
+    Record<string, RuntimeOverview>
+  >({})
   const cacheDirty = useRef(false)
   const cacheWrites = useRef(
-    new Map<string, { token: string; tag: string | undefined; pulls: string; writtenAt: number }>(),
+    new Map<
+      string,
+      {
+        token: string
+        tag: string | undefined
+        pulls: string
+        writtenAt: number
+      }
+    >(),
   )
-  const installedSnapshot = useRef<{ address: string; token: string; tag: string } | null>(null)
-  const caches = useRef(new Map<string, { token: string; cache: RuntimeReadCache }>())
+  const installedSnapshot = useRef<{
+    address: string
+    token: string
+    tag: string
+  } | null>(null)
+  const caches = useRef(
+    new Map<
+      string,
+      {
+        address: string
+        token: string
+        cache: RuntimeReadCache
+      }
+    >(),
+  )
   const cacheFor = useCallback((profile: RuntimeProfile) => {
     let entry = caches.current.get(profile.id)
-    if (!entry || entry.token !== profile.connection.token) {
+    if (
+      !entry ||
+      entry.token !== profile.connection.token ||
+      entry.address !== profile.connection.address
+    ) {
       cacheWrites.current.delete(profile.id)
       if (entry)
-        clearRuntimeRequestCache({ address: profile.connection.address, token: entry.token })
+        clearRuntimeRequestCache({
+          address: entry.address,
+          token: entry.token,
+        })
       if (entry) void entry.cache.close()
-      entry = { token: profile.connection.token, cache: browserReadCache(profile.connection) }
+      entry = {
+        address: profile.connection.address,
+        token: profile.connection.token,
+        cache: browserReadCache(profile.connection),
+      }
       caches.current.set(profile.id, entry)
     }
     return entry.cache
@@ -144,15 +206,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const busySnapshots = useRef(new Set<string>())
   const snapshotOrder = useRef(new Map<string, number>())
   const bootstrapped = useRef(false),
-    connecting = useRef(0),
-    saving = useRef(Promise.resolve())
+    connecting = useRef(0)
+  const changingConnection = useRef(false)
+  const [storageLock] = useApplicationState(() => Effect.runSync(Effect.makeSemaphore(1)))
   const [synchronization] = useState(
     () => new WorkspaceSynchronization(setSyncError, undefined, writeWorkspaceOutbox),
   )
   const install = useCallback((value: Workspace) => {
     installedSnapshot.current = null
-    const next = { ...value, tasks: value.tasks.filter((task) => !task.example) }
-    current.current = next
+    const next = {
+      ...value,
+      tasks: value.tasks.filter((task) => !task.example),
+    }
     setState(next)
   }, [])
   const installSnapshot = useCallback(
@@ -168,107 +233,145 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       )
         return
       install(value.workspace)
-      if (tag) installedSnapshot.current = { address: target.address, token: target.token, tag }
+      if (tag)
+        installedSnapshot.current = {
+          address: target.address,
+          token: target.token,
+          tag,
+        }
     },
     [install],
   )
-  const saveRegistry = useCallback((value: RuntimeRegistry) => {
-    registryRef.current = value
-    setRegistry(value)
-    saving.current = saving.current
-      .then(() => writeRuntimeRegistry(value))
-      .catch((error) => {
-        setStorageError(
-          `Could not save runtime connections. ${error instanceof Error ? error.message : String(error)}`,
-        )
-      })
-  }, [])
+  const persistRegistryEffect = useCallback(
+    (value: RuntimeRegistry) =>
+      Effect.tryPromise({ try: () => writeRuntimeRegistry(value), catch: connectionError }).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            setRegistry(value)
+            setStorageError('')
+          }),
+        ),
+        Effect.tapError((error) =>
+          Effect.sync(() =>
+            setStorageError(`Could not save runtime connections. ${error.message}`),
+          ),
+        ),
+      ),
+    [],
+  )
+  const saveRegistry = useCallback(
+    (change: (current: RuntimeRegistry) => RuntimeRegistry) => {
+      return runClientEffect(
+        storageLock
+          .withPermits(1)(Effect.suspend(() => persistRegistryEffect(change(registryRef.current))))
+          .pipe(Effect.uninterruptible),
+      )
+    },
+    [storageLock, persistRegistryEffect],
+  )
+  const cancelPairing = useCallback(
+    (address: string, proof: PairingProof) =>
+      runClientEffect(
+        storageLock
+          .withPermits(1)(
+            Effect.suspend(() =>
+              cancelRuntimePairing(
+                registryRef.current,
+                new URL(address).origin,
+                proof,
+                persistRegistryEffect,
+              ),
+            ),
+          )
+          .pipe(Effect.asVoid),
+      ),
+    [storageLock, persistRegistryEffect],
+  )
   const updateOverview = useCallback((value: RuntimeOverview) => {
     const profile = registryRef.current.profiles.find(
       (entry) =>
         entry.id === value.profile.id && entry.connection.token === value.profile.connection.token,
     )
     if (!profile) return
-    const next = { ...overviewsRef.current, [value.profile.id]: value }
-    overviewsRef.current = next
+    const next = {
+      ...overviewsRef.current,
+      [value.profile.id]: value,
+    }
     setOverviews(next)
     if (value.connected && value.snapshot) cacheDirty.current = true
   }, [])
   useEffect(() => {
-    let writing = false
-    const persistCache = async () => {
-      if (writing || !cacheDirty.current) return
-      writing = true
+    const persist = Effect.gen(function* () {
+      if (!cacheDirty.current) return
       cacheDirty.current = false
-      try {
-        await Promise.all(
-          Object.values(overviewsRef.current)
-            .filter(
-              (entry) =>
-                entry.snapshot &&
-                entry.connected &&
-                registryRef.current.profiles.some(
-                  (profile) =>
-                    profile.id === entry.profile.id &&
-                    profile.connection.token === entry.profile.connection.token,
-                ),
+      yield* Effect.forEach(
+        Object.values(overviewsRef.current),
+        (entry) =>
+          Effect.gen(function* () {
+            if (
+              !entry.snapshot ||
+              !entry.connected ||
+              !registryRef.current.profiles.some(
+                (profile) =>
+                  profile.id === entry.profile.id &&
+                  profile.connection.token === entry.profile.connection.token,
+              )
             )
-            .map(async (entry) => {
-              if (!entry.snapshot) return
-              const tag = getRuntimeSnapshotTag(entry.snapshot)
-              const pulls = JSON.stringify(entry.pulls)
-              const previous = cacheWrites.current.get(entry.profile.id)
-              const now = Date.now()
-              if (
-                tag &&
-                previous &&
-                previous.tag === tag &&
-                previous.token === entry.profile.connection.token &&
-                previous.pulls === pulls &&
-                now - previous.writtenAt < 60000
+              return
+            const tag = getRuntimeSnapshotTag(entry.snapshot)
+            const pulls = JSON.stringify(entry.pulls)
+            const previous = cacheWrites.current.get(entry.profile.id)
+            const now = Date.now()
+            if (
+              tag &&
+              previous &&
+              previous.tag === tag &&
+              previous.token === entry.profile.connection.token &&
+              previous.pulls === pulls &&
+              now - previous.writtenAt < 60000
+            )
+              return
+            yield* cacheFor(entry.profile).writeEffect('snapshot', {
+              snapshot: entry.snapshot,
+              lastSeen: entry.lastSeen,
+              pulls: entry.pulls,
+            })
+            if (
+              registryRef.current.profiles.some(
+                (profile) =>
+                  profile.id === entry.profile.id &&
+                  profile.connection.token === entry.profile.connection.token,
               )
-                return
-              await cacheFor(entry.profile).write('snapshot', {
-                snapshot: entry.snapshot,
-                lastSeen: entry.lastSeen,
-                pulls: entry.pulls,
+            )
+              cacheWrites.current.set(entry.profile.id, {
+                token: entry.profile.connection.token,
+                tag,
+                pulls,
+                writtenAt: now,
               })
-              if (
-                registryRef.current.profiles.some(
-                  (profile) =>
-                    profile.id === entry.profile.id &&
-                    profile.connection.token === entry.profile.connection.token,
-                )
-              )
-                cacheWrites.current.set(entry.profile.id, {
-                  token: entry.profile.connection.token,
-                  tag,
-                  pulls,
-                  writtenAt: now,
-                })
-            }),
-        )
-      } catch {
-        cacheDirty.current = true
-        setStorageError('Could not cache device workspaces. Keep this window open.')
-      } finally {
-        writing = false
-      }
-    }
-    const flushCache = () => {
-      void persistCache()
-    }
-    const timer = setInterval(flushCache, 5000)
-    window.addEventListener('pagehide', flushCache)
+          }),
+        { concurrency: 3, discard: true },
+      ).pipe(
+        Effect.catchAll(() =>
+          Effect.sync(() => {
+            cacheDirty.current = true
+            setStorageError('Could not cache device workspaces. Keep this window open.')
+          }),
+        ),
+      )
+    }).pipe(Effect.uninterruptible)
+    const polling = startPolling(persist, { interval: 5000, immediate: false, onError: () => {} })
+    window.addEventListener('pagehide', polling.refresh)
     return () => {
-      clearInterval(timer)
-      window.removeEventListener('pagehide', flushCache)
-      void persistCache()
+      window.removeEventListener('pagehide', polling.refresh)
+      void polling.stop().then(() => runClientEffect(persist))
     }
   }, [cacheFor])
   const flush = useCallback(() => synchronization.flush(), [synchronization])
   const setWorkspace = useCallback<Dispatch<SetStateAction<Workspace>>>(
     (update) => {
+      if (changingConnection.current)
+        throw new Error('Connection is changing. Wait before editing.')
       if (connection !== connectionRef.current)
         throw new Error('Runtime connection changed. Reopen this view before editing.')
       const before = current.current,
@@ -289,9 +392,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       value: RuntimeSnapshot | null,
       online: boolean,
       outbox: WorkspaceOutbox | null = null,
+      persist = true,
     ) => {
       synchronization.bind(profile.connection, outbox)
-      connectionRef.current = profile.connection
       setConnection(profile.connection)
       setSnapshot(value)
       if (outbox) install(outbox.workspace)
@@ -312,60 +415,201 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             ? null
             : 'This runtime is offline. Showing its last saved workspace.',
       )
-      saveRegistry(upsertRuntime(registryRef.current, profile))
+      if (persist)
+        void saveRegistry((saved) => upsertRuntime(saved, profile)).catch(() => {
+          /* Storage error remains visible. */
+        })
     },
     [install, installSnapshot, saveRegistry, synchronization],
   )
-  const openProfile = useCallback(
-    async (profile: RuntimeProfile) => {
-      const attempt = ++connecting.current
-      // A failed replacement must keep the currently authenticated profile intact.
-      // New hosts can still be remembered while offline for a later reconnect.
-      const saved = registryRef.current.profiles.find((entry) => entry.id === profile.id)
-      if (!saved || saved.connection.token === profile.connection.token)
-        saveRegistry(upsertRuntime(registryRef.current, profile, false))
-      await flush()
-      const checkpoint = synchronization.checkpoint()
-      const outbox = await readWorkspaceOutbox(profile.connection)
-      const value = await runtimeRequest(
-        profile.connection,
-        profile.connection.address,
-        '/api/snapshot',
-        undefined,
-        snapshotSchema,
-        'GET',
-      )
-      if (attempt !== connecting.current) throw new Error('Another runtime connection was selected')
-      if (!synchronization.accepts(checkpoint))
-        throw new Error(
-          'The workspace changed while connecting. Wait for changes to sync, then try again.',
-        )
-      await writeWorkspaceDocument(
-        `${storageKey}.before-connection`,
-        encodeWorkspace(current.current),
-      )
-      if (attempt !== connecting.current || !synchronization.accepts(checkpoint))
-        throw new Error('The workspace changed while connecting. Try again after it syncs.')
-      const named = { ...profile, name: value.runtimeHost || profile.name }
-      const previous = overviewsRef.current[profile.id]
-      adopt(named, value, true, outbox)
-      updateOverview({
-        ...(previous?.profile.connection.token === profile.connection.token
-          ? previous
-          : idleOverview(named)),
-        profile: named,
-        snapshot: value,
-        connected: true,
-        lastSeen: new Date().toISOString(),
-        error: null,
-      })
-    },
-    [adopt, flush, saveRegistry, synchronization, updateOverview],
+  const openProfileEffect = useCallback(
+    (profile: RuntimeProfile, proof?: PairingProof) =>
+      Effect.acquireUseRelease(
+        Effect.try({
+          try: () => {
+            if (changingConnection.current)
+              throw new Error('Another connection change is in progress.')
+            changingConnection.current = true
+          },
+          catch: connectionError,
+        }),
+        () =>
+          Effect.gen(function* () {
+            const attempt = ++connecting.current
+            const previousProfile = registryRef.current.profiles.find(
+              (item) => item.id === profile.id,
+            )
+            const previousConnection =
+              registryRef.current.activeId === profile.id
+                ? connectionRef.current
+                : previousProfile?.connection
+            const replacing =
+              !!previousConnection &&
+              (previousConnection.address !== profile.connection.address ||
+                previousConnection.token !== profile.connection.token)
+            const replacingActive = replacing && registryRef.current.activeId === profile.id
+            if (!replacingActive) yield* synchronization.flushEffect()
+            const saved = yield* synchronization.savedEffect()
+            const checkpoint = saved.checkpoint
+            const accepts = () =>
+              replacingActive
+                ? synchronization.acceptsSaved(checkpoint)
+                : synchronization.accepts(checkpoint)
+            let outbox = yield* Effect.tryPromise({
+              try: () => readWorkspaceOutbox(profile.connection),
+              catch: connectionError,
+            })
+            if (replacing && previousConnection) {
+              const oldOutbox = replacingActive
+                ? saved.outbox
+                : yield* Effect.tryPromise({
+                    try: () => readWorkspaceOutbox(previousConnection),
+                    catch: connectionError,
+                  })
+              if (oldOutbox && outbox && JSON.stringify(oldOutbox) !== JSON.stringify(outbox))
+                return yield* Effect.fail(
+                  new Error(
+                    'Both addresses have saved edits. Resolve the target connection edits before replacing it.',
+                  ),
+                )
+              outbox = oldOutbox ?? outbox
+            }
+            const value = yield* runtimeRequestEffect(
+              profile.connection,
+              profile.connection.address,
+              '/api/snapshot',
+              undefined,
+              snapshotSchema,
+              'GET',
+            )
+            if (attempt !== connecting.current)
+              return yield* Effect.fail(new Error('Another runtime connection was selected'))
+            if (!accepts())
+              return yield* Effect.fail(
+                new Error(
+                  'The workspace changed while connecting. Wait for changes to sync, then try again.',
+                ),
+              )
+            yield* Effect.tryPromise({
+              try: () =>
+                writeWorkspaceDocument(
+                  `${storageKey}.before-connection`,
+                  encodeWorkspace(current.current),
+                ),
+              catch: connectionError,
+            }).pipe(Effect.uninterruptible)
+            if (attempt !== connecting.current || !accepts())
+              return yield* Effect.fail(
+                new Error('The workspace changed while connecting. Try again after it syncs.'),
+              )
+            if (replacing && outbox)
+              yield* Effect.tryPromise({
+                try: () => writeWorkspaceOutbox(profile.connection, outbox),
+                catch: connectionError,
+              }).pipe(Effect.uninterruptible)
+            const named = {
+              ...profile,
+              name: value.runtimeHost || profile.name,
+            }
+            const previous = overviewsRef.current[profile.id]
+            yield* storageLock
+              .withPermits(1)(
+                Effect.suspend(() =>
+                  proof
+                    ? saveRuntimePairing(
+                        registryRef.current,
+                        { profile: named, proof },
+                        persistRegistryEffect,
+                      ).pipe(Effect.asVoid)
+                    : persistRegistryEffect(upsertRuntime(registryRef.current, named)),
+                ),
+              )
+              .pipe(Effect.uninterruptible)
+            adopt(named, value, true, outbox, false)
+            if (replacing && previousConnection && outbox)
+              yield* Effect.tryPromise({
+                try: () => writeWorkspaceOutbox(previousConnection, null),
+                catch: connectionError,
+              }).pipe(
+                Effect.catchAll((error) =>
+                  Effect.sync(() =>
+                    setStorageError(
+                      `Connected with your saved edits, but the old address backup could not be removed. ${error.message}`,
+                    ),
+                  ),
+                ),
+              )
+            updateOverview({
+              ...(previous?.profile.connection.token === profile.connection.token
+                ? previous
+                : idleOverview(named)),
+              profile: named,
+              snapshot: value,
+              connected: true,
+              lastSeen: new Date().toISOString(),
+              error: null,
+            })
+          }),
+        () =>
+          Effect.sync(() => {
+            changingConnection.current = false
+          }),
+      ),
+    [adopt, synchronization, updateOverview, storageLock, persistRegistryEffect],
   )
+  const openProfile = useCallback(
+    (profile: RuntimeProfile, proof?: PairingProof) =>
+      runClientEffect(openProfileEffect(profile, proof)),
+    [openProfileEffect],
+  )
+  useEffect(() => {
+    if (!ready) return
+    const commands = clientTaskScope()
+    const recover = storageLock
+      .withPermits(1)(
+        Effect.suspend(() => {
+          const before = registryRef.current
+          return recoverRuntimePairings(before, persistRegistryEffect).pipe(
+            Effect.map((saved) => {
+              const active = saved.profiles.find((item) => item.id === saved.activeId)
+              const old = before.profiles.find((item) => item.id === saved.activeId)
+              return active &&
+                (active.connection.address !== old?.connection.address ||
+                  active.connection.token !== old?.connection.token)
+                ? active
+                : null
+            }),
+          )
+        }),
+      )
+      .pipe(
+        Effect.flatMap((active) => (active ? openProfileEffect(active) : Effect.void)),
+        Effect.asVoid,
+        Effect.catchAll((error) => Effect.sync(() => setStorageError(error.message))),
+      )
+    const foreground = () => {
+      if (document.visibilityState === 'visible') void commands.run(recover)
+    }
+    foreground()
+    document.addEventListener('visibilitychange', foreground)
+    return () => {
+      document.removeEventListener('visibilitychange', foreground)
+      void commands.stop()
+    }
+  }, [ready, storageLock, persistRegistryEffect, openProfileEffect])
   const connect = useCallback(
-    async (value: RuntimeConnection) => {
-      const next = connectionSchema.parse({ ...value, address: new URL(value.address).origin })
-      await openProfile(runtimeProfile(next))
+    async (value: RuntimeConnection, proof?: PairingProof, replaceId?: string) => {
+      const next = decode(connectionSchema, {
+        ...value,
+        address: new URL(value.address).origin,
+      })
+      const previous = registryRef.current.profiles.find((item) => item.id === replaceId)
+      if (replaceId && (!previous || !proof))
+        throw new Error('Select a saved computer and pair its new address before replacing it.')
+      await openProfile(
+        { ...runtimeProfile(next, previous?.name), ...(previous ? { id: previous.id } : {}) },
+        proof,
+      )
     },
     [openProfile],
   )
@@ -377,69 +621,97 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [openProfile],
   )
-  const disconnect = useCallback(async () => {
+  const disconnectCurrent = useCallback(async () => {
     connecting.current++
     await flush()
+    await saveRegistry((saved) => ({ ...saved, activeId: null }))
     if (connectionRef.current) clearRuntimeRequestCache(connectionRef.current)
-    connectionRef.current = null
     setConnection(null)
     setConnected(false)
     setSnapshot(null)
     synchronization.bind(null)
     setSyncError(null)
-    install({ ...createWorkspace(), repositories: [], agents: [], tasks: [], automations: [] })
-    saveRegistry({ ...registryRef.current, activeId: null })
+    install({
+      ...createWorkspace(),
+      repositories: [],
+      agents: [],
+      tasks: [],
+      automations: [],
+    })
   }, [flush, install, saveRegistry, synchronization])
+  const disconnect = useCallback(async () => {
+    if (changingConnection.current) throw new Error('Wait for the connection change to finish.')
+    changingConnection.current = true
+    try {
+      await disconnectCurrent()
+    } finally {
+      changingConnection.current = false
+    }
+  }, [disconnectCurrent])
   const forgetRuntime = useCallback(
     async (id: string) => {
-      const profile = registryRef.current.profiles.find((item) => item.id === id)
-      if (
-        profile &&
-        registryRef.current.activeId !== id &&
-        (await readWorkspaceOutbox(profile.connection))
-      )
-        throw new Error(
-          'This runtime has saved edits waiting to sync. Open it and retry sync or reload before forgetting it.',
+      if (changingConnection.current) throw new Error('Wait for the connection change to finish.')
+      changingConnection.current = true
+      try {
+        const profile = registryRef.current.profiles.find((item) => item.id === id)
+        if (
+          profile &&
+          registryRef.current.activeId !== id &&
+          (await readWorkspaceOutbox(profile.connection))
         )
-      connecting.current++
-      if (registryRef.current.activeId === id) await disconnect()
-      saveRegistry(removeRuntime(registryRef.current, id))
-      const next = { ...overviewsRef.current }
-      delete next[id]
-      overviewsRef.current = next
-      setOverviews(next)
-      if (profile) {
-        clearRuntimeRequestCache(profile.connection)
-        await cacheFor(profile).clear()
+          throw new Error(
+            'This runtime has saved edits waiting to sync. Open it and retry sync or reload before forgetting it.',
+          )
+        connecting.current++
+        if (registryRef.current.activeId === id) await disconnectCurrent()
+        await saveRegistry((saved) => removeRuntime(saved, id))
+        const next = {
+          ...overviewsRef.current,
+        }
+        delete next[id]
+        setOverviews(next)
+        if (profile) {
+          clearRuntimeRequestCache(profile.connection)
+          await cacheFor(profile).clear()
+        }
+        caches.current.delete(id)
+        cacheWrites.current.delete(id)
+      } finally {
+        changingConnection.current = false
       }
-      caches.current.delete(id)
-      cacheWrites.current.delete(id)
     },
-    [disconnect, saveRegistry, cacheFor],
+    [disconnectCurrent, saveRegistry, cacheFor],
   )
   // Explicit-owner requests never borrow the currently active connection.
+  const readRuntimeEffect = useCallback<Store['readRuntimeEffect']>(
+    (profile, path, input, schema, method) =>
+      Effect.gen(function* () {
+        const check = Effect.try({ try: () => assertProfile(profile), catch: connectionError })
+        yield* check
+        if (
+          connectionRef.current?.address === profile.connection.address &&
+          connectionRef.current.token === profile.connection.token
+        ) {
+          yield* synchronization.flushEffect()
+          yield* check
+        }
+        const value = yield* runtimeRequestEffect(
+          profile.connection,
+          profile.connection.address,
+          path,
+          input,
+          schema,
+          method,
+        )
+        yield* check
+        return value
+      }),
+    [assertProfile, synchronization],
+  )
   const readRuntime = useCallback<Store['readRuntime']>(
-    async (profile, path, input, schema, method) => {
-      assertProfile(profile)
-      if (
-        connectionRef.current?.address === profile.connection.address &&
-        connectionRef.current.token === profile.connection.token
-      ) {
-        await flush()
-        assertProfile(profile)
-      }
-      const value = await runtimeRequest(
-        profile.connection,
-        profile.connection.address,
-        path,
-        input,
-        schema,
-        method,
-      )
-      assertProfile(profile)
-      return value
-    },
-    [assertProfile, flush],
+    (profile, path, input, schema, method) =>
+      runClientEffect(readRuntimeEffect(profile, path, input, schema, method)),
+    [readRuntimeEffect],
   )
   const runtimeReadCache = useCallback(
     (profile: RuntimeProfile) => {
@@ -448,20 +720,37 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [assertProfile, cacheFor],
   )
+  const requestEffect = useCallback<RequestEffect>(
+    (path, input, schema, method) =>
+      Effect.gen(function* () {
+        const target = connection
+        const check = Effect.try({
+          try: () => {
+            if (target !== connectionRef.current)
+              throw new Error('Runtime connection changed. Reopen this view before continuing.')
+          },
+          catch: connectionError,
+        })
+        yield* check
+        if (!target) return yield* Effect.fail(new Error('Connect to a runtime first'))
+        yield* synchronization.flushEffect()
+        yield* check
+        const value = yield* runtimeRequestEffect(
+          target,
+          target.address,
+          path,
+          input,
+          schema,
+          method,
+        )
+        yield* check
+        return value
+      }),
+    [connection, synchronization],
+  )
   const request = useCallback<Request>(
-    async (path, input, schema, method) => {
-      const target = connection
-      if (target !== connectionRef.current)
-        throw new Error('Runtime connection changed. Reopen this view before continuing.')
-      if (!target) throw new Error('Connect to a runtime first')
-      await flush()
-      if (target !== connectionRef.current) throw new Error('Runtime connection changed')
-      const result = await runtimeRequest(target, target.address, path, input, schema, method)
-      if (target !== connectionRef.current)
-        throw new Error('Runtime connection changed. Reopen this view before continuing.')
-      return result
-    },
-    [connection, flush],
+    (path, input, schema, method) => runClientEffect(requestEffect(path, input, schema, method)),
+    [requestEffect],
   )
   const retrySync = useCallback(async () => {
     if (connection !== connectionRef.current) throw new Error('Runtime connection changed')
@@ -564,95 +853,149 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [assertProfile, readRuntime, synchronization, updateOverview, installSnapshot],
   )
-  const refreshRuntimes = useCallback(async () => {
-    await Promise.all(
-      registryRef.current.profiles.map(async (profile) => {
-        if (busyHosts.current.has(profile.id)) return
-        busyHosts.current.add(profile.id)
-        const checkpoint = synchronization.checkpoint()
-        const order = (snapshotOrder.current.get(profile.id) ?? 0) + 1
-        snapshotOrder.current.set(profile.id, order)
-        const valid = () =>
-          registryRef.current.profiles.some(
-            (entry) =>
-              entry.id === profile.id && entry.connection.token === profile.connection.token,
-          )
-        const receiveSnapshot = (value: RuntimeOverview) => {
-          if (!valid() || snapshotOrder.current.get(profile.id) !== order) return
-          updateOverview(value)
-          if (registryRef.current.activeId !== profile.id || !synchronization.isCurrent(checkpoint))
-            return
-          setConnected(value.connected)
-          if (value.connected && value.snapshot) {
-            setSnapshot(value.snapshot)
-            synchronization.clearNetworkError()
-            if (synchronization.accepts(checkpoint))
-              installSnapshot(profile.connection, value.snapshot)
-          } else setSyncError(value.error)
-        }
-        try {
-          const value = await loadRuntimeOverview(
-            profile,
-            overviewsRef.current[profile.id],
-            receiveSnapshot,
-          )
-          if (!valid()) return
-          const previous = overviewsRef.current[profile.id]
-          if (snapshotOrder.current.get(profile.id) !== order && previous) {
-            updateOverview({
-              ...value,
-              snapshot: previous.snapshot,
-              connected: previous.connected,
-              lastSeen: previous.lastSeen,
-              error: previous.error,
-            })
-          } else {
-            updateOverview(value)
-            if (!value.connected) receiveSnapshot(value)
-          }
-        } finally {
-          busyHosts.current.delete(profile.id)
-        }
-      }),
-    )
-  }, [installSnapshot, synchronization, updateOverview])
+  const refreshRuntimesEffect = useCallback(
+    () =>
+      Effect.suspend(() =>
+        Effect.forEach(
+          registryRef.current.profiles,
+          (profile) =>
+            Effect.gen(function* () {
+              if (busyHosts.current.has(profile.id)) return
+              busyHosts.current.add(profile.id)
+              const checkpoint = synchronization.checkpoint()
+              const order = (snapshotOrder.current.get(profile.id) ?? 0) + 1
+              snapshotOrder.current.set(profile.id, order)
+              const valid = () =>
+                registryRef.current.profiles.some(
+                  (entry) =>
+                    entry.id === profile.id && entry.connection.token === profile.connection.token,
+                )
+              const receiveSnapshot = (value: RuntimeOverview) => {
+                if (!valid() || snapshotOrder.current.get(profile.id) !== order) return
+                updateOverview(value)
+                if (
+                  registryRef.current.activeId !== profile.id ||
+                  !synchronization.isCurrent(checkpoint)
+                )
+                  return
+                setConnected(value.connected)
+                if (value.connected && value.snapshot) {
+                  setSnapshot(value.snapshot)
+                  synchronization.clearNetworkError()
+                  if (synchronization.accepts(checkpoint))
+                    installSnapshot(profile.connection, value.snapshot)
+                } else setSyncError(value.error)
+              }
+              yield* Effect.gen(function* () {
+                const value = yield* loadRuntimeOverviewEffect(
+                  profile,
+                  overviewsRef.current[profile.id],
+                  receiveSnapshot,
+                )
+                if (!valid()) return
+                const previous = overviewsRef.current[profile.id]
+                if (snapshotOrder.current.get(profile.id) !== order && previous) {
+                  updateOverview({
+                    ...value,
+                    snapshot: previous.snapshot,
+                    connected: previous.connected,
+                    lastSeen: previous.lastSeen,
+                    error: previous.error,
+                  })
+                } else {
+                  updateOverview(value)
+                  if (!value.connected) receiveSnapshot(value)
+                }
+              }).pipe(
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    busyHosts.current.delete(profile.id)
+                  }),
+                ),
+              )
+            }),
+          { concurrency: 3, discard: true },
+        ),
+      ),
+    [installSnapshot, synchronization, updateOverview],
+  )
+  const refreshRuntimes = useCallback(
+    () => runClientEffect(refreshRuntimesEffect()),
+    [refreshRuntimesEffect],
+  )
   useEffect(() => {
     if (bootstrapped.current) return
     bootstrapped.current = true
-    const restore = async () => {
+    let disposed = false
+    const commands = clientTaskScope()
+    const native = <A,>(run: () => A | Promise<A>) =>
+      Effect.tryPromise({
+        try: () => Promise.resolve(run()),
+        catch: connectionError,
+      })
+    const restore = Effect.gen(function* () {
       let restoredWorkspaceDocument: string | null = null
-      try {
-        const saved = await readWorkspaceDocument(storageKey)
+      yield* Effect.gen(function* () {
+        const saved = yield* native(() => readWorkspaceDocument(storageKey))
         if (saved) {
-          install(decodeWorkspace(saved))
+          const decoded = yield* Effect.try({
+            try: () => decodeWorkspace(saved),
+            catch: connectionError,
+          })
+          install(decoded)
           restoredWorkspaceDocument = saved
         }
-      } catch (error) {
-        writable.current = false
-        setStorageError(
-          `Saved workspace could not be loaded and has not been overwritten. ${error instanceof Error ? error.message : ''}`,
-        )
-      }
-      let registry = await readRuntimeRegistry()
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            writable.current = false
+            setStorageError(
+              `Saved workspace could not be loaded and has not been overwritten. ${error.message}`,
+            )
+          }),
+        ),
+      )
+      let registry = yield* native(readRuntimeRegistry)
       let cached: Record<string, RuntimeSnapshot> = {}
-      try {
-        const saved = localStorage.getItem(snapshotKey)
-        if (saved) cached = z.record(z.string(), snapshotSchema).parse(JSON.parse(saved))
-      } catch {
-        setStorageError('Saved device cache could not be loaded. Reconnect to refresh it.')
-      }
-      const desktop = z
-        .object({ dovo: z.object({ runtimeConnection: z.function() }) })
-        .safeParse(window)
+      yield* Effect.try({
+        try: () => {
+          const saved = localStorage.getItem(snapshotKey)
+          if (saved)
+            cached = decode(
+              Schema.mutable(Schema.Record({ key: Schema.String, value: snapshotSchema })),
+              JSON.parse(saved),
+            )
+        },
+        catch: connectionError,
+      }).pipe(
+        Effect.catchAll(() =>
+          Effect.sync(() => {
+            setStorageError('Saved device cache could not be loaded. Reconnect to refresh it.')
+          }),
+        ),
+      )
+      const desktop = decodeResult(
+        mutableStruct({
+          dovo: mutableStruct({
+            runtimeConnection: Schema.Unknown.pipe(
+              Schema.filter(
+                (value): value is (...args: unknown[]) => unknown => typeof value === 'function',
+              ),
+            ),
+          }),
+        }),
+        window,
+      )
       if (desktop.success) {
-        const local = runtimeProfile(
-          connectionSchema.parse(await desktop.data.dovo.runtimeConnection()),
-        )
+        const connection = yield* native(() => desktop.data.dovo.runtimeConnection())
+        const local = yield* Effect.try({
+          try: () => runtimeProfile(decode(connectionSchema, connection)),
+          catch: connectionError,
+        })
         const firstConnection = !registry.profiles.length
         registry = upsertRuntime(registry, local, firstConnection)
-        // Only a first-ever local desktop runtime may adopt pre-existing local drafts.
         if (firstConnection) {
-          const initial = await runtimeRequest(
+          const initial = yield* runtimeRequestEffect(
             local.connection,
             local.connection.address,
             '/api/snapshot',
@@ -665,38 +1008,41 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             !initial.workspace.agents.length &&
             !initial.workspace.repositories.length &&
             !initial.workspace.tasks.length
-          ) {
-            await runtimeRequest(
+          )
+            yield* runtimeRequestEffect(
               local.connection,
               local.connection.address,
               '/api/workspace/import',
               current.current,
               responses.ok,
-            )
-          }
+            ).pipe(Effect.uninterruptible)
         }
       }
-      saveRegistry(registry)
+      yield* native(() => saveRegistry(() => registry))
       let migrated = true
       for (const profile of registry.profiles) {
         let lastSeen: string | null = null
         let pulls: RuntimeOverview['pulls'] = null
-        try {
-          const stored = await cacheFor(profile).read('snapshot', runtimeSnapshotCacheSchema)
+        yield* Effect.gen(function* () {
+          const stored = yield* cacheFor(profile).readEffect('snapshot', runtimeSnapshotCacheSchema)
           if (stored) {
             cached[profile.id] = stored.value.snapshot
             lastSeen = stored.value.lastSeen
             pulls = stored.value.pulls ? { ...stored.value.pulls, partial: true } : null
           } else if (cached[profile.id])
-            await cacheFor(profile).write('snapshot', {
+            yield* cacheFor(profile).writeEffect('snapshot', {
               snapshot: cached[profile.id],
               lastSeen: null,
               pulls: null,
             })
-        } catch {
-          migrated = false
-          setStorageError('Saved device cache could not be loaded. Reconnect to refresh it.')
-        }
+        }).pipe(
+          Effect.catchAll(() =>
+            Effect.sync(() => {
+              migrated = false
+              setStorageError('Saved device cache could not be loaded. Reconnect to refresh it.')
+            }),
+          ),
+        )
         const value = cached[profile.id]
         if (value)
           cached[profile.id] = {
@@ -708,19 +1054,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           }
         updateOverview({ ...idleOverview(profile, cached[profile.id] ?? null), lastSeen, pulls })
       }
-      if (migrated) localStorage.removeItem(snapshotKey)
+      if (migrated) yield* native(() => localStorage.removeItem(snapshotKey))
       const active = registry.profiles.find((profile) => profile.id === registry.activeId)
       if (active) {
-        const outbox = await readWorkspaceOutbox(active.connection)
-        // The old workspace document may contain unsent changes, but predates per-host
-        // attribution. Preserve it without replaying it against an arbitrary runtime.
+        const outbox = yield* native(() => readWorkspaceOutbox(active.connection))
         const legacyRecovery = `${storageKey}.before-outbox-migration`
         if (
           !outbox &&
           restoredWorkspaceDocument &&
-          !(await readWorkspaceDocument(legacyRecovery))
+          !(yield* native(() => readWorkspaceDocument(legacyRecovery)))
         ) {
-          await writeWorkspaceDocument(legacyRecovery, restoredWorkspaceDocument)
+          const document = restoredWorkspaceDocument
+          yield* native(() => writeWorkspaceDocument(legacyRecovery, document)).pipe(
+            Effect.uninterruptible,
+          )
           if (
             !cached[active.id] ||
             encodeWorkspace(current.current) !== encodeWorkspace(cached[active.id].workspace)
@@ -731,21 +1078,42 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
         adopt(active, cached[active.id] ?? null, false, outbox)
         setReady(true)
-        try {
-          if (!outbox) await openProfile(active)
-        } catch (error) {
-          setSyncError(error instanceof Error ? error.message : String(error))
-        }
+        if (!outbox)
+          yield* openProfileEffect(active).pipe(
+            Effect.catchAll((error) => Effect.sync(() => setSyncError(error.message))),
+          )
       }
       setReady(true)
-      void refreshRuntimes().catch((error) =>
-        setSyncError(error instanceof Error ? error.message : String(error)),
+      yield* refreshRuntimesEffect().pipe(
+        Effect.catchAll((error) => Effect.sync(() => setSyncError(String(error)))),
       )
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          if (!disposed) setSyncError(error.message)
+        }),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (!disposed) setReady(true)
+        }),
+      ),
+    )
+    void commands.run(restore)
+    return () => {
+      disposed = true
+      bootstrapped.current = false
+      void commands.stop()
     }
-    void restore()
-      .catch((error) => setSyncError(error instanceof Error ? error.message : String(error)))
-      .finally(() => setReady(true))
-  }, [adopt, install, openProfile, refreshRuntimes, saveRegistry, updateOverview, cacheFor])
+  }, [
+    adopt,
+    install,
+    openProfileEffect,
+    refreshRuntimesEffect,
+    saveRegistry,
+    updateOverview,
+    cacheFor,
+  ])
   useEffect(() => {
     if (!ready || !writable.current) return
     void writeWorkspaceDocument(storageKey, encodeWorkspace(workspace)).catch(() =>
@@ -755,79 +1123,104 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!connection) return
     let stopped = false
-    const id = runtimeProfile(connection).id
-    const poll = async () => {
-      if (document.visibilityState !== 'visible' || busySnapshots.current.has(id)) return
+    const id =
+      registryRef.current.profiles.find(
+        (profile) =>
+          profile.connection.address === connection.address &&
+          profile.connection.token === connection.token,
+      )?.id ?? runtimeProfile(connection).id
+    const poll = Effect.suspend(() => {
+      if (document.visibilityState !== 'visible' || busySnapshots.current.has(id))
+        return Effect.void
       busySnapshots.current.add(id)
       const order = (snapshotOrder.current.get(id) ?? 0) + 1
       snapshotOrder.current.set(id, order)
       const checkpoint = synchronization.checkpoint()
-      try {
-        const value = await runtimeRequest(
-          connection,
-          connection.address,
-          '/api/snapshot',
-          undefined,
-          snapshotSchema,
-          'GET',
+      return Effect.gen(function* () {
+        const response = yield* Effect.either(
+          runtimeRequestEffect(
+            connection,
+            connection.address,
+            '/api/snapshot',
+            undefined,
+            snapshotSchema,
+            'GET',
+          ),
         )
-        if (
-          stopped ||
-          !synchronization.isCurrent(checkpoint) ||
-          snapshotOrder.current.get(id) !== order
-        )
-          return
-        setSnapshot(value)
-        setConnected(true)
-        synchronization.clearNetworkError()
-        if (synchronization.accepts(checkpoint)) installSnapshot(connection, value)
-        const profile = registryRef.current.profiles.find(
-          (entry) => entry.id === id && entry.connection.token === connection.token,
-        )
-        if (profile)
-          updateOverview({
-            ...(overviewsRef.current[id] ?? idleOverview(profile)),
-            profile,
-            snapshot: value,
-            connected: true,
-            lastSeen: new Date().toISOString(),
-            error: null,
-          })
-      } catch (error) {
-        if (
-          !stopped &&
-          synchronization.isCurrent(checkpoint) &&
-          snapshotOrder.current.get(id) === order
-        ) {
-          const message = error instanceof Error ? error.message : String(error)
-          setConnected(false)
-          setSyncError(message)
-          const previous = overviewsRef.current[id]
-          if (previous) updateOverview({ ...previous, connected: false, error: message })
+        if (Either.isRight(response)) {
+          const value = response.right
+          if (
+            stopped ||
+            !synchronization.isCurrent(checkpoint) ||
+            snapshotOrder.current.get(id) !== order
+          )
+            return
+          setSnapshot(value)
+          setConnected(true)
+          synchronization.clearNetworkError()
+          if (synchronization.accepts(checkpoint)) installSnapshot(connection, value)
+          const profile = registryRef.current.profiles.find(
+            (entry) => entry.id === id && entry.connection.token === connection.token,
+          )
+          if (profile)
+            updateOverview({
+              ...(overviewsRef.current[id] ?? idleOverview(profile)),
+              profile,
+              snapshot: value,
+              connected: true,
+              lastSeen: new Date().toISOString(),
+              error: null,
+            })
+        } else {
+          const error = response.left
+          if (
+            !stopped &&
+            synchronization.isCurrent(checkpoint) &&
+            snapshotOrder.current.get(id) === order
+          ) {
+            const message = error instanceof Error ? error.message : String(error)
+            setConnected(false)
+            setSyncError(message)
+            const previous = overviewsRef.current[id]
+            if (previous)
+              updateOverview({
+                ...previous,
+                connected: false,
+                error: message,
+              })
+          }
         }
-      } finally {
-        busySnapshots.current.delete(id)
-      }
-    }
-    void poll()
-    const timer = setInterval(() => void poll(), 1000)
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            busySnapshots.current.delete(id)
+          }),
+        ),
+      )
+    })
+    const polling = startPolling(poll, {
+      interval: 1000,
+      onError: (error) => setSyncError(String(error)),
+    })
     return () => {
       stopped = true
-      clearInterval(timer)
+      void polling.stop()
     }
   }, [connection, installSnapshot, synchronization, updateOverview])
   useEffect(() => {
     if (!ready) return
-    const refresh = () => {
-      if (document.visibilityState === 'visible') void refreshRuntimes()
-    }
-    const timer = setInterval(refresh, 30000)
-    document.addEventListener('visibilitychange', refresh)
+    const polling = startPolling(
+      Effect.suspend(() =>
+        document.visibilityState === 'visible' ? refreshRuntimesEffect() : Effect.void,
+      ),
+      { interval: 30000, immediate: false, onError: (error) => setSyncError(String(error)) },
+    )
+    document.addEventListener('visibilitychange', polling.refresh)
     return () => {
-      clearInterval(timer)
-      document.removeEventListener('visibilitychange', refresh)
+      void polling.stop()
+      document.removeEventListener('visibilitychange', polling.refresh)
     }
-  }, [ready, refreshRuntimes])
+  }, [ready, refreshRuntimesEffect])
   return (
     <WorkspaceContext.Provider
       value={{
@@ -840,8 +1233,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         connected,
         syncError,
         connect,
+        cancelPairing,
         disconnect,
         request,
+        requestEffect,
         flush,
         runtimeRegistry,
         activeRuntimeId: runtimeRegistry.activeId,
@@ -857,8 +1252,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         retrySync,
         discardAndReload,
         pendingSync: synchronization.hasPending(),
-        readCache: connection ? cacheFor(runtimeProfile(connection)) : null,
+        readCache: connection
+          ? cacheFor(
+              runtimeRegistry.profiles.find(
+                (profile) =>
+                  profile.connection.address === connection.address &&
+                  profile.connection.token === connection.token,
+              ) ?? runtimeProfile(connection),
+            )
+          : null,
         readRuntime,
+        readRuntimeEffect,
         runtimeReadCache,
       }}
     >
@@ -881,14 +1285,21 @@ export function WorkspaceScope({
   children: ReactNode
 }) {
   const root = useWorkspace()
-  const { readRuntime, refreshRuntime, runtimeReadCache, setWorkspace } = root
+  const { readRuntimeEffect, refreshRuntime, runtimeReadCache, setWorkspace } = root
   const {
     id,
     name,
     connection: { address, token },
   } = profile
   const owner = useMemo(
-    () => ({ id, name, connection: { address, token } }),
+    () => ({
+      id,
+      name,
+      connection: {
+        address,
+        token,
+      },
+    }),
     [id, name, address, token],
   )
   const entry = root.runtimes.find(
@@ -897,13 +1308,19 @@ export function WorkspaceScope({
       item.profile.connection.address === address &&
       item.profile.connection.token === token,
   )
+  const requestEffect = useCallback<RequestEffect>(
+    (path, input, schema, method) =>
+      Effect.gen(function* () {
+        const result = yield* readRuntimeEffect(owner, path, input, schema, method)
+        if (method === 'PATCH' && path === '/api/workspace')
+          yield* Effect.tryPromise({ try: () => refreshRuntime(owner), catch: connectionError })
+        return result
+      }),
+    [owner, readRuntimeEffect, refreshRuntime],
+  )
   const request = useCallback<Request>(
-    async (path, input, schema, method) => {
-      const result = await readRuntime(owner, path, input, schema, method)
-      if (method === 'PATCH' && path === '/api/workspace') await refreshRuntime(owner)
-      return result
-    },
-    [owner, readRuntime, refreshRuntime],
+    (path, input, schema, method) => runClientEffect(requestEffect(path, input, schema, method)),
+    [requestEffect],
   )
   const active = root.activeRuntimeId === id
   const scopedSetWorkspace = useCallback<Store['setWorkspace']>(
@@ -936,6 +1353,7 @@ export function WorkspaceScope({
         pendingSync: active && root.pendingSync,
         readCache: runtimeReadCache(owner),
         request,
+        requestEffect,
         setWorkspace: scopedSetWorkspace,
       }}
     >

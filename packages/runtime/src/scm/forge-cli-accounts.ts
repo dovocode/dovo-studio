@@ -1,5 +1,7 @@
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode, minValue, decodeResult } from '@dovo/protocol'
 import { ForgeHttp } from './forge-http.js'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import type { CommandSettings, ForgeConnection, ForgeCliProfileQuery } from '@dovo/protocol'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -17,7 +19,13 @@ export class ForgeCliAccounts {
       const data = await new ForgeHttp(connection, () =>
         this.authorization(connection, false, cwd),
       ).json('api/v1/user')
-      const user = z.object({ id: z.number(), login: z.string() }).parse(data)
+      const user = decode(
+        mutableStruct({
+          id: Schema.Number.pipe(Schema.finite()),
+          login: Schema.String,
+        }),
+        data,
+      )
       return JSON.stringify([connection.cliProfile, user.id, user.login])
     }
     return this.authorization(connection, false, cwd)
@@ -47,55 +55,47 @@ export class ForgeCliAccounts {
     if (connection.provider === 'gitea' || connection.provider === 'forgejo')
       return `token ${await this.teaToken(connection, cwd)}`
     if (connection.provider === 'azure-devops') {
-      const result = z
-        .object({ accessToken: z.string().min(1) })
-        .parse(
-          privateJson(
-            await runForgeCli(
-              this.settings().az,
-              [
-                'account',
-                'get-access-token',
-                '--resource',
-                '499b84ac-1321-427f-aa17-267ca6975798',
-                '--output',
-                'json',
-                ...(connection.cliProfile ? ['--tenant', connection.cliProfile] : []),
-              ],
-              undefined,
-              cwd,
-            ),
+      const result = decode(
+        mutableStruct({
+          accessToken: minValue(Schema.String, 1),
+        }),
+        privateJson(
+          await runForgeCli(
+            this.settings().az,
+            [
+              'account',
+              'get-access-token',
+              '--resource',
+              '499b84ac-1321-427f-aa17-267ca6975798',
+              '--output',
+              'json',
+              ...(connection.cliProfile ? ['--tenant', connection.cliProfile] : []),
+            ],
+            undefined,
+            cwd,
           ),
-        )
+        ),
+      )
       return `Bearer ${result.accessToken}`
     }
     if (connection.provider === 'bitbucket') {
-      const profile = z
-        .object({
-          name: z.string(),
-          apiRoot: z.string().optional(),
-          user: z.string().optional(),
-          password: z.string().optional(),
-          accessToken: z.string().optional(),
-        })
-        .parse(
-          privateJson(
-            await runForgeCli(
-              this.settings().bb,
-              [
-                'profile',
-                'get',
-                '--show-secrets',
-                '--output',
-                'json',
-                '--',
-                connection.cliProfile!,
-              ],
-              undefined,
-              cwd,
-            ),
+      const profile = decode(
+        mutableStruct({
+          name: Schema.String,
+          apiRoot: Schema.optional(Schema.String),
+          user: Schema.optional(Schema.String),
+          password: Schema.optional(Schema.String),
+          accessToken: Schema.optional(Schema.String),
+        }),
+        privateJson(
+          await runForgeCli(
+            this.settings().bb,
+            ['profile', 'get', '--show-secrets', '--output', 'json', '--', connection.cliProfile!],
+            undefined,
+            cwd,
           ),
-        )
+        ),
+      )
       if (
         profile.name !== connection.cliProfile ||
         (profile.apiRoot && profile.apiRoot.replace(/\/$/, '') !== 'https://api.bitbucket.org/2.0')
@@ -123,7 +123,17 @@ export class ForgeCliAccounts {
         cwd,
       ),
     )
-    const rows = z.array(z.record(z.string(), z.unknown())).parse(data)
+    const rows = decode(
+      mutableArray(
+        Schema.mutable(
+          Schema.Record({
+            key: Schema.String,
+            value: Schema.Unknown,
+          }),
+        ),
+      ),
+      data,
+    )
     const selected = rows.find((row) => {
       const name = row.Name ?? row.name
       return typeof name === 'string' && name.toLowerCase() === connection.cliProfile?.toLowerCase()
@@ -206,9 +216,19 @@ export class ForgeCliAccounts {
         if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue
         throw new HttpError(500, 'Cannot read Forgejo CLI credentials')
       }
-      const parsed = z
-        .object({ hosts: z.record(z.string(), z.object({ token: z.string().min(1) })) })
-        .safeParse(privateJson(content))
+      const parsed = decodeResult(
+        mutableStruct({
+          hosts: Schema.mutable(
+            Schema.Record({
+              key: Schema.String,
+              value: mutableStruct({
+                token: minValue(Schema.String, 1),
+              }),
+            }),
+          ),
+        }),
+        privateJson(content),
+      )
       if (!parsed.success)
         throw new HttpError(401, 'Forgejo CLI credentials are invalid; sign in again with fj')
       const token = parsed.data.hosts[url.host]?.token
@@ -218,7 +238,6 @@ export class ForgeCliAccounts {
     throw new HttpError(401, 'No Forgejo CLI account found on the runtime host')
   }
 }
-
 function privateJson(value: string): unknown {
   try {
     return JSON.parse(value) as unknown

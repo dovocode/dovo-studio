@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useRef } from 'react'
 import {
   clientScopeKey,
   hasUnviewedTaskCompletion,
@@ -22,8 +23,11 @@ export function useTaskViewed(task: Task, visible: boolean) {
     turnId,
     expectedRevision,
   ])
-  const [failure, setFailure] = useState<{ identity: string; message: string } | null>(null)
-  const [attempt, setAttempt] = useState(0)
+  const [failure, setFailure] = useApplicationState<{
+    identity: string
+    message: string
+  } | null>(null)
+  const [attempt, setAttempt] = useApplicationState(0)
   const attempted = useRef('')
   useEffect(() => {
     if (!visible || !connected) {
@@ -56,7 +60,15 @@ export function useTaskViewed(task: Task, visible: boolean) {
       if (!unread) return
       pending = true
       try {
-        await request('/api/tasks/viewed', { id: task.id, turnId, expectedRevision }, responses.ok)
+        await request(
+          '/api/tasks/viewed',
+          {
+            id: task.id,
+            turnId,
+            expectedRevision,
+          },
+          responses.ok,
+        )
         acknowledged = true
         if (!stopped) setFailure(null)
       } catch (error) {

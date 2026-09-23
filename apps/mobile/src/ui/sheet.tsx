@@ -1,12 +1,5 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useApplicationState } from '../runtime/application-state'
+import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from 'react'
 import {
   BottomSheet,
   Button,
@@ -31,12 +24,10 @@ import { Text } from './text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Action } from './action'
 import { colors, styles } from './theme'
-
 const SheetContext = createContext(false)
 export function useInsideSheet() {
   return useContext(SheetContext)
 }
-
 export function Sheet({
   title,
   children,
@@ -52,8 +43,8 @@ export function Sheet({
   scrollable?: boolean
   footer?: ReactNode
 }) {
-  const [presented, setPresented] = useState(true)
-  const [keyboard, setKeyboard] = useState(false)
+  const [presented, setPresented] = useApplicationState(true)
+  const [keyboard, setKeyboard] = useApplicationState(false)
   const closed = useRef(false)
   const closeCallback = useRef(onClose)
   closeCallback.current = onClose
@@ -78,13 +69,14 @@ export function Sheet({
     setPresented(false)
     if (Platform.OS !== 'ios') finishClose()
   }
-
   if (Platform.OS === 'ios')
     return (
       <Host
         colorScheme="dark"
         seedColor={colors.accent}
-        style={{ position: 'absolute' }}
+        style={{
+          position: 'absolute',
+        }}
         pointerEvents="none"
       >
         <BottomSheet
@@ -106,20 +98,32 @@ export function Sheet({
                 modifiers={[navigationTitle(title), navigationBarTitleDisplayMode('inline')]}
               >
                 <RNHostView>
-                  <View style={{ flexGrow: 1, height: 0 }}>
+                  <View
+                    style={{
+                      flexGrow: 1,
+                      height: 0,
+                    }}
+                  >
                     {scrollable ? (
                       <ScrollView
                         keyboardDismissMode="interactive"
                         keyboardShouldPersistTaps="handled"
                         contentContainerStyle={[
                           styles.content,
-                          { paddingTop: 12, paddingBottom: 24 },
+                          {
+                            paddingTop: 12,
+                            paddingBottom: 24,
+                          },
                         ]}
                       >
                         <SheetContext.Provider value>{children}</SheetContext.Provider>
                       </ScrollView>
                     ) : (
-                      <View style={{ flex: 1 }}>
+                      <View
+                        style={{
+                          flex: 1,
+                        }}
+                      >
                         <SheetContext.Provider value>{children}</SheetContext.Provider>
                       </View>
                     )}
@@ -149,13 +153,29 @@ export function Sheet({
         </BottomSheet>
       </Host>
     )
-
   return (
     <Modal visible={presented} animationType="slide" onRequestClose={close}>
       <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
         <KeyboardAvoidingView style={styles.screen} behavior="height">
-          <View style={[styles.content, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
-            <Text accessibilityRole="header" style={[styles.title, { flex: 1 }]}>
+          <View
+            style={[
+              styles.content,
+              {
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+              },
+            ]}
+          >
+            <Text
+              accessibilityRole="header"
+              style={[
+                styles.title,
+                {
+                  flex: 1,
+                },
+              ]}
+            >
               {title}
             </Text>
             {keyboard && <Action label="Dismiss keyboard" secondary onPress={Keyboard.dismiss} />}
@@ -165,12 +185,21 @@ export function Sheet({
             <ScrollView
               keyboardDismissMode="on-drag"
               keyboardShouldPersistTaps="handled"
-              contentContainerStyle={[styles.content, { paddingTop: 4 }]}
+              contentContainerStyle={[
+                styles.content,
+                {
+                  paddingTop: 4,
+                },
+              ]}
             >
               <SheetContext.Provider value>{children}</SheetContext.Provider>
             </ScrollView>
           ) : (
-            <View style={{ flex: 1 }}>
+            <View
+              style={{
+                flex: 1,
+              }}
+            >
               <SheetContext.Provider value>{children}</SheetContext.Provider>
             </View>
           )}

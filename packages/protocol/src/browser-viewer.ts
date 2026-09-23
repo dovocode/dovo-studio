@@ -1,3 +1,4 @@
+import { decode } from './schema.js'
 // Browser-only entry point, bundled into a self-contained canvas viewer by build-browser-viewer.mjs.
 import { remoteBrowserMessageSchema, type RemoteBrowserInput } from './remote-browser'
 import { decodeBrowserFrame } from './browser-frames'
@@ -274,7 +275,7 @@ function connect(url: string) {
         void render({ ...frame, blob: new Blob([frame.data], { type: 'image/jpeg' }) })
         return
       }
-      const message = remoteBrowserMessageSchema.parse(JSON.parse(String(event.data)))
+      const message = decode(remoteBrowserMessageSchema, JSON.parse(String(event.data)))
       if (message.type === 'frame') {
         // Backward compatibility with a host that has not been updated yet.
         const bytes = Uint8Array.from(atob(message.data), (value) => value.charCodeAt(0))
@@ -413,8 +414,11 @@ function flushMovement() {
 }
 function coalesce(message: RemoteBrowserInput) {
   if (message.type === 'scroll' && move?.type === 'scroll') {
-    message.deltaX = Math.max(-4000, Math.min(4000, message.deltaX + move.deltaX))
-    message.deltaY = Math.max(-4000, Math.min(4000, message.deltaY + move.deltaY))
+    message = {
+      ...message,
+      deltaX: Math.max(-4000, Math.min(4000, message.deltaX + move.deltaX)),
+      deltaY: Math.max(-4000, Math.min(4000, message.deltaY + move.deltaY)),
+    }
   }
   move = message
   if (!moveFrame)

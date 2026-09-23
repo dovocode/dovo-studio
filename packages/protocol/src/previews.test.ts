@@ -1,3 +1,4 @@
+import { decodeResult } from './schema.js'
 import { describe, expect, it } from 'vitest'
 import { previewUrl, browserCommandSchema } from './previews'
 describe('preview addresses', () => {
@@ -21,11 +22,16 @@ describe('preview addresses', () => {
   })
   it('requires bounded integer native view coordinates', () => {
     expect(
-      browserCommandSchema.safeParse({
+      decodeResult(browserCommandSchema, {
         action: 'show',
         key: 'task',
         url: 'https://example.com',
-        bounds: { x: -1, y: 0, width: 100, height: 100 },
+        bounds: {
+          x: -1,
+          y: 0,
+          width: 100,
+          height: 100,
+        },
       }).success,
     ).toBe(false)
   })

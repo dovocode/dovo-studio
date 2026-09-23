@@ -1,3 +1,5 @@
+import { mutableStruct } from '@dovo/protocol'
+import { decodeResult } from '@dovo/protocol'
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
@@ -7,14 +9,13 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
 import { once } from 'node:events'
-import Dicer from 'dicer'
+import { Dicer } from '@fastify/busboy'
 import sharp from 'sharp'
-import { z } from 'zod'
+import { Schema } from 'effect'
 import type { PreviewDevice } from '@dovo/protocol'
 import { asciiKey, specialKeys, type NativeSimulator } from './simulator-native.js'
 import type { BrowserFrame } from './browser.js'
 import { HttpError } from '../errors.js'
-
 const exec = promisify(execFile)
 let building: Promise<string> | undefined
 async function helper() {
@@ -32,7 +33,9 @@ async function helper() {
     } catch (error) {
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
     }
-    await mkdir(target, { recursive: true })
+    await mkdir(target, {
+      recursive: true,
+    })
     await exec(
       'cargo',
       [
@@ -44,7 +47,10 @@ async function helper() {
         '--target-dir',
         target,
       ],
-      { timeout: 180000, maxBuffer: 4 * 1024 * 1024 },
+      {
+        timeout: 180000,
+        maxBuffer: 4 * 1024 * 1024,
+      },
     )
     return executable
   })().catch((error) => {
@@ -66,7 +72,15 @@ export function physicalKeys(key: string): number[] {
     final = parts.pop() ?? ''
   const character = asciiKey(final)
   const code = specialKeys[final] ?? (final.length === 1 ? character?.code : undefined)
-  const modifiers = parts.map((part) => ({ Meta: 227, Control: 224, Alt: 226, Shift: 225 })[part])
+  const modifiers = parts.map(
+    (part) =>
+      ({
+        Meta: 227,
+        Control: 224,
+        Alt: 226,
+        Shift: 225,
+      })[part],
+  )
   if (code === undefined || modifiers.some((value) => value === undefined))
     throw new Error('This physical device key is not supported')
   return [
@@ -77,11 +91,25 @@ export function physicalKeys(key: string): number[] {
     ]),
   ]
 }
-const eventSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('ready'), device: z.string() }),
-  z.object({ type: z.literal('ack'), id: z.number().int() }),
-  z.object({ type: z.literal('error'), message: z.string() }),
-])
+const eventSchema = Schema.Union(
+  ...[
+    mutableStruct({
+      type: Schema.Literal('ready'),
+      device: Schema.String,
+    }),
+    mutableStruct({
+      type: Schema.Literal('ack'),
+      id: Schema.Number.pipe(Schema.finite()).pipe(
+        Schema.int(),
+        Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+      ),
+    }),
+    mutableStruct({
+      type: Schema.Literal('error'),
+      message: Schema.String,
+    }),
+  ],
+)
 async function stop(child: ChildProcess) {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) return
   const exited = once(child, 'exit')
@@ -102,7 +130,9 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
       'Physical iPhone control requires a trusted iPhone or iPad with Developer Mode connected to this Mac.',
     )
   const executable = await helper()
-  const child = spawn(executable, [device.runtime], { stdio: ['pipe', 'pipe', 'pipe'] })
+  const child = spawn(executable, [device.runtime], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
   const decoder = spawn(
     process.env.DOVO_FFMPEG || 'ffmpeg',
     [
@@ -143,7 +173,9 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
       'dovo-frame',
       'pipe:1',
     ],
-    { stdio: ['pipe', 'pipe', 'pipe'] },
+    {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
   )
   let closed = false,
     failure: Error | undefined,
@@ -152,7 +184,11 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
   let errorListener: ((error: Error) => void) | undefined
   const pending = new Map<
     number,
-    { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
+    {
+      resolve: () => void
+      reject: (error: Error) => void
+      timer: ReturnType<typeof setTimeout>
+    }
   >()
   const report = (error: Error) => {
     if (closed || failure) return
@@ -183,8 +219,12 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
         ),
       )
     })
-  const lines = createInterface({ input: child.stderr! })
-  const parser = new Dicer({ boundary: 'dovo-frame' })
+  const lines = createInterface({
+    input: child.stderr!,
+  })
+  const parser = new Dicer({
+    boundary: 'dovo-frame',
+  })
   let encoding = false,
     next: Buffer | undefined
   const publish = async (data: Buffer) => {
@@ -198,7 +238,12 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
         const { width, height } = await sharp(frame).metadata()
         if (!width || !height || width > 1600 || height > 1600)
           throw new Error('Invalid physical device frame')
-        lastFrame = { type: 'frame', data: frame, width, height }
+        lastFrame = {
+          type: 'frame',
+          data: frame,
+          width,
+          height,
+        }
         frameListener?.(lastFrame)
       }
     } catch (error) {
@@ -250,7 +295,7 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
           report(new Error('Invalid native device response'))
           return
         }
-        const parsed = eventSchema.safeParse(value)
+        const parsed = decodeResult(eventSchema, value)
         if (!parsed.success) {
           report(new Error('Invalid native device response'))
           return
@@ -299,12 +344,25 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
         reject(error)
         report(error)
       }, 10000)
-      pending.set(id, { resolve, reject, timer })
-      child.stdin!.write(JSON.stringify({ id, ...command }) + '\n', (error) => {
-        if (error) report(error)
+      pending.set(id, {
+        resolve,
+        reject,
+        timer,
       })
+      child.stdin!.write(
+        JSON.stringify({
+          id,
+          ...command,
+        }) + '\n',
+        (error) => {
+          if (error) report(error)
+        },
+      )
     })
-  const release = () => send({ type: 'release' })
+  const release = () =>
+    send({
+      type: 'release',
+    })
   return {
     start(frame, error) {
       frameListener = frame
@@ -334,8 +392,15 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
           Mute: 0xe2,
         }
         if (buttons[input.key] !== undefined)
-          await send({ type: 'button', code: buttons[input.key] })
-        else await send({ type: 'key', codes: physicalKeys(input.key) })
+          await send({
+            type: 'button',
+            code: buttons[input.key],
+          })
+        else
+          await send({
+            type: 'key',
+            codes: physicalKeys(input.key),
+          })
       } else if (input.type === 'text') {
         const keys = Array.from(input.text).map(asciiKey)
         if (keys.some((value) => !value)) {
@@ -352,7 +417,9 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
                 '--timeout',
                 '10',
               ],
-              { stdio: ['pipe', 'ignore', 'pipe'] },
+              {
+                stdio: ['pipe', 'ignore', 'pipe'],
+              },
             )
             copy.on('error', reject)
             copy.stdin.on('error', reject)
@@ -363,16 +430,27 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
             )
             copy.stdin.end(input.text)
           })
-          await send({ type: 'key', codes: [227, 25] })
+          await send({
+            type: 'key',
+            codes: [227, 25],
+          })
         } else
           for (const key of keys)
-            if (key) await send({ type: 'key', codes: [...(key.shift ? [225] : []), key.code] })
+            if (key)
+              await send({
+                type: 'key',
+                codes: [...(key.shift ? [225] : []), key.code],
+              })
       } else if (input.type === 'scroll') {
         if (!lastFrame) return
         const { width, height } = lastFrame
         const start = physicalPoint(input.x, input.y, width, height)
         const end = physicalPoint(input.x - input.deltaX, input.y - input.deltaY, width, height)
-        await send({ type: 'pointer', phase: 'down', ...start })
+        await send({
+          type: 'pointer',
+          phase: 'down',
+          ...start,
+        })
         try {
           for (let step = 1; step <= 8; step++) {
             await send({
@@ -384,7 +462,11 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
             await new Promise((resolve) => setTimeout(resolve, 12))
           }
         } finally {
-          await send({ type: 'pointer', phase: 'up', ...end })
+          await send({
+            type: 'pointer',
+            phase: 'up',
+            ...end,
+          })
         }
       } else throw new Error('This action is unavailable on a physical device')
     },

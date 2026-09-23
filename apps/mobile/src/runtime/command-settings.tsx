@@ -1,4 +1,8 @@
-import { useEffect, useState } from 'react'
+import { mobileWorkflow, nativeEffect } from './native-effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import { Effect } from 'effect'
+import { useApplicationState } from './application-state'
+import { useEffect } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/text'
 import {
@@ -12,27 +16,37 @@ import { Action } from '../ui/action'
 import { useAction } from '../ui/use-action'
 import { styles } from '../ui/theme'
 export function CommandSettings() {
-  const { call, read, connected } = useRuntime()
+  const { read, connected, callEffect, readEffect } = useRuntime()
   const { busy, error, act } = useAction()
-  const [settings, setSettings] = useState<Settings | null>(null)
-  const [defaultShell, setDefaultShell] = useState('')
-  const [loadError, setLoadError] = useState('')
-  const [saved, setSaved] = useState(false)
+  const [settings, setSettings] = useApplicationState<Settings | null>(null)
+  const [defaultShell, setDefaultShell] = useApplicationState('')
+  const [loadError, setLoadError] = useApplicationState('')
+  const [saved, setSaved] = useApplicationState(false)
   useEffect(() => {
     let stopped = false
     setSettings(null)
     setLoadError('')
     if (connected)
-      void read('/api/commands/read', {}, commandSettingsResponse)
-        .then((result) => {
-          if (!stopped) {
-            setSettings(result.settings)
-            setDefaultShell(result.defaultShell)
-          }
-        })
-        .catch((error) => {
-          if (!stopped) setLoadError(String(error))
-        })
+      void runClientEffect(
+        readEffect('/api/commands/read', {}, commandSettingsResponse)
+          .pipe(
+            Effect.flatMap((result) =>
+              nativeEffect(() => {
+                if (!stopped) {
+                  setSettings(result.settings)
+                  setDefaultShell(result.defaultShell)
+                }
+              }),
+            ),
+          )
+          .pipe(
+            Effect.catchAll((error) =>
+              nativeEffect(() => {
+                if (!stopped) setLoadError(String(error))
+              }),
+            ),
+          ),
+      )
     return () => {
       stopped = true
     }
@@ -55,7 +69,10 @@ export function CommandSettings() {
               editable={!busy}
               placeholder={field.id === 'shell' ? defaultShell : field.placeholder}
               onChangeText={(value) => {
-                setSettings({ ...settings, [field.id]: value })
+                setSettings({
+                  ...settings,
+                  [field.id]: value,
+                })
                 setSaved(false)
               }}
             />
@@ -66,7 +83,10 @@ export function CommandSettings() {
             editable={!busy}
             value={settings.shellArgs.join('\n')}
             onChangeText={(value) => {
-              setSettings({ ...settings, shellArgs: value.split('\n') })
+              setSettings({
+                ...settings,
+                shellArgs: value.split('\n'),
+              })
               setSaved(false)
             }}
           />
@@ -77,15 +97,20 @@ export function CommandSettings() {
             label="Save command settings"
             disabled={busy}
             onPress={() =>
-              act(async () => {
-                const result = await call(
-                  '/api/commands/save',
-                  { ...settings, shellArgs: settings.shellArgs.filter(Boolean) },
-                  commandSettingsResponse,
-                )
-                setSettings(result.settings)
-                setSaved(true)
-              })
+              act(() =>
+                mobileWorkflow(function* () {
+                  const result = yield* callEffect(
+                    '/api/commands/save',
+                    {
+                      ...settings,
+                      shellArgs: settings.shellArgs.filter(Boolean),
+                    },
+                    commandSettingsResponse,
+                  )
+                  setSettings(result.settings)
+                  setSaved(true)
+                }),
+              )
             }
           />
           {saved && <Text style={styles.muted}>Command settings saved.</Text>}

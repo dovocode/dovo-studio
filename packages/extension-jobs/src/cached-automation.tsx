@@ -1,10 +1,9 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowLeft, Monitor } from 'lucide-react'
-import { useState } from 'react'
 import { Button, ChoicePicker, IconButton } from '@dovo/studio-ui'
 import { type FleetAutomation } from './fleet'
 import { runLabels, runSteps } from './run-progress'
 import { StepStatus } from './run-details'
-
 export function CachedAutomation({
   row,
   busy,
@@ -18,7 +17,7 @@ export function CachedAutomation({
   onOpen: () => void
   onBack: () => void
 }) {
-  const [runId, setRunId] = useState(row.latest?.id)
+  const [runId, setRunId] = useApplicationState(row.latest?.id)
   const run = row.runs.find((run) => run.id === runId) ?? row.latest
   return (
     <section className="flex h-full min-h-0 flex-col">

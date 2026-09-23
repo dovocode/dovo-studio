@@ -1,16 +1,28 @@
+import { decode } from '@dovo/protocol'
 import { app, dialog, Menu, BrowserWindow, type MenuItemConstructorOptions } from 'electron'
 import updater from 'electron-updater'
 import { snapshotSchema } from '@dovo/protocol'
 import { startLocalRuntime } from './local-runtime.js'
 const { autoUpdater } = updater
-
-export function registerUpdates(directory: string, prepareQuit: () => Promise<void>) {
+export function registerUpdates(
+  directory: string,
+  prepareQuit: () => Promise<() => Promise<void>>,
+) {
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.allowPrerelease = false
   let busy = false
+  let restoreRuntime: (() => Promise<void>) | undefined
+  const recover = async () => {
+    const restore = restoreRuntime
+    restoreRuntime = undefined
+    if (restore) await restore()
+  }
   autoUpdater.on('error', (error) => {
     console.error('Desktop update failed:', error.message)
+    void recover().catch((cause) =>
+      console.error('Could not restore runtime after failed update:', cause),
+    )
   })
   const check = async () => {
     if (busy) return
@@ -67,16 +79,18 @@ export function registerUpdates(directory: string, prepareQuit: () => Promise<vo
         defaultId: 1,
       })
       if (install.response !== 0) return
-      const connection = await startLocalRuntime(directory)
+      const connection = await startLocalRuntime(directory, { allowIncompatible: true })
       const response = await fetch(`${connection.address}/api/snapshot`, {
-        headers: { Authorization: `Bearer ${connection.token}` },
+        headers: {
+          Authorization: `Bearer ${connection.token}`,
+        },
         signal: AbortSignal.timeout(5000),
       })
       if (!response.ok)
         throw new Error(
           'Could not verify active work. Reconnect the local runtime before installing.',
         )
-      const snapshot = snapshotSchema.parse(await response.json())
+      const snapshot = decode(snapshotSchema, await response.json())
       if (
         snapshot.workspace.tasks.some((task) => task.status === 'running') ||
         snapshot.runs.some((run) => run.status === 'running')
@@ -89,10 +103,15 @@ export function registerUpdates(directory: string, prepareQuit: () => Promise<vo
         })
         return
       }
-      await prepareQuit()
+      restoreRuntime = await prepareQuit()
       autoUpdater.quitAndInstall(false, true)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      let message = error instanceof Error ? error.message : String(error)
+      try {
+        await recover()
+      } catch (cause) {
+        message += ` Runtime recovery failed: ${cause instanceof Error ? cause.message : String(cause)}`
+      }
       await dialog.showMessageBox({
         type: 'error',
         message: 'Could not update Dovo Studio',
@@ -114,23 +133,49 @@ export function registerUpdates(directory: string, prepareQuit: () => Promise<vo
           {
             label: 'Dovo Studio',
             submenu: [
-              { role: 'about' as const },
+              {
+                role: 'about' as const,
+              },
               updateItem,
-              { type: 'separator' as const },
-              { role: 'services' as const },
-              { role: 'hide' as const },
-              { role: 'hideOthers' as const },
-              { type: 'separator' as const },
-              { role: 'quit' as const },
+              {
+                type: 'separator' as const,
+              },
+              {
+                role: 'services' as const,
+              },
+              {
+                role: 'hide' as const,
+              },
+              {
+                role: 'hideOthers' as const,
+              },
+              {
+                type: 'separator' as const,
+              },
+              {
+                role: 'quit' as const,
+              },
             ],
           },
         ]
       : []),
-    { role: 'fileMenu' },
-    { role: 'editMenu' },
-    { role: 'viewMenu' },
-    { role: 'windowMenu' },
-    { role: 'help', submenu: [updateItem] },
+    {
+      role: 'fileMenu',
+    },
+    {
+      role: 'editMenu',
+    },
+    {
+      role: 'viewMenu',
+    },
+    {
+      role: 'windowMenu',
+    },
+    {
+      role: 'help',
+      submenu: [updateItem],
+    },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+  return check
 }

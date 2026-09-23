@@ -9,13 +9,19 @@ interface.
 
 Requires Node 24.11+ and the repository's pinned pnpm version.
 
-```sh
-pnpm install
-pnpm dev:web
-pnpm dev:desktop
-pnpm dev:api
-pnpm dev:mobile
-```
+Install dependencies once with `pnpm install`, then choose a workflow:
+
+- **Desktop:** `pnpm dev:desktop`. This starts the desktop and its runtime; do not also start
+  `dev:api` for the same workspace.
+- **Web:** run `pnpm dev:api` in one terminal and `pnpm dev:web` in another. Open the web address
+  and pair it with the runtime using `pnpm pair` in a third terminal.
+- **iPhone development:** keep the desktop or background runtime running on your Mac, then run
+  `pnpm dev:mobile`. Open the development build on your phone and connect it from Computers. Both
+  devices need the same Wi-Fi or VPN. Expo Go is not sufficient for the app’s native modules.
+
+A successful setup shows your computer as **Online**. Add a project and configure an agent before
+sending your first task. The standalone API and desktop may use different data directories; use the
+existing desktop directory when attaching a background server to its workspace.
 
 Web defaults to port 4173; desktop uses 5173. If another project uses 4173:
 
@@ -40,9 +46,9 @@ guide before creating a separate workspace.
 
 ## Working flows
 
-- Desktop attaches to an existing authenticated runtime in its data directory, or starts and stops
-  its own runtime. The background server continues when desktop closes; web/mobile pair with a
-  running host.
+- Desktop attaches to an existing authenticated runtime in its data directory, or starts its
+  runtime. On macOS the managed background runtime stays available after the window closes. The
+  background server continues when desktop closes; web/mobile pair with a running host.
 - Codex App Server, OpenCode Serve, Claude Agent SDK and ACP adapters load through the extension
   host. Task sessions resume, stream responses, request approvals and support cancellation.
 - Reusable agent configurations own provider, model, instructions and permissions. Changing the
@@ -133,10 +139,10 @@ pnpm pair approve <request-id>
 pnpm pair deny <request-id>
 ```
 
-Use the actual runtime port. The code expires after two minutes and automatically approves devices
-using it during that window. Use `pnpm pair --manual` for a single-use code that requires approving
-its request. Enter the address and code on each device. `devices` shows pending requests and paired
-devices, not live network presence. `--json` supports scripting;
+Use the actual runtime port. The code expires after two minutes and automatically approves one
+device. Every code is single use. Use `pnpm pair --manual` for a single-use code that requires
+approving its request. Generate a separate code for each device. `devices` shows pending requests
+and paired devices, not live network presence. `--json` supports scripting;
 `--connection /path/to/runtime-connection.json` selects a specific runtime. `--public-address` only
 changes the displayed address; the runtime must already listen on a reachable interface. An explicit
 `--public-address` takes precedence over `--network` discovery, including an HTTPS reverse proxy.
@@ -207,7 +213,7 @@ pnpm --filter @dovo/mobile android
 1. Start a reachable runtime using `pnpm server start` or desktop. Generate a code with
    `pnpm server pair` for that data directory, or in **Devices & runtime**.
 2. On mobile, enter the complete LAN/VPN runtime address, a device name and the eight-digit code.
-   Default CLI codes approve automatically for two minutes; only manual codes need host approval.
+   CLI codes are single use and expire after two minutes; only manual codes need host approval.
    Credentials are stored in Keychain/Keystore; provider credentials stay on the host.
 3. Open **Tasks** and choose **New task** for an empty draft chat. Select the project,
    harness/model, access mode and local checkout/worktree before sending the first message. Its
@@ -310,12 +316,12 @@ responsibility; domain transformations and graph validation stay outside renderi
 ## Verification
 
 ```sh
-pnpm typecheck
-pnpm test
-pnpm build
+pnpm verify # typecheck, build test prerequisites, tests, lint, and all builds
 pnpm check
 pnpm fallow
-# After pnpm build, verify the actual desktop runtime and terminal UI:
+# After pnpm build, verify pairing in an isolated desktop profile:
+env -u ELECTRON_RUN_AS_NODE pnpm --filter @dovo/desktop exec electron ../../scripts/verify-pairing-ux.cjs
+# Verify the actual desktop runtime and terminal UI:
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @dovo/desktop exec electron ../../scripts/verify-desktop.cjs
 # With Maestro installed and the native app on an iOS simulator:
 node scripts/verify-mobile.mjs <simulator-uuid>
@@ -830,3 +836,50 @@ row for its prompt and latest update. This data is saved on the task’s host an
 web, and mobile. Earlier runs without captured subagent data are not reconstructed. Unsupported
 harnesses and unreported metrics remain empty; offline or ended runs do not show stale agents as
 currently working.
+
+### Connection and credential editing
+
+In desktop **Devices & runtime**, choose **Manage → Connect your phone** for a QR code and manual
+address/code instructions. Scan with the iPhone Camera, review the address in Dovo, then pair and
+approve on the Mac. For an address change, use **Update connection address** and a fresh code from
+the same computer. Existing saved routes retain their computer ID.
+
+MCP credentials use named, masked fields. **Replace** changes a value, **Keep saved value** cancels
+a replacement, and **Remove** clears that credential when you save. Stored references are handled
+automatically. Validation errors identify fields without printing submitted values.
+
+`pnpm test` builds API/runtime prerequisites before running the tests, including lifecycle tests
+that execute compiled JavaScript. `pnpm verify` runs the complete typecheck, test, lint and build
+sequence. Direct `pnpm exec vp test <file>` is useful for source-only tests; run the API build first
+when directly invoking lifecycle tests.
+
+### Continuing tasks after a restart
+
+In a computer’s settings, **Auto-continue tasks after runtime restart** is off by default. Enable it
+separately for each runtime to resume interrupted agent turns and previously unpaused message
+queues, one task at a time. A running turn resumes before its queued follow-ups. Explicit Stop,
+queue pauses, settled tasks and automation-owned tasks are not resumed automatically. Automation
+runs retain their separate Retry flow. This setting does not change Mac login startup, HTTP/VPN
+connectivity, or device pairing recovery.
+
+Leave the option off to review work first, then choose **Resume task** in an interrupted task.
+Automatic continuation failures keep an actionable error and remain paused for manual recovery.
+Agent work may have changed files or external systems before the interruption; continuation does not
+roll back those effects or promise exactly-once tool execution.
+
+
+### Phone connection setup and recovery
+
+In desktop **Settings → Devices & runtime → Manage**, the listener status shows whether the runtime
+accepts connections beyond this Mac. **Enable LAN / VPN access** restarts the desktop-managed runtime
+on all IPv4 interfaces, keeps the same port, and generates a fresh pairing code. Finish or stop running
+tasks first. **Limit access to this Mac** reverses this. If `DOVO_HOST` or an external supervisor manages
+the listener, change that configuration and restart that service instead; reopening the desktop does
+not restart an already-running background runtime. Pairing and device tokens remain required; HTTP is
+supported, and HTTPS is optional.
+
+On iPhone, scanning a code lets you choose **Add a new computer** or **Update** a saved computer.
+Choose Update only for the same computer at a new address. The pairing sheet stays open until the
+request completes or you cancel it. Cancelling an offline request can be retried when the connection
+returns. On desktop, address replacement preserves unsent edits under the new connection; use
+**Retry sync** to apply them, or review the conflict if the host changed the same fields.

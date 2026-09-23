@@ -1,7 +1,8 @@
+import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskAgents } from './task-agents'
-import { Files, Terminal, Globe, Bot, PanelRightClose, Monitor, Folder } from 'lucide-react'
+import { Monitor, Folder } from 'lucide-react'
 import { BrowserPane } from './browser/browser-pane'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   createTask,
   defaultTaskHarness,
@@ -11,7 +12,6 @@ import {
 } from '@dovo/studio-core'
 import {
   EmptyState,
-  IconButton,
   Button,
   ResizableHandle,
   ResizablePanel,
@@ -36,19 +36,19 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const sources = useMemo(() => taskSources(store), [store])
   const host = useStudioHost()
   const localTasks = workspace.tasks.filter((task) => !task.example)
-  const [selectedId, setSelectedId] = useState(
+  const [selectedId, setSelectedId] = useApplicationState(
     entityId ??
       localTasks.find((t) => !t.archived && !t.archivedAt)?.id ??
       localTasks.find((t) => !t.archivedAt)?.id ??
       '',
   )
-  const [deselected, setDeselected] = useState(false)
+  const [deselected, setDeselected] = useApplicationState(false)
   const compact = useCompactLayout()
-  const [listOpen, setListOpen] = useState(false)
-  const [sidebar, setSidebar] = useState(true)
-  const [surface, setSurface] = useState<TaskSurface>('chat')
-  const [split, setSplit] = useState(false)
-  const [terminalVisited, setTerminalVisited] = useState(false)
+  const [listOpen, setListOpen] = useApplicationState(false)
+  const [sidebar, setSidebar] = useApplicationState(true)
+  const [surface, setSurface] = useApplicationState<TaskSurface>('chat')
+  const [split, setSplit] = useApplicationState(false)
+  const [terminalVisited, setTerminalVisited] = useApplicationState(false)
   const panes = useRef<Record<TaskSurface, HTMLDivElement | null>>({
     chat: null,
     changes: null,
@@ -91,17 +91,19 @@ export default function TasksView({ entityId }: StudioViewProps) {
         ? previous
         : (input ??
           [...pane.querySelectorAll<HTMLElement>('input, button, [tabindex="0"]')].find(focusable))
-    ;(target ?? pane).focus({ preventScroll: true })
+    ;(target ?? pane).focus({
+      preventScroll: true,
+    })
   }, [surface, terminalVisited])
   const toggleTerminal = useCallback(() => {
     selectSurface(surface === 'terminal' ? 'chat' : 'terminal', true)
   }, [selectSurface, surface])
-  const [projectId, setProjectId] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [choosingProject, setChoosingProject] = useState(false)
-  const [projectQuery, setProjectQuery] = useState('')
-  const [suggestedProject, setSuggestedProject] = useState('')
+  const [projectId, setProjectId] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [choosingProject, setChoosingProject] = useApplicationState(false)
+  const [projectQuery, setProjectQuery] = useApplicationState('')
+  const [suggestedProject, setSuggestedProject] = useApplicationState('')
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -109,7 +111,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
       mounted.current = false
     }
   }, [])
-  const [pendingCreate, setPendingCreate] = useState<{
+  const [pendingCreate, setPendingCreate] = useApplicationState<{
     runtimeId: string | null
     repositoryId: string
   } | null>(null)
@@ -126,7 +128,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
       const selection = requestedProject ?? projectId
       const target = sources
         .flatMap((source) =>
-          source.workspace.repositories.map((repository) => ({ source, repository })),
+          source.workspace.repositories.map((repository) => ({
+            source,
+            repository,
+          })),
         )
         .find(
           ({ source, repository }) =>
@@ -147,7 +152,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
       try {
         if (runtimeId && runtimeId !== activeRuntimeId) await switchRuntime(runtimeId)
         if (!mounted.current) return
-        setPendingCreate({ runtimeId, repositoryId })
+        setPendingCreate({
+          runtimeId,
+          repositoryId,
+        })
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error))
         setBusy(false)
@@ -174,7 +182,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
       execution: 'main',
       repositoryId: pendingCreate.repositoryId,
     })
-    setWorkspace((w) => ({ ...w, tasks: [task, ...w.tasks] }))
+    setWorkspace((w) => ({
+      ...w,
+      tasks: [task, ...w.tasks],
+    }))
     setSelectedId(task.id)
     setDeselected(false)
     setSurface('chat')
@@ -183,7 +194,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
     setListOpen(false)
     setPendingCreate(null)
     setBusy(false)
-    host.navigate({ viewId: 'tasks', entityId: task.id })
+    host.navigate({
+      viewId: 'tasks',
+      entityId: task.id,
+    })
   }, [activeRuntimeId, host, pendingCreate, setWorkspace, workspace.repositories])
   const selectTask = async (entry: TaskEntry) => {
     if (busy) return
@@ -195,7 +209,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
       if (!mounted.current) return
       setSelectedId(entry.task.id)
       setDeselected(false)
-      host.navigate({ viewId: 'tasks', entityId: entry.task.id })
+      host.navigate({
+        viewId: 'tasks',
+        entityId: entry.task.id,
+      })
       setListOpen(false)
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))
@@ -212,10 +229,17 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const deselectTask = () => {
     setDeselected(true)
     setSelectedId('')
-    host.navigate({ viewId: 'tasks' })
+    host.navigate({
+      viewId: 'tasks',
+    })
   }
   useEffect(
-    () => host.registerCommand({ id: 'tasks.new', title: 'New task', run: () => startTask() }),
+    () =>
+      host.registerCommand({
+        id: 'tasks.new',
+        title: 'New task',
+        run: () => startTask(),
+      }),
     [host, startTask],
   )
   useEffect(
@@ -263,7 +287,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
         <ResizablePanelGroup direction="horizontal">
           {(sidebar || !task) && !compact && (
             <>
-              <ResizablePanel id="task-list" order={1} defaultSize={18} minSize={15} maxSize={35}>
+              <ResizablePanel id="task-list" order={1} defaultSize={22} minSize={20} maxSize={36}>
                 <TaskList
                   projectId={projectId}
                   onProjectChange={setProjectId}
@@ -290,9 +314,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   task={task}
                   surface={surface}
                   onSurface={selectSurface}
-                  split={surface !== 'chat'}
                   compact={compact}
-                  onSplit={() => selectSurface(surface === 'chat' ? 'browser' : 'chat')}
                   onSidebar={() => (compact ? setListOpen(true) : setSidebar((value) => !value))}
                 />
                 <div className="flex min-h-0 min-w-0 flex-1">
@@ -320,46 +342,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       compact ? 'flex-1' : 'w-[380px] max-w-[48%] shrink-0 border-l',
                     )}
                   >
-                    {!compact && (
-                      <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2">
-                        <div
-                          role="group"
-                          aria-label="Workspace tools"
-                          className="flex min-w-0 flex-1 gap-0.5"
-                        >
-                          {(
-                            [
-                              ['changes', 'Diff', Files],
-                              ['agents', 'Agents', Bot],
-                              ['terminal', 'Terminal', Terminal],
-                              ['browser', 'Preview', Globe],
-                            ] as const
-                          ).map(([id, label, Icon]) => (
-                            <Button
-                              key={id}
-                              variant="ghost"
-                              size="sm"
-                              aria-pressed={surface === id}
-                              onClick={() => selectSurface(id)}
-                              className={cn(
-                                'h-7 gap-1.5 px-2 text-xs',
-                                surface === id && 'bg-muted',
-                              )}
-                            >
-                              <Icon size={13} />
-                              {label}
-                            </Button>
-                          ))}
-                        </div>
-                        <IconButton
-                          label="Hide workspace sidebar"
-                          className="size-7 shrink-0"
-                          onClick={() => selectSurface('chat', true)}
-                        >
-                          <PanelRightClose size={14} />
-                        </IconButton>
-                      </div>
-                    )}
                     {surface === 'agents' && (
                       <div
                         ref={(element) => {

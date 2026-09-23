@@ -1,50 +1,55 @@
-import { z } from 'zod'
+import { uuidSchema } from './schema.js'
+import { mutableStruct } from './schema.js'
+import { minValue, maxValue } from './schema.js'
+import { Schema } from 'effect'
 import { forgeIssueSchema, forgePipelineSchema } from './forge-work.js'
 import { forgeProviderSchema } from './forges.js'
-
 const source = {
-  id: forgeIssueSchema.shape.id,
-  url: forgeIssueSchema.shape.url,
-  title: z.string(),
+  id: forgeIssueSchema.fields.id,
+  url: forgeIssueSchema.fields.url,
+  title: Schema.String,
 }
-
-export const taskWorkItemSchema = z.discriminatedUnion('kind', [
-  z.object({
-    ...source,
-    kind: z.literal('issue'),
-    jiraSourceId: z.string().min(1).max(200).optional(),
-    provider: z.union([forgeProviderSchema, z.literal('jira')]),
-    revision: forgeIssueSchema.shape.revision,
-  }),
-  z.object({
-    ...source,
-    kind: z.literal('pipeline'),
-    provider: forgeProviderSchema,
-    ref: forgePipelineSchema.shape.ref,
-    sha: forgePipelineSchema.shape.sha,
-  }),
-])
-
+export const taskWorkItemSchema = Schema.Union(
+  ...[
+    mutableStruct({
+      ...source,
+      kind: Schema.Literal('issue'),
+      jiraSourceId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+      provider: Schema.Union(forgeProviderSchema, Schema.Literal('jira')),
+      revision: forgeIssueSchema.fields.revision,
+    }),
+    mutableStruct({
+      ...source,
+      kind: Schema.Literal('pipeline'),
+      provider: forgeProviderSchema,
+      ref: forgePipelineSchema.fields.ref,
+      sha: forgePipelineSchema.fields.sha,
+    }),
+  ],
+)
 const input = {
-  repositoryId: z.string().min(1).max(200),
+  repositoryId: maxValue(minValue(Schema.String, 1), 200),
   id: source.id,
   url: source.url,
-  requestId: z.uuid(),
+  requestId: uuidSchema,
 }
-
-export const workTaskInputSchema = z.discriminatedUnion('kind', [
-  z.object({
-    ...input,
-    kind: z.literal('issue'),
-    jiraSourceId: z.string().min(1).max(200).optional(),
-    revision: z.string().min(1).max(300),
-  }),
-  z.object({
-    ...input,
-    kind: z.literal('pipeline'),
-    sha: z.string().max(300),
-  }),
-])
-export const workTaskResponseSchema = z.object({ id: z.uuid() })
-export type TaskWorkItem = z.infer<typeof taskWorkItemSchema>
-export type WorkTaskInput = z.infer<typeof workTaskInputSchema>
+export const workTaskInputSchema = Schema.Union(
+  ...[
+    mutableStruct({
+      ...input,
+      kind: Schema.Literal('issue'),
+      jiraSourceId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+      revision: maxValue(minValue(Schema.String, 1), 300),
+    }),
+    mutableStruct({
+      ...input,
+      kind: Schema.Literal('pipeline'),
+      sha: maxValue(Schema.String, 300),
+    }),
+  ],
+)
+export const workTaskResponseSchema = mutableStruct({
+  id: uuidSchema,
+})
+export type TaskWorkItem = Schema.Schema.Type<typeof taskWorkItemSchema>
+export type WorkTaskInput = Schema.Schema.Type<typeof workTaskInputSchema>

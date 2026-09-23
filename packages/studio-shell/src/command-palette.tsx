@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useRef } from 'react'
 import type { StudioCommand } from '@dovo/studio-core'
 import {
   Dialog,
@@ -18,15 +19,17 @@ export function CommandPalette({
   onOpenChange: (open: boolean) => void
   commands: readonly StudioCommand[]
 }) {
-  const [query, setQuery] = useState(''),
-    [selected, setSelected] = useState(0)
+  const [query, setQuery] = useApplicationState(''),
+    [selected, setSelected] = useApplicationState(0)
   const origin = useRef<HTMLElement | null>(null)
   const executed = useRef(false)
   const filtered = commands.filter((c) => c.title.toLowerCase().includes(query.toLowerCase()))
   const index = Math.min(selected, Math.max(0, filtered.length - 1))
   useEffect(() => {
     if (open)
-      document.getElementById(`command-option-${index}`)?.scrollIntoView({ block: 'nearest' })
+      document.getElementById(`command-option-${index}`)?.scrollIntoView({
+        block: 'nearest',
+      })
   }, [index, open])
   useEffect(() => {
     if (!open) {
@@ -51,12 +54,16 @@ export function CommandPalette({
         onCloseAutoFocus={(event) => {
           event.preventDefault()
           if (!executed.current && origin.current?.getClientRects().length) {
-            origin.current.focus({ preventScroll: true })
+            origin.current.focus({
+              preventScroll: true,
+            })
           } else if (
             document.activeElement === document.body ||
             document.activeElement?.closest('[role="dialog"]')
           ) {
-            document.querySelector<HTMLElement>('.studio-main')?.focus({ preventScroll: true })
+            document.querySelector<HTMLElement>('.studio-main')?.focus({
+              preventScroll: true,
+            })
           }
         }}
       >

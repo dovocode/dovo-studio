@@ -1,3 +1,4 @@
+import { decode } from './schema.js'
 import { describe, expect, it } from 'vitest'
 import { forgeIssueSchema, forgePipelineSchema } from './forge-work.js'
 import {
@@ -7,7 +8,6 @@ import {
   pipelineSignal,
   pipelineDuration,
 } from './work-presentation.js'
-
 describe('pipeline status and actions', () => {
   it.each([
     'queued',
@@ -29,7 +29,6 @@ describe('pipeline status and actions', () => {
     expect(pipelineActionAllowed('cancel', status)).toBe(true)
     expect(pipelineActionAllowed('rerun', status)).toBe(false)
   })
-
   it.each([
     'success',
     'failure',
@@ -56,13 +55,11 @@ describe('pipeline status and actions', () => {
     expect(pipelineActionAllowed('cancel', status)).toBe(false)
     expect(pipelineActionAllowed('rerun', status)).toBe(true)
   })
-
   it.each(['cancelling', 'canceling'])('waits for cancellation to finish for %s', (status) => {
     expect(pipelineSignal(status).phase).toBe('active')
     expect(pipelineActionAllowed('cancel', status)).toBe(false)
     expect(pipelineActionAllowed('rerun', status)).toBe(false)
   })
-
   it.each(['', 'unknown', 'none', 'all', 'newProviderState'])(
     'suppresses run actions for unknown status %s',
     (status) => {
@@ -73,7 +70,6 @@ describe('pipeline status and actions', () => {
       expect(pipelineActionAllowed('disable', status)).toBe(true)
     },
   )
-
   it('distinguishes success, failure, partial success and unfinished work visually', () => {
     expect(pipelineSignal('SUCCESSFUL')).toEqual({
       label: 'Passed',
@@ -93,7 +89,6 @@ describe('pipeline status and actions', () => {
     expect(pipelineSignal('').label).toBe('Unknown')
   })
 })
-
 describe('pipeline timing', () => {
   const startedAt = '2026-09-20T10:00:00Z'
   it.each([
@@ -104,29 +99,86 @@ describe('pipeline timing', () => {
     [90000000, '1d 1h'],
   ])('formats a completed duration of %i ms', (elapsed, expected) => {
     const completedAt = new Date(Date.parse(startedAt) + elapsed).toISOString()
-    expect(pipelineDuration({ status: 'success', startedAt, completedAt })).toBe(expected)
+    expect(
+      pipelineDuration({
+        status: 'success',
+        startedAt,
+        completedAt,
+      }),
+    ).toBe(expected)
   })
   it('uses elapsed time only while active and ignores bad timestamps', () => {
     const now = Date.parse(startedAt) + 125000
-    expect(pipelineDuration({ status: 'in_progress', startedAt }, now)).toBe('2m 5s')
-    expect(pipelineDuration({ status: 'failed', startedAt }, now)).toBeUndefined()
-    expect(pipelineDuration({ status: 'unknown', startedAt }, now)).toBeUndefined()
-    expect(pipelineDuration({ status: 'running' }, now)).toBeUndefined()
-    expect(pipelineDuration({ status: 'running', startedAt: 'invalid' }, now)).toBeUndefined()
-    expect(pipelineDuration({ status: 'running', startedAt }, now - 130000)).toBeUndefined()
-    expect(pipelineDuration({ status: 'success', startedAt, completedAt: 'bad' })).toBeUndefined()
+    expect(
+      pipelineDuration(
+        {
+          status: 'in_progress',
+          startedAt,
+        },
+        now,
+      ),
+    ).toBe('2m 5s')
+    expect(
+      pipelineDuration(
+        {
+          status: 'failed',
+          startedAt,
+        },
+        now,
+      ),
+    ).toBeUndefined()
+    expect(
+      pipelineDuration(
+        {
+          status: 'unknown',
+          startedAt,
+        },
+        now,
+      ),
+    ).toBeUndefined()
+    expect(
+      pipelineDuration(
+        {
+          status: 'running',
+        },
+        now,
+      ),
+    ).toBeUndefined()
+    expect(
+      pipelineDuration(
+        {
+          status: 'running',
+          startedAt: 'invalid',
+        },
+        now,
+      ),
+    ).toBeUndefined()
+    expect(
+      pipelineDuration(
+        {
+          status: 'running',
+          startedAt,
+        },
+        now - 130000,
+      ),
+    ).toBeUndefined()
+    expect(
+      pipelineDuration({
+        status: 'success',
+        startedAt,
+        completedAt: 'bad',
+      }),
+    ).toBeUndefined()
   })
 })
-
 describe('work item identifiers and search', () => {
   it('formats numeric issue IDs without changing Jira keys', () => {
     expect(issueLabel('123')).toBe('#123')
     expect(issueLabel('STUDIO-123')).toBe('STUDIO-123')
     expect(issueLabel('#123')).toBe('#123')
   })
-
   it('matches multiple terms across issue metadata', () => {
-    const issue = forgeIssueSchema.parse({
+    const issue = decode(forgeIssueSchema, {
       id: '123',
       title: 'Repair cancellation',
       body: '',
@@ -142,11 +194,18 @@ describe('work item identifiers and search', () => {
     expect(matchesWorkItem(issue, ' #123 REPAIR dominic Taylor priority-high bug open ')).toBe(true)
     expect(matchesWorkItem(issue, 'repair absent')).toBe(false)
     expect(matchesWorkItem(issue, ' ')).toBe(true)
-    expect(matchesWorkItem({ ...issue, id: 'STUDIO-123' }, 'studio-123 repair')).toBe(true)
+    expect(
+      matchesWorkItem(
+        {
+          ...issue,
+          id: 'STUDIO-123',
+        },
+        'studio-123 repair',
+      ),
+    ).toBe(true)
   })
-
   it('matches pipeline branches, commits, actors and definitions', () => {
-    const run = forgePipelineSchema.parse({
+    const run = decode(forgePipelineSchema, {
       id: '5',
       title: 'Deploy preview',
       url: 'https://github.com/me/app/actions/runs/5',

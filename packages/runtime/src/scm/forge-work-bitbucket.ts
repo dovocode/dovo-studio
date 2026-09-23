@@ -1,4 +1,6 @@
-import { z } from 'zod'
+import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { decode } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { pipelineActionAllowed } from '@dovo/protocol'
 import type {
   ForgeIssueCreate,
@@ -11,27 +13,57 @@ import type { ForgeWorkProvider, WorkHttp } from './forge-work-types.js'
 import { HttpError } from '../errors.js'
 import { workPage } from './forge-work-git.js'
 import { pipelineErrors, pipelineTime } from './forge-work-details.js'
-const state = z.object({
-  name: z.string(),
-  result: z
-    .object({
-      name: z.string(),
-      error: z.object({ message: z.string().nullish() }).nullish(),
-    })
-    .optional(),
+const state = mutableStruct({
+  name: Schema.String,
+  result: Schema.optional(
+    mutableStruct({
+      name: Schema.String,
+      error: Schema.optional(
+        Schema.NullOr(
+          mutableStruct({
+            message: Schema.optional(Schema.NullOr(Schema.String)),
+          }),
+        ),
+      ),
+    }),
+  ),
 })
-const pipeline = z.object({
-  uuid: z.string(),
-  build_number: z.number(),
-  created_on: z.string(),
-  completed_on: z.string().nullish(),
-  trigger: z.object({ type: z.string().nullish(), name: z.string().nullish() }).nullish(),
+const pipeline = mutableStruct({
+  uuid: Schema.String,
+  build_number: Schema.Number.pipe(Schema.finite()),
+  created_on: Schema.String,
+  completed_on: Schema.optional(Schema.NullOr(Schema.String)),
+  trigger: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        type: Schema.optional(Schema.NullOr(Schema.String)),
+        name: Schema.optional(Schema.NullOr(Schema.String)),
+      }),
+    ),
+  ),
   state,
-  creator: z.object({ display_name: z.string() }).optional(),
-  target: z.object({
-    ref_name: z.string().optional(),
-    commit: z.object({ hash: z.string(), message: z.string().nullish() }).nullish(),
-    selector: z.object({ pattern: z.string().nullish() }).nullish(),
+  creator: Schema.optional(
+    mutableStruct({
+      display_name: Schema.String,
+    }),
+  ),
+  target: mutableStruct({
+    ref_name: Schema.optional(Schema.String),
+    commit: Schema.optional(
+      Schema.NullOr(
+        mutableStruct({
+          hash: Schema.String,
+          message: Schema.optional(Schema.NullOr(Schema.String)),
+        }),
+      ),
+    ),
+    selector: Schema.optional(
+      Schema.NullOr(
+        mutableStruct({
+          pattern: Schema.optional(Schema.NullOr(Schema.String)),
+        }),
+      ),
+    ),
   }),
 })
 export class BitbucketForgeWork implements ForgeWorkProvider {
@@ -81,7 +113,7 @@ export class BitbucketForgeWork implements ForgeWorkProvider {
   async actOnIssue(_input: ForgeIssueAction): ReturnType<ForgeWorkProvider['actOnIssue']> {
     return this.unavailable()
   }
-  private normalize(value: z.infer<typeof pipeline>): ForgePipeline {
+  private normalize(value: Schema.Schema.Type<typeof pipeline>): ForgePipeline {
     return {
       id: value.uuid,
       title: `#${value.build_number} · ${value.target.selector?.pattern ?? value.target.ref_name ?? 'Pipeline'}`,
@@ -111,9 +143,13 @@ export class BitbucketForgeWork implements ForgeWorkProvider {
   }
   async pipelines(cursor?: string) {
     const page = workPage(cursor)
-    const result = z
-      .object({ values: z.array(pipeline), next: z.string().optional() })
-      .parse(await this.get(`pipelines/?pagelen=30&page=${page}&sort=-created_on`))
+    const result = decode(
+      mutableStruct({
+        values: mutableArray(pipeline),
+        next: Schema.optional(Schema.String),
+      }),
+      await this.get(`pipelines/?pagelen=30&page=${page}&sort=-created_on`),
+    )
     return {
       items: result.values.map((v) => this.normalize(v)),
       next: result.next ? String(page + 1) : undefined,
@@ -122,22 +158,23 @@ export class BitbucketForgeWork implements ForgeWorkProvider {
   async pipeline(id: string, cursor?: string) {
     const selected = encodeURIComponent(id),
       page = workPage(cursor)
-    const value = pipeline.parse(await this.get(`pipelines/${selected}`)),
+    const value = decode(pipeline, await this.get(`pipelines/${selected}`)),
       run = this.normalize(value)
-    const steps = z
-      .object({
-        values: z.array(
-          z.object({
-            uuid: z.string(),
-            name: z.string().optional(),
+    const steps = decode(
+      mutableStruct({
+        values: mutableArray(
+          mutableStruct({
+            uuid: Schema.String,
+            name: Schema.optional(Schema.String),
             state,
-            started_on: z.string().nullish(),
-            completed_on: z.string().nullish(),
+            started_on: Schema.optional(Schema.NullOr(Schema.String)),
+            completed_on: Schema.optional(Schema.NullOr(Schema.String)),
           }),
         ),
-        next: z.string().optional(),
-      })
-      .parse(await this.get(`pipelines/${selected}/steps/?pagelen=50&page=${page}`))
+        next: Schema.optional(Schema.String),
+      }),
+      await this.get(`pipelines/${selected}/steps/?pagelen=50&page=${page}`),
+    )
     return {
       run,
       jobs: steps.values.map((v) => ({
@@ -156,7 +193,8 @@ export class BitbucketForgeWork implements ForgeWorkProvider {
   }
   async actOnPipeline(input: ForgePipelineAction) {
     if (input.action === 'run') {
-      const value = pipeline.parse(
+      const value = decode(
+        pipeline,
         await this.get('pipelines/', {
           method: 'POST',
           body: {
@@ -166,7 +204,12 @@ export class BitbucketForgeWork implements ForgeWorkProvider {
               ref_name: input.ref,
               ...(input.definition === 'default'
                 ? {}
-                : { selector: { type: 'custom', pattern: input.definition } }),
+                : {
+                    selector: {
+                      type: 'custom',
+                      pattern: input.definition,
+                    },
+                  }),
             },
             variables: Object.entries(input.inputs).map(([key, value]) => ({
               key,
@@ -176,17 +219,27 @@ export class BitbucketForgeWork implements ForgeWorkProvider {
           },
         }),
       )
-      return { id: value.uuid, url: this.normalize(value).url, message: 'Pipeline queued' }
+      return {
+        id: value.uuid,
+        url: this.normalize(value).url,
+        message: 'Pipeline queued',
+      }
     }
     if (input.action !== 'cancel')
       throw new HttpError(400, 'Use Bitbucket for this pipeline action')
-    const current = pipeline.parse(await this.get(`pipelines/${encodeURIComponent(input.id)}`))
+    const current = decode(pipeline, await this.get(`pipelines/${encodeURIComponent(input.id)}`))
     if (!pipelineActionAllowed(input.action, current.state.name))
       throw new HttpError(
         409,
         'This pipeline cannot be cancelled in its current state. Refresh its status.',
       )
-    await this.get(`pipelines/${encodeURIComponent(input.id)}/stopPipeline`, { method: 'POST' })
-    return { id: current.uuid, url: this.normalize(current).url, message: 'Cancellation requested' }
+    await this.get(`pipelines/${encodeURIComponent(input.id)}/stopPipeline`, {
+      method: 'POST',
+    })
+    return {
+      id: current.uuid,
+      url: this.normalize(current).url,
+      message: 'Cancellation requested',
+    }
   }
 }

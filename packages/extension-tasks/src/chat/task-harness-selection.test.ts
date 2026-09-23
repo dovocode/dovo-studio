@@ -1,3 +1,4 @@
+import { decode } from '@dovo/protocol'
 import { expect, it } from 'vite-plus/test'
 import {
   createTask,
@@ -8,7 +9,6 @@ import {
   type Agent,
 } from '@dovo/studio-core'
 import { changeTaskHarness, chooseTaskAgent } from './task-harness-selection'
-
 const custom: Agent = {
   ...defaultTaskHarness('codex'),
   id: 'reviewer',
@@ -25,7 +25,12 @@ const custom: Agent = {
   resources: {
     mcpServers: [],
     skills: [
-      { name: 'review', description: 'Review', content: 'Custom review skill', enabled: true },
+      {
+        name: 'review',
+        description: 'Review',
+        content: 'Custom review skill',
+        enabled: true,
+      },
     ],
   },
 }
@@ -43,7 +48,6 @@ const draft = createTask({
   objective: '',
   harness: defaultTaskHarness('codex'),
 })
-
 it('switches freely between built-in providers and custom agents before sending input', () => {
   const selected = chooseTaskAgent(draft, agents, claude.id)
   expect(selected.agentId).toBe(claude.id)
@@ -59,12 +63,11 @@ it('switches freely between built-in providers and custom agents before sending 
   })
   expect(chooseTaskAgent(builtin, agents, custom.id).agentId).toBe(custom.id)
 })
-
 it('keeps the saved custom agent identity and configuration when changing model settings', () => {
   const template = structuredClone(custom)
   const selected = chooseTaskAgent(draft, agents, custom.id)
   const changed = changeTaskHarness(selected, agents, {
-    ...taskHarnessSchema.parse(custom),
+    ...decode(taskHarnessSchema, custom),
     model: 'another-model',
     reasoning: 'low',
     permission: 'workspace-write',
@@ -73,7 +76,10 @@ it('keeps the saved custom agent identity and configuration when changing model 
     instructions: 'Must not replace the custom instructions',
     endpoint: 'must-not-replace',
     args: [],
-    resources: { skills: [], mcpServers: [] },
+    resources: {
+      skills: [],
+      mcpServers: [],
+    },
   })
   expect(changed.agentId).toBe(custom.id)
   expect(changed.harness).toBeNull()
@@ -87,16 +93,15 @@ it('keeps the saved custom agent identity and configuration when changing model 
   })
   expect(custom).toEqual(template)
 })
-
 it('clears custom modes explicitly so JSON persistence does not restore inherited defaults', () => {
   const selected = chooseTaskAgent(draft, agents, custom.id)
   const changed = changeTaskHarness(selected, agents, {
-    ...taskHarnessSchema.parse(custom),
+    ...decode(taskHarnessSchema, custom),
     reasoning: undefined,
     serviceTier: undefined,
     cyberAccessProgram: undefined,
   })
-  const restored = taskSchema.parse(JSON.parse(JSON.stringify(changed)))
+  const restored = decode(taskSchema, JSON.parse(JSON.stringify(changed)))
   expect(restored.agentOverrides).toMatchObject({
     reasoning: '',
     serviceTier: null,
@@ -108,7 +113,6 @@ it('clears custom modes explicitly so JSON persistence does not restore inherite
     cyberAccessProgram: undefined,
   })
 })
-
 it('drops custom template configuration when explicitly choosing the built-in provider', () => {
   const selected = chooseTaskAgent(draft, agents, custom.id)
   const changed = changeTaskHarness(selected, agents, defaultTaskHarness('codex'), true)
@@ -122,34 +126,43 @@ it('drops custom template configuration when explicitly choosing the built-in pr
     cyberAccessProgram: undefined,
   })
 })
-
 it('discards old model overrides when another saved custom agent is selected', () => {
   const selected = {
     ...chooseTaskAgent(draft, agents, custom.id),
-    agentOverrides: { model: 'old-model', permission: 'full-access' as const },
+    agentOverrides: {
+      model: 'old-model',
+      permission: 'full-access' as const,
+    },
   }
   const changed = chooseTaskAgent(selected, agents, claude.id)
   expect(changed.agentOverrides).toBeUndefined()
   expect(resolveTaskAgent(changed, agents)).toEqual(claude)
 })
-
 it('preserves per-task settings when reselecting the current custom agent', () => {
   const selected = {
     ...chooseTaskAgent(draft, agents, custom.id),
-    agentOverrides: { model: 'selected-model', reasoning: 'low' },
+    agentOverrides: {
+      model: 'selected-model',
+      reasoning: 'low',
+    },
   }
   expect(chooseTaskAgent(selected, agents, custom.id)).toBe(selected)
 })
-
 it('allows custom agents and model settings within the provider after the first input', () => {
   const submitted = {
     ...draft,
-    messages: [{ id: 'first', role: 'user' as const, text: 'Start' }],
+    messages: [
+      {
+        id: 'first',
+        role: 'user' as const,
+        text: 'Start',
+      },
+    ],
   }
   const selected = chooseTaskAgent(submitted, agents, custom.id)
   expect(selected.agentId).toBe(custom.id)
   const changed = changeTaskHarness(selected, agents, {
-    ...taskHarnessSchema.parse(custom),
+    ...decode(taskHarnessSchema, custom),
     model: 'another-model',
   })
   expect(resolveTaskAgent(changed, agents)?.model).toBe('another-model')
@@ -158,16 +171,20 @@ it('allows custom agents and model settings within the provider after the first 
     'another provider',
   )
 })
-
 it.each([
-  { ...draft, status: 'running' as const },
-  { ...draft, archived: true },
+  {
+    ...draft,
+    status: 'running' as const,
+  },
+  {
+    ...draft,
+    archived: true,
+  },
 ])('rejects both selection paths while the task cannot be configured', (task) => {
   const message = task.status === 'running' ? 'Stop the current turn' : 'Reopen this task'
   expect(() => chooseTaskAgent(task, agents, custom.id)).toThrow(message)
   expect(() => changeTaskHarness(task, agents, defaultTaskHarness('codex'))).toThrow(message)
 })
-
 it('rejects a custom agent removed since the picker opened', () => {
   expect(() => chooseTaskAgent(draft, agents, 'removed')).toThrow('no longer available')
 })

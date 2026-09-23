@@ -1,5 +1,7 @@
-import { z } from 'zod'
-import { runtimeRequest } from './client.js'
+import { mutableStruct, mutableArray } from './schema.js'
+import { decode, minValue, refine } from './schema.js'
+import { Effect, Either, Schema } from 'effect'
+import { runtimeRequestEffect } from './client.js'
 import { connectionSchema, snapshotSchema } from './runtime.js'
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
 import { pullPageSchema } from './pulls.js'
@@ -7,9 +9,8 @@ import type { PullSummary } from './pulls.js'
 import { pullNeedsAttention } from './pull-presentation.js'
 import { isSnoozed } from './task-priority.js'
 import type { Task } from './workspace.js'
-
 export function runtimeProfile(connection: RuntimeConnection, name?: string) {
-  const parsed = connectionSchema.parse(connection)
+  const parsed = decode(connectionSchema, connection)
   const url = new URL(parsed.address)
   if (['0.0.0.0', '[::]'].includes(url.hostname))
     throw new Error(
@@ -18,49 +19,70 @@ export function runtimeProfile(connection: RuntimeConnection, name?: string) {
   return {
     id: url.origin,
     name: name?.trim() || url.hostname,
-    connection: { ...parsed, address: url.origin },
+    connection: {
+      ...parsed,
+      address: url.origin,
+    },
   }
 }
-const profileSchema = z
-  .object({
-    id: z.string(),
-    name: z.string().min(1),
-    connection: connectionSchema,
-  })
-  .refine((profile) => {
-    try {
-      return profile.id === new URL(profile.connection.address).origin
-    } catch {
-      return false
-    }
-  }, 'Runtime identity must match its address')
-export const runtimeRegistrySchema = z
-  .object({
-    version: z.literal(1),
-    activeId: z.string().nullable(),
-    profiles: z.array(profileSchema),
-  })
-  .refine(
+// IDs remain stable when a newly paired address replaces a saved connection.
+const profileSchema = mutableStruct({
+  id: minValue(Schema.String, 1),
+  name: minValue(Schema.String, 1),
+  connection: connectionSchema,
+})
+
+export const pairingProofSchema = mutableStruct({
+  id: Schema.String,
+  secret: Schema.String,
+  expiresAt: Schema.String,
+})
+export type PairingProof = Schema.Schema.Type<typeof pairingProofSchema>
+export const pendingRuntimePairingSchema = mutableStruct({
+  profile: profileSchema,
+  proof: pairingProofSchema,
+  previousConnection: Schema.optional(Schema.NullOr(connectionSchema)),
+})
+export type PendingRuntimePairing = Schema.Schema.Type<typeof pendingRuntimePairingSchema>
+export const runtimeRegistrySchema = refine(
+  refine(
+    mutableStruct({
+      version: Schema.Literal(1),
+      activeId: Schema.NullOr(Schema.String),
+      profiles: mutableArray(profileSchema),
+      pendingPairings: Schema.optional(mutableArray(pendingRuntimePairingSchema)),
+    }),
     (registry) =>
-      new Set(registry.profiles.map((profile) => profile.id)).size === registry.profiles.length,
-    'Runtime addresses must be unique',
-  )
-  .refine(
-    (registry) =>
-      registry.activeId === null ||
-      registry.profiles.some((profile) => profile.id === registry.activeId),
-    'Active runtime must be saved',
-  )
-export type RuntimeProfile = z.infer<typeof profileSchema>
-export type RuntimeRegistry = z.infer<typeof runtimeRegistrySchema>
+      new Set(registry.profiles.map((profile) => profile.id)).size === registry.profiles.length &&
+      new Set(registry.profiles.map((profile) => profile.connection.address)).size ===
+        registry.profiles.length,
+    'Saved computer IDs and addresses must be unique',
+  ),
+  (registry) =>
+    registry.activeId === null ||
+    registry.profiles.some((profile) => profile.id === registry.activeId),
+  'Active runtime must be saved',
+)
+export type RuntimeProfile = Schema.Schema.Type<typeof profileSchema>
+export type RuntimeRegistry = Schema.Schema.Type<typeof runtimeRegistrySchema>
 export function upsertRuntime(
   registry: RuntimeRegistry,
   profile: RuntimeProfile,
   activate = true,
 ): RuntimeRegistry {
-  const normalized = runtimeProfile(profile.connection, profile.name)
+  const normalized = { ...runtimeProfile(profile.connection, profile.name), id: profile.id }
+  if (
+    registry.profiles.some(
+      (item) =>
+        item.id !== normalized.id && item.connection.address === normalized.connection.address,
+    )
+  )
+    throw new Error(
+      'This address is already saved as another computer. Manage that connection instead.',
+    )
   const exists = registry.profiles.some((item) => item.id === normalized.id)
   return {
+    ...registry,
     version: 1,
     activeId: activate ? normalized.id : registry.activeId,
     profiles: exists
@@ -70,9 +92,13 @@ export function upsertRuntime(
 }
 export function removeRuntime(registry: RuntimeRegistry, id: string): RuntimeRegistry {
   return {
+    ...registry,
     version: 1,
     activeId: registry.activeId === id ? null : registry.activeId,
     profiles: registry.profiles.filter((profile) => profile.id !== id),
+    ...(registry.pendingPairings
+      ? { pendingPairings: registry.pendingPairings.filter((entry) => entry.profile.id !== id) }
+      : {}),
   }
 }
 export type RuntimeOverview = {
@@ -81,64 +107,65 @@ export type RuntimeOverview = {
   connected: boolean
   lastSeen: string | null
   error: string | null
-  pulls: { total: number; needsAttention: number; reviewRequested: number; partial: boolean } | null
+  pulls: {
+    total: number
+    needsAttention: number
+    reviewRequested: number
+    partial: boolean
+  } | null
   pullError: string | null
 }
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
-export async function loadRuntimeOverview(
+export function loadRuntimeOverviewEffect(
   profile: RuntimeProfile,
   previous?: RuntimeOverview,
   onSnapshot?: (overview: RuntimeOverview) => void,
-): Promise<RuntimeOverview> {
-  // Never retain another host's data, including when callers replace a profile.
-  const cached =
-    previous?.profile.id === profile.id &&
-    previous.profile.connection.token === profile.connection.token
-      ? previous
-      : undefined
-  let snapshot: RuntimeSnapshot
-  try {
-    snapshot = await runtimeRequest(
-      profile.connection,
-      profile.connection.address,
-      '/api/snapshot',
-      undefined,
-      snapshotSchema,
-      'GET',
-      10000,
+): Effect.Effect<RuntimeOverview> {
+  return Effect.gen(function* () {
+    const cached =
+      previous?.profile.id === profile.id &&
+      previous.profile.connection.token === profile.connection.token
+        ? previous
+        : undefined
+    const result = yield* Effect.either(
+      runtimeRequestEffect(
+        profile.connection,
+        profile.connection.address,
+        '/api/snapshot',
+        undefined,
+        snapshotSchema,
+        'GET',
+        10000,
+      ),
     )
-  } catch (error) {
-    return {
+    if (Either.isLeft(result))
+      return {
+        profile,
+        snapshot: cached?.snapshot ?? null,
+        connected: false,
+        lastSeen: cached?.lastSeen ?? null,
+        error: errorText(result.left),
+        pulls: cached?.pulls ? { ...cached.pulls, partial: true } : null,
+        pullError: cached?.pullError ?? null,
+      }
+    const snapshot = result.right
+    const lastSeen = new Date().toISOString()
+    onSnapshot?.({
       profile,
-      snapshot: cached?.snapshot ?? null,
-      connected: false,
-      lastSeen: cached?.lastSeen ?? null,
-      error: errorText(error),
-      pulls: cached?.pulls ? { ...cached.pulls, partial: true } : null,
+      snapshot,
+      connected: true,
+      lastSeen,
+      error: null,
+      pulls: cached?.pulls ?? null,
       pullError: cached?.pullError ?? null,
-    }
-  }
-  const lastSeen = new Date().toISOString()
-  onSnapshot?.({
-    profile,
-    snapshot,
-    connected: true,
-    lastSeen,
-    error: null,
-    pulls: cached?.pulls ?? null,
-    pullError: cached?.pullError ?? null,
-  })
-  const pulls = new Map<string, PullSummary>()
-  const errors: string[] = []
-  let partial = false
-  let loaded = 0
-  const repositories = snapshot.workspace.repositories
-  // Cached first pages keep this lightweight. Counts explicitly flag incomplete data.
-  for (let start = 0; start < repositories.length; start += 3) {
-    await Promise.all(
-      repositories.slice(start, start + 3).map(async (repository) => {
-        try {
-          const page = await runtimeRequest(
+    })
+    const repositories = snapshot.workspace.repositories
+    // Concurrency belongs to the parent fiber; interruption cancels every child request.
+    const pages = yield* Effect.forEach(
+      repositories,
+      (repository) =>
+        Effect.either(
+          runtimeRequestEffect(
             profile.connection,
             profile.connection.address,
             '/api/scm/pulls/overview',
@@ -146,43 +173,61 @@ export async function loadRuntimeOverview(
             pullPageSchema,
             'POST',
             15000,
-          )
-          loaded++
-          partial ||= page.hasMore || !!page.stale || !!page.refreshError
-          if (page.refreshError) errors.push(`${repository.name}: ${page.refreshError}`)
-          for (const pull of page.pulls)
-            if (pull.state === 'open') {
-              const existing = pulls.get(pull.url)
-              if (!existing || existing.updatedAt < pull.updatedAt) pulls.set(pull.url, pull)
-            }
-        } catch (error) {
-          partial = true
-          errors.push(`${repository.name}: ${errorText(error)}`)
-        }
-      }),
+          ),
+        ),
+      { concurrency: 3 },
     )
-  }
-  const values = [...pulls.values()]
-  return {
-    profile,
-    snapshot,
-    connected: true,
-    lastSeen,
-    error: null,
-    pulls:
-      loaded || !repositories.length
-        ? {
-            total: values.length,
-            needsAttention: values.filter(pullNeedsAttention).length,
-            reviewRequested: values.filter((pull) => pull.viewerReviewRequested && !pull.draft)
-              .length,
-            partial,
-          }
-        : cached?.pulls
-          ? { ...cached.pulls, partial: true }
-          : null,
-    pullError: errors.length ? errors.join('\n') : null,
-  }
+    const pulls = new Map<string, PullSummary>()
+    const errors: string[] = []
+    let partial = false
+    let loaded = 0
+    for (const [index, page] of pages.entries()) {
+      if (Either.isLeft(page)) {
+        partial = true
+        errors.push(`${repositories[index].name}: ${errorText(page.left)}`)
+        continue
+      }
+      loaded++
+      partial ||= page.right.hasMore || !!page.right.stale || !!page.right.refreshError
+      if (page.right.refreshError)
+        errors.push(`${repositories[index].name}: ${page.right.refreshError}`)
+      for (const pull of page.right.pulls)
+        if (pull.state === 'open') {
+          const existing = pulls.get(pull.url)
+          if (!existing || existing.updatedAt < pull.updatedAt) pulls.set(pull.url, pull)
+        }
+    }
+    const values = [...pulls.values()]
+    return {
+      profile,
+      snapshot,
+      connected: true,
+      lastSeen,
+      error: null,
+      pulls:
+        loaded || !repositories.length
+          ? {
+              total: values.length,
+              needsAttention: values.filter(pullNeedsAttention).length,
+              reviewRequested: values.filter((pull) => pull.viewerReviewRequested && !pull.draft)
+                .length,
+              partial,
+            }
+          : cached?.pulls
+            ? { ...cached.pulls, partial: true }
+            : null,
+      pullError: errors.length ? errors.join('\n') : null,
+    }
+  })
+}
+
+export function loadRuntimeOverview(
+  profile: RuntimeProfile,
+  previous?: RuntimeOverview,
+  onSnapshot?: (overview: RuntimeOverview) => void,
+  signal?: AbortSignal,
+): Promise<RuntimeOverview> {
+  return Effect.runPromise(loadRuntimeOverviewEffect(profile, previous, onSnapshot), { signal })
 }
 export type RuntimeTask = {
   key: string

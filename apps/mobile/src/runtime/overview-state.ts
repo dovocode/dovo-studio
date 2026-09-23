@@ -1,5 +1,4 @@
 import { getRuntimeSnapshotTag, type RuntimeOverview } from '@dovo/protocol'
-
 export function retainOverviewSnapshot(previous: RuntimeOverview, next: RuntimeOverview) {
   const tag = next.snapshot && getRuntimeSnapshotTag(next.snapshot)
   if (
@@ -9,10 +8,12 @@ export function retainOverviewSnapshot(previous: RuntimeOverview, next: RuntimeO
     tag &&
     tag === getRuntimeSnapshotTag(previous.snapshot)
   )
-    return { ...next, snapshot: previous.snapshot }
+    return {
+      ...next,
+      snapshot: previous.snapshot,
+    }
   return next
 }
-
 export function shouldPublishOverview(
   previous: RuntimeOverview | undefined,
   next: RuntimeOverview,

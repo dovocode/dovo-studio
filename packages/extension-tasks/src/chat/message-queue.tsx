@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowUp, ArrowDown, X } from 'lucide-react'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import {
@@ -13,14 +13,22 @@ import {
 } from '@dovo/studio-ui'
 export function MessageQueue({ task }: { task: Task }) {
   const { request, connected } = useWorkspace(),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+    [error, setError] = useApplicationState(''),
+    [busy, setBusy] = useApplicationState(false)
   const queue = task.queue ?? []
   const act = async (action: string, messageId?: string) => {
     setBusy(true)
     setError('')
     try {
-      await request('/api/tasks/queue', { id: task.id, action, messageId }, responses.ok)
+      await request(
+        '/api/tasks/queue',
+        {
+          id: task.id,
+          action,
+          messageId,
+        },
+        responses.ok,
+      )
     } catch (e) {
       setError(String(e))
     } finally {

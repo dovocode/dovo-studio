@@ -1,4 +1,6 @@
-import { useRef, useState } from 'react'
+import { useApplicationState } from '@dovo/studio-core/state'
+import { decode } from '@dovo/protocol'
+import { useRef } from 'react'
 import {
   Check,
   LockKeyhole,
@@ -54,14 +56,14 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
   const providerLock = lockedTaskProvider(task, workspace.agents)
   const resolved = resolveTaskAgent(task, workspace.agents)
   const value = resolved
-    ? taskHarnessSchema.parse(resolved)
+    ? decode(taskHarnessSchema, resolved)
     : defaultTaskHarness(providerLock ?? 'codex')
-  const [open, setOpen] = useState(false)
-  const [reasoningOpen, setReasoningOpen] = useState(false)
-  const [connection, setConnection] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [open, setOpen] = useApplicationState(false)
+  const [reasoningOpen, setReasoningOpen] = useApplicationState(false)
+  const [connection, setConnection] = useApplicationState(false)
+  const [saving, setSaving] = useApplicationState(false)
   const savingRef = useRef(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useApplicationState('')
   const { catalog, loading, error: catalogError } = useHarnessCatalog(value, open || reasoningOpen)
   const selected =
     catalog?.models.find((model) => model.id === value.model) ??
@@ -144,13 +146,30 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
             </DropdownMenu.Label>
             <DropdownMenu.RadioGroup
               value={value.reasoning || selected?.defaultReasoning || ''}
-              onValueChange={(reasoning) => void apply({ ...value, reasoning })}
+              onValueChange={(reasoning) =>
+                void apply({
+                  ...value,
+                  reasoning,
+                })
+              }
             >
               {[
-                ...(!selected?.defaultReasoning ? [{ id: '', name: 'Provider default' }] : []),
+                ...(!selected?.defaultReasoning
+                  ? [
+                      {
+                        id: '',
+                        name: 'Provider default',
+                      },
+                    ]
+                  : []),
                 ...efforts,
                 ...(value.reasoning && !efforts.some((e) => e.id === value.reasoning)
-                  ? [{ id: value.reasoning, name: value.reasoning }]
+                  ? [
+                      {
+                        id: value.reasoning,
+                        name: value.reasoning,
+                      },
+                    ]
                   : []),
               ].map((effort) => (
                 <DropdownMenu.RadioItem key={effort.id} value={effort.id} className={itemClass}>
@@ -175,7 +194,12 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
                 <DropdownMenu.RadioGroup
                   aria-label="Service tier"
                   value={serviceTierValue(value.serviceTier)}
-                  onValueChange={(serviceTier) => void apply({ ...value, serviceTier })}
+                  onValueChange={(serviceTier) =>
+                    void apply({
+                      ...value,
+                      serviceTier,
+                    })
+                  }
                 >
                   {tiers.map((tier) => (
                     <DropdownMenu.RadioItem
@@ -237,7 +261,7 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
                         void apply({
                           ...value,
                           cyberAccessProgram: program
-                            ? taskHarnessSchema.shape.cyberAccessProgram.parse(program)
+                            ? decode(taskHarnessSchema.fields.cyberAccessProgram.from, program)
                             : undefined,
                         })
                       }
@@ -317,7 +341,7 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
               onValueChange={(permission) =>
                 void apply({
                   ...value,
-                  permission: taskHarnessSchema.shape.permission.parse(permission),
+                  permission: decode(taskHarnessSchema.fields.permission, permission),
                 })
               }
             >
