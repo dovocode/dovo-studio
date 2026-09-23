@@ -1,3 +1,4 @@
+import { Alert } from 'react-native'
 import { z } from 'zod'
 import {
   latestCompletedTaskTurn,
@@ -21,7 +22,7 @@ type LifecycleChanges = Partial<{
   }
 }>
 
-export function useTaskLifecycle(task: Task, runtimeId?: string) {
+export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () => void) {
   const { call, connected, activeId, overviews, readRuntime, refreshRuntime } = useRuntime()
   const { act, busy, error } = useAction()
   const onCurrentRuntime = runtimeId === undefined || runtimeId === activeId
@@ -63,6 +64,34 @@ export function useTaskLifecycle(task: Task, runtimeId?: string) {
         )
         await refreshRuntime(owner.profile)
       }),
+    toggleArchived: () =>
+      act(() =>
+        call(
+          '/api/tasks/lifecycle',
+          {
+            id: task.id,
+            action: task.archivedAt ? 'restore' : 'archive',
+          },
+          responses.ok,
+        ),
+      ),
+    deleteThread: () =>
+      Alert.alert(
+        'Delete thread?',
+        `“${task.title}” and its conversation will be permanently deleted. Project files and worktrees stay on disk.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () =>
+              act(async () => {
+                await call('/api/tasks/lifecycle', { id: task.id, action: 'delete' }, responses.ok)
+                onDeleted?.()
+              }),
+          },
+        ],
+      ),
     togglePinned: () =>
       act(() => patch({ pinned: { before: task.pinned ?? null, after: !task.pinned } })),
     toggleSettled: () =>

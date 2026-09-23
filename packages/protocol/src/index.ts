@@ -47,3 +47,5 @@ export * from './issue-edit.js'
 export * from './tool-presentation.js'
 
 export * from './live-activities.js'
+
+export * from './subagents.js'

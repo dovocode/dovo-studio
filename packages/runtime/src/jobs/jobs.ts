@@ -44,6 +44,16 @@ export class Jobs {
       }
     }
   }
+  requireTaskIdle(id: string) {
+    if (
+      [...this.runs.values()].some(
+        (run) =>
+          run.taskIds.includes(id) &&
+          (['running', 'waiting'].includes(run.status) || this.active.has(run.id)),
+      )
+    )
+      throw new HttpError(409, 'Finish or cancel the automation before changing this thread.')
+  }
   startScheduler() {
     if (this.timer || this.stopping) return
     this.timer = setInterval(() => {

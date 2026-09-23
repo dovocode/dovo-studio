@@ -1,3 +1,4 @@
+import { updateSubagents } from './subagents.js'
 import { ReasoningEvents, safeReasoningEvent } from './reasoning-event.js'
 import type { AgentSteer, AgentRun } from './types.js'
 import {
@@ -263,6 +264,15 @@ ${
             if (!timer) timer = setTimeout(flush, 100)
           },
           onEvent: (name, payload) => {
+            const current = this.store.task(id).subagents ?? []
+            const subagents = updateSubagents(
+              current,
+              agent.provider,
+              payload,
+              new Date().toISOString(),
+              name,
+            )
+            if (subagents !== current) this.store.updateTask(id, (task) => ({ ...task, subagents }))
             const reasoningOnly = reasoning.accept(name, payload)
             const tool = toolEvent(agent.provider, name, payload)
             if (reasoningOnly && !tool) return

@@ -1,4 +1,5 @@
-import { Files, Terminal, Globe, PanelRightClose, Monitor, Folder } from 'lucide-react'
+import { TaskAgents } from './task-agents'
+import { Files, Terminal, Globe, Bot, PanelRightClose, Monitor, Folder } from 'lucide-react'
 import { BrowserPane } from './browser/browser-pane'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -36,7 +37,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const host = useStudioHost()
   const localTasks = workspace.tasks.filter((task) => !task.example)
   const [selectedId, setSelectedId] = useState(
-    entityId ?? localTasks.find((t) => !t.archived)?.id ?? localTasks[0]?.id ?? '',
+    entityId ??
+      localTasks.find((t) => !t.archived && !t.archivedAt)?.id ??
+      localTasks.find((t) => !t.archivedAt)?.id ??
+      '',
   )
   const [deselected, setDeselected] = useState(false)
   const compact = useCompactLayout()
@@ -50,12 +54,13 @@ export default function TasksView({ entityId }: StudioViewProps) {
     changes: null,
     terminal: null,
     browser: null,
+    agents: null,
   })
   const lastFocus = useRef<Partial<Record<TaskSurface, HTMLElement>>>({})
   const focusNext = useRef<TaskSurface | null>(null)
   const selectSurface = useCallback(
     (next: TaskSurface, moveFocus = false) => {
-      for (const id of ['chat', 'changes', 'terminal', 'browser'] as const) {
+      for (const id of ['chat', 'changes', 'terminal', 'browser', 'agents'] as const) {
         const focused = document.activeElement
         if (focused instanceof HTMLElement && panes.current[id]?.contains(focused)) {
           lastFocus.current[id] = focused
@@ -247,7 +252,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const task = deselected
     ? undefined
     : (localTasks.find((t) => t.id === selectedId) ??
-      (entityId ? undefined : (localTasks.find((t) => !t.archived) ?? localTasks[0])))
+      (entityId
+        ? undefined
+        : (localTasks.find((t) => !t.archived && !t.archivedAt) ??
+          localTasks.find((t) => !t.archivedAt))))
   const selectedKey = task ? taskCollectionKey(activeRuntimeId, task.id) : ''
   return (
     <>
@@ -322,6 +330,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                           {(
                             [
                               ['changes', 'Diff', Files],
+                              ['agents', 'Agents', Bot],
                               ['terminal', 'Terminal', Terminal],
                               ['browser', 'Preview', Globe],
                             ] as const
@@ -349,6 +358,17 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         >
                           <PanelRightClose size={14} />
                         </IconButton>
+                      </div>
+                    )}
+                    {surface === 'agents' && (
+                      <div
+                        ref={(element) => {
+                          panes.current.agents = element
+                        }}
+                        tabIndex={-1}
+                        className="min-h-0 flex-1 overflow-y-auto"
+                      >
+                        <TaskAgents task={task} />
                       </div>
                     )}
                     {surface === 'browser' && (

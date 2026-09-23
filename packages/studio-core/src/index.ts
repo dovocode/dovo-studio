@@ -153,3 +153,5 @@ export { issueEditInput } from '@dovo/protocol'
 
 export { toolPresentation, activitySummary } from '@dovo/protocol'
 export type { ToolKind, ToolPresentation } from '@dovo/protocol'
+
+export { subagentElapsed, subagentMetadata } from '@dovo/protocol'

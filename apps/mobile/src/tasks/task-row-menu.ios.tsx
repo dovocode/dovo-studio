@@ -105,12 +105,26 @@ export function TaskRowMenu({
                 </Menu>
               ))}
             <Button
-              testID="Task menu settle"
-              label={task.archived ? 'Reopen task' : 'Settle task'}
-              systemImage={task.archived ? 'arrow.uturn.backward' : 'checkmark'}
+              label={task.archivedAt ? 'Restore thread' : 'Archive thread'}
+              systemImage="archivebox"
               modifiers={[disabledModifier(unavailable || task.status === 'running')]}
-              onPress={actions.toggleSettled}
+              onPress={actions.toggleArchived}
             />
+            <Button
+              label="Delete thread…"
+              systemImage="trash"
+              modifiers={[disabledModifier(unavailable || task.status === 'running')]}
+              onPress={actions.deleteThread}
+            />
+            {!task.archivedAt && (
+              <Button
+                testID="Task menu settle"
+                label={task.archived ? 'Reopen task' : 'Settle task'}
+                systemImage={task.archived ? 'arrow.uturn.backward' : 'checkmark'}
+                modifiers={[disabledModifier(unavailable || task.status === 'running')]}
+                onPress={actions.toggleSettled}
+              />
+            )}
           </>
         )}
       </Menu>

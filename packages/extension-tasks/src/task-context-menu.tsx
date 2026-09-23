@@ -21,6 +21,8 @@ import {
   Input,
 } from '@dovo/studio-ui'
 import {
+  Archive,
+  Trash2,
   ArrowUpRight,
   Check,
   ChevronRight,
@@ -80,7 +82,7 @@ export function TaskContextMenu({
   const [pending, setPending] = useState(false)
   const pendingRef = useRef(false)
   const [error, setError] = useState('')
-  const [dialog, setDialog] = useState<'rename' | 'settings' | null>(null)
+  const [dialog, setDialog] = useState<'rename' | 'settings' | 'delete' | null>(null)
   const [title, setTitle] = useState(task.title)
   const blocked = busy || pending
   const canEdit = source.online && !blocked
@@ -188,7 +190,7 @@ export function TaskContextMenu({
             </ContextMenu.Item>
             <ContextMenu.Item
               className={itemClass}
-              disabled={!canEdit || task.status === 'running'}
+              disabled={!canEdit || !!task.archivedAt || task.status === 'running'}
               onSelect={() =>
                 void run(() => patch({ archived: !task.archived, snoozedUntil: null }))
               }
@@ -340,6 +342,36 @@ export function TaskContextMenu({
               <Settings2 />
               Task settings…
             </ContextMenu.Item>
+            <ContextMenu.Separator className={separatorClass} />
+            <ContextMenu.Item
+              className={itemClass}
+              disabled={!canEdit || task.status === 'running'}
+              onSelect={() =>
+                void run(async () => {
+                  await client.request(
+                    '/api/tasks/lifecycle',
+                    { id: task.id, action: task.archivedAt ? 'restore' : 'archive' },
+                    responses.ok,
+                  )
+                  if (selected && !task.archivedAt) onDeselect()
+                  await client.refresh()
+                })
+              }
+            >
+              <Archive />
+              {task.archivedAt ? 'Restore thread' : 'Archive thread'}
+            </ContextMenu.Item>
+            <ContextMenu.Item
+              className={`${itemClass} text-destructive`}
+              disabled={!canEdit || task.status === 'running'}
+              onSelect={() => {
+                setError('')
+                setDialog('delete')
+              }}
+            >
+              <Trash2 />
+              Delete thread…
+            </ContextMenu.Item>
           </ContextMenu.Content>
         </ContextMenu.Portal>
       </ContextMenu.Root>
@@ -397,6 +429,48 @@ export function TaskContextMenu({
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={dialog === 'delete'}
+        onOpenChange={(open) => {
+          if (!open && !pending) setDialog(null)
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogTitle>Delete thread?</DialogTitle>
+          <DialogDescription>
+            “{task.title}” and its conversation will be permanently deleted. Project files and
+            worktrees stay on disk.
+          </DialogDescription>
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" disabled={pending} onClick={() => setDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!canEdit}
+              onClick={() =>
+                void run(async () => {
+                  await client.request(
+                    '/api/tasks/lifecycle',
+                    { id: task.id, action: 'delete' },
+                    responses.ok,
+                  )
+                  setDialog(null)
+                  if (selected) onDeselect()
+                  await client.refresh()
+                })
+              }
+            >
+              {pending ? 'Deleting…' : 'Delete thread'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
       {settings &&

@@ -35,6 +35,47 @@ export async function agentsRoute(
   if (method === 'POST' && path === '/api/agents/title-settings/read') return s.titles.read()
   if (method === 'POST' && path === '/api/agents/title-settings/save')
     return s.titles.save(await body(request))
+  if (method === 'POST' && path === '/api/tasks/lifecycle') {
+    const { id, action } = z
+      .object({
+        id: idSchema,
+        action: z.enum(['archive', 'restore', 'delete']),
+      })
+      .strict()
+      .parse(await body(request))
+    // Missing deletes are successful retries after a lost response.
+    if (action === 'delete' && !s.store.get().tasks.some((task) => task.id === id))
+      return { ok: true }
+    s.tasks.requireIdle(id)
+    s.jobs.requireTaskIdle(id)
+    if (action !== 'restore') {
+      if (s.terminals.list().some((terminal) => terminal.taskId === id && !terminal.exited))
+        throw new HttpError(409, 'Close this thread’s terminals before archiving or deleting it.')
+      await s.browsers.close(id)
+      await s.simulators.closeTask(id)
+      s.tasks.requireIdle(id)
+      s.jobs.requireTaskIdle(id)
+    }
+    if (action === 'delete') {
+      s.db.transaction(() => {
+        s.db.prepare('DELETE FROM activity WHERE scope = ?').run(id)
+        s.db.prepare('DELETE FROM attachments WHERE task = ?').run(id)
+        s.store.update((workspace) => ({
+          ...workspace,
+          tasks: workspace.tasks.filter((task) => task.id !== id),
+        }))
+      })()
+    } else {
+      s.store.updateTask(id, (task) => ({
+        ...task,
+        archived: action === 'archive',
+        archivedAt:
+          action === 'archive' ? (task.archivedAt ?? new Date().toISOString()) : undefined,
+        snoozedUntil: null,
+      }))
+    }
+    return { ok: true }
+  }
   if (method === 'POST' && path === '/api/tasks/viewed') {
     const { id, turnId, viewed, expectedRevision } = z
       .object({

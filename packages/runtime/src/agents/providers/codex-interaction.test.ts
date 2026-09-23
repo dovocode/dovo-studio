@@ -11,7 +11,7 @@ afterEach(async () => {
     await rm(directory, { recursive: true, force: true })
 })
 async function fixture(
-  mode: 'steer' | 'question' | 'clear-question' | 'reject-steer' | 'message-form',
+  mode: 'steer' | 'question' | 'clear-question' | 'reject-steer' | 'message-form' | 'child-events',
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-codex-interaction-'))
   directories.push(directory)
@@ -32,6 +32,11 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
  else if(m.method==='thread/start') send({id:m.id,result:{thread:{id:'thread-1'}}});
  else if(m.method==='turn/start') {
    send({id:m.id,result:{turn:{id:'turn-1',status:'inProgress'}}});
+   if(${JSON.stringify(mode)}==='child-events') {
+     send({method:'item/agentMessage/delta',params:{threadId:'child',delta:'Child output'}});
+     send({method:'turn/completed',params:{threadId:'child',turn:{id:'child-turn',status:'completed'}}});
+     setTimeout(() => { send({method:'item/agentMessage/delta',params:{threadId:'thread-1',delta:'Parent output'}}); complete(); }, 30);
+   }
    if(${JSON.stringify(mode)}==='message-form') {
      const item={type:'agentMessage',id:'async-form',text:'',questions:[{title:'Which output style?',options:['Compact','Detailed']},{title:'Any additional context?',options:null}]};
      send({method:'item/started',params:{item}});
@@ -176,5 +181,15 @@ it('recognizes Astra assistant-message forms once, including choices and free te
         expect.objectContaining({ question: 'Any additional context?', custom: true, options: [] }),
       ],
     }),
+  )
+})
+it('keeps child output and completion out of the parent conversation', async () => {
+  const { run } = await fixture('child-events')
+  run.onEvent = vi.fn<NonNullable<AgentRun['onEvent']>>()
+  await codexAdapter.run(run)
+  expect(run.onText).toHaveBeenCalledExactlyOnceWith('Parent output')
+  expect(run.onEvent).toHaveBeenCalledWith(
+    'turn/completed',
+    expect.objectContaining({ threadId: 'child' }),
   )
 })

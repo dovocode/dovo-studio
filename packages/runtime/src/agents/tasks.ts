@@ -48,6 +48,11 @@ export class Tasks {
     )
     this.queue = new TaskQueue(store, activity)
   }
+  requireIdle(id: string) {
+    const task = this.store.task(id)
+    if (task.status === 'running' || this.running.has(id))
+      throw new HttpError(409, 'Stop the active turn before archiving or deleting this thread.')
+  }
   feedback(value: unknown) {
     const input = taskFeedbackSchema.parse(value)
     const task = this.store.task(input.id)

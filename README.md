@@ -815,3 +815,18 @@ See [releases, local iPhone updates and Live Activities](docs/releases-and-updat
 ## Inspiration
 
 The developer experience is inspired by T3 Code, Codex, and Claude.
+
+### Thread archive and subagents
+
+Settle keeps a finished thread in the sidebar’s Settled group. **Archive thread** hides it from
+normal lists; select **Archived** in the thread filter to restore it. **Delete thread** asks for
+confirmation and removes its conversation, stored attachments, and thread activity. Project files
+and worktrees remain on disk. Stop active turns, close terminals, and finish or cancel linked
+automation runs before deleting a thread.
+
+The task workspace **Agents** panel shows subagents reported by Codex and Claude, including their
+last reported activity, elapsed time, and available model, reasoning, and usage details. Expand a
+row for its prompt and latest update. This data is saved on the task’s host and appears on desktop,
+web, and mobile. Earlier runs without captured subagent data are not reconstructed. Unsupported
+harnesses and unreported metrics remain empty; offline or ended runs do not show stale agents as
+currently working.

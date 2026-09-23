@@ -37,6 +37,7 @@ export const codexAdapter: AgentAdapter = {
       new JsonLineWriter(child.stdin),
     )
     const questionItems = new Set<string>()
+    let threadId = run.sessionId
     let turnFinished = false
     let stderr = ''
     child.stderr.on('data', (data) => {
@@ -101,6 +102,9 @@ export const codexAdapter: AgentAdapter = {
       run.onEvent?.(method, params)
       const value = object.safeParse(params)
       if (!value.success) return
+      // Child notifications feed the Agents panel, never the parent transcript or completion.
+      if (threadId && typeof value.data.threadId === 'string' && value.data.threadId !== threadId)
+        return
       if (method === 'item/agentMessage/delta' && typeof value.data.delta === 'string')
         run.onText(value.data.delta)
       if ((method === 'item/started' || method === 'item/completed') && run.onQuestions) {
@@ -199,6 +203,7 @@ export const codexAdapter: AgentAdapter = {
       const thread = z
         .object({ thread: z.object({ id: z.string(), daybreakEnabled: z.boolean().nullish() }) })
         .parse(response).thread
+      threadId = thread.id
       run.onSession(thread.id)
       if (
         run.tools !== 'none' &&

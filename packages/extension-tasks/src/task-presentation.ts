@@ -23,26 +23,30 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
           : seconds < 86400
             ? `${Math.floor(seconds / 3600)}h ago`
             : `${Math.floor(seconds / 86400)}d ago`
-  const state = task.archived
-    ? 'Settled'
-    : isSnoozed(task, now)
-      ? 'Snoozed'
-      : needsInput
-        ? 'Needs input'
-        : hasUnviewedTaskCompletion(task)
-          ? 'Done'
-          : {
-              draft: 'Draft',
-              running: 'Working',
-              review: 'Review',
-              done: 'Finished',
-              failed: 'Failed',
-              cancelled: 'Stopped',
-            }[task.status]
+  const state = task.archivedAt
+    ? 'Archived'
+    : task.archived
+      ? 'Settled'
+      : isSnoozed(task, now)
+        ? 'Snoozed'
+        : needsInput
+          ? 'Needs input'
+          : hasUnviewedTaskCompletion(task)
+            ? 'Done'
+            : {
+                draft: 'Draft',
+                running: 'Working',
+                review: 'Review',
+                done: 'Finished',
+                failed: 'Failed',
+                cancelled: 'Stopped',
+              }[task.status]
   const compactLabel =
     state === 'Working'
       ? `Working ${time}`.trim()
-      : ['Needs input', 'Failed', 'Stopped', 'Done', 'Settled', 'Snoozed'].includes(state)
+      : ['Needs input', 'Failed', 'Stopped', 'Done', 'Archived', 'Settled', 'Snoozed'].includes(
+            state,
+          )
         ? state
         : time.replace(' ago', '') || state
   return { state, time, compactLabel, label: [state, time].filter(Boolean).join(' · ') }

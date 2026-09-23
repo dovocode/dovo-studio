@@ -217,6 +217,13 @@ export class SimulatorPreviews {
     await session.queue
     await session.driver.close()
   }
+  async closeTask(taskId: string) {
+    await Promise.all(
+      [...this.sessions]
+        .filter(([, entry]) => entry.taskId === taskId)
+        .map(([id]) => this.close(id)),
+    )
+  }
   async closeDevice(taskId: string, deviceId: string) {
     await Promise.all(
       [...this.sessions]

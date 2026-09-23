@@ -48,8 +48,11 @@ export function TaskList({
     .filter(
       ({ task: t, source, key, projectKey, projectName }) =>
         (!projectId || projectKey === projectId) &&
-        (filter === 'active' || (filter === 'archived' ? t.archived : !t.archived)) &&
-        (['active', 'archived'].includes(filter) ||
+        (filter === 'archive' ? !!t.archivedAt : !t.archivedAt) &&
+        (filter === 'archive' ||
+          filter === 'active' ||
+          (filter === 'archived' ? t.archived : !t.archived)) &&
+        (['active', 'archived', 'archive'].includes(filter) ||
           (filter === 'snoozed' && isSnoozed(t, now)) ||
           (filter === 'input' ? needsInput.has(key) : t.status === filter)) &&
         [
@@ -84,9 +87,9 @@ export function TaskList({
     },
     {
       id: 'settled',
-      name: 'Settled',
+      name: filter === 'archive' ? 'Archived' : 'Settled',
       tasks: tasks.filter(({ task }) => task.archived),
-      open: filter === 'archived',
+      open: filter === 'archived' || filter === 'archive',
     },
   ].filter((g) => g.tasks.length)
   return (
@@ -129,6 +132,7 @@ export function TaskList({
           <option value="failed">Failed</option>
           <option value="snoozed">Snoozed</option>
           <option value="archived">Settled</option>
+          <option value="archive">Archived</option>
         </ChoicePicker>
         <ChoicePicker
           aria-label="Thread sort"

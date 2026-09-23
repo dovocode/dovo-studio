@@ -19,25 +19,29 @@ export function showTaskDone(task: Task, needsInput: boolean, now: number) {
 /** Time supplements state without hiding warnings or unread results. */
 export function taskRowStatus(task: Task, needsInput: boolean, online: boolean, now: number) {
   const turn = task.turns?.at(-1)
-  const state = needsInput
-    ? 'Needs input'
-    : isSnoozed(task, now)
-      ? 'Snoozed'
-      : task.status === 'running'
-        ? online
-          ? 'Working'
-          : 'Was working'
-        : task.status === 'failed'
-          ? 'Failed'
-          : showTaskDone(task, needsInput, now)
-            ? 'Done'
-            : task.status === 'review'
-              ? 'Review'
-              : task.status === 'done'
-                ? 'Finished'
-                : task.status === 'cancelled'
-                  ? 'Stopped'
-                  : 'Draft'
+  const state = task.archivedAt
+    ? 'Archived'
+    : task.archived
+      ? 'Settled'
+      : needsInput
+        ? 'Needs input'
+        : isSnoozed(task, now)
+          ? 'Snoozed'
+          : task.status === 'running'
+            ? online
+              ? 'Working'
+              : 'Was working'
+            : task.status === 'failed'
+              ? 'Failed'
+              : showTaskDone(task, needsInput, now)
+                ? 'Done'
+                : task.status === 'review'
+                  ? 'Review'
+                  : task.status === 'done'
+                    ? 'Finished'
+                    : task.status === 'cancelled'
+                      ? 'Stopped'
+                      : 'Draft'
   const date = task.status === 'running' ? turn?.startedAt : turn?.finishedAt
   return date && !needsInput ? `${state} · ${age(date, now)}` : state
 }

@@ -1,3 +1,4 @@
+import { subagentSchema } from './subagents.js'
 import { jiraBindingSchema, jiraSourceSchema, jiraIssueLinkSchema } from './jira.js'
 import { taskWorkItemSchema } from './work-task.js'
 import { resourceSettingsSchema } from './resources.js'
@@ -160,7 +161,10 @@ export const taskSchema = z.object({
   lastViewedTurnId: z.string().min(1).max(200).optional(),
   viewedRevision: z.number().int().nonnegative().optional(),
   pinned: z.boolean().optional(),
+  // Legacy archived flag means Settled; archivedAt hides the thread from normal lists.
   archived: z.boolean().optional(),
+  archivedAt: z.string().datetime().nullable().optional(),
+  subagents: z.array(subagentSchema).optional(),
   snoozedUntil: z.string().datetime().nullable().optional(),
   agentOverrides: taskModelSchema.optional(),
   harness: taskHarnessSchema.nullable().optional(),

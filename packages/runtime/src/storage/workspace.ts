@@ -87,7 +87,16 @@ export class WorkspaceStore {
               `This task uses ${locked}. After the first message, choose models and settings within the same provider. Create a new task to use another provider.`,
             )
           const providerLock = locked ?? lockedTaskProvider(task, parsed.agents)
-          return providerLock ? { ...task, providerLock } : task
+          const updated =
+            previous?.status === 'running' && task.status !== 'running'
+              ? {
+                  ...task,
+                  subagents: task.subagents?.map((agent) =>
+                    agent.status === 'working' ? { ...agent, status: 'unknown' as const } : agent,
+                  ),
+                }
+              : task
+          return providerLock ? { ...updated, providerLock } : updated
         }),
     }
     this.db.transaction(() => {
@@ -155,6 +164,8 @@ export class WorkspaceStore {
           record.lastViewedTurnId !== undefined ||
           record.viewedRevision !== undefined ||
           record.turns !== undefined ||
+          record.subagents !== undefined ||
+          record.archivedAt !== undefined ||
           record.queue !== undefined ||
           record.consumedMessageIds !== undefined)
       )
@@ -239,6 +250,7 @@ export class WorkspaceStore {
       current[key] = change.after ?? undefined
       changed = true
     }
+    if (patch.collection === 'tasks' && current.archived === false) current.archivedAt = undefined
     if (!changed) return
     this.update((w) => ({
       ...w,

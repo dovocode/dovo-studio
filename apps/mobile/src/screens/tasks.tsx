@@ -65,14 +65,15 @@ export default function TasksScreen() {
     return allTasks
       .filter(
         ({ task, projectName, runtimeName, needsInput }) =>
-          (filter === 'archived' ? task.archived : !task.archived) &&
+          (filter === 'archive' ? !!task.archivedAt : !task.archivedAt) &&
+          (filter === 'archive' || (filter === 'archived' ? task.archived : !task.archived)) &&
           (filter === 'snoozed'
             ? isSnoozed(task, now)
             : filter === 'active'
               ? !isSnoozed(task, now)
               : filter === 'input'
                 ? needsInput
-                : filter === 'archived' || task.status === filter) &&
+                : filter === 'archive' || filter === 'archived' || task.status === filter) &&
           (!query ||
             [
               task.title,
@@ -176,11 +177,13 @@ export default function TasksScreen() {
             </View>
             {(filter !== 'active' || sort !== 'priority') && (
               <Text style={styles.muted}>
-                {filter === 'archived'
-                  ? 'Settled'
-                  : filter === 'input'
-                    ? 'Needs input'
-                    : filter[0]?.toUpperCase() + filter.slice(1)}{' '}
+                {filter === 'archive'
+                  ? 'Archived'
+                  : filter === 'archived'
+                    ? 'Settled'
+                    : filter === 'input'
+                      ? 'Needs input'
+                      : filter[0]?.toUpperCase() + filter.slice(1)}{' '}
                 · {taskSortOptions.find((item) => item.id === sort)?.name}
               </Text>
             )}
@@ -228,6 +231,7 @@ export default function TasksScreen() {
               { id: 'review', name: 'Review' },
               { id: 'snoozed', name: 'Snoozed' },
               { id: 'archived', name: 'Settled' },
+              { id: 'archive', name: 'Archived' },
             ]}
             onChange={(filter) => setView((current) => ({ ...current, filter }))}
           />

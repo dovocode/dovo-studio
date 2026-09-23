@@ -16,10 +16,12 @@ export function TaskSettings({
   task,
   onBack,
   onBusyChange,
+  onDeleted,
 }: {
   task: Task
   onBack: () => void
   onBusyChange: (busy: boolean) => void
+  onDeleted?: () => void
 }) {
   const { call, connected } = useRuntime(),
     { act, busy, error } = useAction()
@@ -84,7 +86,7 @@ export function TaskSettings({
         onPress={() => setHarness(true)}
       />
       <BranchPicker repositoryId={task.repositoryId} taskId={task.id} />
-      <LifecycleActions task={task} />
+      <LifecycleActions task={task} onDeleted={onDeleted} />
       {task.sessionId && (
         <Action
           secondary

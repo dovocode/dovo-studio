@@ -7,9 +7,11 @@ import { snoozeOptions, useTaskLifecycle } from './use-task-lifecycle'
 export function LifecycleActions({
   task,
   allowReadState = false,
+  onDeleted,
 }: {
   task: Task
   allowReadState?: boolean
+  onDeleted?: () => void
 }) {
   const {
     enabled,
@@ -17,11 +19,13 @@ export function LifecycleActions({
     error,
     togglePinned,
     toggleSettled,
+    toggleArchived,
+    deleteThread,
     snooze,
     readStateEnabled,
     unread,
     toggleRead,
-  } = useTaskLifecycle(task)
+  } = useTaskLifecycle(task, undefined, onDeleted)
   return (
     <View style={{ gap: 10 }}>
       {allowReadState && !task.archived && latestCompletedTaskTurn(task) && (
@@ -39,12 +43,14 @@ export function LifecycleActions({
           disabled={!enabled || busy}
           onPress={togglePinned}
         />
-        <Action
-          secondary
-          label={task.archived ? 'Reopen task' : 'Settle task'}
-          disabled={!enabled || busy || task.status === 'running'}
-          onPress={toggleSettled}
-        />
+        {!task.archivedAt && (
+          <Action
+            secondary
+            label={task.archived ? 'Reopen task' : 'Settle task'}
+            disabled={!enabled || busy || task.status === 'running'}
+            onPress={toggleSettled}
+          />
+        )}
       </View>
       {!task.archived && (
         <View style={styles.row}>
@@ -70,6 +76,20 @@ export function LifecycleActions({
           )}
         </View>
       )}
+      <View style={styles.row}>
+        <Action
+          secondary
+          label={task.archivedAt ? 'Restore thread' : 'Archive thread'}
+          disabled={!enabled || busy || task.status === 'running'}
+          onPress={toggleArchived}
+        />
+        <Action
+          secondary
+          label="Delete thread…"
+          disabled={!enabled || busy || task.status === 'running'}
+          onPress={deleteThread}
+        />
+      </View>
       {!!error && <Text style={styles.error}>{error}</Text>}
     </View>
   )

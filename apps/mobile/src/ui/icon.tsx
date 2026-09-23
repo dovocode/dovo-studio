@@ -3,6 +3,7 @@ import { Text } from './text'
 import { SymbolView } from 'expo-symbols'
 import { colors } from './theme'
 export const symbols = {
+  agents: ['person.2', '♙'],
   expand: ['arrow.up.left.and.arrow.down.right', '⤢'],
   collapse: ['arrow.down.right.and.arrow.up.left', '⤡'],
   add: ['plus', '+'],

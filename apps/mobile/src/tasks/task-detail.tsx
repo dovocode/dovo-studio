@@ -1,3 +1,4 @@
+import { TaskAgents } from './task-agents'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BrowserPane } from './browser-pane'
 import { Conversation } from './conversation'
@@ -33,22 +34,26 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
   const runtimeHost =
     (latestTurn ? latestTurn.runtimeHost : snapshot?.runtimeHost) ?? 'Unknown device'
   const subtitle = [repository?.name, runtimeHost].filter(Boolean).join(' · ')
-  const status = needsInput
-    ? 'Needs input'
-    : task.status === 'running'
-      ? 'Working'
-      : task.status === 'failed'
-        ? 'Failed'
-        : task.status === 'review'
-          ? 'Ready for review'
-          : task.status === 'done'
-            ? 'Finished'
-            : task.status === 'cancelled'
-              ? 'Stopped'
-              : 'Draft'
+  const status = task.archivedAt
+    ? 'Archived'
+    : task.archived
+      ? 'Settled'
+      : needsInput
+        ? 'Needs input'
+        : task.status === 'running'
+          ? 'Working'
+          : task.status === 'failed'
+            ? 'Failed'
+            : task.status === 'review'
+              ? 'Ready for review'
+              : task.status === 'done'
+                ? 'Finished'
+                : task.status === 'cancelled'
+                  ? 'Stopped'
+                  : 'Draft'
   const [checkpoint, setCheckpoint] = useState('')
   const [terminalId, setTerminalId] = useState('')
-  const [pane, setPane] = useState<'chat' | 'diff' | 'terminal' | 'browser'>('chat')
+  const [pane, setPane] = useState<'chat' | 'diff' | 'terminal' | 'browser' | 'agents'>('chat')
   const [expandedPreview, setExpandedPreview] = useState(false)
   const [settings, setSettings] = useState(false)
   const [settingsBusy, setSettingsBusy] = useState(false)
@@ -67,7 +72,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
         gestureEnabled={pane !== 'browser'}
         onBack={pane === 'browser' ? onBack : undefined}
         leading={<Action secondary label="Back" onPress={onBack} />}
-        buttons={(['chat', 'diff', 'terminal', 'browser'] as const).map((tab) => ({
+        buttons={(['chat', 'diff', 'terminal', 'browser', 'agents'] as const).map((tab) => ({
           label:
             tab === 'chat'
               ? 'Chat'
@@ -75,7 +80,9 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
                 ? `Changes (${task.files.length})`
                 : tab === 'terminal'
                   ? 'Terminal'
-                  : 'Browser',
+                  : tab === 'agents'
+                    ? 'Agents'
+                    : 'Browser',
           icon: tab === 'diff' ? 'changes' : tab === 'browser' ? 'web' : tab,
           selected: pane === tab,
           onPress: () => {
@@ -181,6 +188,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
           <MessageQueue task={task} />
           <Composer key={task.id} task={task} />
         </View>
+        {pane === 'agents' && <TaskAgents task={task} />}
         {pane === 'browser' && (
           <BrowserPane taskId={task.id} expanded={expandedPreview} onExpand={setExpandedPreview} />
         )}
@@ -195,6 +203,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
             key={task.id}
             task={task}
             onBack={() => setSettings(false)}
+            onDeleted={onBack}
             onBusyChange={setSettingsBusy}
           />
         </Sheet>

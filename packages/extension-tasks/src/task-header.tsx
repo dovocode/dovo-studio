@@ -4,6 +4,7 @@ import { taskPullLinks } from './task-pull-links'
 import { TaskActions } from './task-actions'
 import { useWorkspace, useStudioHost, encodeWorkTarget, issueLabel } from '@dovo/studio-core'
 import {
+  Bot,
   CircleCheck,
   CircleX,
   Globe,
@@ -20,7 +21,7 @@ import type { Task } from '@dovo/studio-core'
 import { Badge, Button, IconButton, cn } from '@dovo/studio-ui'
 import { taskPresentation } from './task-presentation'
 
-export type TaskSurface = 'chat' | 'changes' | 'terminal' | 'browser'
+export type TaskSurface = 'chat' | 'changes' | 'terminal' | 'browser' | 'agents'
 export function TaskHeader({
   task,
   onSidebar,
@@ -165,6 +166,7 @@ export function TaskHeader({
               [
                 ['chat', 'Chat', MessageSquare, 0],
                 ['changes', 'Changes', Files, task.files.length],
+                ['agents', 'Agents', Bot, task.subagents?.length ?? 0],
                 ['terminal', 'Terminal', Terminal, terminals],
                 ['browser', 'Browser', Globe, 0],
               ] as const
