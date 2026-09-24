@@ -89,5 +89,6 @@ exec "$base/libexec/node" "$base/libexec/server/dist/server-cli.js" "$@"
   })
   console.log(join(output, name))
 } finally {
-  await rm(stage, { recursive: true, force: true })
+  // Windows may briefly retain file handles after the PTY child exits.
+  await rm(stage, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }

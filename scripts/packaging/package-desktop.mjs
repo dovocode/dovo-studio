@@ -181,5 +181,6 @@ try {
   })
   if (process.platform === 'darwin') await desktopMiseArchive(root)
 } finally {
-  await rm(stage, { recursive: true, force: true })
+  // Windows may briefly retain file handles after the PTY child exits.
+  await rm(stage, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }
