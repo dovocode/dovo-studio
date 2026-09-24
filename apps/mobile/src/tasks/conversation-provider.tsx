@@ -2,7 +2,7 @@ import { useApplicationState } from '../runtime/application-state'
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
 import { AssistantRuntimeProvider } from '@assistant-ui/react-native'
 import { useExternalStoreRuntime } from '@assistant-ui/core/react'
-import { type Task } from '@dovo/protocol'
+import { visiblePendingMessage, type PendingMessage, type Task } from '@dovo/protocol'
 import { useConversationActions } from './use-conversation-actions'
 import { useToolActivity } from './use-tool-activity'
 import { conversationMessages } from './conversation-messages'
@@ -19,10 +19,14 @@ type Conversation = {
   followRequest: number
 }
 const Context = createContext<Conversation | null>(null)
+const PendingContext = createContext<PendingMessage | null>(null)
 export function useTaskConversation() {
   const value = useContext(Context)
   if (!value) throw new Error('Task conversation provider is missing')
   return value
+}
+export function usePendingConversationMessage() {
+  return useContext(PendingContext)
 }
 export function ConversationProvider({
   task,
@@ -45,22 +49,25 @@ export function ConversationProvider({
     if ((!visible || answeringQuestion || task.archived) && dictating) finishDictation()
   }, [visible, answeringQuestion, task.archived, dictating, finishDictation])
   const activity = useToolActivity(task.id, visible, task.status === 'running')
-  const messages = useMemo(
-    () => conversationMessages(task, activity.events),
-    [task, activity.events],
+  const pendingMessage = useMemo(
+    () => visiblePendingMessage(task, actions.pendingMessage),
+    [task.id, task.messages, task.queue, actions.pendingMessage],
   )
-  const legacyEvents = useMemo(
-    () =>
-      taskToolEvents(task, activity.events).filter(
-        (event) =>
-          !task.turns?.some(
-            (turn) =>
-              turn.id === event.turnId &&
-              task.messages.some((message) => message.id === turn.assistantId),
-          ),
-      ),
-    [activity.events, task.id, task.status, task.turns, task.messages],
-  )
+  const messages = useMemo(() => {
+    const displayed = pendingMessage
+      ? { ...task, messages: [...task.messages, pendingMessage.message] }
+      : task
+    return conversationMessages(displayed, activity.events)
+  }, [task, activity.events, pendingMessage])
+  const legacyEvents = useMemo(() => {
+    const messageIds = new Set(task.messages.map((message) => message.id))
+    const visibleTurns = new Set(
+      task.turns?.filter((turn) => messageIds.has(turn.assistantId)).map((turn) => turn.id),
+    )
+    return taskToolEvents(task, activity.events).filter(
+      (event) => !event.turnId || !visibleTurns.has(event.turnId),
+    )
+  }, [activity.events, task.id, task.status, task.turns, task.messages])
   const runtime = useExternalStoreRuntime({
     messages,
     convertMessage: (message) => message,
@@ -114,7 +121,9 @@ export function ConversationProvider({
         stop: () => runtime.thread.cancelRun(),
       }}
     >
-      <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
+      <PendingContext.Provider value={pendingMessage}>
+        <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
+      </PendingContext.Provider>
     </Context.Provider>
   )
 }

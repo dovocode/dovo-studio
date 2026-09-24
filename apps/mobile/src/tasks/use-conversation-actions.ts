@@ -1,3 +1,4 @@
+import type { PendingMessage } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../runtime/application-state'
@@ -26,6 +27,7 @@ export function useConversationActions(task: Task) {
     storedDraft = useDraft(task.id, task.draft),
     action = useAction(),
     cancellation = useAction()
+  const [pendingMessage, setPendingMessage] = useApplicationState<PendingMessage | null>(null)
   const { busy } = action
   const failedSend = useRef<SendAttempt | null>(null)
   const run = (work: () => Promise<unknown> | Effect.Effect<unknown, unknown>) => {
@@ -79,7 +81,7 @@ export function useConversationActions(task: Task) {
       [...task.messages, ...(task.queue ?? [])].map((message) => message.id),
     )
     if (acknowledged) storedDraft.update('')
-  }, [activeId, task, storedDraft.ready, storedDraft.text])
+  }, [activeId, task.id, task.messages, task.queue, task.draftAttachments, storedDraft.ready])
   const agent = resolveTaskAgent(task, snapshot?.workspace.agents ?? [])
   const firstMessage = !task.messages.length && !task.queue?.length && !task.turns?.length
   const checkoutEditable = canChangeTaskCheckout(task)
@@ -121,6 +123,7 @@ export function useConversationActions(task: Task) {
   const patch = (changes: Parameters<typeof patchEffect>[0]) =>
     runClientEffect(patchEffect(changes))
   const submit = (mode: 'queue' | 'steer' = 'queue', input = draft.text) => {
+    let submittedId: string | undefined
     return mobileWorkflow(function* () {
       Keyboard.dismiss()
       dictation.reset()
@@ -130,6 +133,18 @@ export function useConversationActions(task: Task) {
         text,
         attachmentIds,
         mode,
+      })
+      submittedId = attempt.id
+      setPendingMessage({
+        taskId: task.id,
+        state: 'sending',
+        message: {
+          id: attempt.id,
+          role: 'user',
+          text,
+          createdAt: new Date().toISOString(),
+          attachments: task.draftAttachments,
+        },
       })
       if (firstMessage) {
         const title =
@@ -178,9 +193,21 @@ export function useConversationActions(task: Task) {
           }),
         ),
       )
-    })
+    }).pipe(
+      Effect.catchAll((error) =>
+        mobileWorkflow(function* () {
+          setPendingMessage((pending) =>
+            pending?.taskId === task.id && pending.message.id === submittedId
+              ? { ...pending, state: 'failed' }
+              : pending,
+          )
+          return yield* Effect.fail(error)
+        }),
+      ),
+    )
   }
   return {
+    pendingMessage,
     call,
     stopping: cancellation.busy,
     stop: () =>

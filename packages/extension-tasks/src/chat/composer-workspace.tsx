@@ -1,7 +1,7 @@
 import { TaskMachineSelector } from './task-machine-selector'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Schema } from 'effect'
-import { Check, ChevronDown, Folder, GitBranch } from 'lucide-react'
+import { Check, ChevronDown, Folder, GitBranch, GitFork } from 'lucide-react'
 import {
   branchesSchema,
   defaultWorktreeBase,
@@ -70,7 +70,7 @@ export function ComposerWorkspace({
               side="top"
               align="start"
               sideOffset={8}
-              className="z-50 min-w-48 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
+              className="z-50 w-80 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
             >
               <DropdownMenu.RadioGroup
                 value={task.execution ?? 'main'}
@@ -105,15 +105,32 @@ export function ComposerWorkspace({
                     value={mode}
                     data-value={mode}
                     disabled={disabled}
-                    className={itemClass}
+                    className={`${itemClass} my-1 min-h-20 justify-start gap-3 border border-transparent data-[state=checked]:border-border`}
                   >
-                    {mode === 'main' ? 'Local checkout' : 'Worktree'}
+                    {mode === 'main' ? (
+                      <Folder className="size-5 shrink-0" />
+                    ) : (
+                      <GitFork className="size-5 shrink-0" />
+                    )}
+                    <span className="flex-1 space-y-1">
+                      <span className="block font-medium text-foreground">
+                        {mode === 'main' ? 'Local checkout' : 'New worktree'}
+                      </span>
+                      <span className="block text-[11px] leading-relaxed text-muted-foreground">
+                        {mode === 'main'
+                          ? `Use ${repository?.branch || 'the current branch'} and its local changes.`
+                          : 'Separate folder and branch. Your current checkout stays untouched.'}
+                      </span>
+                    </span>
                     <DropdownMenu.ItemIndicator>
                       <Check className="size-3" />
                     </DropdownMenu.ItemIndicator>
                   </DropdownMenu.RadioItem>
                 ))}
               </DropdownMenu.RadioGroup>
+              <p className="px-3 pb-2 pt-1 text-[11px] leading-relaxed text-muted-foreground">
+                Created on first send. The branch name uses your AI-generated task title.
+              </p>
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>

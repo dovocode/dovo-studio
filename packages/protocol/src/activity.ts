@@ -28,6 +28,26 @@ const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const pending = (status: string) =>
   ['started', 'running', 'in_progress', 'pending', 'inProgress'].includes(status)
 type Event = Schema.Schema.Type<typeof activitySchema>['events'][number]
+
+/** Preserve references on unchanged polls without ignoring same-ID tool updates. */
+export function retainActivityEvents(previous: Event[], next: Event[]): Event[] {
+  if (previous === next) return previous
+  if (previous.length !== next.length) return next
+  return previous.every((event, index) => {
+    const other = next[index]!
+    return (
+      event.id === other.id &&
+      event.time === other.time &&
+      event.kind === other.kind &&
+      event.scope === other.scope &&
+      event.summary === other.summary &&
+      event.payload === other.payload
+    )
+  })
+    ? previous
+    : next
+}
+
 type Tool = Event & {
   status: string
   turnId?: string

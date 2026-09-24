@@ -1,3 +1,4 @@
+import type { PendingMessage } from '@dovo/protocol'
 import { conversationTurns, conversationTurnLabel } from './conversation-turns'
 import { useMemo } from 'react'
 import { TurnCheckpoint } from './turn-checkpoint'
@@ -16,7 +17,15 @@ import {
   Button,
 } from '@dovo/studio-ui'
 import type { Task } from '@dovo/studio-core'
-export function ChatThread({ task, onReview }: { task: Task; onReview: () => void }) {
+export function ChatThread({
+  task,
+  onReview,
+  pending,
+}: {
+  task: Pick<Task, 'id' | 'messages' | 'turns' | 'files' | 'status' | 'queue'>
+  onReview: () => void
+  pending?: PendingMessage | null
+}) {
   const activity = useTaskActivity(task.id)
   const turns = useMemo(
     () => new Map(task.turns?.map((turn) => [turn.assistantId, turn])),
@@ -119,6 +128,13 @@ export function ChatThread({ task, onReview }: { task: Task; onReview: () => voi
                         </span>
                       )}
                     </MessageContent>
+                  )}
+                  {pending?.message.id === message.id && (
+                    <p role="status" className="text-[11px] text-muted-foreground">
+                      {pending.state === 'failed'
+                        ? 'Not confirmed · retry from the composer'
+                        : 'Sending…'}
+                    </p>
                   )}
                   {!!message.text && <MessageCopy text={message.text} />}
                   {turn?.error && (

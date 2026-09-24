@@ -6,6 +6,7 @@ import {
   startPolling,
   clientScopeKey,
   recentTools,
+  retainActivityEvents,
   activitySummary,
   toolPresentation,
   useWorkspace,
@@ -52,7 +53,16 @@ export function useTaskActivity(taskId: string) {
         { scope: taskId, kind: 'task-activity' },
         activitySchema,
       )
-      if (!stopped) setSnapshot({ identity, events: result.events, error: '' })
+      if (!stopped)
+        setSnapshot((previous) => {
+          const events =
+            previous.identity === identity
+              ? retainActivityEvents(previous.events, result.events)
+              : result.events
+          return previous.identity === identity && !previous.error && events === previous.events
+            ? previous
+            : { identity, events, error: '' }
+        })
     })
     const polling = startPolling(load, {
       interval: 2000,

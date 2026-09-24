@@ -1,3 +1,4 @@
+import { createDraftCreation } from './draft-creation'
 import { nativeEffect } from '../runtime/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../runtime/application-state'
@@ -24,14 +25,15 @@ export function NewTask({
   onCreated: (id: string) => void
   onCancel: () => void
 }) {
-  const { snapshot, call, connected } = useRuntime()
+  const { snapshot, call, connected, profile } = useRuntime()
   const [repositoryId, setRepositoryId] = useApplicationState(
     selectedRepositoryId ?? initial?.repositoryId ?? '',
   )
-  const [requested, setRequested] = useApplicationState(false)
+  const [requested, setRequested] = useApplicationState(!!selectedRepositoryId)
   const [id] = useApplicationState(() => initial?.id ?? randomUUID()),
     [error, setError] = useApplicationState(''),
     [retry, setRetry] = useApplicationState(0)
+  const createRequest = useRef(createDraftCreation())
   const callbacks = useRef({
     onCreated,
     onCancel,
@@ -48,7 +50,8 @@ export function NewTask({
     if (!connected || !requested) return
     let active = true
     const state = workspace.current
-    if (!state?.repositories.some((repository) => repository.id === repositoryId)) {
+    if (!state) return
+    if (!state.repositories.some((repository) => repository.id === repositoryId)) {
       setError('Choose an available project before opening the chat.')
       setRequested(false)
       return
@@ -73,24 +76,19 @@ export function NewTask({
       example: false,
     }
     setError('')
+    const requestKey = JSON.stringify([profile?.id, id, repositoryId, retry])
+    const request = existing
+      ? Promise.resolve()
+      : createRequest.current(requestKey, () =>
+          call(
+            '/api/workspace',
+            { collection: 'tasks', id, create: task, changes: {} },
+            mutableStruct({ revision: Schema.Number.pipe(Schema.finite()) }),
+            'PATCH',
+          ),
+        )
     void runClientEffect(
-      nativeEffect(() =>
-        existing
-          ? Promise.resolve()
-          : call(
-              '/api/workspace',
-              {
-                collection: 'tasks',
-                id,
-                create: task,
-                changes: {},
-              },
-              mutableStruct({
-                revision: Schema.Number.pipe(Schema.finite()),
-              }),
-              'PATCH',
-            ),
-      )
+      nativeEffect(() => request)
         .pipe(
           Effect.flatMap(() =>
             nativeEffect(() => {
@@ -109,7 +107,17 @@ export function NewTask({
     return () => {
       active = false
     }
-  }, [id, initial, call, connected, retry, requested, repositoryId])
+  }, [
+    id,
+    initial,
+    call,
+    connected,
+    profile?.id,
+    retry,
+    requested,
+    repositoryId,
+    snapshot?.workspace,
+  ])
   return (
     <View style={styles.content}>
       <Text style={styles.title}>{requested ? 'Opening draft chat…' : 'Choose a project'}</Text>

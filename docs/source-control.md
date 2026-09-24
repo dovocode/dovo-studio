@@ -105,3 +105,18 @@ your actual repositories.
 
 See [Issues, pipelines and Jira](issues-pipelines-jira.md) for signed-in CLI setup, Jira linking and
 provider-specific run controls.
+
+## Starting a thread
+
+Choose the project first. When the same repository is available on several devices, choose its host
+before opening the draft. A project with one checkout opens directly. The draft does not run until
+its first message is sent. The composer lets you choose the local checkout or a separate worktree
+and its base branch before that first message.
+
+New worktree branches use the AI-generated task title, normalized to a Git-safe name with a unique
+task suffix. This reuses the configured title-generation harness, model and reasoning settings
+without a second naming request. Existing branches are not renamed when the task title changes.
+
+Sent messages appear immediately with a Sending status while naming and delivery complete. A server
+acknowledgement replaces the local preview by message ID; an unconfirmed send keeps its draft
+available for retry.

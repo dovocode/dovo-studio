@@ -1,3 +1,4 @@
+import { taskBranchName } from './task-branch.js'
 import { defaultWorktreeBase, canChangeTaskCheckout } from '@dovo/protocol'
 import { listBranches } from './branches.js'
 import { fetchPullHead } from './pull-head.js'
@@ -52,7 +53,14 @@ export class TaskCheckout {
     const head = task.pullRequest
       ? await fetchPullHead(this.git, root, task.pullRequest, key)
       : (base ?? 'HEAD')
-    await this.git.command(root, ['worktree', 'add', '-b', `dovo/task-${key}`, directory, head])
+    await this.git.command(root, [
+      'worktree',
+      'add',
+      '-b',
+      taskBranchName(task.title, key),
+      directory,
+      head,
+    ])
     return this.prepare(id, directory)
   }
   private async prepare(id: string, directory: string) {

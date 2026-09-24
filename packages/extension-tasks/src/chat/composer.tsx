@@ -1,3 +1,4 @@
+import type { PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { generatedTitleSchema, resolveTaskAgent } from '@dovo/studio-core'
 import { AttachmentPicker } from './attachment-picker'
@@ -17,7 +18,13 @@ import {
 } from '@dovo/studio-ui'
 import { ComposerHarnessControls } from './composer-harness-controls'
 import { ComposerWorkspace } from './composer-workspace'
-export function Composer({ task }: { task: Task }) {
+export function Composer({
+  task,
+  onPending,
+}: {
+  task: Task
+  onPending: (pending: PendingMessage | null) => void
+}) {
   const { workspace, setWorkspace, request, connected, connection, flush, snapshot } =
     useWorkspace()
   const [error, setError] = useApplicationState(''),
@@ -85,6 +92,18 @@ export function Composer({ task }: { task: Task }) {
         attachmentIds,
         mode,
       }
+    const pending: PendingMessage = {
+      taskId: task.id,
+      state: 'sending',
+      message: {
+        id: attempt.current.id,
+        role: 'user',
+        text,
+        createdAt: new Date().toISOString(),
+        attachments: attachments.files,
+      },
+    }
+    onPending(pending)
     try {
       await flush()
       if (firstMessage) {
@@ -125,14 +144,7 @@ export function Composer({ task }: { task: Task }) {
         setWorkspace((w) =>
           updateTask(w, task.id, (t) => ({
             ...t,
-            messages: [
-              ...t.messages,
-              {
-                id: crypto.randomUUID(),
-                role: 'user',
-                text,
-              },
-            ],
+            messages: [...t.messages, pending.message],
           })),
         )
       setWorkspace((w) =>
@@ -143,6 +155,7 @@ export function Composer({ task }: { task: Task }) {
       )
       attempt.current = null
     } catch (e) {
+      onPending({ ...pending, state: 'failed' })
       setError(String(e))
     } finally {
       sendingRequest.current = false

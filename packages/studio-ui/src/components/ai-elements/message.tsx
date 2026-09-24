@@ -1,5 +1,5 @@
 // Adapted from Vercel AI Elements (MIT), packages/elements/src/message.tsx.
-import { useCallback, useMemo, type HTMLAttributes } from 'react'
+import { memo, useCallback, useMemo, type HTMLAttributes } from 'react'
 import { resolveMarkdownLink } from '@dovo/protocol'
 import { Streamdown } from 'streamdown'
 import { code } from '@streamdown/code'
@@ -35,7 +35,7 @@ export function MessageContent({ className, ...props }: HTMLAttributes<HTMLDivEl
     />
   )
 }
-export function MessageResponse({
+export const MessageResponse = memo(function MessageResponse({
   children,
   isStreaming = false,
   baseURL,
@@ -70,7 +70,7 @@ export function MessageResponse({
       {children}
     </Streamdown>
   )
-}
+})
 export function MessageActions({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div className={cn('flex items-center gap-1 group-[.is-user]:ml-auto', className)} {...props} />

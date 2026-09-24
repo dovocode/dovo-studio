@@ -79,3 +79,4 @@ export {
   retainOverviewSnapshot,
   shouldPublishOverview,
 } from './overview-state.js'
+export { visiblePendingMessage, type PendingMessage } from './pending-message.js'

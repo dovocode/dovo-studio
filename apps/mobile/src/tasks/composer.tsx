@@ -1,3 +1,4 @@
+import { CheckoutChoice } from './checkout-choice'
 import { TaskMachineSelector } from './task-machine-selector'
 import { WorktreeBasePicker } from './worktree-base-picker'
 import { useApplicationState } from '../runtime/application-state'
@@ -466,20 +467,12 @@ export function Composer({ task }: { task: Task }) {
               )
             }}
           />
-          <Choice
-            label="Working directory"
+          <CheckoutChoice
             value={task.execution ?? 'main'}
+            branch={
+              snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.branch
+            }
             disabled={busy || !connected}
-            items={[
-              {
-                id: 'main',
-                name: 'Local checkout',
-              },
-              {
-                id: 'worktree',
-                name: 'New worktree',
-              },
-            ]}
             onChange={(execution) =>
               act(() =>
                 patch({

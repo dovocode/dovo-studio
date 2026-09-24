@@ -56,6 +56,24 @@ describe('Dovo conversation adapter', () => {
     expect(messages[1].status).toEqual({ type: 'complete', reason: 'stop' })
     expect(messages[2].status).toEqual({ type: 'running' })
   })
+  it('keeps the existing order of multiple tools within each turn', () => {
+    const result = conversationMessages(task, [
+      {
+        ...event('newest', 't2', 'completed'),
+        payload: JSON.stringify({ turnId: 't2', toolId: 'newest', status: 'completed' }),
+      },
+      event('another-turn', 't1', 'completed'),
+      {
+        ...event('older', 't2', 'completed'),
+        payload: JSON.stringify({ turnId: 't2', toolId: 'older', status: 'completed' }),
+      },
+    ])[2]
+    const toolIds =
+      typeof result.content === 'string'
+        ? []
+        : result.content.flatMap((part) => (part.type === 'tool-call' ? [part.toolCallId] : []))
+    expect(toolIds).toEqual(['t2:older', 't2:newest'])
+  })
   it('deduplicates tool updates without changing the invocation identity', () => {
     const before = conversationMessages(task, [event('start', 't2', 'running')])[2]
     const after = conversationMessages(task, [

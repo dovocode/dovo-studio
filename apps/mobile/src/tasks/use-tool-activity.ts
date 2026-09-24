@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { AppState } from 'react-native'
 import { Effect } from 'effect'
-import { activitySchema } from '@dovo/protocol'
+import { activitySchema, retainActivityEvents } from '@dovo/protocol'
 import { clientScopeKey, startPolling } from '@dovo/client-runtime'
 import { useApplicationState } from '../runtime/application-state'
 import { useRuntime } from '../runtime/provider'
@@ -28,10 +28,15 @@ export function useToolActivity(taskId: string, visible: boolean, running = fals
         activitySchema,
       )
       if (!stopped)
-        setState({
-          identity,
-          events: data.events.filter((event) => event.scope === taskId),
-          error: '',
+        setState((previous) => {
+          const incoming = data.events.filter((event) => event.scope === taskId)
+          const events =
+            previous.identity === identity
+              ? retainActivityEvents(previous.events, incoming)
+              : incoming
+          return previous.identity === identity && !previous.error && events === previous.events
+            ? previous
+            : { identity, events, error: '' }
         })
     })
     const polling = startPolling(load, {

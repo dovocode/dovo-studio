@@ -120,6 +120,22 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const [choosingProject, setChoosingProject] = useApplicationState(false)
   const [projectQuery, setProjectQuery] = useApplicationState('')
   const [suggestedProject, setSuggestedProject] = useApplicationState('')
+  const projectGroups = useMemo(
+    () =>
+      choosingProject
+        ? projectMachineGroups(
+            sources.flatMap((source) =>
+              source.workspace.repositories.map((repository) => ({
+                repository,
+                runtimeId: source.runtimeId,
+                source,
+              })),
+            ),
+          )
+        : [],
+    [sources, choosingProject],
+  )
+  const normalizedProjectQuery = projectQuery.trim().toLowerCase()
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -345,6 +361,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                     )}
                   >
                     <TaskConversation
+                      key={taskCollectionKey(activeRuntimeId, task.id)}
                       task={task}
                       visible={!listOpen && (!compact || surface === 'chat')}
                       onReview={() => selectSurface('changes')}
@@ -478,7 +495,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
         <DialogContent className="max-w-md">
           <DialogTitle>New task</DialogTitle>
           <DialogDescription>
-            Choose the project and computer where this task will run.
+            Choose a project, then a device if it’s available on more than one. Nothing runs until
+            you send your first message.
           </DialogDescription>
           {error && (
             <p role="alert" className="text-xs text-destructive">
@@ -492,25 +510,50 @@ export default function TasksView({ entityId }: StudioViewProps) {
             onChange={(event) => setProjectQuery(event.target.value)}
           />
           <div className="max-h-[55dvh] space-y-3 overflow-y-auto">
-            {projectMachineGroups(
-              sources.flatMap((source) =>
-                source.workspace.repositories.map((repository) => ({
-                  repository,
-                  runtimeId: source.runtimeId,
-                  source,
-                })),
-              ),
-            ).map((group) => {
+            {projectGroups.map((group) => {
               const matches = group.entries.filter(({ repository, source }) =>
                 `${repository.gitIdentity ?? ''} ${repository.name} ${repository.path} ${source.name}`
                   .toLowerCase()
-                  .includes(projectQuery.trim().toLowerCase()),
+                  .includes(normalizedProjectQuery),
               )
               if (!matches.length) return null
+              if (group.entries.length === 1) {
+                const { source, repository } = group.entries[0]
+                return (
+                  <Button
+                    key={group.key}
+                    variant="outline"
+                    disabled={busy || !source.online || !!repository.gitIdentityError}
+                    className="h-auto w-full justify-start gap-3 rounded-lg px-3 py-3 text-left"
+                    onClick={() =>
+                      void startTask(taskCollectionKey(source.runtimeId, repository.id), true)
+                    }
+                  >
+                    <Folder className="size-5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm">{group.name}</span>
+                      <span className="mt-1 flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
+                        <Monitor className="size-3" />
+                        {source.name} · {repository.branch}
+                      </span>
+                      {!!repository.gitIdentityError && (
+                        <span className="block text-xs text-destructive">
+                          {repository.gitIdentityError}
+                        </span>
+                      )}
+                    </span>
+                    {source.online ? (
+                      <ChevronRight className="size-3.5" />
+                    ) : (
+                      <span className="text-xs">Offline</span>
+                    )}
+                  </Button>
+                )
+              }
               return (
                 <details
                   key={`${group.key}:${!!projectQuery}`}
-                  open={projectQuery ? true : undefined}
+                  open={normalizedProjectQuery ? true : undefined}
                   className="group rounded-lg border border-border/50"
                   aria-label={group.name}
                 >
@@ -571,7 +614,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 source.workspace.repositories.some((repository) =>
                   `${repository.gitIdentity ?? ''} ${repository.name} ${repository.path} ${source.name}`
                     .toLowerCase()
-                    .includes(projectQuery.trim().toLowerCase()),
+                    .includes(normalizedProjectQuery),
                 ),
               ) && (
                 <p className="px-3 py-4 text-sm text-muted-foreground">

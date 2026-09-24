@@ -13,7 +13,7 @@ import { useNavigation } from '../shell/navigation'
 import { MessageQueue } from './message-queue'
 import { TaskQuestions } from './task-questions'
 import { TaskSettings } from './task-settings'
-import { Keyboard, Pressable, View, useWindowDimensions } from 'react-native'
+import { ActivityIndicator, Keyboard, Pressable, View, useWindowDimensions } from 'react-native'
 import { Text } from '../ui/text'
 import { type Task } from '@dovo/protocol'
 import { useRuntime } from '../runtime/provider'
@@ -214,6 +214,24 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
           }}
         >
           <Conversation />
+          {task.status === 'running' && task.runPhase === 'preparing' && (
+            <View
+              accessibilityRole="text"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+              }}
+            >
+              <ActivityIndicator size="small" color={colors.muted} />
+              <Text style={[styles.muted, { flex: 1 }]}>
+                {task.execution === 'worktree' ? 'Preparing worktree' : 'Preparing checkout'}
+                {task.setupCommand ? ' and running setup' : ''}…
+              </Text>
+            </View>
+          )}
           <TaskQuestions taskId={task.id} />
           {task.restartRecovery &&
             task.status !== 'running' &&

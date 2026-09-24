@@ -20,7 +20,7 @@ import {
   type ToolCallMessagePartProps,
   type ThreadMessage,
 } from '@assistant-ui/react-native'
-import { useTaskConversation } from './conversation-provider'
+import { usePendingConversationMessage, useTaskConversation } from './conversation-provider'
 import { Markdown } from '../ui/markdown'
 import { MessageAttachments } from './message-attachments'
 import { colors, styles } from '../ui/theme'
@@ -251,6 +251,8 @@ const userParts = {
   Text: UserText,
 }
 function Message() {
+  const pendingMessage = usePendingConversationMessage()
+  const id = useAuiState((state) => state.message.id)
   const user = useAuiState((state) => state.message.role === 'user')
   const createdAt = useAuiState((state) => state.message.createdAt)
   const streaming = useAuiState((state) => state.message.status?.type === 'running')
@@ -280,6 +282,16 @@ function Message() {
       >
         <MessagePrimitive.Parts components={user ? userParts : parts} />
       </View>
+      {pendingMessage?.message.id === id && (
+        <Text
+          accessibilityRole="text"
+          style={[styles.muted, { fontSize: 12, paddingHorizontal: 8 }]}
+        >
+          {pendingMessage.state === 'failed'
+            ? 'Not confirmed · retry from the composer'
+            : 'Sending…'}
+        </Text>
+      )}
       {createdAt && (user || !streaming) && (
         <Text
           style={[

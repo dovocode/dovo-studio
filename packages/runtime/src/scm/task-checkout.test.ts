@@ -66,6 +66,9 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
       force: true,
     }),
   )
+  expect((await s.git.command(cwd, ['branch', '--show-current'])).trim()).toMatch(
+    /^dovo\/isolated-[a-f0-9]{24}$/,
+  )
   expect(cwd).toBe(same)
   expect(cwd).not.toBe(f.directory)
   expect(await s.checkouts.directory(main.id)).toBe(await realpath(f.directory))

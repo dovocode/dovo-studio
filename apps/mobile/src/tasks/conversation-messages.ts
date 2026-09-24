@@ -7,12 +7,20 @@ import { taskToolEvents, pendingActivity, type ToolEvents } from './task-tool-ev
 export type { ToolEvents } from './task-tool-events'
 export function conversationMessages(task: Task, events: ToolEvents): ThreadMessageLike[] {
   const tools = taskToolEvents(task, events)
+  const turnsByAssistant = new Map(task.turns?.map((turn) => [turn.assistantId, turn]))
+  const toolsByTurn = new Map<string, typeof tools>()
+  for (const tool of tools) {
+    if (!tool.turnId) continue
+    const turnTools = toolsByTurn.get(tool.turnId) ?? []
+    turnTools.push(tool)
+    toolsByTurn.set(tool.turnId, turnTools)
+  }
   const activeTurnId =
     task.status === 'running'
       ? [...(task.turns ?? [])].reverse().find((turn) => turn.status === 'running')?.id
       : undefined
   return task.messages.map((message) => {
-    const turn = task.turns?.find((item) => item.assistantId === message.id)
+    const turn = turnsByAssistant.get(message.id)
     const content: Exclude<ThreadMessageLike['content'], string>[number][] = []
     if (message.attachments?.length)
       content.push({
@@ -26,7 +34,7 @@ export function conversationMessages(task: Task, events: ToolEvents): ThreadMess
         text: message.text,
       })
     if (turn) {
-      const turnEvents = tools.filter((item) => item.turnId === turn.id).reverse()
+      const turnEvents = [...(toolsByTurn.get(turn.id) ?? [])].reverse()
       const reasoning = turnEvents.filter(
         (tool) =>
           tool.kind === 'reasoning' ||

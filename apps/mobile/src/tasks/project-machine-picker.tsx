@@ -8,6 +8,7 @@ import { SearchField } from '../ui/field'
 import { Icon } from '../ui/icon'
 import { colors, styles } from '../ui/theme'
 import { NewTask } from './new-task'
+import { useMemo } from 'react'
 
 export function ProjectMachinePicker({
   onCreated,
@@ -23,15 +24,20 @@ export function ProjectMachinePicker({
   } | null>(null)
   const [expanded, setExpanded] = useApplicationState<string | null>(null)
   const [query, setQuery] = useApplicationState('')
-  const groups = projectMachineGroups(
-    overviews.flatMap((entry) =>
-      (entry.snapshot?.workspace.repositories ?? []).map((repository) => ({
-        repository,
-        runtimeId: entry.profile.id,
-        entry,
-      })),
-    ),
+  const groups = useMemo(
+    () =>
+      projectMachineGroups(
+        overviews.flatMap((entry) =>
+          (entry.snapshot?.workspace.repositories ?? []).map((repository) => ({
+            repository,
+            runtimeId: entry.profile.id,
+            entry,
+          })),
+        ),
+      ),
+    [overviews],
   )
+  const normalizedQuery = query.trim().toLowerCase()
   if (selection)
     return (
       <RuntimeScope runtimeId={selection.runtimeId}>
@@ -44,14 +50,17 @@ export function ProjectMachinePicker({
     )
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>Choose project & machine</Text>
+      <Text style={styles.title}>Choose a project</Text>
+      <Text style={styles.muted}>
+        Choose where to work. Nothing runs until you send your first message.
+      </Text>
       <SearchField label="Search projects and machines" value={query} onChangeText={setQuery} />
       {groups
         .filter((group) =>
           group.entries.some(({ repository, entry }) =>
             `${group.identity ?? ''} ${repository.name} ${repository.path} ${entry.profile.name}`
               .toLowerCase()
-              .includes(query.trim().toLowerCase()),
+              .includes(normalizedQuery),
           ),
         )
         .map((group) => {
@@ -63,14 +72,22 @@ export function ProjectMachinePicker({
                 a[0].entry.profile.name.localeCompare(b[0].entry.profile.name),
             )
           const online = machines.filter((items) => items[0].entry.connected).length
-          const open = expanded === group.key || !!query.trim()
+          const open = expanded === group.key || !!normalizedQuery
+          const single = group.entries.length === 1 ? group.entries[0] : undefined
           return (
             <View key={group.key} style={[styles.card, { padding: 0, gap: 0, overflow: 'hidden' }]}>
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ expanded: open }}
                 accessibilityLabel={group.name}
-                onPress={() => setExpanded(open ? null : group.key)}
+                onPress={() => {
+                  if (single && single.entry.connected && !single.repository.gitIdentityError)
+                    setSelection({
+                      runtimeId: single.runtimeId,
+                      repositoryId: single.repository.id,
+                    })
+                  else setExpanded(open ? null : group.key)
+                }}
                 style={({ pressed }) => ({
                   padding: 14,
                   flexDirection: 'row',
@@ -85,11 +102,16 @@ export function ProjectMachinePicker({
                     {group.name}
                   </Text>
                   <Text numberOfLines={1} style={styles.muted}>
-                    {group.identity ?? 'Local repository'}
+                    {single
+                      ? `${single.entry.profile.name} · ${single.repository.branch}`
+                      : (group.identity ?? 'Local repository')}
                   </Text>
                   <Text style={styles.muted}>
-                    {online} of {machines.length} {machines.length === 1 ? 'machine' : 'machines'}{' '}
-                    online
+                    {single
+                      ? single.entry.connected
+                        ? 'Online'
+                        : 'Offline'
+                      : `${online} of ${machines.length} devices online`}
                   </Text>
                 </View>
                 <Icon name={open ? 'down' : 'next'} size={14} color={colors.muted} />
@@ -164,7 +186,7 @@ export function ProjectMachinePicker({
           group.entries.some(({ repository, entry }) =>
             `${group.identity ?? ''} ${repository.name} ${repository.path} ${entry.profile.name}`
               .toLowerCase()
-              .includes(query.trim().toLowerCase()),
+              .includes(normalizedQuery),
           ),
         ) && <Text style={styles.muted}>No matching projects or machines.</Text>}
       {!groups.length && (
