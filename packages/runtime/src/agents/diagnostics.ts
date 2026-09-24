@@ -105,7 +105,7 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
       packageName: '@anthropic-ai/claude-agent-sdk',
       inspect: sdk('@anthropic-ai/claude-agent-sdk'),
       guidance:
-        'Update Dovo to receive its tested, pinned Claude SDK and bundled executable. Updating the global Claude CLI does not update this SDK.',
+        'Update Dovo to receive its tested, pinned Claude SDK. Install Claude CLI separately on the runtime host. Updating the global Claude CLI does not update this SDK.',
       documentationUrl: 'https://github.com/anthropics/claude-agent-sdk-typescript/releases',
     },
     {
@@ -155,7 +155,7 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
     ...agents,
   ]) {
     if (agent.provider === 'opencode') continue
-    const command = agent.endpoint
+    const command = agent.endpoint || (agent.provider === 'claude' ? 'claude' : '')
     if (!command || configured.has(`${agent.provider}\0${command}`)) continue
     configured.add(`${agent.provider}\0${command}`)
     result.push({

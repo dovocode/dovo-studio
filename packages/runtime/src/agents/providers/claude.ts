@@ -1,3 +1,4 @@
+import { claudeCommand } from '../claude-command.js'
 import { decode } from '@dovo/protocol'
 import { claudeMcpServers } from '../mcp-settings.js'
 import { claudeInput } from './claude-input.js'
@@ -12,10 +13,12 @@ export const claudeAdapter: AgentAdapter = {
   models: claudeModels,
   probe: async (agent) => ({
     provider: 'claude',
-    available: !agent.endpoint || (await executableAvailable(agent.endpoint)),
-    detail: 'Claude Agent SDK installed. Uses the host’s Claude login or ANTHROPIC_API_KEY.',
+    available: await executableAvailable(agent.endpoint || 'claude'),
+    detail:
+      'Requires Claude CLI installed on this runtime host (claude on PATH or a configured executable). Uses the host’s Claude login or ANTHROPIC_API_KEY.',
   }),
   async run(run) {
+    const command = await claudeCommand(run.agent.endpoint)
     const controller = new AbortController(),
       abort = () => controller.abort()
     run.signal.addEventListener('abort', abort, {
@@ -46,11 +49,7 @@ export const claudeAdapter: AgentAdapter = {
               ),
             }
           : {}),
-        ...(run.agent.endpoint
-          ? {
-              pathToClaudeCodeExecutable: run.agent.endpoint,
-            }
-          : {}),
+        pathToClaudeCodeExecutable: command,
         systemPrompt:
           run.tools === 'none'
             ? run.agent.instructions

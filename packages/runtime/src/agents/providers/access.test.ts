@@ -1,3 +1,5 @@
+import { executableAvailable } from '../../process'
+import { claudeModels } from '../catalogs/claude'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -7,6 +9,10 @@ import { supportsAccess } from '@dovo/protocol'
 import type { AgentRun } from '../types'
 import { codexAdapter } from './codex'
 import { claudeAdapter } from './claude'
+vi.mock('../../process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../process')>()),
+  executableAvailable: vi.fn<typeof executableAvailable>(async () => true),
+}))
 const captured = vi.hoisted(() => ({
   options: [] as Options[],
 }))
@@ -28,6 +34,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   captured.options.length = 0
+  vi.mocked(executableAvailable).mockResolvedValue(true)
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
 function run(permission: AgentRun['agent']['permission']): AgentRun {
@@ -181,3 +188,22 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
     expect(input.onSession).not.toHaveBeenCalled()
   },
 )
+
+it('uses the host Claude CLI instead of the SDK bundled executable', async () => {
+  await claudeAdapter.run(run('ask'))
+  expect(captured.options[0].pathToClaudeCodeExecutable).toBe('claude')
+  const custom = run('ask')
+  custom.agent.endpoint = '/custom path/claude'
+  await claudeAdapter.run(custom)
+  expect(captured.options[1].pathToClaudeCodeExecutable).toBe('/custom path/claude')
+})
+it('reports missing Claude CLI for discovery, model listing and execution', async () => {
+  vi.mocked(executableAvailable).mockResolvedValue(false)
+  const input = run('ask')
+  expect(await claudeAdapter.probe(input.agent)).toMatchObject({ available: false })
+  await expect(claudeAdapter.run(input)).rejects.toThrow('Install Claude Code on this runtime host')
+  await expect(claudeModels(input.agent)).rejects.toThrow(
+    'Install Claude Code on this runtime host',
+  )
+  expect(captured.options).toHaveLength(0)
+})

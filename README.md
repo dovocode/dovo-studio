@@ -181,12 +181,12 @@ HTTPS/WSS runtime endpoint, supplied by your local reverse proxy; browsers block
 
 ### Provider setup and execution limits
 
-| Integration | Host requirement                                                                                    |
-| ----------- | --------------------------------------------------------------------------------------------------- |
-| Codex       | `codex` on PATH, or executable path in Agent settings; authenticated Codex login                    |
-| OpenCode    | `opencode serve` running; endpoint defaults to `http://127.0.0.1:4096`; models use `provider/model` |
-| Claude      | Installed Agent SDK; Claude login or `ANTHROPIC_API_KEY`; optional custom CLI path                  |
-| ACP         | Install one or more agents from the official ACP Registry, or configure an executable and arguments |
+| Integration | Host requirement                                                                                      |
+| ----------- | ----------------------------------------------------------------------------------------------------- |
+| Codex       | `codex` on PATH, or executable path in Agent settings; authenticated Codex login                      |
+| OpenCode    | `opencode serve` running; endpoint defaults to `http://127.0.0.1:4096`; models use `provider/model`   |
+| Claude      | User-installed Claude CLI on the runtime host; bundled Agent SDK; Claude login or `ANTHROPIC_API_KEY` |
+| ACP         | Install one or more agents from the official ACP Registry, or configure an executable and arguments   |
 
 OpenCode server authentication uses `OPENCODE_SERVER_PASSWORD` and optional
 `OPENCODE_SERVER_USERNAME` on the runtime host. ACP read-only execution requires an advertised

@@ -287,13 +287,13 @@ offline it explicitly falls back to default executable names. Version checks do 
 requests, log in, install software, or upgrade anything. An installed executable or healthy server
 does not prove the provider account has valid model access or quota.
 
-| Adapter  | What Dovo uses                                                  | Update the component actually in use                                                                                                                |
-| -------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Codex    | Host `codex` executable/App Server                              | Use its original installer: npm, Homebrew, mise, or another managed installation. For an npm installation: `npm install -g @openai/codex@latest`.   |
-| Claude   | Bundled Claude Agent SDK by default; optional custom CLI        | Update Dovo for its locked SDK. Use `claude update` for a native CLI installation, or the original package manager for a managed/custom executable. |
-| OpenCode | Running OpenCode server and Dovo's bundled client SDK           | Upgrade OpenCode on the server host using its installer or `opencode upgrade`, then restart `opencode serve`. Update Dovo for its client SDK.       |
-| ACP      | The custom agent's configured executable and bundled ACP SDK    | Update that agent through its own installer. There is no universal executable or version for every ACP agent.                                       |
-| MCP      | Bundled MCP SDK and separately configured project/agent servers | Update Dovo for its SDK; update individual MCP servers using their configured package or deployment.                                                |
+| Adapter  | What Dovo uses                                                       | Update the component actually in use                                                                                                                |
+| -------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex    | Host `codex` executable/App Server                                   | Use its original installer: npm, Homebrew, mise, or another managed installation. For an npm installation: `npm install -g @openai/codex@latest`.   |
+| Claude   | Bundled Agent SDK plus user-installed Claude CLI on the runtime host | Update Dovo for its locked SDK. Use `claude update` for a native CLI installation, or the original package manager for a managed/custom executable. |
+| OpenCode | Running OpenCode server and Dovo's bundled client SDK                | Upgrade OpenCode on the server host using its installer or `opencode upgrade`, then restart `opencode serve`. Update Dovo for its client SDK.       |
+| ACP      | The custom agent's configured executable and bundled ACP SDK         | Update that agent through its own installer. There is no universal executable or version for every ACP agent.                                       |
+| MCP      | Bundled MCP SDK and separately configured project/agent servers      | Update Dovo for its SDK; update individual MCP servers using their configured package or deployment.                                                |
 
 `--check-updates` queries official npm metadata and reports current, update available, ahead, or
 unknown. Registry/network failures remain unknown; they are not treated as proof that a component is

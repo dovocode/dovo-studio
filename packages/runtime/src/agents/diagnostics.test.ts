@@ -42,18 +42,13 @@ it('checks the installed adapters without contacting an update registry or runni
     }),
   )
   const diagnostics = await checkAdapterUpdates(settings)
-  expect(run.mock.calls).toEqual([
-    [
-      'codex',
+  expect(run.mock.calls).toEqual(
+    ['codex', 'claude'].map((command) => [
+      command,
       ['--version'],
-      expect.objectContaining({
-        timeout: 5000,
-        env: {
-          PATH: '/bin',
-        },
-      }),
-    ],
-  ])
+      expect.objectContaining({ timeout: 5000, env: { PATH: '/bin' } }),
+    ]),
+  )
   expect(request.mock.calls.map(([url]) => urlString(url))).toEqual([
     'http://127.0.0.1:4096/global/health',
   ])

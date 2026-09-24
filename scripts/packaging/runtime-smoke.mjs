@@ -5,6 +5,7 @@ const runtime = await startRuntime({
   databasePath: ':memory:', ownerToken: 'packaging-smoke-token-at-least-32-characters', port: 0,
 });
 try {
+  for (const provider of ['codex', 'claude', 'opencode', 'acp']) await runtime.services.agents.get(provider);
   const terminal = runtime.services.terminals.createCommand('packaging-check', process.cwd(), {
     command: process.execPath,
     args: ['-e', "console.log('DOVO_RUNTIME_READY'); setInterval(() => {}, 1000)"],
