@@ -1,3 +1,4 @@
+import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
 import { stageWorkspace } from './stage-workspace.mjs'
 import { desktopMiseArchive } from './desktop-mise-archive.mjs'
@@ -42,6 +43,8 @@ try {
   deploy(
     [
       '--config.allow-unused-patches=true',
+      '--config.node-linker=hoisted',
+      '--config.shared-workspace-lockfile=false',
       '--filter',
       '@dovo/api',
       'deploy',
@@ -61,19 +64,16 @@ try {
   if (process.platform === 'darwin')
     await chmod(join(pty, 'prebuilds/darwin-arm64/spawn-helper'), 0o755)
   // Verify the deployed dependency closure with its bundled Node, before making an installer.
-  execFileSync(
-    join(runtime, 'bin', nodeName),
-    [
-      '--input-type=module',
-      '--eval',
-      "import {startRuntime} from '@dovo/runtime'; const r=await startRuntime({databasePath:':memory:',ownerToken:'packaging-check-token-at-least-32-characters',port:0}); const t=r.services.terminals.create('check',process.cwd()); r.services.terminals.close(t.id); await r.close();",
-    ],
-    { cwd: runtime, stdio: 'inherit' },
-  )
+  execFileSync(join(runtime, 'bin', nodeName), ['--input-type=module', '--eval', runtimeSmoke], {
+    cwd: runtime,
+    stdio: 'inherit',
+  })
   // Deploy the desktop dependency closure too (notably electron-updater).
   deploy(
     [
       '--config.allow-unused-patches=true',
+      '--config.node-linker=hoisted',
+      '--config.shared-workspace-lockfile=false',
       '--filter',
       '@dovo/desktop',
       'deploy',
@@ -135,11 +135,7 @@ try {
         })
         execFileSync(
           join(destination, 'bin', nodeName),
-          [
-            '--input-type=module',
-            '--eval',
-            "import {startRuntime} from '@dovo/runtime'; const r=await startRuntime({databasePath:':memory:',ownerToken:'packaging-check-token-at-least-32-characters',port:0}); const t=r.services.terminals.create('check',process.cwd()); r.services.terminals.close(t.id); await r.close();",
-          ],
+          ['--input-type=module', '--eval', runtimeSmoke],
           { cwd: destination, stdio: 'inherit' },
         )
       },

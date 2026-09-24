@@ -1,3 +1,4 @@
+import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
 import { stageWorkspace } from './stage-workspace.mjs'
 import { mkdtemp, cp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises'
@@ -26,6 +27,8 @@ try {
   deploy(
     [
       '--config.allow-unused-patches=true',
+      '--config.node-linker=hoisted',
+      '--config.shared-workspace-lockfile=false',
       '--filter',
       '@dovo/api',
       'deploy',
@@ -75,11 +78,7 @@ exec "$base/libexec/node" "$base/libexec/server/dist/server-cli.js" "$@"
   })
   execFileSync(
     join(archive, 'libexec', nodeName),
-    [
-      '--input-type=module',
-      '--eval',
-      "import {startRuntime} from '@dovo/runtime'; const r=await startRuntime({databasePath:':memory:',ownerToken:'archive-smoke-test-owner-token-at-least-32',port:0}); const t=r.services.terminals.create('check',process.cwd()); r.services.terminals.close(t.id); await r.close();",
-    ],
+    ['--input-type=module', '--eval', runtimeSmoke],
     { cwd: server, stdio: 'inherit' },
   )
   const output = resolve(root, 'release')
