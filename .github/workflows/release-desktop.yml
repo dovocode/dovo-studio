@@ -122,7 +122,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @dovo/api... --filter @dovo/desktop... -r build
       - name: Build unsigned desktop packages
-        run: pnpm exec node scripts/packaging/package-desktop.mjs
+        run: pnpm run package:desktop:artifacts
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.runner }}

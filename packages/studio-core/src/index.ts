@@ -37,7 +37,12 @@ export * from './workspace/schema'
 export * from './workspace/provider'
 export * from './workspace/actions'
 export * from './runtime/client'
-export { PAIRING_PROTOCOL_VERSION, responses, snapshotSchema, connectionSchema } from '@dovo/protocol'
+export {
+  PAIRING_PROTOCOL_VERSION,
+  responses,
+  snapshotSchema,
+  connectionSchema,
+} from '@dovo/protocol'
 export type {
   RuntimeConnection,
   RuntimeProfile,

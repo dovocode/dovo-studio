@@ -20,6 +20,7 @@
     "fallow:ci": "fallow dead-code --format compact",
     "postinstall": "node scripts/prepare-pty.mjs && node scripts/build-mobile-terminal.mjs && node scripts/prepare-mobile-markdown.mjs && node scripts/build-browser-viewer.mjs",
     "package:desktop": "pnpm build && node scripts/packaging/package-desktop.mjs",
+    "package:desktop:artifacts": "node scripts/packaging/package-desktop.mjs",
     "pair": "pnpm --filter @dovo/api exec tsx src/cli.ts",
     "server": "pnpm --filter @dovo/api exec tsx src/server-cli.ts",
     "mobile:update": "node scripts/update-mobile.mjs",

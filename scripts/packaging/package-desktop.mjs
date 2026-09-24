@@ -33,11 +33,11 @@ const stage = await mkdtemp(join(tmpdir(), 'dovo-package-'))
 const require = createRequire(join(root, 'apps/desktop/package.json'))
 const electron = JSON.parse(await readFile(require.resolve('electron/package.json'), 'utf8'))
 function deploy(args, cwd) {
-  // pnpm exec exposes the real CLI entrypoint, avoiding cmd.exe quoting on Windows.
+  // pnpm run exposes the real CLI entrypoint, avoiding cmd.exe quoting on Windows.
   const cli = process.env.npm_execpath
   if (process.platform === 'win32') {
     if (!cli || /\.(cmd|bat)$/i.test(cli))
-      throw new Error('On Windows run: pnpm exec node scripts/packaging/package-desktop.mjs')
+      throw new Error('On Windows run: pnpm run package:desktop:artifacts')
     const javascript = /\.[cm]?js$/i.test(cli)
     execFileSync(javascript ? process.execPath : cli, javascript ? [cli, ...args] : args, {
       cwd,
@@ -169,7 +169,7 @@ try {
       mac: {
         icon: join(root, 'apps/desktop/build/icon.icns'),
         category: 'public.app-category.developer-tools',
-        identity: process.env.CSC_NAME ?? null,
+        identity: process.env.CSC_NAME?.replace(/^Developer ID Application:\s*/, '') ?? null,
         hardenedRuntime: true,
         notarize: !!(
           process.env.APPLE_API_KEY ||

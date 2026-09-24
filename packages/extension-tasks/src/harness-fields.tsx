@@ -118,19 +118,19 @@ export function HarnessFields({
         <div className="mt-3 grid gap-3">
           {(value.provider !== 'acp' || !value.acpInstallationId) && (
             <FormField label={value.provider === 'opencode' ? 'Server URL' : 'Executable'}>
-            <Input
-              aria-label="Harness endpoint"
-              value={value.endpoint}
-              onChange={(e) =>
-                onChange({
-                  ...value,
-                  endpoint: e.target.value,
-                })
-              }
-              placeholder={
-                value.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Use runtime default'
-              }
-            />
+              <Input
+                aria-label="Harness endpoint"
+                value={value.endpoint}
+                onChange={(e) =>
+                  onChange({
+                    ...value,
+                    endpoint: e.target.value,
+                  })
+                }
+                placeholder={
+                  value.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Use runtime default'
+                }
+              />
             </FormField>
           )}
           {value.provider === 'acp' && !value.acpInstallationId && (

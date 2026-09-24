@@ -134,7 +134,9 @@ it('persists ACP installation, mode and config overrides without inheriting stal
     acpMode: '',
     acpConfig: {},
   })
-  expect(resolveTaskAgent(decode(taskSchema, JSON.parse(JSON.stringify(changed))), [acp])).toMatchObject({
+  expect(
+    resolveTaskAgent(decode(taskSchema, JSON.parse(JSON.stringify(changed))), [acp]),
+  ).toMatchObject({
     acpInstallationId: undefined,
     acpMode: '',
     acpConfig: {},

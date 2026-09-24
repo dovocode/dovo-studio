@@ -468,5 +468,6 @@ paths beneath it. Mobile's project filter includes matching tasks from every sel
 Matching normalizes SSH/HTTPS clone URLs, standard SSH ports, provider alternate SSH endpoints,
 Azure DevOps legacy URLs and URL-encoded paths. Git's `insteadOf` rewrites are honored. Without an
 `origin`, multiple remotes match only when they all identify the same repository. Forks, ambiguous
-remotes and local repositories without a remote stay separate; folder names never establish identity.
-Custom SSH host aliases and different self-hosted SSH/HTTPS ports are not inferred as equivalent.
+remotes and local repositories without a remote stay separate; folder names never establish
+identity. Custom SSH host aliases and different self-hosted SSH/HTTPS ports are not inferred as
+equivalent.

@@ -164,19 +164,21 @@ export function AgentEditor({
         onChange={setDraft}
         disabled={busy || !providerAllowed}
       />
-      {(draft.provider !== 'acp' || !draft.acpInstallationId) && <Field
-        label={
-          draft.provider === 'opencode' ? 'Server URL' : 'Executable path · blank uses default'
-        }
-        value={draft.endpoint}
-        editable={!busy}
-        onChangeText={(endpoint) =>
-          setDraft({
-            ...draft,
-            endpoint,
-          })
-        }
-      />}
+      {(draft.provider !== 'acp' || !draft.acpInstallationId) && (
+        <Field
+          label={
+            draft.provider === 'opencode' ? 'Server URL' : 'Executable path · blank uses default'
+          }
+          value={draft.endpoint}
+          editable={!busy}
+          onChangeText={(endpoint) =>
+            setDraft({
+              ...draft,
+              endpoint,
+            })
+          }
+        />
+      )}
       {draft.provider === 'acp' && !draft.acpInstallationId && (
         <Field
           label="Arguments · one per line"

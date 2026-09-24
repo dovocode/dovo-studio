@@ -39,21 +39,19 @@ async function setup() {
 }
 it('requires pairing credentials even on HTTP and does not expose auth launch secrets', async () => {
   const { call } = await setup()
-  const inspect = vi
-    .spyOn(acp, 'inspectAcp')
-    .mockResolvedValue({
-      agentInfo: undefined,
-      canLogout: false,
-      authMethods: [
-        {
-          type: 'terminal',
-          id: 'login',
-          name: 'Sign in',
-          args: ['secret-arg'],
-          env: { TOKEN: 'private-token' },
-        },
-      ],
-    })
+  const inspect = vi.spyOn(acp, 'inspectAcp').mockResolvedValue({
+    agentInfo: undefined,
+    canLogout: false,
+    authMethods: [
+      {
+        type: 'terminal',
+        id: 'login',
+        name: 'Sign in',
+        args: ['secret-arg'],
+        env: { TOKEN: 'private-token' },
+      },
+    ],
+  })
   expect((await call('inspect', { id: 'first' }, 'invalid')).status).toBe(401)
   expect(inspect).not.toHaveBeenCalled()
   const response = await call('inspect', { id: 'first' })
@@ -130,13 +128,11 @@ it('prevents uninstall of saved profiles and authenticates agent methods through
 })
 it('returns paginated agent sessions and only deletes an explicitly selected session', async () => {
   const { call } = await setup()
-  const list = vi
-    .spyOn(acp, 'listAcpSessions')
-    .mockResolvedValue({
-      sessions: [{ sessionId: 's1', cwd: '/workspace', title: 'Earlier work' }],
-      nextCursor: 'next',
-      canDelete: true,
-    })
+  const list = vi.spyOn(acp, 'listAcpSessions').mockResolvedValue({
+    sessions: [{ sessionId: 's1', cwd: '/workspace', title: 'Earlier work' }],
+    nextCursor: 'next',
+    canDelete: true,
+  })
   const remove = vi.spyOn(acp, 'deleteAcpSession').mockResolvedValue()
   const response = await call('sessions', { id: 'first', cursor: 'page2' })
   expect(await response.json()).toEqual({

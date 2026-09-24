@@ -180,14 +180,14 @@ Installer references: [Homebrew taps](https://docs.brew.sh/How-to-Create-and-Mai
 
 ### Configure Mac signing from this Mac
 
-In Keychain Access → My Certificates, locate
-**Developer ID Application: Dovocode (VDXV4YX2UK)**. Expand it to confirm the private key exists,
-then export that identity as a password-protected `.p12`. Do not export all identities or the
-Apple Development certificate. Keep the file outside the repository.
+In Keychain Access → My Certificates, locate **Developer ID Application: Dovocode (VDXV4YX2UK)**.
+Expand it to confirm the private key exists, then export that identity as a password-protected
+`.p12`. Do not export all identities or the Apple Development certificate. Keep the file outside the
+repository.
 
-At [Apple Account](https://account.apple.com), create an app-specific password under
-Sign-In and Security → App-Specific Passwords, named “Dovo GitHub notarization”.
-Run the following in Terminal from the repository:
+At [Apple Account](https://account.apple.com), create an app-specific password under Sign-In and
+Security → App-Specific Passwords, named “Dovo GitHub notarization”. Run the following in Terminal
+from the repository:
 
 ```sh
 python3 scripts/setup-mac-signing.py
@@ -195,6 +195,6 @@ python3 scripts/setup-mac-signing.py
 
 The helper checks the exported certificate, Team ID, expiry and private-key presence before
 uploading the six required secrets directly to `dovocode/dovo-studio`. Password prompts are hidden;
-secret values go to `gh secret set` over stdin, never command arguments or logs. It does not validate
-the Apple account credentials: the release job verifies notarization with Apple. It requires `gh`
-to already be signed in with permission to manage this repository's Actions secrets.
+secret values go to `gh secret set` over stdin, never command arguments or logs. It does not
+validate the Apple account credentials: the release job verifies notarization with Apple. It
+requires `gh` to already be signed in with permission to manage this repository's Actions secrets.
