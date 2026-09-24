@@ -1,0 +1,2 @@
+# pnpm's patch parser requires LF even on Windows checkouts with autocrlf enabled.
+patches/*.patch text eol=lf

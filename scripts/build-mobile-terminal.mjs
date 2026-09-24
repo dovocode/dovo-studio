@@ -5,6 +5,8 @@ import { createRequire } from 'node:module'
 const require = createRequire(new URL('../apps/mobile/package.json', import.meta.url))
 const result = await build({
   entryPoints: [fileURLToPath(new URL('../apps/mobile/terminal/client.ts', import.meta.url))],
+  // postinstall runs before workspace packages have emitted dist files.
+  conditions: ['development'],
   bundle: true,
   write: false,
   minify: true,
