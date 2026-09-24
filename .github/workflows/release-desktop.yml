@@ -139,7 +139,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, ubuntu-24.04, ubuntu-24.04-arm]
+        runner: [macos-15, ubuntu-24.04, ubuntu-24.04-arm, windows-2025, windows-11-arm]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
@@ -154,11 +154,34 @@ jobs:
         run: node -e 'const p=require("./package.json"); if(process.env.TAG!==`v${p.version}`) throw Error("Tag must match package.json version")'
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @dovo/api... -r build
-      - run: node scripts/packaging/package-server.mjs
+      - run: pnpm run package:server
+      - name: Test extracted Windows server and launcher
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = (Get-ChildItem release/Dovo-Server-*.zip).FullName
+          $destination = Join-Path $env:RUNNER_TEMP 'Dovo Server Extracted'
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination
+          $launcher = Join-Path $destination 'bin/dovo-server.cmd'
+          $data = Join-Path $env:RUNNER_TEMP 'Dovo Server Smoke Data'
+          & $launcher --help
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted launcher failed' }
+          & $launcher setup --data-dir $data --host 127.0.0.1 --port 51465
+          if ($LASTEXITCODE -ne 0) { throw 'Server setup failed' }
+          try {
+            & $launcher start --data-dir $data
+            if ($LASTEXITCODE -ne 0) { throw 'Server start failed' }
+            $status = & $launcher status --data-dir $data --json | ConvertFrom-Json
+            if (!$status.running -or !$status.managed) { throw 'Server is not healthy and managed' }
+          } finally {
+            & $launcher stop --data-dir $data
+            if ($LASTEXITCODE -ne 0) { throw 'Server stop failed' }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: server-${{ matrix.runner }}
-          path: release/Dovo-Server-*.tar.gz
+          if-no-files-found: error
+          path: release/Dovo-Server-*
   upload:
     needs: [server, desktop]
     runs-on: ubuntu-24.04
@@ -198,6 +221,8 @@ jobs:
             "Dovo-Server-${TAG#v}-macos-arm64.tar.gz" \
             "Dovo-Server-${TAG#v}-linux-x64.tar.gz" \
             "Dovo-Server-${TAG#v}-linux-arm64.tar.gz" \
+            "Dovo-Server-${TAG#v}-windows-x64.zip" \
+            "Dovo-Server-${TAG#v}-windows-arm64.zip" \
             "Dovo-Studio-${TAG#v}-windows-x64.exe" \
             "Dovo-Studio-${TAG#v}-windows-arm64.exe" \
             "Dovo-Studio-${TAG#v}-linux-x64.deb" \

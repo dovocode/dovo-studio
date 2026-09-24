@@ -21,6 +21,8 @@ await test('generates matching Homebrew and mise checksums and rejects incomplet
       'Dovo-Server-1.2.3-linux-x64.tar.gz',
       'Dovo-Studio-1.2.3-arm64.zip',
       'Dovo-Studio-mise-1.2.3-macos-arm64.tar.gz',
+      'Dovo-Server-1.2.3-windows-x64.zip',
+      'Dovo-Server-1.2.3-windows-arm64.zip',
     ]
     for (const name of files) await writeFile(join(temporary, name), name)
     execFileSync(process.execPath, [script.pathname, temporary, output, '1.2.3'])
@@ -30,8 +32,9 @@ await test('generates matching Homebrew and mise checksums and rejects incomplet
     for (const name of files) {
       const hash = createHash('sha256').update(name).digest('hex')
       assert.ok(sums.includes(`${hash}  ${name}`))
-      if (!name.endsWith('.zip')) assert.ok(mise.includes(hash))
-      if (name.startsWith('Dovo-Server')) assert.ok(formula.includes(hash))
+      if (!name.startsWith('Dovo-Studio-1.2.3')) assert.ok(mise.includes(hash))
+      if (name.startsWith('Dovo-Server') && !name.includes('windows'))
+        assert.ok(formula.includes(hash))
     }
     assert.ok(!formula.includes(':no_check'))
     assert.match(formula, /bin.install_symlink/)

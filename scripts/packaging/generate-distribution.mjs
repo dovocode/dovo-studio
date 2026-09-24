@@ -15,6 +15,8 @@ const names = [
   `Dovo-Server-${version}-linux-x64.tar.gz`,
   `Dovo-Studio-${version}-arm64.zip`,
   `Dovo-Studio-mise-${version}-macos-arm64.tar.gz`,
+  `Dovo-Server-${version}-windows-x64.zip`,
+  `Dovo-Server-${version}-windows-arm64.zip`,
 ]
 const hashes = new Map()
 for (const name of names)
@@ -90,6 +92,8 @@ await writeFile(
       ['macos-arm64', names[0]],
       ['linux-arm64', names[1]],
       ['linux-x64', names[2]],
+      ['windows-x64', names[5]],
+      ['windows-arm64', names[6]],
     ]) +
     tool('dovo-studio', [['macos-arm64', names[4]]]),
 )

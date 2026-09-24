@@ -471,3 +471,27 @@ Azure DevOps legacy URLs and URL-encoded paths. Git's `insteadOf` rewrites are h
 remotes and local repositories without a remote stay separate; folder names never establish
 identity. Custom SSH host aliases and different self-hosted SSH/HTTPS ports are not inferred as
 equivalent.
+
+### Windows standalone server
+
+Download `Dovo-Server-<version>-windows-x64.zip` or `windows-arm64.zip` from the release. Extract
+the whole archive to a permanent folder. Node and runtime dependencies are included; you do not need
+a separate Node installation. In PowerShell from that folder:
+
+```powershell
+.\bin\dovo-server.cmd setup --host local --port 51464
+.\bin\dovo-server.cmd start
+.\bin\dovo-server.cmd status
+.\bin\dovo-server.cmd pair
+```
+
+Add the extracted `bin` directory to your user PATH to run `dovo-server` anywhere. The same
+`--host tailscale`, `--host netbird`, `--host 0.0.0.0`, and pairing controls apply. Allow the
+selected port through Windows Firewall only on the networks you intend to use. Git and your chosen
+signed-in agent/provider CLIs must be installed separately.
+
+The server runs in the background; this does not install a Windows service or start at login. Data
+lives in `%USERPROFILE%\.dovo` unless you pass `--data-dir`. Before updating, run
+`dovo-server stop`, extract the new release to a new folder, update PATH, and run
+`dovo-server start` with the same data directory. Keep the entire archive together. Windows server
+archives are unsigned. The generated mise configuration includes both Windows architectures.

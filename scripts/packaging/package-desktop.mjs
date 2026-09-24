@@ -1,3 +1,4 @@
+import { deploy } from './deploy.mjs'
 import { stageWorkspace } from './stage-workspace.mjs'
 import { desktopMiseArchive } from './desktop-mise-archive.mjs'
 import { mkdtemp, cp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises'
@@ -32,19 +33,7 @@ const targets =
 const stage = await mkdtemp(join(tmpdir(), 'dovo-package-'))
 const require = createRequire(join(root, 'apps/desktop/package.json'))
 const electron = JSON.parse(await readFile(require.resolve('electron/package.json'), 'utf8'))
-function deploy(args, cwd) {
-  // pnpm run exposes the real CLI entrypoint, avoiding cmd.exe quoting on Windows.
-  const cli = process.env.npm_execpath
-  if (process.platform === 'win32') {
-    if (!cli || /\.(cmd|bat)$/i.test(cli))
-      throw new Error('On Windows run: pnpm run package:desktop:artifacts')
-    const javascript = /\.[cm]?js$/i.test(cli)
-    execFileSync(javascript ? process.execPath : cli, javascript ? [cli, ...args] : args, {
-      cwd,
-      stdio: 'inherit',
-    })
-  } else execFileSync('pnpm', args, { cwd, stdio: 'inherit' })
-}
+
 try {
   const runtime = join(stage, 'runtime'),
     application = join(stage, 'application')

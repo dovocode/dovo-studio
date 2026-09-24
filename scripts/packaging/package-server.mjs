@@ -1,3 +1,4 @@
+import { deploy } from './deploy.mjs'
 import { stageWorkspace } from './stage-workspace.mjs'
 import { mkdtemp, cp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -6,9 +7,14 @@ import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 const root = fileURLToPath(new URL('../../', import.meta.url))
-if (!['darwin', 'linux'].includes(process.platform) || !['arm64', 'x64'].includes(process.arch))
-  throw new Error('Server archives support macOS/Linux arm64 and x64.')
+if (
+  !['darwin', 'linux', 'win32'].includes(process.platform) ||
+  !['arm64', 'x64'].includes(process.arch)
+)
+  throw new Error('Server archives support macOS/Linux/Windows arm64 and x64.')
 if (Number(process.versions.node.split('.')[0]) !== 24) throw new Error('Package with Node 24.')
+const windows = process.platform === 'win32'
+const nodeName = windows ? 'node.exe' : 'node'
 const version = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version
 const stage = await mkdtemp(join(tmpdir(), 'dovo-server-package-'))
 try {
@@ -17,8 +23,7 @@ try {
   const server = join(archive, 'libexec/server')
   await stageWorkspace(root, source)
   await mkdir(join(archive, 'libexec'), { recursive: true })
-  execFileSync(
-    'pnpm',
+  deploy(
     [
       '--config.allow-unused-patches=true',
       '--filter',
@@ -26,12 +31,14 @@ try {
       'deploy',
       '--prod',
       '--legacy',
-      server,
+      windows ? join(stage, 'deployed') : server,
     ],
-    { cwd: source, stdio: 'inherit' },
+    source,
   )
-  await cp(process.execPath, join(archive, 'libexec/node'))
-  await chmod(join(archive, 'libexec/node'), 0o755)
+  // Materialize pnpm junctions before archiving; ZIPs must not reference the build machine.
+  if (windows) await cp(join(stage, 'deployed'), server, { recursive: true, dereference: true })
+  await cp(process.execPath, join(archive, 'libexec', nodeName))
+  await chmod(join(archive, 'libexec', nodeName), 0o755)
   const runtimeRequire = createRequire(
     await realpath(join(server, 'node_modules/@dovo/runtime/package.json')),
   )
@@ -40,9 +47,15 @@ try {
     await chmod(join(pty, `prebuilds/darwin-${process.arch}/spawn-helper`), 0o755)
   }
   await mkdir(join(archive, 'bin'))
-  await writeFile(
-    join(archive, 'bin/dovo-server'),
-    `#!/bin/sh
+  if (windows)
+    await writeFile(
+      join(archive, 'bin/dovo-server.cmd'),
+      '@echo off\r\nsetlocal\r\nset DOVO_SERVER_DISTRIBUTION=archive\r\n"%~dp0..\\libexec\\node.exe" "%~dp0..\\libexec\\server\\dist\\server-cli.js" %*\r\nexit /b %errorlevel%\r\n',
+    )
+  else
+    await writeFile(
+      join(archive, 'bin/dovo-server'),
+      `#!/bin/sh
 set -eu
 entry="$0"
 while [ -L "$entry" ]; do
@@ -54,12 +67,14 @@ base=$(CDPATH= cd -- "$(dirname -- "$entry")/.." && pwd)
 export DOVO_SERVER_DISTRIBUTION=archive
 exec "$base/libexec/node" "$base/libexec/server/dist/server-cli.js" "$@"
 `,
-    { mode: 0o755 },
-  )
+      { mode: 0o755 },
+    )
   await writeFile(join(archive, 'VERSION'), `${version}\n`)
-  execFileSync(join(archive, 'bin/dovo-server'), ['--help'], { stdio: 'inherit' })
+  execFileSync(join(archive, 'libexec', nodeName), [join(server, 'dist/server-cli.js'), '--help'], {
+    stdio: 'inherit',
+  })
   execFileSync(
-    join(archive, 'libexec/node'),
+    join(archive, 'libexec', nodeName),
     [
       '--input-type=module',
       '--eval',
@@ -69,8 +84,10 @@ exec "$base/libexec/node" "$base/libexec/server/dist/server-cli.js" "$@"
   )
   const output = resolve(root, 'release')
   await mkdir(output, { recursive: true })
-  const name = `Dovo-Server-${version}-${process.platform === 'darwin' ? 'macos' : 'linux'}-${process.arch}.tar.gz`
-  execFileSync('tar', ['-czf', join(output, name), '-C', archive, '.'], { stdio: 'inherit' })
+  const name = `Dovo-Server-${version}-${windows ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux'}-${process.arch}.${windows ? 'zip' : 'tar.gz'}`
+  execFileSync('tar', [windows ? '-acf' : '-czf', join(output, name), '-C', archive, '.'], {
+    stdio: 'inherit',
+  })
   console.log(join(output, name))
 } finally {
   await rm(stage, { recursive: true, force: true })

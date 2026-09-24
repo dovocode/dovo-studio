@@ -21,12 +21,13 @@ release. The Release workflow produces:
 | Windows  | x64, ARM64    | NSIS EXE installer     | Unsigned                          |
 | Linux    | x64, ARM64    | DEB, RPM, AppImage     | Unsigned                          |
 
-Standalone macOS ARM64 and Linux x64/ARM64 server archives are retained. Each desktop build uses its
-native runner and Node 24, packages its matching SQLite/PTY dependencies, and smoke-tests the
-bundled runtime and terminal. Windows ARM64 has a separate update channel to avoid overwriting x64
-metadata. AppImage uses architecture-specific Linux update metadata. DEB/RPM users install a new
-package through their package manager; Check for Updates opens the release download page. Artifacts
-are not a promise of compatibility with every historical Debian/Fedora/CentOS release.
+Standalone server archives support macOS ARM64, Linux x64/ARM64 and Windows x64/ARM64. Each desktop
+build uses its native runner and Node 24, packages its matching SQLite/PTY dependencies, and
+smoke-tests the bundled runtime and terminal. Windows ARM64 has a separate update channel to avoid
+overwriting x64 metadata. AppImage uses architecture-specific Linux update metadata. DEB/RPM users
+install a new package through their package manager; Check for Updates opens the release download
+page. Artifacts are not a promise of compatibility with every historical Debian/Fedora/CentOS
+release.
 
 1. Update the root `package.json` version and mobile `app.json` version as appropriate.
 2. Verify with `pnpm check`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
@@ -127,10 +128,11 @@ References: [Expo Widgets](https://docs.expo.dev/versions/latest/sdk/widgets/),
 
 ## Homebrew and mise
 
-The release workflow builds a standalone server archive for macOS arm64 and Linux arm64/x64, with
-Node 24 and native dependencies included. Desktop releases target macOS arm64. Linux archives are
-built on Ubuntu 24.04 (glibc); Alpine/musl and Windows are not release targets. Agent CLIs and Git
-remain host tools, so existing signed-in accounts and project directories work.
+The release workflow builds standalone server archives for macOS arm64, Linux arm64/x64 and Windows
+arm64/x64, with Node 24 and native dependencies included. Windows archives are ZIPs with a
+`bin/dovo-server.cmd` launcher; macOS/Linux use tar.gz. Linux archives are built on Ubuntu 24.04
+(glibc); Alpine/musl is not supported. Agent CLIs and Git remain host tools, so existing signed-in
+accounts and project directories work.
 
 **These commands become available after the first signed stable release is published.** A source
 push does not make downloadable installers. The `Release` workflow creates a draft containing server
@@ -160,19 +162,19 @@ a package does not delete data or pairings. This formula uses Dovo's managed bac
 For mise, merge the relevant entries from [distribution/mise.toml](../distribution/mise.toml) into
 your personal or project mise config. The two aliases select different assets from the same GitHub
 release, and `bin_path` exposes `dovo-server` and `dovo-studio` without exposing bundled Node. On
-Linux, select only `dovo-server`. The `dovo-studio` command launches its versioned macOS app bundle.
-Use `mise install`, then `mise exec -- dovo-server --help` or `mise exec -- dovo-studio`.
-`mise upgrade dovo-server` / `mise upgrade dovo-studio` select newer releases. Stop the server
-before upgrading and start it again afterward; close the desktop app before replacing its version.
-For strictly pinned deployment, use the release's attached `mise.toml`, which includes exact
-versions and platform-specific SHA-256 checksums. The pinned HTTP entries update by adopting a newer
-release config, while the GitHub aliases support release discovery. Use `mise lock` to lock alias
-downloads.
+Linux and Windows, select only `dovo-server`. The `dovo-studio` command launches its versioned macOS
+app bundle. Use `mise install`, then `mise exec -- dovo-server --help` or
+`mise exec -- dovo-studio`. `mise upgrade dovo-server` / `mise upgrade dovo-studio` select newer
+releases. Stop the server before upgrading and start it again afterward; close the desktop app
+before replacing its version. For strictly pinned deployment, use the release's attached
+`mise.toml`, which includes exact versions and platform-specific SHA-256 checksums. The pinned HTTP
+entries update by adopting a newer release config, while the GitHub aliases support release
+discovery. Use `mise lock` to lock alias downloads.
 
 Package-manager installs deliberately do not invoke the source checkout's `dovo-server update` flow
 or redirect to a previously staged source release. Their selected package controls the server
-version. Test a locally built archive with `node scripts/packaging/package-server.mjs` under
-Node 24. Generate tap/checksum metadata with
+version. Test a locally built archive with `pnpm run package:server` under Node 24. Generate
+tap/checksum metadata with
 `node scripts/packaging/generate-distribution.mjs release release/distribution VERSION`.
 
 Installer references: [Homebrew taps](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap),
