@@ -32,7 +32,7 @@ type LifecycleChanges = Partial<{
 }>
 export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () => void) {
   const {
-    call,
+    previewTaskEffect,
     connected,
     activeId,
     overviews,
@@ -49,17 +49,35 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
   const readStateEnabled = !!owner?.connected && !!completed && !task.archived && !task.example
   const patch = (changes: LifecycleChanges) => {
     if (!enabled) throw new Error('Reconnect to this task’s device before changing it.')
-    return call(
-      '/api/workspace',
+    if (!owner) throw new Error('This computer is no longer saved.')
+    return previewTaskEffect(
+      owner.profile,
+      task.id,
       {
-        collection: 'tasks',
-        id: task.id,
-        changes,
+        ...(changes.pinned ? { pinned: changes.pinned.after ?? false } : {}),
+        ...(changes.archived ? { archived: changes.archived.after ?? false } : {}),
+        ...(changes.snoozedUntil ? { snoozedUntil: changes.snoozedUntil.after ?? undefined } : {}),
       },
-      mutableStruct({
-        revision: Schema.Number.pipe(Schema.finite()),
-      }),
-      'PATCH',
+      callEffect(
+        '/api/workspace',
+        {
+          collection: 'tasks',
+          id: task.id,
+          changes,
+        },
+        mutableStruct({
+          revision: Schema.Number.pipe(Schema.finite()),
+        }),
+        'PATCH',
+      ),
+    ).pipe(
+      Effect.tapError((error) =>
+        Effect.sync(() => {
+          // Settling or snoozing can unmount the row that owns useAction's inline error.
+          if (changes.archived?.after || changes.snoozedUntil?.after)
+            Alert.alert('Could not update thread', error.message)
+        }),
+      ),
     )
   }
   return {

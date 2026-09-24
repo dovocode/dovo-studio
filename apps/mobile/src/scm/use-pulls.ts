@@ -4,7 +4,7 @@ import { Effect, Schema } from 'effect'
 import { startPolling, clientTaskScope } from '@dovo/client-runtime'
 import { mutableArray, mutableStruct, pullPageSchema, type PullPage } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/application-state'
-import { refreshFirstPage } from './collection-pages'
+import { refreshFirstPage, shouldSweepWorkPages } from './collection-pages'
 import { useRuntime } from '../runtime/provider'
 import {
   collectionSources,
@@ -45,6 +45,7 @@ export function usePulls(repositoryId: string, state: string) {
   const [busy, setBusy] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
   const forceNext = useRef(false)
+  const fullSweepAt = useRef(new Map<string, number>())
   const sourceState = useRef('')
   const generation = useRef(0)
   const moreRef = useRef<(id: string) => Promise<void>>(async () => {})
@@ -145,6 +146,16 @@ export function usePulls(repositoryId: string, state: string) {
             const cache = cacheForRuntime(entry.profile)
             const invalidated = pullListRevision(cache, entry.repository.id)
             const refresh = forced || !!invalidated
+            const previous = pagesRef.current[entry.key]
+            const sweepKey = JSON.stringify([projectContentIdentity(entry), remoteState])
+            const lastSweep = fullSweepAt.current.get(sweepKey) ?? Date.now()
+            if (!fullSweepAt.current.has(sweepKey)) fullSweepAt.current.set(sweepKey, lastSweep)
+            const sweeping =
+              !refresh &&
+              !!previous &&
+              (shouldSweepWorkPages(previous.page, lastSweep, Date.now()) ||
+                (previous.page > 1 && !previous.firstPageIds))
+            if (sweeping) fullSweepAt.current.set(sweepKey, Date.now())
             const response = yield* request(
               entry.profile,
               '/api/scm/pulls/overview',
@@ -152,22 +163,25 @@ export function usePulls(repositoryId: string, state: string) {
                 repositoryId: entry.repository.id,
                 state: remoteState,
                 page: 1,
-                refresh,
+                refresh: refresh || !!sweeping,
               },
               pullPageSchema,
             )
-            const previous = pagesRef.current[entry.key]
-            const page: Page = {
+            let page: Page = {
               ...response,
               ...metadata(entry),
               error: response.refreshError,
+              stale: !!response.stale || !!response.refreshError,
               firstPageIds: response.pulls.map((pull) => String(pull.number)),
-              ...(previous?.page > 1 && previous.firstPageIds && !refresh
+              ...(previous?.page > 1 &&
+              previous.firstPageIds &&
+              !refresh &&
+              !sweeping &&
+              response.hasMore
                 ? {
                     page: previous.page,
                     hasMore: previous.hasMore,
-                    stale: previous.stale || response.stale,
-                    error: response.refreshError || previous.error,
+                    stale: true,
                     pulls: refreshFirstPage(
                       previous.pulls,
                       previous.firstPageIds,
@@ -177,8 +191,45 @@ export function usePulls(repositoryId: string, state: string) {
                   }
                 : {}),
             }
+            for (
+              let number = 2;
+              sweeping && number <= previous.page && page.hasMore && !page.stale;
+              number++
+            ) {
+              const next = yield* request(
+                entry.profile,
+                '/api/scm/pulls/overview',
+                {
+                  repositoryId: entry.repository.id,
+                  state: remoteState,
+                  page: number,
+                  refresh: true,
+                },
+                pullPageSchema,
+              )
+              page = {
+                ...next,
+                ...metadata(entry),
+                firstPageIds: page.firstPageIds,
+                stale: page.stale || next.stale || !!next.refreshError,
+                error: page.error || next.refreshError,
+                pulls: [
+                  ...new Map(
+                    [...page.pulls, ...next.pulls].map((pull) => [pull.number, pull]),
+                  ).values(),
+                ],
+              }
+            }
+            if (sweeping && page.stale) {
+              update(entry.key, {
+                ...previous,
+                stale: true,
+                error: page.error,
+              })
+              return
+            }
             update(entry.key, page)
-            if (!response.stale && !response.refreshError)
+            if (!page.stale && !page.error)
               acknowledgePullList(cache, entry.repository.id, invalidated)
             yield* save(entry, page)
           }).pipe(
@@ -241,6 +292,11 @@ export function usePulls(repositoryId: string, state: string) {
           }
           update(id, page)
           yield* save(entry, page)
+          if (!next.stale && !next.refreshError)
+            fullSweepAt.current.set(
+              JSON.stringify([projectContentIdentity(entry), remoteState]),
+              Date.now(),
+            )
         }).pipe(
           Effect.catchAll((error) =>
             Effect.sync(() => update(id, { ...previous, error: error.message })),

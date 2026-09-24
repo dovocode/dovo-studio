@@ -308,8 +308,9 @@ enough.
 ## Caching and offline behavior
 
 The runtime keeps PR pages and details in SQLite, with up to 500 cached entries. Results older than
-60 seconds can be shown while a refresh runs in the background. Refresh explicitly when you need the
-latest GitHub state; a cached approval or check result is not a live merge-readiness guarantee.
+60 seconds can be shown while a refresh runs in the background. Visible clients automatically
+revalidate their cached views; Refresh requests an immediate check. A cached approval or check
+result is not a live merge-readiness guarantee.
 
 Desktop/web and mobile also retain a workspace snapshot and up to 100 successful read responses per
 saved runtime. Browser storage uses IndexedDB; native mobile uses app-private files so large
@@ -317,11 +318,11 @@ histories do not exceed Android AsyncStorage limits. Entries are scoped to the r
 credential hash, so data from two hosts or different credentials cannot replace one another. The
 credential itself stays in the connection's credential storage, not the cache key.
 
-Cached tasks, messages, and PR details can make reopening screens faster and preserve context during
-a network outage. They remain stale until the host is reachable again. Cached reads do not queue or
-authorize offline mutations: sending messages, running agents, applying edits, and terminal input
-require the correct live runtime. **Forget computer** removes that host's local cached data
-alongside its saved connection. This does not delete the workspace on the server.
+Cached tasks, messages, PRs, issues, and pipeline details make reopening screens faster and preserve
+context during a network outage. They remain stale until the host is reachable again. Cached reads
+do not queue or authorize offline mutations: sending messages, running agents, applying edits, and
+terminal input require the correct live runtime. **Forget computer** removes that host's local
+cached data alongside its saved connection. This does not delete the workspace on the server.
 
 Desktop workspace edits use a separate durable outbox, scoped to the same host and credential. The
 working workspace and pending changes are saved before a patch is sent. After an interrupted session

@@ -37,6 +37,16 @@ available content visible. Provider connections and repository bindings are incl
 identity. Changing a binding or saved account revision prevents reuse of that account's old client
 cache.
 
+Cached content appears before live requests finish. Open views refresh automatically, and returning
+to the app triggers another check; pressing Refresh is optional. Desktop PR lists check the first
+page every 30 seconds and mobile PR lists every 10 seconds; both revisit loaded older pages every
+two minutes. Mobile issue and pipeline lists check every 30 seconds while focused and in the
+foreground, with a two-minute sweep of loaded older pages. Issue and pipeline details on desktop and
+mobile also refresh every 30 seconds, including the discussion/job pages you have loaded. Background
+refreshes keep existing content visible; failed reads retain it with a stale/error indication. Issue
+and pipeline details are saved locally too, including loaded comments and jobs, so they can reopen
+offline. Mutations still require a live connection and fresh data.
+
 - **Create PR** takes a title, description, source branch and target branch. Branches must already
   exist on the server; this does not push local commits. Draft creation appears where supported.
 - **Review & actions / PR actions** provides distinct comment, approve and request-changes actions,

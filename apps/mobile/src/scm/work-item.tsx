@@ -1,16 +1,19 @@
 import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
 import { useApplicationState } from '../runtime/application-state'
 import {
   appendUniqueRows,
   clientScopeKey,
   RequestScope,
   runClientEffect,
+  startPolling,
 } from '@dovo/client-runtime'
-import { useEffect, useRef } from 'react'
+import { AppState } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
 import { Linking, RefreshControl, ScrollView, View } from 'react-native'
 import {
   forgeWorkOptionsSchema,
+  mutableStruct,
   forgeIssueDetailSchema,
   forgePipelineDetailSchema,
   forgeWorkResultSchema,
@@ -44,6 +47,14 @@ type WorkItemProps = {
   onBack: () => void
 }
 type RunAction = 'rerun' | 'cancel' | 'enable' | 'disable'
+const cachedIssueSchema = mutableStruct({
+  ...forgeIssueDetailSchema.fields,
+  loadedPages: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(1, 500))),
+})
+const cachedPipelineSchema = mutableStruct({
+  ...forgePipelineDetailSchema.fields,
+  loadedPages: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(1, 500))),
+})
 
 /** The route owns item identity; the collection remains mounted underneath. */
 export function WorkItemScreen(props: WorkItemProps) {
@@ -96,9 +107,12 @@ function WorkItemContent({
   })
   const [options, setOptions] = useApplicationState<ForgeWorkOptions | undefined>(undefined)
   const [revision, reload] = useApplicationState(0)
-  const [issue, setIssue] = useApplicationState<ForgeIssueDetail | undefined>(undefined)
-  const [pipeline, setPipeline] = useApplicationState<ForgePipelineDetail | undefined>(undefined)
+  const [issue, setIssue, issueRef] = useApplicationState<ForgeIssueDetail | undefined>(undefined)
+  const [pipeline, setPipeline, pipelineRef] = useApplicationState<ForgePipelineDetail | undefined>(
+    undefined,
+  )
   const [busy, setBusy] = useApplicationState(false)
+  const [refreshing, setRefreshing] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [stale, setStale] = useApplicationState(false)
   const [message, setMessage] = useApplicationState('')
@@ -107,7 +121,12 @@ function WorkItemContent({
   )
   const [confirm, setConfirm] = useApplicationState<RunAction | null>(null)
   const pending = useRef(false)
+  const refreshInFlight = useRef(false)
+  const hydrated = useRef(false)
+  const loadedPages = useRef(1)
+  const consumedRevision = useRef(0)
   const requests = useRef(new RequestScope())
+  const [semaphore] = useState(() => Effect.runSync(Effect.makeSemaphore(1)))
   const alive = useRef(true)
   useEffect(() => {
     alive.current = true
@@ -116,47 +135,60 @@ function WorkItemContent({
     }
   }, [])
   useEffect(() => {
-    const current = requests.current.begin()
-    pending.current = false
-    setBusy(false)
-    if (!focused) return () => requests.current.cancel()
-    setError('')
-    setBusy(connected)
-    setStale(true)
-    void runClientEffect(
-      mobileWorkflow(function* () {
-        yield* mobileWorkflow(function* () {
-          return yield* mobileWorkflow(function* () {
+    if (!focused) return
+    let stopped = false
+    let force = revision > consumedRevision.current
+    const load = Effect.suspend(() => {
+      if (
+        pending.current ||
+        refreshInFlight.current ||
+        form ||
+        confirm ||
+        AppState.currentState !== 'active'
+      )
+        return Effect.void
+      return Effect.gen(function* () {
+        const current = requests.current.begin()
+        const valid = () => !stopped && current()
+        refreshInFlight.current = true
+        setRefreshing(true)
+        const showBusy = force || (!issueRef.current && !pipelineRef.current)
+        if (showBusy) setBusy(true)
+        if (!hydrated.current) {
+          hydrated.current = true
+          yield* mobileWorkflow(function* () {
             const cachedOptions = yield* (
               readCache?.readEffect(optionsKey, forgeWorkOptionsSchema) ?? Effect.succeed(undefined)
             )
-            if (!current()) return
+            if (!valid()) return
             if (cachedOptions) setOptions(cachedOptions.value)
             if (mode === 'issues') {
               const cached = yield* (
-                readCache?.readEffect(detailKey, forgeIssueDetailSchema) ??
-                  Effect.succeed(undefined)
+                readCache?.readEffect(detailKey, cachedIssueSchema) ?? Effect.succeed(undefined)
               )
-              if (!current()) return
+              if (!valid()) return
               if (cached) {
                 assertWorkSource(mode, cached.value.issue.url, expectedURL)
                 setIssue(cached.value)
+                loadedPages.current = cached.value.loadedPages ?? 1
+                setStale(true)
               }
             } else {
               const cached = yield* (
-                readCache?.readEffect(detailKey, forgePipelineDetailSchema) ??
-                  Effect.succeed(undefined)
+                readCache?.readEffect(detailKey, cachedPipelineSchema) ?? Effect.succeed(undefined)
               )
-              if (!current()) return
+              if (!valid()) return
               if (cached) {
                 assertWorkSource(mode, cached.value.run.url, expectedURL)
                 setPipeline(cached.value)
+                loadedPages.current = cached.value.loadedPages ?? 1
+                setStale(true)
               }
             }
           }).pipe(
             Effect.catchAll((cause) =>
               nativeEffect(() => {
-                if (current())
+                if (valid())
                   setError(
                     cause instanceof Error
                       ? cause.message
@@ -165,105 +197,148 @@ function WorkItemContent({
               }),
             ),
           )
-        })
-        if (!connected || !current()) return
+        }
+        if (!connected || !valid()) {
+          if (showBusy) setBusy(false)
+          return
+        }
+        const refresh = force
+        force = false
+        consumedRevision.current = revision
+        if (showBusy) setStale(true)
         const opts = yield* readEffect(
           '/api/scm/work/options',
-          {
-            ...(jiraSourceId
-              ? {
-                  jiraSourceId,
-                }
-              : {
-                  repositoryId,
-                }),
-            area: mode,
-          },
+          { ...sourceInput, area: mode },
           forgeWorkOptionsSchema,
         )
-        if (!current()) return
+        if (!valid()) return
         setOptions(opts)
-        if (!(mode === 'issues' ? opts.issues : opts.pipelines)) return
+        if (!(mode === 'issues' ? opts.issues : opts.pipelines)) {
+          setStale(false)
+          setError('')
+          return
+        }
         if (mode === 'issues') {
-          const data = yield* readEffect(
+          let data = yield* readEffect(
             '/api/scm/work/issues/detail',
-            {
-              ...(jiraSourceId
-                ? {
-                    jiraSourceId,
-                  }
-                : {
-                    repositoryId,
-                  }),
-              id: selected,
-              refresh: revision > 0,
-            },
+            { ...sourceInput, id: selected, refresh },
             forgeIssueDetailSchema,
           )
-          if (!current()) return
+          if (!valid()) return
           assertWorkSource(mode, data.issue.url, expectedURL)
+          let pagesLoaded = 1
+          for (let page = 1; data.next && page < loadedPages.current; page++) {
+            const next = yield* readEffect(
+              '/api/scm/work/issues/detail',
+              { ...sourceInput, id: selected, cursor: data.next },
+              forgeIssueDetailSchema,
+            )
+            if (!valid()) return
+            assertWorkSource(mode, next.issue.url, expectedURL ?? data.issue.url)
+            data = {
+              ...next,
+              comments: appendUniqueRows(data.comments, next.comments),
+              stale: data.stale || next.stale,
+              refreshError: data.refreshError ?? next.refreshError,
+            }
+            pagesLoaded++
+          }
+          loadedPages.current = pagesLoaded
           setIssue(data)
           setStale(!!data.stale || !!data.refreshError)
           setError(data.refreshError ?? '')
           yield* mobileWorkflow(function* () {
             yield* readCache?.writeEffect(optionsKey, opts) ?? Effect.succeed(undefined)
-            yield* readCache?.writeEffect(detailKey, data) ?? Effect.succeed(undefined)
+            yield* (
+              readCache?.writeEffect(detailKey, {
+                ...data,
+                loadedPages: loadedPages.current,
+              }) ?? Effect.succeed(undefined)
+            )
           }).pipe(
-            Effect.catchAll((_error) =>
+            Effect.catchAll(() =>
               nativeEffect(() => {
-                if (current()) setError('Details loaded, but could not be saved for offline use.')
+                if (valid()) setError('Details loaded, but could not be saved for offline use.')
               }),
             ),
           )
         } else {
-          const data = yield* readEffect(
+          let data = yield* readEffect(
             '/api/scm/work/pipelines/detail',
-            {
-              ...(jiraSourceId
-                ? {
-                    jiraSourceId,
-                  }
-                : {
-                    repositoryId,
-                  }),
-              id: selected,
-              refresh: revision > 0,
-            },
+            { ...sourceInput, id: selected, refresh },
             forgePipelineDetailSchema,
           )
-          if (!current()) return
+          if (!valid()) return
           assertWorkSource(mode, data.run.url, expectedURL)
+          let pagesLoaded = 1
+          for (let page = 1; data.next && page < loadedPages.current; page++) {
+            const next = yield* readEffect(
+              '/api/scm/work/pipelines/detail',
+              { ...sourceInput, id: selected, cursor: data.next },
+              forgePipelineDetailSchema,
+            )
+            if (!valid()) return
+            assertWorkSource(mode, next.run.url, expectedURL ?? data.run.url)
+            data = {
+              ...next,
+              jobs: appendUniqueRows(data.jobs, next.jobs),
+              stale: data.stale || next.stale,
+              refreshError: data.refreshError ?? next.refreshError,
+            }
+            pagesLoaded++
+          }
+          loadedPages.current = pagesLoaded
           setPipeline(data)
           setStale(!!data.stale || !!data.refreshError)
           setError(data.refreshError ?? '')
           yield* mobileWorkflow(function* () {
             yield* readCache?.writeEffect(optionsKey, opts) ?? Effect.succeed(undefined)
-            yield* readCache?.writeEffect(detailKey, data) ?? Effect.succeed(undefined)
+            yield* (
+              readCache?.writeEffect(detailKey, {
+                ...data,
+                loadedPages: loadedPages.current,
+              }) ?? Effect.succeed(undefined)
+            )
           }).pipe(
-            Effect.catchAll((_error) =>
+            Effect.catchAll(() =>
               nativeEffect(() => {
-                if (current()) setError('Details loaded, but could not be saved for offline use.')
+                if (valid()) setError('Details loaded, but could not be saved for offline use.')
               }),
             ),
           )
         }
-      })
-        .pipe(
-          Effect.catchAll((cause) =>
-            nativeEffect(() => {
-              if (current()) setError(cause instanceof Error ? cause.message : String(cause))
-            }),
-          ),
-        )
-        .pipe(
-          Effect.ensuring(
-            nativeEffect(() => {
-              if (current()) setBusy(false)
-            }).pipe(Effect.orDie),
-          ),
+      }).pipe(
+        Effect.catchAll((cause) =>
+          nativeEffect(() => {
+            if (!stopped) {
+              setStale(true)
+              setError(cause instanceof Error ? cause.message : String(cause))
+            }
+          }),
         ),
-    )
-    return () => requests.current.cancel()
+        Effect.ensuring(
+          nativeEffect(() => {
+            refreshInFlight.current = false
+            setRefreshing(false)
+            if (!stopped) setBusy(false)
+          }).pipe(Effect.orDie),
+        ),
+      )
+    })
+    const polling = startPolling(semaphore.withPermits(1)(load), {
+      interval: 30000,
+      onError: () => {},
+    })
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') polling.refresh()
+    })
+    return () => {
+      stopped = true
+      requests.current.cancel()
+      setBusy(false)
+      subscription.remove()
+      void polling.stop()
+    }
   }, [
     read,
     connected,
@@ -277,18 +352,40 @@ function WorkItemContent({
     readCache,
     optionsKey,
     detailKey,
+    form,
+    confirm,
+    issueRef,
+    pipelineRef,
   ])
   const done = (message: string) => {
     if (!alive.current) return
     setForm(null)
     setConfirm(null)
     setMessage(message)
-    reload((value) => value + 1)
+    setStale(true)
+    pending.current = true
+    void runClientEffect(
+      mobileWorkflow(function* () {
+        yield* readCache?.removeEffect(detailKey) ?? Effect.succeed(undefined)
+      }).pipe(
+        Effect.catchAll(() =>
+          nativeEffect(() =>
+            setError('Updated details could not be cleared from offline storage.'),
+          ),
+        ),
+        Effect.ensuring(
+          nativeEffect(() => {
+            pending.current = false
+            reload((value) => value + 1)
+          }).pipe(Effect.orDie),
+        ),
+      ),
+    )
   }
   const more = () => {
     return runClientEffect(
       mobileWorkflow(function* () {
-        if (pending.current || busy || !connected || !focused) return
+        if (pending.current || refreshInFlight.current || busy || !connected || !focused) return
         const current = requests.current.begin()
         setError('')
         pending.current = true
@@ -315,12 +412,20 @@ function WorkItemContent({
             const merged = {
               ...data,
               comments: appendUniqueRows(issue.comments, data.comments),
+              stale: issue.stale || data.stale,
+              refreshError: issue.refreshError ?? data.refreshError,
             }
             setIssue(merged)
+            loadedPages.current = Math.min(500, loadedPages.current + 1)
             setStale(stale || !!data.stale || !!data.refreshError)
             setError(data.refreshError ?? '')
             yield* mobileWorkflow(function* () {
-              yield* readCache?.writeEffect(detailKey, merged) ?? Effect.succeed(undefined)
+              yield* (
+                readCache?.writeEffect(detailKey, {
+                  ...merged,
+                  loadedPages: loadedPages.current,
+                }) ?? Effect.succeed(undefined)
+              )
             }).pipe(
               Effect.catchAll((_error) =>
                 nativeEffect(() => {
@@ -350,12 +455,20 @@ function WorkItemContent({
             const merged = {
               ...data,
               jobs: appendUniqueRows(pipeline.jobs, data.jobs),
+              stale: pipeline.stale || data.stale,
+              refreshError: pipeline.refreshError ?? data.refreshError,
             }
             setPipeline(merged)
+            loadedPages.current = Math.min(500, loadedPages.current + 1)
             setStale(stale || !!data.stale || !!data.refreshError)
             setError(data.refreshError ?? '')
             yield* mobileWorkflow(function* () {
-              yield* readCache?.writeEffect(detailKey, merged) ?? Effect.succeed(undefined)
+              yield* (
+                readCache?.writeEffect(detailKey, {
+                  ...merged,
+                  loadedPages: loadedPages.current,
+                }) ?? Effect.succeed(undefined)
+              )
             }).pipe(
               Effect.catchAll((_error) =>
                 nativeEffect(() => {
@@ -392,7 +505,7 @@ function WorkItemContent({
       ),
     )
   }
-  const mutationDisabled = !focused || !connected || busy || stale
+  const mutationDisabled = !focused || !connected || busy || refreshing || stale
   const confirmAllowed = !!(
     confirm &&
     pipeline &&

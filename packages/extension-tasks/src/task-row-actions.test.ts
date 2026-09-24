@@ -61,6 +61,8 @@ const source: TaskSource = {
 function setup() {
   const requests: unknown[] = []
   const store: Store = {
+    connection: mac.connection,
+    previewTask: (_connection, _taskId, _changes, action) => action(),
     activeRuntimeId: mac.id,
     runtimeRegistry: {
       version: 1,
@@ -76,6 +78,7 @@ function setup() {
       })
       return decode(schema, {
         ok: true,
+        revision: 2,
       })
     },
     readRuntime: async (profile, path, input, schema, method) => {
@@ -89,6 +92,7 @@ function setup() {
       })
       return decode(schema, {
         ok: true,
+        revision: 2,
       })
     },
     refreshRuntime: vi.fn<Store['refreshRuntime']>(async () => {}),
@@ -281,4 +285,44 @@ it('rejects offline, forgotten or replaced remote owners instead of using the ac
     'credentials changed',
   )
   expect(requests).toEqual([])
+})
+
+it('keeps the preview until reconciliation and does not fail a committed edit when refresh fails', async () => {
+  const { store, requests } = setup()
+  const order: string[] = []
+  store.previewTask = async (connection, taskId, changes, action) => {
+    expect(connection).toBe(linux.connection)
+    expect(taskId).toBe(task.id)
+    expect(changes).toEqual({ pinned: true })
+    order.push('preview')
+    try {
+      return await action()
+    } finally {
+      order.push('remove')
+    }
+  }
+  store.refreshRuntime = async () => {
+    order.push('refresh')
+    expect(requests).toHaveLength(1)
+    throw new Error('Connection lost after commit')
+  }
+  await expect(
+    taskActionClient(store, source).patch(task, { pinned: true }),
+  ).resolves.toBeUndefined()
+  expect(order).toEqual(['preview', 'refresh', 'remove'])
+  expect(requests).toHaveLength(1)
+})
+
+it('reports a rejected edit without attempting a refresh or duplicating the write', async () => {
+  const { store } = setup()
+  let calls = 0
+  store.readRuntime = async () => {
+    calls++
+    throw new Error('Conflict')
+  }
+  await expect(taskActionClient(store, source).patch(task, { pinned: true })).rejects.toThrow(
+    'Conflict',
+  )
+  expect(calls).toBe(1)
+  expect(store.refreshRuntime).not.toHaveBeenCalled()
 })

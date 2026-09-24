@@ -1,3 +1,4 @@
+import { readWorkDetailCache, workDetailCacheKeys } from './work-detail-cache'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode } from '@dovo/protocol'
 import { issueEditInput } from '@dovo/studio-core'
@@ -13,9 +14,10 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
-import { Schema } from 'effect'
+import { Effect, Schema } from 'effect'
 import {
   useWorkspace,
+  startPolling,
   issueLabel,
   forgeLabels,
   matchesWorkItem,
@@ -101,6 +103,7 @@ export function WorkContent({
   const [confirm, setConfirm] = useApplicationState<
     'rerun' | 'cancel' | 'enable' | 'disable' | null
   >(null)
+  const loadedDetailPages = useRef(1)
   const pending = useRef(false)
   const requests = useRef(new RequestScope())
   const target = useMemo(
@@ -114,122 +117,242 @@ export function WorkContent({
           },
     [jiraSourceId, repositoryId],
   )
+  const { workspace, readCache } = useWorkspace()
+  const keys = workDetailCacheKeys(
+    {
+      repository: workspace.repositories.find((repo) => repo.id === repositoryId),
+      jira: workspace.jiraSources?.find((source) => source.id === jiraSourceId),
+    },
+    mode,
+    selected,
+  )
+  const optionsKey = keys.options
+  const detailKey = keys.detail
+  const cacheScope = useRef({ detailKey, readCache })
   const base = '/api/scm/work/'
   useEffect(() => {
-    const current = requests.current.begin()
+    let stopped = false
+    let hydrated = false
+    let force = revision > 0
     pending.current = false
     setStale(true)
     setBusy(true)
     setError('')
-    setIssue((value) => (value?.issue.id === selected ? value : undefined))
-    setPipeline((value) => (value?.run.id === selected ? value : undefined))
-    if (!connected) {
-      setBusy(false)
-      return () => requests.current.cancel()
+    const sameSource =
+      cacheScope.current.detailKey === detailKey && cacheScope.current.readCache === readCache
+    cacheScope.current = { detailKey, readCache }
+    setIssue((value) => (sameSource && value?.issue.id === selected ? value : undefined))
+    setPipeline((value) => (sameSource && value?.run.id === selected ? value : undefined))
+    if (!sameSource) {
+      setOptions(undefined)
+      loadedDetailPages.current = 1
     }
-    void (async () => {
-      const opts = await request(
-        base + 'options',
-        {
-          ...target,
-          area: mode,
-        },
-        forgeWorkOptionsSchema,
-      )
-      if (!current()) return
-      setOptions(opts)
-      if (!(mode === 'issues' ? opts.issues : opts.pipelines)) {
-        setRows([])
-        return
+    const load = async () => {
+      if (stopped || pending.current) return
+      const valid = requests.current.begin()
+      const current = () => !stopped && valid()
+      const save = async (key: string, value: unknown) => {
+        if (!readCache || !current()) return
+        try {
+          await readCache.write(key, value)
+        } catch {
+          if (current()) setError('Details loaded, but could not be saved for offline use.')
+        }
       }
-      if (selected) {
-        if (mode === 'issues') {
-          const data = await request(
-            base + 'issues/detail',
-            {
-              ...target,
-              id: selected,
-              refresh: revision > 0,
-            },
-            forgeIssueDetailSchema,
-          )
-          if (current()) {
-            if (
-              selected === initialSelected &&
-              initialSourceURL &&
-              data.issue.url !== initialSourceURL
-            ) {
-              setIssue(undefined)
-              throw new Error('This issue source changed. Open the original source below.')
+      try {
+        if (!hydrated && selected && readCache && (revision === 0 || !sameSource)) {
+          hydrated = true
+          try {
+            const saved = await readWorkDetailCache(
+              readCache,
+              { options: optionsKey, detail: detailKey },
+              mode,
+              selected === initialSelected ? initialSourceURL : undefined,
+            )
+            if (!current()) return
+            if (saved.options) setOptions(saved.options)
+            if (saved.issue) setIssue(saved.issue)
+            if (saved.pipeline) setPipeline(saved.pipeline)
+            loadedDetailPages.current = saved.issue?.loadedPages ?? saved.pipeline?.loadedPages ?? 1
+          } catch (error) {
+            if (current())
+              setError(error instanceof Error ? error.message : 'Saved details could not be read.')
+          }
+        }
+        if (!current() || !connected || document.visibilityState !== 'visible') return
+        const refresh = force
+        force = false
+        const opts = await request(
+          base + 'options',
+          {
+            ...target,
+            area: mode,
+          },
+          forgeWorkOptionsSchema,
+        )
+        if (!current()) return
+        setOptions(opts)
+        if (!(mode === 'issues' ? opts.issues : opts.pipelines)) {
+          setRows([])
+          return
+        }
+        if (selected) {
+          if (mode === 'issues') {
+            let data = await request(
+              base + 'issues/detail',
+              {
+                ...target,
+                id: selected,
+                refresh,
+              },
+              forgeIssueDetailSchema,
+            )
+            if (current()) {
+              if (
+                selected === initialSelected &&
+                initialSourceURL &&
+                data.issue.url !== initialSourceURL
+              ) {
+                setIssue(undefined)
+                throw new Error('This issue source changed. Open the original source below.')
+              }
+              let pages = 1
+              const wanted = refresh ? 1 : loadedDetailPages.current
+              while (data.next && pages < wanted) {
+                const next = await request(
+                  base + 'issues/detail',
+                  {
+                    ...target,
+                    id: selected,
+                    cursor: data.next,
+                    refresh,
+                  },
+                  forgeIssueDetailSchema,
+                )
+                if (!current()) return
+                if (next.issue.url !== data.issue.url) throw new Error('This issue source changed.')
+                data = {
+                  ...next,
+                  comments: appendUniqueRows(data.comments, next.comments),
+                  stale: data.stale || next.stale,
+                  refreshError: data.refreshError || next.refreshError,
+                }
+                pages++
+              }
+              loadedDetailPages.current = pages
+              setIssue(data)
+              setStale(!!data.stale || !!data.refreshError)
+              setError(data.refreshError ?? '')
+              await save(detailKey, { ...data, loadedPages: loadedDetailPages.current })
             }
-            setIssue(data)
-            setStale(!!data.stale)
-            setError(data.refreshError ?? '')
+          } else {
+            let data = await request(
+              base + 'pipelines/detail',
+              {
+                ...target,
+                id: selected,
+                refresh,
+              },
+              forgePipelineDetailSchema,
+            )
+            if (current()) {
+              if (
+                selected === initialSelected &&
+                initialSourceURL &&
+                data.run.url !== initialSourceURL
+              ) {
+                setPipeline(undefined)
+                throw new Error(
+                  'This project now uses a different pipeline source. Open the original source below.',
+                )
+              }
+              let pages = 1
+              const wanted = refresh ? 1 : loadedDetailPages.current
+              while (data.next && pages < wanted) {
+                const next = await request(
+                  base + 'pipelines/detail',
+                  {
+                    ...target,
+                    id: selected,
+                    cursor: data.next,
+                    refresh,
+                  },
+                  forgePipelineDetailSchema,
+                )
+                if (!current()) return
+                if (next.run.url !== data.run.url) throw new Error('This pipeline source changed.')
+                data = {
+                  ...next,
+                  jobs: appendUniqueRows(data.jobs, next.jobs),
+                  stale: data.stale || next.stale,
+                  refreshError: data.refreshError || next.refreshError,
+                }
+                pages++
+              }
+              loadedDetailPages.current = pages
+              setPipeline(data)
+              setStale(!!data.stale || !!data.refreshError)
+              setError(data.refreshError ?? '')
+              await save(detailKey, { ...data, loadedPages: loadedDetailPages.current })
+            }
           }
         } else {
-          const data = await request(
-            base + 'pipelines/detail',
-            {
-              ...target,
-              id: selected,
-              refresh: revision > 0,
-            },
-            forgePipelineDetailSchema,
-          )
+          const data =
+            mode === 'issues'
+              ? await request(
+                  base + 'issues/list',
+                  {
+                    ...target,
+                    state,
+                    cursor,
+                    refresh,
+                  },
+                  forgeIssuePageSchema,
+                )
+              : await request(
+                  base + 'pipelines/list',
+                  {
+                    ...target,
+                    cursor,
+                    refresh,
+                  },
+                  forgePipelinePageSchema,
+                )
           if (current()) {
-            if (
-              selected === initialSelected &&
-              initialSourceURL &&
-              data.run.url !== initialSourceURL
-            ) {
-              setPipeline(undefined)
-              throw new Error(
-                'This project now uses a different pipeline source. Open the original source below.',
-              )
-            }
-            setPipeline(data)
-            setStale(!!data.stale)
+            setRows(data.items)
+            setNext(data.next)
+            setStale(!!data.stale || !!data.refreshError)
             setError(data.refreshError ?? '')
           }
         }
-      } else {
-        const data =
-          mode === 'issues'
-            ? await request(
-                base + 'issues/list',
-                {
-                  ...target,
-                  state,
-                  cursor,
-                  refresh: revision > 0,
-                },
-                forgeIssuePageSchema,
-              )
-            : await request(
-                base + 'pipelines/list',
-                {
-                  ...target,
-                  cursor,
-                  refresh: revision > 0,
-                },
-                forgePipelinePageSchema,
-              )
+        if (selected) await save(optionsKey, opts)
+      } catch (error) {
         if (current()) {
-          setRows(data.items)
-          setNext(data.next)
-          setStale(!!data.stale)
-          setError(data.refreshError ?? '')
+          setStale(true)
+          setError(error instanceof Error ? error.message : String(error))
         }
-      }
-    })()
-      .catch((e) => {
-        if (current()) setError(e instanceof Error ? e.message : String(e))
-      })
-      .finally(() => {
+      } finally {
         if (current()) setBusy(false)
-      })
+      }
+    }
+    const polling = startPolling(
+      Effect.tryPromise({
+        try: load,
+        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+      }),
+      {
+        interval: 30000,
+        onError: (error) => {
+          if (!stopped) setError(error.message)
+        },
+      },
+    )
+    document.addEventListener('visibilitychange', polling.refresh)
     return () => {
+      stopped = true
       requests.current.cancel()
+      document.removeEventListener('visibilitychange', polling.refresh)
+      void polling.stop()
     }
   }, [
     connected,
@@ -242,12 +365,22 @@ export function WorkContent({
     revision,
     initialSelected,
     initialSourceURL,
+    readCache,
+    optionsKey,
+    detailKey,
   ])
   const visibleRows = rows.filter((row) => matchesWorkItem(row, search))
-  const changed = (message: string) => {
+  const changed = async (message: string) => {
+    requests.current.cancel()
     setMessage(message)
     setForm(null)
     setConfirm(null)
+    // The mutation committed; never hydrate the pre-edit detail on a later visit.
+    try {
+      if (readCache && selected) await readCache.remove(detailKey)
+    } catch {
+      setMessage(message + ' Offline details could not be cleared.')
+    }
     reload((v) => v + 1)
   }
   const moreDetail = async () => {
@@ -268,12 +401,14 @@ export function WorkContent({
           forgeIssueDetailSchema,
         )
         if (!current()) return
-        setIssue({
-          ...data,
-          comments: appendUniqueRows(issue.comments, data.comments),
-        })
+        if (data.issue.url !== issue.issue.url) throw new Error('This issue source changed.')
+        const merged = { ...data, comments: appendUniqueRows(issue.comments, data.comments) }
+        setIssue(merged)
+        loadedDetailPages.current++
         setStale(stale || !!data.stale)
         setError(data.refreshError ?? '')
+        if (readCache)
+          await readCache.write(detailKey, { ...merged, loadedPages: loadedDetailPages.current })
       } else if (pipeline?.next) {
         const data = await request(
           base + 'pipelines/detail',
@@ -285,12 +420,14 @@ export function WorkContent({
           forgePipelineDetailSchema,
         )
         if (!current()) return
-        setPipeline({
-          ...data,
-          jobs: appendUniqueRows(pipeline.jobs, data.jobs),
-        })
+        if (data.run.url !== pipeline.run.url) throw new Error('This pipeline source changed.')
+        const merged = { ...data, jobs: appendUniqueRows(pipeline.jobs, data.jobs) }
+        setPipeline(merged)
+        loadedDetailPages.current++
         setStale(stale || !!data.stale)
         setError(data.refreshError ?? '')
+        if (readCache)
+          await readCache.write(detailKey, { ...merged, loadedPages: loadedDetailPages.current })
       }
     } catch (e) {
       if (current()) setError(e instanceof Error ? e.message : String(e))
@@ -496,7 +633,9 @@ export function WorkContent({
         )}
         {stale && !!(issue || pipeline || rows.length) && (
           <p className="text-sm text-muted-foreground">
-            Cached results. Refresh before making changes.
+            {connected
+              ? 'Showing cached results while checking for updates.'
+              : 'Showing saved results. Reconnect for live updates.'}
           </p>
         )}
         {message && (

@@ -1,3 +1,9 @@
+import {
+  previewWorkspace,
+  withTaskPreview,
+  type TaskPreview,
+  type TaskPreviewChanges,
+} from './task-previews'
 import { recoverRuntimePairings } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/application-state'
 import { mutableStruct } from '@dovo/protocol'
@@ -31,6 +37,9 @@ import {
   runtimeRequestEffect,
   clearRuntimeRequestCache,
   getRuntimeSnapshotTag,
+  retainRuntimeSnapshot,
+  retainOverviewSnapshot,
+  shouldPublishOverview,
   type RuntimeConnection,
   type RuntimeSnapshot,
   type RuntimeProfile,
@@ -68,6 +77,13 @@ type RequestEffect = <T extends Schema.Schema.AnyNoContext>(
 const connectionError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
 type Store = {
+  previewTask: <A>(
+    connection: RuntimeConnection,
+    taskId: string,
+    changes: TaskPreviewChanges,
+    action: () => Promise<A>,
+  ) => Promise<A>
+
   workspace: Workspace
   setWorkspace: Dispatch<SetStateAction<Workspace>>
   ready: boolean
@@ -127,6 +143,16 @@ const idleOverview = (
   pullError: null,
 })
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const [previews, setPreviews] = useApplicationState<TaskPreview[]>([])
+  const previewTask = useCallback(
+    <A,>(
+      connection: RuntimeConnection,
+      taskId: string,
+      changes: TaskPreviewChanges,
+      action: () => Promise<A>,
+    ) => withTaskPreview({ id: Symbol(taskId), connection, taskId, changes }, setPreviews, action),
+    [],
+  )
   const [workspace, setState, current] = useApplicationState(createWorkspace)
   const [ready, setReady] = useApplicationState(false),
     [storageError, setStorageError] = useApplicationState<string | null>(null),
@@ -134,13 +160,37 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [connection, setConnection, connectionRef] = useApplicationState<RuntimeConnection | null>(
     null,
   )
-  const [snapshot, setSnapshot] = useApplicationState<RuntimeSnapshot | null>(null),
+  const [snapshot, setSnapshotState, snapshotRef] = useApplicationState<RuntimeSnapshot | null>(
+      null,
+    ),
     [connected, setConnected] = useApplicationState(false),
     [syncError, setSyncError] = useApplicationState<string | null>(null)
+  const snapshotConnection = useRef<RuntimeConnection | null>(null)
+  const setSnapshot = useCallback(
+    (value: RuntimeSnapshot | null, target: RuntimeConnection | null) => {
+      const retained = retainRuntimeSnapshot(
+        snapshotRef.current,
+        snapshotConnection.current,
+        value,
+        target,
+      )
+      snapshotConnection.current = target
+      setSnapshotState(retained)
+    },
+    [],
+  )
   const [runtimeRegistry, setRegistry, registryRef] = useApplicationState(emptyRegistry)
   const [overviews, setOverviews, overviewsRef] = useApplicationState<
     Record<string, RuntimeOverview>
-  >({})
+  >({}, (previous, next) => {
+    if (
+      !previous ||
+      Object.keys(previous).length !== Object.keys(next).length ||
+      Object.entries(next).some(([id, entry]) => shouldPublishOverview(previous[id], entry))
+    )
+      return next
+    return previous
+  })
   const cacheDirty = useRef(false)
   const cacheWrites = useRef(
     new Map<
@@ -295,7 +345,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (!profile) return
     const next = {
       ...overviewsRef.current,
-      [value.profile.id]: value,
+      [value.profile.id]: overviewsRef.current[value.profile.id]
+        ? retainOverviewSnapshot(overviewsRef.current[value.profile.id], value)
+        : value,
     }
     setOverviews(next)
     if (value.connected && value.snapshot) cacheDirty.current = true
@@ -396,7 +448,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     ) => {
       synchronization.bind(profile.connection, outbox)
       setConnection(profile.connection)
-      setSnapshot(value)
+      setSnapshot(value, profile.connection)
       if (outbox) install(outbox.workspace)
       else if (value) installSnapshot(profile.connection, value)
       else
@@ -628,7 +680,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (connectionRef.current) clearRuntimeRequestCache(connectionRef.current)
     setConnection(null)
     setConnected(false)
-    setSnapshot(null)
+    setSnapshot(null, null)
     synchronization.bind(null)
     setSyncError(null)
     install({
@@ -845,7 +897,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         error: null,
       })
       if (registryRef.current.activeId === profile.id && synchronization.isCurrent(checkpoint)) {
-        setSnapshot(value)
+        setSnapshot(value, profile.connection)
         setConnected(true)
         synchronization.clearNetworkError()
         if (synchronization.accepts(checkpoint)) installSnapshot(profile.connection, value)
@@ -880,7 +932,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   return
                 setConnected(value.connected)
                 if (value.connected && value.snapshot) {
-                  setSnapshot(value.snapshot)
+                  setSnapshot(value.snapshot, profile.connection)
                   synchronization.clearNetworkError()
                   if (synchronization.accepts(checkpoint))
                     installSnapshot(profile.connection, value.snapshot)
@@ -1155,7 +1207,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             snapshotOrder.current.get(id) !== order
           )
             return
-          setSnapshot(value)
+          setSnapshot(value, connection)
           setConnected(true)
           synchronization.clearNetworkError()
           if (synchronization.accepts(checkpoint)) installSnapshot(connection, value)
@@ -1221,10 +1273,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', polling.refresh)
     }
   }, [ready, refreshRuntimesEffect])
+  const visibleWorkspace = useMemo(
+    () => previewWorkspace(workspace, connection, previews),
+    [workspace, connection, previews],
+  )
+  const visibleRuntimes = useMemo(
+    () =>
+      runtimeRegistry.profiles.map((profile) => {
+        const entry =
+          overviews[profile.id]?.profile.connection.token === profile.connection.token
+            ? overviews[profile.id]
+            : idleOverview(profile)
+        if (!entry.snapshot) return entry
+        const workspace = previewWorkspace(entry.snapshot.workspace, profile.connection, previews)
+        return workspace === entry.snapshot.workspace
+          ? entry
+          : {
+              ...entry,
+              snapshot: { ...entry.snapshot, workspace },
+            }
+      }),
+    [runtimeRegistry.profiles, overviews, previews],
+  )
   return (
     <WorkspaceContext.Provider
       value={{
-        workspace,
+        previewTask,
+        workspace: visibleWorkspace,
         setWorkspace,
         ready,
         storageError,
@@ -1240,11 +1315,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         flush,
         runtimeRegistry,
         activeRuntimeId: runtimeRegistry.activeId,
-        runtimes: runtimeRegistry.profiles.map((profile) =>
-          overviews[profile.id]?.profile.connection.token === profile.connection.token
-            ? overviews[profile.id]
-            : idleOverview(profile),
-        ),
+        runtimes: visibleRuntimes,
         switchRuntime,
         forgetRuntime,
         refreshRuntimes,

@@ -14,6 +14,8 @@ import {
 import { useIssueSources, type WorkSource } from './work-sources'
 type Page = {
   loadedPages?: number
+  optionsMode?: 'issues' | 'pipelines'
+  optionsFetchedAt?: number
   query?: string
   source: WorkSource
   items: Array<ForgeIssue | ForgePipeline>
@@ -21,6 +23,29 @@ type Page = {
   next?: string
   stale?: boolean
   error?: string
+}
+export function reusableOptions<T>(
+  page:
+    | {
+        source: { scope: string }
+        optionsMode?: string
+        optionsFetchedAt?: number
+        options?: T
+      }
+    | undefined,
+  source: { scope: string },
+  mode: string,
+  refresh: boolean,
+  now = Date.now(),
+): T | undefined {
+  return !refresh &&
+    page?.source.scope === source.scope &&
+    page.optionsMode === mode &&
+    page.optionsFetchedAt !== undefined &&
+    now - page.optionsFetchedAt >= 0 &&
+    now - page.optionsFetchedAt < 60_000
+    ? page.options
+    : undefined
 }
 const cacheKey = (source: WorkSource, mode: string, kind: string, query = '') =>
   JSON.stringify([
@@ -72,24 +97,28 @@ export function useWorkSources(mode: 'issues' | 'pipelines', search = '') {
           (source) =>
             Effect.gen(function* () {
               if (pagesRef.current[source.key]) return
-              const options = yield* source.readCache.readEffect(
-                cacheKey(source, mode, 'options'),
-                forgeWorkOptionsSchema,
-              )
-              const page = yield* mode === 'issues'
-                ? source.readCache.readEffect(
-                    cacheKey(source, mode, 'list', search),
-                    forgeIssuePageSchema,
-                  )
-                : source.readCache.readEffect(
-                    cacheKey(source, mode, 'list', search),
-                    forgePipelinePageSchema,
-                  )
+              const [options, page] = yield* Effect.all([
+                source.readCache.readEffect(
+                  cacheKey(source, mode, 'options'),
+                  forgeWorkOptionsSchema,
+                ),
+                mode === 'issues'
+                  ? source.readCache.readEffect(
+                      cacheKey(source, mode, 'list', search),
+                      forgeIssuePageSchema,
+                    )
+                  : source.readCache.readEffect(
+                      cacheKey(source, mode, 'list', search),
+                      forgePipelinePageSchema,
+                    ),
+              ])
               if (!pagesRef.current[source.key] && (options || page))
                 update(source, {
                   ...page?.value,
                   items: page?.value.items ?? [],
                   options: options?.value,
+                  optionsMode: mode,
+                  // Disk entries have no in-memory fetch time and must refresh on the next poll.
                   stale: true,
                   query: options?.value.issueSearch ? search : undefined,
                 })
@@ -120,14 +149,21 @@ export function useWorkSources(mode: 'issues' | 'pipelines', search = '') {
         sources.filter((source) => source.connected),
         (source) =>
           Effect.gen(function* () {
-            const options = yield* source.requestEffect(
-              '/api/scm/work/options',
-              {
-                ...source.input,
-                area: mode,
-              },
-              forgeWorkOptionsSchema,
-            )
+            const previous = pagesRef.current[source.key]
+            const options =
+              reusableOptions(previous, source, mode, refresh) ??
+              (yield* source.requestEffect(
+                '/api/scm/work/options',
+                {
+                  ...source.input,
+                  area: mode,
+                },
+                forgeWorkOptionsSchema,
+              ))
+            const optionsFetchedAt =
+              options === previous?.options && previous?.optionsFetchedAt !== undefined
+                ? previous.optionsFetchedAt
+                : Date.now()
             const query =
               mode === 'issues' &&
               options.issueSearch &&
@@ -186,6 +222,8 @@ export function useWorkSources(mode: 'issues' | 'pipelines', search = '') {
             const page = {
               ...response,
               options,
+              optionsMode: mode,
+              optionsFetchedAt,
               loadedPages,
               query,
               error: response.refreshError,

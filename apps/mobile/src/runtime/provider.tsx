@@ -1,7 +1,21 @@
+import {
+  optimisticTaskEffect,
+  previewTasks,
+  type OptimisticTask,
+  type TaskPreview,
+} from './optimistic-tasks'
 import { nativeEffect, mobileWorkflow } from './native-effect'
 import { useApplicationState } from './application-state'
 import { decode } from '@dovo/protocol'
-import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from 'react'
 import { AppState } from 'react-native'
 import * as SecureStore from 'expo-secure-store'
 import { Data, Effect, Schema } from 'effect'
@@ -71,6 +85,13 @@ type RuntimeReadEffect = <T extends Schema.Schema.AnyNoContext>(
   method?: string,
 ) => Effect.Effect<Schema.Schema.Type<T>, Error>
 type Runtime = {
+  previewTaskEffect: <A, E>(
+    profile: RuntimeProfile,
+    taskId: string,
+    changes: TaskPreview,
+    request: Effect.Effect<A, E>,
+  ) => Effect.Effect<A, E>
+
   snapshot: RuntimeSnapshot | null
   connection: RuntimeConnection | null
   profile: RuntimeProfile | null
@@ -143,6 +164,21 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [ready, setReady] = useApplicationState(false),
     [storageError, setStorageError] = useApplicationState(''),
     [legacyDraftRuntimeId, setLegacyDraftRuntimeId] = useApplicationState<string | null>(null)
+  const [previews, setPreviews] = useApplicationState<OptimisticTask[]>([])
+  const previewTaskEffect = useCallback(
+    <A, E>(
+      owner: RuntimeProfile,
+      taskId: string,
+      changes: TaskPreview,
+      request: Effect.Effect<A, E>,
+    ) =>
+      optimisticTaskEffect(
+        { id: Symbol(taskId), connection: owner.connection, taskId, changes },
+        setPreviews,
+        request,
+      ),
+    [],
+  )
   const [storageLock] = useApplicationState(() => Effect.runSync(Effect.makeSemaphore(1)))
   const sequence = useRef(new Map<string, number>())
   const fleetPending = useRef(
@@ -579,7 +615,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           current.current.profiles.some(
             (saved) =>
               saved.id === owner.id &&
-              clientScopeKey(saved.connection) === clientScopeKey(owner.connection),
+              saved.connection.address === owner.connection.address &&
+              saved.connection.token === owner.connection.token,
           )
         const changed = () =>
           new ConnectionChangedError({
@@ -777,20 +814,31 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     (...args: Parameters<typeof disconnectEffect>) => runClientEffect(disconnectEffect(...args)),
     [disconnectEffect],
   )
+  const overviews = useMemo(
+    () =>
+      registry.profiles.map((item) =>
+        previewTasks(
+          {
+            ...(entries[item.id]?.profile.connection.token === item.connection.token
+              ? entries[item.id]
+              : initialOverview(item)),
+            profile: item,
+          },
+          previews,
+        ),
+      ),
+    [registry.profiles, entries, previews],
+  )
   return (
     <Context.Provider
       value={{
+        previewTaskEffect,
         connection,
         profile,
         profiles: registry.profiles,
         activeId: registry.activeId,
-        overviews: registry.profiles.map((item) => ({
-          ...(entries[item.id]?.profile.connection.token === item.connection.token
-            ? entries[item.id]
-            : initialOverview(item)),
-          profile: item,
-        })),
-        snapshot: active?.snapshot ?? null,
+        overviews,
+        snapshot: overviews.find((entry) => entry.profile.id === profile?.id)?.snapshot ?? null,
         connected: active?.connected ?? false,
         ready,
         error:

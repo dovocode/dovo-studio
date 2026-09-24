@@ -15,3 +15,11 @@ export function refreshFirstPage<T>(
     ).values(),
   ]
 }
+
+export function shouldSweepWorkPages(
+  loadedPages: number | undefined,
+  lastFullSweep: number,
+  now: number,
+) {
+  return (loadedPages ?? 1) > 1 && now - lastFullSweep >= 120000
+}

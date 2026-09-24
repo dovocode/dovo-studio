@@ -1,4 +1,4 @@
-import { decode } from '@dovo/protocol'
+import { decode, mutableStruct } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { Task, useWorkspace } from '@dovo/studio-core'
 import type { TaskSource } from './task-collection'
@@ -51,6 +51,8 @@ export function taskRowPatch(task: Task, updates: TaskRowChanges) {
 type Store = Pick<
   ReturnType<typeof useWorkspace>,
   | 'activeRuntimeId'
+  | 'connection'
+  | 'previewTask'
   | 'runtimeRegistry'
   | 'request'
   | 'readRuntime'
@@ -68,10 +70,34 @@ export function taskActionClient(store: Store, source: TaskSource) {
     if (!profile) return Promise.reject(new Error('This task’s computer is no longer connected.'))
     return store.readRuntime(profile, path, input, schema, method)
   }
+  const refresh = () => (profile ? store.refreshRuntime(profile) : store.refreshRuntimes())
   return {
     profile,
     request,
-    refresh: () => (profile ? store.refreshRuntime(profile) : store.refreshRuntimes()),
+    refresh,
+    patch: async (task: Task, updates: TaskRowChanges) => {
+      const input = taskRowPatch(task, updates)
+      if (!Object.keys(input.changes).length) return
+      const apply = async () => {
+        await request(
+          '/api/workspace',
+          input,
+          mutableStruct({
+            revision: Schema.Number.pipe(Schema.finite()),
+          }),
+          'PATCH',
+        )
+        try {
+          await refresh()
+        } catch {
+          // The write committed. refreshRuntime already exposes the connection error;
+          // do not report this as a rejected edit or invite a duplicate mutation.
+        }
+      }
+      const connection = profile?.connection ?? (active ? store.connection : null)
+      if (connection) await store.previewTask(connection, task.id, updates, apply)
+      else await apply()
+    },
   }
 }
 export function taskRowValues(task: Task, source: TaskSource) {

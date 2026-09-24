@@ -1,8 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { mutableStruct } from '@dovo/protocol'
 import { useRef, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { Schema } from 'effect'
 import {
   generatedTitleSchema,
   hasUnviewedTaskCompletion,
@@ -43,12 +41,7 @@ import {
 } from 'lucide-react'
 import type { TaskEntry } from './task-collection'
 import { TaskSettings } from './task-settings'
-import {
-  taskActionClient,
-  taskRowPatch,
-  taskRowValues,
-  type TaskRowChanges,
-} from './task-row-actions'
+import { taskActionClient, taskRowValues, type TaskRowChanges } from './task-row-actions'
 const menuClass =
   'z-50 max-h-[var(--radix-context-menu-content-available-height)] min-w-56 max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border bg-popover p-1 text-popover-foreground shadow-xl'
 const itemClass =
@@ -105,19 +98,8 @@ export function TaskContextMenu({
       setPending(false)
     }
   }
-  const patch = async (updates: TaskRowChanges) => {
-    const input = taskRowPatch(task, updates)
-    if (!Object.keys(input.changes).length) return
-    await client.request(
-      '/api/workspace',
-      input,
-      mutableStruct({
-        revision: Schema.Number.pipe(Schema.finite()),
-      }),
-      'PATCH',
-    )
-    await client.refresh()
-  }
+  const patch = (updates: TaskRowChanges) => client.patch(task, updates)
+
   const settings = dialog === 'settings' && (
     <TaskSettings
       task={task}

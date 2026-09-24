@@ -104,8 +104,9 @@ export function useConversationActions(task: Task) {
         after: unknown
       }
     >,
+    refresh = true,
   ) =>
-    callEffect(
+    (refresh ? callEffect : readEffect)(
       '/api/workspace',
       {
         collection: 'tasks',
@@ -133,7 +134,7 @@ export function useConversationActions(task: Task) {
       if (firstMessage) {
         const title =
           attempt.title ??
-          (yield* callEffect(
+          (yield* readEffect(
             '/api/tasks/title',
             {
               text:
@@ -143,12 +144,15 @@ export function useConversationActions(task: Task) {
             generatedTitleSchema,
           )).title
         sendAttempts.setTitle(scope, attempt.id, title)
-        yield* patchEffect({
-          title: {
-            before: task.title,
-            after: title,
+        yield* patchEffect(
+          {
+            title: {
+              before: task.title,
+              after: title,
+            },
           },
-        })
+          false,
+        )
       }
       return yield* mobileWorkflow(function* () {
         const clearDraft = yield* sendAttempts.deliverEffect(

@@ -1,15 +1,21 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
 import {
+  mutableArray,
+  mutableStruct,
   pullPageSchema,
   useRepositorySources,
   startPolling,
   clientTaskScope,
-  type PullPage,
   type RepositorySource,
 } from '@dovo/studio-core'
-type Page = PullPage & { source: RepositorySource; error?: string }
+import { refreshPageCount, refreshPullPage, type CachedPullPage } from './collection-pages'
+type Page = CachedPullPage & { source: RepositorySource; error?: string }
+const cachedPullPageSchema = mutableStruct({
+  ...pullPageSchema.fields,
+  firstPageIds: Schema.optional(mutableArray(Schema.String)),
+})
 const cacheKey = (source: RepositorySource, state: string) =>
   JSON.stringify([
     'pulls',
@@ -25,15 +31,19 @@ export function usePulls(state: string) {
   const [busy, setBusy] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
   const forceNext = useRef(false)
+  const fullSweepAt = useRef(new Map<string, number>())
   const generation = useRef(0)
   const lastState = useRef(state)
   const moreRef = useRef<(key: string) => Promise<void>>(async () => {})
   const remoteState = state === 'merged' ? 'closed' : state
   useEffect(() => {
     const current = ++generation.current
+    const sweepKeys = new Set(sources.map((source) => JSON.stringify([source.scope, remoteState])))
+    for (const key of fullSweepAt.current.keys())
+      if (!sweepKeys.has(key)) fullSweepAt.current.delete(key)
     const semaphore = Effect.runSync(Effect.makeSemaphore(1))
     const commands = clientTaskScope()
-    const update = (source: RepositorySource, page: PullPage, error?: string) => {
+    const update = (source: RepositorySource, page: CachedPullPage, error?: string) => {
       if (current !== generation.current) return
       setStored((previous) => ({ ...previous, [source.key]: { ...page, source, error } }))
     }
@@ -47,7 +57,7 @@ export function usePulls(state: string) {
       ),
     )
     lastState.current = remoteState
-    const save = (source: RepositorySource, page: PullPage) =>
+    const save = (source: RepositorySource, page: CachedPullPage) =>
       source.readCache
         .writeEffect(cacheKey(source, remoteState), page)
         .pipe(
@@ -66,7 +76,7 @@ export function usePulls(state: string) {
               if (pagesRef.current[source.key]) return
               const cached = yield* source.readCache.readEffect(
                 cacheKey(source, remoteState),
-                pullPageSchema,
+                cachedPullPageSchema,
               )
               if (cached && !pagesRef.current[source.key])
                 update(source, {
@@ -96,13 +106,21 @@ export function usePulls(state: string) {
       if (document.visibilityState !== 'visible') return
       const refresh = force
       force = false
-      setBusy(sources.some((source) => source.connected))
+      setBusy(
+        sources.some((source) => source.connected) &&
+          (refresh || !sources.some((source) => !!pagesRef.current[source.key])),
+      )
       yield* Effect.forEach(
         sources.filter((source) => source.connected),
         (source) =>
           Effect.gen(function* () {
-            const count = refresh ? 1 : Math.max(1, pagesRef.current[source.key]?.page ?? 1)
-            let page: PullPage = { pulls: [], page: 0, hasMore: true }
+            const previous = pagesRef.current[source.key]
+            const sweepKey = JSON.stringify([source.scope, remoteState])
+            const lastSweep = fullSweepAt.current.get(sweepKey) ?? Date.now()
+            if (!fullSweepAt.current.has(sweepKey)) fullSweepAt.current.set(sweepKey, lastSweep)
+            // Rebuild older saved pages once; sweep later pages every two minutes.
+            const count = refreshPageCount(previous, refresh, lastSweep, Date.now())
+            let page: CachedPullPage = { pulls: [], page: 0, hasMore: true }
             for (let number = 1; number <= count && page.hasMore; number++) {
               const response = yield* source.requestEffect(
                 '/api/scm/pulls/overview',
@@ -114,19 +132,28 @@ export function usePulls(state: string) {
                 },
                 pullPageSchema,
               )
-              page = {
-                ...response,
-                stale: page.stale || response.stale,
-                refreshError: page.refreshError || response.refreshError,
-                pulls: [
-                  ...new Map(
-                    [...page.pulls, ...response.pulls].map((pull) => [pull.number, pull]),
-                  ).values(),
-                ],
-              }
+              if (number === 1)
+                page =
+                  count === 1
+                    ? refreshPullPage(previous, response, refresh)
+                    : refreshPullPage(undefined, response, refresh)
+              else
+                page = {
+                  ...response,
+                  firstPageIds: page.firstPageIds,
+                  stale: page.stale || response.stale,
+                  refreshError: page.refreshError || response.refreshError,
+                  pulls: [
+                    ...new Map(
+                      [...page.pulls, ...response.pulls].map((pull) => [pull.number, pull]),
+                    ).values(),
+                  ],
+                }
             }
             update(source, page, page.refreshError)
             yield* save(source, page)
+            if (count > 1 && !page.stale && !page.refreshError)
+              fullSweepAt.current.set(sweepKey, Date.now())
           }).pipe(
             Effect.catchAll((error) =>
               Effect.sync(() =>
@@ -177,6 +204,7 @@ export function usePulls(state: string) {
           )
           const page = {
             ...next,
+            firstPageIds: previous.firstPageIds,
             stale: previous.stale || next.stale,
             refreshError: previous.refreshError || next.refreshError,
             pulls: [
@@ -187,6 +215,8 @@ export function usePulls(state: string) {
           }
           update(source, page, page.refreshError)
           yield* save(source, page)
+          if (!page.stale && !page.refreshError)
+            fullSweepAt.current.set(JSON.stringify([source.scope, remoteState]), Date.now())
         }).pipe(
           Effect.catchAll((error) => Effect.sync(() => update(source, previous, error.message))),
           Effect.ensuring(
