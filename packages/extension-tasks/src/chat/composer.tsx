@@ -21,8 +21,10 @@ export function Composer({ task }: { task: Task }) {
   const { workspace, setWorkspace, request, connected, connection, flush, snapshot } =
     useWorkspace()
   const [error, setError] = useApplicationState(''),
-    [sending, setSending] = useApplicationState(false),
+    [submitBusy, setSending] = useApplicationState(false),
     [stopping, setStopping] = useApplicationState(false)
+  const [machineMoving, setMachineMoving] = useApplicationState(false)
+  const sending = submitBusy || machineMoving
   const sendingRequest = useRef(false)
   const attachments = useAttachments(task)
   const pendingQuestion = !!snapshot?.questions.some(
@@ -60,6 +62,7 @@ export function Composer({ task }: { task: Task }) {
     const attachmentIds = attachments.files.map((f) => f.id)
     if (
       (!text && !attachmentIds.length) ||
+      machineMoving ||
       sendingRequest.current ||
       stopping ||
       attachments.busy ||
@@ -307,7 +310,11 @@ export function Composer({ task }: { task: Task }) {
         )}
       </PromptInput>
       <div className={pendingQuestion ? 'hidden' : undefined}>
-        <ComposerWorkspace task={task} disabled={sending || !!task.archived} />
+        <ComposerWorkspace
+          task={task}
+          disabled={sending || !!task.archived}
+          onMachineMoving={setMachineMoving}
+        />
         <p className="mx-auto mt-1 hidden max-w-3xl text-right text-[10px] text-muted-foreground/70">
           {task.status === 'running' || task.queuePaused ? 'Enter to queue' : 'Enter to send'} ·
           Shift + Enter for a new line

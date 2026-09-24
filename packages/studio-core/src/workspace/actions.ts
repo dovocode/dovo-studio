@@ -10,7 +10,16 @@ export function updateTask(
   }
 }
 export function createTask(
-  input: Pick<Task, 'title' | 'agentId' | 'repositoryId' | 'execution' | 'harness'> & {
+  input: Pick<
+    Task,
+    | 'title'
+    | 'agentId'
+    | 'repositoryId'
+    | 'execution'
+    | 'harness'
+    | 'worktreeBaseBranch'
+    | 'setupCommand'
+  > & {
     objective: string
     origin?: string
   },
@@ -22,6 +31,8 @@ export function createTask(
     agentId: input.agentId,
     harness: input.harness,
     execution: input.execution,
+    worktreeBaseBranch: input.worktreeBaseBranch,
+    setupCommand: input.setupCommand,
     status: 'draft',
     createdAt: new Date().toISOString(),
     messages: input.objective.trim()

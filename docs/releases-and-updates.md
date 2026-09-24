@@ -12,25 +12,37 @@ asks before restarting. Installation checks the local runtime and waits if tasks
 running. Choosing Later does not install unexpectedly on quit. Remote runtimes are not restarted.
 Source builds explain how to update the checkout instead of attempting an installer update.
 
-The feed is the public `dovocode/dovo-studio` GitHub repository. It must contain signed macOS arm64
-ZIP/DMG artifacts, blockmaps and `latest-mac.yml` generated together by electron-builder. A source
-push alone is not a binary release. macOS updating requires a Developer ID signed app.
+The feed is the public `dovocode/dovo-studio` GitHub repository. A source push alone is not a binary
+release. The Release workflow produces:
+
+| Platform | Architectures | Artifacts              | Signing                           |
+| -------- | ------------- | ---------------------- | --------------------------------- |
+| macOS    | ARM64         | DMG, ZIP, mise archive | Developer ID signed and notarized |
+| Windows  | x64, ARM64    | NSIS EXE installer     | Unsigned                          |
+| Linux    | x64, ARM64    | DEB, RPM, AppImage     | Unsigned                          |
+
+Standalone macOS ARM64 and Linux x64/ARM64 server archives are retained. Each desktop build uses its
+native runner and Node 24, packages its matching SQLite/PTY dependencies, and smoke-tests the
+bundled runtime and terminal. Windows ARM64 has a separate update channel to avoid overwriting x64
+metadata. AppImage uses architecture-specific Linux update metadata. DEB/RPM users install a new
+package through their package manager; Check for Updates opens the release download page. Artifacts
+are not a promise of compatibility with every historical Debian/Fedora/CentOS release.
 
 1. Update the root `package.json` version and mobile `app.json` version as appropriate.
 2. Verify with `pnpm check`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
-3. Configure GitHub Actions secrets: `MAC_CERTIFICATE` (Developer ID `.p12` as base64),
+3. Configure Mac-only GitHub Actions secrets: `MAC_CERTIFICATE` (Developer ID `.p12` as base64),
    `MAC_CERTIFICATE_PASSWORD`, `MAC_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`,
-   and `APPLE_TEAM_ID`. Do not commit signing material.
-4. Run the **Release** GitHub Action manually from `main` with a matching `vX.Y.Z` tag, or push that
-   tag. The workflow checks the version and signing secrets before creating/updating a **draft**,
-   builds macOS arm64/Node 24 desktop and standalone server archives, and verifies the expected
-   assets. For the first release, run it with `v0.0.1`; an existing empty draft is reused. Inspect
-   the artifacts, signing and notarization, then publish the draft.
-5. On an older signed install, exercise download, Later, restart/install and retained runtime data.
+   and `APPLE_TEAM_ID`. Do not commit signing material. Windows/Linux need no signing secrets.
+4. Run **Release** manually with a matching `vX.Y.Z` tag, or push that tag. All jobs build the
+   selected commit. The workflow creates a draft and verifies every expected architecture/format and
+   update feed. Inspect the artifacts and publish the draft only after native installation tests.
+5. On an older install, exercise download, Later, restart/install and retained runtime data.
 
-For a local package use Node 24, `pnpm build`, then `node scripts/packaging/package-desktop.mjs`.
-Append `--dir` for a directory build or `--publish` for a signed draft GitHub Release. Local
-unsigned builds are for development, not a working update feed.
+Use Node 24, `pnpm build`, then `pnpm exec node scripts/packaging/package-desktop.mjs` on the target
+OS and architecture. Append `--dir` for an unpacked build. Linux packaging requires Ruby/FPM and RPM
+tools. Only macOS publishing with `--publish` requires a Developer ID identity and notarization
+credentials. The workflow uses native GitHub-hosted ARM runners; repository/plan eligibility must
+allow those runner labels. Unsigned Windows installers may show SmartScreen prompts.
 
 ## Local iPhone updates
 
@@ -165,3 +177,24 @@ Node 24. Generate tap/checksum metadata with
 
 Installer references: [Homebrew taps](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap),
 [mise GitHub backend](https://mise.jdx.dev/dev-tools/backends/github.html).
+
+### Configure Mac signing from this Mac
+
+In Keychain Access → My Certificates, locate
+**Developer ID Application: Dovocode (VDXV4YX2UK)**. Expand it to confirm the private key exists,
+then export that identity as a password-protected `.p12`. Do not export all identities or the
+Apple Development certificate. Keep the file outside the repository.
+
+At [Apple Account](https://account.apple.com), create an app-specific password under
+Sign-In and Security → App-Specific Passwords, named “Dovo GitHub notarization”.
+Run the following in Terminal from the repository:
+
+```sh
+python3 scripts/setup-mac-signing.py
+```
+
+The helper checks the exported certificate, Team ID, expiry and private-key presence before
+uploading the six required secrets directly to `dovocode/dovo-studio`. Password prompts are hidden;
+secret values go to `gh secret set` over stdin, never command arguments or logs. It does not validate
+the Apple account credentials: the release job verifies notarization with Apple. It requires `gh`
+to already be signed in with permission to manage this repository's Actions secrets.

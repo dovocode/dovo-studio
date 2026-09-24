@@ -1,5 +1,5 @@
 import { decode } from '@dovo/protocol'
-import { app, dialog, Menu, BrowserWindow, type MenuItemConstructorOptions } from 'electron'
+import { app, dialog, Menu, BrowserWindow, shell, type MenuItemConstructorOptions } from 'electron'
 import updater from 'electron-updater'
 import { snapshotSchema } from '@dovo/protocol'
 import { startLocalRuntime } from './local-runtime.js'
@@ -35,6 +35,19 @@ export function registerUpdates(
         detail:
           'Signed desktop releases can check, download and install updates from the Dovo Studio menu.',
       })
+      return
+    }
+    if (process.platform === 'linux' && !process.env.APPIMAGE) {
+      const answer = await dialog.showMessageBox({
+        type: 'info',
+        message: 'Update your Linux package',
+        detail:
+          'Install the Debian/RPM package for your architecture over the existing app. Your workspace and pairing data are preserved.',
+        buttons: ['Open releases', 'Cancel'],
+        cancelId: 1,
+      })
+      if (answer.response === 0)
+        await shell.openExternal('https://github.com/dovocode/dovo-studio/releases/latest')
       return
     }
     busy = true

@@ -292,6 +292,7 @@ function connect(url: string) {
         keyboard.title = message.editable ? 'Type into focused field' : 'Keyboard'
         document.title = message.title || 'Host browser'
       } else if (message.type === 'error' || message.type === 'closed') {
+        if (message.type === 'closed') enabled(false)
         notice(message.message, true)
       } else if (message.type === 'dialog') {
         dialogText.textContent = message.message

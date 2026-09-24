@@ -62,3 +62,23 @@ it('reads and stages files after their entire parent directory is deleted', asyn
     await f.cleanup()
   }
 })
+it('matches equivalent non-origin remotes but keeps forks and ambiguous remotes separate', async () => {
+  const f = await fixture()
+  const git = new GitService()
+  const { exec } = await import('../process')
+  const command = (args: string[]) => exec('git', args, { cwd: f.directory })
+  try {
+    await command(['remote', 'add', 'fetch', 'git@github.com:owner/repo.git'])
+    await command(['remote', 'add', 'backup', 'https://github.com/Owner/Repo'])
+    expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/repo')
+    await command(['remote', 'set-url', 'backup', 'https://github.com/another/repo'])
+    expect(await git.repositoryIdentity(f.directory, true)).toBeUndefined()
+    await command(['remote', 'add', 'origin', 'https://github.com/fork/repo'])
+    expect(await git.repositoryIdentity(f.directory, true)).toBe('github.com/fork/repo')
+    await command(['config', 'url.https://github.com/.insteadOf', 'https://git-alias/'])
+    await command(['remote', 'set-url', 'origin', 'https://git-alias/owner/repo'])
+    expect(await git.repositoryIdentity(f.directory, true)).toBe('github.com/owner/repo')
+  } finally {
+    await f.cleanup()
+  }
+})

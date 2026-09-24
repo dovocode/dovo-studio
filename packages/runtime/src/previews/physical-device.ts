@@ -114,8 +114,9 @@ async function stop(child: ChildProcess) {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) return
   const exited = once(child, 'exit')
   child.stdin?.end()
-  const timeout = setTimeout(() => child.kill('SIGTERM'), 2000)
-  const kill = setTimeout(() => child.kill('SIGKILL'), 4000)
+  // The native helper allows three seconds to end its iOS screen-sharing session.
+  const timeout = setTimeout(() => child.kill('SIGTERM'), 4000)
+  const kill = setTimeout(() => child.kill('SIGKILL'), 6000)
   try {
     await exited
   } finally {
@@ -225,6 +226,8 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
   const parser = new Dicer({
     boundary: 'dovo-frame',
   })
+  let nativeReady = false
+  let completeStartup = () => {}
   let encoding = false,
     next: Buffer | undefined
   const publish = async (data: Buffer) => {
@@ -244,6 +247,7 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
           width,
           height,
         }
+        completeStartup()
         frameListener?.(lastFrame)
       }
     } catch (error) {
@@ -277,11 +281,19 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
         () =>
           reject(
             new Error(
-              'Physical device did not become ready. Connect and unlock the phone, trust this Mac, and enable Developer Mode.',
+              nativeReady
+                ? 'The phone connected but did not send a screen frame. Wake and unlock it, then reconnect.'
+                : 'Physical device did not become ready. Connect and unlock the phone, trust this Mac, and enable Developer Mode.',
             ),
           ),
         20000,
       )
+      completeStartup = () => {
+        if (nativeReady && lastFrame) {
+          clearTimeout(timer)
+          resolve()
+        }
+      }
       errorListener = (error) => {
         clearTimeout(timer)
         reject(error)
@@ -307,8 +319,8 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
             report(new Error('Physical device identity changed'))
             return
           }
-          clearTimeout(timer)
-          resolve()
+          nativeReady = true
+          completeStartup()
         } else {
           const operation = pending.get(event.id)
           if (operation) {
@@ -327,8 +339,10 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
     closed = true
     await Promise.all([stop(child), stop(decoder)])
     lines.close()
+    parser.destroy()
     throw error
   }
+  completeStartup = () => {}
   errorListener = undefined
   let sequence = 0
   const send = (command: object) =>
@@ -372,7 +386,6 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
       return () => {
         frameListener = undefined
         errorListener = undefined
-        if (!closed) void release().catch(report)
       }
     },
     async input(input) {

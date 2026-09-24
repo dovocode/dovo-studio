@@ -48,7 +48,14 @@ export function TaskList({
   const tasks = entries
     .filter(
       ({ task: t, source, key, projectKey, projectName }) =>
-        (!projectId || projectKey === projectId) &&
+        (!projectId ||
+          projectKey === projectId ||
+          source.workspace.repositories.some(
+            (repo) =>
+              repo.id === t.repositoryId &&
+              repo.gitIdentity &&
+              `git:${repo.gitIdentity}` === projectId,
+          )) &&
         (filter === 'archive' ? !!t.archivedAt : !t.archivedAt) &&
         (filter === 'archive' ||
           filter === 'active' ||
@@ -209,7 +216,13 @@ export function TaskList({
                 onOpen={() => onSelect(entry)}
                 onCreate={() => onCreate(entry.projectKey)}
                 onFilter={() => {
-                  onProjectChange(entry.projectKey)
+                  onProjectChange(
+                    entry.source.workspace.repositories.find(
+                      (repo) => repo.id === entry.task.repositoryId,
+                    )?.gitIdentity
+                      ? `git:${entry.source.workspace.repositories.find((repo) => repo.id === entry.task.repositoryId)?.gitIdentity}`
+                      : entry.projectKey,
+                  )
                   setQuery('')
                   setFilter('active')
                 }}

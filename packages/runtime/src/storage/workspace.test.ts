@@ -265,6 +265,13 @@ it('allows choosing a project and checkout only before the first submitted input
         tasks: [started],
       }))
       expect(change).toThrow('before sending the first message')
+      expect(() =>
+        store.patch({
+          collection: 'tasks',
+          id: draft.id,
+          changes: { worktreeBaseBranch: { before: null, after: 'refs/remotes/origin/main' } },
+        }),
+      ).toThrow('before sending the first message')
       expect(store.task(draft.id).execution).toBe('main')
       expect(() =>
         store.patch({

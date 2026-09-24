@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 const f = vi.hoisted(() => ({
+  open: vi.fn(async (_url: string) => {}),
   listeners: new Map<string, (error: Error) => void>(),
   install: vi.fn<() => void>(),
   message: vi.fn<(options: unknown) => Promise<{ response: number }>>(async () => ({
@@ -9,6 +10,7 @@ const f = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   app: { isPackaged: true, getVersion: () => 'fixture' },
   dialog: { showMessageBox: f.message },
+  shell: { openExternal: f.open },
   Menu: { buildFromTemplate: (value: unknown) => value, setApplicationMenu: () => {} },
   BrowserWindow: { getAllWindows: () => [] },
 }))
@@ -30,6 +32,8 @@ vi.mock('./local-runtime.js', () => ({
 }))
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
   vi.clearAllMocks()
   f.listeners.clear()
 })
@@ -84,4 +88,15 @@ it('restores the stopped runtime when the updater reports an asynchronous instal
   await vi.waitFor(() => expect(restore).toHaveBeenCalledOnce())
   f.listeners.get('error')?.(new Error('Repeated error'))
   expect(restore).toHaveBeenCalledOnce()
+})
+
+it('opens Linux package downloads without attempting an AppImage update for DEB/RPM installs', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+  vi.stubEnv('APPIMAGE', '')
+  const { registerUpdates } = await import('./updates')
+  const prepare = vi.fn(async () => async () => {})
+  await registerUpdates('/unused', prepare)()
+  expect(f.open).toHaveBeenCalledWith('https://github.com/dovocode/dovo-studio/releases/latest')
+  expect(prepare).not.toHaveBeenCalled()
+  expect(f.install).not.toHaveBeenCalled()
 })

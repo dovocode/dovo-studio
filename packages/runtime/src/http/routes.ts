@@ -294,7 +294,28 @@ export function route(
           runtimeHost: hostname(),
           defaults: s.defaults.get(),
           revision: s.store.version(),
-          workspace: s.store.publicWorkspace(),
+          workspace: {
+            ...s.store.publicWorkspace(),
+            repositories: yield* Effect.forEach(
+              s.store.publicWorkspace().repositories,
+              (repo) =>
+                serviceResult(s.git.repositoryIdentity(repo.path)).pipe(
+                  Effect.map((gitIdentity) => ({
+                    ...repo,
+                    gitIdentity,
+                    gitIdentityError: undefined,
+                  })),
+                  Effect.catchAll(() =>
+                    Effect.succeed({
+                      ...repo,
+                      gitIdentity: undefined,
+                      gitIdentityError: 'Checkout unavailable: could not inspect its Git remote',
+                    }),
+                  ),
+                ),
+              { concurrency: 4 },
+            ),
+          },
           approvals: s.approvals.list(),
           questions: s.questions.list(),
           terminals: s.terminals.list(),

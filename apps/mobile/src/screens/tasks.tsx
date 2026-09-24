@@ -4,6 +4,7 @@ import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/application-state'
 import {
   aggregateRuntimeTasks,
+  projectMachineGroups,
   compareTasks,
   taskSortOptions,
   isSnoozed,
@@ -15,6 +16,7 @@ import { FlatList, Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import { useRuntime } from '../runtime/provider'
 import { FleetOverview } from '../runtime/fleet-overview'
+import { ProjectThreadFilter } from '../tasks/project-thread-filter'
 import { TaskListRow } from '../tasks/task-list-row'
 import { taskRowStatus } from '../tasks/task-row-status'
 import { useTaskListView } from '../tasks/task-list-view'
@@ -35,7 +37,7 @@ export default function TasksScreen() {
     { refreshAll, overviews, profiles, activeId, selectRuntimeEffect } = useRuntime(),
     { busy, error, act } = useAction()
   const { view, setView, scrollOffset } = useTaskListView()
-  const { search, filter, source, sort } = view
+  const { search, filter, source, sort, project } = view
   const [details, setDetails] = useApplicationState(''),
     [filtersOpen, setFiltersOpen] = useApplicationState(false),
     [now, setNow] = useApplicationState(Date.now())
@@ -61,6 +63,29 @@ export default function TasksScreen() {
     () => (source === 'all' ? overviews : overviews.filter((entry) => entry.profile.id === source)),
     [overviews, source],
   )
+  const projectGroups = useMemo(
+    () =>
+      projectMachineGroups(
+        entries.flatMap((entry) =>
+          (entry.snapshot?.workspace.repositories ?? []).map((repository) => ({
+            repository,
+            runtimeId: entry.profile.id,
+          })),
+        ),
+      ),
+    [entries],
+  )
+  const projectMembers = useMemo(
+    () =>
+      new Set(
+        projectGroups
+          .find((group) => group.key === project)
+          ?.entries.map(({ runtimeId, repository }) =>
+            JSON.stringify([runtimeId, repository.id]),
+          ) ?? [],
+      ),
+    [projectGroups, project],
+  )
   const allTasks = useMemo(() => aggregateRuntimeTasks(entries, now, true), [entries, now])
   const detail = allTasks.find((item) => item.key === details)
   const detailRuntime = overviews.find((entry) => entry.profile.id === detail?.runtimeId)
@@ -71,7 +96,8 @@ export default function TasksScreen() {
     const projects = new Map(allTasks.map((row) => [row.key, row.projectName]))
     return allTasks
       .filter(
-        ({ task, projectName, runtimeName, needsInput }) =>
+        ({ task, projectName, runtimeName, runtimeId, needsInput }) =>
+          (!project || projectMembers.has(JSON.stringify([runtimeId, task.repositoryId]))) &&
           (filter === 'archive' ? !!task.archivedAt : !task.archivedAt) &&
           (filter === 'archive' || (filter === 'archived' ? task.archived : !task.archived)) &&
           (filter === 'snoozed'
@@ -103,7 +129,7 @@ export default function TasksScreen() {
           }
         return compareTasks(first, second, sort, needsInput, projects)
       })
-  }, [allTasks, filter, now, query, sort])
+  }, [allTasks, filter, now, query, sort, project, projectMembers])
   const { retainPosition, ...listScroll } = useListScroll<(typeof tasks)[number]>(
     scrollOffset,
     focused,
@@ -247,6 +273,13 @@ export default function TasksScreen() {
                 />
               </View>
             )}
+            <ProjectThreadFilter
+              value={project}
+              onChange={(project) => {
+                scrollOffset.current = 0
+                setView((current) => ({ ...current, project, source: 'all' }))
+              }}
+            />
             <SearchField
               label="Search tasks"
               placeholder="Search tasks"

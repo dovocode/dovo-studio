@@ -36,3 +36,30 @@ it('preserves managed ACP selection and independent title model through serializ
   expect(harness?.acpInstallationId).toBe('managed-agent')
   expect(settings.model).toBe('utility-model')
 })
+
+it('resolves project overrides field by field and allows disabling inherited setup', async () => {
+  const { resolveTaskDefaults } = await import('./runtime-setup')
+  const runtime = decode(runtimeDefaultsSchema, {
+    harness: defaultTaskHarness('claude'),
+    execution: 'worktree',
+    worktreeBaseBranch: 'origin/master',
+    setupCommand: 'pnpm install',
+  })
+  const project = {
+    id: 'repo',
+    name: 'Repo',
+    path: '/repo',
+    branch: 'feature',
+    taskDefaults: { setupCommand: '', worktreeBaseBranch: 'release' },
+  }
+  expect(resolveTaskDefaults(runtime, project)).toEqual({
+    harness: runtime.harness,
+    execution: 'worktree',
+    worktreeBaseBranch: 'release',
+    setupCommand: '',
+  })
+  expect(resolveTaskDefaults(undefined, undefined)).toMatchObject({
+    execution: 'main',
+    harness: defaultTaskHarness('codex'),
+  })
+})

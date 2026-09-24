@@ -18,7 +18,12 @@ type Session = {
   queued: number
   move?: { input: RemoteBrowserInput; authorize: () => void; promise?: Promise<void> }
 }
-type Entry = { taskId: string; deviceId: string; pending: Promise<Session> }
+type Entry = {
+  taskId: string
+  deviceId: string
+  pending: Promise<Session>
+  closing?: Promise<void>
+}
 export class SimulatorPreviews {
   private sessions = new Map<string, Entry>()
   private disposed = false
@@ -30,11 +35,15 @@ export class SimulatorPreviews {
     if (!entry) throw new HttpError(404, 'Simulator preview expired. Reconnect to continue.')
     return entry
   }
-  async open(taskId: string, deviceId: string) {
+  async open(taskId: string, deviceId: string): Promise<{ id: string; device: PreviewDevice }> {
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
     const existing = [...this.sessions].find(
       ([, value]) => value.taskId === taskId && value.deviceId === deviceId,
     )
+    if (existing?.[1].closing) {
+      await existing[1].closing
+      return this.open(taskId, deviceId)
+    }
     if (existing) return { id: existing[0], device: (await existing[1].pending).device }
     const device = (await previewDevices()).devices.find((device) => device.id === deviceId)
     if (!device) throw new HttpError(404, 'Simulator is no longer available')
@@ -55,6 +64,10 @@ export class SimulatorPreviews {
     const concurrent = [...this.sessions].find(
       ([, value]) => value.taskId === taskId && value.deviceId === deviceId,
     )
+    if (concurrent?.[1].closing) {
+      await concurrent[1].closing
+      return this.open(taskId, deviceId)
+    }
     if (concurrent) return { id: concurrent[0], device: (await concurrent[1].pending).device }
     if (this.sessions.size >= 4)
       throw new HttpError(409, 'Close an unused simulator preview first (maximum 4)')
@@ -206,7 +219,13 @@ export class SimulatorPreviews {
   async close(id: string) {
     const entry = this.sessions.get(id)
     if (!entry) return
-    this.sessions.delete(id)
+    if (entry.closing) return entry.closing
+    entry.closing = this.closeSession(entry).finally(() => {
+      this.sessions.delete(id)
+    })
+    return entry.closing
+  }
+  private async closeSession(entry: Entry) {
     const session = await entry.pending
     session.closed = true
     clearTimeout(session.idle)

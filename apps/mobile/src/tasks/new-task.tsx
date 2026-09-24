@@ -3,7 +3,7 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../runtime/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import type { ShortcutInput } from '../shell/shortcuts'
-import { defaultTaskHarness, type Task } from '@dovo/protocol'
+import { resolveTaskDefaults, type Task } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/text'
@@ -15,15 +15,19 @@ import { Choice } from '../ui/choice'
 import { styles } from '../ui/theme'
 export function NewTask({
   initial,
+  repositoryId: selectedRepositoryId,
   onCreated,
   onCancel,
 }: {
+  repositoryId?: string
   initial?: ShortcutInput
   onCreated: (id: string) => void
   onCancel: () => void
 }) {
   const { snapshot, call, connected } = useRuntime()
-  const [repositoryId, setRepositoryId] = useApplicationState(initial?.repositoryId ?? '')
+  const [repositoryId, setRepositoryId] = useApplicationState(
+    selectedRepositoryId ?? initial?.repositoryId ?? '',
+  )
   const [requested, setRequested] = useApplicationState(false)
   const [id] = useApplicationState(() => initial?.id ?? randomUUID()),
     [error, setError] = useApplicationState(''),
@@ -50,15 +54,17 @@ export function NewTask({
       return
     }
     const existing = state?.tasks.find((task) => task.id === id)
+    const taskDefaults = resolveTaskDefaults(
+      defaults.current,
+      state.repositories.find((repo) => repo.id === repositoryId),
+    )
     const task: Task = {
+      ...taskDefaults,
       id,
       title: 'New task',
       repositoryId,
       agentId: initial?.agentId || '',
-      harness: initial?.agentId
-        ? undefined
-        : (defaults.current?.harness ?? defaultTaskHarness('codex')),
-      execution: 'main',
+      harness: initial?.agentId ? undefined : taskDefaults.harness,
       status: 'draft',
       createdAt: new Date().toISOString(),
       messages: [],

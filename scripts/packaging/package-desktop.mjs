@@ -8,22 +8,49 @@ import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { build, Platform, Arch } from 'electron-builder'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-if (process.platform !== 'darwin' || process.arch !== 'arm64')
-  throw new Error(
-    'This release target is macOS Apple Silicon. Build on an arm64 Mac to include matching native modules.',
-  )
+if (
+  !['darwin', 'linux', 'win32'].includes(process.platform) ||
+  !['arm64', 'x64'].includes(process.arch) ||
+  (process.platform === 'darwin' && process.arch !== 'arm64')
+)
+  throw new Error('Build natively on macOS arm64, Windows x64/arm64 or Linux x64/arm64.')
 if (Number(process.versions.node.split('.')[0]) !== 24)
   throw new Error('Package with Node 24, matching the runtime native modules.')
+const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
+const platform =
+  process.platform === 'darwin'
+    ? Platform.MAC
+    : process.platform === 'win32'
+      ? Platform.WINDOWS
+      : Platform.LINUX
+const targets =
+  process.platform === 'darwin'
+    ? ['dmg', 'zip']
+    : process.platform === 'win32'
+      ? ['nsis']
+      : ['deb', 'rpm', 'AppImage']
 const stage = await mkdtemp(join(tmpdir(), 'dovo-package-'))
 const require = createRequire(join(root, 'apps/desktop/package.json'))
 const electron = JSON.parse(await readFile(require.resolve('electron/package.json'), 'utf8'))
+function deploy(args, cwd) {
+  // pnpm exec exposes the real CLI entrypoint, avoiding cmd.exe quoting on Windows.
+  const cli = process.env.npm_execpath
+  if (process.platform === 'win32') {
+    if (!cli || /\.(cmd|bat)$/i.test(cli))
+      throw new Error('On Windows run: pnpm exec node scripts/packaging/package-desktop.mjs')
+    const javascript = /\.[cm]?js$/i.test(cli)
+    execFileSync(javascript ? process.execPath : cli, javascript ? [cli, ...args] : args, {
+      cwd,
+      stdio: 'inherit',
+    })
+  } else execFileSync('pnpm', args, { cwd, stdio: 'inherit' })
+}
 try {
   const runtime = join(stage, 'runtime'),
     application = join(stage, 'application')
   const source = join(stage, 'source')
   await stageWorkspace(root, source)
-  execFileSync(
-    'pnpm',
+  deploy(
     [
       '--config.allow-unused-patches=true',
       '--filter',
@@ -33,22 +60,20 @@ try {
       '--legacy',
       runtime,
     ],
-    {
-      cwd: source,
-      stdio: 'inherit',
-    },
+    source,
   )
   await mkdir(join(runtime, 'bin'))
-  await cp(process.execPath, join(runtime, 'bin/node'))
-  await chmod(join(runtime, 'bin/node'), 0o755)
+  await cp(process.execPath, join(runtime, 'bin', nodeName))
+  await chmod(join(runtime, 'bin', nodeName), 0o755)
   const runtimeRequire = createRequire(
     await realpath(join(runtime, 'node_modules/@dovo/runtime/package.json')),
   )
   const pty = dirname(runtimeRequire.resolve('node-pty/package.json'))
-  await chmod(join(pty, 'prebuilds/darwin-arm64/spawn-helper'), 0o755)
+  if (process.platform === 'darwin')
+    await chmod(join(pty, 'prebuilds/darwin-arm64/spawn-helper'), 0o755)
   // Verify the deployed dependency closure with its bundled Node, before making an installer.
   execFileSync(
-    join(runtime, 'bin/node'),
+    join(runtime, 'bin', nodeName),
     [
       '--input-type=module',
       '--eval',
@@ -57,8 +82,7 @@ try {
     { cwd: runtime, stdio: 'inherit' },
   )
   // Deploy the desktop dependency closure too (notably electron-updater).
-  execFileSync(
-    'pnpm',
+  deploy(
     [
       '--config.allow-unused-patches=true',
       '--filter',
@@ -68,7 +92,7 @@ try {
       '--legacy',
       application,
     ],
-    { cwd: source, stdio: 'inherit' },
+    source,
   )
   await cp(join(root, 'apps/desktop/dist'), join(application, 'dist'), { recursive: true })
   await cp(join(root, 'apps/desktop/dist-electron'), join(application, 'dist-electron'), {
@@ -80,7 +104,8 @@ try {
       name: 'dovo-studio',
       version: JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version,
       description: 'Personal agent workspace',
-      author: 'Dovo',
+      author: { name: 'Dovocode', email: 'noreply@github.com' },
+      homepage: 'https://github.com/dovocode/dovo-studio',
       license: 'UNLICENSED',
       type: 'module',
       main: 'dist-electron/main.js',
@@ -91,15 +116,15 @@ try {
       },
     }),
   )
-  if (process.argv.includes('--publish') && !process.env.CSC_NAME)
+  if (process.argv.includes('--publish') && process.platform === 'darwin' && !process.env.CSC_NAME)
     throw new Error(
       'Publishing desktop updates requires a Developer ID signing identity (CSC_NAME).',
     )
   await build({
     publish: process.argv.includes('--publish') ? 'always' : 'never',
-    targets: Platform.MAC.createTarget(
-      process.argv.includes('--dir') ? ['dir'] : ['dmg', 'zip'],
-      Arch.arm64,
+    targets: platform.createTarget(
+      process.argv.includes('--dir') ? ['dir'] : targets,
+      process.arch === 'arm64' ? Arch.arm64 : Arch.x64,
     ),
     config: {
       appId: 'com.dovo.studio',
@@ -108,10 +133,19 @@ try {
       directories: { app: application, output: join(root, 'release') },
       files: ['dist/**/*', 'dist-electron/**/*', 'package.json'],
       afterPack: async (context) => {
-        const destination = join(context.appOutDir, 'Dovo Studio.app/Contents/Resources/runtime')
-        await cp(runtime, destination, { recursive: true, verbatimSymlinks: true })
+        const destination = join(
+          context.appOutDir,
+          process.platform === 'darwin'
+            ? 'Dovo Studio.app/Contents/Resources/runtime'
+            : 'resources/runtime',
+        )
+        await cp(runtime, destination, {
+          recursive: true,
+          dereference: process.platform === 'win32',
+          verbatimSymlinks: process.platform !== 'win32',
+        })
         execFileSync(
-          join(destination, 'bin/node'),
+          join(destination, 'bin', nodeName),
           [
             '--input-type=module',
             '--eval',
@@ -123,7 +157,14 @@ try {
       npmRebuild: false,
       asar: true,
       publish: [
-        { provider: 'github', owner: 'dovocode', repo: 'dovo-studio', releaseType: 'draft' },
+        {
+          provider: 'github',
+          owner: 'dovocode',
+          repo: 'dovo-studio',
+          releaseType: 'draft',
+          channel:
+            process.platform === 'win32' && process.arch === 'arm64' ? 'latest-arm64' : 'latest',
+        },
       ],
       mac: {
         icon: join(root, 'apps/desktop/build/icon.icns'),
@@ -137,10 +178,23 @@ try {
             process.env.APPLE_TEAM_ID)
         ),
       },
+      win: { icon: join(root, 'apps/desktop/build/icon.png') },
+      nsis: {
+        oneClick: false,
+        allowToChangeInstallationDirectory: true,
+        artifactName: 'Dovo-Studio-${version}-windows-${arch}.${ext}',
+      },
+      linux: {
+        icon: join(root, 'apps/desktop/build/icon.png'),
+        category: 'Development',
+        executableName: 'dovo-studio',
+        maintainer: 'Dovocode <noreply@github.com>',
+        artifactName: 'Dovo-Studio-${version}-linux-${arch}.${ext}',
+      },
       artifactName: 'Dovo-Studio-${version}-${arch}.${ext}',
     },
   })
-  await desktopMiseArchive(root)
+  if (process.platform === 'darwin') await desktopMiseArchive(root)
 } finally {
   await rm(stage, { recursive: true, force: true })
 }

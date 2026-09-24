@@ -1,10 +1,12 @@
+import { TaskMachineSelector } from './task-machine-selector'
+import { WorktreeBasePicker } from './worktree-base-picker'
 import { useApplicationState } from '../runtime/application-state'
 import { Glass } from '../ui/glass'
 import { MessageAttachments } from './message-attachments'
 import { ActivityIndicator, Keyboard, Linking, Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import { useRef } from 'react'
-import { type Task } from '@dovo/protocol'
+import { resolveTaskDefaults, type Task } from '@dovo/protocol'
 import { useTaskConversation } from './conversation-provider'
 import { Action } from '../ui/action'
 import { Field } from '../ui/field'
@@ -25,7 +27,7 @@ export function Composer({ task }: { task: Task }) {
     snapshot,
     draft,
     dictation,
-    busy,
+    busy: actionBusy,
     stopping,
     error,
     act,
@@ -39,6 +41,8 @@ export function Composer({ task }: { task: Task }) {
     canSend,
     patch,
   } = actions
+  const [machineMoving, setMachineMoving] = useApplicationState(false)
+  const busy = actionBusy || machineMoving
   const [focused, setFocused] = useApplicationState(false),
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
@@ -333,7 +337,9 @@ export function Composer({ task }: { task: Task }) {
               variant="filled"
               icon={task.status === 'running' ? 'stop' : 'send'}
               label={task.status === 'running' ? 'Stop' : task.queuePaused ? 'Queue' : 'Send'}
-              disabled={task.status === 'running' ? !connected || stopping : !canSend}
+              disabled={
+                machineMoving || (task.status === 'running' ? !connected || stopping : !canSend)
+              }
               onPress={task.status === 'running' ? stop : () => send()}
             />
           </View>
@@ -418,6 +424,14 @@ export function Composer({ task }: { task: Task }) {
           )}
         </View>
       )}
+      {checkoutEditable && (
+        <TaskMachineSelector
+          task={task}
+          text={draft.text}
+          disabled={busy || !draft.ready || attaching || dictation.active}
+          onMoving={setMachineMoving}
+        />
+      )}
       {checkout && checkoutEditable && (
         <Sheet title="Project & checkout" onClose={() => setCheckout(false)}>
           <Choice
@@ -425,16 +439,32 @@ export function Composer({ task }: { task: Task }) {
             value={task.repositoryId}
             disabled={busy || !connected || !!task.workItem}
             items={snapshot?.workspace.repositories ?? []}
-            onChange={(repositoryId) =>
+            onChange={(repositoryId) => {
+              const defaults = resolveTaskDefaults(
+                snapshot?.defaults,
+                snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId),
+              )
               act(() =>
                 patch({
+                  execution: { before: task.execution ?? null, after: defaults.execution },
+                  setupCommand: {
+                    before: task.setupCommand ?? null,
+                    after: defaults.setupCommand ?? null,
+                  },
+                  ...(!task.agentId
+                    ? { harness: { before: task.harness ?? null, after: defaults.harness } }
+                    : {}),
+                  worktreeBaseBranch: {
+                    before: task.worktreeBaseBranch ?? null,
+                    after: defaults.worktreeBaseBranch ?? null,
+                  },
                   repositoryId: {
                     before: task.repositoryId,
                     after: repositoryId,
                   },
                 }),
               )
-            }
+            }}
           />
           <Choice
             label="Working directory"
@@ -461,6 +491,20 @@ export function Composer({ task }: { task: Task }) {
               )
             }
           />
+          {task.execution === 'worktree' && !task.pullRequest && (
+            <WorktreeBasePicker
+              key={task.repositoryId}
+              repositoryId={task.repositoryId}
+              value={task.worktreeBaseBranch}
+              onChange={(value) =>
+                act(() =>
+                  patch({
+                    worktreeBaseBranch: { before: task.worktreeBaseBranch ?? null, after: value },
+                  }),
+                )
+              }
+            />
+          )}
           <Action label="Done" onPress={() => setCheckout(false)} />
         </Sheet>
       )}

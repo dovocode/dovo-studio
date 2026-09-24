@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router'
 import { ActivityIndicator, Keyboard, View } from 'react-native'
 import { useRuntime } from '../runtime/provider'
-import { CreationTarget } from '../runtime/creation-target'
+import { ProjectMachinePicker } from './project-machine-picker'
 import { useNavigation } from '../shell/navigation'
 import { taskHref } from '../shell/task-route'
 import { useRouteComputer } from '../shell/use-route-computer'
@@ -10,7 +10,6 @@ import { ScreenHeader } from '../ui/screen-header'
 import { Text } from '../ui/text'
 import { colors, styles } from '../ui/theme'
 import { useAction } from '../ui/use-action'
-import { NewTask } from './new-task'
 import { TaskDetail } from './task-detail'
 
 function backToTasks() {
@@ -113,14 +112,10 @@ export function NewTaskScreen() {
   return (
     <>
       <ScreenHeader title="New task" />
-      <CreationTarget alwaysChoose title="New task" onClose={backToTasks}>
-        {(runtimeId) => (
-          <NewTask
-            onCancel={backToTasks}
-            onCreated={(id) => router.replace(taskHref(runtimeId, id))}
-          />
-        )}
-      </CreationTarget>
+      <ProjectMachinePicker
+        onCancel={backToTasks}
+        onCreated={(runtimeId, id) => router.replace(taskHref(runtimeId, id))}
+      />
     </>
   )
 }

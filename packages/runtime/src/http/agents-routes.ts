@@ -1,3 +1,6 @@
+import { canChangeTaskCheckout, taskSchema } from '@dovo/protocol'
+import { isDeepStrictEqual } from 'node:util'
+import { runtimeDefaultsSchema } from '@dovo/protocol'
 import { acpRoute } from './acp-routes.js'
 import { routeProgram, serviceResult } from './effect.js'
 import { runtimeSetupSchema } from '@dovo/protocol'
@@ -43,6 +46,22 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
       if (method === 'POST' && path === '/api/agents/setup/read')
         return yield* serviceResult({ defaults: s.defaults.get(), titles: s.titles.read() })
+      if (method === 'POST' && path === '/api/agents/defaults/save') {
+        const input = decode(
+          mutableStruct({ before: runtimeDefaultsSchema, after: runtimeDefaultsSchema }),
+          yield* serviceResult(body(request)),
+        )
+        const current = s.defaults.get()
+        if (isDeepStrictEqual(current, { ...input.after, configured: true }))
+          return yield* serviceResult(current)
+        if (!isDeepStrictEqual(current, input.before))
+          throw new HttpError(
+            409,
+            'Runtime defaults changed on another device. Reload settings before saving.',
+          )
+        if (input.after.harness.acpInstallationId) s.agents.launch(input.after.harness)
+        return yield* serviceResult(s.defaults.save(input.after))
+      }
       if (method === 'POST' && path === '/api/agents/setup/save') {
         const input = decode(runtimeSetupSchema, yield* serviceResult(body(request)))
         if (input.defaults.harness.acpInstallationId) s.agents.launch(input.defaults.harness)
@@ -57,6 +76,86 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         return yield* serviceResult(s.titles.read())
       if (method === 'POST' && path === '/api/agents/title-settings/save')
         return yield* serviceResult(s.titles.save(yield* serviceResult(body(request))))
+      if (method === 'POST' && path === '/api/tasks/draft-receive') {
+        const input = decode(
+          mutableStruct({ task: taskSchema, gitIdentity: Schema.String }),
+          yield* serviceResult(body(request)),
+        )
+        const repo = s.store.get().repositories.find((repo) => repo.id === input.task.repositoryId)
+        if (
+          !repo ||
+          !input.gitIdentity ||
+          (yield* serviceResult(s.git.repositoryIdentity(repo.path, true))) !== input.gitIdentity
+        )
+          throw new HttpError(
+            409,
+            'The destination no longer has the same Git repository. Refresh projects and try again.',
+          )
+        if (
+          !canChangeTaskCheckout(input.task) ||
+          input.task.draftAttachments?.length ||
+          input.task.workItem ||
+          input.task.archivedAt ||
+          input.task.worktreeSetupComplete !== undefined
+        )
+          throw new HttpError(400, 'Only unsent drafts can change machines')
+        const existing = s.store.get().tasks.find((task) => task.id === input.task.id)
+        if (existing) {
+          if (!canChangeTaskCheckout(existing))
+            throw new HttpError(409, 'This task already started on the destination machine')
+          if (!existing.archivedAt) {
+            if (
+              existing.draft !== input.task.draft ||
+              existing.repositoryId !== input.task.repositoryId
+            )
+              throw new HttpError(
+                409,
+                'The destination already has a different draft. It has been preserved.',
+              )
+            return yield* serviceResult(existing)
+          }
+          s.store.updateTask(existing.id, () => input.task)
+        } else
+          s.store.patch({ collection: 'tasks', id: input.task.id, create: input.task, changes: {} })
+        return yield* serviceResult(s.store.task(input.task.id))
+      }
+      if (method === 'POST' && path === '/api/tasks/draft-moved') {
+        const input = decode(
+          mutableStruct({
+            id: idSchema,
+            draft: Schema.String,
+            repositoryId: idSchema,
+            gitIdentity: Schema.String,
+          }),
+          yield* serviceResult(body(request)),
+        )
+        const task = s.store.task(input.id)
+        const repo = s.store.get().repositories.find((repo) => repo.id === input.repositoryId)
+        if (
+          !repo ||
+          !input.gitIdentity ||
+          (yield* serviceResult(s.git.repositoryIdentity(repo.path, true))) !== input.gitIdentity
+        )
+          throw new HttpError(
+            409,
+            'The source Git repository changed. Both drafts have been preserved.',
+          )
+        if (
+          task.draft !== input.draft ||
+          task.repositoryId !== input.repositoryId ||
+          !!task.draftAttachments?.length ||
+          !canChangeTaskCheckout(task)
+        )
+          throw new HttpError(
+            409,
+            'The source draft changed or started. It has been preserved; the destination is still an unsent draft.',
+          )
+        s.store.updateTask(task.id, (current) => ({
+          ...current,
+          archivedAt: current.archivedAt ?? new Date().toISOString(),
+        }))
+        return yield* serviceResult({ ok: true })
+      }
       if (method === 'POST' && path === '/api/tasks/lifecycle') {
         const { id, action } = decode(
           mutableStruct({

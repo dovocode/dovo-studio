@@ -67,3 +67,9 @@ export * from './acp-auth.js'
 
 export * from './runtime-setup.js'
 export * from './repository-tools.js'
+
+export * from './worktree-base.js'
+
+export * from './project-machines.js'
+
+export * from './task-machine-draft.js'

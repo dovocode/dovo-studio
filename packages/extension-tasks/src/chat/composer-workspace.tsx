@@ -1,17 +1,29 @@
+import { TaskMachineSelector } from './task-machine-selector'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Schema } from 'effect'
 import { Check, ChevronDown, Folder, GitBranch } from 'lucide-react'
 import {
   branchesSchema,
+  defaultWorktreeBase,
+  resolveTaskDefaults,
   canChangeTaskCheckout,
   updateTask,
   useWorkspace,
   type Task,
 } from '@dovo/studio-core'
 import { Button, DropdownMenu, Popover } from '@dovo/studio-ui'
-export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: boolean }) {
-  const { workspace, setWorkspace, request, connected } = useWorkspace()
+export function ComposerWorkspace({
+  task,
+  disabled,
+  onMachineMoving,
+}: {
+  task: Task
+  disabled: boolean
+  onMachineMoving: (moving: boolean) => void
+}) {
+  const { workspace, setWorkspace, request, connected, snapshot } = useWorkspace()
   const editable = canChangeTaskCheckout(task)
+  const choosingBase = editable && task.execution === 'worktree' && !task.pullRequest
   const repository = workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const [branches, setBranches] = useApplicationState<Schema.Schema.Type<
     typeof branchesSchema
@@ -52,6 +64,9 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content
+              onCloseAutoFocus={(event) => {
+                if (open) event.preventDefault()
+              }}
               side="top"
               align="start"
               sideOffset={8}
@@ -61,6 +76,16 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
                 value={task.execution ?? 'main'}
                 onValueChange={(execution) => {
                   if (disabled || !editable) return
+                  if (execution === 'worktree') {
+                    setOpen(true)
+                    void act(() =>
+                      request(
+                        '/api/scm/branches',
+                        { repositoryId: task.repositoryId },
+                        branchesSchema,
+                      ),
+                    )
+                  }
                   if (execution === 'main' || execution === 'worktree')
                     setWorkspace((w) =>
                       updateTask(w, task.id, (t) =>
@@ -102,6 +127,7 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
           {task.execution === 'worktree' ? 'Worktree' : 'Local checkout'}
         </span>
       )}
+      <TaskMachineSelector task={task} disabled={disabled} onMoving={onMachineMoving} />
       {editable && (
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
@@ -136,6 +162,10 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
                         canChangeTaskCheckout(t) && !t.workItem
                           ? {
                               ...t,
+                              ...resolveTaskDefaults(snapshot?.defaults, repo),
+                              harness: t.agentId
+                                ? undefined
+                                : resolveTaskDefaults(snapshot?.defaults, repo).harness,
                               repositoryId: repo.id,
                             }
                           : t,
@@ -160,7 +190,7 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
                 '/api/scm/branches',
                 {
                   repositoryId: task.repositoryId,
-                  taskId: task.id,
+                  taskId: choosingBase ? undefined : task.id,
                 },
                 branchesSchema,
               ),
@@ -176,13 +206,15 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
               disabled ||
               !connected ||
               task.status === 'running' ||
-              (task.execution === 'worktree' && !task.checkoutBranch)
+              (task.execution === 'worktree' && !task.checkoutBranch && !choosingBase)
             }
             className="ml-auto h-6 min-w-0 max-w-48 gap-1 px-2 text-[10px] font-normal"
           >
             <GitBranch className="size-3" />
             <span className="truncate">
-              {task.checkoutBranch ?? repository?.branch ?? 'Branch'}
+              {choosingBase
+                ? `From ${(task.worktreeBaseBranch ?? (branches && defaultWorktreeBase(branches.branches, branches.current)) ?? 'origin/main or origin/master').replace(/^refs\/(heads|remotes)\//, '')}`
+                : (task.checkoutBranch ?? repository?.branch ?? 'Branch')}
             </span>
             <ChevronDown className="size-3" />
           </Button>
@@ -195,20 +227,29 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
             className="z-50 max-h-72 w-64 overflow-y-auto rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
             aria-label="Checkout branches"
           >
-            <p className="px-2 py-1 text-xs text-muted-foreground">Switch branch</p>
+            <p className="px-2 py-1 text-xs text-muted-foreground">
+              {choosingBase ? 'Create worktree from branch' : 'Switch branch'}
+            </p>
             {branches?.branches.map((branch) => (
               <Button
                 key={branch.ref}
                 type="button"
                 variant="ghost"
                 disabled={
-                  busy ||
-                  branch.name === branches.current ||
-                  (branch.checkedOut && branch.name !== branches.current)
+                  busy || (!choosingBase && (branch.name === branches.current || branch.checkedOut))
                 }
                 className="h-8 w-full justify-between text-xs font-normal"
                 onClick={() =>
                   void act(async () => {
+                    if (choosingBase) {
+                      setWorkspace((w) =>
+                        updateTask(w, task.id, (t) =>
+                          canChangeTaskCheckout(t) ? { ...t, worktreeBaseBranch: branch.ref } : t,
+                        ),
+                      )
+                      setOpen(false)
+                      return branches
+                    }
                     const next = await request(
                       '/api/scm/branch',
                       {
@@ -226,7 +267,13 @@ export function ComposerWorkspace({ task, disabled }: { task: Task; disabled: bo
                 }
               >
                 {branch.name}
-                {branch.name === branches.current && <Check className="size-3" />}
+                {(choosingBase
+                  ? [branch.ref, branch.name].includes(
+                      task.worktreeBaseBranch ??
+                        defaultWorktreeBase(branches.branches, branches.current) ??
+                        '',
+                    )
+                  : branch.name === branches.current) && <Check className="size-3" />}
               </Button>
             ))}
             {busy && (

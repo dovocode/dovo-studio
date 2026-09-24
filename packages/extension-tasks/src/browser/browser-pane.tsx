@@ -285,7 +285,10 @@ function BrowserContent({
       </section>
     )
   return (
-    <section className="flex h-full min-h-0 flex-col" aria-label="Browser preview">
+    <section
+      className="flex h-full min-h-0 flex-col"
+      aria-label={initialMode === 'devices' ? 'Device previews' : 'Browser previews'}
+    >
       {mode === 'web' && (
         <form
           className="flex shrink-0 items-center gap-1 border-b p-2"
@@ -377,34 +380,28 @@ function BrowserContent({
         </form>
       )}
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b px-2 py-1 text-xs">
-        <Button
-          size="sm"
-          className="h-7 px-2 text-xs"
-          variant={mode === 'remote' ? 'secondary' : 'ghost'}
-          onClick={() => setMode('remote')}
-        >
-          Host browser
-        </Button>
-        <Button
-          size="sm"
-          className="h-7 px-2 text-xs"
-          variant={mode === 'web' ? 'secondary' : 'ghost'}
-          onClick={() => setMode('web')}
-        >
-          Responsive
-        </Button>
-        <Button
-          size="sm"
-          className="h-7 px-2 text-xs"
-          variant={mode === 'devices' ? 'secondary' : 'ghost'}
-          disabled={!connected || busy}
-          onClick={() => {
-            setMode('devices')
-            void act(loadDevices)
-          }}
-        >
-          Devices
-        </Button>
+        {initialMode === 'devices' ? (
+          <span className="px-2 font-medium">Devices</span>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              className="h-7 px-2 text-xs"
+              variant={mode === 'remote' ? 'secondary' : 'ghost'}
+              onClick={() => setMode('remote')}
+            >
+              Host browser
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 px-2 text-xs"
+              variant={mode === 'web' ? 'secondary' : 'ghost'}
+              onClick={() => setMode('web')}
+            >
+              Responsive
+            </Button>
+          </>
+        )}
         <span className="flex-1" />
         {onClose && (
           <IconButton label="Hide preview sidebar" className="size-7 shrink-0" onClick={onClose}>

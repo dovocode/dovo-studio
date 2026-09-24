@@ -140,3 +140,93 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
   expect(decode(responses.pulls, await call('/api/scm/pulls', scope)).pulls[0].title).toBe(cwd)
   expect(await s.checkouts.directory(isolated.id)).toBe(cwd)
 })
+
+it('bases new worktrees on origin/main, then origin/master, or the explicitly selected branch', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'worktree-base-test-owner-token-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const initial = (await s.git.command(f.directory, ['rev-parse', 'HEAD'])).trim()
+  await s.git.command(f.directory, ['update-ref', 'refs/remotes/origin/main', initial])
+  await s.git.command(f.directory, ['update-ref', 'refs/remotes/origin/master', initial])
+  await writeFile(join(f.directory, 'hello.txt'), 'local branch only\n')
+  await s.git.command(f.directory, ['commit', '-am', 'Local branch work'])
+  const local = (await s.git.command(f.directory, ['rev-parse', 'HEAD'])).trim()
+  await s.git.command(f.directory, ['branch', 'chosen-base'])
+  const make = async (base?: string) => {
+    const task = s.tasks.create({
+      title: 'Base test',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Start test',
+      execution: 'worktree',
+    })
+    s.store.update((w) => ({
+      ...w,
+      tasks: w.tasks.map((t) => (t.id === task.id ? { ...t, worktreeBaseBranch: base } : t)),
+    }))
+    const cwd = await s.checkouts.directory(task.id)
+    cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+    return (await s.git.command(cwd, ['rev-parse', 'HEAD'])).trim()
+  }
+  expect(await make()).toBe(initial)
+  await s.git.command(f.directory, ['update-ref', '-d', 'refs/remotes/origin/main'])
+  expect(await make()).toBe(initial)
+  expect(await make('refs/heads/chosen-base')).toBe(local)
+  await expect(make('refs/heads/missing')).rejects.toThrow('Choose an existing base branch')
+  expect((await s.git.command(f.directory, ['rev-parse', 'HEAD'])).trim()).toBe(local)
+})
+
+it('snapshots project defaults and retries failed worktree setup without rerunning completed setup', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'setup-test-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.commands.save({ ...s.commands.get(), shell: '/bin/sh', shellArgs: [] })
+  s.store.update(() => ({
+    ...f.workspace,
+    repositories: f.workspace.repositories.map((repo) => ({
+      ...repo,
+      taskDefaults: {
+        execution: 'worktree',
+        setupCommand:
+          'if [ ! -f setup-attempt ]; then touch setup-attempt; exit 1; fi\nprintf done >> setup-result',
+      },
+    })),
+  }))
+  const task = s.tasks.create({
+    title: 'Setup',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Start test',
+  })
+  expect(task.execution).toBe('worktree')
+  expect(task.setupCommand).toContain('setup-attempt')
+  s.store.update((w) => ({
+    ...w,
+    repositories: w.repositories.map((repo) => ({
+      ...repo,
+      taskDefaults: { setupCommand: 'exit 9' },
+    })),
+  }))
+  await expect(s.checkouts.directory(task.id)).rejects.toThrow('Worktree setup failed')
+  expect(s.store.task(task.id).worktreeSetupComplete).toBeUndefined()
+  const cwd = await s.checkouts.directory(task.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  expect(await readFile(join(cwd, 'setup-result'), 'utf8')).toBe('done')
+  expect(s.store.task(task.id).worktreeSetupComplete).toBe(true)
+  await s.checkouts.directory(task.id)
+  expect(await readFile(join(cwd, 'setup-result'), 'utf8')).toBe('done')
+  await expect(readFile(join(f.directory, 'setup-result'), 'utf8')).rejects.toThrow('ENOENT')
+})

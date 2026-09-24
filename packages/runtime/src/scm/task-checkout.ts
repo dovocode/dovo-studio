@@ -1,3 +1,5 @@
+import { defaultWorktreeBase, canChangeTaskCheckout } from '@dovo/protocol'
+import { listBranches } from './branches.js'
 import { fetchPullHead } from './pull-head.js'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
@@ -25,6 +27,8 @@ export class TaskCheckout {
     if (!repo) throw new HttpError(404, 'Repository not found')
     const { path: root } = await this.git.inspect(repo.path)
     if (task.execution !== 'worktree') return root
+    if (canChangeTaskCheckout(task))
+      throw new HttpError(409, 'Send the first prompt before creating the worktree')
     const common = (
       await this.git.command(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
     ).trim()
@@ -34,13 +38,37 @@ export class TaskCheckout {
     const records = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z'])).split(
       '\0',
     )
-    if (records.includes(`worktree ${directory}`)) return (await this.git.inspect(directory)).path
+    if (records.includes(`worktree ${directory}`)) return this.prepare(id, directory)
     // Never reset an existing branch or remove a checkout. A collision/missing checkout needs repair.
     await mkdir(dirname(directory), { recursive: true })
+    const refs = task.pullRequest ? undefined : await listBranches({ git: this.git }, root)
+    const selection =
+      task.worktreeBaseBranch ?? (refs && defaultWorktreeBase(refs.branches, refs.current))
+    const base = refs?.branches.find(
+      (branch) => branch.ref === selection || branch.name === selection,
+    )?.ref
+    if (!task.pullRequest && (!base || !refs?.branches.some((branch) => branch.ref === base)))
+      throw new HttpError(400, 'Choose an existing base branch for the worktree')
     const head = task.pullRequest
       ? await fetchPullHead(this.git, root, task.pullRequest, key)
-      : 'HEAD'
+      : (base ?? 'HEAD')
     await this.git.command(root, ['worktree', 'add', '-b', `dovo/task-${key}`, directory, head])
-    return (await this.git.inspect(directory)).path
+    return this.prepare(id, directory)
+  }
+  private async prepare(id: string, directory: string) {
+    const cwd = (await this.git.inspect(directory)).path
+    const task = this.store.task(id)
+    if (task.setupCommand?.trim() && !task.worktreeSetupComplete) {
+      try {
+        await this.git.setupWorktree(cwd, task.setupCommand)
+      } catch (error) {
+        throw new HttpError(
+          400,
+          `Worktree setup failed. Fix the command or checkout, then retry the task. ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+      this.store.updateTask(id, (current) => ({ ...current, worktreeSetupComplete: true }))
+    }
+    return cwd
   }
 }

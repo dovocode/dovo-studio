@@ -1,7 +1,7 @@
 import type { AcpLaunch } from '../agents/types.js'
 import { decode } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
-import { defaultShell } from './shell.js'
+import { defaultShell, shellArguments } from './shell.js'
 import { commandsSchema, type CommandSettings } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import * as pty from 'node-pty'
@@ -30,7 +30,7 @@ export class Terminals {
       cwd,
       {
         command: settings.shell || defaultShell(),
-        args: settings.shellArgs,
+        args: shellArguments(settings),
         env: {},
       },
       `Terminal ${this.sessions.size + 1}`,

@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 type TaskListView = {
+  project: string
   search: string
   filter: string
   source: string
@@ -24,6 +25,7 @@ const Context = createContext<{
 /** Aggregate list navigation survives the host-bound task screen and its editors. */
 export function TaskListViewProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useApplicationState<TaskListView>({
+    project: '',
     search: '',
     filter: 'active',
     source: 'all',

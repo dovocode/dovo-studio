@@ -57,3 +57,52 @@ it('merges waiting wheel input without crossing a tap or controller boundary', a
     await sessions.close(id)
   }
 })
+
+it('waits for native teardown before reconnecting a physical device', async () => {
+  const physical = await import('./physical-device')
+  let finishClose = () => {}
+  const closing = new Promise<void>((resolve) => {
+    finishClose = resolve
+  })
+  const close = vi
+    .fn<native.NativeSimulator['close']>()
+    .mockImplementationOnce(() => closing)
+    .mockResolvedValue(undefined)
+  const create = vi.spyOn(physical, 'physicalDevice').mockImplementation(async () => ({
+    input: async () => {},
+    start: () => () => {},
+    release: async () => {},
+    close,
+  }))
+  vi.spyOn(discovery, 'previewDevices').mockResolvedValue({
+    host: 'qa',
+    diagnostics: [],
+    devices: [
+      {
+        id: 'physical-ios:qa',
+        kind: 'physical',
+        name: 'Phone',
+        platform: 'ios',
+        state: 'booted',
+        runtime: 'qa',
+      },
+    ],
+  })
+  const sessions = new SimulatorPreviews()
+  try {
+    const first = await sessions.open('task', 'physical-ios:qa')
+    const teardown = sessions.close(first.id)
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
+    const reconnect = sessions.open('task', 'physical-ios:qa')
+    await Promise.resolve()
+    expect(create).toHaveBeenCalledOnce()
+    finishClose()
+    await teardown
+    const second = await reconnect
+    expect(second.id).not.toBe(first.id)
+    expect(create).toHaveBeenCalledTimes(2)
+  } finally {
+    finishClose()
+    await sessions.dispose()
+  }
+})

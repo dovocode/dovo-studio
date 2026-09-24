@@ -6,6 +6,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useRuntime } from '../runtime/provider'
 import { createDraftStorage } from './draft-storage'
 const drafts = createDraftStorage(AsyncStorage)
+export function saveRuntimeDraft(runtimeId: string, taskId: string, text: string) {
+  return drafts.write(`dovo.draft.${encodeURIComponent(runtimeId)}.${taskId}`, text)
+}
 export function useDraft(taskId: string, initial = '') {
   const { activeId, legacyDraftRuntimeId } = useRuntime()
   const key = `dovo.draft.${encodeURIComponent(activeId ?? '')}.${taskId}`

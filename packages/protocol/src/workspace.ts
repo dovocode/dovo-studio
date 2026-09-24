@@ -42,7 +42,19 @@ export const agentSchema = mutableStruct({
 })
 export const taskHarnessSchema = agentSchema.omit('id', 'name', 'icon')
 export type TaskHarness = Schema.Schema.Type<typeof taskHarnessSchema>
+export const projectTaskDefaultsSchema = mutableStruct({
+  setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
+  harness: Schema.optional(taskHarnessSchema.omit('resources')),
+  execution: Schema.optional(executionSchema),
+  worktreeBaseBranch: Schema.optional(
+    maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 500),
+  ),
+})
+export type ProjectTaskDefaults = Schema.Schema.Type<typeof projectTaskDefaultsSchema>
 export const repositorySchema = mutableStruct({
+  gitIdentity: Schema.optional(Schema.String),
+  gitIdentityError: Schema.optional(Schema.String),
+  taskDefaults: Schema.optional(projectTaskDefaultsSchema),
   forge: Schema.optional(forgeBindingSchema),
   jira: Schema.optional(jiraBindingSchema),
   resources: Schema.optional(resourceSettingsSchema),
@@ -155,7 +167,10 @@ export const taskSchema = mutableStruct({
   runAttempt: Schema.optional(
     mutableStruct({ inputMessageIds: mutableArray(Schema.String), promptAccepted: Schema.Boolean }),
   ),
+  setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
+  worktreeSetupComplete: Schema.optional(Schema.Boolean),
   checkoutBranch: Schema.optional(Schema.String),
+  worktreeBaseBranch: Schema.optional(Schema.String),
   checkoutLocked: Schema.optional(Schema.Boolean),
   // Captured on the first submitted input; queued input keeps the lock after removal.
   providerLock: Schema.optional(providerSchema),

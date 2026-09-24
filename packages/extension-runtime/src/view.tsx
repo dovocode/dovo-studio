@@ -1,3 +1,4 @@
+import { TaskDefaultSettings } from '@dovo/studio-ui'
 import { RuntimePreferences } from './runtime-preferences'
 import { useApplicationState } from '@dovo/studio-core/state'
 import type { RuntimeProfile } from '@dovo/studio-core'
@@ -60,6 +61,7 @@ export default function RuntimeView() {
               <WorkspaceScope profile={managing}>
                 <DeviceManager />
                 <RuntimePreferences />
+                <TaskDefaultSettings />
                 <HostTools />
               </WorkspaceScope>
             ) : (

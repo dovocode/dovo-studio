@@ -1,3 +1,4 @@
+import { TaskDefaultSettings } from '../runtime/task-default-settings'
 import { RuntimePreferences } from '../runtime/runtime-preferences'
 import { useEffect } from 'react'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -293,6 +294,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
             </Text>
           )}
           <RuntimePreferences />
+          <TaskDefaultSettings />
           <SettingsGroup title="On this computer">
             <SettingsRow
               title="CLI commands & shell"

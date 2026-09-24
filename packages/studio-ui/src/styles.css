@@ -618,30 +618,6 @@ a:focus-visible {
   }
 }
 
-/* Labels help orientation when there is room; compact windows keep the left rail. */
-@media (min-width: 1280px) {
-  .studio-navigation {
-    width: 124px;
-    align-items: stretch;
-    padding: 12px 6px;
-  }
-  .studio-navigation-heading {
-    display: block;
-    padding: 4px 10px 10px;
-    font-size: 10px;
-    color: var(--muted-foreground);
-  }
-  .studio-navigation-label {
-    display: inline;
-    font-size: 11px;
-  }
-  .studio-navigation .studio-navigation-item {
-    width: 100%;
-    justify-content: flex-start;
-    gap: 8px;
-    padding-inline: 10px;
-  }
-}
 .studio-composer:focus-within {
   border-color: #a5b4fc80;
   box-shadow: 0 0 0 2px #a5b4fc0c;

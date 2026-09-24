@@ -1,3 +1,5 @@
+import { gitRemoteIdentity } from '@dovo/protocol'
+import { defaultShell, shellArguments } from '../terminal/shell.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode, urlSchema } from '@dovo/protocol'
 import { readFile, writeFile, stat, mkdir, mkdtemp, rm, copyFile } from 'node:fs/promises'
@@ -50,6 +52,22 @@ export class GitService {
       })
       throw error
     }
+  }
+  setupWorktree(cwd: string, script: string) {
+    const settings = this.settings()
+    return this.run(
+      cwd,
+      settings.shell || defaultShell(),
+      process.platform === 'win32' && !settings.shell
+        ? [
+            ...shellArguments(settings),
+            '-Command',
+            `$ErrorActionPreference = 'Stop';\n${script}\nif ($LASTEXITCODE) { exit $LASTEXITCODE }`,
+          ]
+        : [...shellArguments(settings), '-c', `set -e\n${script}`],
+      300000,
+      2 * 1024 * 1024,
+    )
   }
   command(cwd: string, args: string[]) {
     return this.run(cwd, this.settings().git, args, 30000, 12 * 1024 * 1024)
@@ -153,6 +171,29 @@ export class GitService {
       10000,
       1024 * 1024,
     )
+  }
+  private identities = new Map<string, { expires: number; result: Promise<string | undefined> }>()
+  repositoryIdentity(path: string, refresh = false) {
+    const cached = this.identities.get(path)
+    if (!refresh && cached && cached.expires > Date.now()) return cached.result
+    const result = this.readRepositoryIdentity(path)
+    this.identities.set(path, { expires: Date.now() + 60000, result })
+    return result
+  }
+  private async readRepositoryIdentity(path: string) {
+    const remotes = (await this.command(path, ['remote'])).trim().split('\n').filter(Boolean)
+    // Prefer the clone's origin: merging every remote would incorrectly merge forks.
+    if (remotes.includes('origin'))
+      return gitRemoteIdentity(await this.command(path, ['remote', 'get-url', 'origin']))
+    const identities = await Promise.all(
+      remotes.map(async (name) =>
+        gitRemoteIdentity(await this.command(path, ['remote', 'get-url', name])),
+      ),
+    )
+    const unique = new Set(identities)
+    if (unique.size === 1) return identities[0]
+    // Ambiguous remotes remain separate rather than changing identity with the branch.
+    return undefined
   }
   async inspect(path: string) {
     const cwd = await repositoryPath(path)

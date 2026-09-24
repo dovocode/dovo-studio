@@ -1,4 +1,5 @@
-import { RuntimeDefaults } from './runtime-defaults.js'
+import { resolveTaskDefaults } from '@dovo/protocol'
+import { RuntimeDefaults, validateDefaultHarness } from './runtime-defaults.js'
 import { McpSecrets } from './mcp-secrets.js'
 import { newSecret } from '../auth/devices.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
@@ -153,6 +154,8 @@ export class WorkspaceStore {
     const parsed = migrateJiraSources(
       decode(workspaceSchema, this.restoreSecrets(fn(this.workspace))),
     )
+    for (const repository of parsed.repositories)
+      if (repository.taskDefaults?.harness) validateDefaultHarness(repository.taskDefaults.harness)
     const previousTasks = new Map(this.workspace.tasks.map((task) => [task.id, task]))
     const next = {
       ...parsed,
@@ -221,8 +224,11 @@ export class WorkspaceStore {
     this.revision++
     return next
   }
-  taskDefaults() {
-    return new RuntimeDefaults(this.db).get().harness
+  taskDefaults(repositoryId?: string) {
+    return resolveTaskDefaults(
+      new RuntimeDefaults(this.db).get(),
+      this.workspace.repositories.find((repo) => repo.id === repositoryId),
+    )
   }
   task(id: string) {
     const task = this.workspace.tasks.find((t) => t.id === id)
@@ -330,6 +336,7 @@ export class WorkspaceStore {
           record.sessionId !== undefined ||
           record.checkoutLocked !== undefined ||
           record.providerLock !== undefined ||
+          record.worktreeSetupComplete !== undefined ||
           record.lastViewedTurnId !== undefined ||
           record.viewedRevision !== undefined ||
           record.turns !== undefined ||
@@ -392,6 +399,8 @@ export class WorkspaceStore {
             'agentOverrides',
             'harness',
             'execution',
+            'worktreeBaseBranch',
+            'setupCommand',
           ])
         : null
     let changed = false
@@ -403,7 +412,10 @@ export class WorkspaceStore {
       if (isDeepStrictEqual(current[key] ?? null, change.after ?? null)) continue
       if (
         patch.collection === 'tasks' &&
-        (key === 'execution' || key === 'repositoryId') &&
+        (key === 'execution' ||
+          key === 'repositoryId' ||
+          key === 'worktreeBaseBranch' ||
+          key === 'setupCommand') &&
         'messages' in entity &&
         !canChangeTaskCheckout(entity)
       )

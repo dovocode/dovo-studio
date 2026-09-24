@@ -415,3 +415,58 @@ boundaries, verification commands, and supported execution behavior.
 Runtime and management operations use a persistent `*.lock.sqlite` file for OS-backed ownership. The
 adjacent JSON PID record supports diagnostics and older running versions. A crash releases the
 SQLite lock automatically; do not delete a lock database to force a second runtime to start.
+
+## Runtime and project task defaults
+
+Open **Settings → Devices & runtime → your computer → Task defaults** to configure that runtime.
+Open a project's settings and choose **Task defaults** for project overrides. The same controls are
+available on mobile under the device and project settings.
+
+- Choose the harness, model/reasoning/service tier, access mode, instructions and optional
+  executable or server URL.
+- Choose local checkout or a new worktree. Worktree base branches accept short names such as
+  `origin/main` or full Git refs. Automatic selection prefers `origin/main`, then `origin/master`,
+  then the current local branch. Remote branches must already exist locally; this does not fetch or
+  switch the project checkout.
+- Projects inherit unset fields. An agent configuration override replaces the runtime's complete
+  agent configuration. **Reset to runtime defaults**, followed by **Save defaults**, removes project
+  overrides.
+- Defaults are copied into new tasks. Existing conversations retain their settings. Selecting a
+  different project in an unsent draft applies the new project's defaults; a selected custom agent
+  stays selected.
+- Setup commands run only in new task worktrees, using the runtime's configured shell. They have a
+  five-minute timeout and stop on shell errors. Successful setup is recorded and is not repeated on
+  subsequent turns. Failed setup prevents agent startup; explicitly retrying the task retries setup
+  in the existing worktree. Use idempotent commands such as dependency installation. An empty
+  project setup override disables inherited setup. Local checkouts never run setup automatically.
+
+These settings are saved on the owning runtime and shared with its paired devices. Runtime
+connection and authentication policies are unchanged.
+
+## Choose a project’s execution machine
+
+New-task selection groups registered checkouts with the same Git remote across saved runtimes. It
+shows each machine’s availability, local path and branch. The desktop Projects filter groups those
+threads together while keeping project settings specific to each machine. SSH and HTTPS remotes are
+normalized without exposing embedded credentials; folder names alone never establish a match.
+Repositories without an identifiable remote remain separate. Checkout discovery is cached for one
+minute.
+
+An unsent draft has a **Run on** selector. Selecting another machine copies its draft text using the
+destination project’s defaults, verifies both checkouts still identify the same remote, and archives
+the original only after the destination accepts the draft. Nothing starts, and no worktree or setup
+command runs, until the first prompt is sent. Started tasks stay on their original runtime.
+Concurrent draft edits or a newly started task block archiving and preserve both drafts for
+recovery.
+
+Remove draft attachments before switching and attach them on the destination. Linked issue/PR drafts
+currently stay on their original machine. No automatic clone or machine pairing occurs; register the
+repository on an already paired runtime first.
+
+Project pickers show one expandable group per Git repository, with available machines and checkout
+paths beneath it. Mobile's project filter includes matching tasks from every selected machine.
+Matching normalizes SSH/HTTPS clone URLs, standard SSH ports, provider alternate SSH endpoints,
+Azure DevOps legacy URLs and URL-encoded paths. Git's `insteadOf` rewrites are honored. Without an
+`origin`, multiple remotes match only when they all identify the same repository. Forks, ambiguous
+remotes and local repositories without a remote stay separate; folder names never establish identity.
+Custom SSH host aliases and different self-hosted SSH/HTTPS ports are not inferred as equivalent.

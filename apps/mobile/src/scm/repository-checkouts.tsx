@@ -1,3 +1,4 @@
+import { TaskDefaultSettings } from '../runtime/task-default-settings'
 import { useApplicationState } from '../runtime/application-state'
 import { View } from 'react-native'
 import type { Repository } from '@dovo/protocol'
@@ -30,6 +31,7 @@ export function RepositoryCheckouts({ repository }: { repository: Repository }) 
             })),
         ]}
       />
+      <TaskDefaultSettings repository={repository} />
       <RepositoryCard key={taskId} repository={repository} taskId={taskId || undefined} />
     </View>
   )

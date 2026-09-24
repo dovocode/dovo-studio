@@ -218,8 +218,20 @@ export class Tasks {
             const completion: Effect.Effect<void, RuntimeFailure> = Effect.void
             return Effect.succeed({ completion })
           }
-          if (task.example || task.archived)
+          if (task.example || task.archived || task.archivedAt)
             return Effect.fail(new HttpError(400, 'Restore this task before running it'))
+          if (
+            !task.messages.some(
+              (message) =>
+                message.role === 'user' && (message.text.trim() || message.attachments?.length),
+            ) &&
+            !task.queue?.length &&
+            !task.turns?.length &&
+            !task.consumedMessageIds?.length
+          )
+            return Effect.fail(
+              new HttpError(400, 'Send the first prompt before starting this task'),
+            )
           if (this.running.has(id))
             return Effect.fail(new HttpError(409, 'This task is already running'))
           let recoveringQueue = task.restartRecovery?.kind === 'queue'
@@ -553,19 +565,18 @@ export class Tasks {
       origin?: string
     },
   ) {
+    const defaults = this.store.taskDefaults(input.repositoryId)
     const task: Task = {
+      ...defaults,
       id: randomUUID(),
       ...input,
-      ...(!input.agentId ? { harness: this.store.taskDefaults() } : {}),
+      execution: input.execution ?? defaults.execution,
+      harness: input.agentId ? undefined : defaults.harness,
       status: 'draft',
       createdAt: new Date().toISOString(),
-      messages: [
-        {
-          id: randomUUID(),
-          role: 'user',
-          text: input.objective,
-        },
-      ],
+      messages: input.objective.trim()
+        ? [{ id: randomUUID(), role: 'user', text: input.objective }]
+        : [],
       files: [],
       draft: '',
       example: false,

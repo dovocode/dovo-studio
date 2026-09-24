@@ -140,3 +140,86 @@ it('rejects missing ACP configuration and invalid provider choices', async () =>
     ).status,
   ).toBe(400)
 })
+
+it('persists project overrides, inherits runtime settings, and leaves existing tasks unchanged', async () => {
+  const { runtime, options, call } = await setup()
+  await call('save', {
+    ...selection,
+    defaults: {
+      ...selection.defaults,
+      execution: 'worktree',
+      worktreeBaseBranch: 'origin/main',
+      setupCommand: 'pnpm install',
+    },
+  })
+  runtime.services.store.update((w) => ({
+    ...w,
+    repositories: [{ id: 'project', name: 'Project', path: '/tmp', branch: 'main' }],
+  }))
+  const overrides = {
+    harness: { ...defaultTaskHarness('codex'), model: 'project-model' },
+    setupCommand: '',
+  }
+  const patch = async (before: unknown, after: unknown) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/workspace`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${options.ownerToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        collection: 'repositories',
+        id: 'project',
+        changes: { taskDefaults: { before, after } },
+      }),
+    })
+  expect((await patch(null, overrides)).status).toBe(200)
+  const task = runtime.services.tasks.create({
+    title: 'Project task',
+    repositoryId: 'project',
+    agentId: '',
+    objective: '',
+  })
+  expect(task).toMatchObject({
+    harness: { model: 'project-model' },
+    execution: 'worktree',
+    worktreeBaseBranch: 'origin/main',
+    setupCommand: '',
+  })
+  expect((await patch(null, {})).status).toBe(409)
+  expect((await patch(overrides, {})).status).toBe(200)
+  expect(runtime.services.store.task(task.id).harness?.model).toBe('project-model')
+  expect(runtime.services.store.taskDefaults('project')).toMatchObject({
+    harness: { model: 'main-model' },
+    setupCommand: 'pnpm install',
+  })
+  await runtime.close()
+  const restarted = await startRuntime(options)
+  cleanups.push(restarted.close)
+  expect(restarted.services.store.taskDefaults('project')).toMatchObject({
+    execution: 'worktree',
+    worktreeBaseBranch: 'origin/main',
+    setupCommand: 'pnpm install',
+  })
+  expect(restarted.services.store.task(task.id).setupCommand).toBe('')
+})
+
+it('rejects stale runtime default saves without overwriting independent title settings', async () => {
+  const { runtime, options, call } = await setup()
+  await call('save', selection)
+  const before = runtime.services.defaults.get()
+  const save = (execution: string) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/agents/defaults/save`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${options.ownerToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ before, after: { ...before, execution } }),
+    })
+  expect((await save('worktree')).status).toBe(200)
+  expect((await save('worktree')).status).toBe(200)
+  expect((await save('main')).status).toBe(409)
+  expect(runtime.services.defaults.get().execution).toBe('worktree')
+  expect(runtime.services.titles.read().model).toBe(selection.titles.model)
+})

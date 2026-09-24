@@ -208,7 +208,11 @@ function launch(directory: string) {
         try: () =>
           spawn(
             app.isPackaged
-              ? join(process.resourcesPath, 'runtime/bin/node')
+              ? join(
+                  process.resourcesPath,
+                  'runtime/bin',
+                  process.platform === 'win32' ? 'node.exe' : 'node',
+                )
               : (process.env.DOVO_NODE_PATH ?? 'node'),
             [
               app.isPackaged

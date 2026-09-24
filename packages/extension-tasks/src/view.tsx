@@ -1,12 +1,13 @@
+import { projectMachineGroups } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskTools } from './task-tools'
 import { TaskAgents } from './task-agents'
-import { Monitor, Folder } from 'lucide-react'
+import { Monitor, Folder, ChevronRight } from 'lucide-react'
 import { BrowserPane } from './browser/browser-pane'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   createTask,
-  defaultTaskHarness,
+  resolveTaskDefaults,
   useStudioHost,
   useWorkspace,
   type StudioViewProps,
@@ -193,8 +194,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
       title: 'New task',
       objective: '',
       agentId: '',
-      harness: store.snapshot?.defaults?.harness ?? defaultTaskHarness('codex'),
-      execution: 'main',
+      ...resolveTaskDefaults(
+        store.snapshot?.defaults,
+        workspace.repositories.find((repo) => repo.id === pendingCreate.repositoryId),
+      ),
       repositoryId: pendingCreate.repositoryId,
     })
     setWorkspace((w) => ({
@@ -489,50 +492,84 @@ export default function TasksView({ entityId }: StudioViewProps) {
             onChange={(event) => setProjectQuery(event.target.value)}
           />
           <div className="max-h-[55dvh] space-y-3 overflow-y-auto">
-            {sources.map((source) => {
-              const repositories = source.workspace.repositories.filter((repository) =>
-                `${repository.name} ${repository.path} ${source.name}`
+            {projectMachineGroups(
+              sources.flatMap((source) =>
+                source.workspace.repositories.map((repository) => ({
+                  repository,
+                  runtimeId: source.runtimeId,
+                  source,
+                })),
+              ),
+            ).map((group) => {
+              const matches = group.entries.filter(({ repository, source }) =>
+                `${repository.gitIdentity ?? ''} ${repository.name} ${repository.path} ${source.name}`
                   .toLowerCase()
                   .includes(projectQuery.trim().toLowerCase()),
               )
-              if (!repositories.length) return null
+              if (!matches.length) return null
               return (
-                <section key={source.runtimeId ?? 'local'} aria-label={source.name}>
-                  <h3 className="flex items-center gap-2 px-3 py-1 text-xs text-muted-foreground">
-                    <Monitor className="size-3.5" />
-                    <span className="truncate">{source.name}</span>
-                    {!source.online && <span className="ml-auto">Offline</span>}
-                  </h3>
-                  {repositories.map((repository) => {
+                <details
+                  key={`${group.key}:${!!projectQuery}`}
+                  open={projectQuery ? true : undefined}
+                  className="group rounded-lg border border-border/50"
+                  aria-label={group.name}
+                >
+                  <summary className="flex cursor-pointer items-center gap-2 px-3 py-3 text-xs text-muted-foreground">
+                    <Folder className="size-3.5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-foreground">
+                        {group.name}
+                      </span>
+                      <span className="block truncate text-[10px]">
+                        {group.identity ?? 'Local repository'}
+                      </span>
+                    </span>
+                    <span className="ml-auto">
+                      {
+                        new Set(
+                          group.entries
+                            .filter(({ source }) => source.online)
+                            .map((entry) => entry.runtimeId),
+                        ).size
+                      }
+                      /{new Set(group.entries.map((entry) => entry.runtimeId)).size} online
+                    </span>
+                    <ChevronRight className="size-3 shrink-0 transition-transform group-open:rotate-90" />
+                  </summary>
+                  {matches.map(({ repository, source }) => {
                     const key = taskCollectionKey(source.runtimeId, repository.id)
                     return (
                       <Button
                         key={key}
                         variant="ghost"
-                        disabled={busy || !source.online}
+                        disabled={busy || !source.online || !!repository.gitIdentityError}
                         className={cn(
                           'h-auto w-full justify-start gap-2 px-3 py-2 text-left',
                           key === suggestedProject && 'bg-muted/50',
                         )}
                         onClick={() => void startTask(key, true)}
                       >
-                        <Folder className="size-4 shrink-0 text-muted-foreground" />
+                        <Monitor className="size-4 shrink-0 text-muted-foreground" />
                         <span className="min-w-0">
-                          <span className="block truncate">{repository.name}</span>
+                          <span className="block truncate">
+                            {source.name}
+                            {!source.online ? ' · Offline' : ''}
+                          </span>
                           <span className="block truncate text-xs font-normal text-muted-foreground">
-                            {repository.path}
+                            {repository.gitIdentityError ??
+                              `${repository.path} · ${repository.branch}`}
                           </span>
                         </span>
                       </Button>
                     )
                   })}
-                </section>
+                </details>
               )
             })}
             {projectQuery &&
               !sources.some((source) =>
                 source.workspace.repositories.some((repository) =>
-                  `${repository.name} ${repository.path} ${source.name}`
+                  `${repository.gitIdentity ?? ''} ${repository.name} ${repository.path} ${source.name}`
                     .toLowerCase()
                     .includes(projectQuery.trim().toLowerCase()),
                 ),

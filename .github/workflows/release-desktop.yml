@@ -18,23 +18,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Verify version and signing configuration
+      - name: Verify version
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
-          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
-          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
-          MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          node -e 'const p=require("./package.json"); if(process.env.TAG!==`v${p.version}`) throw Error("Release tag must match package.json version")'
-          for name in MAC_CERTIFICATE MAC_CERTIFICATE_PASSWORD MAC_SIGNING_IDENTITY APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
-            if [[ -z "${!name}" ]]; then
-              echo "::error::Missing $name GitHub Actions secret"
-              exit 1
-            fi
-          done
+        run: node -e 'const p=require("./package.json"); if(process.env.TAG!==`v${p.version}`) throw Error("Release tag must match package.json version")'
       - name: Create release draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -61,6 +48,18 @@ jobs:
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: node -e 'const p=require("./package.json"); if(process.env.TAG!==`v${p.version}`) throw Error("Tag must match package.json version")'
+      - name: Verify Apple signing secrets
+        env:
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in MAC_CERTIFICATE MAC_CERTIFICATE_PASSWORD MAC_SIGNING_IDENTITY APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            test -n "${!name}" || { echo "::error::Missing $name secret"; exit 1; }
+          done
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Build signed update artifacts into a draft release
@@ -74,11 +73,67 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           GITHUB_REF_NAME: ${{ inputs.tag || github.ref_name }}
         run: node scripts/packaging/package-desktop.mjs --publish
+      - name: Verify Mac signature and notarization
+        run: |
+          codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Dovo Studio.app"
+          spctl --assess --type execute --verbose=2 "release/mac-arm64/Dovo Studio.app"
+          xcrun stapler validate "release/mac-arm64/Dovo Studio.app"
       - name: Upload mise desktop archive
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: gh release upload "$TAG" release/Dovo-Studio-mise-*.tar.gz --clobber
+  desktop:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x64
+          - runner: windows-11-arm
+            arch: arm64
+          - runner: ubuntu-24.04
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      USE_SYSTEM_FPM: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          architecture: ${{ matrix.arch }}
+      - uses: pnpm/action-setup@v4
+      - name: Verify native architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: node -e "if(process.arch!==process.env.EXPECTED_ARCH) throw Error('Native architecture mismatch')"
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm ruby-dev build-essential libarchive-tools
+          sudo gem install --no-document fpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @dovo/api... --filter @dovo/desktop... -r build
+      - name: Build unsigned desktop packages
+        run: pnpm exec node scripts/packaging/package-desktop.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.runner }}
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.deb
+            release/*.rpm
+            release/*.AppImage
+            release/*.blockmap
+            release/latest*.yml
   server:
     needs: draft
     strategy:
@@ -105,7 +160,7 @@ jobs:
           name: server-${{ matrix.runner }}
           path: release/Dovo-Server-*.tar.gz
   upload:
-    needs: server
+    needs: [server, desktop]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
@@ -113,13 +168,18 @@ jobs:
           pattern: server-*
           merge-multiple: true
           path: release
-      - name: Upload server archives into draft release
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release
+      - name: Upload unsigned desktop and server packages into draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          gh release upload "$TAG" release/*.tar.gz --clobber
+          gh release upload "$TAG" release/* --clobber
   verify:
     needs: [mac, upload]
     runs-on: ubuntu-24.04
@@ -138,6 +198,18 @@ jobs:
             "Dovo-Server-${TAG#v}-macos-arm64.tar.gz" \
             "Dovo-Server-${TAG#v}-linux-x64.tar.gz" \
             "Dovo-Server-${TAG#v}-linux-arm64.tar.gz" \
+            "Dovo-Studio-${TAG#v}-windows-x64.exe" \
+            "Dovo-Studio-${TAG#v}-windows-arm64.exe" \
+            "Dovo-Studio-${TAG#v}-linux-x64.deb" \
+            "Dovo-Studio-${TAG#v}-linux-arm64.deb" \
+            "Dovo-Studio-${TAG#v}-linux-x64.rpm" \
+            "Dovo-Studio-${TAG#v}-linux-arm64.rpm" \
+            "Dovo-Studio-${TAG#v}-linux-x64.AppImage" \
+            "Dovo-Studio-${TAG#v}-linux-arm64.AppImage" \
+            latest.yml \
+            latest-arm64.yml \
+            latest-linux.yml \
+            latest-linux-arm64.yml \
             latest-mac.yml; do
             grep -Fx "$pattern" /tmp/dovo-release-assets || { echo "::error::Missing release asset: $pattern"; exit 1; }
           done
