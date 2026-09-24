@@ -76,6 +76,13 @@ export function HarnessFields({
             reasoning: next.reasoning,
             serviceTier: next.serviceTier,
             cyberAccessProgram: next.cyberAccessProgram,
+            ...(next.provider === 'acp'
+              ? {
+                  acpInstallationId: next.acpInstallationId,
+                  acpMode: next.acpMode,
+                  acpConfig: next.acpConfig,
+                }
+              : {}),
           })
         }
       />
@@ -109,7 +116,8 @@ export function HarnessFields({
           Connection and instructions
         </summary>
         <div className="mt-3 grid gap-3">
-          <FormField label={value.provider === 'opencode' ? 'Server URL' : 'Executable'}>
+          {(value.provider !== 'acp' || !value.acpInstallationId) && (
+            <FormField label={value.provider === 'opencode' ? 'Server URL' : 'Executable'}>
             <Input
               aria-label="Harness endpoint"
               value={value.endpoint}
@@ -123,8 +131,9 @@ export function HarnessFields({
                 value.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Use runtime default'
               }
             />
-          </FormField>
-          {value.provider === 'acp' && (
+            </FormField>
+          )}
+          {value.provider === 'acp' && !value.acpInstallationId && (
             <FormField label="Arguments (one per line)">
               <Textarea
                 aria-label="Harness arguments"

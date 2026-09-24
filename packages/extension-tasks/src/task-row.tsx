@@ -67,7 +67,7 @@ export function TaskRow({
             className={cn(
               'mb-px h-auto min-h-11 w-full min-w-0 flex-col items-stretch gap-0.5 whitespace-normal rounded-md border border-transparent px-2 py-1.5 text-left font-normal',
               selected
-                ? 'border-border/60 bg-accent/60 hover:bg-accent/70 group-hover/task:bg-accent/70'
+                ? 'border-primary/20 bg-primary/8 shadow-[inset_2px_0_var(--primary)] hover:bg-primary/12 group-hover/task:bg-primary/12'
                 : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
             )}
             onClick={onSelect}

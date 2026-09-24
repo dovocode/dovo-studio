@@ -4,11 +4,14 @@ import { decode } from '@dovo/protocol'
 import { ExtensionHost, runClientEffect } from '@dovo/client-runtime'
 import { commandsSchema, type CommandSettings, type AgentDiscovery } from '@dovo/protocol'
 import type { Agent } from '@dovo/protocol'
-import type { AgentAdapter } from './types.js'
+import type { AcpLaunch, AgentAdapter } from './types.js'
 export class AgentRegistry {
   private adapters = new Map<Agent['provider'], AgentAdapter>()
   readonly host = new ExtensionHost()
-  constructor(private settings: () => CommandSettings = () => decode(commandsSchema, {})) {
+  constructor(
+    private settings: () => CommandSettings = () => decode(commandsSchema, {}),
+    private acpLaunch?: (id: string) => AcpLaunch,
+  ) {
     const providers = [
       ['codex', () => import('./providers/codex.js').then((m) => m.codexAdapter)],
       ['opencode', () => import('./providers/opencode.js').then((m) => m.opencodeAdapter)],
@@ -41,6 +44,11 @@ export class AgentRegistry {
         agent.endpoint || (agent.provider === 'opencode' ? '' : this.settings()[agent.provider]),
     }
   }
+  launch(agent: AgentDiscovery): AcpLaunch | undefined {
+    if (agent.provider !== 'acp' || !agent.acpInstallationId) return undefined
+    if (!this.acpLaunch) throw new Error('Managed ACP installations are unavailable')
+    return this.acpLaunch(agent.acpInstallationId)
+  }
   getEffect(provider: Agent['provider']) {
     return Effect.gen(this, function* () {
       yield* this.host.activateEffect(`dovo.provider.${provider}`)
@@ -53,11 +61,12 @@ export class AgentRegistry {
           adapter.run({
             ...run,
             agent: this.configure(run.agent),
+            acpLaunch: this.launch(run.agent),
           }),
-        probe: (agent) => adapter.probe(this.configure(agent)),
+        probe: (agent) => adapter.probe(this.configure(agent), this.launch(agent)),
         ...(models
           ? {
-              models: (agent: AgentDiscovery) => models(this.configure(agent)),
+              models: (agent: AgentDiscovery) => models(this.configure(agent), this.launch(agent)),
             }
           : {}),
       } satisfies AgentAdapter

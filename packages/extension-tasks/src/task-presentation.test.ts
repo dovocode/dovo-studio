@@ -174,3 +174,12 @@ it('retains settled and snoozed states and handles drafts without turn timestamp
     ).label,
   ).toBe('Draft')
 })
+
+it('shows change capture separately from provider work', () => {
+  expect(
+    taskPresentation({ ...task('running'), runPhase: 'finalizing' }, false, now),
+  ).toMatchObject({
+    state: 'Saving changes',
+    compactLabel: 'Saving changes',
+  })
+})

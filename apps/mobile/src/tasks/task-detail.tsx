@@ -221,7 +221,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
             !snapshot?.runs.some((run) => run.taskIds.includes(task.id)) && (
               <View style={{ paddingHorizontal: 16, gap: 8 }}>
                 <Action
-                  label="Resume task"
+                  label={task.runPhase === 'finalizing' ? 'Retry saving changes' : 'Resume task'}
                   disabled={!connected || resume.busy}
                   onPress={() =>
                     resume.act(() => callEffect('/api/tasks/run', { id: task.id }, responses.ok))

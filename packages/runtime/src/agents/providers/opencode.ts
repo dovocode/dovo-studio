@@ -197,6 +197,7 @@ export const opencodeAdapter: AgentAdapter = {
         once: true,
       })
       if (run.signal.aborted) abort()
+      let prompting = false
       let streamed = false
       const textParts = new Set<string>()
       const events = await api.event.subscribe(
@@ -232,8 +233,17 @@ export const opencodeAdapter: AgentAdapter = {
               scope.data.info?.sessionID === sessionID ||
               scope.data.info?.id === sessionID ||
               scope.data.part?.sessionID === sessionID)
-          )
+          ) {
+            if (
+              prompting &&
+              (event.type === 'message.part.updated' ||
+                event.type === 'message.part.delta' ||
+                event.type === 'permission.asked' ||
+                event.type === 'question.asked')
+            )
+              run.onPromptAccepted?.()
             run.onEvent?.(event.type, event)
+          }
           if (
             event.type === 'message.part.updated' &&
             event.properties.sessionID === sessionID &&
@@ -343,6 +353,7 @@ export const opencodeAdapter: AgentAdapter = {
         const slash = run.agent.model.indexOf('/')
         if (run.agent.model && slash < 1)
           throw new Error('OpenCode models use provider/model format')
+        prompting = true
         const response = await Promise.race([
           eventFailure,
           api.session.prompt(
@@ -382,6 +393,7 @@ export const opencodeAdapter: AgentAdapter = {
             },
           ),
         ])
+        run.onPromptAccepted?.()
         run.onEvent?.('prompt.result', response.data)
         if (response.data.info.error) throw new Error(JSON.stringify(response.data.info.error))
         if (!streamed)

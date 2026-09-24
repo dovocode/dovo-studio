@@ -222,6 +222,39 @@ it('keeps custom instructions and resources when applying task-specific model se
   expect(builder.model).toBe('saved-model')
   expect(builder.permission).toBe('ask')
 })
+it('persists ACP installation, mode and config overrides for a saved agent', () => {
+  const acp: Agent = {
+    ...defaultTaskHarness('acp'),
+    id: 'registered-agent',
+    name: 'Registered agent',
+    acpInstallationId: 'registered-agent',
+    acpMode: 'plan',
+    acpConfig: { search: 'enabled' },
+  }
+  const selected = selectedTaskHarness(draft, [acp], 'agent:registered-agent')!
+  const changes = taskHarnessChanges(draft, 'agent:registered-agent', {
+    ...selected,
+    acpInstallationId: undefined,
+    acpMode: undefined,
+    acpConfig: undefined,
+  })
+  expect(changes.agentOverrides.after).toMatchObject({
+    acpInstallationId: null,
+    acpMode: '',
+    acpConfig: {},
+  })
+  const updated = decode(taskSchema, {
+    ...draft,
+    agentId: changes.agentId.after,
+    harness: changes.harness.after,
+    agentOverrides: changes.agentOverrides.after,
+  })
+  expect(resolveTaskAgent(updated, [acp])).toMatchObject({
+    acpInstallationId: undefined,
+    acpMode: '',
+    acpConfig: {},
+  })
+})
 it('clears the custom binding and overrides when selecting a built-in agent', () => {
   const custom = decode(taskSchema, {
     ...draft,

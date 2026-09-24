@@ -61,7 +61,10 @@ export function TaskListRow({
             flex: 1,
             minWidth: 0,
             gap: 5,
-            paddingVertical: 6,
+            paddingVertical: 8,
+            paddingHorizontal: 6,
+            borderRadius: 8,
+            backgroundColor: pressed ? colors.elevated : 'transparent',
             opacity: pressed ? 0.6 : 1,
           })}
         >

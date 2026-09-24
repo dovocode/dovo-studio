@@ -6,7 +6,7 @@ import { supportsCodexDaybreak } from '../codex-modes.js'
 import { codexModels } from '../catalogs/codex.js'
 import { codexQuestions, codexAsyncQuestions } from './codex-questions.js'
 import { formQuestions } from './form-questions.js'
-import { stopChild } from '../stop-child.js'
+import { stopOwnedChild } from '../stop-owned-child.js'
 import { spawn } from 'node:child_process'
 import { createMessageConnection } from 'vscode-jsonrpc/node'
 import { Schema } from 'effect'
@@ -41,6 +41,7 @@ export const codexAdapter: AgentAdapter = {
     run.signal.throwIfAborted()
     const child = spawn(run.agent.endpoint || 'codex', ['app-server', '--listen', 'stdio://'], {
       cwd: run.cwd,
+      detached: process.platform !== 'win32',
       env: processEnvironment(),
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -136,6 +137,8 @@ export const codexAdapter: AgentAdapter = {
       // Child notifications feed the Agents panel, never the parent transcript or completion.
       if (threadId && typeof value.data.threadId === 'string' && value.data.threadId !== threadId)
         return
+      if (method === 'turn/started' || method === 'turn/completed' || method === 'item/started')
+        run.onPromptAccepted?.()
       if (method === 'item/agentMessage/delta' && typeof value.data.delta === 'string')
         run.onText(value.data.delta)
       if ((method === 'item/started' || method === 'item/completed') && run.onQuestions) {
@@ -170,14 +173,14 @@ export const codexAdapter: AgentAdapter = {
       }
     })
     const abort = () => {
-      stopChild(child)
+      void stopOwnedChild(child)
       rejectTurn(new Error('Task cancelled'))
     }
     run.signal.addEventListener('abort', abort, {
       once: true,
     })
     const timeout = setTimeout(() => {
-      stopChild(child)
+      void stopOwnedChild(child)
       rejectTurn(new Error('Codex initialization timed out'))
     }, 30000)
     rpc.listen()
@@ -315,6 +318,7 @@ export const codexAdapter: AgentAdapter = {
           : {}),
         input: turnInput(run),
       })
+      run.onPromptAccepted?.()
       const turn = decodeResult(
         mutableStruct({
           turn: mutableStruct({
@@ -342,7 +346,7 @@ export const codexAdapter: AgentAdapter = {
       clearTimeout(timeout)
       run.signal.removeEventListener('abort', abort)
       rpc.dispose()
-      stopChild(child)
+      await stopOwnedChild(child)
     }
   },
 }

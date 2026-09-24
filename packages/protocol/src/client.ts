@@ -21,6 +21,10 @@ function rememberSnapshotTag(value: unknown, tag: string | null | undefined) {
   if (tag && value && typeof value === 'object') snapshotTags.set(value, tag)
 }
 function requestTimeout(path: string) {
+  if (path === '/api/agents/acp/install') return 630000
+  if (path === '/api/agents/acp/authenticate' || path === '/api/agents/acp/logout') return 330000
+  if (path === '/api/agents/acp/inspect' || path.startsWith('/api/agents/acp/sessions'))
+    return 65000
   return path === '/api/previews/simulator/open'
     ? 210000
     : path.startsWith('/api/previews/')

@@ -2,7 +2,7 @@ import { Cause, Deferred, Effect, Fiber, Layer, ManagedRuntime } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { decode } from '@dovo/protocol'
 import type { Attachments } from '../storage/attachments.js'
-import { TaskTurnRunner } from './run-turn.js'
+import { TaskTurnRunner, FinalizationFailure } from './run-turn.js'
 import { TaskQueue } from './task-queue.js'
 import type { Questions } from './questions.js'
 import type { Activity } from '../storage/activity.js'
@@ -17,6 +17,7 @@ import { AgentRegistry } from './registry.js'
 import { Approvals } from './approvals.js'
 import {
   HttpError,
+  RuntimeOperationError,
   errorMessage,
   runtimeFailure,
   runtimeOperation,
@@ -120,15 +121,17 @@ export class Tasks {
   }
   steerEffect(id: string, messageId: string, text: string, attachmentIds: string[] = []) {
     return runtimeOperation(() => {
-      const task = this.store.task(id)
-      if ([...task.messages, ...(task.queue ?? [])].some((message) => message.id === messageId)) {
-        this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds))
+      if (this.queue.accepted(id, messageId, text, this.attachments.metadata(id, attachmentIds))) {
         return null
       }
       if (this.steering.has(id))
         throw new HttpError(409, 'A steering request is already being applied')
       const run = this.running.get(id)
       if (!run) throw new HttpError(409, 'The turn finished. Send this as a follow-up instead.')
+      if (this.store.task(id).runPhase === 'finalizing') {
+        this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds))
+        return null
+      }
       const nativeSteer = run.steer
       const paused = this.store.task(id).queuePaused ?? false
       if (!this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds)))
@@ -227,6 +230,8 @@ export class Tasks {
           this.store.updateTask(id, (task) => ({
             ...task,
             status: 'running',
+            runPhase: task.runPhase === 'finalizing' ? 'finalizing' : 'preparing',
+            runAttempt: recoveringTurn ? task.runAttempt : undefined,
             restartRecovery: undefined,
             queuePaused: pauseQueue,
             error: undefined,
@@ -252,12 +257,18 @@ export class Tasks {
               )
             run.cwd = cwd
             yield* Deferred.succeed(ready, undefined)
+            if (task.runPhase === 'finalizing') {
+              yield* this.runner.finalizeEffect(id, cwd)
+              resumeInterruptedTurn = false
+              if (pauseQueue || !this.store.task(id).queue?.length) return
+            }
             do {
               yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
               if (recoveringQueue && !this.store.task(id).queue?.length) {
                 this.store.updateTask(id, (current) => ({
                   ...current,
                   status: task.status,
+                  runPhase: undefined,
                   activity: undefined,
                   queuePaused: true,
                 }))
@@ -276,33 +287,49 @@ export class Tasks {
                 },
                 (prompt) => {
                   // Message forms outlive the turn; Stop and runtime shutdown still dismiss them.
-                  const deliver = async (
-                    answers: import('@dovo/protocol').QuestionAnswers | null,
-                  ) => {
-                    try {
-                      const text = answers
-                        ? prompt.questions
-                            .map((q) => `${q.question}\n${(answers[q.id] ?? []).join('\n')}`)
-                            .join('\n\n')
-                        : `The user declined to answer:\n${prompt.questions.map((q) => q.question).join('\n')}`
-                      const messageId = randomUUID()
-                      if (this.running.get(id)?.steer && !this.steering.has(id))
-                        await this.steer(id, messageId, text)
-                      else await this.send(id, messageId, text)
-                    } catch (error) {
-                      this.store.updateTask(id, (t) => ({
-                        ...t,
-                        error: `Could not deliver the form answer: ${errorMessage(error)}`,
-                      }))
-                    }
-                  }
                   void this.questions.request(
                     id,
                     prompt,
                     run.controller.signal,
                     undefined,
-                    (answers) => {
-                      void deliver(answers)
+                    (answers, receipt) => {
+                      const text = answers
+                        ? prompt.questions
+                            .map((q) => `${q.question}\n${(answers[q.id] ?? []).join('\n')}`)
+                            .join('\n\n')
+                        : `The user declined to answer:\n${prompt.questions.map((q) => q.question).join('\n')}`
+                      const messageId = `answer:${receipt.id}`
+                      // The answer receipt and input are one transaction, before HTTP acknowledgement.
+                      this.queue.add(id, messageId, text, [], receipt)
+                      if (!this.store.task(id).queue?.some((message) => message.id === messageId))
+                        return
+                      const active = this.running.get(id)
+                      const nativeSteer = active?.steer
+                      const token = Symbol()
+                      const deliver =
+                        nativeSteer && !this.steering.has(id)
+                          ? Effect.acquireUseRelease(
+                              Effect.sync(() => this.steering.set(id, token)),
+                              () => runtimeOperation(() => nativeSteer(messageId)),
+                              () =>
+                                Effect.sync(() => {
+                                  if (this.steering.get(id) === token) this.steering.delete(id)
+                                }),
+                            )
+                          : this.sendEffect(id, messageId, text)
+                      this.executor.runFork(
+                        deliver.pipe(
+                          Effect.catchAllCause((cause) =>
+                            Effect.sync(() => {
+                              this.store.updateTask(id, (task) => ({
+                                ...task,
+                                queuePaused: true,
+                                error: `Form answer saved in the queue; delivery was not confirmed: ${errorMessage(Cause.squash(cause))}`,
+                              }))
+                            }),
+                          ),
+                        ),
+                      )
                     },
                   )
                 },
@@ -313,9 +340,22 @@ export class Tasks {
             Effect.tapErrorCause((cause) =>
               Effect.gen(this, function* () {
                 const error = runtimeFailure(Cause.squash(cause))
+                if (
+                  error instanceof RuntimeOperationError &&
+                  error.cause instanceof FinalizationFailure
+                ) {
+                  yield* Deferred.fail(ready, error)
+                  return
+                }
                 this.store.updateTask(id, (task) => ({
                   ...task,
-                  status: run.controller.signal.aborted ? 'cancelled' : 'failed',
+                  status:
+                    task.runPhase === 'finalizing' && task.turns?.at(-1)?.status === 'completed'
+                      ? 'review'
+                      : run.controller.signal.aborted
+                        ? 'cancelled'
+                        : 'failed',
+                  runPhase: task.runPhase === 'finalizing' ? 'finalizing' : undefined,
                   queuePaused: true,
                   restartRecovery:
                     !run.controller.signal.aborted && recoveringTurn
@@ -452,7 +492,10 @@ export class Tasks {
                 // A failed startup stays actionable; it must not silently retry forever.
                 this.store.updateTask(id, (task) => ({
                   ...task,
-                  status: 'failed',
+                  status:
+                    task.runPhase === 'finalizing' && task.turns?.at(-1)?.status === 'completed'
+                      ? 'review'
+                      : 'failed',
                   queuePaused: true,
                   restartRecovery: {
                     kind:
@@ -477,10 +520,20 @@ export class Tasks {
       const running = [...this.running.values()]
       for (const [id, run] of this.running) {
         const task = this.store.task(id)
-        if (!run.controller.signal.aborted && task.status === 'running')
+        if (
+          !run.controller.signal.aborted &&
+          task.status === 'running' &&
+          task.runPhase !== 'finalizing'
+        )
           this.store.updateTask(id, (task) => ({
             ...task,
-            restartRecovery: { kind: 'turn', automatic: !task.queuePaused },
+            restartRecovery: {
+              kind:
+                task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length
+                  ? 'queue'
+                  : 'turn',
+              automatic: !task.queuePaused,
+            },
           }))
         run.controller.abort(new Error('Runtime shutting down'))
       }
@@ -503,6 +556,7 @@ export class Tasks {
     const task: Task = {
       id: randomUUID(),
       ...input,
+      ...(!input.agentId ? { harness: this.store.taskDefaults() } : {}),
       status: 'draft',
       createdAt: new Date().toISOString(),
       messages: [

@@ -14,10 +14,10 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
   } | null>(null)
   const [error, setError] = useApplicationState('')
   const [loading, setLoading] = useApplicationState(false)
-  const { provider, endpoint, args, model } = harness
+  const { provider, endpoint, args, model, acpInstallationId, acpMode, acpConfig } = harness
   const argsKey = JSON.stringify(args ?? [])
   const discoveryModel = provider === 'acp' ? model : ''
-  const key = JSON.stringify([provider, endpoint, argsKey, discoveryModel])
+  const key = JSON.stringify([provider, endpoint, argsKey, discoveryModel, acpInstallationId, acpMode, acpConfig])
   useEffect(() => {
     if (!active) return
     let stopped = false
@@ -32,6 +32,9 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
         endpoint,
         args: JSON.parse(argsKey),
         model: discoveryModel,
+        acpInstallationId,
+        acpMode,
+        acpConfig,
       },
       modelCatalogSchema,
     )
@@ -51,7 +54,7 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
     return () => {
       stopped = true
     }
-  }, [active, provider, endpoint, argsKey, discoveryModel, connected, request, key])
+  }, [active, provider, endpoint, argsKey, discoveryModel, acpInstallationId, acpMode, acpConfig, connected, request, key])
   return {
     catalog: catalog?.key === key ? catalog.value : null,
     error,

@@ -32,7 +32,7 @@ export function ModelSettings({
   disabled?: boolean
   onChange: (agent: Agent) => void
 }) {
-  const { call, connected, callEffect } = useRuntime()
+  const { connected, callEffect } = useRuntime()
   const [catalog, setCatalog] = useApplicationState<ModelCatalog | null>(null),
     [error, setError] = useApplicationState(''),
     [loading, setLoading] = useApplicationState(false),
@@ -43,13 +43,22 @@ export function ModelSettings({
     endpoint: agent.endpoint,
     args: agent.args,
     model: agent.provider === 'acp' ? agent.model : '',
+    acpInstallationId: agent.provider === 'acp' ? agent.acpInstallationId : undefined,
+    acpMode: agent.provider === 'acp' ? agent.acpMode : undefined,
+    acpConfig: agent.provider === 'acp' ? agent.acpConfig : undefined,
   })
+  const canDiscover =
+    connected &&
+    (agent.provider !== 'acp' ||
+      !!agent.acpInstallationId ||
+      !!agent.endpoint.trim() ||
+      refresh > 0)
   useEffect(() => {
     let stopped = false
     setCatalog(null)
     setError('')
-    setLoading(connected)
-    if (!connected) return
+    setLoading(canDiscover)
+    if (!canDiscover) return
     const timer = setTimeout(() => {
       void runClientEffect(
         callEffect('/api/agents/models', JSON.parse(key), modelCatalogSchema)
@@ -80,7 +89,7 @@ export function ModelSettings({
       stopped = true
       clearTimeout(timer)
     }
-  }, [key, connected, call, refresh])
+  }, [key, canDiscover, callEffect, refresh])
   const models = catalog?.models ?? [],
     selected = selectedCatalogModel(catalog, agent.model),
     efforts =
@@ -165,6 +174,63 @@ export function ModelSettings({
           })
         }
       />
+      {serviceTier && agent.provider === 'acp' && catalog?.acp && (
+        <>
+          {!!catalog.acp.modes.length && (
+            <Choice
+              row
+              label="ACP mode"
+              disabled={disabled}
+              value={agent.acpMode ?? ''}
+              items={[
+                { id: '', name: 'Provider default' },
+                ...(agent.acpMode && !catalog.acp.modes.some((mode) => mode.id === agent.acpMode)
+                  ? [{ id: agent.acpMode, name: `${agent.acpMode} (saved)` }]
+                  : []),
+                ...catalog.acp.modes,
+              ]}
+              onChange={(acpMode) => onChange({ ...agent, acpMode: acpMode || undefined })}
+            />
+          )}
+          {catalog.acp.configOptions.map((option) => {
+            const value = agent.acpConfig?.[option.id] ?? option.currentValue
+            const label = option.category ? `${option.category} · ${option.name}` : option.name
+            return option.options.length ? (
+              <Choice
+                key={option.id}
+                row
+                label={label}
+                disabled={disabled}
+                value={value}
+                items={[
+                  ...(value && !option.options.some((item) => item.id === value)
+                    ? [{ id: value, name: `${value} (saved)` }]
+                    : []),
+                  ...option.options,
+                ]}
+                onChange={(next) =>
+                  onChange({ ...agent, acpConfig: { ...agent.acpConfig, [option.id]: next } })
+                }
+              />
+            ) : (
+              <Field
+                key={option.id}
+                label={label}
+                value={value}
+                editable={!disabled}
+                onChangeText={(next) =>
+                  onChange({ ...agent, acpConfig: { ...agent.acpConfig, [option.id]: next } })
+                }
+              />
+            )
+          })}
+          {!!catalog.acp.commands.length && (
+            <Text style={styles.muted}>
+              Commands: {catalog.acp.commands.map((command) => command.name).join(' · ')}
+            </Text>
+          )}
+        </>
+      )}
       {serviceTier && agent.provider === 'codex' && (
         <>
           <Choice
@@ -222,6 +288,11 @@ export function ModelSettings({
           {loading
             ? 'Loading provider models…'
             : 'Connect to discover models and reasoning levels.'}
+        </Text>
+      )}
+      {connected && agent.provider === 'acp' && !canDiscover && (
+        <Text style={styles.muted}>
+          Install or select an ACP agent, or enter a custom command to discover its models.
         </Text>
       )}
       <Action

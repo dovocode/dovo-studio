@@ -1,7 +1,15 @@
 import { mutableStruct, mutableArray } from './schema.js'
 import { Schema } from 'effect'
 import { agentSchema } from './workspace.js'
-export const agentDiscoverySchema = agentSchema.pick('provider', 'endpoint', 'args', 'model')
+export const agentDiscoverySchema = agentSchema.pick(
+  'provider',
+  'endpoint',
+  'args',
+  'model',
+  'acpInstallationId',
+  'acpMode',
+  'acpConfig',
+)
 const choiceSchema = mutableStruct({
   id: Schema.String,
   name: Schema.String,
@@ -32,6 +40,26 @@ export const modelCatalogSchema = mutableStruct({
     }),
   ),
   reasoning: mutableArray(choiceSchema),
+  acp: Schema.optional(
+    mutableStruct({
+      modes: mutableArray(choiceSchema),
+      configOptions: mutableArray(
+        mutableStruct({
+          ...choiceSchema.fields,
+          category: Schema.optional(Schema.String),
+          currentValue: Schema.String,
+          options: mutableArray(choiceSchema),
+        }),
+      ),
+      commands: mutableArray(
+        mutableStruct({
+          name: Schema.String,
+          description: Schema.String,
+          inputHint: Schema.optional(Schema.String),
+        }),
+      ),
+    }),
+  ),
   codex: Schema.optional(
     mutableStruct({
       daybreakPrograms: mutableArray(Schema.Literal('daybreakBlue', 'daybreakRed')),

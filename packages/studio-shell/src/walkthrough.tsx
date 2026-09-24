@@ -7,9 +7,9 @@ export const walkthroughSteps = [
     text: 'Open Projects in Tasks, choose Add project, then browse for the repository on your computer. Your files stay on that computer.',
   },
   {
-    title: 'Choose an agent',
+    title: 'Choose your defaults',
     view: 'agents',
-    text: 'Add an agent in Settings → Agents. Choose your provider and model, then check that its command or service is available on your computer.',
+    text: 'Open Set up defaults in Settings → Agents. Choose your everyday provider and model, then a separate model for titles and dictation. These settings are shared with your paired phone.',
   },
   {
     title: 'Send your first task',

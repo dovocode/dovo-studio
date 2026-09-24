@@ -15,7 +15,7 @@ afterEach(async () => {
       force: true,
     })
 })
-async function fixture(version = '0.155.1', savedDaybreak = false) {
+async function fixture(version = '0.155.1', savedDaybreak = false, slowShutdown = false) {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-codex-modes-'))
   cleanups.push(directory)
   const executable = join(directory, 'codex')
@@ -24,6 +24,10 @@ async function fixture(version = '0.155.1', savedDaybreak = false) {
     executable,
     `#!${process.execPath}
 const fs=require('node:fs');
+if (${slowShutdown}) {
+ process.on('SIGTERM', () => setTimeout(() => fs.writeFileSync(${JSON.stringify(join(directory, 'late.txt'))}, 'saved'), 150));
+ setInterval(() => {}, 1000);
+}
 const send = x => process.stdout.write(JSON.stringify(x)+'\\n');
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);if(m.id===undefined)return;
@@ -52,6 +56,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
     prompt: 'Fixture only',
     signal: new AbortController().signal,
     onSession: vi.fn<AgentRun['onSession']>(),
+    onPromptAccepted: vi.fn<NonNullable<AgentRun['onPromptAccepted']>>(),
     onText: vi.fn<AgentRun['onText']>(),
     onActivity: vi.fn<AgentRun['onActivity']>(),
     approve: vi.fn<AgentRun['approve']>(async () => false),
@@ -153,3 +158,13 @@ it('clears an old persisted Daybreak choice when a resumed task returns to Autom
     'cyberAccessProgram',
   )
 })
+
+it.skipIf(process.platform === 'win32')(
+  'waits for owned Codex shutdown before returning a completed run',
+  async () => {
+    const { run } = await fixture('0.155.1', false, true)
+    await codexAdapter.run(run)
+    expect(run.onPromptAccepted).toHaveBeenCalled()
+    expect(await readFile(join(run.cwd, 'late.txt'), 'utf8')).toBe('saved')
+  },
+)

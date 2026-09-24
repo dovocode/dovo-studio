@@ -6,12 +6,18 @@ export type AgentInput = {
   attachments?: AgentRun['attachments']
 }
 export type AgentSteer = (input: AgentInput) => Promise<void>
+export interface AcpLaunch {
+  command: string
+  args: string[]
+  env: Record<string, string>
+}
 export interface AgentRun {
   /** Non-blocking message forms: answers arrive as a new user message, possibly after this turn. */
   onQuestions?: (prompt: QuestionPrompt) => void
   /** Available only while the harness accepts input into its active turn. */
   onSteer?: (steer: AgentSteer | undefined) => void
   agent: Agent
+  acpLaunch?: AcpLaunch
   cwd: string
   attachments?: Array<import('@dovo/protocol').Attachment & { path: string; data: string }>
   prompt: string
@@ -19,6 +25,8 @@ export interface AgentRun {
   signal: AbortSignal
   /** Request a text-only utility turn. Adapters disable tools where supported. */
   tools?: 'none'
+  /** Evidence that the provider accepted this prompt, distinct from session allocation. */
+  onPromptAccepted?: () => void
   onSession: (id: string) => void
   onText: (text: string) => void
   onActivity: (text: string) => void
@@ -31,7 +39,7 @@ export interface AgentRun {
   ) => Promise<QuestionAnswers | null>
 }
 export interface AgentAdapter {
-  models?: (agent: AgentDiscovery) => Promise<ModelCatalog>
+  models?: (agent: AgentDiscovery, launch?: AcpLaunch) => Promise<ModelCatalog>
   run: (run: AgentRun) => Promise<void>
-  probe: (agent: Agent) => Promise<ProviderStatus>
+  probe: (agent: Agent, launch?: AcpLaunch) => Promise<ProviderStatus>
 }

@@ -1,3 +1,8 @@
+import { AcpInstallations } from './agents/acp-installations.js'
+import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { RuntimeDefaults } from './storage/runtime-defaults.js'
 import { RuntimePreferences } from './storage/runtime-preferences.js'
 import { Context } from 'effect'
 import { LiveActivities } from './notifications/live-activities.js'
@@ -29,6 +34,13 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   const activity = new Activity(db)
   const commands = new Commands(db)
   const preferences = new RuntimePreferences(db)
+  const defaults = new RuntimeDefaults(db)
+  const acpInstallations = new AcpInstallations(
+    db,
+    db.name === ':memory:'
+      ? join(tmpdir(), `dovo-acp-${randomUUID()}`)
+      : join(dirname(resolve(db.name)), 'acp'),
+  )
   const store = new WorkspaceStore(db, (before, after) => activity.workspace(before, after))
   const forgeCli = new ForgeCliAccounts(() => commands.get())
   const forges = new ForgeConnections(
@@ -59,9 +71,12 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     ),
     pulls = new ForgePullRequests(git, forges, store),
     terminals = new Terminals(() => commands.get(), activity),
-    agents = new AgentRegistry(() => commands.get()),
+    agents = new AgentRegistry(
+      () => commands.get(),
+      (id) => acpInstallations.launch(id),
+    ),
     approvals = new Approvals(activity),
-    questions = new Questions(activity),
+    questions = new Questions(activity, store),
     tickets = new SocketTickets()
   activity.workspace({ ...store.get(), tasks: [] }, store.get())
   const attachments = new Attachments(db, store, activity)
@@ -88,7 +103,10 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       questions.list().some((item) => item.taskId === id),
   )
   return {
+    acpInstallations,
+    acpController: new AbortController(),
     preferences,
+    defaults,
     liveActivities,
     forges,
     forgeCli,
@@ -119,11 +137,14 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  acpInstallations: AcpInstallations
+  acpController: AbortController
   preferences: RuntimePreferences
   liveActivities: LiveActivities
   forgeCli: ForgeCliAccounts
   forgeWork: ForgeWork
   forges: ForgeConnections
+  defaults: RuntimeDefaults
   titles: TitleGeneration
   activity: Activity
   pullCache: PullCache

@@ -61,3 +61,8 @@ export * from './schema.js'
 export * from './runtime-pairing.js'
 export * from './credential-fields.js'
 export * from './pairing-invitation.js'
+export * from './acp-registry.js'
+
+export * from './acp-auth.js'
+
+export * from './runtime-setup.js'

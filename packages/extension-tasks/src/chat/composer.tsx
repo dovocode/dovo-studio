@@ -149,7 +149,7 @@ export function Composer({ task }: { task: Task }) {
   return (
     <div className="shrink-0 px-3 pb-2 pt-1">
       <PromptInput
-        className="relative z-10 mx-auto max-w-3xl rounded-xl border-border/70 bg-card shadow-none"
+        className="studio-composer relative z-10 mx-auto max-w-3xl rounded-xl border-border/70 bg-card shadow-none"
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes('Files')) event.preventDefault()
         }}
@@ -198,8 +198,8 @@ export function Composer({ task }: { task: Task }) {
               : task.status === 'running'
                 ? 'Queue a follow-up while the agent works…'
                 : firstMessage
-                  ? 'What should get done? Add context or constraints…'
-                  : 'Ask for changes or share context…'
+                  ? 'What would you like to build or fix?'
+                  : 'Ask a follow-up or describe a change…'
           }
         />
         <PromptInputFooter className="flex-wrap items-center gap-1.5 px-2.5 pb-2 pt-1">

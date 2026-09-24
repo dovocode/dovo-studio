@@ -25,7 +25,10 @@ function answerFingerprint(answers: QuestionAnswers | null) {
 export class Questions {
   private answered = new Map<string, string>()
   private requests = new Map<string, Pending>()
-  constructor(private activity: Pick<Activity, 'add'>) {}
+  constructor(
+    private activity: Pick<Activity, 'add'>,
+    private receipts?: { questionResponse: (id: string) => string | undefined },
+  ) {}
   list() {
     return [...this.requests.values()].map((r) => r.info)
   }
@@ -34,7 +37,10 @@ export class Questions {
     value: QuestionPrompt,
     signal: AbortSignal,
     validate?: (answers: QuestionAnswers) => void,
-    onResponse?: (answers: QuestionAnswers | null) => void,
+    onResponse?: (
+      answers: QuestionAnswers | null,
+      receipt: { id: string; fingerprint: string },
+    ) => void,
   ) {
     if (signal.aborted) return Promise.resolve(null)
     const prompt = decode(questionPromptSchema, value),
@@ -58,6 +64,9 @@ export class Questions {
     return new Promise<QuestionAnswers | null>((resolve) => {
       const finish = (answers: QuestionAnswers | null, status: string) => {
         if (!this.requests.has(id)) return
+        // Admission must succeed before resolving or remembering the response.
+        if (status !== 'cancelled')
+          onResponse?.(answers, { id, fingerprint: answerFingerprint(answers) })
         const logged =
           answers &&
           Object.fromEntries(
@@ -82,7 +91,6 @@ export class Questions {
         this.requests.delete(id)
         signal.removeEventListener('abort', abort)
         resolve(answers)
-        if (status !== 'cancelled') onResponse?.(answers)
       }
       const abort = () => finish(null, 'cancelled')
       this.requests.set(id, {
@@ -99,6 +107,13 @@ export class Questions {
   respond(id: string, value: QuestionAnswers | null) {
     const request = this.requests.get(id)
     const answers = value === null ? null : decode(questionAnswersSchema, value)
+    const receipt = this.receipts?.questionResponse(id)
+    if (receipt) {
+      if (receipt !== answerFingerprint(answers))
+        throw new HttpError(409, 'This question was already answered differently')
+      if (request) request.finish(answers, answers ? 'answered' : 'declined')
+      return
+    }
     if (!request) {
       if (this.answered.get(id) === answerFingerprint(answers)) return
       throw new HttpError(409, 'This question was already answered or cancelled')

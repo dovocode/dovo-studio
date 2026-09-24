@@ -36,6 +36,9 @@ export const agentSchema = mutableStruct({
   permission: Schema.Literal('ask', 'read-only', 'workspace-write', 'auto', 'full-access'),
   endpoint: Schema.String,
   args: Schema.optional(mutableArray(Schema.String)),
+  acpInstallationId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  acpMode: Schema.optional(maxValue(Schema.String, 200)),
+  acpConfig: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
 })
 export const taskHarnessSchema = agentSchema.omit('id', 'name', 'icon')
 export type TaskHarness = Schema.Schema.Type<typeof taskHarnessSchema>
@@ -137,6 +140,9 @@ export const turnSchema = mutableStruct({
   error: Schema.optional(Schema.String),
 })
 export const taskModelSchema = mutableStruct({
+  acpInstallationId: Schema.optional(Schema.NullOr(agentSchema.fields.acpInstallationId.from)),
+  acpMode: agentSchema.fields.acpMode,
+  acpConfig: agentSchema.fields.acpConfig,
   model: Schema.optional(agentSchema.fields.model),
   reasoning: agentSchema.fields.reasoning,
   permission: Schema.optional(agentSchema.fields.permission),
@@ -144,6 +150,11 @@ export const taskModelSchema = mutableStruct({
   cyberAccessProgram: Schema.optional(Schema.NullOr(agentSchema.fields.cyberAccessProgram.from)),
 })
 export const taskSchema = mutableStruct({
+  runPhase: Schema.optional(Schema.Literal('preparing', 'provider', 'finalizing')),
+  // Admission is durable before checkout preparation; a session alone proves no delivery.
+  runAttempt: Schema.optional(
+    mutableStruct({ inputMessageIds: mutableArray(Schema.String), promptAccepted: Schema.Boolean }),
+  ),
   checkoutBranch: Schema.optional(Schema.String),
   checkoutLocked: Schema.optional(Schema.Boolean),
   // Captured on the first submitted input; queued input keeps the lock after removal.
@@ -327,6 +338,7 @@ export function resolveTaskAgent(
   }
   return {
     ...merged,
+    acpInstallationId: merged.acpInstallationId ?? undefined,
     serviceTier: merged.serviceTier ?? undefined,
     cyberAccessProgram: merged.cyberAccessProgram ?? undefined,
   }

@@ -232,6 +232,21 @@ export default function TasksScreen() {
                 </Pressable>
               ))}
             </ScrollView>
+            {overviews.some(
+              (entry) => entry.connected && entry.snapshot?.defaults?.configured === false,
+            ) && (
+              <View style={styles.card}>
+                <Text style={styles.text}>Make this workspace yours</Text>
+                <Text style={styles.muted}>
+                  Choose default models for tasks and titles, shared with your computer.
+                </Text>
+                <Action
+                  label="Set up defaults"
+                  secondary
+                  onPress={() => router.push('/settings/agents')}
+                />
+              </View>
+            )}
             <SearchField
               label="Search tasks"
               placeholder="Search tasks"
@@ -309,15 +324,43 @@ export default function TasksScreen() {
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Icon name="tasks" size={32} color={colors.muted} />
+            <Icon name="tasks" size={32} color={colors.accent} />
             <Text style={styles.title}>
               {search
                 ? 'No matches'
                 : entries.some((entry) => !entry.snapshot)
                   ? 'Waiting for your computers'
-                  : 'All clear'}
+                  : search || filter !== 'active' || source !== 'all'
+                    ? 'Nothing in this view'
+                    : 'Ready for your next idea'}
             </Text>
-            <Text style={styles.muted}>No tasks in this view.</Text>
+            <Text style={[styles.muted, { textAlign: 'center' }]}>
+              {entries.some((entry) => !entry.snapshot)
+                ? 'Tasks will appear when your computer connects.'
+                : search || filter !== 'active' || source !== 'all'
+                  ? 'Try a different search or clear your filters.'
+                  : 'Start with a question, a fix, or something you want to build.'}
+            </Text>
+            {search || filter !== 'active' || source !== 'all' ? (
+              <Action
+                label="Clear filters"
+                secondary
+                onPress={() =>
+                  setView((current) => ({
+                    ...current,
+                    search: '',
+                    filter: 'active',
+                    source: 'all',
+                  }))
+                }
+              />
+            ) : (
+              <Action
+                label="New task"
+                disabled={busy || !overviews.some((entry) => entry.connected)}
+                onPress={() => router.push('/new', { withAnchor: true })}
+              />
+            )}
           </View>
         }
       />

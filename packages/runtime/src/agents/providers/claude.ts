@@ -137,6 +137,12 @@ export const claudeAdapter: AgentAdapter = {
     })
     try {
       for await (const message of stream) {
+        if (
+          message.type === 'assistant' ||
+          message.type === 'stream_event' ||
+          message.type === 'result'
+        )
+          run.onPromptAccepted?.()
         run.onEvent?.(message.type, message)
         if (message.session_id) run.onSession(message.session_id)
         if (

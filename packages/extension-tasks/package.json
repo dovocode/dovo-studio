@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./terminal-session": "./src/terminal/terminal-session.tsx",
     "./styles.css": "./src/styles.css"
   },
   "scripts": {

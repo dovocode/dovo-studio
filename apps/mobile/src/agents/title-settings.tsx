@@ -9,10 +9,13 @@ import { Text } from '../ui/text'
 import {
   agentSchema,
   defaultTaskHarness,
+  resolveTitleHarness,
+  titleSettingsForHarness,
   titleGenerationSettingsSchema,
   type TitleGenerationSettings,
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/provider'
+import { AcpRegistry } from './acp-registry'
 import { ModelSettings } from './model-settings'
 import { Choice } from '../ui/choice'
 import { Field } from '../ui/field'
@@ -51,10 +54,13 @@ export function TitleSettings() {
     }
   }, [call, connected])
   if (!settings) return <Text style={styles.muted}>{loadError || 'Loading title settings…'}</Text>
-  const saved = snapshot?.workspace.agents.find((agent) => agent.id === settings.agentId)
+  const harness = resolveTitleHarness(
+    settings,
+    snapshot?.workspace.agents ?? [],
+    snapshot?.defaults?.configured ? snapshot.defaults.harness : undefined,
+  )
   const agent = {
-    ...defaultTaskHarness('codex'),
-    ...(settings.harness ?? saved),
+    ...(harness ?? defaultTaskHarness('codex')),
     id: 'title',
     name: 'Title generator',
     model: settings.model,
@@ -74,10 +80,11 @@ export function TitleSettings() {
             ? `harness:${settings.harness.provider}`
             : settings.agentId
               ? `agent:${settings.agentId}`
-              : 'harness:codex'
+              : 'default'
         }
         disabled={busy}
         items={[
+          { id: 'default', name: 'Default provider · separate model' },
           ...(['codex', 'claude', 'opencode', 'acp'] as const).map((provider) => ({
             id: `harness:${provider}`,
             name: provider,
@@ -102,6 +109,12 @@ export function TitleSettings() {
           })
         }
       />
+      {agent.provider === 'acp' && (
+        <AcpRegistry
+          agent={agent}
+          onChange={(agent) => setSettings(titleSettingsForHarness(agent))}
+        />
+      )}
       <ModelSettings
         serviceTier={false}
         disabled={busy}

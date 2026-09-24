@@ -4,6 +4,7 @@ import { decodeResult, decode } from '@dovo/protocol'
 import { accessModes, lockedTaskProvider, supportsAccess } from '@dovo/studio-core'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { ModelSettings } from './model-settings'
+import { AcpRegistry } from './acp-registry'
 import { useRef } from 'react'
 import { Schema } from 'effect'
 import { agentSchema, providers, useWorkspace, type Agent } from '@dovo/studio-core'
@@ -201,6 +202,9 @@ export function AgentEditor({
                     reasoning: '',
                     serviceTier: undefined,
                     cyberAccessProgram: undefined,
+                    acpInstallationId: undefined,
+                    acpMode: undefined,
+                    acpConfig: undefined,
                     endpoint: '',
                     args: [],
                   })
@@ -229,6 +233,7 @@ export function AgentEditor({
                 use another. Models and settings can still change.
               </p>
             )}
+            {agent.provider === 'acp' && <AcpRegistry agent={agent} onChange={setAgent} />}
             <FormField label="Access">
               <ChoicePicker
                 aria-label="Permissions"
@@ -262,23 +267,25 @@ export function AgentEditor({
               </p>
             )}
             <ModelSettings key={agent.provider} agent={agent} onChange={setAgent} />
-            <FormField
-              label={agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'}
-            >
-              <Input
-                value={agent.endpoint}
-                onChange={(e) =>
-                  setAgent({
-                    ...agent,
-                    endpoint: e.target.value,
-                  })
-                }
-                placeholder={
-                  agent.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Managed by runtime'
-                }
-              />
-            </FormField>
-            {agent.provider === 'acp' && (
+            {(agent.provider !== 'acp' || !agent.acpInstallationId) && (
+              <FormField
+                label={agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'}
+              >
+                <Input
+                  value={agent.endpoint}
+                  onChange={(e) =>
+                    setAgent({
+                      ...agent,
+                      endpoint: e.target.value,
+                    })
+                  }
+                  placeholder={
+                    agent.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Managed by runtime'
+                  }
+                />
+              </FormField>
+            )}
+            {agent.provider === 'acp' && !agent.acpInstallationId && (
               <FormField label="Executable arguments (one per line)">
                 <Textarea
                   value={(agent.args ?? []).join('\n')}

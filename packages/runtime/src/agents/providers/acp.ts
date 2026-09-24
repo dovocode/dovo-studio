@@ -4,34 +4,38 @@ import { acpMcpServers } from '../mcp-settings.js'
 import { isImageAttachment } from '@dovo/protocol'
 import { acpModels } from '../catalogs/acp.js'
 import { formQuestions } from './form-questions.js'
-import { stopChild } from '../stop-child.js'
-import { spawn } from 'node:child_process'
 import { Schema } from 'effect'
-import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import type { AgentAdapter } from '../types.js'
-import { executableAvailable, processEnvironment } from '../../process.js'
+import { executableAvailable } from '../../process.js'
+import { acpControl, initializeAcp, legacyAcpLaunch, openAcpConnection } from './acp-connection.js'
+import { acpClientTools } from './acp-client-tools.js'
 export const acpAdapter: AgentAdapter = {
   models: acpModels,
-  probe: async (agent) => ({
+  probe: async (agent, launch) => ({
     provider: 'acp',
-    available: !!agent.endpoint && (await executableAvailable(agent.endpoint)),
-    detail: agent.endpoint ? 'ACP executable configured.' : 'Set an ACP executable and arguments.',
+    available:
+      !!(launch?.command || agent.endpoint) &&
+      (await executableAvailable(launch?.command || agent.endpoint)),
+    detail:
+      launch?.command || agent.endpoint
+        ? 'ACP executable configured.'
+        : 'Set an ACP executable and arguments.',
   }),
   async run(run) {
     run.signal.throwIfAborted()
-    if (!run.agent.endpoint) throw new Error('Configure an ACP executable and arguments first')
-    const child = spawn(run.agent.endpoint, run.agent.args ?? [], {
-      cwd: run.cwd,
-      env: processEnvironment(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    let stderr = ''
-    child.stderr.on('data', (data) => {
-      stderr = (stderr + String(data)).slice(-4000)
-    })
-    const rpc = new ClientSideConnection(
-      () => ({
+    if (!run.acpLaunch && !run.agent.endpoint)
+      throw new Error('Configure an ACP executable and arguments first')
+    let cancelling = false
+    let loading = !!run.sessionId
+    let sessionId: string | undefined
+    const tools = await acpClientTools(run, () => sessionId)
+    const connection = openAcpConnection(
+      run.acpLaunch ?? legacyAcpLaunch(run.agent.endpoint, run.agent.args ?? []),
+      {
+        ...tools.client,
         createElicitation: async (params) => {
+          if (run.signal.aborted || ('sessionId' in params && params.sessionId !== sessionId))
+            return { action: 'cancel' }
           run.onEvent?.('elicitation/create', params)
           const form = decodeResult(
             mutableStruct({
@@ -58,13 +62,18 @@ export const acpAdapter: AgentAdapter = {
               }
         },
         requestPermission: async (params) => {
+          if (cancelling || run.signal.aborted || params.sessionId !== sessionId)
+            return { outcome: { outcome: 'cancelled' } }
+          if (prompting) run.onPromptAccepted?.()
           run.onEvent?.('permission', params)
           const allow =
             run.agent.permission !== 'read-only' &&
+            run.tools !== 'none' &&
             (await run.approve(
               params.toolCall.title ?? 'ACP tool request',
               JSON.stringify(params.toolCall, null, 2),
             ))
+          if (cancelling || run.signal.aborted) return { outcome: { outcome: 'cancelled' } }
           const option = params.options.find(
             (option) => option.kind === (allow ? 'allow_once' : 'reject_once'),
           )
@@ -80,63 +89,56 @@ export const acpAdapter: AgentAdapter = {
           }
         },
         sessionUpdate: (params) => {
+          if (loading) return
+          if (params.sessionId !== sessionId) return
+          if (
+            prompting &&
+            [
+              'agent_message_chunk',
+              'agent_thought_chunk',
+              'tool_call',
+              'tool_call_update',
+            ].includes(params.update.sessionUpdate)
+          )
+            run.onPromptAccepted?.()
           run.onEvent?.(params.update.sessionUpdate, params)
           const update = params.update
           if (update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text')
             run.onText(update.content.text)
           if (update.sessionUpdate === 'tool_call') run.onActivity(update.title)
         },
-      }),
-      ndJsonStream(
-        new WritableStream<Uint8Array>({
-          write: (chunk) =>
-            new Promise<void>((resolve, reject) => {
-              child.stdin.write(chunk, (error) => (error ? reject(error) : resolve()))
-            }),
-        }),
-        new ReadableStream<Uint8Array>({
-          start: (controller) => {
-            child.stdout.on('data', (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)))
-            child.stdout.on('end', () => controller.close())
-            child.stdout.on('error', (error) => controller.error(error))
-          },
-        }),
-      ),
+      },
+      run.cwd,
     )
-    const abort = () => stopChild(child)
+    const { rpc, exited } = connection
+    let prompting = false
+    let canCloseSession = false
+    const abort = () => {
+      cancelling = true
+      if (sessionId) {
+        setTimeout(() => {
+          void connection.close()
+        }, 1500).unref()
+        void rpc.cancel({ sessionId }).catch(() => {})
+      } else void connection.close()
+    }
     run.signal.addEventListener('abort', abort, {
       once: true,
     })
-    let rejectExit: (error: Error) => void = () => {}
-    const exited = new Promise<never>((_, reject) => {
-      rejectExit = reject
-    })
-    void exited.catch(() => {})
-    child.on('error', rejectExit)
-    child.on('exit', (code) => rejectExit(new Error(`ACP exited (${code}). ${stderr}`)))
-    const timeout = setTimeout(() => rejectExit(new Error('ACP initialization timed out')), 30000)
     try {
-      const initialization = await Promise.race([
-        rpc.initialize({
-          protocolVersion: PROTOCOL_VERSION,
-          clientCapabilities: {
-            fs: {
-              readTextFile: false,
-              writeTextFile: false,
-            },
-            terminal: false,
-            elicitation: {
-              form: {},
-            },
-          },
-          clientInfo: {
-            name: 'dovo-studio',
-            version: '0.1.0',
-          },
-        }),
-        exited,
-      ])
-      if (run.sessionId && !initialization.agentCapabilities?.loadSession)
+      const initialization = await initializeAcp(connection, {
+        ...tools.capabilities,
+        session: { configOptions: { boolean: {} } },
+        elicitation: {
+          form: {},
+        },
+      })
+      canCloseSession = !!initialization.agentCapabilities?.sessionCapabilities?.close
+      if (
+        run.sessionId &&
+        !initialization.agentCapabilities?.sessionCapabilities?.resume &&
+        !initialization.agentCapabilities?.loadSession
+      )
         throw new Error('This ACP agent cannot resume sessions. Start a new session explicitly.')
       const mcpServers = acpMcpServers(run.agent.resources?.mcpServers ?? [])
       if (
@@ -144,19 +146,37 @@ export const acpAdapter: AgentAdapter = {
         !initialization.agentCapabilities?.mcpCapabilities?.http
       )
         throw new Error('This ACP harness does not support HTTP MCP servers')
-      const session = await Promise.race([
-        run.sessionId
-          ? rpc.loadSession({
-              sessionId: run.sessionId,
-              cwd: run.cwd,
-              mcpServers,
-            })
-          : rpc.newSession({
-              cwd: run.cwd,
-              mcpServers,
-            }),
-        exited,
-      ])
+      let session
+      try {
+        session = await acpControl(
+          connection,
+          run.sessionId
+            ? initialization.agentCapabilities?.sessionCapabilities?.resume
+              ? rpc.resumeSession({
+                  sessionId: run.sessionId,
+                  cwd: run.cwd,
+                  mcpServers,
+                })
+              : rpc.loadSession({
+                  sessionId: run.sessionId,
+                  cwd: run.cwd,
+                  mcpServers,
+                })
+            : rpc.newSession({
+                cwd: run.cwd,
+                mcpServers,
+              }),
+          'session setup',
+        )
+      } catch (error) {
+        if (error instanceof Error && /auth[_ ]required/i.test(error.message))
+          throw new Error(
+            'This ACP agent needs authentication. Open its Agent settings to sign in.',
+            { cause: error },
+          )
+        throw error
+      }
+      loading = false
       const id =
         run.sessionId ??
         decode(
@@ -166,26 +186,41 @@ export const acpAdapter: AgentAdapter = {
           session,
         ).sessionId
       if (!id) throw new Error('ACP agent did not return a session id')
+      sessionId = id
       run.onSession(id)
-      if (run.agent.permission === 'read-only') {
-        const mode = session.modes?.availableModes.find((mode) =>
-          /^(plan|read[-_ ]?only)$/i.test(mode.id),
+      const restrictive = run.agent.permission === 'read-only' || run.tools === 'none'
+      if (restrictive || run.agent.acpMode) {
+        const mode = restrictive
+          ? session.modes?.availableModes.find((item) => /^(plan|read[-_ ]?only)$/i.test(item.id))
+          : session.modes?.availableModes.find((item) => item.id === run.agent.acpMode)
+        if (!mode)
+          throw new Error(
+            restrictive
+              ? 'This ACP agent does not advertise a read-only mode'
+              : 'This ACP agent does not advertise the selected mode',
+          )
+        await acpControl(
+          connection,
+          rpc.setSessionMode({
+            sessionId: id,
+            modeId: mode.id,
+          }),
+          'mode selection',
         )
-        if (!mode) throw new Error('This ACP agent does not advertise a read-only mode')
-        await rpc.setSessionMode({
-          sessionId: id,
-          modeId: mode.id,
-        })
       }
       let configOptions = session.configOptions
       if (run.agent.model) {
         const model = session.configOptions?.find((option) => option.category === 'model')
         if (!model) throw new Error('ACP agent does not advertise model configuration')
-        const updated = await rpc.setSessionConfigOption({
-          sessionId: id,
-          configId: model.id,
-          value: run.agent.model,
-        })
+        const updated = await acpControl(
+          connection,
+          rpc.setSessionConfigOption({
+            sessionId: id,
+            configId: model.id,
+            value: run.agent.model,
+          }),
+          'model selection',
+        )
         configOptions = updated.configOptions
       }
       if (run.agent.reasoning) {
@@ -193,13 +228,53 @@ export const acpAdapter: AgentAdapter = {
           (o) => o.category === 'thought_level' && o.type === 'select',
         )
         if (!option) throw new Error('This ACP model does not advertise reasoning configuration')
-        await rpc.setSessionConfigOption({
-          sessionId: id,
-          configId: option.id,
-          value: run.agent.reasoning,
-        })
+        configOptions = (
+          await acpControl(
+            connection,
+            rpc.setSessionConfigOption({
+              sessionId: id,
+              configId: option.id,
+              value: run.agent.reasoning,
+            }),
+            'reasoning selection',
+          )
+        ).configOptions
       }
-      clearTimeout(timeout)
+      for (const [configId, value] of Object.entries(run.agent.acpConfig ?? {})) {
+        const option = configOptions?.find((item) => item.id === configId)
+        if (!option) throw new Error(`ACP configuration ${configId} is unavailable`)
+        if (restrictive && option.category === 'mode')
+          throw new Error('ACP mode configuration cannot override read-only execution')
+        if (option.type === 'boolean') {
+          if (value !== 'true' && value !== 'false')
+            throw new Error(`ACP configuration ${configId} must be true or false`)
+          configOptions = (
+            await acpControl(
+              connection,
+              rpc.setSessionConfigOption({
+                sessionId: id,
+                configId,
+                type: 'boolean',
+                value: value === 'true',
+              }),
+              'configuration',
+            )
+          ).configOptions
+        } else {
+          const choices = option.options.flatMap((item) =>
+            'options' in item ? item.options : [item],
+          )
+          if (!choices.some((item) => item.value === value))
+            throw new Error(`ACP configuration ${configId} does not offer ${value}`)
+          configOptions = (
+            await acpControl(
+              connection,
+              rpc.setSessionConfigOption({ sessionId: id, configId, value }),
+              'configuration',
+            )
+          ).configOptions
+        }
+      }
       if (run.signal.aborted) throw new Error('Task cancelled')
       if (
         run.attachments?.some(isImageAttachment) &&
@@ -208,6 +283,7 @@ export const acpAdapter: AgentAdapter = {
         run.onActivity(
           'This ACP agent does not accept image input; images are available as attached files only.',
         )
+      prompting = true
       const result = await Promise.race([
         rpc.prompt({
           sessionId: id,
@@ -227,11 +303,22 @@ export const acpAdapter: AgentAdapter = {
         }),
         exited,
       ])
-      if (result.stopReason !== 'end_turn') throw new Error(`ACP stopped: ${result.stopReason}`)
+      run.onPromptAccepted?.()
+      if (result.stopReason !== 'end_turn' && !(cancelling && result.stopReason === 'cancelled'))
+        throw new Error(`ACP stopped: ${result.stopReason}`)
     } finally {
-      clearTimeout(timeout)
       run.signal.removeEventListener('abort', abort)
-      stopChild(child)
+      if (canCloseSession && sessionId && !run.signal.aborted && !connection.rpc.signal.aborted) {
+        try {
+          await acpControl(connection, rpc.closeSession({ sessionId }), 'session close')
+        } catch (error) {
+          run.onActivity(
+            `ACP session cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
+      }
+      await tools.close()
+      await connection.close()
     }
   },
 }

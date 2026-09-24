@@ -113,6 +113,33 @@ it('clears custom modes explicitly so JSON persistence does not restore inherite
     cyberAccessProgram: undefined,
   })
 })
+it('persists ACP installation, mode and config overrides without inheriting stale profile values', () => {
+  const acp: Agent = {
+    ...defaultTaskHarness('acp'),
+    id: 'registered-agent',
+    name: 'Registered agent',
+    acpInstallationId: 'registered-agent',
+    acpMode: 'plan',
+    acpConfig: { search: 'enabled' },
+  }
+  const selected = chooseTaskAgent(draft, [acp], acp.id)
+  const changed = changeTaskHarness(selected, [acp], {
+    ...decode(taskHarnessSchema, acp),
+    acpInstallationId: undefined,
+    acpMode: undefined,
+    acpConfig: undefined,
+  })
+  expect(changed.agentOverrides).toMatchObject({
+    acpInstallationId: null,
+    acpMode: '',
+    acpConfig: {},
+  })
+  expect(resolveTaskAgent(decode(taskSchema, JSON.parse(JSON.stringify(changed))), [acp])).toMatchObject({
+    acpInstallationId: undefined,
+    acpMode: '',
+    acpConfig: {},
+  })
+})
 it('drops custom template configuration when explicitly choosing the built-in provider', () => {
   const selected = chooseTaskAgent(draft, agents, custom.id)
   const changed = changeTaskHarness(selected, agents, defaultTaskHarness('codex'), true)

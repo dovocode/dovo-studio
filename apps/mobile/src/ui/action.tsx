@@ -1,30 +1,10 @@
-import { useApplicationState } from '../runtime/application-state'
-import { Host, Button, Text as NativeText } from '@expo/ui/swift-ui'
-import {
-  buttonBorderShape,
-  buttonStyle,
-  controlSize,
-  disabled as disabledModifier,
-  font,
-  foregroundStyle,
-  frame,
-  tint,
-  accessibilityLabel,
-  fixedSize,
-  lineLimit,
-  multilineTextAlignment,
-  padding,
-  contentShape,
-  shapes,
-} from '@expo/ui/swift-ui/modifiers'
-import { Platform, Pressable, View, useWindowDimensions } from 'react-native'
+import { Pressable } from 'react-native'
 import { Text } from './text'
 import { IconButton } from './icon-button'
 import type { IconName } from './icon'
 import { colors } from './theme'
 const actionIcons: Readonly<Partial<Record<string, IconName>>> = {
   'New terminal': 'add',
-  'New task': 'add',
   'Create PR': 'add',
   'Close shell': 'close',
   'Reconnect terminal': 'refresh',
@@ -70,118 +50,12 @@ export function Action(props: ActionProps) {
   return <TextAction {...props} />
 }
 function TextAction({ label, onPress, disabled = false, secondary = false }: ActionProps) {
-  const [availableWidth, setAvailableWidth] = useApplicationState<number | undefined>(undefined)
-  const { fontScale } = useWindowDimensions()
-  const [intrinsic, setIntrinsic] = useApplicationState<
-    | {
-        label: string
-        fontScale: number
-        secondary: boolean
-        width: number
-      }
-    | undefined
-  >(undefined)
-  const naturalWidth =
-    intrinsic?.label === label &&
-    intrinsic.fontScale === fontScale &&
-    intrinsic.secondary === secondary
-      ? intrinsic.width
-      : undefined
-  if (Platform.OS === 'ios') {
-    return (
-      <View
-        // Reserve each button's intrinsic width. A wrapping row moves whole buttons
-        // onto the next line instead of squeezing their labels beside siblings.
-        style={{
-          flexShrink: 0,
-          width: naturalWidth,
-          minWidth: 44,
-          maxWidth: '100%',
-          opacity: disabled ? 0.45 : 1,
-        }}
-        onLayout={({ nativeEvent }) => setAvailableWidth(Math.floor(nativeEvent.layout.width))}
-      >
-        <Host
-          ignoreSafeArea="all"
-          key={`${label}:${fontScale}:${secondary}`}
-          matchContents
-          colorScheme="dark"
-          style={{
-            flexShrink: 0,
-            maxWidth: '100%',
-          }}
-          onLayoutContent={({ nativeEvent }) => {
-            if (naturalWidth === undefined && nativeEvent.width > 0)
-              setIntrinsic({
-                label,
-                fontScale,
-                secondary,
-                width: Math.ceil(nativeEvent.width),
-              })
-          }}
-        >
-          <Button
-            testID={label}
-            onPress={onPress}
-            modifiers={[
-              buttonStyle(secondary ? 'plain' : 'borderedProminent'),
-              buttonBorderShape('roundedRectangle', 12),
-              controlSize('large'),
-              // The outer React Native layout owns the bounded width; SwiftUI owns
-              // the label height, including Dynamic Type and narrow-screen wrapping.
-              frame({
-                minHeight: 44,
-                width: naturalWidth === undefined || !availableWidth ? undefined : availableWidth,
-              }),
-              contentShape(shapes.rectangle(), ['interaction', 'accessibility']),
-              font({
-                textStyle: 'body',
-                weight: 'semibold',
-              }),
-              tint(colors.accent),
-              disabledModifier(disabled),
-              accessibilityLabel(label),
-            ]}
-          >
-            <NativeText
-              modifiers={[
-                foregroundStyle(secondary ? colors.accent : colors.onAccent),
-                lineLimit(),
-                fixedSize({
-                  horizontal: false,
-                  vertical: true,
-                }),
-                multilineTextAlignment('center'),
-                ...(secondary
-                  ? [
-                      padding({
-                        horizontal: 8,
-                        vertical: 8,
-                      }),
-                      frame({
-                        minWidth: 44,
-                        minHeight: 44,
-                      }),
-                      contentShape(shapes.rectangle(), ['interaction', 'accessibility']),
-                    ]
-                  : []),
-              ]}
-            >
-              {label}
-            </NativeText>
-          </Button>
-        </Host>
-      </View>
-    )
-  }
   return (
     <Pressable
       testID={label}
       accessibilityLabel={label}
       accessibilityRole="button"
-      accessibilityState={{
-        disabled,
-      }}
+      accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
@@ -189,6 +63,7 @@ function TextAction({ label, onPress, disabled = false, secondary = false }: Act
         minWidth: 44,
         maxWidth: '100%',
         flexShrink: 0,
+        alignSelf: 'flex-start',
         paddingHorizontal: 16,
         paddingVertical: 10,
         alignItems: 'center',
@@ -200,7 +75,7 @@ function TextAction({ label, onPress, disabled = false, secondary = false }: Act
     >
       <Text
         style={{
-          fontSize: 17,
+          fontSize: 15,
           fontWeight: '600',
           color: secondary ? colors.accent : colors.onAccent,
           textAlign: 'center',

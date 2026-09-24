@@ -44,7 +44,7 @@ export default function SettingsScreen() {
           />
           <SettingsRow
             title="Agents"
-            subtitle="Models, instructions and permissions"
+            subtitle="Setup, default models, titles and permissions"
             icon="chat"
             tint="#bb9aff"
             disabled={!profiles.length}

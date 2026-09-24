@@ -154,3 +154,9 @@ describe('mobile thread status', () => {
     ).toBe('Failed · 4m')
   })
 })
+
+it('shows change capture separately from provider work', () => {
+  expect(
+    taskRowStatus({ ...task, status: 'running', runPhase: 'finalizing' }, false, true, now),
+  ).toBe('Saving changes · 4m')
+})

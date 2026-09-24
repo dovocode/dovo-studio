@@ -393,7 +393,9 @@ it('retries only the failed task, retaining successful steps and approved review
   expect(execute.mock.calls[2][0].sessionId).toBe('second-step-session')
   expect(execute.mock.calls[2][0].cwd).toBe(execute.mock.calls[1][0].cwd)
   expect(execute.mock.calls[2][0].agent).toEqual(execute.mock.calls[1][0].agent)
-  expect(execute.mock.calls[2][0].prompt).toContain('Second step')
+  // Output proves this request was accepted; resume its saved session without resending it.
+  expect(execute.mock.calls[2][0].prompt).toContain('Continue the task')
+  expect(execute.mock.calls[2][0].prompt).not.toContain('Second step')
   expect(retried.attempt).toBe(2)
   expect(retried.steps?.find((step) => step.nodeId === 'task')).toEqual(
     failed.steps?.find((step) => step.nodeId === 'task'),

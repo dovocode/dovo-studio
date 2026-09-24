@@ -125,6 +125,7 @@ export function route(
           ![
             '/api/tasks/answer',
             '/api/agents/mcp/test',
+            '/api/agents/acp/authenticate',
             '/api/live-activities/register',
             '/api/attachments/upload',
             '/api/scm/connections/save',
@@ -291,6 +292,7 @@ export function route(
         return yield* serviceResult({
           protocolVersion: RUNTIME_PROTOCOL_VERSION,
           runtimeHost: hostname(),
+          defaults: s.defaults.get(),
           revision: s.store.version(),
           workspace: s.store.publicWorkspace(),
           approvals: s.approvals.list(),

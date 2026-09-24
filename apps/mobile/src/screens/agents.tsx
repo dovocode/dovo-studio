@@ -1,3 +1,4 @@
+import { Setup } from '../agents/setup'
 import { mobileWorkflow } from '../runtime/native-effect'
 import { useApplicationState } from '../runtime/application-state'
 import { ScreenHeader } from '../ui/screen-header'
@@ -83,6 +84,7 @@ function ComputerAgents({ name }: { name: string }) {
           }
         />
       </View>
+      <Setup />
       {snapshot?.workspace.agents.map((agent) => (
         <View key={agent.id} style={styles.card}>
           <Text style={styles.text}>{agent.name}</Text>

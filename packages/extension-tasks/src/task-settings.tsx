@@ -228,6 +228,13 @@ export function TaskSettings({
                       reasoning: next.reasoning,
                       serviceTier: next.serviceTier ?? null,
                       cyberAccessProgram: next.cyberAccessProgram ?? null,
+                      ...(next.provider === 'acp'
+                        ? {
+                            acpInstallationId: next.acpInstallationId ?? null,
+                            acpMode: next.acpMode ?? '',
+                            acpConfig: next.acpConfig ?? {},
+                          }
+                        : {}),
                     })
                   }
                 />

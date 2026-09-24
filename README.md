@@ -19,9 +19,16 @@ Install dependencies once with `pnpm install`, then choose a workflow:
   `pnpm dev:mobile`. Open the development build on your phone and connect it from Computers. Both
   devices need the same Wi-Fi or VPN. Expo Go is not sufficient for the app’s native modules.
 
-A successful setup shows your computer as **Online**. Add a project and configure an agent before
-sending your first task. The standalone API and desktop may use different data directories; use the
-existing desktop directory when attaching a background server to its workspace.
+A successful connection shows your computer as **Online**. Open **Settings → Agents → Set up
+defaults** on desktop or iPhone: choose your everyday provider/model, then a separate model for
+titles and dictation cleanup. Both choices save together on that runtime and are shared with its
+paired devices. New tasks inherit the everyday model; existing tasks and explicitly selected agents
+keep their settings. **Edit defaults** reopens setup, and **Titles & dictation** can update the
+utility model independently. A blank model means the selected provider’s own default. Setup does not
+install or sign in to a provider automatically; use the installed provider on your computer or the
+ACP registry picker. Add a project before sending your first task. The standalone API and desktop
+may use different data directories; use the existing desktop directory when attaching a background
+server to its workspace.
 
 Web defaults to port 4173; desktop uses 5173. If another project uses 4173:
 
@@ -92,7 +99,8 @@ guide before creating a separate workspace.
    permissions errors are shown without changing the form. Selecting a folder or repository only
    fills the form; **Clone and add repository** starts the download. Private clones can also use the
    host's `gh` credentials without changing global Git settings.
-3. In Agents, select a provider, configure its executable/endpoint and check availability.
+3. In Agents, use **Set up defaults** to select your task and title models. Configure the provider
+   executable/endpoint when needed; reusable custom agents remain optional.
 4. Create a task with that repository and agent. Sending starts execution or queues a follow-up
    behind the active turn. Pause, reorder or remove queued messages above the composer. Stop pauses
    remaining messages; Resume queue continues them. During a run, Stop replaces Send and Queue adds
@@ -178,12 +186,36 @@ HTTPS/WSS runtime endpoint, supplied by your local reverse proxy; browsers block
 | Codex       | `codex` on PATH, or executable path in Agent settings; authenticated Codex login                    |
 | OpenCode    | `opencode serve` running; endpoint defaults to `http://127.0.0.1:4096`; models use `provider/model` |
 | Claude      | Installed Agent SDK; Claude login or `ANTHROPIC_API_KEY`; optional custom CLI path                  |
-| ACP         | Executable plus arguments, e.g. `opencode` and `acp`; authentication belongs to that agent          |
+| ACP         | Install one or more agents from the official ACP Registry, or configure an executable and arguments |
 
 OpenCode server authentication uses `OPENCODE_SERVER_PASSWORD` and optional
 `OPENCODE_SERVER_USERNAME` on the runtime host. ACP read-only execution requires an advertised
-read-only/plan mode; unsupported capabilities fail explicitly. ACP agents must provide their own
-filesystem/terminal tools; Dovo does not advertise client-side ACP filesystem or terminal services.
+read-only/plan mode; unsupported capabilities fail explicitly. ACP client filesystem access is
+restricted to the task workspace. Writes and terminal commands require approval; read-only turns
+never advertise write or terminal services. These controls govern Dovo's client services, not a
+sandbox around third-party agent executables.
+
+ACP agents can be installed and managed from an ACP agent's settings on desktop or iPhone.
+Installation happens on the connected runtime host. Each saved profile chooses its installation,
+model, advertised mode, and configuration independently; custom executable configurations remain
+supported. Registry updates are explicit, and removing an installation requires first removing its
+references from saved profiles and threads.
+
+The integration targets [stable ACP v1](https://agentclientprotocol.com/protocol/v1/overview) and
+the [official registry](https://github.com/agentclientprotocol/registry). It negotiates
+capabilities, supports agent and interactive terminal authentication, logout when advertised,
+new/load/resume sessions, session listing/deletion, cancellation, modes, select/boolean
+configuration, model and reasoning discovery, form elicitation, permissions, filesystem callbacks,
+and terminal lifecycle. Session replay is suppressed when resuming an existing Dovo conversation.
+Experimental protocol extensions, including session forking and ACP v2, are not enabled. Optional
+client capabilities without a corresponding Dovo workflow are not advertised.
+
+Registry packages run as local software on the runtime host. Installation uses the registry's pinned
+version and distribution metadata; binary checksums are verified when supplied. Package-based agents
+need their package manager on the host (npm for npx distributions, uv for uvx distributions).
+Bzip2-compressed binary archives also need `bzip2` on the host. Agent authentication is separate
+from runtime pairing: HTTP remains supported for LAN/VPN, pairing codes and device tokens remain
+required, and no Dovo account or login provider is added.
 
 Jobs require a running runtime. Missed schedule ticks are coalesced while running; downtime is not
 replayed after restart. Interrupted running jobs become failed and can be retried from unfinished
@@ -217,7 +249,7 @@ pnpm --filter @dovo/mobile android
    Credentials are stored in Keychain/Keystore; provider credentials stay on the host.
 3. Open **Tasks** and choose **New task** for an empty draft chat. Select the project,
    harness/model, access mode and local checkout/worktree before sending the first message. Its
-   title is generated using Settings → Agents → Task title generation. Stop replaces Send during a
+   title is generated using Settings → Agents → Titles & dictation. Stop replaces Send during a
    turn; Queue and Steer appear in the composer toolbar when it has input. Drafts survive restarts.
    Thread and PR details hide the app-wide navigation. The thread title returns to chat; header
    icons open changes, terminal and settings. Project and checkout choices live in a sheet before
@@ -822,6 +854,10 @@ See [releases, local iPhone updates and Live Activities](docs/releases-and-updat
 
 The developer experience is inspired by T3 Code, Codex, and Claude.
 
+See [turn ownership and recovery](docs/orchestration.md) for the T3 orchestrator v2 takeaways:
+durable submission receipts, separate provider completion and change capture, and retired-provider
+callback protection. Removed queued messages cannot return through a lost-response retry.
+
 ### Thread archive and subagents
 
 Settle keeps a finished thread in the sidebar’s Settled group. **Archive thread** hides it from
@@ -867,16 +903,15 @@ Automatic continuation failures keep an actionable error and remain paused for m
 Agent work may have changed files or external systems before the interruption; continuation does not
 roll back those effects or promise exactly-once tool execution.
 
-
 ### Phone connection setup and recovery
 
 In desktop **Settings → Devices & runtime → Manage**, the listener status shows whether the runtime
-accepts connections beyond this Mac. **Enable LAN / VPN access** restarts the desktop-managed runtime
-on all IPv4 interfaces, keeps the same port, and generates a fresh pairing code. Finish or stop running
-tasks first. **Limit access to this Mac** reverses this. If `DOVO_HOST` or an external supervisor manages
-the listener, change that configuration and restart that service instead; reopening the desktop does
-not restart an already-running background runtime. Pairing and device tokens remain required; HTTP is
-supported, and HTTPS is optional.
+accepts connections beyond this Mac. **Enable LAN / VPN access** restarts the desktop-managed
+runtime on all IPv4 interfaces, keeps the same port, and generates a fresh pairing code. Finish or
+stop running tasks first. **Limit access to this Mac** reverses this. If `DOVO_HOST` or an external
+supervisor manages the listener, change that configuration and restart that service instead;
+reopening the desktop does not restart an already-running background runtime. Pairing and device
+tokens remain required; HTTP is supported, and HTTPS is optional.
 
 On iPhone, scanning a code lets you choose **Add a new computer** or **Update** a saved computer.
 Choose Update only for the same computer at a new address. The pairing sheet stays open until the

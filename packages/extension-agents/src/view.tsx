@@ -1,3 +1,4 @@
+import { Setup } from './setup'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TitleSettings } from './title-settings'
 import { accessLabel } from '@dovo/studio-core'
@@ -74,6 +75,7 @@ function ComputerAgents({ name }: { name: string }) {
           New agent
         </Button>
       </header>
+      <Setup />
       <div className="min-w-0">
         <div className="mx-auto max-w-4xl">
           <div className="divide-y border-y">

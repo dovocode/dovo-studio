@@ -10,6 +10,7 @@ import {
   lockedTaskProvider,
 } from '@dovo/protocol'
 import { ModelSettings } from './model-settings'
+import { AcpRegistry } from './acp-registry'
 import { View } from 'react-native'
 import { Sheet } from '../ui/sheet'
 import { Text } from '../ui/text'
@@ -142,6 +143,9 @@ export function AgentEditor({
             reasoning: '',
             serviceTier: undefined,
             cyberAccessProgram: undefined,
+            acpInstallationId: undefined,
+            acpMode: undefined,
+            acpConfig: undefined,
             endpoint: '',
             args: [],
           })
@@ -153,13 +157,14 @@ export function AgentEditor({
           still change.
         </Text>
       )}
+      {draft.provider === 'acp' && <AcpRegistry agent={draft} onChange={setDraft} />}
       <ModelSettings
         key={draft.provider}
         agent={draft}
         onChange={setDraft}
         disabled={busy || !providerAllowed}
       />
-      <Field
+      {(draft.provider !== 'acp' || !draft.acpInstallationId) && <Field
         label={
           draft.provider === 'opencode' ? 'Server URL' : 'Executable path · blank uses default'
         }
@@ -171,8 +176,8 @@ export function AgentEditor({
             endpoint,
           })
         }
-      />
-      {draft.provider === 'acp' && (
+      />}
+      {draft.provider === 'acp' && !draft.acpInstallationId && (
         <Field
           label="Arguments · one per line"
           editable={!busy}

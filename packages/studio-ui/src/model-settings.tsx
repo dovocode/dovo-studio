@@ -38,13 +38,22 @@ export function ModelSettings({
     endpoint: agent.endpoint,
     args: agent.args,
     model: agent.provider === 'acp' ? agent.model : '',
+    acpInstallationId: agent.provider === 'acp' ? agent.acpInstallationId : undefined,
+    acpMode: agent.provider === 'acp' ? agent.acpMode : undefined,
+    acpConfig: agent.provider === 'acp' ? agent.acpConfig : undefined,
   })
+  const canDiscover =
+    connected &&
+    (agent.provider !== 'acp' ||
+      !!agent.acpInstallationId ||
+      !!agent.endpoint.trim() ||
+      refresh > 0)
   useEffect(() => {
     let stopped = false
     setCatalog(null)
     setError('')
-    setLoading(connected)
-    if (!connected) return
+    setLoading(canDiscover)
+    if (!canDiscover) return
     const timer = setTimeout(() => {
       void loadModels(JSON.parse(key))
         .then((value) => {
@@ -61,7 +70,7 @@ export function ModelSettings({
       stopped = true
       clearTimeout(timer)
     }
-  }, [key, connected, loadModels, refresh])
+  }, [key, canDiscover, loadModels, refresh])
   const models = catalog?.models ?? [],
     selected = selectedCatalogModel(catalog, agent.model)
   const efforts =
@@ -134,6 +143,84 @@ export function ModelSettings({
           ))}
         </ChoicePicker>
       </FormField>
+      {modes && agent.provider === 'acp' && catalog?.acp && (
+        <>
+          {!!catalog.acp.modes.length && (
+            <FormField label="ACP mode">
+              <ChoicePicker
+                aria-label="ACP mode"
+                className="h-9 rounded-md border bg-background px-2 text-xs"
+                value={agent.acpMode ?? ''}
+                onValueChange={(acpMode) => onChange({ ...agent, acpMode: acpMode || undefined })}
+              >
+                <option value="">Provider default</option>
+                {agent.acpMode && !catalog.acp.modes.some((mode) => mode.id === agent.acpMode) && (
+                  <option value={agent.acpMode}>{agent.acpMode} (saved)</option>
+                )}
+                {catalog.acp.modes.map((mode) => (
+                  <option key={mode.id} value={mode.id}>
+                    {mode.name}
+                  </option>
+                ))}
+              </ChoicePicker>
+            </FormField>
+          )}
+          {catalog.acp.configOptions.map((option) => {
+            const value = agent.acpConfig?.[option.id] ?? option.currentValue
+            return (
+              <FormField key={option.id} label={option.name}>
+                {option.options.length ? (
+                  <ChoicePicker
+                    aria-label={`ACP ${option.name}`}
+                    className="h-9 rounded-md border bg-background px-2 text-xs"
+                    value={value}
+                    onValueChange={(next) =>
+                      onChange({
+                        ...agent,
+                        acpConfig: { ...agent.acpConfig, [option.id]: next },
+                      })
+                    }
+                  >
+                    {value && !option.options.some((item) => item.id === value) && (
+                      <option value={value}>{value} (saved)</option>
+                    )}
+                    {option.options.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </ChoicePicker>
+                ) : (
+                  <Input
+                    aria-label={`ACP ${option.name}`}
+                    value={value}
+                    onChange={(event) =>
+                      onChange({
+                        ...agent,
+                        acpConfig: { ...agent.acpConfig, [option.id]: event.target.value },
+                      })
+                    }
+                  />
+                )}
+              </FormField>
+            )
+          })}
+          {!!catalog.acp.commands.length && (
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">Supported commands</summary>
+              <ul className="mt-2 grid gap-1">
+                {catalog.acp.commands.map((command) => (
+                  <li key={command.name}>
+                    <span className="font-medium text-foreground">{command.name}</span>
+                    {command.inputHint ? ` · ${command.inputHint}` : ''}
+                    {command.description ? ` — ${command.description}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
       {modes && agent.provider === 'codex' && (
         <>
           <FormField label="Speed">
@@ -202,9 +289,11 @@ export function ModelSettings({
             ? 'Loading provider models…'
             : !connected
               ? 'Connect to discover models and reasoning levels.'
-              : !efforts.length
-                ? 'Select a model that advertises reasoning options.'
-                : selected?.description}
+              : agent.provider === 'acp' && !agent.acpInstallationId && !agent.endpoint.trim()
+                ? 'Install or select an ACP agent, or enter a custom command to discover its models.'
+                : !efforts.length
+                  ? 'Select a model that advertises reasoning options.'
+                  : selected?.description}
         </span>
         <Button
           type="button"

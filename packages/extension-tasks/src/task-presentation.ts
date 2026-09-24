@@ -4,7 +4,8 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
   const latest = task.turns?.at(-1)
   const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
   const started = latest?.startedAt ? Date.parse(latest.startedAt) : NaN
-  const elapsed = task.status === 'running' && Number.isFinite(started)
+  const elapsed =
+    task.status === 'running' && task.runPhase !== 'finalizing' && Number.isFinite(started)
   const date = elapsed ? started : finished
   const seconds = Math.max(0, Math.floor((now - date) / 1000))
   const time = !Number.isFinite(date)
@@ -34,7 +35,7 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
             ? 'Done'
             : {
                 draft: 'Draft',
-                running: 'Working',
+                running: task.runPhase === 'finalizing' ? 'Saving changes' : 'Working',
                 review: 'Review',
                 done: 'Finished',
                 failed: 'Failed',
@@ -43,9 +44,16 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
   const compactLabel =
     state === 'Working'
       ? `Working ${time}`.trim()
-      : ['Needs input', 'Failed', 'Stopped', 'Done', 'Archived', 'Settled', 'Snoozed'].includes(
-            state,
-          )
+      : [
+            'Needs input',
+            'Failed',
+            'Stopped',
+            'Done',
+            'Archived',
+            'Settled',
+            'Snoozed',
+            'Saving changes',
+          ].includes(state)
         ? state
         : time.replace(' ago', '') || state
   return {

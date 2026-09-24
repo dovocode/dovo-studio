@@ -1,4 +1,5 @@
 import { Cause, Effect } from 'effect'
+import { OwnedProcessShutdownError } from './stop-owned-child.js'
 import { updateSubagents } from './subagents.js'
 import { ReasoningEvents, safeReasoningEvent } from './reasoning-event.js'
 import type { AgentSteer, AgentRun } from './types.js'
@@ -19,7 +20,15 @@ import type { WorkspaceStore } from '../storage/workspace.js'
 import type { GitService } from '../scm/git.js'
 import type { AgentRegistry } from './registry.js'
 import type { Approvals } from './approvals.js'
-import { HttpError, errorMessage, runtimeFailure, runtimeOperation } from '../errors.js'
+import {
+  HttpError,
+  RuntimeOperationError,
+  errorMessage,
+  runtimeFailure,
+  runtimeOperation,
+} from '../errors.js'
+export class FinalizationFailure extends Error {}
+
 export class TaskTurnRunner {
   constructor(
     private store: WorkspaceStore,
@@ -31,6 +40,37 @@ export class TaskTurnRunner {
     private attachments: Attachments,
     private activity?: Pick<Activity, 'add'>,
   ) {}
+  /** Retry only change capture for an already terminal provider turn. */
+  finalizeEffect(id: string, cwd: string) {
+    return Effect.gen(this, function* () {
+      const turn = this.store.task(id).turns?.at(-1)
+      if (!turn || turn.status === 'running' || !turn.finishedAt || !turn.checkpoint)
+        throw new HttpError(409, 'No completed provider turn is awaiting change capture')
+      const before = turn.checkpoint.before
+      const after =
+        turn.checkpoint.after ??
+        (yield* runtimeOperation(() =>
+          this.git.snapshot(cwd, `refs/dovo/checkpoints/${turn.id}/after`),
+        ))
+      const changes = yield* runtimeOperation(() => this.git.checkpointChanges(cwd, before, after))
+      const files = yield* runtimeOperation(() => this.git.changes(cwd))
+      this.store.updateTask(id, (task) => ({
+        ...task,
+        status: turn.status === 'completed' ? 'review' : turn.status,
+        runPhase: undefined,
+        runAttempt: undefined,
+        restartRecovery: undefined,
+        activity: undefined,
+        error: turn.error,
+        files,
+        turns: task.turns?.map((current) =>
+          current.id === turn.id
+            ? { ...current, checkpoint: { before, after, ...changes } }
+            : current,
+        ),
+      }))
+    })
+  }
   runEffect(
     id: string,
     cwd: string,
@@ -84,20 +124,25 @@ ${
         let assistantId = randomUUID()
         const turnId = randomUUID(),
           fingerprint = createHash('sha256')
-            .update(JSON.stringify({ agent, cwd, commands, branch }))
+            .update(
+              JSON.stringify({
+                agent,
+                cwd,
+                commands,
+                branch,
+                acpLaunch: this.registry.launch(agent),
+              }),
+            )
             .digest('hex')
         const sessionId = task.sessionAgentId === fingerprint ? task.sessionId : undefined
         const currentMessages = this.store.task(id).messages
         const lastAssistant = currentMessages
           .map((message) => message.role)
           .lastIndexOf('assistant')
-        const consumedMessageIds =
-          continuingAfterRestart && sessionId
-            ? currentMessages.map((message) => message.id)
-            : sessionId
-              ? (task.consumedMessageIds ??
-                currentMessages.slice(0, lastAssistant + 1).map((message) => message.id))
-              : []
+        const consumedMessageIds = sessionId
+          ? (task.consumedMessageIds ??
+            currentMessages.slice(0, lastAssistant + 1).map((message) => message.id))
+          : []
         const messages = sessionId
           ? currentMessages.filter((message) => !consumedMessageIds.includes(message.id))
           : currentMessages
@@ -117,6 +162,8 @@ ${
         this.store.updateTask(id, (t) => ({
           ...t,
           status: 'running',
+          runPhase: 'provider',
+          runAttempt: { inputMessageIds: currentMessages.map((m) => m.id), promptAccepted: false },
           checkoutBranch: branch,
           error: undefined,
           consumedMessageIds,
@@ -151,6 +198,7 @@ ${
             return {
               before,
               after,
+              error: undefined,
               ...(yield* runtimeOperation(() =>
                 this.git.checkpointChanges(cwd, before, capturedAfter),
               )),
@@ -177,7 +225,27 @@ ${
           )
         })
         const acceptedIds = new Set<string>()
+        let providerFinishedAt: string | undefined
+        let providerOpen = true
+        let promptAccepted = false
+        const acceptPrompt = () => {
+          if (!acceptsProviderEvents() || promptAccepted) return
+          this.store.updateTask(id, (t) => ({
+            ...t,
+            runAttempt: { inputMessageIds: currentMessages.map((m) => m.id), promptAccepted: true },
+            consumedMessageIds: [
+              ...new Set([
+                ...(t.consumedMessageIds ?? []),
+                ...currentMessages.map((m) => m.id),
+                assistantId,
+              ]),
+            ],
+          }))
+          promptAccepted = true
+        }
+        const acceptsProviderEvents = () => providerOpen && !controller.signal.aborted
         let steering: Promise<void> | undefined
+        let flushError: unknown
         let buffer = '',
           timer: ReturnType<typeof setTimeout> | undefined
         const flush = () => {
@@ -185,13 +253,13 @@ ${
           timer = undefined
           if (!buffer) return
           const text = buffer
-          buffer = ''
           this.store.updateTask(id, (t) => ({
             ...t,
             messages: t.messages.map((m) =>
               m.id === assistantId ? { ...m, text: m.text + text } : m,
             ),
           }))
+          buffer = ''
         }
         yield* Effect.forkScoped(
           Effect.sleep(2 * 60 * 60 * 1000).pipe(
@@ -239,8 +307,13 @@ ${
               attachments,
               sessionId,
               signal: controller.signal,
-              onQuestions,
+              onPromptAccepted: acceptPrompt,
+              onQuestions: (prompt) => {
+                acceptPrompt()
+                if (acceptsProviderEvents()) onQuestions?.(prompt)
+              },
               onSteer: (steer) => {
+                if (!acceptsProviderEvents()) return
                 if (!steer) {
                   onSteer?.(undefined)
                   return
@@ -293,6 +366,7 @@ ${
                 })
               },
               onSession: (sessionId) => {
+                if (!acceptsProviderEvents()) return
                 if (
                   this.store.task(id).sessionId !== sessionId ||
                   this.store.task(id).sessionAgentId !== fingerprint
@@ -304,10 +378,21 @@ ${
                   }))
               },
               onText: (text) => {
+                if (!acceptsProviderEvents()) return
+                acceptPrompt()
                 buffer += text
-                if (!timer) timer = setTimeout(flush, 100)
+                if (!timer)
+                  timer = setTimeout(() => {
+                    try {
+                      flush()
+                    } catch (error) {
+                      flushError = error
+                      controller.abort(error)
+                    }
+                  }, 100)
               },
               onEvent: (name, payload) => {
+                if (!acceptsProviderEvents()) return
                 const current = this.store.task(id).subagents ?? []
                 const subagents = updateSubagents(
                   current,
@@ -329,22 +414,28 @@ ${
                 )
               },
               onActivity: (text) => {
+                if (!acceptsProviderEvents()) return
                 this.activity?.add('agent', id, `${agent.provider} activity`, { text })
                 this.store.updateTask(id, (t) => ({ ...t, activity: text }))
               },
               approve: (title, detail) =>
-                this.approvals.request(id, title, detail, controller.signal),
+                acceptsProviderEvents()
+                  ? this.approvals.request(id, title, detail, questionSignal)
+                  : Promise.resolve(false),
               ask: (prompt, signal, validate) =>
-                this.questions.request(
-                  id,
-                  prompt,
-                  signal ? AbortSignal.any([questionSignal, signal]) : questionSignal,
-                  validate,
-                ),
+                acceptsProviderEvents()
+                  ? this.questions.request(
+                      id,
+                      prompt,
+                      signal ? AbortSignal.any([questionSignal, signal]) : questionSignal,
+                      validate,
+                    )
+                  : Promise.resolve(null),
             }),
           ).pipe(
             Effect.ensuring(
               Effect.gen(function* () {
+                providerOpen = false
                 onSteer?.(undefined)
                 // The provider may finish before its final steering acknowledgement.
                 if (steering) yield* Effect.exit(runtimeOperation(() => steering))
@@ -352,10 +443,23 @@ ${
               }),
             ),
           )
-          flush()
+          if (flushError) throw flushError
           if (controller.signal.aborted) throw new Error('Task cancelled')
-          const captured = yield* checkpoint()
           const finishedAt = new Date().toISOString()
+          providerFinishedAt = finishedAt
+          flush()
+          this.store.updateTask(id, (t) => ({
+            ...t,
+            runPhase: 'finalizing',
+            activity: 'Saving changes',
+            consumedMessageIds: [
+              ...new Set([...currentMessages.map((m) => m.id), assistantId, ...acceptedIds]),
+            ],
+            turns: t.turns?.map((turn) =>
+              turn.id === turnId ? { ...turn, status: 'completed', finishedAt } : turn,
+            ),
+          }))
+          const captured = yield* checkpoint()
           const review = yield* runtimeOperation(() => this.git.changes(cwd)).pipe(
             Effect.map((files) => ({ files, error: undefined })),
             Effect.catchAll((error) =>
@@ -368,8 +472,13 @@ ${
           this.store.updateTask(id, (t) => ({
             ...t,
             status: 'review',
+            runPhase: captured.error || review.error ? 'finalizing' : undefined,
+            runAttempt: undefined,
+            restartRecovery:
+              captured.error || review.error ? { kind: 'turn', automatic: false } : undefined,
+            queuePaused: captured.error || review.error ? true : t.queuePaused,
             files: review.files ?? t.files,
-            error: review.error ?? t.error,
+            error: review.error ?? captured.error ?? t.error,
             activity: undefined,
             consumedMessageIds: [
               ...new Set([...currentMessages.map((m) => m.id), assistantId, ...acceptedIds]),
@@ -384,11 +493,72 @@ ${
           Effect.catchAllCause((cause) =>
             Effect.gen(this, function* () {
               const error = runtimeFailure(Cause.squash(cause))
+              if (providerFinishedAt) {
+                // Finalization failure cannot revise the provider's successful outcome.
+                yield* runtimeOperation(() =>
+                  this.store.updateTask(id, (t) => ({
+                    ...t,
+                    status: 'review',
+                    runPhase: 'finalizing',
+                    restartRecovery: { kind: 'turn', automatic: false },
+                    activity: undefined,
+                    queuePaused: true,
+                    consumedMessageIds: [
+                      ...new Set([
+                        ...currentMessages.map((m) => m.id),
+                        assistantId,
+                        ...acceptedIds,
+                      ]),
+                    ],
+                    error: `Agent finished. Could not save changes: ${errorMessage(error)}. Resume to retry change capture.`,
+                    turns: t.turns?.map((turn) =>
+                      turn.id === turnId
+                        ? { ...turn, status: 'completed', finishedAt: providerFinishedAt }
+                        : turn,
+                    ),
+                  })),
+                ).pipe(
+                  Effect.mapError((failure) =>
+                    runtimeFailure(new FinalizationFailure(errorMessage(failure))),
+                  ),
+                )
+                return
+              }
               flush()
-              const captured = yield* checkpoint()
+              const finishedAt = new Date().toISOString()
+              const status = controller.signal.aborted
+                ? ('cancelled' as const)
+                : ('failed' as const)
+              this.store.updateTask(id, (t) => ({
+                ...t,
+                runPhase: 'finalizing',
+                activity: 'Saving changes',
+                queuePaused: true,
+                turns: t.turns?.map((turn) =>
+                  turn.id === turnId
+                    ? {
+                        ...turn,
+                        status,
+                        finishedAt,
+                        error: errorMessage(controller.signal.reason ?? error),
+                      }
+                    : turn,
+                ),
+              }))
+              const captured =
+                error instanceof RuntimeOperationError &&
+                error.cause instanceof OwnedProcessShutdownError
+                  ? {
+                      before,
+                      files: [],
+                      omitted: [],
+                      error: 'Change capture skipped because provider shutdown was not confirmed.',
+                    }
+                  : yield* checkpoint()
               this.store.updateTask(id, (t) => ({
                 ...t,
                 status: controller.signal.aborted ? 'cancelled' : 'failed',
+                runPhase: undefined,
                 error: errorMessage(controller.signal.reason ?? error),
                 activity: undefined,
                 queuePaused: true,
@@ -398,7 +568,7 @@ ${
                         ...turn,
                         checkpoint: captured,
                         status: controller.signal.aborted ? 'cancelled' : 'failed',
-                        finishedAt: new Date().toISOString(),
+                        finishedAt,
                         error: errorMessage(controller.signal.reason ?? error),
                       }
                     : turn,

@@ -1,5 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { decode } from '@dovo/protocol'
+import { decode, resolveTitleHarness, titleSettingsForHarness } from '@dovo/protocol'
+import { AcpRegistry } from './acp-registry'
 import { useCallback, useEffect } from 'react'
 import {
   titleGenerationSettingsSchema,
@@ -7,13 +8,12 @@ import {
   useWorkspace,
   providers,
   providerSchema,
-  defaultTaskHarness,
   type TitleGenerationSettings as Settings,
   type AgentDiscovery,
 } from '@dovo/studio-core'
 import { Button, ChoicePicker, FormField, ModelSettings, Input, Textarea } from '@dovo/studio-ui'
 export function TitleSettings() {
-  const { workspace, request, connected } = useWorkspace()
+  const { workspace, request, connected, snapshot } = useWorkspace()
   const [open, setOpen] = useApplicationState(false)
   const [settings, setSettings] = useApplicationState<Settings | null>(null)
   const [error, setError] = useApplicationState('')
@@ -39,20 +39,13 @@ export function TitleSettings() {
     (agent: AgentDiscovery) => request('/api/agents/models', agent, modelCatalogSchema),
     [request],
   )
-  const harness = settings?.harness
-    ? {
-        ...defaultTaskHarness(settings.harness.provider),
-        ...settings.harness,
-        id: 'title-harness',
-        name: settings.harness.provider,
-      }
-    : settings?.agentId
-      ? workspace.agents.find((a) => a.id === settings.agentId)
-      : (workspace.agents[0] ?? {
-          ...defaultTaskHarness('codex'),
-          id: 'title-harness',
-          name: 'Codex',
-        })
+  const harness = settings
+    ? resolveTitleHarness(
+        settings,
+        workspace.agents,
+        snapshot?.defaults?.configured ? snapshot.defaults.harness : undefined,
+      )
+    : undefined
   return (
     <details className="mb-6 rounded-lg border p-4" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary className="cursor-pointer text-sm font-medium">Titles & dictation</summary>
@@ -111,7 +104,7 @@ export function TitleSettings() {
                       setSaved(false)
                     }}
                   >
-                    <option value="">Default harness</option>
+                    <option value="">Default provider · separate model</option>
                     {providerSchema.literals.map((provider) => (
                       <option key={provider} value={`harness:${provider}`}>
                         {providers[provider].short}
@@ -165,6 +158,15 @@ export function TitleSettings() {
                       )}
                     </div>
                   </details>
+                )}
+                {harness?.provider === 'acp' && (
+                  <AcpRegistry
+                    agent={{ ...harness, model: settings.model, reasoning: settings.reasoning }}
+                    onChange={(agent) => {
+                      setSettings(titleSettingsForHarness(agent))
+                      setSaved(false)
+                    }}
+                  />
                 )}
                 {harness && (
                   <ModelSettings

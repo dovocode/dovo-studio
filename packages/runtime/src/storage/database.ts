@@ -8,6 +8,8 @@ export function openDatabase(path: string): Database.Database {
   db.exec(`CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, revoked_at TEXT);
     CREATE TABLE IF NOT EXISTS job_runs (id TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS task_submissions (task_id TEXT NOT NULL, message_id TEXT NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY (task_id, message_id));
+    CREATE TABLE IF NOT EXISTS question_responses (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, fingerprint TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS deliveries (key TEXT PRIMARY KEY, created_at TEXT NOT NULL);`)
   if (path !== ':memory:') chmodSync(path, 0o600)
   return db

@@ -1,3 +1,4 @@
+import { RuntimeDefaults } from '../storage/runtime-defaults.js'
 import { runClientEffect } from '@dovo/client-runtime'
 import { mutableStruct } from '@dovo/protocol'
 import { decode, decodeResult } from '@dovo/protocol'
@@ -8,7 +9,7 @@ import { join } from 'node:path'
 import { Effect, Fiber, Layer, ManagedRuntime, Schema } from 'effect'
 import {
   titleGenerationSettingsSchema,
-  defaultTaskHarness,
+  resolveTitleHarness,
   generateTitleSchema,
   generatedTitleSchema,
   cleanupDictationSchema,
@@ -45,6 +46,14 @@ export class TitleGeneration {
       !this.store.get().agents.some((a) => a.id === settings.agentId)
     )
       throw new HttpError(400, 'Choose an available harness')
+    if (
+      settings.harness?.provider === 'acp' &&
+      !settings.harness.acpInstallationId &&
+      !settings.harness.endpoint.trim()
+    )
+      throw new HttpError(400, 'Choose an installed ACP title agent or enter its executable')
+    if (settings.harness?.acpInstallationId)
+      this.agents.launch({ ...settings.harness, model: settings.model })
     this.db
       .prepare(
         'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
@@ -123,20 +132,12 @@ export class TitleGeneration {
         Effect.gen(this, function* () {
           const cleanup = mode === 'dictation'
           const settings = this.read()
-          const harness = settings.harness
-            ? {
-                ...defaultTaskHarness(settings.harness.provider),
-                ...settings.harness,
-                id: 'title-harness',
-                name: settings.harness.provider,
-              }
-            : settings.agentId
-              ? this.store.get().agents.find((a) => a.id === settings.agentId)
-              : (this.store.get().agents[0] ?? {
-                  ...defaultTaskHarness('codex'),
-                  id: 'title-harness',
-                  name: 'Codex',
-                })
+          const defaults = new RuntimeDefaults(this.db).get()
+          const harness = resolveTitleHarness(
+            settings,
+            this.store.get().agents,
+            defaults.configured ? defaults.harness : undefined,
+          )
           if (!harness)
             throw new HttpError(400, 'Choose a title-generation harness in Settings → Agents')
           const directory = yield* Effect.acquireRelease(

@@ -1,4 +1,4 @@
-import { decode } from '@dovo/protocol'
+import { decode, questionPromptSchema } from '@dovo/protocol'
 import type { AgentAdapter } from './types'
 import { afterEach, expect, it, vi } from 'vitest'
 import { startRuntime } from '../index'
@@ -611,7 +611,7 @@ it('runs a task-specific harness without a saved agent and resets sessions after
     id: task.id,
     changes: {
       harness: {
-        before: null,
+        before: task.harness,
         after: harness,
       },
     },
@@ -1341,4 +1341,203 @@ it('settles task admission racing executor shutdown without leaving a running ta
   const result = await Effect.runPromise(Fiber.await(starting).pipe(Effect.timeout('1 second')))
   expect(Exit.isFailure(result)).toBe(true)
   expect(s.store.task(task.id).status).not.toBe('running')
+})
+
+it('settles provider output before checkpointing and rejects callbacks from a retired turn', async () => {
+  const s = await setup()
+  let releaseCapture = () => {}
+  const capture = new Promise<void>((resolve) => {
+    releaseCapture = resolve
+  })
+  let provider: AgentRun | undefined
+  const snapshot = s.git.snapshot.bind(s.git)
+  vi.spyOn(s.git, 'snapshot').mockImplementation(async (cwd, ref) => {
+    if (ref.endsWith('/after')) await capture
+    return snapshot(cwd, ref)
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      provider = run
+      run.onSession('owned-session')
+      run.onText('Finished')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Finalize',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  const execution = await s.tasks.start(task.id)
+  try {
+    await vi.waitFor(() => expect(s.store.task(task.id).runPhase).toBe('finalizing'))
+    const turn = s.store.task(task.id).turns?.at(-1)
+    expect(turn?.status).toBe('completed')
+    expect(turn?.finishedAt).toBeTruthy()
+    expect(s.store.task(task.id).messages.at(-1)?.text).toBe('Finished')
+    expect(() => s.tasks.requireIdle(task.id)).toThrow('active turn')
+    const revision = s.store.version()
+    provider?.onText('late output')
+    provider?.onSession('stale-session')
+    provider?.onActivity('Still working')
+    provider?.onEvent?.('item/started', {
+      item: { type: 'subAgentActivity', agentThreadId: 'stale', kind: 'started' },
+    })
+    expect(await provider?.approve('Too late', 'Must not appear')).toBe(false)
+    expect(
+      await provider?.ask(
+        decode(questionPromptSchema, {
+          title: 'Retired provider',
+          questions: [{ id: 'late', header: 'Late', question: 'Too late?', options: [] }],
+        }),
+      ),
+    ).toBeNull()
+    expect(s.store.version()).toBe(revision)
+    expect(s.approvals.list()).toHaveLength(0)
+    s.tasks.queue.change(task.id, 'pause')
+    await s.tasks.steer(task.id, 'during-finalize', 'Next request')
+    expect(provider?.signal.aborted).toBe(false)
+    expect(s.store.task(task.id).queue?.[0]?.id).toBe('during-finalize')
+    releaseCapture()
+    await execution.done
+    expect(s.store.task(task.id).runPhase).toBeUndefined()
+    expect(s.store.task(task.id).turns?.at(-1)?.finishedAt).toBe(turn?.finishedAt)
+    expect(s.store.task(task.id).sessionId).toBe('owned-session')
+  } finally {
+    releaseCapture()
+    await execution.done
+  }
+})
+
+it('acknowledges retried removed submissions without resurrecting them or starting a provider', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>()
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const task = s.tasks.create({
+    title: 'Retry',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  s.tasks.queue.change(task.id, 'pause')
+  await s.tasks.send(task.id, 'request', 'Follow-up')
+  s.tasks.queue.change(task.id, 'remove', 'request')
+  expect(await s.tasks.send(task.id, 'request', 'Follow-up')).toEqual({ ok: true })
+  expect(await s.tasks.steer(task.id, 'request', 'Follow-up')).toEqual({ ok: true })
+  expect(s.store.task(task.id).queue).toEqual([])
+  expect(run).not.toHaveBeenCalled()
+})
+
+it('keeps provider success when finalization storage fails and retries capture without another prompt', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Done'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const task = s.tasks.create({
+    title: 'Capture failure',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Do work',
+  })
+  const update = s.store.updateTask.bind(s.store)
+  let fail = true
+  vi.spyOn(s.store, 'updateTask').mockImplementation((id, fn, receipt) => {
+    const next = fn(s.store.task(id))
+    if (fail && next.status === 'review') {
+      fail = false
+      throw new Error('SQLite finalization failure')
+    }
+    return update(id, fn, receipt)
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  const completed = s.store.task(task.id).turns?.at(-1)
+  expect(completed?.status).toBe('completed')
+  expect(s.store.task(task.id)).toMatchObject({
+    status: 'review',
+    runPhase: 'finalizing',
+    queuePaused: true,
+  })
+  expect(s.store.task(task.id).error).toContain('SQLite finalization failure')
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(run).toHaveBeenCalledTimes(1)
+  expect(s.store.task(task.id).turns?.at(-1)?.finishedAt).toBe(completed?.finishedAt)
+  expect(s.store.task(task.id).turns?.at(-1)?.checkpoint?.after).toBeTruthy()
+  expect(s.store.task(task.id).runPhase).toBeUndefined()
+  expect(s.store.task(task.id).error).toBeUndefined()
+})
+
+it('durably admits each queued turn before inspecting its checkout', async () => {
+  const s = await setup()
+  const { WorkspaceStore } = await import('../storage/workspace')
+  const task = s.tasks.create({
+    title: 'Queue crash',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'First request',
+  })
+  s.tasks.queue.add(task.id, 'second-input', 'Second request')
+  // First request is already in the transcript; hold the follow-up until its own turn.
+  s.store.updateTask(task.id, (t) => ({
+    ...t,
+    restartRecovery: { kind: 'turn', automatic: false },
+  }))
+  const inspect = s.git.inspect.bind(s.git)
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let recovered: Task | undefined
+  vi.spyOn(s.git, 'inspect').mockImplementation(async (cwd) => {
+    if (s.store.task(task.id).runAttempt?.inputMessageIds.includes('second-input')) {
+      recovered = new WorkspaceStore(s.db).task(task.id)
+      await gate
+    }
+    return inspect(cwd)
+  })
+  const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Done'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const execution = await s.tasks.start(task.id)
+  try {
+    await vi.waitFor(() => expect(recovered).toBeDefined())
+    expect(recovered).toMatchObject({
+      status: 'failed',
+      restartRecovery: { kind: 'turn', automatic: true },
+      runAttempt: { inputMessageIds: ['second-input'], promptAccepted: false },
+      queue: [],
+    })
+    expect(recovered?.messages.some((m) => m.id === 'second-input')).toBe(true)
+    expect(run).toHaveBeenCalledTimes(1)
+  } finally {
+    release()
+    await execution.done
+  }
+})
+
+it('retains legacy session consumption when admitting a new queued request', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (context) => {
+    context.onSession('legacy-session')
+    context.onText('Done')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const task = s.tasks.create({
+    title: 'Legacy',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Already completed original',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  s.store.updateTask(task.id, (current) => ({ ...current, consumedMessageIds: undefined }))
+  s.tasks.queue.add(task.id, 'follow-up', 'New queued request')
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(run.mock.calls[1][0].prompt).toContain('New queued request')
+  expect(run.mock.calls[1][0].prompt).not.toContain('Already completed original')
 })

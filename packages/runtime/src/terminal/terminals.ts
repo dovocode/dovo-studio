@@ -1,3 +1,4 @@
+import type { AcpLaunch } from '../agents/types.js'
 import { decode } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
 import { defaultShell } from './shell.js'
@@ -23,23 +24,37 @@ export class Terminals {
     return [...this.sessions.values()].map((s) => s.info)
   }
   create(taskId: string, cwd: string) {
+    const settings = this.settings()
+    return this.createCommand(
+      taskId,
+      cwd,
+      {
+        command: settings.shell || defaultShell(),
+        args: settings.shellArgs,
+        env: {},
+      },
+      `Terminal ${this.sessions.size + 1}`,
+    )
+  }
+  createCommand(taskId: string, cwd: string, launch: AcpLaunch, title: string) {
     if (this.sessions.size >= 20)
       throw new HttpError(409, 'Close a terminal before opening another (limit 20)')
-    const settings = this.settings()
-    const shell = settings.shell || defaultShell()
+    const env = { ...processEnvironment(), ...launch.env }
+    delete env.DOVO_OWNER_TOKEN
+    delete env.ELECTRON_RUN_AS_NODE
     const id = randomUUID(),
-      process = pty.spawn(shell, settings.shellArgs, {
+      process = pty.spawn(launch.command, launch.args, {
         name: 'xterm-256color',
         cols: 100,
         rows: 24,
         cwd,
-        env: processEnvironment(),
+        env,
       })
     const session: Session = {
       info: {
         id,
         taskId,
-        title: `Terminal ${this.sessions.size + 1}`,
+        title,
         exited: false,
       },
       process,
@@ -50,8 +65,7 @@ export class Terminals {
     this.activity?.add('terminal', id, 'Shell started', {
       taskId,
       cwd,
-      shell,
-      args: settings.shellArgs,
+      command: launch.command,
     })
     process.onData((data) => {
       session.buffer = (session.buffer + data).slice(-1024 * 1024)

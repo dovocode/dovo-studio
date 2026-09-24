@@ -28,7 +28,9 @@ export function taskRowStatus(task: Task, needsInput: boolean, online: boolean, 
           ? 'Snoozed'
           : task.status === 'running'
             ? online
-              ? 'Working'
+              ? task.runPhase === 'finalizing'
+                ? 'Saving changes'
+                : 'Working'
               : 'Was working'
             : task.status === 'failed'
               ? 'Failed'
@@ -41,6 +43,7 @@ export function taskRowStatus(task: Task, needsInput: boolean, online: boolean, 
                     : task.status === 'cancelled'
                       ? 'Stopped'
                       : 'Draft'
-  const date = task.status === 'running' ? turn?.startedAt : turn?.finishedAt
+  const date =
+    task.status === 'running' && task.runPhase !== 'finalizing' ? turn?.startedAt : turn?.finishedAt
   return date && !needsInput ? `${state} · ${age(date, now)}` : state
 }

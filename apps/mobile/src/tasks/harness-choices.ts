@@ -66,6 +66,13 @@ export function taskHarnessChanges(task: Task, selection: string, agent: Agent) 
             permission: agent.permission,
             serviceTier: agent.serviceTier ?? null,
             cyberAccessProgram: agent.cyberAccessProgram ?? null,
+            ...(agent.provider === 'acp'
+              ? {
+                  acpInstallationId: agent.acpInstallationId ?? null,
+                  acpMode: agent.acpMode ?? '',
+                  acpConfig: agent.acpConfig ?? {},
+                }
+              : {}),
           }
         : null,
     },

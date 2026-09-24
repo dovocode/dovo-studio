@@ -93,3 +93,62 @@ it('cancels pending questions on abort and runtime shutdown without inventing an
   await r.close()
   expect(await second).toBeNull()
 })
+
+it('keeps failed form admission retryable and retains durable answer receipts across restart', async () => {
+  const { Questions } = await import('./questions')
+  const { WorkspaceStore } = await import('../storage/workspace')
+  const r = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'owner-token-at-least-thirty-two-characters',
+    port: 0,
+  })
+  cleanups.push(r.close)
+  const s = r.services
+  s.store.update((w) => ({
+    ...w,
+    tasks: [
+      {
+        id: 'form-task',
+        title: 'Form',
+        repositoryId: 'repo',
+        agentId: 'agent',
+        status: 'draft',
+        createdAt: '',
+        messages: [],
+        files: [],
+        draft: '',
+        example: false,
+        queuePaused: true,
+      },
+    ],
+  }))
+  const answers = { choice: ['existing'], secret: ['private-answer'] }
+  const pending = s.questions.request(
+    'form-task',
+    prompt,
+    new AbortController().signal,
+    undefined,
+    (_answers, receipt) => {
+      s.tasks.queue.add('form-task', `answer:${receipt.id}`, 'Answer delivered', [], receipt)
+    },
+  )
+  const id = s.questions.list()[0].id
+  s.db.exec(
+    "CREATE TRIGGER fail_form_acceptance BEFORE UPDATE ON documents WHEN NEW.id = 'workspace' BEGIN SELECT RAISE(ABORT, 'SQLite unavailable'); END",
+  )
+  expect(() => s.questions.respond(id, answers)).toThrow('SQLite unavailable')
+  expect(s.questions.list()).toHaveLength(1)
+  expect(s.store.questionResponse(id)).toBeUndefined()
+  expect(s.store.task('form-task').queue).toBeUndefined()
+  expect(s.store.taskSubmission('form-task', `answer:${id}`)).toBeUndefined()
+  s.db.exec('DROP TRIGGER fail_form_acceptance')
+  s.questions.respond(id, answers)
+  expect(await pending).toEqual(answers)
+  expect(s.store.task('form-task').queue).toHaveLength(1)
+  const recovered = new WorkspaceStore(s.db)
+  const questions = new Questions(s.activity, recovered)
+  expect(() => questions.respond(id, answers)).not.toThrow()
+  expect(() => questions.respond(id, { ...answers, secret: ['changed'] })).toThrow('differently')
+  expect(recovered.task('form-task').queue).toHaveLength(1)
+  expect(s.store.questionResponse(id)).not.toContain('private-answer')
+})

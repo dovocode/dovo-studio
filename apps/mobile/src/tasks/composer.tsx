@@ -95,7 +95,9 @@ export function Composer({ task }: { task: Task }) {
           borderRadius: 26,
           padding: 3,
           gap: 0,
-          backgroundColor: colors.elevated,
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: focused ? colors.accent : colors.border,
         }}
       >
         <MessageAttachments
@@ -134,8 +136,10 @@ export function Composer({ task }: { task: Task }) {
                   dictation.isRecording
                     ? 'Listening…'
                     : firstMessage
-                      ? 'What should get done?'
-                      : 'Message…'
+                      ? 'What would you like to work on?'
+                      : task.status === 'running'
+                        ? 'Add a follow-up…'
+                        : 'Ask a follow-up…'
                 }
                 value={draft.text}
                 onChangeText={draft.update}

@@ -178,7 +178,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
       title: 'New task',
       objective: '',
       agentId: '',
-      harness: defaultTaskHarness('codex'),
+      harness: store.snapshot?.defaults?.harness ?? defaultTaskHarness('codex'),
       execution: 'main',
       repositoryId: pendingCreate.repositoryId,
     })
@@ -198,7 +198,14 @@ export default function TasksView({ entityId }: StudioViewProps) {
       viewId: 'tasks',
       entityId: task.id,
     })
-  }, [activeRuntimeId, host, pendingCreate, setWorkspace, workspace.repositories])
+  }, [
+    activeRuntimeId,
+    host,
+    pendingCreate,
+    setWorkspace,
+    workspace.repositories,
+    store.snapshot?.defaults,
+  ])
   const selectTask = async (entry: TaskEntry) => {
     if (busy) return
     setBusy(true)
@@ -393,8 +400,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
               </div>
             ) : (
               <EmptyState
-                title="Choose a task"
-                description="Your conversations from every connected computer appear together."
+                title="What would you like to work on?"
+                description="Pick up a task from the sidebar, or start with a question, a fix, or a new idea."
                 action={
                   <div className="flex gap-2">
                     {compact && (

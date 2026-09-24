@@ -56,6 +56,8 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       const closeTitles = () => (titlesClosing ??= services.titles.dispose())
       const closeTasks = () => (tasksClosing ??= services.tasks.dispose())
       const finalizers = [
+        () => services.acpInstallations.dispose(),
+        () => services.acpController.abort(),
         closeTitles,
         closeTasks,
         () => services.agents.dispose(),
@@ -80,12 +82,14 @@ export const runtimeLayer = (options: RuntimeOptions) =>
             // Stop admission and cancel owned workers while accepted requests drain.
             // Waiting for HTTP first deadlocks requests awaiting those workers.
             // Capture exits so all drains finish before dependencies and SQLite close.
+            services.acpController.abort()
             const results = yield* Effect.all(
               [
                 Effect.exit(
                   release(() => (http.server.listening ? http.close() : http.closeSockets())),
                 ),
                 Effect.exit(release(() => services.jobs.shutdown())),
+                Effect.exit(release(() => services.acpInstallations.dispose())),
                 Effect.exit(release(closeTitles)),
                 Effect.exit(release(closeTasks)),
               ],

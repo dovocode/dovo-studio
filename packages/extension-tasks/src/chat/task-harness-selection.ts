@@ -42,6 +42,13 @@ export function changeTaskHarness(
         permission: harness.permission,
         serviceTier: harness.serviceTier ?? null,
         cyberAccessProgram: harness.cyberAccessProgram ?? null,
+        ...(harness.provider === 'acp'
+          ? {
+              acpInstallationId: harness.acpInstallationId ?? null,
+              acpMode: harness.acpMode ?? '',
+              acpConfig: harness.acpConfig ?? {},
+            }
+          : {}),
       },
     }
   return { ...task, harness, agentId: '', agentOverrides: undefined }

@@ -5,7 +5,7 @@ import { ProjectsMenu } from '@dovo/extension-scm/projects'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { Plus, Search, ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { useEffect } from 'react'
-import { IconButton, Input } from '@dovo/studio-ui'
+import { Button, Input } from '@dovo/studio-ui'
 import { TaskRow } from './task-row'
 import { TaskContextMenu } from './task-context-menu'
 import { collectTasks, type TaskEntry, type TaskSource } from './task-collection'
@@ -126,7 +126,7 @@ export function TaskList({
             aria-label="Search tasks"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search"
+            placeholder="Search tasks"
             className="h-7 border-transparent bg-transparent pl-7 text-xs shadow-none focus:border-border"
           />
         </div>
@@ -137,14 +137,15 @@ export function TaskList({
           onChange={onProjectChange}
           disabled={busy}
         />
-        <IconButton
-          label="New task"
-          className="size-7 shrink-0"
+        <Button
+          aria-label="New task"
+          size="sm"
+          className="h-7 shrink-0 gap-1 px-2"
           onClick={() => onCreate()}
           disabled={busy}
         >
-          <Plus size={15} />
-        </IconButton>
+          <Plus size={14} aria-hidden="true" /> New
+        </Button>
       </div>
       <details className="group/filter mx-2 mb-1 rounded-md border border-transparent open:border-border/70 open:bg-muted/35">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
@@ -231,11 +232,35 @@ export function TaskList({
           </details>
         ))}
         {!tasks.length && (
-          <p className="p-3 text-xs text-muted-foreground">
-            {query || filter !== 'active'
-              ? 'No matching tasks.'
-              : 'Create a task to start working.'}
-          </p>
+          <div className="space-y-2 px-3 py-6 text-xs">
+            <p className="font-medium">
+              {query || filter !== 'active' || projectId
+                ? 'No matching tasks'
+                : 'Ready for your next idea'}
+            </p>
+            <p className="leading-5 text-muted-foreground">
+              {query || filter !== 'active' || projectId
+                ? 'Try a different search or clear your filters.'
+                : 'Start with a question, a fix, or something you want to build.'}
+            </p>
+            {query || filter !== 'active' || projectId ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setQuery('')
+                  setFilter('active')
+                  onProjectChange('')
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : (
+              <Button size="sm" disabled={busy} onClick={() => onCreate()}>
+                Create a task
+              </Button>
+            )}
+          </div>
         )}
       </div>
     </aside>

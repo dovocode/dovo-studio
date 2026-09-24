@@ -435,6 +435,9 @@ importers:
 
   packages/extension-agents:
     dependencies:
+      '@dovo/extension-tasks':
+        specifier: workspace:*
+        version: link:../extension-tasks
       '@dovo/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -687,9 +690,15 @@ importers:
       sharp:
         specifier: ^0.35.4
         version: 0.35.4(@types/node@26.4.1)
+      tar:
+        specifier: 7.5.22
+        version: 7.5.22
       turndown:
         specifier: ^7.2.4
         version: 7.2.4
+      unzipper:
+        specifier: 0.12.5
+        version: 0.12.5
       vscode-jsonrpc:
         specifier: ^9.0.2
         version: 9.0.2
@@ -709,6 +718,9 @@ importers:
       '@types/turndown':
         specifier: ^5.0.6
         version: 5.0.6
+      '@types/unzipper':
+        specifier: ^0.10.11
+        version: 0.10.11
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
@@ -3493,6 +3505,9 @@ packages:
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
+
+  '@types/unzipper@0.10.11':
+    resolution: {integrity: sha512-D25im2zjyMCcgL9ag6N46+wbtJBnXIr7SI4zHf9eJD2Dw2tEB5e+p5MYkrxKIVRscs5QV0EhtU9rgXSPx90oJg==}
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
@@ -10799,6 +10814,10 @@ snapshots:
   '@types/unist@2.0.11': {}
 
   '@types/unist@3.0.3': {}
+
+  '@types/unzipper@0.10.11':
+    dependencies:
+      '@types/node': 26.4.1
 
   '@types/ws@8.18.1':
     dependencies:

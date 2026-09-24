@@ -36,6 +36,8 @@ export function NewTask({
     onCreated,
     onCancel,
   }
+  const defaults = useRef(snapshot?.defaults)
+  defaults.current = snapshot?.defaults
   const workspace = useRef(snapshot?.workspace)
   workspace.current = snapshot?.workspace
   useEffect(() => {
@@ -53,7 +55,9 @@ export function NewTask({
       title: 'New task',
       repositoryId,
       agentId: initial?.agentId || '',
-      harness: initial?.agentId ? undefined : defaultTaskHarness('codex'),
+      harness: initial?.agentId
+        ? undefined
+        : (defaults.current?.harness ?? defaultTaskHarness('codex')),
       execution: 'main',
       status: 'draft',
       createdAt: new Date().toISOString(),

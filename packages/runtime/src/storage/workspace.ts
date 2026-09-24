@@ -1,3 +1,4 @@
+import { RuntimeDefaults } from './runtime-defaults.js'
 import { McpSecrets } from './mcp-secrets.js'
 import { newSecret } from '../auth/devices.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
@@ -50,39 +51,76 @@ export class WorkspaceStore {
       tasks: w.tasks
         .filter((task) => !task.example)
         .map((task) =>
-          task.status === 'running'
+          task.runPhase === 'finalizing' &&
+          task.turns?.at(-1)?.finishedAt &&
+          task.turns?.at(-1)?.status !== 'running'
             ? {
                 ...task,
-                status: 'failed',
-                restartRecovery: { kind: 'turn', automatic: !task.queuePaused },
+                status:
+                  task.turns?.at(-1)?.status === 'completed'
+                    ? 'review'
+                    : task.turns?.at(-1)?.status === 'cancelled'
+                      ? 'cancelled'
+                      : 'failed',
+                runPhase: 'finalizing',
+                activity: undefined,
                 queuePaused: true,
+                restartRecovery: { kind: 'turn', automatic: !task.queuePaused },
+                error:
+                  'The agent finished before the runtime stopped. Change capture was interrupted; review the working tree before continuing.',
                 turns: task.turns?.map((turn) =>
-                  turn.status === 'running'
+                  turn.id === task.turns?.at(-1)?.id && turn.checkpoint && !turn.checkpoint.after
                     ? {
                         ...turn,
-                        status: 'failed',
-                        finishedAt: new Date().toISOString(),
-                        error: 'Runtime stopped during this turn',
-                        checkpoint: turn.checkpoint
-                          ? {
-                              ...turn.checkpoint,
-                              error: 'Runtime stopped before the after snapshot was captured.',
-                            }
-                          : undefined,
+                        checkpoint: {
+                          ...turn.checkpoint,
+                          error: 'Runtime stopped before change capture finished.',
+                        },
                       }
                     : turn,
                 ),
-                error: 'Runtime stopped while this task was running. Resume to continue.',
               }
-            : task.queue?.length
+            : task.status === 'running'
               ? {
                   ...task,
-                  restartRecovery:
-                    task.restartRecovery ??
-                    (!task.queuePaused ? { kind: 'queue', automatic: true } : undefined),
+                  status: 'failed',
+                  runPhase: undefined,
+                  activity: undefined,
+                  restartRecovery: {
+                    kind:
+                      task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length
+                        ? 'queue'
+                        : 'turn',
+                    automatic: !task.queuePaused,
+                  },
                   queuePaused: true,
+                  turns: task.turns?.map((turn) =>
+                    turn.status === 'running'
+                      ? {
+                          ...turn,
+                          status: 'failed',
+                          finishedAt: new Date().toISOString(),
+                          error: 'Runtime stopped during this turn',
+                          checkpoint: turn.checkpoint
+                            ? {
+                                ...turn.checkpoint,
+                                error: 'Runtime stopped before the after snapshot was captured.',
+                              }
+                            : undefined,
+                        }
+                      : turn,
+                  ),
+                  error: 'Runtime stopped while this task was running. Resume to continue.',
                 }
-              : task,
+              : task.queue?.length
+                ? {
+                    ...task,
+                    restartRecovery:
+                      task.restartRecovery ??
+                      (!task.queuePaused ? { kind: 'queue', automatic: true } : undefined),
+                    queuePaused: true,
+                  }
+                : task,
         ),
     }))
   }
@@ -103,7 +141,15 @@ export class WorkspaceStore {
   version() {
     return this.revision
   }
-  update(fn: (workspace: Workspace) => Workspace) {
+  update(
+    fn: (workspace: Workspace) => Workspace,
+    submission?: {
+      taskId: string
+      id: string
+      fingerprint: string
+      response?: { id: string; fingerprint: string }
+    },
+  ) {
     const parsed = migrateJiraSources(
       decode(workspaceSchema, this.restoreSecrets(fn(this.workspace))),
     )
@@ -149,7 +195,21 @@ export class WorkspaceStore {
             : updated
         }),
     }
+    const nextTaskIds = new Set(next.tasks.map((task) => task.id))
     this.db.transaction(() => {
+      if (submission)
+        this.db
+          .prepare('INSERT INTO task_submissions VALUES (?, ?, ?)')
+          .run(submission.taskId, submission.id, submission.fingerprint)
+      if (submission?.response)
+        this.db
+          .prepare('INSERT INTO question_responses VALUES (?, ?, ?)')
+          .run(submission.response.id, submission.taskId, submission.response.fingerprint)
+      for (const id of previousTasks.keys())
+        if (!nextTaskIds.has(id)) {
+          this.db.prepare('DELETE FROM task_submissions WHERE task_id = ?').run(id)
+          this.db.prepare('DELETE FROM question_responses WHERE task_id = ?').run(id)
+        }
       this.db
         .prepare(
           'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value',
@@ -161,23 +221,51 @@ export class WorkspaceStore {
     this.revision++
     return next
   }
+  taskDefaults() {
+    return new RuntimeDefaults(this.db).get().harness
+  }
   task(id: string) {
     const task = this.workspace.tasks.find((t) => t.id === id)
     if (!task) throw new HttpError(404, 'Task not found')
     return task
   }
-  updateTask(id: string, fn: (task: Task) => Task) {
-    this.update((w) => ({
-      ...w,
-      tasks: w.tasks.map((t) =>
-        t.id === id
-          ? {
-              ...fn(t),
-              updatedAt: new Date().toISOString(),
-            }
-          : t,
-      ),
-    }))
+  questionResponse(id: string) {
+    const row = this.db
+      .prepare('SELECT fingerprint AS value FROM question_responses WHERE id = ?')
+      .get(id)
+    return row ? decode(rowSchema, row).value : undefined
+  }
+  taskSubmission(id: string, messageId: string) {
+    const row = this.db
+      .prepare(
+        'SELECT fingerprint AS value FROM task_submissions WHERE task_id = ? AND message_id = ?',
+      )
+      .get(id, messageId)
+    return row ? decode(rowSchema, row).value : undefined
+  }
+  updateTask(
+    id: string,
+    fn: (task: Task) => Task,
+    submission?: {
+      id: string
+      fingerprint: string
+      response?: { id: string; fingerprint: string }
+    },
+  ) {
+    this.update(
+      (w) => ({
+        ...w,
+        tasks: w.tasks.map((t) =>
+          t.id === id
+            ? {
+                ...fn(t),
+                updatedAt: new Date().toISOString(),
+              }
+            : t,
+        ),
+      }),
+      submission ? { ...submission, taskId: id } : undefined,
+    )
   }
   markTaskViewed(id: string, turnId: string, expectedRevision: number, viewed = true) {
     const task = this.task(id)
@@ -248,6 +336,8 @@ export class WorkspaceStore {
           record.subagents !== undefined ||
           record.archivedAt !== undefined ||
           record.queue !== undefined ||
+          record.runPhase !== undefined ||
+          record.runAttempt !== undefined ||
           record.consumedMessageIds !== undefined)
       )
         throw new HttpError(400, 'New tasks must be drafts')

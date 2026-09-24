@@ -4,6 +4,7 @@ import { mutableStruct, mutableArray } from './schema.js'
 import { minValue, urlSchema, refine, maxValue } from './schema.js'
 import { Schema } from 'effect'
 import { workspaceSchema, providerSchema, taskSchema } from './workspace.js'
+import { runtimeDefaultsSchema } from './runtime-setup.js'
 import { pendingQuestionSchema } from './questions.js'
 export const deviceSchema = mutableStruct({
   id: Schema.String,
@@ -71,6 +72,7 @@ export const providerStatusSchema = mutableStruct({
 export const snapshotSchema = mutableStruct({
   protocolVersion: Schema.optional(Schema.Number.pipe(Schema.int())),
   runtimeHost: Schema.optional(Schema.String),
+  defaults: Schema.optional(runtimeDefaultsSchema),
   revision: Schema.Number.pipe(Schema.finite()),
   workspace: workspaceSchema,
   approvals: mutableArray(approvalSchema),

@@ -1,4 +1,6 @@
+import { acpRoute } from './acp-routes.js'
 import { routeProgram, serviceResult } from './effect.js'
+import { runtimeSetupSchema } from '@dovo/protocol'
 import { mutableStruct } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import { dirname, join, resolve } from 'node:path'
@@ -19,6 +21,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (path.startsWith('/api/agents/acp/')) return yield* acpRoute(request, path)
       if (method === 'POST' && path === '/api/agents/catalogs/mcp')
         return yield* serviceResult(searchRegistry(yield* serviceResult(body(request))))
       if (method === 'POST' && path === '/api/agents/catalogs/skills')
@@ -38,6 +41,18 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         return yield* serviceResult(
           testMcpServer(s.store.restoreSecrets(yield* serviceResult(body(request)))),
         )
+      if (method === 'POST' && path === '/api/agents/setup/read')
+        return yield* serviceResult({ defaults: s.defaults.get(), titles: s.titles.read() })
+      if (method === 'POST' && path === '/api/agents/setup/save') {
+        const input = decode(runtimeSetupSchema, yield* serviceResult(body(request)))
+        if (input.defaults.harness.acpInstallationId) s.agents.launch(input.defaults.harness)
+        return yield* serviceResult(
+          s.db.transaction(() => ({
+            defaults: s.defaults.save(input.defaults),
+            titles: s.titles.save(input.titles),
+          }))(),
+        )
+      }
       if (method === 'POST' && path === '/api/agents/title-settings/read')
         return yield* serviceResult(s.titles.read())
       if (method === 'POST' && path === '/api/agents/title-settings/save')

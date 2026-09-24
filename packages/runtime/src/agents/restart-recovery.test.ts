@@ -38,7 +38,7 @@ async function seed(enabled: boolean, changes: Partial<Task> = {}) {
   return { options, id: task.id }
 }
 function adapter(run: AgentAdapter['run']) {
-  vi.spyOn(AgentRegistry.prototype, 'get').mockResolvedValue({
+  return vi.spyOn(AgentRegistry.prototype, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
     run,
   })
@@ -330,3 +330,69 @@ it('atomically blocks new task admission while the owner prepares a restart', as
     await runtime.services.tasks.start(id)
   ).done
 })
+
+it('dequeues an initial request after a crash before admission, without a phantom continuation', async () => {
+  const { options, id } = await seed(true, {
+    runPhase: 'preparing',
+    messages: [],
+    queue: [{ id: 'initial', role: 'user', text: 'The actual request', createdAt: '' }],
+  })
+  const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Done'))
+  adapter(run)
+  const runtime = await startRuntime(options)
+  cleanups.push(runtime.close)
+  await vi.waitFor(() => expect(runtime.services.store.task(id).status).toBe('review'))
+  expect(run).toHaveBeenCalledTimes(1)
+  expect(run.mock.calls[0][0].prompt).toContain('The actual request')
+  expect(run.mock.calls[0][0].prompt).not.toContain('runtime restarted')
+  expect(runtime.services.store.task(id).queue).toEqual([])
+})
+
+it.each([false, true])(
+  'only consumes an interrupted prompt after acceptance evidence (accepted=%s)',
+  async (accepted) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const options = {
+      databasePath: join(f.directory, '.git', 'acceptance.sqlite'),
+      ownerToken: 'synthetic-owner-token-for-restart-test',
+      port: 0,
+    }
+    const runtime = await startRuntime(options)
+    runtime.services.store.update(() => f.workspace)
+    runtime.services.preferences.save({ autoContinueAfterRestart: true })
+    const task = runtime.services.tasks.create({
+      title: 'Prompt boundary',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Do not lose this original request',
+    })
+    let allocated = false
+    const lookup = adapter(async (context) => {
+      context.onSession('allocated-session')
+      if (accepted) context.onPromptAccepted?.()
+      allocated = true
+      await new Promise<void>((resolve) =>
+        context.signal.addEventListener('abort', () => resolve(), { once: true }),
+      )
+      context.signal.throwIfAborted()
+    })
+    await runtime.services.tasks.start(task.id)
+    await vi.waitFor(() => expect(allocated).toBe(true))
+    expect(runtime.services.store.task(task.id).runAttempt?.promptAccepted).toBe(accepted)
+    await runtime.close()
+    const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Recovered'))
+    lookup.mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run,
+    })
+    const restarted = await startRuntime(options)
+    cleanups.push(restarted.close)
+    await vi.waitFor(() => expect(restarted.services.store.task(task.id).status).toBe('review'))
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(run.mock.calls[0][0].sessionId).toBe('allocated-session')
+    expect(run.mock.calls[0][0].prompt.includes('Do not lose this original request')).toBe(
+      !accepted,
+    )
+  },
+)
