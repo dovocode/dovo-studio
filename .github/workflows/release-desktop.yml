@@ -72,7 +72,10 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           GITHUB_REF_NAME: ${{ inputs.tag || github.ref_name }}
-        run: node scripts/packaging/package-desktop.mjs --publish
+        run: |
+          # Signing scans the bundled Node runtime and its dependency tree concurrently.
+          ulimit -n 65536
+          node scripts/packaging/package-desktop.mjs --publish
       - name: Verify Mac signature and notarization
         run: |
           codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Dovo Studio.app"
