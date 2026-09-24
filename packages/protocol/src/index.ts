@@ -66,3 +66,4 @@ export * from './acp-registry.js'
 export * from './acp-auth.js'
 
 export * from './runtime-setup.js'
+export * from './repository-tools.js'

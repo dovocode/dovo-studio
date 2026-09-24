@@ -100,6 +100,36 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
     <section className="flex min-h-0 flex-1 flex-col">
       {!selected && (
         <header className="studio-page-header space-y-3 border-b">
+          {!!pulls.length && (
+            <div
+              className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
+              aria-label="Visible pull request summary"
+            >
+              <span>
+                <strong className="font-medium text-foreground">
+                  {pulls.filter(pullNeedsAttention).length}
+                </strong>{' '}
+                need attention
+              </span>
+              <span>
+                <strong className="font-medium text-foreground">
+                  {pulls.filter((pull) => pull.state === 'open' && pull.draft).length}
+                </strong>{' '}
+                drafts
+              </span>
+              <span>
+                <strong className="font-medium text-foreground">
+                  {
+                    pulls.filter((pull) => pull.state === 'open' && pull.viewerReviewRequested)
+                      .length
+                  }
+                </strong>{' '}
+                awaiting your review
+              </span>
+              <span>In loaded, filtered results</span>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="mr-2 text-lg font-semibold tracking-tight">Pull requests</h1>
             <span className="text-xs text-muted-foreground">

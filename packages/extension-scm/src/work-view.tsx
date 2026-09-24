@@ -199,6 +199,31 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       {!selected && (
         <header className="studio-page-header space-y-3 border-b">
+          {mode === 'issues' && !!rows.length && (
+            <div
+              className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
+              aria-label="Visible issue summary"
+            >
+              <span>
+                <strong className="font-medium text-foreground">
+                  {rows.filter(({ item }) => 'assignees' in item && !item.assignees.length).length}
+                </strong>{' '}
+                unassigned
+              </span>
+              <span>
+                <strong className="font-medium text-foreground">
+                  {
+                    rows.filter(
+                      ({ source, item }) => source.jira && !source.projectLinks?.[item.id],
+                    ).length
+                  }
+                </strong>{' '}
+                without a linked project
+              </span>
+              <span>In loaded, filtered results</span>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="mr-2 text-lg font-semibold tracking-tight">
               {mode === 'issues' ? 'Issues' : 'Pipelines'}
@@ -501,7 +526,9 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
                       : ''}
                   </time>
                 </div>
-                <span className="my-1.5 block break-words text-sm font-medium">{item.title}</span>
+                <span className="my-1.5 block break-words text-sm font-medium leading-relaxed">
+                  {item.title}
+                </span>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <span className="inline-flex min-w-0 items-center gap-1">
                     <Monitor className="size-3 shrink-0" />
@@ -524,14 +551,26 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
                         <span>{source.projectLinks?.[item.id] ?? 'No project linked'}</span>
                       )}
                       <span>{item.author}</span>
-                      {!!item.assignees.length && (
-                        <span>Assigned to {(item.assigneeNames ?? item.assignees).join(', ')}</span>
+                      {item.priority && (
+                        <span className="rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-foreground">
+                          Priority: {item.priority}
+                        </span>
                       )}
-                      {item.labels.map((label) => (
+                      <span className="text-foreground/80">
+                        {(item.assigneeNames ?? item.assignees).length
+                          ? `Assigned to ${(item.assigneeNames ?? item.assignees).join(', ')}`
+                          : 'Unassigned'}
+                      </span>
+                      {item.labels.slice(0, 3).map((label) => (
                         <span className="rounded bg-muted px-1.5 py-0.5" key={label}>
                           {label}
                         </span>
                       ))}
+                      {item.labels.length > 3 && (
+                        <span title={item.labels.slice(3).join(', ')}>
+                          +{item.labels.length - 3} labels
+                        </span>
+                      )}
                     </>
                   )}
                 </div>

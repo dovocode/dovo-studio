@@ -1,3 +1,5 @@
+import { CreateGithub } from './create-github'
+import { useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { branchesSchema, encodeWorkTarget } from '@dovo/studio-core'
 import { BranchPicker } from '@dovo/studio-ui'
@@ -25,15 +27,59 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
         }
       : {}),
   }
+  const pending = useRef(false)
   const act = (fn: () => Promise<void>) => {
+    if (pending.current) return
+    pending.current = true
     setBusy(true)
     setStatus('')
     void fn()
       .catch((error) => setStatus(String(error)))
-      .finally(() => setBusy(false))
+      .finally(() => {
+        pending.current = false
+        setBusy(false)
+      })
   }
   return (
     <div className="mt-4 space-y-3">
+      <CreateGithub path={repo.path} disabled={busy} />
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            ['finder', 'Open in Finder'],
+            ['vscode', 'Open in VS Code'],
+            ['cursor', 'Open in Cursor'],
+          ] as const
+        ).map(([target, label]) => (
+          <Button
+            key={target}
+            size="sm"
+            variant="ghost"
+            disabled={!connected || busy}
+            onClick={() =>
+              act(async () => {
+                await request('/api/scm/open-folder', { ...input, target }, responses.ok)
+                setStatus('Opened on the runtime computer.')
+              })
+            }
+          >
+            {label}
+          </Button>
+        ))}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!connected || busy}
+          onClick={() =>
+            act(async () => {
+              await request('/api/scm/push', input, responses.ok)
+              setStatus('Branch pushed.')
+            })
+          }
+        >
+          Push branch
+        </Button>
+      </div>
       <BranchPicker
         current={taskId ? undefined : repo.branch}
         disabled={!connected || busy}
@@ -129,7 +175,7 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
         </ul>
       )}
       <form
-        className="flex gap-2"
+        className="flex flex-wrap gap-2"
         onSubmit={(event) => {
           event.preventDefault()
           act(async () => {
@@ -155,6 +201,32 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
         />
         <Button size="sm" variant="outline" disabled={!connected || busy || !message.trim()}>
           Commit staged
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={!connected || busy || !message.trim()}
+          onClick={() =>
+            act(async () => {
+              const result = await request(
+                '/api/scm/commit',
+                { ...input, message },
+                responses.commit,
+              )
+              setMessage('')
+              setFiles([])
+              try {
+                await request('/api/scm/push', input, responses.ok)
+                setStatus(`Committed ${result.commit.slice(0, 8)} and pushed.`)
+              } catch (error) {
+                setStatus(
+                  `Committed ${result.commit.slice(0, 8)}, but push failed: ${String(error)}. Use Push branch to retry without committing again.`,
+                )
+              }
+            })
+          }
+        >
+          Commit &amp; push
         </Button>
       </form>
       {status && (

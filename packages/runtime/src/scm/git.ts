@@ -54,6 +54,106 @@ export class GitService {
   command(cwd: string, args: string[]) {
     return this.run(cwd, this.settings().git, args, 30000, 12 * 1024 * 1024)
   }
+  private publishing = new Set<string>()
+  async folderStatus(path: string) {
+    const cwd = await repositoryPath(path)
+    try {
+      await stat(join(cwd, '.git'))
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+        return { initialized: false, remotes: [] }
+      throw error
+    }
+    return {
+      initialized: true,
+      remotes: (await this.command(cwd, ['remote'])).trim().split('\n').filter(Boolean),
+    }
+  }
+  async createGithub(path: string, name: string, visibility: 'private' | 'public') {
+    const cwd = await repositoryPath(path)
+    if (this.publishing.has(cwd))
+      throw new HttpError(409, 'Repository creation is already in progress')
+    this.publishing.add(cwd)
+    try {
+      const status = await this.folderStatus(cwd)
+      if (status.remotes.length)
+        throw new HttpError(
+          409,
+          'This folder already has a Git remote. Existing remotes will not be replaced.',
+        )
+      // Validate GitHub authentication before initializing a local repository.
+      await this.run(cwd, this.settings().gh, ['auth', 'status'], 30000, 1024 * 1024)
+      if (!status.initialized) await this.command(cwd, ['init', '-b', 'main'])
+      await this.run(
+        cwd,
+        this.settings().gh,
+        ['repo', 'create', name, `--${visibility}`, '--source', cwd, '--remote', 'origin'],
+        60000,
+        1024 * 1024,
+      )
+      return this.inspect(cwd)
+    } finally {
+      this.publishing.delete(cwd)
+    }
+  }
+  async push(path: string) {
+    const { path: cwd } = await this.inspect(path)
+    const branch = (await this.command(cwd, ['branch', '--show-current'])).trim()
+    if (!branch) throw new HttpError(409, 'Check out a branch before pushing')
+    const remote = (
+      await this.command(cwd, [
+        'for-each-ref',
+        '--format=%(upstream:remotename)',
+        `refs/heads/${branch}`,
+      ])
+    ).trim()
+    if (remote === '.')
+      throw new HttpError(
+        409,
+        'This branch tracks a local branch. Configure a remote upstream first.',
+      )
+    const remotes = (await this.folderStatus(cwd)).remotes
+    const destination =
+      remote ||
+      (remotes.includes('origin') ? 'origin' : remotes.length === 1 ? remotes[0] : undefined)
+    if (!destination)
+      throw new HttpError(409, 'Choose a Git remote or create a GitHub repository before pushing')
+    const ref = remote
+      ? (
+          await this.command(cwd, [
+            'for-each-ref',
+            '--format=%(upstream:remoteref)',
+            `refs/heads/${branch}`,
+          ])
+        ).trim()
+      : `refs/heads/${branch}`
+    const gh = "'" + this.settings().gh.replaceAll("'", "'\"'\"'") + "'"
+    await this.command(cwd, [
+      '-c',
+      'credential.https://github.com.helper=',
+      '-c',
+      `credential.https://github.com.helper=!${gh} auth git-credential`,
+      'push',
+      '--set-upstream',
+      '--',
+      destination,
+      `HEAD:${ref}`,
+    ])
+  }
+  async openFolder(path: string, target: 'finder' | 'vscode' | 'cursor') {
+    const cwd = await repositoryPath(path)
+    if (process.platform !== 'darwin')
+      throw new HttpError(400, 'Opening Finder or a Mac editor requires a macOS runtime')
+    await this.run(
+      cwd,
+      '/usr/bin/open',
+      target === 'finder'
+        ? [cwd]
+        : ['-a', target === 'vscode' ? 'Visual Studio Code' : 'Cursor', cwd],
+      10000,
+      1024 * 1024,
+    )
+  }
   async inspect(path: string) {
     const cwd = await repositoryPath(path)
     const root = (await this.command(cwd, ['rev-parse', '--show-toplevel'])).replace(/\r?\n$/, '')

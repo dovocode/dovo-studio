@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./projects": "./src/projects-menu.tsx",
-    "./connections": "./src/forge-connections.tsx"
+    "./connections": "./src/forge-connections.tsx",
+    "./repository-actions": "./src/repository-actions.tsx"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

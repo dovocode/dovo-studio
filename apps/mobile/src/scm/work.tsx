@@ -371,11 +371,23 @@ export function WorkScreen({
               <Icon name="next" size={12} color={colors.muted} />
             </View>
             {'state' in row ? (
-              <Text numberOfLines={1} style={styles.muted}>
-                {[row.state, ...(row.assigneeNames ?? row.assignees), ...row.labels]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </Text>
+              <View style={{ gap: 4 }}>
+                <Text style={styles.muted}>
+                  {row.state} · {row.type}
+                  {row.priority ? ` · ${row.priority} priority` : ''}
+                </Text>
+                <Text numberOfLines={2} style={styles.text}>
+                  {(row.assigneeNames ?? row.assignees).length
+                    ? `Assigned to ${(row.assigneeNames ?? row.assignees).join(', ')}`
+                    : 'Unassigned'}
+                </Text>
+                {!!row.labels.length && (
+                  <Text numberOfLines={2} style={styles.muted}>
+                    {row.labels.slice(0, 3).join(' · ')}
+                    {row.labels.length > 3 ? ` · +${row.labels.length - 3} labels` : ''}
+                  </Text>
+                )}
+              </View>
             ) : (
               <WorkSignal status={row.status} />
             )}

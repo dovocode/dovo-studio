@@ -117,6 +117,9 @@ export function PullDetail({
               <GitBranch className="size-3.5 shrink-0" />
               <span className="break-all font-mono">
                 {detail.pull.head} → {detail.pull.base}
+                <span className="ml-2 text-muted-foreground" title={detail.pull.headSha}>
+                  {detail.pull.headSha.slice(0, 8)}
+                </span>
               </span>
             </p>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
@@ -124,6 +127,38 @@ export function PullDetail({
               <Signal signal={pullDetailReviews(detail)} />
               <Signal signal={pullMergeability(detail.pull)} />
             </div>
+            <dl className="grid grid-cols-2 gap-3 rounded-md border bg-card px-3 py-3 text-xs sm:grid-cols-4">
+              <div>
+                <dt className="text-muted-foreground">Changes</dt>
+                <dd className="mt-1 font-medium">
+                  {detail.pull.changedFiles === null
+                    ? 'File count unavailable'
+                    : `${detail.pull.changedFiles} files`}
+                  {detail.pull.additions !== null && detail.pull.deletions !== null && (
+                    <span className="ml-2 tabular-nums">
+                      <span className="text-emerald-400">+{detail.pull.additions}</span>{' '}
+                      <span className="text-red-400">−{detail.pull.deletions}</span>
+                    </span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Requested reviewers</dt>
+                <dd className="mt-1 break-words">
+                  {detail.pull.reviewers.join(', ') || 'None requested'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Assignees</dt>
+                <dd className="mt-1 break-words">
+                  {detail.pull.assignees.join(', ') || 'Unassigned'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Updated</dt>
+                <dd className="mt-1">{new Date(detail.pull.updatedAt).toLocaleString()}</dd>
+              </div>
+            </dl>
             {(detail.stale || detail.refreshError || !connected) && (
               <p role="status" className="text-xs text-amber-400">
                 {!connected
@@ -215,7 +250,7 @@ export function PullDetail({
               <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_240px]">
                 <section aria-label="PR description" className="min-w-0 py-1">
                   <h3 className="mb-4 text-sm font-medium">Description</h3>
-                  <div className="min-w-0 text-sm">
+                  <div className="min-w-0 max-w-prose text-sm leading-7">
                     <MessageResponse
                       baseURL={detail.pull.url}
                       fileBaseURL={
@@ -252,18 +287,6 @@ export function PullDetail({
                     )}
                   </div>
                   <div>
-                    <h3 className="mb-2 font-medium">Requested reviewers</h3>
-                    <p className="break-words text-muted-foreground">
-                      {detail.pull.reviewers.join(', ') || 'None'}
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="mb-2 font-medium">Assignees</h3>
-                    <p className="break-words text-muted-foreground">
-                      {detail.pull.assignees.join(', ') || 'No one'}
-                    </p>
-                  </div>
-                  <div>
                     <h3 className="mb-2 font-medium">Labels</h3>
                     <div className="flex flex-wrap gap-1">
                       {detail.pull.labels.length ? (
@@ -276,27 +299,6 @@ export function PullDetail({
                         <span className="text-muted-foreground">No labels</span>
                       )}
                     </div>
-                  </div>
-                  <div className="space-y-1 border-t pt-3 text-muted-foreground">
-                    <p>
-                      {detail.pull.changedFiles === null
-                        ? 'File count unavailable'
-                        : `${detail.pull.changedFiles} changed files`}
-                    </p>
-                    {detail.pull.additions !== null && detail.pull.deletions !== null && (
-                      <p>
-                        <span className="text-emerald-600 dark:text-emerald-400">
-                          +{detail.pull.additions}
-                        </span>{' '}
-                        <span className="text-red-600 dark:text-red-400">
-                          −{detail.pull.deletions}
-                        </span>
-                      </p>
-                    )}
-                    <p>Updated {new Date(detail.pull.updatedAt).toLocaleString()}</p>
-                    <p className="font-mono" title={detail.pull.headSha}>
-                      {detail.pull.headSha.slice(0, 8)}
-                    </p>
                   </div>
                   <Button size="sm" variant="outline" onClick={() => selectTab('changes')}>
                     Review code changes

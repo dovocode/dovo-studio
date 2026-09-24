@@ -49,7 +49,7 @@ export function PullRow({
             }}
             aria-current={selected ? 'true' : undefined}
             onClick={onSelect}
-            className={`group block w-full rounded-lg border px-3 py-3 text-left transition-colors hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-primary ${selected ? 'border-primary/50 bg-accent' : 'border-transparent bg-transparent'}`}
+            className={`group block w-full rounded-md border px-3 py-3 text-left transition-colors hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-primary ${selected ? 'border-primary/50 bg-accent' : 'border-transparent bg-transparent'}`}
           >
             <div className={`flex gap-3 ${compact ? '' : 'items-center'}`}>
               {pull.state === 'merged' ? (
@@ -68,7 +68,9 @@ export function PullRow({
                     {pullState(pull).label}
                   </Badge>
                 </div>
-                <p className={`mt-1 font-medium ${compact ? 'line-clamp-2 text-sm' : 'text-sm'}`}>
+                <p
+                  className={`mt-1 font-medium ${compact ? 'line-clamp-2 text-sm leading-relaxed' : 'text-sm leading-relaxed'}`}
+                >
                   {pull.title}
                 </p>
                 <p
@@ -80,6 +82,33 @@ export function PullRow({
                     {pull.head} → {pull.base}
                   </span>
                 </p>
+                {!!pull.labels.length && (
+                  <div className="mt-2 flex flex-wrap gap-1" aria-label="Labels">
+                    {pull.labels.slice(0, 3).map((label) => (
+                      <Badge
+                        key={label}
+                        variant="secondary"
+                        className="max-w-40 truncate text-[10px]"
+                        title={label}
+                      >
+                        {label}
+                      </Badge>
+                    ))}
+                    {pull.labels.length > 3 && (
+                      <span
+                        className="text-[10px] text-muted-foreground"
+                        title={pull.labels.slice(3).join(', ')}
+                      >
+                        +{pull.labels.length - 3} labels
+                      </span>
+                    )}
+                  </div>
+                )}
+                {compact && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Updated {new Date(pull.updatedAt).toLocaleDateString()}
+                  </p>
+                )}
                 {pull.state === 'open' && (
                   <div className="mt-2">
                     <Signal signal={pullNextStep(pull)} />

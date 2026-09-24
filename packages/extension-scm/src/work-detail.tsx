@@ -534,7 +534,9 @@ export function WorkContent({
                     {formatDate(row.updatedAt)}
                   </span>
                 </div>
-                <span className="my-1.5 block break-words text-sm font-medium">{row.title}</span>
+                <span className="my-1.5 block break-words text-sm font-medium leading-relaxed">
+                  {row.title}
+                </span>
                 <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   {'status' in row ? (
                     <>
@@ -548,14 +550,26 @@ export function WorkContent({
                   ) : (
                     <>
                       <span>{row.author}</span>
-                      {!!row.assignees.length && (
-                        <span>Assigned to {(row.assigneeNames ?? row.assignees).join(', ')}</span>
+                      {row.priority && (
+                        <span className="rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-foreground">
+                          Priority: {row.priority}
+                        </span>
                       )}
-                      {row.labels.map((label) => (
+                      <span className="text-foreground/80">
+                        {(row.assigneeNames ?? row.assignees).length
+                          ? `Assigned to ${(row.assigneeNames ?? row.assignees).join(', ')}`
+                          : 'Unassigned'}
+                      </span>
+                      {row.labels.slice(0, 3).map((label) => (
                         <span className="rounded bg-muted px-1.5 py-0.5" key={label}>
                           {label}
                         </span>
                       ))}
+                      {row.labels.length > 3 && (
+                        <span title={row.labels.slice(3).join(', ')}>
+                          +{row.labels.length - 3} labels
+                        </span>
+                      )}
                     </>
                   )}
                 </span>
@@ -621,6 +635,48 @@ export function WorkContent({
               <h2 className="break-words text-xl font-semibold leading-snug">
                 {issue.issue.title}
               </h2>
+              <dl className="grid grid-cols-2 gap-3 rounded-md border bg-card p-3 text-xs sm:grid-cols-4">
+                <div>
+                  <dt className="text-muted-foreground">Assigned to</dt>
+                  <dd className="mt-1 break-words">
+                    {(issue.issue.assigneeNames ?? issue.issue.assignees).join(', ') ||
+                      'Unassigned'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Type</dt>
+                  <dd className="mt-1">{issue.issue.type}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Updated</dt>
+                  <dd className="mt-1">{formatDate(issue.issue.updatedAt)}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Discussion</dt>
+                  <dd className="mt-1">
+                    {issue.comments.length}
+                    {issue.next ? '+' : ''} comments loaded
+                  </dd>
+                </div>
+              </dl>
+              {issue.issue.priority && (
+                <p className="text-xs">
+                  <span className="text-muted-foreground">Priority</span>{' '}
+                  <span className="ml-2 font-medium">{issue.issue.priority}</span>
+                </p>
+              )}
+              {!!issue.issue.labels.length && (
+                <div className="flex flex-wrap gap-1" aria-label="Labels">
+                  {issue.issue.labels.map((label) => (
+                    <span
+                      key={label}
+                      className="max-w-full break-words rounded bg-muted px-2 py-1 text-xs"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
@@ -659,29 +715,15 @@ export function WorkContent({
                 {issue.issue.bodyNotice}
               </p>
             )}
-            <section aria-label="Issue description" className="min-w-0 border-t pt-5 text-sm">
+            <section
+              aria-label="Issue description"
+              className="min-w-0 max-w-prose border-t pt-5 text-sm leading-7"
+            >
+              <h3 className="mb-3 font-medium">Description</h3>
               <MessageResponse baseURL={issue.issue.url}>
                 {(issue.issue.preview ?? issue.issue.body) || 'No description provided.'}
               </MessageResponse>
             </section>
-            <details open className="border-y py-2 text-xs">
-              <summary className="cursor-pointer py-1.5 text-muted-foreground hover:text-foreground">
-                Issue details · Updated {formatDate(issue.issue.updatedAt)}
-              </summary>
-              <div className="space-y-3 py-3">
-                <p className="text-muted-foreground">
-                  Assigned to{' '}
-                  {(issue.issue.assigneeNames ?? issue.issue.assignees).join(', ') || 'no one'}
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {issue.issue.labels.map((label) => (
-                    <span key={label} className="rounded bg-muted px-2 py-1">
-                      {label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </details>
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-medium">
                 Discussion

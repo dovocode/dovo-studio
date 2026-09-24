@@ -918,3 +918,17 @@ Choose Update only for the same computer at a new address. The pairing sheet sta
 request completes or you cancel it. Cancelling an offline request can be retried when the connection
 returns. On desktop, address replacement preserves unsent edits under the new connection; use
 **Retry sync** to apply them, or review the conflict if the host changed the same fields.
+
+### Project Git actions
+
+Project checkout controls and the desktop thread’s **Commit & push** button offer staging,
+committing, pushing, and opening the working folder in Finder, VS Code, or Cursor on the
+runtime Mac. Commit actions use staged files; **Push branch** retries a failed push without
+creating another commit. Push respects the branch’s upstream, or sets one using origin (or
+its sole remote), and never force-pushes.
+
+When adding a local folder, **Create on GitHub** appears if it has no Git remote. Choose a
+repository name (optionally owner/name) and private or public visibility; private is the
+default. The runtime uses its configured GitHub CLI account, initializes Git when necessary,
+and adds origin without staging or uploading files. Existing remotes are never replaced.
+After creation, add the project, review and stage its files, then commit and push.

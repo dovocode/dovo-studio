@@ -167,6 +167,7 @@ const rawIssue = mutableStruct({
     issuetype: mutableStruct({
       name: Schema.String,
     }),
+    priority: Schema.optional(Schema.NullOr(mutableStruct({ name: Schema.String }))),
     creator: Schema.optional(Schema.NullOr(person)),
     assignee: Schema.optional(Schema.NullOr(person)),
     labels: Schema.optional(mutableArray(Schema.String)),
@@ -270,6 +271,7 @@ export class JiraWork implements ForgeWorkProvider {
       ...renderJiraBody(raw.fields.description),
       state: raw.fields.status.name,
       type: raw.fields.issuetype.name,
+      ...(raw.fields.priority ? { priority: raw.fields.priority.name } : {}),
       url: new URL('/browse/' + raw.key, this.binding.site).href,
       author: raw.fields.creator?.displayName ?? '',
       assignees: raw.fields.assignee
@@ -322,7 +324,7 @@ export class JiraWork implements ForgeWorkProvider {
       '--limit',
       String(offset + 31),
       '--fields',
-      'key,summary,description,status,issuetype,creator,assignee,labels',
+      'key,summary,description,status,issuetype,priority,creator,assignee,labels',
     ])
     const rows = decode(mutableArray(rawIssue), result)
     return {
@@ -339,7 +341,7 @@ export class JiraWork implements ForgeWorkProvider {
         'view',
         this.key(id),
         '--fields',
-        'key,summary,description,status,issuetype,creator,assignee,labels,updated,comment',
+        'key,summary,description,status,issuetype,priority,creator,assignee,labels,updated,comment',
       ]),
     )
     this.check(value)

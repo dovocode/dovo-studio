@@ -66,6 +66,7 @@ export const forgeIssueSchema = mutableStruct({
   }),
   url,
   author: Schema.String,
+  priority: Schema.optional(Schema.String),
   assignees: mutableArray(Schema.String),
   assigneeNames: Schema.optional(mutableArray(Schema.String)),
   labels: mutableArray(Schema.String),

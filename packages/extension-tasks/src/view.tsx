@@ -1,4 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
+import { TaskTools } from './task-tools'
 import { TaskAgents } from './task-agents'
 import { Monitor, Folder } from 'lucide-react'
 import { BrowserPane } from './browser/browser-pane'
@@ -43,38 +44,52 @@ export default function TasksView({ entityId }: StudioViewProps) {
       '',
   )
   const [deselected, setDeselected] = useApplicationState(false)
+  const task = deselected
+    ? undefined
+    : (localTasks.find((t) => t.id === selectedId) ??
+      (entityId
+        ? undefined
+        : (localTasks.find((t) => !t.archived && !t.archivedAt) ??
+          localTasks.find((t) => !t.archivedAt))))
   const compact = useCompactLayout()
   const [listOpen, setListOpen] = useApplicationState(false)
   const [sidebar, setSidebar] = useApplicationState(true)
-  const [surface, setSurface] = useApplicationState<TaskSurface>('chat')
-  const [split, setSplit] = useApplicationState(false)
+  const threadKey = taskCollectionKey(activeRuntimeId, task?.id ?? selectedId)
+  const [threadSurfaces, setThreadSurfaces] = useApplicationState<Record<string, TaskSurface>>({})
+  const surface = threadSurfaces[threadKey] ?? 'chat'
+  const setSurface = useCallback(
+    (next: TaskSurface) => {
+      setThreadSurfaces((current) => ({ ...current, [threadKey]: next }))
+    },
+    [threadKey],
+  )
   const [terminalVisited, setTerminalVisited] = useApplicationState(false)
   const panes = useRef<Record<TaskSurface, HTMLDivElement | null>>({
     chat: null,
     changes: null,
     terminal: null,
     browser: null,
+    devices: null,
     agents: null,
   })
   const lastFocus = useRef<Partial<Record<TaskSurface, HTMLElement>>>({})
   const focusNext = useRef<TaskSurface | null>(null)
   const selectSurface = useCallback(
     (next: TaskSurface, moveFocus = false) => {
-      for (const id of ['chat', 'changes', 'terminal', 'browser', 'agents'] as const) {
+      for (const id of ['chat', 'changes', 'terminal', 'browser', 'devices', 'agents'] as const) {
         const focused = document.activeElement
         if (focused instanceof HTMLElement && panes.current[id]?.contains(focused)) {
           lastFocus.current[id] = focused
           // A toolbar click keeps focus on the toolbar. In-pane actions and shortcuts
           // move it out of content that is about to become hidden.
-          if (id !== next && (id !== 'chat' || !split || compact)) moveFocus = true
+          if (id !== next && (id !== 'chat' || compact)) moveFocus = true
         }
       }
       if (moveFocus) focusNext.current = next
       setSurface(next)
-      if (next !== 'chat' && !compact) setSplit(true)
       if (next === 'terminal') setTerminalVisited(true)
     },
-    [compact, split],
+    [compact, setSurface],
   )
   useLayoutEffect(() => {
     const next = focusNext.current
@@ -188,8 +203,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
     }))
     setSelectedId(task.id)
     setDeselected(false)
-    setSurface('chat')
-    setSplit(false)
     setChoosingProject(false)
     setListOpen(false)
     setPendingCreate(null)
@@ -280,13 +293,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [toggleTerminal])
-  const task = deselected
-    ? undefined
-    : (localTasks.find((t) => t.id === selectedId) ??
-      (entityId
-        ? undefined
-        : (localTasks.find((t) => !t.archived && !t.archivedAt) ??
-          localTasks.find((t) => !t.archivedAt))))
   const selectedKey = task ? taskCollectionKey(activeRuntimeId, task.id) : ''
   return (
     <>
@@ -349,6 +355,19 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       compact ? 'flex-1' : 'w-[380px] max-w-[48%] shrink-0 border-l',
                     )}
                   >
+                    {!compact && (
+                      <div className="flex h-9 shrink-0 items-center justify-between border-b px-3 text-xs text-muted-foreground">
+                        <span>Thread tools</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2"
+                          onClick={() => selectSurface('chat', true)}
+                        >
+                          Close
+                        </Button>
+                      </div>
+                    )}
                     {surface === 'agents' && (
                       <div
                         ref={(element) => {
@@ -360,15 +379,19 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         <TaskAgents task={task} />
                       </div>
                     )}
-                    {surface === 'browser' && (
+                    {(surface === 'browser' || surface === 'devices') && (
                       <div
                         ref={(element) => {
-                          panes.current.browser = element
+                          panes.current[surface] = element
                         }}
                         tabIndex={-1}
                         className="min-h-0 min-w-0 flex-1"
                       >
-                        <BrowserPane taskId={task.id} />
+                        <BrowserPane
+                          key={surface}
+                          taskId={task.id}
+                          initialMode={surface === 'devices' ? 'devices' : 'remote'}
+                        />
                       </div>
                     )}
                     <div
@@ -396,6 +419,12 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       )}
                     </div>
                   </aside>
+                  {!compact && (
+                    <TaskTools
+                      surface={surface}
+                      onSelect={(next) => selectSurface(next === surface ? 'chat' : next)}
+                    />
+                  )}
                 </div>
               </div>
             ) : (

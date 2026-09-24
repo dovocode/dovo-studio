@@ -348,7 +348,7 @@ it('reads supported search fields without inventing a date or revision', async (
   })
   const args = run.mock.calls[2]![1]
   expect(args[args.indexOf('--fields') + 1]).toBe(
-    'key,summary,description,status,issuetype,creator,assignee,labels',
+    'key,summary,description,status,issuetype,priority,creator,assignee,labels',
   )
   expect(args).toContain(
     'project = TEAM AND statusCategory != Done ORDER BY updated DESC, key DESC',
@@ -434,6 +434,7 @@ it('keeps readable content and a notice when one ADF extension is unsupported', 
         fields: {
           ...raw.fields,
           description,
+          priority: { name: 'Highest' },
           assignee: {
             displayName: 'Sam Developer',
             accountId: '712:opaque-account',
@@ -458,6 +459,7 @@ it('keeps readable content and a notice when one ADF extension is unsupported', 
     bodyNotice: expect.stringContaining('rich content'),
     assignees: ['712:opaque-account'],
     assigneeNames: ['Sam Developer'],
+    priority: 'Highest',
   })
   expect(detail.comments[0]).toMatchObject({
     author: 'Deleted user',
@@ -485,4 +487,14 @@ it('requires a real detail revision before any write', async () => {
     }),
   ).rejects.toThrow('revision')
   expect(run).toHaveBeenCalledTimes(3)
+})
+
+it('accepts an unset Jira priority without inventing a severity', async () => {
+  const run = vi
+    .fn<typeof runForgeCli>()
+    .mockResolvedValueOnce(auth)
+    .mockResolvedValueOnce(JSON.stringify(project))
+    .mockResolvedValueOnce(JSON.stringify({ ...raw, fields: { ...raw.fields, priority: null } }))
+  const detail = await new JiraWork('acli', binding, run).issue(raw.key)
+  expect(detail.issue.priority).toBeUndefined()
 })

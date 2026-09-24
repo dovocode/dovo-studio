@@ -1,3 +1,4 @@
+import { CreateGithub } from './create-github'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { validationMessages } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
@@ -86,8 +87,8 @@ function RepositoryDialogContent({
                 : 'Add repository'}
           </DialogTitle>
           <DialogDescription>
-            Open an existing checkout or clone a repository. Paths refer to the connected runtime
-            host.
+            Open a checkout or clone a repository. For a folder without Git or a remote, choose
+            Create on GitHub after entering its path. Paths refer to the connected runtime host.
           </DialogDescription>
         </DialogHeader>
         {picker === 'directory' ? (
@@ -238,6 +239,7 @@ function RepositoryDialogContent({
                   }}
                 />
               )}
+              {source === 'local' && <CreateGithub path={path} disabled={busy} />}
               <div className="grid gap-2">
                 <label htmlFor={pathId} className="text-xs font-medium text-muted-foreground">
                   {source === 'local' ? 'Local path' : 'Clone parent folder'}

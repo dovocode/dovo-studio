@@ -1,3 +1,4 @@
+import { RepositoryActions } from '@dovo/extension-scm/repository-actions'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import { TaskPullLinkDialog } from './task-pull-link-dialog'
@@ -16,9 +17,18 @@ import {
   Terminal,
 } from 'lucide-react'
 import type { Task } from '@dovo/studio-core'
-import { Badge, Button, IconButton, cn } from '@dovo/studio-ui'
+import {
+  Badge,
+  Button,
+  IconButton,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  cn,
+} from '@dovo/studio-ui'
 import { taskPresentation } from './task-presentation'
-export type TaskSurface = 'chat' | 'changes' | 'terminal' | 'browser' | 'agents'
+export type TaskSurface = 'chat' | 'changes' | 'terminal' | 'browser' | 'devices' | 'agents'
 export function TaskHeader({
   task,
   onSidebar,
@@ -34,6 +44,7 @@ export function TaskHeader({
 }) {
   const { workspace, snapshot, connected } = useWorkspace()
   const host = useStudioHost()
+  const [gitOpen, setGitOpen] = useApplicationState(false)
   const [linking, setLinking] = useApplicationState(false)
   const linkedPulls = taskPullLinks(task)
   const [now, setNow] = useApplicationState(Date.now)
@@ -143,46 +154,71 @@ export function TaskHeader({
         </div>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1">
-        <div
-          role="group"
-          aria-label="Task workspace"
-          className="flex items-center rounded-md border border-border/70 bg-muted/20 p-0.5"
-        >
-          {(
-            [
-              ['chat', 'Chat', MessageSquare, 0],
-              ['changes', 'Diff', Files, task.files.length],
-              ['agents', 'Agents', Bot, task.subagents?.length ?? 0],
-              ['terminal', 'Terminal', Terminal, terminals],
-              ['browser', 'Preview', Globe, 0],
-            ] as const
-          ).map(([id, label, Icon, count]) => (
-            <Button
-              key={id}
-              size="sm"
-              variant="ghost"
-              aria-label={label}
-              title={label}
-              aria-pressed={surface === id}
-              onClick={() => onSurface(id)}
-              className={cn(
-                'gap-1 rounded-sm text-[10px]',
-                compact ? 'size-7 px-1.5' : 'size-7 sm:h-7 sm:w-auto sm:px-2',
-                surface === id && 'bg-background text-foreground shadow-sm',
-              )}
-            >
-              <Icon className="size-3.5" />
-              {!compact && <span className="hidden sm:inline">{label}</span>}
-              {count > 0 && (
-                <span className="hidden text-[9px] tabular-nums text-muted-foreground md:inline">
-                  {count}
-                </span>
-              )}
-            </Button>
-          ))}
-        </div>
+        {compact && (
+          <div
+            role="group"
+            aria-label="Task workspace"
+            className="flex items-center rounded-md border border-border/70 bg-muted/20 p-0.5"
+          >
+            {(
+              [
+                ['chat', 'Chat', MessageSquare, 0],
+                ['changes', 'Diff', Files, task.files.length],
+                ['agents', 'Agents', Bot, task.subagents?.length ?? 0],
+                ['terminal', 'Terminal', Terminal, terminals],
+                ['browser', 'Preview', Globe, 0],
+              ] as const
+            ).map(([id, label, Icon, count]) => (
+              <Button
+                key={id}
+                size="sm"
+                variant="ghost"
+                aria-label={label}
+                title={label}
+                aria-pressed={surface === id}
+                onClick={() => onSurface(id)}
+                className={cn(
+                  'gap-1 rounded-sm text-[10px]',
+                  compact ? 'size-7 px-1.5' : 'size-7 sm:h-7 sm:w-auto sm:px-2',
+                  surface === id && 'bg-background text-foreground shadow-sm',
+                )}
+              >
+                <Icon className="size-3.5" />
+                {!compact && <span className="hidden sm:inline">{label}</span>}
+                {count > 0 && (
+                  <span className="hidden text-[9px] tabular-nums text-muted-foreground md:inline">
+                    {count}
+                  </span>
+                )}
+              </Button>
+            ))}
+          </div>
+        )}
+        {!compact && repo && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px]"
+            onClick={() => setGitOpen(true)}
+          >
+            <GitBranch className="size-3.5" />
+            Commit &amp; push
+          </Button>
+        )}
         <TaskActions key={task.id} task={task} />
       </div>
+      {gitOpen && repo && (
+        <Dialog open onOpenChange={setGitOpen}>
+          <DialogContent className="max-h-[85dvh] overflow-y-auto">
+            <DialogTitle>Git &amp; project actions</DialogTitle>
+            <DialogDescription>
+              Stage and commit changes, push your branch, or open this thread’s working folder on
+              the runtime computer.
+            </DialogDescription>
+            <RepositoryActions repo={repo} taskId={task.id} />
+          </DialogContent>
+        </Dialog>
+      )}
       {linking && (
         <TaskPullLinkDialog key={task.id} task={task} onClose={() => setLinking(false)} />
       )}

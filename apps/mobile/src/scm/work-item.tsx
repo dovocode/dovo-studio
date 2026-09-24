@@ -586,11 +586,20 @@ function WorkItemContent({
                   {(issue.issue.assigneeNames ?? issue.issue.assignees).join(', ') || 'Unassigned'}
                 </Text>
               </Text>
+              {issue.issue.priority && (
+                <Text style={styles.muted}>
+                  Priority <Text style={styles.text}>{issue.issue.priority}</Text>
+                </Text>
+              )}
               {!!issue.issue.author && (
                 <Text style={styles.muted}>
                   Reported by <Text style={styles.text}>{issue.issue.author}</Text>
                 </Text>
               )}
+              <Text style={styles.muted}>
+                {issue.comments.length}
+                {issue.next ? '+' : ''} comments loaded
+              </Text>
               {!!issue.issue.labels.length && (
                 <Text style={styles.muted}>
                   Labels <Text style={styles.text}>{issue.issue.labels.join(' · ')}</Text>

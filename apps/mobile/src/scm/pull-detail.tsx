@@ -221,6 +221,33 @@ export function PullDetail({
                 <Text selectable style={styles.muted}>
                   {detail.pull.head} → {detail.pull.base}
                 </Text>
+                <View
+                  style={{
+                    gap: 5,
+                    paddingVertical: 10,
+                    borderTopWidth: 0.5,
+                    borderBottomWidth: 0.5,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <Text style={styles.text}>
+                    {detail.pull.changedFiles === null
+                      ? 'File count unavailable'
+                      : `${detail.pull.changedFiles} changed files`}
+                    {detail.pull.additions !== null && detail.pull.deletions !== null
+                      ? ` · +${detail.pull.additions} / −${detail.pull.deletions}`
+                      : ''}
+                  </Text>
+                  <Text style={styles.muted}>
+                    Reviewers: {detail.pull.reviewers.join(', ') || 'None requested'}
+                  </Text>
+                  <Text style={styles.muted}>
+                    Assigned to: {detail.pull.assignees.join(', ') || 'Unassigned'}
+                  </Text>
+                  <Text style={styles.muted}>
+                    Updated {new Date(detail.pull.updatedAt).toLocaleString()}
+                  </Text>
+                </View>
                 <View style={styles.row}>
                   <Signal signal={pullDetailChecks(detail)} />
                   <Text style={styles.muted}>·</Text>

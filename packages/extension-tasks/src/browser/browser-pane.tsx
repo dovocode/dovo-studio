@@ -24,17 +24,35 @@ import { RemoteBrowser } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
 const addresses = new Map<string, string>()
-export function BrowserPane({ taskId, onClose }: { taskId: string; onClose?: () => void }) {
+export function BrowserPane({
+  taskId,
+  onClose,
+  initialMode = 'remote',
+}: {
+  taskId: string
+  onClose?: () => void
+  initialMode?: 'remote' | 'devices'
+}) {
   const { connection } = useWorkspace()
   const scope = `${connection?.address ?? ''}:${taskId}`
-  return <BrowserContent key={scope} scope={scope} taskId={taskId} onClose={onClose} />
+  return (
+    <BrowserContent
+      key={scope}
+      scope={scope}
+      taskId={taskId}
+      onClose={onClose}
+      initialMode={initialMode}
+    />
+  )
 }
 function BrowserContent({
   scope,
+  initialMode,
   taskId,
   onClose,
 }: {
   scope: string
+  initialMode: 'remote' | 'devices'
   taskId: string
   onClose?: () => void
 }) {
@@ -48,7 +66,7 @@ function BrowserContent({
     forward: false,
   })
   const editing = useRef(false)
-  const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>('remote')
+  const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>(initialMode)
   const [preset, setPreset] = useApplicationState('fill'),
     [landscape, setLandscape] = useApplicationState(false)
   const [error, setError] = useApplicationState(''),
@@ -95,6 +113,9 @@ function BrowserContent({
       setDiagnostics(result.diagnostics)
     }
   }
+  useEffect(() => {
+    if (initialMode === 'devices' && connected) void act(loadDevices)
+  }, [initialMode, connected])
   const navigate = () => {
     try {
       const target = previewUrl(input, connection?.address)

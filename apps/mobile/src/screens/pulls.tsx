@@ -356,6 +356,19 @@ function PullsContent({
               </Text>
               <Icon name="next" size={12} color={colors.muted} />
             </View>
+            <Text numberOfLines={1} style={styles.muted}>
+              {p.author} · {p.head} → {p.base}
+            </Text>
+            <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
+              <Signal signal={pullChecks(p)} />
+              <Signal signal={pullReview(p)} />
+            </View>
+            {!!p.labels.length && (
+              <Text numberOfLines={2} style={styles.muted}>
+                {p.labels.slice(0, 3).join(' · ')}
+                {p.labels.length > 3 ? ` · +${p.labels.length - 3} labels` : ''}
+              </Text>
+            )}
             <Signal signal={p.state === 'open' ? pullNextStep(p) : pullState(p)} />
           </Pressable>
         )}

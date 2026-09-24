@@ -1,3 +1,8 @@
+import {
+  repositoryFolderSchema,
+  createGithubRepositorySchema,
+  openRepositorySchema,
+} from '@dovo/protocol'
 import { routeProgram, serviceResult } from './effect.js'
 import { mutableStruct, withDefault, mutableArray } from '@dovo/protocol'
 import { minValue, maxValue, refine, decode } from '@dovo/protocol'
@@ -165,6 +170,14 @@ export function scmRoute(request: IncomingMessage, path: string) {
         return yield* serviceResult(
           listGithubRepositories(s.git, yield* serviceResult(body(request))),
         )
+      if (method === 'POST' && path === '/api/scm/repositories/git-status') {
+        const input = decode(repositoryFolderSchema, yield* serviceResult(body(request)))
+        return yield* serviceResult(s.git.folderStatus(input.path))
+      }
+      if (method === 'POST' && path === '/api/scm/repositories/github/create') {
+        const input = decode(createGithubRepositorySchema, yield* serviceResult(body(request)))
+        return yield* serviceResult(s.git.createGithub(input.path, input.name, input.visibility))
+      }
       if (method === 'POST' && path === '/api/scm/repositories/add')
         return yield* addRepositoryEffect(s, yield* serviceResult(body(request)))
       if (method === 'POST' && path.startsWith('/api/scm/')) {
@@ -188,6 +201,15 @@ export function scmRoute(request: IncomingMessage, path: string) {
         const cwd = input.taskId
           ? yield* serviceResult(s.checkouts.directory(input.taskId))
           : repo.path
+        if (path === '/api/scm/push') {
+          yield* serviceResult(s.git.push(cwd))
+          return { ok: true }
+        }
+        if (path === '/api/scm/open-folder') {
+          const { target } = decode(openRepositorySchema, input)
+          yield* serviceResult(s.git.openFolder(cwd, target))
+          return { ok: true }
+        }
         if (path === '/api/scm/pulls/options/read')
           return yield* serviceResult(s.pulls.createOptions(cwd))
         if (path === '/api/scm/repositories/forge/bind') {
