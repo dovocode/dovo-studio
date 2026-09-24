@@ -301,7 +301,8 @@ async function extractZip(file: string, root: string, signal: AbortSignal) {
     await pipeline(
       entry.stream(),
       count,
-      createWriteStream(destination, { flags: 'wx', mode: 0o600 }),
+      // Preserve only owner execution for helpers; never inherit public or special bits.
+      createWriteStream(destination, { flags: 'wx', mode: unixMode & 0o111 ? 0o700 : 0o600 }),
       { signal },
     )
   }

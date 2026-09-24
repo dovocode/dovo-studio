@@ -111,6 +111,19 @@ export async function acpControl<T>(
         timer = setTimeout(() => reject(new Error(`ACP ${label} timed out`)), 30000)
       }),
     ])
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      'data' in error &&
+      error.data &&
+      typeof error.data === 'object' &&
+      'details' in error.data &&
+      typeof error.data.details === 'string'
+    )
+      throw new Error(`ACP ${label}: ${error.message}: ${error.data.details.slice(0, 4000)}`, {
+        cause: error,
+      })
+    throw error
   } finally {
     clearTimeout(timer)
   }

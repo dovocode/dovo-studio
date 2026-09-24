@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   authenticateAcp,
+  acpControl,
   deleteAcpSession,
   inspectAcp,
   listAcpSessions,
@@ -131,4 +132,22 @@ setInterval(() => {}, 1000)
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
   expect(await readFile(stopped, 'utf8')).toBe('yes')
+})
+
+it('keeps ACP server details when control requests fail', async () => {
+  const launch = await fixture()
+  const connection = openAcpConnection(launch, {
+    requestPermission: async () => ({ outcome: { outcome: 'cancelled' } }),
+    sessionUpdate: async () => {},
+  })
+  try {
+    const error = Object.assign(new Error('Internal error'), {
+      data: { details: 'Permission denied: helper' },
+    })
+    await expect(acpControl(connection, Promise.reject(error), 'session setup')).rejects.toThrow(
+      'ACP session setup: Internal error: Permission denied: helper',
+    )
+  } finally {
+    await connection.close()
+  }
 })

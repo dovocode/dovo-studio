@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { gzipSync } from 'node:zlib'
@@ -495,4 +495,36 @@ describe('ACP registry installations', () => {
       await rm(temp, { recursive: true, force: true })
     }
   })
+})
+
+it('preserves executable ZIP helpers without granting special or public permissions', async () => {
+  const temp = await mkdtemp(join(tmpdir(), 'dovo-acp-zip-'))
+  const db = openDatabase(':memory:')
+  const bytes = await readFile(
+    new URL('../testing/fixtures/acp-helpers.zip.fixture', import.meta.url),
+  )
+  const entry = structuredClone(registryEntry)
+  entry.distribution.binary['linux-x86_64'].archive = 'https://example.test/agent.zip'
+  entry.distribution.binary['linux-x86_64'].sha256 = createHash('sha256')
+    .update(bytes)
+    .digest('hex')
+  const installer = new AcpInstallations(db, temp, {
+    platform: 'linux',
+    arch: 'x64',
+    fetch: async (input) =>
+      inputUrl(input).endsWith('/registry.json')
+        ? Response.json({ version: '1.0.0', agents: [entry] })
+        : new Response(bytes),
+  })
+  try {
+    await installer.install(entry.id)
+    const { command } = installer.launch(entry.id)
+    expect((await execFileAsync(command)).stdout).toContain('helper-ready')
+    expect((await stat(join(dirname(command), 'helper'))).mode & 0o7777).toBe(0o700)
+    expect((await stat(join(dirname(command), 'config'))).mode & 0o7777).toBe(0o600)
+  } finally {
+    await installer.dispose()
+    db.close()
+    await rm(temp, { recursive: true, force: true })
+  }
 })
