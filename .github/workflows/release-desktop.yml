@@ -8,6 +8,10 @@ on:
         description: Release tag matching package.json (for example v0.0.1)
         required: true
         default: v0.0.1
+      verify_only:
+        description: Verify existing draft assets without rebuilding
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -15,6 +19,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   draft:
+    if: ${{ !inputs.verify_only }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -207,6 +212,7 @@ jobs:
         run: |
           gh release upload "$TAG" release/* --clobber
   verify:
+    if: ${{ always() && (inputs.verify_only || (needs.mac.result == 'success' && needs.upload.result == 'success')) }}
     needs: [mac, upload]
     runs-on: ubuntu-24.04
     steps:
@@ -228,11 +234,11 @@ jobs:
             "Dovo-Server-${TAG#v}-windows-arm64.zip" \
             "Dovo-Studio-${TAG#v}-windows-x64.exe" \
             "Dovo-Studio-${TAG#v}-windows-arm64.exe" \
-            "Dovo-Studio-${TAG#v}-linux-x64.deb" \
+            "Dovo-Studio-${TAG#v}-linux-amd64.deb" \
             "Dovo-Studio-${TAG#v}-linux-arm64.deb" \
-            "Dovo-Studio-${TAG#v}-linux-x64.rpm" \
-            "Dovo-Studio-${TAG#v}-linux-arm64.rpm" \
-            "Dovo-Studio-${TAG#v}-linux-x64.AppImage" \
+            "Dovo-Studio-${TAG#v}-linux-x86_64.rpm" \
+            "Dovo-Studio-${TAG#v}-linux-aarch64.rpm" \
+            "Dovo-Studio-${TAG#v}-linux-x86_64.AppImage" \
             "Dovo-Studio-${TAG#v}-linux-arm64.AppImage" \
             latest.yml \
             latest-arm64.yml \
