@@ -5,6 +5,9 @@ import { join } from 'node:path'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import { responses, type Automation, type AutomationData } from '@dovo/protocol'
+// These integration tests run real Git checkout/checkpoint subprocesses.
+vi.setConfig({ testTimeout: 30000 })
+const waitForJob = (assertion: () => void) => vi.waitFor(assertion, { timeout: 10000 })
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -35,10 +38,7 @@ it(
       run: async (run) => run.onText('Done'),
     })
     const id = runtime.services.jobs.start('flow', 'delivery-1')
-    // This runs the real checkout/checkpoint subprocesses, which can exceed waitFor's 1s default on CI.
-    await vi.waitFor(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'), {
-      timeout: 10000,
-    })
+    await waitForJob(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
     expect(runtime.services.jobs.list()[0].taskIds).toHaveLength(1)
     expect(
       runtime.services.activity
@@ -58,7 +58,7 @@ it(
     runtime = await startRuntime(options)
     expect(runtime.services.jobs.list()[0].status).toBe('waiting')
     runtime.services.jobs.approve(id, true)
-    await vi.waitFor(() => expect(runtime.services.jobs.list()[0].status).toBe('completed'))
+    await waitForJob(() => expect(runtime.services.jobs.list()[0].status).toBe('completed'))
     expect(() => runtime.services.jobs.start('flow', 'delivery-1')).toThrow('already delivered')
   },
 )
@@ -131,9 +131,9 @@ it('fires due schedules and authenticates webhook payload delivery', async () =>
   s.jobs.tick(now)
   expect(s.jobs.list()).toHaveLength(0)
   s.jobs.tick(now + 60000)
-  await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('waiting'))
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('waiting'))
   s.jobs.approve(s.jobs.list()[0].id, true)
-  await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('completed'))
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('completed'))
   s.jobs.tick(now + 60000)
   expect(s.jobs.list()).toHaveLength(1)
   s.store.update((w) => ({
@@ -180,10 +180,10 @@ it('fires due schedules and authenticates webhook payload delivery', async () =>
     ).status,
   ).toBe(200)
   expect(s.activity.list('Webhook received', 'integration', 0).events[0].payload).toContain('42')
-  await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('waiting'))
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('waiting'))
   expect(s.store.task(s.jobs.list()[0].taskIds[0]).messages[0].text).toContain('"issue": 42')
   s.jobs.approve(s.jobs.list()[0].id, true)
-  await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('completed'))
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('completed'))
   expect(
     (
       await post(hook.path, hook.secret, {
@@ -222,7 +222,7 @@ it('isolates broken schedules and resets due times when trigger modes change', a
   const now = Date.parse('2026-09-07T12:00:00Z')
   s.jobs.tick(now)
   s.jobs.tick(now + 60000)
-  await vi.waitFor(() => expect(s.jobs.list()[0]?.status).toBe('waiting'))
+  await waitForJob(() => expect(s.jobs.list()[0]?.status).toBe('waiting'))
   expect(s.jobs.list()[0].automationId).toBe(valid.id)
   expect(errors).toHaveBeenCalledTimes(1)
   const id = s.jobs.list()[0].id
@@ -257,7 +257,7 @@ it('isolates broken schedules and resets due times when trigger modes change', a
   s.jobs.tick(now + 180000)
   expect(s.jobs.list()).toHaveLength(1)
   s.jobs.tick(now + 240000)
-  await vi.waitFor(() => expect(s.jobs.list()[0]?.status).toBe('waiting'))
+  await waitForJob(() => expect(s.jobs.list()[0]?.status).toBe('waiting'))
   expect(s.jobs.list()).toHaveLength(2)
 })
 it('does not advance a cancelled task into a review gate', async () => {
@@ -284,11 +284,11 @@ it('does not advance a cancelled task into a review gate', async () => {
       ),
   })
   const id = s.jobs.start('flow')
-  await vi.waitFor(() =>
+  await waitForJob(() =>
     expect(s.store.get().tasks.some((task) => task.status === 'running')).toBe(true),
   )
   s.jobs.cancel(id)
-  await vi.waitFor(() =>
+  await waitForJob(() =>
     expect(s.store.get().tasks.find((task) => task.origin === 'flow')?.status).toBe('cancelled'),
   )
   expect(s.jobs.list()[0].status).toBe('cancelled')
@@ -367,9 +367,9 @@ it('retries only the failed task, retaining successful steps and approved review
     run: execute,
   })
   const id = s.jobs.startManual(flow.id, 'request-one')
-  await vi.waitFor(() => expect(s.jobs.list()[0].waitingNodeId).toBe('middle-review'))
+  await waitForJob(() => expect(s.jobs.list()[0].waitingNodeId).toBe('middle-review'))
   s.jobs.approve(id, true)
-  await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('failed'))
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('failed'))
   const failed = s.jobs.list()[0]
   expect(failed.failedNodeId).toBe('second-task')
   expect(failed.currentNodeId).toBeUndefined()
@@ -385,7 +385,7 @@ it('retries only the failed task, retaining successful steps and approved review
   expect(failed.completedNodes).toEqual(['trigger', 'task', 'middle-review'])
   fail = false
   expect(s.jobs.retry(id)).toBe(id)
-  await vi.waitFor(() => expect(s.jobs.list()[0].waitingNodeId).toBe('review'))
+  await waitForJob(() => expect(s.jobs.list()[0].waitingNodeId).toBe('review'))
   const retried = s.jobs.list()[0]
   expect(retried.taskIds).toEqual(failed.taskIds)
   expect(s.store.get().tasks).toHaveLength(2)
@@ -409,7 +409,7 @@ it('retries only the failed task, retaining successful steps and approved review
     taskId: failed.taskIds[1],
   })
   s.jobs.approve(id, true)
-  await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('completed'))
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('completed'))
 })
 it('cancels during checkout preparation and retries the same unfinished task', async () => {
   const f = await fixture()
@@ -440,12 +440,12 @@ it('cancels during checkout preparation and retries the same unfinished task', a
     run: execute,
   })
   const id = s.jobs.start('flow')
-  await vi.waitFor(() => expect(s.store.get().tasks[0]?.activity).toBe('Preparing checkout'))
+  await waitForJob(() => expect(s.store.get().tasks[0]?.activity).toBe('Preparing checkout'))
   const taskId = s.jobs.list()[0].taskIds[0]
   s.jobs.cancel(id)
   expect(() => s.jobs.retry(id)).toThrow('Wait for the current step to stop')
   release()
-  await vi.waitFor(() => expect(s.store.task(taskId).status).toBe('cancelled'))
+  await waitForJob(() => expect(s.store.task(taskId).status).toBe('cancelled'))
   expect(execute).not.toHaveBeenCalled()
   expect(s.jobs.list()[0].steps?.find((step) => step.nodeId === 'task')).toMatchObject({
     status: 'cancelled',
@@ -453,7 +453,7 @@ it('cancels during checkout preparation and retries the same unfinished task', a
     finishedAt: expect.any(String),
   })
   s.jobs.retry(id)
-  await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('waiting'))
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('waiting'))
   expect(s.jobs.list()[0].taskIds).toEqual([taskId])
   expect(execute).toHaveBeenCalledTimes(1)
 })
@@ -549,7 +549,7 @@ it('shuts down running jobs before storage closes and resumes interrupted work e
     run: execute,
   })
   const id = runtime.services.jobs.start('flow')
-  await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(1))
+  await waitForJob(() => expect(execute).toHaveBeenCalledTimes(1))
   const taskId = runtime.services.jobs.list()[0].taskIds[0]
   await runtime.close()
   runtime = await startRuntime(options)
@@ -583,7 +583,7 @@ it('shuts down running jobs before storage closes and resumes interrupted work e
   expect(await response.json()).toEqual({
     id,
   })
-  await vi.waitFor(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
+  await waitForJob(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
   expect(runtime.services.jobs.list()[0].taskIds).toEqual([taskId])
 })
 it.each([false, true])(
@@ -607,7 +607,7 @@ it.each([false, true])(
       run: async () => {},
     })
     const id = runtime.services.jobs.start('flow')
-    await vi.waitFor(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
+    await waitForJob(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
     const original = runtime.services.jobs.list()[0]
     // Simulate a crash after the task persisted success but before Jobs committed the step.
     const stored = {
@@ -645,7 +645,7 @@ it.each([false, true])(
       completedNodes: ['trigger', 'task'],
     })
     runtime.services.jobs.retry(id)
-    await vi.waitFor(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
+    await waitForJob(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
     expect(runtime.services.jobs.list()[0].taskIds).toEqual(original.taskIds)
     expect(runtime.services.store.get().tasks).toHaveLength(1)
     expect(execute).not.toHaveBeenCalled()
@@ -674,14 +674,14 @@ it('rolls back task creation when persisting its step association fails', async 
     run: execute,
   })
   const id = s.jobs.start('flow')
-  await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('failed'))
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('failed'))
   expect(s.jobs.list()[0].error).toContain('fixture task link failure')
   expect(s.jobs.list()[0].taskIds).toEqual([])
   expect(s.store.get().tasks).toEqual([])
   expect(execute).not.toHaveBeenCalled()
   s.db.exec('DROP TRIGGER fail_task_link')
   s.jobs.retry(id)
-  await vi.waitFor(() => expect(s.jobs.list()[0].status).toBe('waiting'))
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('waiting'))
   expect(s.store.get().tasks).toHaveLength(1)
   expect(execute).toHaveBeenCalledTimes(1)
 })
