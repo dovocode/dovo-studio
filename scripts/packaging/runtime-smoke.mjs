@@ -8,10 +8,10 @@ try {
   const terminal = runtime.services.terminals.create('packaging-check', process.cwd());
   await new Promise((resolve, reject) => {
     let output = '';
-    const timeout = setTimeout(() => reject(new Error('Packaged terminal did not respond')), 15000);
+    const timeout = setTimeout(() => reject(new Error('Packaged terminal did not respond: ' + JSON.stringify(output.slice(-2000)))), 15000);
     runtime.services.terminals.attach(terminal.id, (chunk) => {
       output += chunk;
-      if (output.includes('\\nDOVO_RUNTIME_READY\\r')) {
+      if (output.split(/[\\r\\n]/).includes('DOVO_RUNTIME_READY')) {
         clearTimeout(timeout);
         resolve();
       }
