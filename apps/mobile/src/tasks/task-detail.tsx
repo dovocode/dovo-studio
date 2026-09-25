@@ -1,14 +1,11 @@
 import { responses } from '@dovo/protocol'
 import { useAction } from '../ui/use-action'
-import { nativeEffect } from '../runtime/native-effect'
-import { runClientEffect } from '@dovo/client-runtime'
-import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/application-state'
 import { TaskAgents } from './task-agents'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BrowserPane } from './browser-pane'
-import { Conversation } from './conversation'
-import { ConversationProvider } from './conversation-provider'
+import { Conversation } from './conversation/view'
+import { ConversationProvider } from './conversation/provider'
 import { useNavigation } from '../shell/navigation'
 import { MessageQueue } from './message-queue'
 import { TaskQuestions } from './task-questions'
@@ -30,7 +27,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
   const { focused } = useNavigation()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const { snapshot, connected, profile, refreshEffect, callEffect } = useRuntime()
+  const { snapshot, connected, profiles, callEffect } = useRuntime()
   const resume = useAction()
   const needsInput =
     snapshot?.questions.some((q) => q.taskId === task.id) ||
@@ -39,7 +36,10 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
   const latestTurn = task.turns?.at(-1)
   const runtimeHost =
     (latestTurn ? latestTurn.runtimeHost : snapshot?.runtimeHost) ?? 'Unknown device'
-  const subtitle = [repository?.name, runtimeHost].filter(Boolean).join(' · ')
+  // Name the computer only when there is more than one to tell apart.
+  const subtitle = [repository?.name, profiles.length > 1 ? runtimeHost : undefined]
+    .filter(Boolean)
+    .join(' · ')
   const status = task.archivedAt
     ? 'Archived'
     : task.archived
@@ -141,38 +141,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
           <TaskSource task={task} />
         </View>
       )}
-      {!connected && (
-        <View
-          style={[
-            styles.row,
-            {
-              paddingHorizontal: 16,
-              paddingVertical: 4,
-              flexWrap: 'nowrap',
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.muted,
-              {
-                flex: 1,
-              },
-            ]}
-          >
-            {profile?.name ?? 'Computer'} offline · Saved conversation
-          </Text>
-          <Action
-            secondary
-            label="Reconnect"
-            onPress={() => {
-              void runClientEffect(
-                refreshEffect().pipe(Effect.catchAll(() => nativeEffect(() => undefined))),
-              )
-            }}
-          />
-        </View>
-      )}
+      {/* Offline and reconnect state lives in the floating pill above the composer. */}
       {viewed.error && (
         <View
           style={[

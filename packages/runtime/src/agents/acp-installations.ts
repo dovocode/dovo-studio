@@ -19,7 +19,7 @@ import type { ChildProcess } from 'node:child_process'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { Transform } from 'node:stream'
-import { mutableArray, mutableStruct, decode, decodeResult } from '@dovo/protocol'
+import { mutableArray, mutableStruct, decode } from '@dovo/protocol'
 import {
   acpInstallationSchema,
   acpRegistryResponseSchema,
@@ -31,11 +31,20 @@ import type Database from 'better-sqlite3'
 import { Schema } from 'effect'
 import * as tar from 'tar'
 import * as unzipper from 'unzipper'
-import { valid as semverValid } from 'semver'
 import { processEnvironment } from '../process.js'
 import { stopAcpChild } from './providers/acp-process.js'
+import {
+  REGISTRY_URL,
+  distributionAvailable,
+  parseRegistryResponse,
+  platformKey,
+  publicUrl,
+  selectedDistribution,
+  type BinaryTarget,
+  type Distribution,
+  type PackageDistribution,
+} from './acp-installation/registry.js'
 
-const REGISTRY_URL = 'https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json'
 const MAX_REGISTRY_BYTES = 8 * 1024 * 1024
 const MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
 const MAX_EXTRACTED_BYTES = 1024 * 1024 * 1024
@@ -43,48 +52,12 @@ const MAX_ARCHIVE_ENTRIES = 100_000
 const INSTALL_DOCUMENT_ID = 'acp-installations'
 
 const boundedString = (max: number) => Schema.String.pipe(Schema.maxLength(max))
-const argSchema = boundedString(4096)
-const argsSchema = mutableArray(argSchema)
+const argsSchema = mutableArray(boundedString(4096))
 const environmentSchema = Schema.Record({
   key: boundedString(256),
   value: boundedString(4096),
 })
-const optionalEnvironment = Schema.optional(environmentSchema)
-const binaryTargetSchema = mutableStruct({
-  archive: boundedString(4096),
-  sha256: Schema.optional(boundedString(64)),
-  cmd: boundedString(4096),
-  args: Schema.optional(argsSchema),
-  env: optionalEnvironment,
-})
-const packageDistributionSchema = mutableStruct({
-  package: boundedString(4096),
-  args: Schema.optional(argsSchema),
-  env: optionalEnvironment,
-})
 const packageBinSchema = Schema.Union(Schema.String, environmentSchema)
-const distributionSchema = mutableStruct({
-  binary: Schema.optional(Schema.Record({ key: Schema.String, value: binaryTargetSchema })),
-  npx: Schema.optional(packageDistributionSchema),
-  uvx: Schema.optional(packageDistributionSchema),
-})
-const registryEntrySchema = mutableStruct({
-  id: boundedString(100),
-  name: boundedString(500),
-  version: boundedString(100),
-  description: boundedString(20_000),
-  repository: Schema.optional(boundedString(4096)),
-  website: Schema.optional(boundedString(4096)),
-  authors: Schema.optional(mutableArray(boundedString(500))),
-  license: Schema.optional(boundedString(500)),
-  license_url: Schema.optional(boundedString(4096)),
-  icon: Schema.optional(boundedString(4096)),
-  distribution: distributionSchema,
-})
-const registryEnvelopeSchema = mutableStruct({
-  version: boundedString(100),
-  agents: mutableArray(Schema.Unknown),
-})
 const storedInstallationSchema = mutableStruct({
   ...acpInstallationSchema.fields,
   command: boundedString(4096),
@@ -94,23 +67,8 @@ const storedInstallationSchema = mutableStruct({
   metadataPath: boundedString(8192),
 })
 const storedInstallationsSchema = mutableArray(storedInstallationSchema)
-type RegistryEntry = Schema.Schema.Type<typeof registryEntrySchema>
-type BinaryTarget = Schema.Schema.Type<typeof binaryTargetSchema>
-type PackageDistribution = Schema.Schema.Type<typeof packageDistributionSchema>
 type StoredInstallation = Schema.Schema.Type<typeof storedInstallationSchema>
 export type AcpLaunch = { command: string; args: string[]; env: Record<string, string> }
-
-type RegistryPlatform =
-  | 'darwin-aarch64'
-  | 'darwin-x86_64'
-  | 'linux-aarch64'
-  | 'linux-x86_64'
-  | 'windows-aarch64'
-  | 'windows-x86_64'
-type Distribution =
-  | { kind: 'binary'; value: BinaryTarget }
-  | { kind: 'npx'; value: PackageDistribution }
-  | { kind: 'uvx'; value: PackageDistribution }
 
 type RunCommand = (
   command: string,
@@ -123,54 +81,6 @@ export type AcpInstallationsOptions = {
   platform?: NodeJS.Platform
   arch?: string
   runCommand?: RunCommand
-}
-
-function platformKey(platform: NodeJS.Platform, arch: string): RegistryPlatform | undefined {
-  const os =
-    platform === 'darwin'
-      ? 'darwin'
-      : platform === 'linux'
-        ? 'linux'
-        : platform === 'win32'
-          ? 'windows'
-          : undefined
-  const cpu = arch === 'arm64' ? 'aarch64' : arch === 'x64' ? 'x86_64' : undefined
-  return os && cpu ? (`${os}-${cpu}` as RegistryPlatform) : undefined
-}
-
-function validRegistryVersion(value: string) {
-  return semverValid(value) === value
-}
-
-function publicUrl(value: string | undefined) {
-  if (!value) return undefined
-  try {
-    const parsed = new URL(value)
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function selectedDistribution(
-  entry: RegistryEntry,
-  target: RegistryPlatform | undefined,
-): Distribution | undefined {
-  const binary = target ? entry.distribution.binary?.[target] : undefined
-  if (binary) return { kind: 'binary', value: binary }
-  if (entry.distribution.npx) return { kind: 'npx', value: entry.distribution.npx }
-  if (entry.distribution.uvx) return { kind: 'uvx', value: entry.distribution.uvx }
-  if (entry.distribution.binary && Object.keys(entry.distribution.binary).length)
-    return { kind: 'binary', value: Object.values(entry.distribution.binary)[0]! }
-  return undefined
-}
-
-function distributionAvailable(entry: RegistryEntry, target: RegistryPlatform | undefined) {
-  return !!(
-    (target && entry.distribution.binary?.[target]) ||
-    entry.distribution.npx ||
-    entry.distribution.uvx
-  )
 }
 
 function safeArchivePath(root: string, entryPath: string) {
@@ -780,23 +690,7 @@ export class AcpInstallations {
     } catch {
       throw new Error('ACP Registry returned invalid JSON')
     }
-    const envelope = decodeResult(registryEnvelopeSchema, raw)
-    if (!envelope.success || !validRegistryVersion(envelope.data.version))
-      throw new Error('ACP Registry returned an unsupported response')
-    if (!envelope.data.version.startsWith('1.'))
-      throw new Error(`ACP Registry version ${envelope.data.version} is not supported`)
-    const agents: RegistryEntry[] = []
-    for (const candidate of envelope.data.agents) {
-      const parsed = decodeResult(registryEntrySchema, candidate)
-      if (
-        !parsed.success ||
-        !/^[a-z][a-z0-9-]*$/.test(parsed.data.id) ||
-        !validRegistryVersion(parsed.data.version)
-      )
-        continue
-      agents.push(parsed.data)
-    }
-    return { version: envelope.data.version, agents }
+    return parseRegistryResponse(raw)
   }
 
   private async prepareDistribution(

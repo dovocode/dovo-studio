@@ -58,6 +58,8 @@ export function openAcpConnection(
   })
   void exited.catch(() => {})
   child.on('error', rejectExit)
+  // An agent that exits closes stdin; an unobserved pipe 'error' would crash the runtime.
+  child.stdin.on('error', (error) => rejectExit(error))
   child.on('exit', (code) =>
     rejectExit(new Error(`ACP ${basename(launch.command)} exited (${code})`)),
   )

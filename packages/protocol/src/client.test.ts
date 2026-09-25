@@ -649,3 +649,64 @@ it.each([307, 308])(
     }
   },
 )
+
+it('retries a dropped snapshot read before reporting the host offline', async () => {
+  const transport = vi
+    .fn<typeof globalThis.fetch>()
+    .mockRejectedValueOnce(new TypeError('The network connection was lost.'))
+    .mockResolvedValueOnce(new Response('Bad gateway', { status: 502 }))
+    .mockResolvedValue(Response.json({ revision: 3 }))
+  vi.stubGlobal('fetch', transport)
+  await expect(readSnapshot()).resolves.toEqual({ revision: 3 })
+  expect(transport).toHaveBeenCalledTimes(3)
+})
+
+it('stops retrying a read after two transient failures', async () => {
+  const transport = vi
+    .fn<typeof globalThis.fetch>()
+    .mockRejectedValue(new TypeError('Network request failed'))
+  vi.stubGlobal('fetch', transport)
+  await expect(readSnapshot()).rejects.toMatchObject({ kind: 'connection' })
+  expect(transport).toHaveBeenCalledTimes(3)
+})
+
+it('never retries mutations or rejected reads', async () => {
+  const transport = vi
+    .fn<typeof globalThis.fetch>()
+    .mockRejectedValue(new TypeError('Network request failed'))
+  vi.stubGlobal('fetch', transport)
+  await expect(
+    runtimeRequest(connection, connection.address, '/api/tasks', {}, dataSchema),
+  ).rejects.toMatchObject({ kind: 'connection' })
+  expect(transport).toHaveBeenCalledTimes(1)
+  transport.mockReset().mockResolvedValue(Response.json({ error: 'Revoked' }, { status: 401 }))
+  await expect(readSnapshot()).rejects.toMatchObject({ status: 401, message: 'Revoked' })
+  expect(transport).toHaveBeenCalledTimes(1)
+})
+
+it('reports the status of a plain-text gateway failure', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response('Unavailable', { status: 500 })),
+  )
+  await expect(readSnapshot()).rejects.toMatchObject({
+    status: 500,
+    message: 'Runtime request failed (500)',
+  })
+})
+
+it('retries a dropped chat message because the runtime deduplicates its message ID', async () => {
+  const transport = vi
+    .fn<typeof globalThis.fetch>()
+    .mockRejectedValueOnce(new TypeError('The network connection was lost.'))
+    .mockResolvedValue(Response.json({ ok: true }))
+  vi.stubGlobal('fetch', transport)
+  const input = { id: 'task', messageId: 'message-1', text: 'Hello', attachmentIds: [] }
+  await expect(
+    runtimeRequest(connection, connection.address, '/api/tasks/message', input, Schema.Unknown),
+  ).resolves.toEqual({ ok: true })
+  expect(transport).toHaveBeenCalledTimes(2)
+  for (const [, init] of transport.mock.calls) expect(init?.body).toBe(JSON.stringify(input))
+})

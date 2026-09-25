@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { JiraWork } from './jira.js'
 import { Schema } from 'effect'
 import type Database from 'better-sqlite3'
+import { runClientEffect } from '@dovo/client-runtime'
 import {
   forgeIssueActionSchema,
   forgeIssueCreateSchema,
@@ -30,19 +31,18 @@ import type { GitService } from './git.js'
 import type { WorkspaceStore } from '../storage/workspace.js'
 import { HttpError, errorMessage } from '../errors.js'
 import { runForgeCli } from './forge-cli.js'
+import { ForgeWorkCache } from './work/cache.js'
 export class ForgeWork {
-  private versions = new Map<string, number>()
+  private cache: ForgeWorkCache
   constructor(
-    private db: Database.Database,
+    db: Database.Database,
     private store: WorkspaceStore,
     private git: GitService,
     private forges: ForgeConnections,
     private pulls: ForgePullRequests,
     private commands: () => CommandSettings,
   ) {
-    db.exec(
-      'CREATE TABLE IF NOT EXISTS forge_work_cache (key TEXT PRIMARY KEY, source TEXT NOT NULL, value TEXT NOT NULL, updated INTEGER NOT NULL)',
-    )
+    this.cache = new ForgeWorkCache(db)
   }
   private async target(repositoryId: string): Promise<{
     cwd: string
@@ -245,90 +245,54 @@ export class ForgeWork {
           : operation === 'issues/action'
             ? await provider.actOnIssue(decode(forgeIssueActionSchema, data))
             : await provider.actOnPipeline(decode(forgePipelineActionSchema, data))
-      this.versions.set(source, (this.versions.get(source) ?? 0) + 1)
-      this.db.prepare('DELETE FROM forge_work_cache WHERE source=?').run(source)
+      await this.cache.invalidate(source)
       return decode(forgeWorkResultSchema, result)
     }
     const key = JSON.stringify([source, operation, data.id, query.state, query.cursor, query.query])
-    const read = async <
-      T extends {
-        cachedAt?: string
-        stale?: boolean
-        refreshError?: string
-      },
-      I,
-    >(
-      schema: Schema.Schema<T, I>,
-      load: () => Promise<T>,
-    ) => {
-      const row = decode(
-        Schema.UndefinedOr(
-          mutableStruct({
-            value: Schema.String,
-            updated: Schema.Number.pipe(Schema.finite()),
-          }),
-        ),
-        this.db.prepare('SELECT value,updated FROM forge_work_cache WHERE key=?').get(key),
-      )
-      let cached: T | undefined
-      if (row) {
-        try {
-          const result = decodeResult(schema, JSON.parse(row.value))
-          if (result.success) cached = result.data
-        } catch {
-          // Cache entries are disposable; invalid persisted JSON must not block the provider.
-        }
-        if (!cached) this.db.prepare('DELETE FROM forge_work_cache WHERE key=?').run(key)
-      }
-      if (row && cached && !query.refresh && Date.now() - row.updated < 30000)
-        return {
-          ...cached,
-          cachedAt: new Date(row.updated).toISOString(),
-        }
-      const version = this.versions.get(source) ?? 0
-      try {
-        const result = decode(schema, await load()),
-          updated = Date.now()
-        validateSource()
-        if (version === (this.versions.get(source) ?? 0)) {
-          this.db
-            .prepare(
-              'INSERT OR REPLACE INTO forge_work_cache(key,source,value,updated) VALUES(?,?,?,?)',
-            )
-            .run(key, source, JSON.stringify(result), updated)
-          this.db
-            .prepare(
-              'DELETE FROM forge_work_cache WHERE key IN (SELECT key FROM forge_work_cache ORDER BY updated DESC LIMIT -1 OFFSET 500)',
-            )
-            .run()
-        }
-        return {
-          ...result,
-          cachedAt: new Date(updated).toISOString(),
-          stale: version !== (this.versions.get(source) ?? 0),
-        }
-      } catch (error) {
-        validateSource()
-        if (cached)
-          return {
-            ...cached,
-            cachedAt: new Date(row!.updated).toISOString(),
-            stale: true,
-            refreshError: errorMessage(error),
-          }
-        throw error
-      }
-    }
     if (operation === 'issues/list')
-      return read(forgeIssuePageSchema, () =>
-        provider.issues(query.state, query.cursor, query.query),
+      return runClientEffect(
+        this.cache.readEffect({
+          key,
+          source,
+          schema: forgeIssuePageSchema,
+          refresh: query.refresh,
+          load: () => provider.issues(query.state, query.cursor, query.query),
+          validateSource,
+        }),
       )
     if (operation === 'issues/detail')
-      return read(forgeIssueDetailSchema, () => provider.issue(id(), query.cursor))
+      return runClientEffect(
+        this.cache.readEffect({
+          key,
+          source,
+          schema: forgeIssueDetailSchema,
+          refresh: query.refresh,
+          load: () => provider.issue(id(), query.cursor),
+          validateSource,
+        }),
+      )
     if (operation === 'pipelines/list')
-      return read(forgePipelinePageSchema, () => provider.pipelines(query.cursor))
+      return runClientEffect(
+        this.cache.readEffect({
+          key,
+          source,
+          schema: forgePipelinePageSchema,
+          refresh: query.refresh,
+          load: () => provider.pipelines(query.cursor),
+          validateSource,
+        }),
+      )
     if (operation === 'pipelines/detail')
-      return read(forgePipelineDetailSchema, () => provider.pipeline(id(), query.cursor))
+      return runClientEffect(
+        this.cache.readEffect({
+          key,
+          source,
+          schema: forgePipelineDetailSchema,
+          refresh: query.refresh,
+          load: () => provider.pipeline(id(), query.cursor),
+          validateSource,
+        }),
+      )
     if (operation === 'pipelines/definitions')
       return decode(forgeDefinitionsSchema, await provider.definitions(query.cursor))
     throw new HttpError(404, 'Source control operation not found')

@@ -69,14 +69,22 @@ export class JsonLineReader extends AbstractMessageReader {
 export class JsonLineWriter extends AbstractMessageWriter {
   constructor(private readonly output: Writable) {
     super()
+    // A child that exits closes this pipe; an unobserved stream 'error' crashes the runtime.
+    output.on('error', (error) => this.fireError(error))
   }
+  /** Never rejects: vscode-jsonrpc rethrows write failures from an async Promise executor,
+   * which surfaces as an unhandled rejection. Failures go to the connection's error event, and
+   * the owner settles pending requests when the child exits and the connection is disposed. */
   write(message: Message): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
+      if (this.output.destroyed || this.output.writableEnded) {
+        this.fireError(new Error('Agent process input is closed'))
+        resolve()
+        return
+      }
       this.output.write(JSON.stringify(message) + '\n', (error) => {
-        if (error) {
-          this.fireError(error)
-          reject(error)
-        } else resolve()
+        if (error) this.fireError(error)
+        resolve()
       })
     })
   }

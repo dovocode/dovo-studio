@@ -82,7 +82,7 @@ app.on('browser-window-created', (_event, window) => {
         if(overview().querySelectorAll('article').length!==2)throw new Error('Both device cards were not preserved');
         const computers=()=>overview().querySelector('[aria-label="Connected computers"]');
         if(!computers()?.innerText.includes('2 of 2 online'))throw new Error('Online aggregate is not 2 of 2');
-        await wait(()=>computers()?.innerText.includes('1 PRs need attention'));
+        await wait(()=>computers()?.innerText.includes('1 PR needs attention'));
         for(const article of overview().querySelectorAll('article'))if(!article.innerText.includes('1 PRs'))throw new Error('Host PR count missing: '+article.innerText);
         if(overview().querySelector('[aria-label="Tasks across devices"]').querySelectorAll('button[aria-label^="Open "]').length!==2)throw new Error('Overlapping task IDs were merged');
         const pick=async(label,value)=>{button(label).click();await wait(()=>document.querySelector('[role="listbox"]'));const option=[...document.querySelectorAll('[role="option"]')].find(el=>el.dataset.value===value);if(!option)throw new Error('Missing '+label+' '+value);option.click();await wait(()=>!document.querySelector('[role="listbox"]'))};

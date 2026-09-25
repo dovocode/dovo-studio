@@ -230,3 +230,33 @@ it('keeps a shared refresh alive after a caller leaves and drains it before disp
   await expect(cache.list('/repo', 'open', 1, true)).rejects.toThrow('Pull cache is closed')
   expect(load).toHaveBeenCalledTimes(1)
 })
+
+it('finishes disposing the cache when the disposing caller is interrupted', async () => {
+  const { cache, pulls, db } = setup()
+  let finish: (value: { pulls: []; page: number; hasMore: boolean }) => void = () => {
+    throw new Error('Refresh did not start')
+  }
+  const load = vi.spyOn(pulls, 'list').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  const caller = Effect.runFork(cache.listEffect('/repo', 'open', 1))
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+  await Effect.runPromise(Fiber.interrupt(caller))
+
+  let disposed = false
+  const closing = Effect.runPromise(Fiber.interrupt(Effect.runFork(cache.disposeEffect()))).then(
+    () => {
+      disposed = true
+    },
+  )
+  await Promise.resolve()
+  expect(disposed).toBe(false)
+  finish({ pulls: [], page: 1, hasMore: false })
+  await closing
+  expect(disposed).toBe(true)
+  expect(db.prepare('SELECT COUNT(*) AS count FROM pull_cache').get()).toEqual({ count: 1 })
+  await expect(cache.list('/repo', 'open', 1, true)).rejects.toThrow('Pull cache is closed')
+})

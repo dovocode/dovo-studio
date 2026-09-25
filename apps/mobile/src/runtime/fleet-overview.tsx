@@ -1,14 +1,19 @@
 import { useApplicationState } from './application-state'
 import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
-import { aggregateRuntimeTasks, type RuntimeOverview } from '@dovo/protocol'
+import { aggregateRuntimeTasks, runtimeReachability, type RuntimeOverview } from '@dovo/protocol'
 import { useNavigation } from '../shell/navigation'
 import { colors, styles } from '../ui/theme'
 import { Icon } from '../ui/icon'
 import { Sheet } from '../ui/sheet'
 import { Action } from '../ui/action'
 function status(entry: RuntimeOverview) {
-  return entry.connected ? 'Online' : entry.lastSeen || entry.error ? 'Offline' : 'Connecting'
+  const reachability = runtimeReachability(entry)
+  return reachability === 'online'
+    ? 'Online'
+    : reachability === 'offline'
+      ? 'Offline'
+      : 'Connecting…'
 }
 function activity(entry: RuntimeOverview) {
   if (!entry.snapshot) return entry.error ? 'Activity unavailable' : 'Loading activity…'

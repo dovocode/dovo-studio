@@ -7,7 +7,7 @@ import { useAction } from '../ui/use-action'
 import { Choice } from '../ui/choice'
 import { Text } from '../ui/text'
 import { styles } from '../ui/theme'
-import { saveRuntimeDraft } from './use-draft'
+import { saveRuntimeDraft } from './draft/use-draft'
 export function TaskMachineSelector({
   task,
   text,
@@ -42,6 +42,8 @@ export function TaskMachineSelector({
   )
   const value = JSON.stringify([runtime.activeId, task.repositoryId])
   const editable = canChangeTaskCheckout(task) && !task.archivedAt
+  // With no other computer holding this project there is nothing to choose.
+  if (targets.length < 2 && !error) return null
   return (
     <View style={{ gap: 4 }}>
       <Choice

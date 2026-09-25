@@ -153,62 +153,45 @@ const markdownStyle: MarkdownStyle = {
     checkedStrikethrough: false,
   },
 }
+// Conversation reading: generous body text, quiet inline code and roomy lists.
 const chatMarkdownStyle: MarkdownStyle = {
   ...markdownStyle,
   paragraph: {
     ...markdownStyle.paragraph,
     ...styles.chatText,
-    marginBottom: 10,
+    marginBottom: 14,
   },
-  h1: {
-    ...heading,
-    fontSize: 25,
-    lineHeight: 30,
-    marginTop: 16,
-  },
-  h2: {
-    ...heading,
-    fontSize: 21,
-    lineHeight: 26,
-    marginTop: 16,
-  },
-  h3: {
-    ...heading,
-    fontSize: 18,
-    lineHeight: 23,
-    marginTop: 16,
-  },
-  h4: {
-    ...heading,
-    fontSize: 16,
-    lineHeight: 22,
-    marginTop: 16,
-  },
-  h5: {
-    ...heading,
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 16,
-  },
-  h6: {
-    ...heading,
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 16,
-    color: colors.muted,
-  },
+  h1: { ...heading, fontSize: 24, lineHeight: 30, marginTop: 18 },
+  h2: { ...heading, fontSize: 21, lineHeight: 27, marginTop: 18 },
+  h3: { ...heading, fontSize: 19, lineHeight: 25, marginTop: 16 },
+  h4: { ...heading, fontSize: 17, lineHeight: 25, marginTop: 16 },
+  h5: { ...heading, fontSize: 17, lineHeight: 25, marginTop: 14 },
+  h6: { ...heading, fontSize: 15, lineHeight: 22, marginTop: 14, color: colors.muted },
   list: {
     ...markdownStyle.list,
     ...styles.chatText,
-    marginBottom: 10,
-    itemSpacing: 3,
+    marginBottom: 14,
+    itemSpacing: 6,
+    // Bullets sit at the text margin, with a wide gap before the item text.
+    marginLeft: 0,
+    gapWidth: 18,
+    markerMinWidth: 8,
+    bulletSize: 5,
   },
   blockquote: {
     ...markdownStyle.blockquote,
     ...styles.chatText,
     color: colors.muted,
-    padding: 10,
-    marginBottom: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  // Inline code reads as a quiet monospace span, not a chip competing with the prose.
+  code: {
+    fontFamily: monospace,
+    fontSize: 16,
+    color: colors.muted,
+    backgroundColor: 'transparent',
+    borderColor: 'transparent',
   },
 }
 export const Markdown = memo(function Markdown({

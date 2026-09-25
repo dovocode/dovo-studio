@@ -1,17 +1,18 @@
 import {
+  WorkspaceContext,
+  type WorkspaceRequest,
+  type WorkspaceRequestEffect,
+  type WorkspaceContextValue,
+} from './context'
+import {
   previewWorkspace,
   withTaskPreview,
   type TaskPreview,
   type TaskPreviewChanges,
 } from './task-previews'
-import { recoverRuntimePairings } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/application-state'
-import { mutableStruct } from '@dovo/protocol'
-import { decode, decodeResult } from '@dovo/protocol'
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -23,6 +24,10 @@ import {
 import { Effect, Either, Schema } from 'effect'
 import { startPolling, runClientEffect, clientTaskScope } from '@dovo/client-runtime'
 import {
+  recoverRuntimePairings,
+  mutableStruct,
+  decode,
+  decodeResult,
   saveRuntimePairing,
   cancelRuntimePairing,
   type PairingProof,
@@ -62,74 +67,8 @@ import {
   writeWorkspaceOutbox,
 } from './read-cache'
 const snapshotKey = 'dovo.runtime-snapshots.v1'
-type Request = <T extends Schema.Schema.AnyNoContext>(
-  path: string,
-  input: unknown,
-  schema: T,
-  method?: 'GET' | 'POST' | 'PATCH',
-) => Promise<Schema.Schema.Type<T>>
-type RequestEffect = <T extends Schema.Schema.AnyNoContext>(
-  path: string,
-  input: unknown,
-  schema: T,
-  method?: 'GET' | 'POST' | 'PATCH',
-) => Effect.Effect<Schema.Schema.Type<T>, Error>
 const connectionError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
-type Store = {
-  previewTask: <A>(
-    connection: RuntimeConnection,
-    taskId: string,
-    changes: TaskPreviewChanges,
-    action: () => Promise<A>,
-  ) => Promise<A>
-
-  workspace: Workspace
-  setWorkspace: Dispatch<SetStateAction<Workspace>>
-  ready: boolean
-  storageError: string | null
-  connection: RuntimeConnection | null
-  snapshot: RuntimeSnapshot | null
-  connected: boolean
-  syncError: string | null
-  connect: (
-    connection: RuntimeConnection,
-    proof?: PairingProof,
-    replaceId?: string,
-  ) => Promise<void>
-  cancelPairing: (address: string, proof: PairingProof) => Promise<void>
-  disconnect: () => Promise<void>
-  request: Request
-  requestEffect: RequestEffect
-  flush: () => Promise<void>
-  runtimeRegistry: RuntimeRegistry
-  activeRuntimeId: string | null
-  runtimes: RuntimeOverview[]
-  switchRuntime: (id: string) => Promise<void>
-  forgetRuntime: (id: string) => Promise<void>
-  refreshRuntimes: () => Promise<void>
-  refreshRuntime: (profile: RuntimeProfile) => Promise<void>
-  retrySync: () => Promise<void>
-  discardAndReload: () => Promise<void>
-  pendingSync: boolean
-  readCache: RuntimeReadCache | null
-  readRuntime: <T extends Schema.Schema.AnyNoContext>(
-    profile: RuntimeProfile,
-    path: string,
-    input: unknown,
-    schema: T,
-    method?: 'GET' | 'POST' | 'PATCH',
-  ) => Promise<Schema.Schema.Type<T>>
-  readRuntimeEffect: <T extends Schema.Schema.AnyNoContext>(
-    profile: RuntimeProfile,
-    path: string,
-    input: unknown,
-    schema: T,
-    method?: 'GET' | 'POST' | 'PATCH',
-  ) => Effect.Effect<Schema.Schema.Type<T>, Error>
-  runtimeReadCache: (profile: RuntimeProfile) => RuntimeReadCache
-}
-const WorkspaceContext = createContext<Store | null>(null)
 const idleOverview = (
   profile: RuntimeProfile,
   snapshot: RuntimeSnapshot | null = null,
@@ -728,6 +667,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
         caches.current.delete(id)
         cacheWrites.current.delete(id)
+        // Retire this client's credential on that computer once the removal is saved.
+        // Owner credentials (the local desktop runtime) are refused by design and ignored.
+        if (profile)
+          await runClientEffect(
+            runtimeRequestEffect(
+              profile.connection,
+              profile.connection.address,
+              '/api/devices/revoke-self',
+              {},
+              responses.ok,
+              'POST',
+              4000,
+            ).pipe(Effect.ignore),
+          )
       } finally {
         changingConnection.current = false
       }
@@ -735,7 +688,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [disconnectCurrent, saveRegistry, cacheFor],
   )
   // Explicit-owner requests never borrow the currently active connection.
-  const readRuntimeEffect = useCallback<Store['readRuntimeEffect']>(
+  const readRuntimeEffect = useCallback<WorkspaceContextValue['readRuntimeEffect']>(
     (profile, path, input, schema, method) =>
       Effect.gen(function* () {
         const check = Effect.try({ try: () => assertProfile(profile), catch: connectionError })
@@ -760,7 +713,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }),
     [assertProfile, synchronization],
   )
-  const readRuntime = useCallback<Store['readRuntime']>(
+  const readRuntime = useCallback<WorkspaceContextValue['readRuntime']>(
     (profile, path, input, schema, method) =>
       runClientEffect(readRuntimeEffect(profile, path, input, schema, method)),
     [readRuntimeEffect],
@@ -772,7 +725,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [assertProfile, cacheFor],
   )
-  const requestEffect = useCallback<RequestEffect>(
+  const requestEffect = useCallback<WorkspaceRequestEffect>(
     (path, input, schema, method) =>
       Effect.gen(function* () {
         const target = connection
@@ -800,7 +753,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }),
     [connection, synchronization],
   )
-  const request = useCallback<Request>(
+  const request = useCallback<WorkspaceRequest>(
     (path, input, schema, method) => runClientEffect(requestEffect(path, input, schema, method)),
     [requestEffect],
   )
@@ -1241,6 +1194,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 error: message,
               })
           }
+          // Already published above; failing only lets the poller back off.
+          return yield* Effect.fail(error)
         }
       }).pipe(
         Effect.ensuring(
@@ -1252,10 +1207,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     })
     const polling = startPolling(poll, {
       interval: 1000,
-      onError: (error) => setSyncError(String(error)),
+      // An unreachable host is not hammered every second; returning or reconnecting retries at once.
+      backoff: 10000,
+      onError: () => {},
     })
+    const wake = () => {
+      if (document.visibilityState === 'visible') polling.refresh()
+    }
+    window.addEventListener('online', wake)
+    document.addEventListener('visibilitychange', wake)
     return () => {
       stopped = true
+      window.removeEventListener('online', wake)
+      document.removeEventListener('visibilitychange', wake)
       void polling.stop()
     }
   }, [connection, installSnapshot, synchronization, updateOverview])
@@ -1295,140 +1259,84 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }),
     [runtimeRegistry.profiles, overviews, previews],
   )
-  return (
-    <WorkspaceContext.Provider
-      value={{
-        previewTask,
-        workspace: visibleWorkspace,
-        setWorkspace,
-        ready,
-        storageError,
-        connection,
-        snapshot,
-        connected,
-        syncError,
-        connect,
-        cancelPairing,
-        disconnect,
-        request,
-        requestEffect,
-        flush,
-        runtimeRegistry,
-        activeRuntimeId: runtimeRegistry.activeId,
-        runtimes: visibleRuntimes,
-        switchRuntime,
-        forgetRuntime,
-        refreshRuntimes,
-        refreshRuntime,
-        retrySync,
-        discardAndReload,
-        pendingSync: synchronization.hasPending(),
-        readCache: connection
-          ? cacheFor(
-              runtimeRegistry.profiles.find(
-                (profile) =>
-                  profile.connection.address === connection.address &&
-                  profile.connection.token === connection.token,
-              ) ?? runtimeProfile(connection),
-            )
-          : null,
-        readRuntime,
-        readRuntimeEffect,
-        runtimeReadCache,
-      }}
-    >
-      {children}
-    </WorkspaceContext.Provider>
+  const readCache = useMemo(
+    () =>
+      connection
+        ? cacheFor(
+            runtimeRegistry.profiles.find(
+              (profile) =>
+                profile.connection.address === connection.address &&
+                profile.connection.token === connection.token,
+            ) ?? runtimeProfile(connection),
+          )
+        : null,
+    [connection, runtimeRegistry.profiles, cacheFor],
   )
-}
-export function useWorkspace() {
-  const value = useContext(WorkspaceContext)
-  if (!value) throw new Error('WorkspaceProvider is required')
-  return value
+  const contextValue = useMemo(
+    () => ({
+      previewTask,
+      workspace: visibleWorkspace,
+      setWorkspace,
+      ready,
+      storageError,
+      connection,
+      snapshot,
+      connected,
+      syncError,
+      connect,
+      cancelPairing,
+      disconnect,
+      request,
+      requestEffect,
+      flush,
+      runtimeRegistry,
+      activeRuntimeId: runtimeRegistry.activeId,
+      runtimes: visibleRuntimes,
+      switchRuntime,
+      forgetRuntime,
+      refreshRuntimes,
+      refreshRuntime,
+      retrySync,
+      discardAndReload,
+      pendingSync: synchronization.hasPending(),
+      readCache,
+      readRuntime,
+      readRuntimeEffect,
+      runtimeReadCache,
+    }),
+    [
+      previewTask,
+      visibleWorkspace,
+      setWorkspace,
+      ready,
+      storageError,
+      connection,
+      snapshot,
+      connected,
+      syncError,
+      connect,
+      cancelPairing,
+      disconnect,
+      request,
+      requestEffect,
+      flush,
+      runtimeRegistry,
+      visibleRuntimes,
+      switchRuntime,
+      forgetRuntime,
+      refreshRuntimes,
+      refreshRuntime,
+      retrySync,
+      discardAndReload,
+      synchronization,
+      readCache,
+      readRuntime,
+      readRuntimeEffect,
+      runtimeReadCache,
+    ],
+  )
+  return <WorkspaceContext.Provider value={contextValue}>{children}</WorkspaceContext.Provider>
 }
 
-/** Settings for an item stay on its host even when navigation opens work on another host. */
-export function WorkspaceScope({
-  profile,
-  children,
-}: {
-  profile: RuntimeProfile
-  children: ReactNode
-}) {
-  const root = useWorkspace()
-  const { readRuntimeEffect, refreshRuntime, runtimeReadCache, setWorkspace } = root
-  const {
-    id,
-    name,
-    connection: { address, token },
-  } = profile
-  const owner = useMemo(
-    () => ({
-      id,
-      name,
-      connection: {
-        address,
-        token,
-      },
-    }),
-    [id, name, address, token],
-  )
-  const entry = root.runtimes.find(
-    (item) =>
-      item.profile.id === id &&
-      item.profile.connection.address === address &&
-      item.profile.connection.token === token,
-  )
-  const requestEffect = useCallback<RequestEffect>(
-    (path, input, schema, method) =>
-      Effect.gen(function* () {
-        const result = yield* readRuntimeEffect(owner, path, input, schema, method)
-        if (method === 'PATCH' && path === '/api/workspace')
-          yield* Effect.tryPromise({ try: () => refreshRuntime(owner), catch: connectionError })
-        return result
-      }),
-    [owner, readRuntimeEffect, refreshRuntime],
-  )
-  const request = useCallback<Request>(
-    (path, input, schema, method) => runClientEffect(requestEffect(path, input, schema, method)),
-    [requestEffect],
-  )
-  const active = root.activeRuntimeId === id
-  const scopedSetWorkspace = useCallback<Store['setWorkspace']>(
-    (update) => {
-      // Legacy optimistic editors use the active outbox. Remote settings use awaited PATCH requests.
-      if (!active) throw new Error('Use an explicit workspace patch to edit this computer.')
-      setWorkspace(update)
-    },
-    [active, setWorkspace],
-  )
-  if (!entry) return null
-  return (
-    <WorkspaceContext.Provider
-      value={{
-        ...root,
-        activeRuntimeId: id,
-        workspace: active
-          ? root.workspace
-          : (entry.snapshot?.workspace ?? {
-              ...createWorkspace(),
-              repositories: [],
-              agents: [],
-              tasks: [],
-              automations: [],
-            }),
-        snapshot: active ? root.snapshot : entry.snapshot,
-        connection: entry.profile.connection,
-        connected: active ? root.connected : entry.connected,
-        syncError: active ? root.syncError : entry.error,
-        pendingSync: active && root.pendingSync,
-        readCache: runtimeReadCache(owner),
-        request,
-        requestEffect,
-        setWorkspace: scopedSetWorkspace,
-      }}
-    >
-      {children}
-    </WorkspaceContext.Provider>
-  )
-}
+export { useWorkspace } from './context'
+export { WorkspaceScope } from './scope'

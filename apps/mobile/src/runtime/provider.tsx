@@ -27,6 +27,7 @@ import {
   snapshotSchema,
   runtimeSnapshotCacheSchema,
   runtimeRequestEffect,
+  responses,
   clearRuntimeRequestCache,
   getRuntimeSnapshotTag,
   runtimeRegistrySchema,
@@ -540,6 +541,18 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         caches.current.delete(id)
         cacheDirty.current.delete(id)
         cacheMarks.current.delete(id)
+        // After the local removal is durable, retire this phone's credential on the computer so
+        // forgotten phones don't linger as trusted devices. Offline or owner hosts just skip it.
+        if (profile)
+          yield* runtimeRequestEffect(
+            profile.connection,
+            profile.connection.address,
+            '/api/devices/revoke-self',
+            {},
+            responses.ok,
+            'POST',
+            4000,
+          ).pipe(Effect.ignore)
       })
     },
     [changeRegistryEffect, cacheFor],
@@ -754,6 +767,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       ),
       {
         interval: 1000,
+        // An unreachable host is not hammered every second; foregrounding still retries at once.
+        backoff: 10000,
         onError: (error) =>
           updateEntry(profile, (previous) => ({
             ...previous,

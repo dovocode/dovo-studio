@@ -49,9 +49,10 @@ export function Field({
   label,
   hideLabel = false,
   error,
+  hint,
   style,
   ...props
-}: TextInputProps & { label: string; hideLabel?: boolean; error?: string }) {
+}: TextInputProps & { label: string; hideLabel?: boolean; error?: string; hint?: string }) {
   return (
     <View style={{ gap: 6 }}>
       {!hideLabel && <Text style={styles.muted}>{label}</Text>}
@@ -64,6 +65,7 @@ export function Field({
         style={[styles.input, style]}
         {...props}
       />
+      {!!hint && !error && <Text style={[styles.muted, { fontSize: 12 }]}>{hint}</Text>}
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}

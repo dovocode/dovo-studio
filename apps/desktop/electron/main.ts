@@ -138,18 +138,9 @@ const startup = Effect.gen(function* () {
     try: () => app.whenReady(),
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
   })
-  yield* Effect.tryPromise({
-    try: () => startLocalRuntime(__dirname),
-    catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-  }).pipe(
-    Effect.catchAll((error) =>
-      Effect.sync(() => {
-        // Keep the window and updater available; the workspace displays connection errors.
-        console.error('Local runtime needs attention:', error.message)
-      }),
-    ),
-  )
-  yield* activateOnStartup
+  // Show the window immediately; the renderer renders its loading state and awaits
+  // runtime:connection itself. Booting the runtime in the background removes the runtime
+  // cold-start latency from time-to-first-pixel.
   yield* Effect.sync(() => {
     if (!app.isPackaged && process.platform === 'darwin')
       app.dock?.setIcon(join(__dirname, '../build/icon.png'))
@@ -163,6 +154,18 @@ const startup = Effect.gen(function* () {
     })
     createWindow()
   })
+  yield* Effect.tryPromise({
+    try: () => startLocalRuntime(__dirname),
+    catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.sync(() => {
+        // Keep the window and updater available; the workspace displays connection errors.
+        console.error('Local runtime needs attention:', error.message)
+      }),
+    ),
+  )
+  yield* activateOnStartup
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

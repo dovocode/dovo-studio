@@ -24,6 +24,7 @@ import { useNavigation } from '../shell/navigation'
 import { issueHref, jiraIssueHref, pipelineHref } from '../shell/source-route'
 import { Text } from '../ui/text'
 import { colors, styles } from '../ui/theme'
+import { formatShortDate } from '../ui/format-date'
 import { Choice } from '../ui/choice'
 import { Action } from '../ui/action'
 import { Icon } from '../ui/icon'
@@ -340,10 +341,7 @@ export function WorkScreen({
                 ]}
               >
                 {row.updatedAt && !Number.isNaN(Date.parse(row.updatedAt))
-                  ? new Date(row.updatedAt).toLocaleDateString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                    })
+                  ? formatShortDate(row.updatedAt)
                   : ''}
               </Text>
             </View>

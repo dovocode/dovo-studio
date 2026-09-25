@@ -1,7 +1,7 @@
 import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { writeFile, readFile, mkdir, realpath, rm } from 'node:fs/promises'
-import { join, dirname } from 'node:path'
+import { join } from 'node:path'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import type { AgentRun } from '../agents/types'
@@ -61,14 +61,16 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
     s.checkouts.directory(isolated.id),
   ])
   cleanups.push(() =>
-    rm(dirname(cwd), {
+    rm(cwd, {
       recursive: true,
       force: true,
     }),
   )
   expect((await s.git.command(cwd, ['branch', '--show-current'])).trim()).toMatch(
-    /^dovo\/isolated-[a-f0-9]{24}$/,
+    /^dovo\/isolated-[a-f0-9]{8}$/,
   )
+  // Readable location: <org or user>/<repo>-<branch>; this fixture repo has no remote.
+  expect(cwd).toMatch(/\.dovo\/worktrees\/local\/[\w.-]+-isolated-[a-f0-9]{8}$/)
   expect(cwd).toBe(same)
   expect(cwd).not.toBe(f.directory)
   expect(await s.checkouts.directory(main.id)).toBe(await realpath(f.directory))

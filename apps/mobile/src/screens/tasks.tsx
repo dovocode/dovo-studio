@@ -34,7 +34,7 @@ import { useAction } from '../ui/use-action'
 import { colors, styles } from '../ui/theme'
 export default function TasksScreen() {
   const { navigate, focused } = useNavigation(),
-    { refreshAll, overviews, profiles, activeId, selectRuntimeEffect } = useRuntime(),
+    { refreshAll, overviews, profiles, activeId, selectRuntimeEffect, ready } = useRuntime(),
     { busy, error, act } = useAction()
   const { view, setView, scrollOffset } = useTaskListView()
   const { search, filter, source, sort, project } = view
@@ -87,6 +87,13 @@ export default function TasksScreen() {
     [projectGroups, project],
   )
   const allTasks = useMemo(() => aggregateRuntimeTasks(entries, now, true), [entries, now])
+  const counts = useMemo(() => {
+    const visible = allTasks.filter(({ task }) => !task.archived && !isSnoozed(task, now))
+    return {
+      input: visible.filter((row) => row.needsInput).length,
+      running: visible.filter((row) => row.task.status === 'running').length,
+    }
+  }, [allTasks, now])
   const detail = allTasks.find((item) => item.key === details)
   const detailRuntime = overviews.find((entry) => entry.profile.id === detail?.runtimeId)
   const detailAgent =
@@ -146,6 +153,7 @@ export default function TasksScreen() {
         }),
       )
   }
+  if (ready && !profiles.length) return <Welcome />
   return (
     <View style={styles.screen}>
       <ScreenHeader
@@ -214,106 +222,18 @@ export default function TasksScreen() {
               paddingBottom: 10,
             }}
           >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 6 }}
-            >
-              {[
-                { id: 'active', label: 'All tasks' },
-                { id: 'input', label: 'Needs input' },
-                { id: 'running', label: 'Working' },
-              ].map((item) => (
-                <Pressable
-                  key={item.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={item.label}
-                  accessibilityState={{ selected: filter === item.id }}
-                  onPress={() => {
-                    scrollOffset.current = 0
-                    setView((current) => ({ ...current, filter: item.id }))
-                  }}
-                  style={({ pressed }) => ({
-                    minHeight: 44,
-                    justifyContent: 'center',
-                    paddingHorizontal: 12,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: filter === item.id ? colors.accent : colors.border,
-                    backgroundColor: filter === item.id ? colors.elevated : colors.surface,
-                    opacity: pressed ? 0.7 : 1,
-                  })}
-                >
-                  <Text
-                    style={[
-                      styles.muted,
-                      {
-                        color: filter === item.id ? colors.accent : colors.muted,
-                        fontWeight: '600',
-                      },
-                    ]}
-                  >
-                    {item.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            {overviews.some(
-              (entry) => entry.connected && entry.snapshot?.defaults?.configured === false,
-            ) && (
-              <View style={styles.card}>
-                <Text style={styles.text}>Make this workspace yours</Text>
-                <Text style={styles.muted}>
-                  Choose default models for tasks and titles, shared with your computer.
-                </Text>
-                <Action
-                  label="Set up defaults"
-                  secondary
-                  onPress={() => router.push('/settings/agents')}
-                />
-              </View>
-            )}
-            <ProjectThreadFilter
-              value={project}
-              onChange={(project) => {
-                scrollOffset.current = 0
-                setView((current) => ({ ...current, project, source: 'all' }))
-              }}
-            />
-            <SearchField
-              label="Search tasks"
-              placeholder="Search tasks"
-              clearButtonMode="while-editing"
-              returnKeyType="search"
-              value={search}
-              onChangeText={(search) =>
-                setView((current) => ({
-                  ...current,
-                  search,
-                }))
-              }
-            />
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
-              <View
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                }}
-              >
-                <FleetOverview
-                  compact
-                  source={source}
-                  entries={overviews}
-                  onSelectSource={(source) =>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <SearchField
+                  label="Search tasks"
+                  placeholder="Search tasks"
+                  clearButtonMode="while-editing"
+                  returnKeyType="search"
+                  value={search}
+                  onChangeText={(search) =>
                     setView((current) => ({
                       ...current,
-                      source,
+                      search,
                     }))
                   }
                 />
@@ -325,6 +245,81 @@ export default function TasksScreen() {
                 onPress={() => setFiltersOpen(true)}
               />
             </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ gap: 6, alignItems: 'center' }}
+            >
+              {[
+                { id: 'active', label: 'All', count: 0 },
+                { id: 'input', label: 'Needs input', count: counts.input },
+                { id: 'running', label: 'Working', count: counts.running },
+              ].map((item) => (
+                <FilterChip
+                  key={item.id}
+                  label={item.label}
+                  count={item.count}
+                  selected={filter === item.id}
+                  urgent={item.id === 'input'}
+                  onPress={() => {
+                    scrollOffset.current = 0
+                    setView((current) => ({ ...current, filter: item.id }))
+                  }}
+                />
+              ))}
+              <ProjectThreadFilter
+                compact
+                value={project}
+                onChange={(project) => {
+                  scrollOffset.current = 0
+                  setView((current) => ({ ...current, project, source: 'all' }))
+                }}
+              />
+            </ScrollView>
+            {overviews.some(
+              (entry) => entry.connected && entry.snapshot?.defaults?.configured === false,
+            ) && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Set up defaults"
+                accessibilityHint="Choose default models for tasks and titles"
+                onPress={() => router.push('/settings/agents')}
+                style={({ pressed }) => [
+                  styles.card,
+                  { borderWidth: 0, borderRadius: 14 },
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Icon name="agents" size={20} color={colors.accent} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.text, { fontWeight: '600', fontSize: 15 }]}>
+                    Choose your default models
+                  </Text>
+                  <Text style={styles.muted}>Used for new tasks and titles on your computer.</Text>
+                </View>
+                <Icon name="next" size={12} color={colors.muted} />
+              </Pressable>
+            )}
+            {/* One computer's state is already in the connection banner. */}
+            {overviews.length > 1 && (
+              <FleetOverview
+                compact
+                source={source}
+                entries={overviews}
+                onSelectSource={(source) =>
+                  setView((current) => ({
+                    ...current,
+                    source,
+                  }))
+                }
+              />
+            )}
             {(filter !== 'active' || sort !== 'priority') && (
               <Text style={styles.muted}>
                 {filter === 'archive'
@@ -351,6 +346,7 @@ export default function TasksScreen() {
             now={now}
             testID={profiles.length === 1 ? `Task ${item.task.id}` : `Task ${item.key}`}
             disabled={busy}
+            showDevice={profiles.length > 1}
             onOpen={() => openTask(item)}
             onDetails={() => setDetails(item.key)}
           />
@@ -463,7 +459,12 @@ export default function TasksScreen() {
             {detail.projectName} · {detail.task.checkoutBranch ?? 'Project checkout'}
           </Text>
           <Text style={styles.muted}>
-            {detail.runtimeName} · {detail.online ? 'Online' : 'Offline'}
+            {detail.runtimeName} ·{' '}
+            {detail.online
+              ? 'Online'
+              : detail.reachability === 'offline'
+                ? 'Offline'
+                : 'Connecting…'}
           </Text>
           {!!detailAgent && (
             <Text style={styles.muted}>
@@ -482,6 +483,115 @@ export default function TasksScreen() {
           )}
         </Sheet>
       )}
+    </View>
+  )
+}
+
+function FilterChip({
+  label,
+  count,
+  selected,
+  urgent,
+  onPress,
+}: {
+  label: string
+  count: number
+  selected: boolean
+  urgent: boolean
+  onPress: () => void
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={count ? `${label}, ${count}` : label}
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        minHeight: 36,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        borderRadius: 18,
+        // Minimal chips: selection is a fill, not an outline.
+        backgroundColor: selected ? colors.elevated : 'transparent',
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      <Text
+        style={[styles.muted, { color: selected ? colors.text : colors.muted, fontWeight: '600' }]}
+      >
+        {label}
+      </Text>
+      {count > 0 && (
+        <View
+          style={{
+            minWidth: 20,
+            height: 20,
+            paddingHorizontal: 6,
+            borderRadius: 10,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: urgent ? colors.accent : colors.elevated,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 12,
+              fontWeight: '700',
+              color: urgent ? colors.onAccent : colors.text,
+              fontVariant: ['tabular-nums'],
+            }}
+          >
+            {count}
+          </Text>
+        </View>
+      )}
+    </Pressable>
+  )
+}
+
+/** First run: one clear step instead of a settings list full of disabled rows. */
+function Welcome() {
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader title="Tasks" />
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24, gap: 24 }}
+      >
+        <View style={{ alignItems: 'center', gap: 12 }}>
+          <View
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 20,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(165, 180, 252, 0.14)',
+            }}
+          >
+            <Icon name="device" size={30} color={colors.accent} />
+          </View>
+          <Text style={[styles.largeTitle, { fontSize: 26, textAlign: 'center' }]}>
+            Connect your computer
+          </Text>
+          <Text style={[styles.muted, { fontSize: 15, lineHeight: 21, textAlign: 'center' }]}>
+            Dovo runs your agents on your own computer. Pair this phone once to follow tasks, answer
+            questions and review changes from anywhere on your Wi-Fi or VPN.
+          </Text>
+        </View>
+        <View style={{ gap: 10 }}>
+          <Action
+            wide
+            label="Connect a computer"
+            onPress={() => router.push({ pathname: '/settings/devices', params: { pair: '1' } })}
+          />
+          <Text style={[styles.muted, { textAlign: 'center' }]}>
+            You’ll need Dovo open on your computer to get a pairing code.
+          </Text>
+        </View>
+      </ScrollView>
     </View>
   )
 }

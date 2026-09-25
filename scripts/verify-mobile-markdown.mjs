@@ -14,7 +14,7 @@ const originalContentSize = inlineOnly
 const inlineMarkdown = [
   '## Inline code',
   'Run `pnpm test`, then `git status`.',
-  'Path: `apps/mobile/src/tasks/conversation-provider.tsx`.',
+  'Path: `apps/mobile/src/tasks/conversation/provider.tsx`.',
   'Token: `RemoteRuntimeConnectionCheckpointRestorationStrategy`.',
   '- Keep `draft.text`; pass `--watch`.',
   '| Key | Value |\n| --- | --- |\n| File | `src/runtime.ts` |',

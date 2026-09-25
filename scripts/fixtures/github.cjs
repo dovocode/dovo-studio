@@ -42,7 +42,7 @@ const pull = {
     ? [
         '## Runtime fix',
         'A real description shape from the test fixture. **Reconnect safely** and preserve `taskId`.',
-        'Run `pnpm test --filter mobile`, then review `apps/mobile/src/tasks/conversation-provider.tsx`.',
+        'Run `pnpm test --filter mobile`, then review `apps/mobile/src/tasks/conversation/provider.tsx`.',
         '### Validation checklist',
         '- [x] Keep the current conversation\n- [ ] Confirm recovery after a network change',
         '> Reviewers can keep their approval while adding a follow-up comment.',

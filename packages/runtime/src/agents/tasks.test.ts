@@ -1,3 +1,4 @@
+import { runtimeIntegration, waitForRuntime as waitForTask } from '../testing/integration'
 import { decode, questionPromptSchema } from '@dovo/protocol'
 import type { AgentAdapter } from './types'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -5,6 +6,7 @@ import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import type { AgentRun, AgentSteer } from './types'
 import { defaultTaskHarness, type Agent, type Task } from '@dovo/protocol'
+vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -121,7 +123,7 @@ it('serializes repository runs and cancellation denies pending approvals and rel
     objective: 'Test',
   })
   const execution = await s.tasks.start(task.id)
-  await vi.waitFor(() => expect(s.approvals.list()).toHaveLength(1))
+  await waitForTask(() => expect(s.approvals.list()).toHaveLength(1))
   await expect(s.tasks.start(second.id)).rejects.toThrow('Another task')
   s.tasks.cancel(task.id)
   await expect(execution.done).rejects.toThrow('Cancelled')
@@ -214,7 +216,7 @@ it('queues follow-ups during a turn, deduplicates retries and drains in the chos
     objective: 'First',
   })
   const execution = await s.tasks.start(task.id)
-  await vi.waitFor(() => expect(prompts).toHaveLength(1))
+  await waitForTask(() => expect(prompts).toHaveLength(1))
   await s.tasks.send(task.id, 'second', 'Second')
   await s.tasks.send(task.id, 'second', 'Second')
   await s.tasks.send(task.id, 'third', 'Third')
@@ -248,7 +250,7 @@ it('pauses remaining input on cancellation and retains failed input on resume', 
     objective: 'Keep this instruction',
   })
   const execution = await s.tasks.start(task.id)
-  await vi.waitFor(() => expect(s.approvals.list()).toHaveLength(1))
+  await waitForTask(() => expect(s.approvals.list()).toHaveLength(1))
   await s.tasks.send(task.id, 'followup', 'Then verify')
   s.tasks.cancel(task.id)
   await expect(execution.done).rejects.toThrow('Cancelled by user')
@@ -515,17 +517,17 @@ it.each([false, true])('steers ahead of queued input and preserves paused=%s', a
     objective: 'Original',
   })
   const first = await s.tasks.start(task.id)
-  await vi.waitFor(() => expect(s.approvals.list()).toHaveLength(1))
+  await waitForTask(() => expect(s.approvals.list()).toHaveLength(1))
   await s.tasks.send(task.id, 'later', 'Do this later')
   if (paused) s.tasks.queue.change(task.id, 'pause')
   await s.tasks.steer(task.id, 'steering', 'Change direction now')
   await expect(first.done).rejects.toThrow('Interrupted to apply steering')
-  await vi.waitFor(() => expect(s.store.task(task.id).status).toBe('review'))
+  await waitForTask(() => expect(s.store.task(task.id).status).toBe('review'))
   expect(runs[1].sessionId).toBe('steering-session')
   expect(runs[1].prompt).toContain('Change direction now')
   expect(runs[1].prompt).not.toContain('Do this later')
   expect(s.store.task(task.id).turns?.[0].checkpoint?.after).toBeTruthy()
-  await vi.waitFor(() => expect(runs).toHaveLength(paused ? 2 : 3))
+  await waitForTask(() => expect(runs).toHaveLength(paused ? 2 : 3))
   expect(s.store.task(task.id).queue?.map((m) => m.id)).toEqual(paused ? ['later'] : [])
   expect(runs.at(-1)?.prompt).toContain(paused ? 'Change direction now' : 'Do this later')
   await s.tasks.steer(task.id, 'steering', 'Change direction now')
@@ -568,7 +570,7 @@ it('Stop during steering leaves the instruction queued without restarting', asyn
     objective: 'Original',
   })
   await s.tasks.start(task.id)
-  await vi.waitFor(() => expect(s.approvals.list()).toHaveLength(1))
+  await waitForTask(() => expect(s.approvals.list()).toHaveLength(1))
   const steering = s.tasks.steer(task.id, 'steering', 'New direction')
   s.tasks.cancel(task.id)
   release()
@@ -736,7 +738,7 @@ it.each([false, true])(
       objective: 'Original',
     })
     const execution = await s.tasks.start(task.id)
-    await vi.waitFor(() => expect(runs).toHaveLength(1))
+    await waitForTask(() => expect(runs).toHaveLength(1))
     await s.tasks.send(task.id, 'later', 'Do this later')
     if (paused) s.tasks.queue.change(task.id, 'pause')
     await s.tasks.steer(task.id, 'live', 'New direction')
@@ -789,7 +791,7 @@ it('retains unconfirmed native steering in a paused queue and does not automatic
     objective: 'Original',
   })
   const execution = await s.tasks.start(task.id)
-  await vi.waitFor(() => expect(ready).toBe(true))
+  await waitForTask(() => expect(ready).toBe(true))
   await s.tasks.steer(task.id, 'live', 'New direction')
   expect(s.store.task(task.id).error).toContain('not confirmed')
   await s.tasks.steer(task.id, 'live', 'New direction')
@@ -864,10 +866,10 @@ it.each(['pause', 'stop'] as const)(
     })
     const execution = await s.tasks.start(task.id)
     const done = execution.done.catch(() => {})
-    await vi.waitFor(() => expect(ready).toBe(true))
+    await waitForTask(() => expect(ready).toBe(true))
     await s.tasks.send(task.id, 'later', 'Do this later')
     const steering = s.tasks.steer(task.id, 'live', 'New direction')
-    await vi.waitFor(() => expect(steer).toHaveBeenCalledTimes(1))
+    await waitForTask(() => expect(steer).toHaveBeenCalledTimes(1))
     if (action === 'stop') s.tasks.cancel(task.id)
     else s.tasks.queue.change(task.id, 'pause')
     accept()
@@ -927,7 +929,7 @@ it.each(['live', 'finished', 'declined'] as const)(
       objective: 'Original',
     })
     const execution = await s.tasks.start(task.id)
-    await vi.waitFor(() => expect(s.questions.list()).toHaveLength(1))
+    await waitForTask(() => expect(s.questions.list()).toHaveLength(1))
     if (timing !== 'live') await execution.done
     const id = s.questions.list()[0].id
     s.questions.respond(
@@ -946,7 +948,7 @@ it.each(['live', 'finished', 'declined'] as const)(
             style: ['Compact'],
           },
     )
-    await vi.waitFor(() =>
+    await waitForTask(() =>
       expect(timing === 'live' ? steer.mock.calls.length : runs.length).toBe(
         timing === 'live' ? 1 : 2,
       ),
@@ -997,7 +999,7 @@ it('Stop dismisses Astra message forms without sending an answer or starting ano
     objective: 'Original',
   })
   const execution = await s.tasks.start(task.id)
-  await vi.waitFor(() => expect(s.questions.list()).toHaveLength(1))
+  await waitForTask(() => expect(s.questions.list()).toHaveLength(1))
   s.tasks.cancel(task.id)
   await expect(execution.done).rejects.toThrow('Cancelled')
   expect(s.questions.list()).toHaveLength(0)
@@ -1048,12 +1050,12 @@ it('queues a second form answer while the first native steering acknowledgement 
     objective: 'Original',
   })
   const execution = await s.tasks.start(task.id)
-  await vi.waitFor(() => expect(s.questions.list()).toHaveLength(2))
+  await waitForTask(() => expect(s.questions.list()).toHaveLength(2))
   const [first, second] = s.questions.list()
   s.questions.respond(first.id, {
     answer: ['One'],
   })
-  await vi.waitFor(() => expect(steer).toHaveBeenCalledTimes(1))
+  await waitForTask(() => expect(steer).toHaveBeenCalledTimes(1))
   s.questions.respond(second.id, {
     answer: ['Two'],
   })
@@ -1274,7 +1276,7 @@ it.each(['custom', 'built-in'] as const)(
       },
     })
     await s.tasks.send(task.id, 'first-input', 'Review the project')
-    await vi.waitFor(() => expect(s.store.task(task.id).status).toBe('review'))
+    await waitForTask(() => expect(s.store.task(task.id).status).toBe('review'))
     expect(runs).toHaveLength(1)
     const configured = runs[0].agent
     const expected =
@@ -1371,7 +1373,7 @@ it('settles provider output before checkpointing and rejects callbacks from a re
   })
   const execution = await s.tasks.start(task.id)
   try {
-    await vi.waitFor(() => expect(s.store.task(task.id).runPhase).toBe('finalizing'))
+    await waitForTask(() => expect(s.store.task(task.id).runPhase).toBe('finalizing'))
     const turn = s.store.task(task.id).turns?.at(-1)
     expect(turn?.status).toBe('completed')
     expect(turn?.finishedAt).toBeTruthy()
@@ -1502,7 +1504,7 @@ it('durably admits each queued turn before inspecting its checkout', async () =>
   vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
   const execution = await s.tasks.start(task.id)
   try {
-    await vi.waitFor(() => expect(recovered).toBeDefined())
+    await waitForTask(() => expect(recovered).toBeDefined())
     expect(recovered).toMatchObject({
       status: 'failed',
       restartRecovery: { kind: 'turn', automatic: true },

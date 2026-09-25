@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { nativeEffect } from '../runtime/native-effect'
+import { nativeEffect } from '../../runtime/native-effect'
 type Storage = {
   getItem: (key: string) => Promise<string | null>
   setItem: (key: string, value: string) => Promise<void>

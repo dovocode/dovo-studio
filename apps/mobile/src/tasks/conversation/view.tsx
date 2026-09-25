@@ -1,17 +1,18 @@
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../../runtime/application-state'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
-import { decode, decodeResult } from '@dovo/protocol'
-import { useCallback, useEffect, useRef, type PropsWithChildren } from 'react'
+import { decode } from '@dovo/protocol'
+import { useCallback, useEffect, useRef } from 'react'
 import {
   FlatList,
   Pressable,
+  Share,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native'
-import { Text } from '../ui/text'
+import { Text } from '../../ui/text'
 import { Schema } from 'effect'
-import { attachmentSchema, activitySchema, activitySummary } from '@dovo/protocol'
+import { attachmentSchema, activitySchema } from '@dovo/protocol'
 import {
   MessagePrimitive,
   ThreadPrimitive,
@@ -20,17 +21,19 @@ import {
   type ToolCallMessagePartProps,
   type ThreadMessage,
 } from '@assistant-ui/react-native'
-import { usePendingConversationMessage, useTaskConversation } from './conversation-provider'
-import { Markdown } from '../ui/markdown'
+import { usePendingConversationMessage, useTaskConversation } from './provider'
+import { Markdown } from '../../ui/markdown'
 import { MessageAttachments } from './message-attachments'
-import { colors, styles } from '../ui/theme'
-import { Icon } from '../ui/icon'
+import { colors, styles } from '../../ui/theme'
+import { Icon } from '../../ui/icon'
 import { ToolActivityRow, ReasoningActivity } from './tool-activity-row'
-import { activityIdentity, activityOutcome, pendingActivity } from './task-tool-events'
-import { TaskActivity } from './task-activity'
-import { TaskApprovals } from './approvals'
-import { IconButton } from '../ui/icon-button'
-import { createConversationScroll } from './conversation-scroll'
+import { TaskActivity } from './activity'
+import { TaskApprovals } from '../approvals'
+import { Pill } from '../../ui/pill'
+import { ConnectionPill } from '../../runtime/connection-status'
+import { useRuntime } from '../../runtime/provider'
+import { createConversationScroll } from './scroll'
+import { ConversationWorkGroup } from './work-group'
 const checkpointSchema = mutableStruct({
   turnId: Schema.String,
   files: Schema.Number.pipe(Schema.finite()),
@@ -104,130 +107,12 @@ function ToolPart({ artifact }: ToolCallMessagePartProps<unknown, unknown>) {
 function ReasoningPart({ data }: DataMessagePartProps<unknown>) {
   return <ReasoningActivity events={decode(mutableArray(toolSchema), data)} />
 }
-function WorkGroup({
-  children,
-  startIndex,
-  endIndex,
-}: PropsWithChildren<{
-  startIndex: number
-  endIndex: number
-}>) {
-  const { task, visible } = useTaskConversation()
-  const message = useAuiState((state) => state.message)
-  const id = message.id
-  const groupEvents = message.content.slice(startIndex, endIndex + 1).flatMap((part) => {
-    if (part.type !== 'tool-call') return []
-    const parsed = decodeResult(toolSchema, part.artifact)
-    return parsed.success ? [parsed.data] : []
-  })
-  const active = [...groupEvents].reverse().find((event) => pendingActivity(event.status))
-  const summary = [activitySummary(groupEvents), activityOutcome(groupEvents)]
-    .filter(Boolean)
-    .join(' · ')
-  const turn = task.turns?.find((item) => item.assistantId === id)
-  const workStatus =
-    turn?.status === 'running' && message.status?.type !== 'running' ? 'interrupted' : turn?.status
-  const [open, setOpen] = useApplicationState(false)
-  const [now, setNow] = useApplicationState(Date.now())
-  useEffect(() => {
-    if (!visible || !open || workStatus !== 'running') return
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [workStatus, visible, open])
-  const seconds = turn
-    ? Math.max(
-        0,
-        Math.floor(
-          ((turn.finishedAt ? Date.parse(turn.finishedAt) : now) - Date.parse(turn.startedAt)) /
-            1000,
-        ),
-      )
-    : 0
-  const duration =
-    workStatus === 'running' || turn?.finishedAt
-      ? seconds >= 60
-        ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-        : `${seconds}s`
-      : undefined
-  const count = endIndex - startIndex + 1
-  if (groupEvents.length === 1 && active)
-    return <ToolActivityRow key={activityIdentity(active)} event={active} compact />
-  return (
-    <View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={summary}
-        accessibilityHint={`${count} ${count === 1 ? 'tool call' : 'tool calls'}`}
-        accessibilityState={{
-          expanded: open,
-        }}
-        onPress={() => {
-          setNow(Date.now())
-          setOpen(!open)
-        }}
-        style={{
-          minHeight: 44,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 8,
-        }}
-      >
-        <Icon name="settings" size={14} color={colors.muted} />
-        <Text
-          style={[
-            styles.muted,
-            {
-              flex: 1,
-              fontSize: 13,
-              lineHeight: 18,
-            },
-          ]}
-        >
-          {summary}
-        </Text>
-        <Icon name={open ? 'down' : 'next'} size={10} color={colors.muted} />
-      </Pressable>
-      {turn && open && (
-        <Text
-          style={[
-            styles.muted,
-            {
-              paddingLeft: 22,
-              fontSize: 12,
-              paddingBottom: 4,
-            },
-          ]}
-        >
-          {duration
-            ? `${workStatus === 'running' ? 'Working' : workStatus === 'failed' ? 'Failed after' : workStatus === 'cancelled' ? 'Cancelled after' : 'Worked for'} ${duration}`
-            : workStatus === 'failed'
-              ? 'Failed'
-              : workStatus === 'cancelled'
-                ? 'Cancelled'
-                : workStatus === 'interrupted'
-                  ? 'Interrupted'
-                  : 'Completed'}
-        </Text>
-      )}
-      {!open && active && <ToolActivityRow key={activityIdentity(active)} event={active} compact />}
-      {open && (
-        <View
-          style={{
-            paddingBottom: 6,
-          }}
-        >
-          {children}
-        </View>
-      )}
-    </View>
-  )
-}
 function AssistantText({ text }: { text: string }) {
   return <Markdown text={text} variant="chat" />
 }
 const parts = {
   Text: AssistantText,
-  ToolGroup: WorkGroup,
+  ToolGroup: ConversationWorkGroup,
   tools: {
     Fallback: ToolPart,
   },
@@ -256,6 +141,10 @@ function Message() {
   const user = useAuiState((state) => state.message.role === 'user')
   const createdAt = useAuiState((state) => state.message.createdAt)
   const streaming = useAuiState((state) => state.message.status?.type === 'running')
+  const text = useAuiState((state) =>
+    state.message.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n\n'),
+  )
+  const time = createdAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return (
     <MessagePrimitive.Root
       style={{
@@ -292,27 +181,44 @@ function Message() {
             : 'Sending…'}
         </Text>
       )}
-      {createdAt && (user || !streaming) && (
-        <Text
-          style={[
-            styles.muted,
-            {
-              fontSize: 12,
-              paddingHorizontal: user ? 8 : 0,
-            },
-          ]}
+      {!!time && (user || !streaming) && (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 2,
+            paddingHorizontal: user ? 8 : 0,
+            marginLeft: user ? 0 : -10,
+          }}
         >
-          {createdAt.toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </Text>
+          {!user && !!text && (
+            <Pressable
+              testID="Copy message"
+              accessibilityRole="button"
+              accessibilityLabel="Copy message"
+              hitSlop={6}
+              // The system share sheet offers Copy without adding a native clipboard module.
+              onPress={() => void Share.share({ message: text }).catch(() => undefined)}
+              style={({ pressed }) => ({
+                width: 36,
+                height: 32,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: pressed ? 0.5 : 1,
+              })}
+            >
+              <Icon name="copy" size={14} color={colors.muted} />
+            </Pressable>
+          )}
+          <Text style={[styles.muted, { fontSize: 13 }]}>{time}</Text>
+        </View>
       )}
     </MessagePrimitive.Root>
   )
 }
 export function Conversation() {
   const { task, legacyEvents, activityError, followRequest } = useTaskConversation()
+  const { activeId } = useRuntime()
   const list = useRef<FlatList<ThreadMessage>>(null)
   const [scroll] = useApplicationState(createConversationScroll)
   const [following, setFollowing] = useApplicationState(true)
@@ -371,8 +277,11 @@ export function Conversation() {
         contentContainerStyle={[
           styles.content,
           {
-            gap: 12,
-            paddingTop: 10,
+            gap: 18,
+            paddingTop: 12,
+            paddingHorizontal: 20,
+            // Room for the floating status pills so they never cover the last message.
+            paddingBottom: 64,
           },
         ]}
         ListEmptyComponent={
@@ -415,17 +324,23 @@ export function Conversation() {
       >
         {() => <Message />}
       </ThreadPrimitive.MessagesFlatList>
-      {!following && (
-        <View
-          style={{
-            position: 'absolute',
-            bottom: 12,
-            alignSelf: 'center',
-          }}
-        >
-          <IconButton label="Latest message" icon="down" variant="glass" onPress={latest} />
-        </View>
-      )}
+      {/* Floating status stack just above the composer. */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute',
+          bottom: 4,
+          left: 0,
+          right: 0,
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <ConnectionPill runtimeId={activeId} />
+        {!following && (
+          <Pill testID="Latest message" icon="down" label="Latest message" onPress={latest} />
+        )}
+      </View>
     </ThreadPrimitive.Root>
   )
 }

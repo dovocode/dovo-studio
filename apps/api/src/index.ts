@@ -8,6 +8,7 @@ import { publishConnection } from './connection.js'
 import { RuntimeHost, runtimeLayer } from '@dovo/runtime'
 import { acquireProcessLock } from './process-lock.js'
 import { runtimeOwnerToken } from './owner-token.js'
+import { knownToolDirectories, loginShellPath, mergePath } from './login-path.js'
 
 class RuntimeProcessError extends Data.TaggedError('RuntimeProcessError')<{
   readonly operation: string
@@ -18,6 +19,16 @@ const attempt = <A>(operation: string, run: () => A) =>
     try: run,
     catch: (cause) => new RuntimeProcessError({ operation, cause }),
   })
+
+// One stray rejected promise (for example, a pipe to an agent that just exited) must not end
+// every task and phone connection on this computer. Synchronous uncaught exceptions still exit.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection in the Dovo runtime', reason)
+})
+
+// Agents are spawned by name (codex, claude, gh); resolve them like the user's terminal does.
+if (process.env.DOVO_LOGIN_PATH !== 'off')
+  process.env.PATH = mergePath(process.env.PATH, loginShellPath(), knownToolDirectories())
 
 const waitForShutdown = Effect.async<void>((resume) => {
   const signals = ['SIGINT', 'SIGTERM', 'disconnect'] as const

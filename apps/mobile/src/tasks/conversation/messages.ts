@@ -3,8 +3,8 @@ import { decodeResult } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { ThreadMessageLike } from '@assistant-ui/react-native'
 import { toolPresentation, type Task } from '@dovo/protocol'
-import { taskToolEvents, pendingActivity, type ToolEvents } from './task-tool-events'
-export type { ToolEvents } from './task-tool-events'
+import { taskToolEvents, pendingActivity, type ToolEvents } from './tool-events'
+export type { ToolEvents } from './tool-events'
 export function conversationMessages(task: Task, events: ToolEvents): ThreadMessageLike[] {
   const tools = taskToolEvents(task, events)
   const turnsByAssistant = new Map(task.turns?.map((turn) => [turn.assistantId, turn]))

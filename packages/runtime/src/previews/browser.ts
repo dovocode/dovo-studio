@@ -1,13 +1,6 @@
 import { decode } from '@dovo/protocol'
 import { existsSync } from 'node:fs'
-import {
-  chromium,
-  type Browser,
-  type BrowserContext,
-  type Dialog,
-  type Page,
-  type CDPSession,
-} from 'playwright'
+import type { Browser, BrowserContext, Dialog, Page, CDPSession } from 'playwright'
 import {
   previewUrl,
   remoteBrowserDialogSchema,
@@ -15,6 +8,13 @@ import {
   type RemoteBrowserMessage,
 } from '@dovo/protocol'
 import { HttpError, errorMessage } from '../errors.js'
+// playwright is large and only needed once a remote browser is opened. Loading it lazily
+// keeps it out of the runtime's startup module graph.
+let chromiumModule: typeof import('playwright').chromium | undefined
+async function loadChromium() {
+  chromiumModule ??= (await import('playwright')).chromium
+  return chromiumModule
+}
 export type BrowserFrame = {
   type: 'frame'
   data: Uint8Array
@@ -65,8 +65,9 @@ export class RemoteBrowsers {
   private browser?: Promise<Browser>
   private sessions = new Map<string, Promise<Session>>()
   private disposed = false
-  private launch() {
+  private async launch() {
     if (!this.browser) {
+      const chromium = await loadChromium()
       const bundled = chromium.executablePath()
       const installed =
         process.platform === 'darwin'

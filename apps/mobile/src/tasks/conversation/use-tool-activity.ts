@@ -3,10 +3,10 @@ import { AppState } from 'react-native'
 import { Effect } from 'effect'
 import { activitySchema, retainActivityEvents } from '@dovo/protocol'
 import { clientScopeKey, startPolling } from '@dovo/client-runtime'
-import { useApplicationState } from '../runtime/application-state'
-import { useRuntime } from '../runtime/provider'
-import { useNavigation } from '../shell/navigation'
-import type { ToolEvents } from './task-tool-events'
+import { useApplicationState } from '../../runtime/application-state'
+import { useRuntime } from '../../runtime/provider'
+import { useNavigation } from '../../shell/navigation'
+import type { ToolEvents } from './tool-events'
 
 export function useToolActivity(taskId: string, visible: boolean, running = false) {
   const { focused } = useNavigation()

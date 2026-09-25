@@ -1,11 +1,11 @@
 import { TaskDefaultSettings } from '../runtime/task-default-settings'
 import { RuntimePreferences } from '../runtime/runtime-preferences'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { router, useLocalSearchParams } from 'expo-router'
 import { pairingInvitation, type PairingInvitation } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/native-effect'
 import { useApplicationState } from '../runtime/application-state'
-import { ScrollView, View } from 'react-native'
+import { Alert, ScrollView, View } from 'react-native'
 import type { RuntimeProfile } from '@dovo/protocol'
 import { clientScopeKey } from '@dovo/client-runtime'
 import { ActivityLog } from '../runtime/activity'
@@ -24,6 +24,8 @@ import { ScreenHeader } from '../ui/screen-header'
 export default function DevicesScreen() {
   const { profiles, overviews, activeId, error: runtimeError } = useRuntime()
   const [adding, setAdding] = useApplicationState(false)
+  // Saved before pairing completes: by then the new computer is already in the list.
+  const firstPairing = useRef(false)
   const [pairingBusy, setPairingBusy] = useApplicationState(false)
   const [pairTarget, setPairTarget] = useApplicationState<string | null | undefined>(undefined)
   const [editing, setEditing] = useApplicationState<RuntimeProfile | null>(null)
@@ -32,9 +34,18 @@ export default function DevicesScreen() {
     code?: string
     expiresAt?: string
     pairingError?: string
+    pair?: string
   }>()
   const [invitation, setInvitation] = useApplicationState<PairingInvitation | undefined>(undefined)
   const [invitationError, setInvitationError] = useApplicationState('')
+  useEffect(() => {
+    if (adding) firstPairing.current = !profiles.length
+  }, [adding])
+  useEffect(() => {
+    if (params.pair !== '1') return
+    setAdding(true)
+    router.setParams({ pair: undefined })
+  }, [params.pair])
   useEffect(() => {
     if (!params.code && !params.pairingError) return
     try {
@@ -119,9 +130,11 @@ export default function DevicesScreen() {
                 subtitle={
                   entry.connected
                     ? 'Online'
-                    : entry.lastSeen
-                      ? 'Offline · Saved workspace available'
-                      : 'Not connected'
+                    : !entry.error
+                      ? 'Connecting…'
+                      : entry.lastSeen
+                        ? 'Offline · Saved workspace available'
+                        : 'Not connected'
                 }
                 icon="device"
                 tint={entry.connected ? colors.accent : colors.muted}
@@ -195,9 +208,12 @@ export default function DevicesScreen() {
                 onBusyChange={setPairingBusy}
                 inSheet
                 onPaired={() => {
+                  const first = firstPairing.current
                   setAdding(false)
                   setInvitation(undefined)
                   setPairingBusy(false)
+                  // A first computer means the user came to work; take them to their tasks.
+                  if (first) router.navigate('/')
                 }}
               />
             </>
@@ -356,11 +372,24 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
             label="Forget computer"
             disabled={busy}
             onPress={() =>
-              act(() =>
-                mobileWorkflow(function* () {
-                  yield* forgetRuntimeEffect(profile.id)
-                  onClose()
-                }),
+              // Undoing this needs a fresh pairing code from the computer, so confirm first.
+              Alert.alert(
+                `Forget ${profile.name}?`,
+                'This phone’s access is removed from the computer too. Connecting again needs a new pairing code. Work on the computer continues.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Forget',
+                    style: 'destructive',
+                    onPress: () =>
+                      act(() =>
+                        mobileWorkflow(function* () {
+                          yield* forgetRuntimeEffect(profile.id)
+                          onClose()
+                        }),
+                      ),
+                  },
+                ],
               )
             }
           />

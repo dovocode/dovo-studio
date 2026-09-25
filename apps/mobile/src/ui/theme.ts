@@ -44,7 +44,7 @@ export const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   text: { color: colors.text, fontSize: 16, lineHeight: 22 },
-  chatText: { color: colors.text, fontSize: 15, lineHeight: 22 },
+  chatText: { color: colors.text, fontSize: 17, lineHeight: 25 },
   muted: { color: colors.muted, fontSize: 13, lineHeight: 18 },
   error: { color: colors.error, fontSize: 13, lineHeight: 18 },
   input: {

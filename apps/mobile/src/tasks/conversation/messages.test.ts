@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test'
 import type { Task, TaskTurn } from '@dovo/protocol'
-import { conversationMessages, type ToolEvents } from './conversation-messages'
+import { conversationMessages, type ToolEvents } from './messages'
 const startedAt = '2026-09-13T10:00:00Z'
 const turn = (id: string, assistantId: string, status: TaskTurn['status']): TaskTurn => ({
   id,

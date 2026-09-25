@@ -1,8 +1,6 @@
-import { projectMachineGroups } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskTools } from './task-tools'
 import { TaskAgents } from './task-agents'
-import { Monitor, Folder, ChevronRight } from 'lucide-react'
 import { BrowserPane } from './browser/browser-pane'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import {
@@ -24,7 +22,6 @@ import {
   DialogDescription,
   useCompactLayout,
   cn,
-  Input,
 } from '@dovo/studio-ui'
 import { TaskList } from './task-list'
 import { TaskHeader, type TaskSurface } from './task-header'
@@ -32,12 +29,22 @@ import { TaskConversation } from './task-conversation'
 import { ReviewPane } from './review/review-pane'
 import { TerminalPane } from './terminal/terminal-pane'
 import { taskSources, taskCollectionKey, type TaskEntry } from './task-collection'
+import { ProjectSelectionDialog } from './task-creation/project-selection-dialog'
 export default function TasksView({ entityId }: StudioViewProps) {
   const store = useWorkspace()
   const { workspace, setWorkspace, activeRuntimeId, switchRuntime } = store
-  const sources = useMemo(() => taskSources(store), [store])
+  const { snapshot, connected, runtimes } = store
+  // Depend on the exact slices taskSources reads so the collection is only rebuilt when
+  // the underlying data changes, not on every context value identity change.
+  const sources = useMemo(
+    () => taskSources({ workspace, snapshot, activeRuntimeId, connected, runtimes }),
+    [workspace, snapshot, activeRuntimeId, connected, runtimes],
+  )
   const host = useStudioHost()
-  const localTasks = workspace.tasks.filter((task) => !task.example)
+  const localTasks = useMemo(
+    () => workspace.tasks.filter((task) => !task.example),
+    [workspace.tasks],
+  )
   const [selectedId, setSelectedId] = useApplicationState(
     entityId ??
       localTasks.find((t) => !t.archived && !t.archivedAt)?.id ??
@@ -120,22 +127,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const [choosingProject, setChoosingProject] = useApplicationState(false)
   const [projectQuery, setProjectQuery] = useApplicationState('')
   const [suggestedProject, setSuggestedProject] = useApplicationState('')
-  const projectGroups = useMemo(
-    () =>
-      choosingProject
-        ? projectMachineGroups(
-            sources.flatMap((source) =>
-              source.workspace.repositories.map((repository) => ({
-                repository,
-                runtimeId: source.runtimeId,
-                source,
-              })),
-            ),
-          )
-        : [],
-    [sources, choosingProject],
-  )
-  const normalizedProjectQuery = projectQuery.trim().toLowerCase()
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -319,7 +310,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
         <ResizablePanelGroup direction="horizontal">
           {(sidebar || !task) && !compact && (
             <>
-              <ResizablePanel id="task-list" order={1} defaultSize={22} minSize={20} maxSize={36}>
+              <ResizablePanel id="task-list" order={1} defaultSize={18} minSize={16} maxSize={30}>
                 <TaskList
                   projectId={projectId}
                   onProjectChange={setProjectId}
@@ -486,149 +477,19 @@ export default function TasksView({ entityId }: StudioViewProps) {
           />
         </DialogContent>
       </Dialog>
-      <Dialog
+      <ProjectSelectionDialog
         open={choosingProject}
         onOpenChange={(open) => {
           if (!busy) setChoosingProject(open)
         }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogTitle>New task</DialogTitle>
-          <DialogDescription>
-            Choose a project, then a device if it’s available on more than one. Nothing runs until
-            you send your first message.
-          </DialogDescription>
-          {error && (
-            <p role="alert" className="text-xs text-destructive">
-              {error}
-            </p>
-          )}
-          <Input
-            aria-label="Search projects and devices"
-            placeholder="Search projects or devices…"
-            value={projectQuery}
-            onChange={(event) => setProjectQuery(event.target.value)}
-          />
-          <div className="max-h-[55dvh] space-y-3 overflow-y-auto">
-            {projectGroups.map((group) => {
-              const matches = group.entries.filter(({ repository, source }) =>
-                `${repository.gitIdentity ?? ''} ${repository.name} ${repository.path} ${source.name}`
-                  .toLowerCase()
-                  .includes(normalizedProjectQuery),
-              )
-              if (!matches.length) return null
-              if (group.entries.length === 1) {
-                const { source, repository } = group.entries[0]
-                return (
-                  <Button
-                    key={group.key}
-                    variant="outline"
-                    disabled={busy || !source.online || !!repository.gitIdentityError}
-                    className="h-auto w-full justify-start gap-3 rounded-lg px-3 py-3 text-left"
-                    onClick={() =>
-                      void startTask(taskCollectionKey(source.runtimeId, repository.id), true)
-                    }
-                  >
-                    <Folder className="size-5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm">{group.name}</span>
-                      <span className="mt-1 flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
-                        <Monitor className="size-3" />
-                        {source.name} · {repository.branch}
-                      </span>
-                      {!!repository.gitIdentityError && (
-                        <span className="block text-xs text-destructive">
-                          {repository.gitIdentityError}
-                        </span>
-                      )}
-                    </span>
-                    {source.online ? (
-                      <ChevronRight className="size-3.5" />
-                    ) : (
-                      <span className="text-xs">Offline</span>
-                    )}
-                  </Button>
-                )
-              }
-              return (
-                <details
-                  key={`${group.key}:${!!projectQuery}`}
-                  open={normalizedProjectQuery ? true : undefined}
-                  className="group rounded-lg border border-border/50"
-                  aria-label={group.name}
-                >
-                  <summary className="flex cursor-pointer items-center gap-2 px-3 py-3 text-xs text-muted-foreground">
-                    <Folder className="size-3.5" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium text-foreground">
-                        {group.name}
-                      </span>
-                      <span className="block truncate text-[10px]">
-                        {group.identity ?? 'Local repository'}
-                      </span>
-                    </span>
-                    <span className="ml-auto">
-                      {
-                        new Set(
-                          group.entries
-                            .filter(({ source }) => source.online)
-                            .map((entry) => entry.runtimeId),
-                        ).size
-                      }
-                      /{new Set(group.entries.map((entry) => entry.runtimeId)).size} online
-                    </span>
-                    <ChevronRight className="size-3 shrink-0 transition-transform group-open:rotate-90" />
-                  </summary>
-                  {matches.map(({ repository, source }) => {
-                    const key = taskCollectionKey(source.runtimeId, repository.id)
-                    return (
-                      <Button
-                        key={key}
-                        variant="ghost"
-                        disabled={busy || !source.online || !!repository.gitIdentityError}
-                        className={cn(
-                          'h-auto w-full justify-start gap-2 px-3 py-2 text-left',
-                          key === suggestedProject && 'bg-muted/50',
-                        )}
-                        onClick={() => void startTask(key, true)}
-                      >
-                        <Monitor className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="min-w-0">
-                          <span className="block truncate">
-                            {source.name}
-                            {!source.online ? ' · Offline' : ''}
-                          </span>
-                          <span className="block truncate text-xs font-normal text-muted-foreground">
-                            {repository.gitIdentityError ??
-                              `${repository.path} · ${repository.branch}`}
-                          </span>
-                        </span>
-                      </Button>
-                    )
-                  })}
-                </details>
-              )
-            })}
-            {projectQuery &&
-              !sources.some((source) =>
-                source.workspace.repositories.some((repository) =>
-                  `${repository.gitIdentity ?? ''} ${repository.name} ${repository.path} ${source.name}`
-                    .toLowerCase()
-                    .includes(normalizedProjectQuery),
-                ),
-              ) && (
-                <p className="px-3 py-4 text-sm text-muted-foreground">
-                  No matching projects or devices.
-                </p>
-              )}
-            {!sources.some((source) => source.workspace.repositories.length) && (
-              <p className="py-4 text-sm text-muted-foreground">
-                Add a project from the Projects menu to start a task.
-              </p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+        sources={sources}
+        busy={busy}
+        error={error}
+        projectQuery={projectQuery}
+        onProjectQueryChange={setProjectQuery}
+        suggestedProject={suggestedProject}
+        onSelect={(projectKey) => void startTask(projectKey, true)}
+      />
     </>
   )
 }

@@ -1,3 +1,4 @@
+import { runtimeIntegration, waitForRuntime as waitForJob } from '../testing/integration'
 import { decode } from '@dovo/protocol'
 import type { AgentAdapter } from '../agents/types'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -6,8 +7,7 @@ import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import { responses, type Automation, type AutomationData } from '@dovo/protocol'
 // These integration tests run real Git checkout/checkpoint subprocesses.
-vi.setConfig({ testTimeout: 30000 })
-const waitForJob = (assertion: () => void) => vi.waitFor(assertion, { timeout: 10000 })
+vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()

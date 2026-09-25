@@ -1,10 +1,14 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { startReconnecting } from './reconnecting.js'
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 it('retries dropped sessions with fresh attempts and stops all retries when disposed', async () => {
   vi.useFakeTimers()
+  vi.spyOn(Math, 'random').mockReturnValue(0)
   const errors: string[] = []
   const connect = vi.fn<() => Promise<void>>(async () => {
     throw new Error('offline')
@@ -58,4 +62,18 @@ it('replaces a stale session on foreground wakeup without overlapping or reporti
   await session.stop()
   expect(active).toBe(0)
   expect(errors).not.toHaveBeenCalled()
+})
+
+it('keeps reconnecting when the error reporter itself throws', async () => {
+  vi.useFakeTimers()
+  vi.spyOn(Math, 'random').mockReturnValue(0)
+  const connect = vi.fn<() => Promise<void>>(async () => {
+    throw new Error('offline')
+  })
+  const session = startReconnecting(connect, () => {
+    throw new Error('Reporter failed')
+  })
+  await vi.advanceTimersByTimeAsync(3000)
+  expect(connect).toHaveBeenCalledTimes(3)
+  await session.stop()
 })

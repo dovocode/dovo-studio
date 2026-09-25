@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { createDraftStorage } from './draft-storage'
+import { createDraftStorage } from './storage'
 
 function gate() {
   let resolve = () => {}

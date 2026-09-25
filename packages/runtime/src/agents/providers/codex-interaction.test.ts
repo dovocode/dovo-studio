@@ -248,3 +248,29 @@ it('keeps child output and completion out of the parent conversation', async () 
     }),
   )
 })
+
+it('fails a turn with the exit reason, not EPIPE, when Codex dies at startup', async () => {
+  const { run } = await fixture('steer')
+  const executable = join(run.cwd, 'codex-crash')
+  await writeFile(
+    executable,
+    `#!${process.execPath}
+process.stdin.destroy();
+process.stderr.write('Error: not logged in. Run codex login.');
+process.exit(1);`,
+    { mode: 0o700 },
+  )
+  run.agent = { ...run.agent, endpoint: executable }
+  const unhandled = vi.fn<(reason: unknown) => void>()
+  process.on('unhandledRejection', unhandled)
+  try {
+    await expect(codexAdapter.run(run)).rejects.toThrow(
+      'Codex exited (1). Error: not logged in. Run codex login.',
+    )
+    // Give a rethrown write failure a chance to surface as an unhandled rejection.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(unhandled).not.toHaveBeenCalled()
+  } finally {
+    process.off('unhandledRejection', unhandled)
+  }
+})

@@ -7,7 +7,7 @@ appId: com.dovo.studio
     timeout: 20000
 - runFlow: reset-computers.yaml
 - tapOn:
-    id: Runtime address
+    id: Computer address
 - inputText: ${FIRST_ADDRESS}
 - pressKey: Enter
 - scrollUntilVisible:
@@ -28,11 +28,11 @@ appId: com.dovo.studio
 - pressKey: Enter
 - scrollUntilVisible:
     element:
-      id: Device name
+      id: This phone’s name
     direction: DOWN
     centerElement: true
 - tapOn:
-    id: Device name
+    id: This phone’s name
 - eraseText
 - inputText: Dovo multi-device test
 - pressKey: Enter
@@ -48,11 +48,11 @@ appId: com.dovo.studio
     id: Dismiss keyboard
 - scrollUntilVisible:
     element:
-      id: Pair device
+      id: Connect
     direction: DOWN
     centerElement: true
 - tapOn:
-    id: Pair device
+    id: Connect
 - extendedWaitUntil:
     visible:
       id: Connected computer

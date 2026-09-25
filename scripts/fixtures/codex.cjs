@@ -138,6 +138,30 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
       })
       return
     }
+    if (JSON.stringify(request.params).includes('Long reply preview')) {
+      // A realistic, long Markdown answer for reviewing conversation typography.
+      notify('item/agentMessage/delta', {
+        delta: [
+          'Both apps are now more stable. I checked every change against a separate test runtime.',
+          '',
+          '## Stability',
+          '- **Crashes:** each tab now shows a recovery screen with **Try again**.',
+          '- **Offline:** a computer shows as **Offline** only after a request fails.',
+          '- **Messages:** a send that fails on a network blip now retries automatically.',
+          '',
+          'I also updated `verify-devices.cjs` and the pairing docs. Nothing is committed.',
+          '',
+          '**Not covered:**',
+          '',
+          '- Android',
+          '- the real Electron window',
+          '',
+          'The simulator now needs Metro running (`pnpm dev:mobile`) to open.',
+        ].join('\n'),
+      })
+      notify('turn/completed', { turn: { status: 'completed' } })
+      return
+    }
     if (JSON.stringify(request.params).includes('Markdown verification')) {
       notify('item/agentMessage/delta', { delta: '## Rendered reply\n\n**Streaming** Markdown' })
       setTimeout(() => {

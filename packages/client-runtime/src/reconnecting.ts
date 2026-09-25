@@ -15,10 +15,14 @@ export function startReconnecting(
         }),
       catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
     }).pipe(
-      Effect.catchAll((error) => Effect.sync(() => onError(error))),
+      Effect.catchAll((error) =>
+        // A faulty reporting callback must not end reconnection for the session's lifetime.
+        Effect.sync(() => onError(error)).pipe(Effect.catchAllCause(Effect.logError)),
+      ),
       Effect.zipRight(
         Effect.suspend(() => {
-          const wait = delay
+          // Jitter keeps clients of a restarted host from reconnecting in lockstep.
+          const wait = Math.round(delay * (1 + Math.random() * 0.2))
           delay = Math.min(delay * 2, 30000)
           return Effect.sleep(wait)
         }),

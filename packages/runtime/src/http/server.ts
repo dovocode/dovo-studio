@@ -91,7 +91,11 @@ export function createRuntimeServer(services: Services) {
     requests.set(request, done)
     void done.catch((error: unknown) => console.error('Runtime request failed', error))
   })
+  // Mobile clients reuse idle sockets; closing them sooner than the client's pool races new
+  // requests into "network connection was lost". TCP keepalive detects peers that left the LAN/VPN.
+  server.keepAliveTimeout = 65_000
   server.on('connection', (socket) => {
+    socket.setKeepAlive(true, 30_000)
     connections.add(socket)
     socket.once('close', () => connections.delete(socket))
     if (stopping) socket.destroy()
@@ -101,6 +105,14 @@ export function createRuntimeServer(services: Services) {
     maxPayload: 128 * 1024,
   })
   const authenticated = new Map<WebSocket, string>()
+  const responsive = new WeakSet<WebSocket>()
+  const track = (client: WebSocket, token: string) => {
+    authenticated.set(client, token)
+    responsive.add(client)
+    client.on('pong', () => responsive.add(client))
+    client.on('close', () => authenticated.delete(client))
+    client.on('error', () => authenticated.delete(client))
+  }
   server.on('upgrade', (request, socket, head) => {
     if (stopping) {
       socket.destroy()
@@ -114,9 +126,7 @@ export function createRuntimeServer(services: Services) {
         const taskId = services.simulators.taskId(ticket.resourceId)
         services.store.task(taskId)
         sockets.handleUpgrade(request, socket, head, (client) => {
-          authenticated.set(client, ticket.token)
-          client.on('close', () => authenticated.delete(client))
-          client.on('error', () => authenticated.delete(client))
+          track(client, ticket.token)
           attachBrowserSocket(client, taskId, ticket.token, services, true, ticket.resourceId)
         })
         return
@@ -126,9 +136,7 @@ export function createRuntimeServer(services: Services) {
         services.devices.authenticate(ticket.token)
         services.store.task(ticket.resourceId)
         sockets.handleUpgrade(request, socket, head, (client) => {
-          authenticated.set(client, ticket.token)
-          client.on('close', () => authenticated.delete(client))
-          client.on('error', () => authenticated.delete(client))
+          track(client, ticket.token)
           attachBrowserSocket(
             client,
             ticket.resourceId,
@@ -144,7 +152,7 @@ export function createRuntimeServer(services: Services) {
       services.devices.authenticate(ticket.token)
       services.terminals.get(ticket.resourceId)
       sockets.handleUpgrade(request, socket, head, (client) => {
-        authenticated.set(client, ticket.token)
+        track(client, ticket.token)
         services.activity.add('terminal', ticket.resourceId, 'Terminal connected')
         const detach = services.terminals.attach(ticket.resourceId, (data) => {
           if (client.readyState === WebSocket.OPEN) {
@@ -204,8 +212,25 @@ export function createRuntimeServer(services: Services) {
     }
   }, 1000)
   revocations.unref()
+  // A phone that sleeps or leaves the network leaves a half-open socket that keeps a
+  // terminal attached or a browser capture running. Reap sockets that miss a pong.
+  const liveness = setInterval(() => {
+    for (const socket of authenticated.keys()) {
+      if (!responsive.delete(socket)) {
+        socket.terminate()
+        continue
+      }
+      try {
+        socket.ping()
+      } catch {
+        socket.terminate()
+      }
+    }
+  }, 30_000)
+  liveness.unref()
   const closeSockets = () => {
     clearInterval(revocations)
+    clearInterval(liveness)
     for (const socket of authenticated.keys()) socket.terminate()
     sockets.close()
   }

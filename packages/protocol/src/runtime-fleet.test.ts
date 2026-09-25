@@ -389,3 +389,14 @@ it('preserves saved identity across a verified address change and rejects duplic
     'already saved',
   )
 })
+
+it('completes a typed runtime address without upgrading HTTP', async () => {
+  const { normalizeRuntimeAddress } = await import('./runtime-fleet.js')
+  expect(normalizeRuntimeAddress(' 192.168.1.20:51464/ ')).toBe('http://192.168.1.20:51464')
+  expect(normalizeRuntimeAddress('my-mac.tailnet.ts.net:51464')).toBe(
+    'http://my-mac.tailnet.ts.net:51464',
+  )
+  expect(normalizeRuntimeAddress('http://100.64.0.2:51464')).toBe('http://100.64.0.2:51464')
+  expect(normalizeRuntimeAddress('https://studio.example')).toBe('https://studio.example')
+  expect(normalizeRuntimeAddress('   ')).toBe('')
+})

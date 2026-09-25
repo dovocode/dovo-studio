@@ -9,7 +9,7 @@ import { Sheet } from '../ui/sheet'
 import { Icon } from '../ui/icon'
 import { IconButton } from '../ui/icon-button'
 import { colors, styles } from '../ui/theme'
-import { useTaskConversation } from './conversation-provider'
+import { useTaskConversation } from './conversation/provider'
 export function MessageQueue({ task }: { task: Task }) {
   const { connected, callEffect } = useRuntime(),
     { act, busy, error } = useAction()

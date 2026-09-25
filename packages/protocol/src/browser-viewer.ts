@@ -51,6 +51,25 @@ address.oninput = () => {
   addressEdited = true
 }
 let intentionallyClosed = false
+// Wi-Fi/VPN drops recover on their own; the user only acts after retries run out.
+let retryTimer: ReturnType<typeof setTimeout> | undefined
+let retryAttempt = 0
+const maxRetries = 6
+function cancelReconnect() {
+  clearTimeout(retryTimer)
+  retryTimer = undefined
+}
+function scheduleReconnect() {
+  if (intentionallyClosed || retryTimer || retryAttempt >= maxRetries) return false
+  const delay = Math.min(1000 * 2 ** retryAttempt, 15000)
+  retryAttempt++
+  notice(simulator ? 'Device connection lost. Reconnecting…' : 'Connection lost. Reconnecting…')
+  retryTimer = setTimeout(() => {
+    retryTimer = undefined
+    bridge('reconnect')
+  }, delay)
+  return true
+}
 let keyboardOpen = false,
   composing = false
 const sentinel = '\u200b'
@@ -202,13 +221,17 @@ function connect(url: string) {
   notice(simulator ? 'Connecting to device…' : 'Connecting to host browser…')
   next.onopen = () => {
     if (socket !== next) return
+    retryAttempt = 0
+    cancelReconnect()
     enabled(true)
     notice('')
     fit()
   }
-  next.onclose = () => {
+  next.onclose = (event) => {
     if (socket !== next) return
     enabled(false)
+    // 1000: the host ended the session. 1008: invalid ticket or revoked device.
+    if (event.code !== 1000 && event.code !== 1008 && scheduleReconnect()) return
     notice(
       simulator
         ? 'Device disconnected. Reconnect to continue.'
@@ -217,7 +240,7 @@ function connect(url: string) {
     )
   }
   next.onerror = () => {
-    if (socket === next)
+    if (socket === next && !retryTimer)
       notice('Cannot reach the host browser. Check your connection and reconnect.', true)
   }
   type Frame = { width: number; height: number; blob: Blob; sequence?: number }
@@ -345,15 +368,19 @@ window.addEventListener('message', (event) => {
     typeof message.message === 'string'
   ) {
     enabled(false)
-    notice(message.message, true)
+    // A failed ticket request during automatic recovery is retried with backoff.
+    if (!retryAttempt || !scheduleReconnect()) notice(message.message, true)
   }
 })
 reconnect.onclick = () => {
+  retryAttempt = 0
+  cancelReconnect()
   notice(simulator ? 'Connecting to device…' : 'Connecting to host browser…')
   bridge('reconnect')
 }
 element('close', HTMLButtonElement).onclick = () => {
   intentionallyClosed = true
+  cancelReconnect()
   bridge('close')
 }
 element('navigation', HTMLFormElement).onsubmit = (event) => {

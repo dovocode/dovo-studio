@@ -3,7 +3,7 @@ appId: com.dovo.studio
 - runFlow: open-devices.yaml
 - tapOn: Add computer
 - tapOn:
-    id: Runtime address
+    id: Computer address
 - inputText: ${SECOND_ADDRESS}
 - pressKey: Enter
 - scrollUntilVisible:
@@ -24,11 +24,11 @@ appId: com.dovo.studio
 - pressKey: Enter
 - scrollUntilVisible:
     element:
-      id: Device name
+      id: This phone’s name
     direction: DOWN
     centerElement: true
 - tapOn:
-    id: Device name
+    id: This phone’s name
 - eraseText
 - inputText: Dovo multi-device test
 - pressKey: Enter
@@ -44,11 +44,11 @@ appId: com.dovo.studio
     id: Dismiss keyboard
 - scrollUntilVisible:
     element:
-      id: Pair device
+      id: Connect
     direction: DOWN
     centerElement: true
 - tapOn:
-    id: Pair device
+    id: Connect
 - extendedWaitUntil:
     visible: Manage First Mac
     timeout: 20000

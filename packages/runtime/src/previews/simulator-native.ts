@@ -7,13 +7,19 @@ import { once } from 'node:events'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import sharp from 'sharp'
 import { Schema } from 'effect'
 import type { PreviewDevice, RemoteBrowserInput } from '@dovo/protocol'
 import type { BrowserFrame } from './browser.js'
 import { SimulatorRpc } from './simulator-rpc.js'
 import { androidProtocol, iosProtocol } from './simulator-protocols.js'
 import { HttpError } from '../errors.js'
+// sharp is a native image library that is only needed once a frame is decoded. Loading it
+// lazily keeps it out of the runtime's startup module graph.
+let sharpModule: typeof import('sharp').default | undefined
+async function loadSharp() {
+  sharpModule ??= (await import('sharp')).default
+  return sharpModule
+}
 export interface NativeSimulator {
   start(frame: (frame: BrowserFrame) => void, error: (error: Error) => void): () => void
   input(input: RemoteBrowserInput): Promise<void>
@@ -257,7 +263,7 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
         let stopped = false
         const encoder = latest<Buffer>(
           async (data) => {
-            const info = await sharp(data).metadata()
+            const info = await (await loadSharp())(data).metadata()
             const landscape = (info.width ?? 0) > (info.height ?? 0)
             width = landscape
               ? Math.max(size.widthPoints, size.heightPoints)
@@ -624,7 +630,9 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
             value.image.byteOffset,
             value.image.byteLength,
           )
-          const data = await sharp(pixels, {
+          const data = await (
+            await loadSharp()
+          )(pixels, {
             raw: {
               width: w,
               height: h,

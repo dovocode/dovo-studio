@@ -2,7 +2,7 @@ import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/application-state'
-import { ConnectionStatus } from '../runtime/connection-status'
+import { ConnectionPill, FloatingPills } from '../runtime/connection-status'
 import { NativeTabs } from 'expo-router/unstable-native-tabs'
 import { router, useGlobalSearchParams, useIsFocused, usePathname } from 'expo-router'
 import { taskHref } from './task-route'
@@ -84,15 +84,6 @@ export function WorkbenchScene({ tab }: { tab: Tab | 'scm' }) {
       }}
     >
       <WorkbenchNotices />
-      {tab !== 'settings' && tab !== 'scm' && (
-        <ConnectionStatus
-          onSettings={() =>
-            router.navigate('/settings/devices', {
-              withAnchor: true,
-            })
-          }
-        />
-      )}
       {context.scenes[tab] ?? null}
     </NavigationContext.Provider>
   )
@@ -183,8 +174,9 @@ export function Workbench() {
   const [screens, setScreens] = useApplicationState<Record<string, ComponentType>>({}),
     [loadError, setLoadError] = useApplicationState('')
   useEffect(() => {
-    if (runtime.ready && !runtime.profiles.length && active !== 'settings')
-      router.replace('/settings')
+    // Tasks greets a first-run user with pairing; other collections have nothing to show yet.
+    if (runtime.ready && !runtime.profiles.length && active !== 'settings' && active !== 'tasks')
+      router.replace('/')
   }, [runtime.ready, runtime.profiles.length, active])
   const shortcuts = useShortcuts()
   const routedShortcut = useRef('')
@@ -260,8 +252,11 @@ export function Workbench() {
       }),
     )
   }
+  // Without a computer only Tasks (first-run welcome) and Settings have anything to show.
   const selected = !runtime.profiles.length
-    ? 'settings'
+    ? active === 'tasks' && pathname !== '/projects'
+      ? 'tasks'
+      : 'settings'
     : active === 'tasks' && pathname === '/projects'
       ? 'scm'
       : active
@@ -403,6 +398,11 @@ export function Workbench() {
             }}
           >
             <View key={tab} />
+            {tab !== 'settings' && (
+              <FloatingPills>
+                <ConnectionPill />
+              </FloatingPills>
+            )}
           </NativeSafeAreaView>
         )
     }
@@ -470,7 +470,6 @@ export function Workbench() {
                 name="(tasks)"
                 disableAutomaticContentInsets={Platform.OS === 'ios'}
                 testID="Tab Tasks"
-                disabled={!runtime.profiles.length}
                 listeners={{
                   tabPress: () => {
                     if (active === 'tasks') router.dismissTo('/')

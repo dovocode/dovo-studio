@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 const f = vi.hoisted(() => ({
-  open: vi.fn(async (_url: string) => {}),
+  open: vi.fn<(url: string) => Promise<void>>(async (_url) => {}),
   listeners: new Map<string, (error: Error) => void>(),
   install: vi.fn<() => void>(),
   message: vi.fn<(options: unknown) => Promise<{ response: number }>>(async () => ({
@@ -94,7 +94,7 @@ it('opens Linux package downloads without attempting an AppImage update for DEB/
   vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
   vi.stubEnv('APPIMAGE', '')
   const { registerUpdates } = await import('./updates')
-  const prepare = vi.fn(async () => async () => {})
+  const prepare = vi.fn<() => Promise<() => Promise<void>>>(async () => async () => {})
   await registerUpdates('/unused', prepare)()
   expect(f.open).toHaveBeenCalledWith('https://github.com/dovocode/dovo-studio/releases/latest')
   expect(prepare).not.toHaveBeenCalled()

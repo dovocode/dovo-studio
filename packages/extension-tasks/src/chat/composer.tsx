@@ -4,7 +4,7 @@ import { generatedTitleSchema, resolveTaskAgent } from '@dovo/studio-core'
 import { AttachmentPicker } from './attachment-picker'
 import { MessageAttachments } from './message-attachments'
 import { useAttachments } from './use-attachments'
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowUp, LoaderCircle, ListPlus, Square, CornerUpRight } from 'lucide-react'
 import { useWorkspace, updateTask, responses, type Task } from '@dovo/studio-core'
 import {
@@ -34,10 +34,31 @@ export function Composer({
   const sending = submitBusy || machineMoving
   const sendingRequest = useRef(false)
   const attachments = useAttachments(task)
+  // Draft text is edited locally and written back to the workspace on a short debounce.
+  // Routing every keystroke through setWorkspace would deep-diff and sync the whole
+  // workspace, re-rendering every useWorkspace consumer on each character typed.
+  const [draft, setDraft] = useState(task.draft)
+  const lastWritten = useRef(task.draft)
+  useEffect(() => {
+    // Adopt external draft changes (e.g. moving the task to another machine) without
+    // clobbering in-progress typing.
+    if (task.draft !== lastWritten.current) {
+      lastWritten.current = task.draft
+      setDraft(task.draft)
+    }
+  }, [task.draft])
+  useEffect(() => {
+    if (draft === lastWritten.current) return
+    const timer = setTimeout(() => {
+      lastWritten.current = draft
+      setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, draft })))
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [draft, task.id, setWorkspace])
   const pendingQuestion = !!snapshot?.questions.some(
     (question) => question.taskId === task.id && question.prompt.blocking !== false,
   )
-  const hasInput = !!task.draft.trim() || attachments.files.length > 0
+  const hasInput = !!draft.trim() || attachments.files.length > 0
   const attempt = useRef<{
     id: string
     text: string
@@ -65,7 +86,7 @@ export function Composer({
     }
   }
   const send = async (mode: 'queue' | 'steer' = 'queue') => {
-    const text = task.draft.trim()
+    const text = draft.trim()
     const attachmentIds = attachments.files.map((f) => f.id)
     if (
       (!text && !attachmentIds.length) ||
@@ -147,10 +168,12 @@ export function Composer({
             messages: [...t.messages, pending.message],
           })),
         )
+      lastWritten.current = ''
+      setDraft((current) => (current.trim() === text ? '' : current))
       setWorkspace((w) =>
         updateTask(w, task.id, (t) => ({
           ...t,
-          draft: t.draft === task.draft ? '' : t.draft,
+          draft: t.draft === text ? '' : t.draft,
         })),
       )
       attempt.current = null
@@ -198,16 +221,9 @@ export function Composer({
           autoFocus={firstMessage}
           aria-label="Message task"
           className={cn('min-h-12 px-3 pt-2 pb-1', pendingQuestion && 'hidden')}
-          value={task.draft}
+          value={draft}
           disabled={sending || task.archived || pendingQuestion}
-          onChange={(e) =>
-            setWorkspace((w) =>
-              updateTask(w, task.id, (t) => ({
-                ...t,
-                draft: e.target.value,
-              })),
-            )
-          }
+          onChange={(e) => setDraft(e.target.value)}
           placeholder={
             task.archived
               ? 'Reopen this task to continue'
@@ -249,7 +265,7 @@ export function Composer({
                     stopping ||
                     attachments.busy ||
                     task.archived ||
-                    (!task.draft.trim() && !attachments.files.length)
+                    (!draft.trim() && !attachments.files.length)
                   }
                   onClick={() => void send('steer')}
                 >
@@ -278,7 +294,7 @@ export function Composer({
                       : 'Save message to task'
                 }
                 disabled={
-                  (!task.draft.trim() && !attachments.files.length) ||
+                  (!draft.trim() && !attachments.files.length) ||
                   sending ||
                   stopping ||
                   attachments.busy ||

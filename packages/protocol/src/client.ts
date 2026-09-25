@@ -1,4 +1,4 @@
-import { Data, Effect, Either, Exit, Schema } from 'effect'
+import { Data, Effect, Either, Exit, Schedule, Schema } from 'effect'
 import { decodeResult, ValidationError } from './schema.js'
 import type { RuntimeConnection } from './runtime.js'
 import { REPOSITORY_CLONE_TIMEOUT_MS } from './repositories.js'
@@ -42,7 +42,26 @@ function requestTimeout(path: string) {
               : 30000
 }
 
-/** A single request; interruption aborts both the fetch and response body read. */
+// Proxies and VPN gateways (Tailscale, NetBird) report a briefly unreachable host this way.
+const transientStatuses = new Set([502, 503, 504])
+const isTransient = (error: RuntimeRequestError | ValidationError) =>
+  error instanceof RuntimeRequestError &&
+  (error.kind === 'connection' ||
+    (error.status !== undefined && transientStatuses.has(error.status)))
+// Wi-Fi roaming and reused keep-alive sockets drop single requests. Two quick retries
+// absorb that blip instead of reporting a healthy host as offline or failing a message.
+const readRetry = {
+  schedule: Schedule.exponential(150).pipe(Schedule.jittered),
+  times: 2,
+  while: isTransient,
+}
+
+// The runtime deduplicates these by client message ID, so a replay cannot post twice.
+const idempotentPaths = new Set(['/api/tasks/message', '/api/tasks/steer'])
+
+/** A single request; interruption aborts both the fetch and response body read.
+ * GET reads and ID-deduplicated sends retry transient failures within the same deadline;
+ * other mutations never retry. */
 export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
   connection: RuntimeConnection | null,
   address: string,
@@ -164,8 +183,9 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
               cause,
             }),
         })
-        const value = yield* parseJson(text)
         if (!response.ok) {
+          // Gateways and a stopping runtime answer with plain text, not a JSON error body.
+          const value = yield* Effect.orElseSucceed(parseJson(text), () => undefined)
           const error = decodeResult(
             Schema.Struct({
               error: Schema.String,
@@ -192,7 +212,7 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
             }),
           )
         }
-        const parsed = yield* decodeResponse(value)
+        const parsed = yield* decodeResponse(yield* parseJson(text))
         if (conditional) {
           conditional.save(response.headers.get('etag'), text)
           rememberSnapshotTag(parsed, response.headers.get('etag'))
@@ -200,6 +220,8 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
         return parsed
       }),
     ).pipe(
+      (request) =>
+        method === 'GET' || idempotentPaths.has(path) ? Effect.retry(request, readRetry) : request,
       Effect.timeoutFail({
         duration: timeoutMs ?? requestTimeout(path),
         onTimeout: () =>

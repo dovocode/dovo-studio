@@ -68,11 +68,11 @@ and do not change an already installed app until it is rebuilt and installed.
 
 ## Connecting a phone and changing addresses
 
-On the desktop, open **Settings → Devices & runtime → Manage → Connect your phone**. Choose a Wi-Fi
-or VPN address reachable from the phone. The QR code opens Dovo’s Computers screen with the address
-and single-use code filled in. Review the address and tap **Pair device**; approve the named phone
-on the desktop. Scanning alone never grants access. Codes expire after two minutes. Manual entry and
-HTTP remain supported; no account is required.
+On the desktop, open **Settings → Devices & runtime** and choose **Connect your phone**. Choose a
+Wi-Fi or VPN address reachable from the phone. The QR code opens Dovo’s Computers screen with the
+address and single-use code filled in. Review the address and tap **Connect**; approve the named
+phone on the desktop. Scanning alone never grants access. Codes expire after two minutes. Manual
+entry and HTTP remain supported; no account is required.
 
 Use **Update connection address** for a saved remote computer when its address changes. Pair the new
 address with a fresh code from the same computer. The old connection remains saved until

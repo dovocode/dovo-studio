@@ -18,6 +18,7 @@ import {
   useWorkspace,
 } from '@dovo/studio-core'
 import { Button, ChoicePicker, IconButton, Input, cn } from '@dovo/studio-ui'
+import { useMemo } from 'react'
 export function RuntimeOverview() {
   const { runtimes, refreshRuntimes, switchRuntime } = useWorkspace()
   const host = useStudioHost()
@@ -27,11 +28,24 @@ export function RuntimeOverview() {
     [sort, setSort] = useApplicationState('priority'),
     [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
-  const visible = runtimes.filter((entry) => !device || entry.profile.id === device)
-  const allTasks = aggregateRuntimeTasks(visible)
-  const needsInput = new Set(allTasks.filter((entry) => entry.needsInput).map((entry) => entry.key))
-  const projects = new Map(
-    allTasks.map((entry) => [`${entry.runtimeId}:${entry.task.repositoryId}`, entry.projectName]),
+  const visible = useMemo(
+    () => runtimes.filter((entry) => !device || entry.profile.id === device),
+    [runtimes, device],
+  )
+  const allTasks = useMemo(() => aggregateRuntimeTasks(visible), [visible])
+  const needsInput = useMemo(
+    () => new Set(allTasks.filter((entry) => entry.needsInput).map((entry) => entry.key)),
+    [allTasks],
+  )
+  const projects = useMemo(
+    () =>
+      new Map(
+        allTasks.map((entry) => [
+          `${entry.runtimeId}:${entry.task.repositoryId}`,
+          entry.projectName,
+        ]),
+      ),
+    [allTasks],
   )
   const partialPulls = visible.some(
     (entry) => !entry.pulls || entry.pulls.partial || entry.pullError || !entry.connected,
@@ -39,33 +53,36 @@ export function RuntimeOverview() {
   const pullCount = visible.some((entry) => entry.pulls)
     ? `${visible.reduce((sum, entry) => sum + (entry.pulls?.needsAttention ?? 0), 0)}${partialPulls ? '+' : ''}`
     : '—'
-  const tasks = allTasks
-    .filter(
-      (entry) =>
-        (filter !== 'input' || entry.needsInput) &&
-        (filter !== 'running' || entry.task.status === 'running') &&
-        [entry.task.title, entry.projectName, entry.runtimeName, entry.task.checkoutBranch ?? '']
-          .join(' ')
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-    )
-    .sort((a, b) =>
-      compareTasks(
-        {
-          ...a.task,
-          id: a.key,
-          repositoryId: `${a.runtimeId}:${a.task.repositoryId}`,
-        },
-        {
-          ...b.task,
-          id: b.key,
-          repositoryId: `${b.runtimeId}:${b.task.repositoryId}`,
-        },
-        sort,
-        needsInput,
-        projects,
-      ),
-    )
+  const tasks = useMemo(() => {
+    const needle = query.toLowerCase()
+    return allTasks
+      .filter(
+        (entry) =>
+          (filter !== 'input' || entry.needsInput) &&
+          (filter !== 'running' || entry.task.status === 'running') &&
+          [entry.task.title, entry.projectName, entry.runtimeName, entry.task.checkoutBranch ?? '']
+            .join(' ')
+            .toLowerCase()
+            .includes(needle),
+      )
+      .sort((a, b) =>
+        compareTasks(
+          {
+            ...a.task,
+            id: a.key,
+            repositoryId: `${a.runtimeId}:${a.task.repositoryId}`,
+          },
+          {
+            ...b.task,
+            id: b.key,
+            repositoryId: `${b.runtimeId}:${b.task.repositoryId}`,
+          },
+          sort,
+          needsInput,
+          projects,
+        ),
+      )
+  }, [allTasks, filter, query, sort, needsInput, projects])
   const open = async (runtimeId: string, viewId: string, entityId?: string) => {
     setBusy(true)
     setError('')
@@ -201,7 +218,7 @@ export function RuntimeOverview() {
                     <Input
                       aria-label="Search all devices"
                       className="h-7 w-full max-w-64 pl-8 text-[11px]"
-                      placeholder="Search threads, projects, devices…"
+                      placeholder="Search tasks, projects, computers…"
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
                     />
@@ -282,7 +299,7 @@ export function RuntimeOverview() {
                   {!tasks.length && (
                     <p className="p-6 text-center text-xs text-muted-foreground">
                       {query || filter !== 'active'
-                        ? 'No threads match these filters.'
+                        ? 'No tasks match these filters.'
                         : 'No active tasks on these computers.'}
                     </p>
                   )}
@@ -293,14 +310,13 @@ export function RuntimeOverview() {
                   <h2 className="text-sm font-semibold">Computers</h2>
                   <p className="text-xs text-muted-foreground">
                     {visible.filter((entry) => entry.connected).length} of {visible.length} online
-                    {' · '}
-                    {pullCount} PRs need attention
+                    {pullCount !== '—' &&
+                      ` · ${pullCount} ${pullCount === '1' ? 'PR needs' : 'PRs need'} attention`}
                   </p>
                 </div>
                 {partialPulls && (
                   <p className="text-xs text-muted-foreground">
-                    PR totals cover loaded results. Some devices or repositories are still loading,
-                    unavailable, or have more results.
+                    Some pull requests couldn’t be counted yet, so totals may be higher.
                   </p>
                 )}
                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -322,7 +338,7 @@ export function RuntimeOverview() {
                           )}
                         >
                           <Circle size={7} fill="currentColor" />
-                          {entry.connected ? 'Online' : 'Offline'}
+                          {entry.connected ? 'Online' : entry.error ? 'Offline' : 'Connecting…'}
                         </span>
                       </div>
                       <p className="mt-1 truncate text-[11px] text-muted-foreground">
@@ -330,7 +346,7 @@ export function RuntimeOverview() {
                       </p>
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
                         <span className="text-muted-foreground">
-                          {aggregateRuntimeTasks([entry]).length} active threads
+                          {activeTaskLabel(aggregateRuntimeTasks([entry]).length)}
                         </span>
                         <Button
                           variant="ghost"
@@ -373,4 +389,8 @@ export function RuntimeOverview() {
       </div>
     </section>
   )
+}
+
+function activeTaskLabel(count: number) {
+  return `${count} active task${count === 1 ? '' : 's'}`
 }

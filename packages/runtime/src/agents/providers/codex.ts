@@ -66,9 +66,28 @@ export const codexAdapter: AgentAdapter = {
     void completed.catch(() => {})
     child.on('error', rejectTurn)
     child.on('exit', (code) => {
+      // Report why Codex stopped before disposal rejects its pending requests generically.
+      rejectTurn(new Error(`Codex exited (${code}). ${stderr.trim()}`.trim()))
       rpc.dispose()
-      rejectTurn(new Error(`Codex exited (${code}). ${stderr}`))
     })
+    // A request races the process: if Codex dies, the turn fails with its exit reason. Its
+    // pipes close just before the exit event, so briefly prefer that explanation over the
+    // connection's generic "pending response rejected".
+    const request = (method: string, params?: object) =>
+      Promise.race([
+        rpc.sendRequest(method, params),
+        completed.then(() => {
+          throw new Error('Codex finished before answering')
+        }),
+      ]).catch(async (error: unknown) => {
+        throw await Promise.race([
+          completed.then(
+            () => error,
+            (reason: unknown) => reason,
+          ),
+          new Promise((resolve) => setTimeout(() => resolve(error), 1000)),
+        ])
+      })
     rpc.onRequest(async (method, params: unknown, token) => {
       run.onEvent?.(method, params)
       if (
@@ -186,7 +205,7 @@ export const codexAdapter: AgentAdapter = {
     rpc.listen()
     try {
       if (run.signal.aborted) throw new Error('Task cancelled')
-      const initialized = await rpc.sendRequest('initialize', {
+      const initialized = await request('initialize', {
         clientInfo: {
           name: 'dovo_studio',
           title: 'Dovo Studio',
@@ -221,7 +240,7 @@ export const codexAdapter: AgentAdapter = {
               }
             : {}),
       }
-      const response = await rpc.sendRequest(run.sessionId ? 'thread/resume' : 'thread/start', {
+      const response = await request(run.sessionId ? 'thread/resume' : 'thread/start', {
         ...(run.sessionId
           ? {
               threadId: run.sessionId,
@@ -298,12 +317,12 @@ export const codexAdapter: AgentAdapter = {
         run.tools !== 'none' &&
         (program || (supportsCodexDaybreak(initialized) && thread.daybreakEnabled === true))
       )
-        await rpc.sendRequest('thread/metadata/update', {
+        await request('thread/metadata/update', {
           threadId: thread.id,
           daybreakEnabled: !!program && program !== 'standard',
         })
       clearTimeout(timeout)
-      const started = await rpc.sendRequest('turn/start', {
+      const started = await request('turn/start', {
         threadId: thread.id,
         ...(run.agent.reasoning
           ? {

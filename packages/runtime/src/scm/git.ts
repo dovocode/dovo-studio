@@ -180,6 +180,13 @@ export class GitService {
     this.identities.set(path, { expires: Date.now() + 60000, result })
     return result
   }
+  // Non-blocking read for hot paths (e.g. the snapshot route): never spawns git inline.
+  // Returns the last known identity, refreshing it in the background so the next poll sees it.
+  cachedRepositoryIdentity(path: string) {
+    const cached = this.identities.get(path)
+    if (!cached || cached.expires <= Date.now()) this.repositoryIdentity(path).catch(() => {})
+    return cached?.result
+  }
   private async readRepositoryIdentity(path: string) {
     const remotes = (await this.command(path, ['remote'])).trim().split('\n').filter(Boolean)
     // Prefer the clone's origin: merging every remote would incorrectly merge forks.

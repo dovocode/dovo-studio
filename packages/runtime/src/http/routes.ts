@@ -298,8 +298,17 @@ export function route(
             ...s.store.publicWorkspace(),
             repositories: yield* Effect.forEach(
               s.store.publicWorkspace().repositories,
-              (repo) =>
-                serviceResult(s.git.repositoryIdentity(repo.path)).pipe(
+              (repo) => {
+                // Never block the snapshot on spawning git: use the last known identity and
+                // refresh it in the background. Unknown identity is not an error, it is pending.
+                const cached = s.git.cachedRepositoryIdentity(repo.path)
+                if (!cached)
+                  return Effect.succeed({
+                    ...repo,
+                    gitIdentity: undefined,
+                    gitIdentityError: undefined,
+                  })
+                return serviceResult(cached).pipe(
                   Effect.map((gitIdentity) => ({
                     ...repo,
                     gitIdentity,
@@ -312,7 +321,8 @@ export function route(
                       gitIdentityError: 'Checkout unavailable: could not inspect its Git remote',
                     }),
                   ),
-                ),
+                )
+              },
               { concurrency: 4 },
             ),
           },

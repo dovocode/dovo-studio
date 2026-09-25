@@ -4,10 +4,15 @@ import { nativeEffect, mobileWorkflow } from './native-effect'
 import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import { useApplicationState } from './application-state'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { ActivityIndicator, AppState, Keyboard, Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
-import { runtimeRequest, runtimeRequestEffect, responses } from '@dovo/protocol'
+import {
+  normalizeRuntimeAddress,
+  runtimeRequest,
+  runtimeRequestEffect,
+  responses,
+} from '@dovo/protocol'
 import { useRuntime } from './provider'
 import { Action } from '../ui/action'
 import { Field } from '../ui/field'
@@ -133,146 +138,96 @@ export function PairComputer({
       void polling.stop()
     }
   }, [pending, address, computerName, replaceId])
-  return (
-    <View
-      style={{
-        gap: 16,
-      }}
-    >
-      <Text style={styles.muted}>
-        {replaceId
-          ? 'Enter the new address and a fresh pairing code from the same computer. Your saved connection stays unchanged until pairing succeeds.'
-          : 'On your Mac, open Settings → Devices & runtime → Manage → Connect your phone. Scan the QR code with the iPhone Camera, or enter the address and code below.'}
-      </Text>
-      <Field
-        label="Runtime address"
-        placeholder="http://100.x.x.x:51464"
-        keyboardType="url"
-        autoCorrect={false}
-        autoComplete="off"
-        value={address}
-        onChangeText={setAddress}
-        editable={!pending && !busy}
-      />
-      <Pressable
-        testID="Pairing options"
-        accessibilityLabel="Pairing options"
-        accessibilityRole="button"
-        accessibilityState={{
-          expanded: options,
-        }}
-        onPress={() => setOptions(!options)}
-        style={[
-          styles.row,
-          {
-            minHeight: 44,
-          },
-        ]}
-      >
-        <Text
-          style={[
-            styles.text,
-            {
-              flex: 1,
-              color: colors.accent,
-            },
-          ]}
-        >
-          Pairing options
-        </Text>
-        <Icon name={options ? 'down' : 'next'} size={13} color={colors.muted} />
-      </Pressable>
-      {options && (
-        <>
-          <Field
-            label="Computer name"
-            placeholder="Optional · Work Mac, Home server…"
-            value={computerName}
-            onChangeText={setComputerName}
-            editable={!pending && !busy}
-            maxLength={80}
-          />
-          <Field
-            label="Device name"
-            value={name}
-            onChangeText={setName}
-            editable={!pending && !busy}
-            maxLength={100}
-          />
-        </>
-      )}
-      <Field
-        label="Pairing code"
-        placeholder="8 digits from the computer"
-        keyboardType="number-pad"
-        value={code}
-        onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 8))}
-        editable={!pending && !busy}
-      />
-      {keyboard && !inSheet && (
-        <Action secondary label="Dismiss keyboard" onPress={Keyboard.dismiss} />
-      )}
-      <Action
-        label={finishing ? 'Saving connection…' : pending ? 'Checking pairing…' : 'Pair device'}
-        disabled={busy || !!pending || !/^\d{8}$/.test(code) || !name.trim() || !address.trim()}
-        onPress={() =>
-          act(() =>
-            mobileWorkflow(function* () {
-              Keyboard.dismiss()
-              setPairError('')
-              const target = address.trim()
-              setAddress(target)
-              setPending(
-                yield* nativeEffect(() =>
-                  runtimeRequest(
-                    null,
-                    target,
-                    '/api/pair/request',
-                    {
-                      protocolVersion: PAIRING_PROTOCOL_VERSION,
-                      code,
-                      name: name.trim(),
-                    },
-                    responses.pairRequest,
-                  ),
-                ),
-              )
-            }),
-          )
-        }
-      />
-      {pending && (
-        <View
-          style={[
-            styles.card,
-            {
-              gap: 12,
-            },
-          ]}
-        >
-          <View
-            style={[
-              styles.row,
+  const digits = code.length
+  const submit = () =>
+    act(() =>
+      mobileWorkflow(function* () {
+        Keyboard.dismiss()
+        setPairError('')
+        const target = normalizeRuntimeAddress(address)
+        setAddress(target)
+        setPending(
+          yield* nativeEffect(() =>
+            runtimeRequest(
+              null,
+              target,
+              '/api/pair/request',
               {
-                flexWrap: 'nowrap',
+                protocolVersion: PAIRING_PROTOCOL_VERSION,
+                code,
+                name: name.trim(),
               },
-            ]}
-          >
+              responses.pairRequest,
+            ),
+          ),
+        )
+      }),
+    )
+  return (
+    <View style={{ gap: 20 }}>
+      {replaceId ? (
+        <Text style={styles.muted}>
+          Enter the new address and a fresh pairing code from the same computer. Your saved
+          connection stays unchanged until pairing succeeds.
+        </Text>
+      ) : (
+        <View style={{ gap: 12 }}>
+          <Step number={1}>
+            On your computer, open Dovo and choose{' '}
+            <Text style={{ color: colors.text, fontWeight: '600' }}>Connect your phone</Text> in
+            Settings → Devices & runtime.
+          </Step>
+          <Step number={2}>
+            Scan the QR code with the iPhone Camera, or type the address and code it shows.
+          </Step>
+        </View>
+      )}
+      <View style={{ gap: 14 }}>
+        <Field
+          label="Computer address"
+          placeholder="192.168.1.20:51464"
+          hint="Wi-Fi, Tailscale and NetBird addresses all work. Include the port."
+          keyboardType="url"
+          autoCorrect={false}
+          autoComplete="off"
+          returnKeyType="next"
+          value={address}
+          onChangeText={setAddress}
+          editable={!pending && !busy}
+        />
+        <Field
+          label="Pairing code"
+          placeholder="8-digit code"
+          hint={
+            digits && digits < 8
+              ? `${8 - digits} more digit${8 - digits === 1 ? '' : 's'}`
+              : 'Codes expire after two minutes.'
+          }
+          keyboardType="number-pad"
+          textContentType="oneTimeCode"
+          value={code}
+          onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 8))}
+          editable={!pending && !busy}
+          // No letterSpacing: iOS recycles native inputs and leaks it into other placeholders.
+          style={{ fontSize: 20, fontVariant: ['tabular-nums'] }}
+        />
+      </View>
+      {!!(error || pairError) && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error || pairError}
+        </Text>
+      )}
+      {pending ? (
+        <View style={[styles.card, { gap: 12 }]}>
+          <View style={[styles.row, { flexWrap: 'nowrap' }]}>
             <ActivityIndicator color={colors.accent} />
-            <Text
-              style={[
-                styles.text,
-                {
-                  flex: 1,
-                },
-              ]}
-            >
-              Waiting for your computer
+            <Text style={[styles.text, { flex: 1, fontWeight: '600' }]}>
+              {finishing ? 'Saving connection…' : 'Waiting for your computer'}
             </Text>
           </View>
           <Text style={styles.muted}>
-            Keep this screen open and the computer online. Approve this phone on the computer to
-            finish pairing.
+            Keep this screen open and the computer online. If your computer asks, approve this phone
+            there to finish.
           </Text>
           <Action
             secondary
@@ -296,41 +251,97 @@ export function PairComputer({
             }
           />
         </View>
+      ) : (
+        <Action
+          wide
+          label={busy ? 'Connecting…' : 'Connect'}
+          disabled={busy || digits !== 8 || !name.trim() || !address.trim()}
+          onPress={submit}
+        />
       )}
-      {!!(error || pairError) && (
-        <Text accessibilityRole="alert" style={styles.error}>
-          {error || pairError}
-        </Text>
+      {keyboard && !inSheet && (
+        <Action secondary label="Dismiss keyboard" onPress={Keyboard.dismiss} />
       )}
-      <Pressable
-        testID="Connection help"
-        accessibilityLabel="Connection help"
-        accessibilityRole="button"
-        accessibilityState={{
-          expanded: help,
-        }}
-        onPress={() => setHelp(!help)}
-        style={[
-          styles.row,
-          {
-            minHeight: 44,
-          },
-        ]}
-      >
-        <Text
-          style={[
-            styles.text,
-            {
-              flex: 1,
-              color: colors.accent,
-            },
-          ]}
-        >
-          {error || pairError ? 'Trouble connecting?' : 'How to connect'}
-        </Text>
-        <Icon name={help ? 'down' : 'next'} size={13} color={colors.muted} />
-      </Pressable>
-      {help && <ConnectionHelp pairing />}
+      <View>
+        <Disclosure
+          label="Name this computer and phone"
+          testID="Pairing options"
+          open={options}
+          onToggle={() => setOptions(!options)}
+        />
+        {options && (
+          <View style={{ gap: 14, paddingBottom: 8 }}>
+            <Field
+              label="Computer name"
+              placeholder="Optional · Work Mac, Home server…"
+              value={computerName}
+              onChangeText={setComputerName}
+              editable={!pending && !busy}
+              maxLength={80}
+            />
+            <Field
+              label="This phone’s name"
+              hint="Shown on your computer’s list of paired devices."
+              value={name}
+              onChangeText={setName}
+              editable={!pending && !busy}
+              maxLength={100}
+            />
+          </View>
+        )}
+        <Disclosure
+          label={error || pairError ? 'Trouble connecting?' : 'How to connect'}
+          testID="Connection help"
+          open={help}
+          onToggle={() => setHelp(!help)}
+        />
+        {help && <ConnectionHelp pairing />}
+      </View>
     </View>
+  )
+}
+function Step({ number, children }: { number: number; children: ReactNode }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+      <View
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          backgroundColor: 'rgba(165, 180, 252, 0.16)',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginTop: 1,
+        }}
+      >
+        <Text style={{ color: colors.accent, fontSize: 13, fontWeight: '700' }}>{number}</Text>
+      </View>
+      <Text style={[styles.muted, { flex: 1, fontSize: 15, lineHeight: 21 }]}>{children}</Text>
+    </View>
+  )
+}
+function Disclosure({
+  label,
+  testID,
+  open,
+  onToggle,
+}: {
+  label: string
+  testID: string
+  open: boolean
+  onToggle: () => void
+}) {
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      onPress={onToggle}
+      style={({ pressed }) => [styles.row, { minHeight: 44, opacity: pressed ? 0.6 : 1 }]}
+    >
+      <Text style={[styles.text, { flex: 1, color: colors.accent, fontSize: 15 }]}>{label}</Text>
+      <Icon name={open ? 'down' : 'next'} size={13} color={colors.muted} />
+    </Pressable>
   )
 }

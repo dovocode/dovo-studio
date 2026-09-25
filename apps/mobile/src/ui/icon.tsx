@@ -29,6 +29,7 @@ export const symbols = {
   down: ['chevron.down', '⌄'],
   next: ['chevron.right', '›'],
   check: ['checkmark', '✓'],
+  copy: ['doc.on.doc', '⧉'],
   error: ['exclamationmark.circle', '!'],
   attach: ['paperclip', '＋'],
   keyboard: ['keyboard.chevron.compact.down', '⌄'],

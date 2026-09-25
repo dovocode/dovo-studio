@@ -116,7 +116,7 @@ export function PairingGuide({
           )}
           <div className="min-w-[160px] flex-1 space-y-3">
             <p className="text-xs text-muted-foreground">
-              Scan with the iPhone Camera, review the address in Dovo, then tap Pair device.
+              Scan with the iPhone Camera, review the address in Dovo, then tap Connect.
             </p>
             <p className="text-xs text-muted-foreground">
               Or enter the address and this code in Computers:

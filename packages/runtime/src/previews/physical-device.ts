@@ -10,12 +10,18 @@ import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
 import { once } from 'node:events'
 import { Dicer } from '@fastify/busboy'
-import sharp from 'sharp'
 import { Schema } from 'effect'
 import type { PreviewDevice } from '@dovo/protocol'
 import { asciiKey, specialKeys, type NativeSimulator } from './simulator-native.js'
 import type { BrowserFrame } from './browser.js'
 import { HttpError } from '../errors.js'
+// sharp is a native image library that is only needed once a frame is decoded. Loading it
+// lazily keeps it out of the runtime's startup module graph.
+let sharpModule: typeof import('sharp').default | undefined
+async function loadSharp() {
+  sharpModule ??= (await import('sharp')).default
+  return sharpModule
+}
 const exec = promisify(execFile)
 let building: Promise<string> | undefined
 async function helper() {
@@ -238,7 +244,7 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
       while (next && !closed) {
         const frame = next
         next = undefined
-        const { width, height } = await sharp(frame).metadata()
+        const { width, height } = await (await loadSharp())(frame).metadata()
         if (!width || !height || width > 1600 || height > 1600)
           throw new Error('Invalid physical device frame')
         lastFrame = {

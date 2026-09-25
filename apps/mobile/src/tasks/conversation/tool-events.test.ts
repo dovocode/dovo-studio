@@ -1,7 +1,7 @@
 import { decode } from '@dovo/protocol'
 import { describe, expect, it } from 'vite-plus/test'
 import { taskSchema } from '@dovo/protocol'
-import { taskToolEvents, type ToolEvents } from './task-tool-events'
+import { taskToolEvents, type ToolEvents } from './tool-events'
 const task = decode(taskSchema, {
   id: 'task',
   repositoryId: 'repo',

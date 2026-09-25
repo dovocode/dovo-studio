@@ -21,11 +21,15 @@ const actionIcons: Readonly<Partial<Record<string, IconName>>> = {
   Back: 'back',
   'Dismiss keyboard': 'keyboard',
 }
+// Irreversible actions read differently from navigation-style links.
+const destructive = /^(Forget|Delete|Remove|Revoke|Discard)\b/
 type ActionProps = {
   label: string
   onPress: () => void
   disabled?: boolean
   secondary?: boolean
+  /** Full-width primary call to action, e.g. the one decision on a form. */
+  wide?: boolean
 }
 export function Action(props: ActionProps) {
   const icon = props.label.startsWith('Changes (') ? 'changes' : actionIcons[props.label]
@@ -49,7 +53,14 @@ export function Action(props: ActionProps) {
     )
   return <TextAction {...props} />
 }
-function TextAction({ label, onPress, disabled = false, secondary = false }: ActionProps) {
+function TextAction({
+  label,
+  onPress,
+  disabled = false,
+  secondary = false,
+  wide = false,
+}: ActionProps) {
+  const danger = destructive.test(label)
   return (
     <Pressable
       testID={label}
@@ -59,17 +70,18 @@ function TextAction({ label, onPress, disabled = false, secondary = false }: Act
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
-        minHeight: 44,
         minWidth: 44,
         maxWidth: '100%',
         flexShrink: 0,
-        alignSelf: 'flex-start',
-        paddingHorizontal: 16,
+        alignSelf: wide ? 'stretch' : 'flex-start',
+        minHeight: wide ? 50 : 44,
+        // Text-only actions align with the content they belong to; the hit area stays 44pt.
+        paddingHorizontal: secondary && !wide ? 0 : 16,
         paddingVertical: 10,
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: 12,
-        backgroundColor: secondary ? 'transparent' : colors.accent,
+        backgroundColor: secondary ? 'transparent' : danger ? colors.error : colors.accent,
         opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >
@@ -77,7 +89,7 @@ function TextAction({ label, onPress, disabled = false, secondary = false }: Act
         style={{
           fontSize: 15,
           fontWeight: '600',
-          color: secondary ? colors.accent : colors.onAccent,
+          color: secondary ? (danger ? colors.error : colors.accent) : colors.onAccent,
           textAlign: 'center',
         }}
       >

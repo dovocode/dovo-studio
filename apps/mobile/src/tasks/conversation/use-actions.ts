@@ -1,7 +1,7 @@
 import type { PendingMessage } from '@dovo/protocol'
-import { mobileWorkflow } from '../runtime/native-effect'
+import { mobileWorkflow } from '../../runtime/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../../runtime/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { Keyboard } from 'react-native'
 import { randomUUID } from 'expo-crypto'
@@ -15,12 +15,12 @@ import {
   canChangeTaskCheckout,
   type Task,
 } from '@dovo/protocol'
-import { useRuntime } from '../runtime/provider'
-import { useAction } from '../ui/use-action'
-import { useDraft } from './use-draft'
-import { useAttachmentPicker } from './attachment-picker'
-import { useComposerDictation } from './use-composer-dictation'
-import { createSendAttempts, type SendAttempt } from './send-attempts'
+import { useRuntime } from '../../runtime/provider'
+import { useAction } from '../../ui/use-action'
+import { useDraft } from '../draft/use-draft'
+import { useAttachmentPicker } from '../attachment-picker'
+import { useComposerDictation } from '../use-composer-dictation'
+import { createSendAttempts, type SendAttempt } from '../send-attempts'
 const sendAttempts = createSendAttempts(randomUUID)
 export function useConversationActions(task: Task) {
   const { call, connected, snapshot, activeId, readEffect, callEffect } = useRuntime(),

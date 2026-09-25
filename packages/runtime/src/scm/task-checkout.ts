@@ -1,10 +1,10 @@
-import { taskBranchName } from './task-branch.js'
+import { taskBranchName, taskWorktreePath } from './task-branch.js'
 import { defaultWorktreeBase, canChangeTaskCheckout } from '@dovo/protocol'
 import { listBranches } from './branches.js'
 import { fetchPullHead } from './pull-head.js'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
-import { join, dirname } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import { homedir } from 'node:os'
 import type { WorkspaceStore } from '../storage/workspace.js'
 import type { GitService } from './git.js'
@@ -35,11 +35,24 @@ export class TaskCheckout {
     ).trim()
     const key = createHash('sha256').update(id).digest('hex').slice(0, 24)
     const repositoryKey = createHash('sha256').update(common).digest('hex').slice(0, 24)
-    const directory = join(homedir(), '.dovo', 'worktrees', repositoryKey, key)
-    const records = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z'])).split(
-      '\0',
+    const worktrees = join(homedir(), '.dovo', 'worktrees')
+    // Tasks created before readable names keep their original hashed checkout.
+    const legacy = join(worktrees, repositoryKey, key)
+    const paths = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
+      .split('\0')
+      .flatMap((record) => (record.startsWith('worktree ') ? [record.slice(9)] : []))
+    // A short suffix unique to this repository and task keeps names readable and collision-free,
+    // and lets a task find its checkout after its title (and so its readable name) changes.
+    const suffix = createHash('sha256').update(`${common}\0${id}`).digest('hex').slice(0, 8)
+    const existing = paths.find(
+      (path) =>
+        path === legacy ||
+        (path.startsWith(worktrees + sep) && basename(path).endsWith(`-${suffix}`)),
     )
-    if (records.includes(`worktree ${directory}`)) return this.prepare(id, directory)
+    if (existing) return this.prepare(id, existing)
+    const branch = taskBranchName(task.title, suffix)
+    const identity = await this.git.repositoryIdentity(root).catch(() => undefined)
+    const directory = join(worktrees, taskWorktreePath(identity, root, branch))
     // Never reset an existing branch or remove a checkout. A collision/missing checkout needs repair.
     await mkdir(dirname(directory), { recursive: true })
     const refs = task.pullRequest ? undefined : await listBranches({ git: this.git }, root)
@@ -53,14 +66,7 @@ export class TaskCheckout {
     const head = task.pullRequest
       ? await fetchPullHead(this.git, root, task.pullRequest, key)
       : (base ?? 'HEAD')
-    await this.git.command(root, [
-      'worktree',
-      'add',
-      '-b',
-      taskBranchName(task.title, key),
-      directory,
-      head,
-    ])
+    await this.git.command(root, ['worktree', 'add', '-b', branch, directory, head])
     return this.prepare(id, directory)
   }
   private async prepare(id: string, directory: string) {

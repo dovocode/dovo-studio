@@ -1,16 +1,16 @@
-import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { nativeEffect, mobileWorkflow } from '../../runtime/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../../runtime/application-state'
 import { Modal, Image, View, ScrollView } from 'react-native'
-import { Text } from '../ui/text'
+import { Text } from '../../ui/text'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import { attachmentReadSchema, isImageAttachment, responses, type Attachment } from '@dovo/protocol'
-import { useRuntime } from '../runtime/provider'
-import { Action } from '../ui/action'
-import { styles } from '../ui/theme'
+import { useRuntime } from '../../runtime/provider'
+import { Action } from '../../ui/action'
+import { styles } from '../../ui/theme'
 export function MessageAttachments({
   taskId,
   files = [],

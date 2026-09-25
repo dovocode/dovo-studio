@@ -47,9 +47,9 @@ appId: com.dovo.studio
     id: Tab Tasks
 - assertVisible:
     id: Connection details
-- tapOn:
+- longPressOn:
     id: Connection details
-- assertVisible: '.*Reconnect to send messages or run commands.*'
+- assertVisible: '.*Reconnect a computer to send messages or run commands.*'
 - assertVisible: Reconnect
 - takeScreenshot: dovo-mobile-connection-details
 - tapOn: Close

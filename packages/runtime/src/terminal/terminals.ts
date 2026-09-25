@@ -4,10 +4,18 @@ import type { Activity } from '../storage/activity.js'
 import { defaultShell, shellArguments } from './shell.js'
 import { commandsSchema, type CommandSettings } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
-import * as pty from 'node-pty'
+import { createRequire } from 'node:module'
+import type * as pty from 'node-pty'
 import type { TerminalInfo } from '@dovo/protocol'
 import { processEnvironment } from '../process.js'
 import { HttpError } from '../errors.js'
+// node-pty is a native addon that is only needed once a terminal is opened. Loading it
+// lazily keeps it (and its native binding) out of the runtime's startup module graph.
+let ptyModule: typeof pty | undefined
+function loadPty() {
+  ptyModule ??= createRequire(import.meta.url)('node-pty') as typeof pty
+  return ptyModule
+}
 type Session = {
   info: TerminalInfo
   process: pty.IPty
@@ -43,7 +51,7 @@ export class Terminals {
     delete env.DOVO_OWNER_TOKEN
     delete env.ELECTRON_RUN_AS_NODE
     const id = randomUUID(),
-      process = pty.spawn(launch.command, launch.args, {
+      process = loadPty().spawn(launch.command, launch.args, {
         name: 'xterm-256color',
         cols: 100,
         rows: 24,

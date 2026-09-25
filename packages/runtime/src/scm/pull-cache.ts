@@ -260,7 +260,7 @@ export class PullCache {
       this.scheduler = undefined
       yield* Effect.forEach(this.pending.values(), (fiber) => Fiber.await(fiber), { discard: true })
       yield* runtimeOperation(() => this.executor.dispose())
-    })
+    }).pipe(Effect.uninterruptible)
   }
   dispose() {
     return runClientEffect(this.disposeEffect())

@@ -4,7 +4,7 @@ import { compareTasks, taskSortOptions, isSnoozed } from '@dovo/studio-core'
 import { ProjectsMenu } from '@dovo/extension-scm/projects'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { Plus, Search, ChevronDown, SlidersHorizontal } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useCallback, useMemo, useRef } from 'react'
 import { Button, Input } from '@dovo/studio-ui'
 import { TaskRow } from './task-row'
 import { TaskContextMenu } from './task-context-menu'
@@ -32,127 +32,167 @@ export function TaskList({
   busy: boolean
   error: string
 }) {
-  const entries = collectTasks(sources)
+  const entries = useMemo(() => collectTasks(sources), [sources])
   const [now, setNow] = useApplicationState(Date.now())
   const running = entries.some(({ task }) => task.status === 'running')
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), running ? 1000 : 60000)
     return () => clearInterval(timer)
   }, [running])
-  const needsInput = new Set(entries.filter((entry) => entry.needsInput).map((entry) => entry.key))
+  const needsInput = useMemo(
+    () => new Set(entries.filter((entry) => entry.needsInput).map((entry) => entry.key)),
+    [entries],
+  )
   const [query, setQuery] = useApplicationState(''),
     [filter, setFilter] = useApplicationState('active'),
     [sort, setSort] = useApplicationState('priority'),
     [actionError, setActionError] = useApplicationState('')
-  const projects = new Map(entries.map((entry) => [entry.projectKey, entry.projectName]))
-  const tasks = entries
-    .filter(
-      ({ task: t, source, key, projectKey, projectName }) =>
-        (!projectId ||
-          projectKey === projectId ||
-          source.workspace.repositories.some(
-            (repo) =>
-              repo.id === t.repositoryId &&
-              repo.gitIdentity &&
-              `git:${repo.gitIdentity}` === projectId,
-          )) &&
-        (filter === 'archive' ? !!t.archivedAt : !t.archivedAt) &&
-        (filter === 'archive' ||
-          filter === 'active' ||
-          (filter === 'archived' ? t.archived : !t.archived)) &&
-        (['active', 'archived', 'archive'].includes(filter) ||
-          (filter === 'snoozed' && isSnoozed(t, now)) ||
-          (filter === 'input' ? needsInput.has(key) : t.status === filter)) &&
-        [
-          t.title,
-          t.checkoutBranch ??
-            source.workspace.repositories.find((r) => r.id === t.repositoryId)?.branch ??
-            '',
-          resolveTaskAgent(t, source.workspace.agents)?.name ?? '',
-          source.name,
-          projectName,
-          ...t.messages.map((m) => m.text),
-        ].some((text) => text.toLowerCase().includes(query.toLowerCase())),
-    )
-    .sort((a, b) =>
-      compareTasks(
-        {
-          ...a.task,
-          id: a.key,
-          repositoryId: a.projectKey,
-        },
-        {
-          ...b.task,
-          id: b.key,
-          repositoryId: b.projectKey,
-        },
-        sort,
-        needsInput,
-        projects,
-      ),
-    )
-  const active = tasks.filter(({ task }) => !task.archived && !isSnoozed(task, now))
-  const groups = [
-    {
-      id: 'pinned',
-      name: 'Pinned',
-      tasks: active.filter(({ task }) => task.pinned),
-      open: true,
-    },
-    {
-      id: 'active',
-      name: 'Active',
-      tasks: active.filter(({ task }) => !task.pinned),
-      open: true,
-    },
-    {
-      id: 'snoozed',
-      name: 'Snoozed',
-      tasks: tasks.filter(({ task }) => !task.archived && isSnoozed(task, now)),
-      open: filter === 'snoozed',
-    },
-    {
-      id: 'settled',
-      name: filter === 'archive' ? 'Archived' : 'Settled',
-      tasks: tasks.filter(({ task }) => task.archived),
-      open: filter === 'archived' || filter === 'archive',
-    },
-  ].filter((g) => g.tasks.length)
+  const projects = useMemo(
+    () => new Map(entries.map((entry) => [entry.projectKey, entry.projectName])),
+    [entries],
+  )
+  const tasks = useMemo(() => {
+    const needle = query.toLowerCase()
+    return entries
+      .filter(
+        ({ task: t, source, key, projectKey, projectName }) =>
+          (!projectId ||
+            projectKey === projectId ||
+            source.workspace.repositories.some(
+              (repo) =>
+                repo.id === t.repositoryId &&
+                repo.gitIdentity &&
+                `git:${repo.gitIdentity}` === projectId,
+            )) &&
+          (filter === 'archive' ? !!t.archivedAt : !t.archivedAt) &&
+          (filter === 'archive' ||
+            filter === 'active' ||
+            (filter === 'archived' ? t.archived : !t.archived)) &&
+          (['active', 'archived', 'archive'].includes(filter) ||
+            (filter === 'snoozed' && isSnoozed(t, now)) ||
+            (filter === 'input' ? needsInput.has(key) : t.status === filter)) &&
+          [
+            t.title,
+            t.checkoutBranch ??
+              source.workspace.repositories.find((r) => r.id === t.repositoryId)?.branch ??
+              '',
+            resolveTaskAgent(t, source.workspace.agents)?.name ?? '',
+            source.name,
+            projectName,
+            ...t.messages.map((m) => m.text),
+          ].some((text) => text.toLowerCase().includes(needle)),
+      )
+      .sort((a, b) =>
+        compareTasks(
+          {
+            ...a.task,
+            id: a.key,
+            repositoryId: a.projectKey,
+          },
+          {
+            ...b.task,
+            id: b.key,
+            repositoryId: b.projectKey,
+          },
+          sort,
+          needsInput,
+          projects,
+        ),
+      )
+  }, [entries, projectId, filter, query, sort, needsInput, projects, now])
+  const groups = useMemo(() => {
+    const active = tasks.filter(({ task }) => !task.archived && !isSnoozed(task, now))
+    return [
+      {
+        id: 'pinned',
+        name: 'Pinned',
+        tasks: active.filter(({ task }) => task.pinned),
+        open: true,
+      },
+      {
+        id: 'active',
+        name: 'Active',
+        tasks: active.filter(({ task }) => !task.pinned),
+        open: true,
+      },
+      {
+        id: 'snoozed',
+        name: 'Snoozed',
+        tasks: tasks.filter(({ task }) => !task.archived && isSnoozed(task, now)),
+        open: filter === 'snoozed',
+      },
+      {
+        id: 'settled',
+        name: filter === 'archive' ? 'Archived' : 'Settled',
+        tasks: tasks.filter(({ task }) => task.archived),
+        open: filter === 'archived' || filter === 'archive',
+      },
+    ].filter((g) => g.tasks.length)
+  }, [tasks, filter, now])
+  // Stable per-entry handlers so memoized rows only re-render when their own data changes.
+  const handlers = useRef(
+    new Map<string, { open: () => void; create: () => void; filter: () => void }>(),
+  )
+  const latest = useRef({ onSelect, onCreate, onDeselect, onProjectChange, setQuery, setFilter })
+  latest.current = { onSelect, onCreate, onDeselect, onProjectChange, setQuery, setFilter }
+  const entryHandlers = useCallback((entry: TaskEntry) => {
+    const existing = handlers.current.get(entry.key)
+    if (existing) return existing
+    const created = {
+      open: () => latest.current.onSelect(entry),
+      create: () => latest.current.onCreate(entry.projectKey),
+      filter: () => {
+        latest.current.onProjectChange(
+          entry.source.workspace.repositories.find((repo) => repo.id === entry.task.repositoryId)
+            ?.gitIdentity
+            ? `git:${entry.source.workspace.repositories.find((repo) => repo.id === entry.task.repositoryId)?.gitIdentity}`
+            : entry.projectKey,
+        )
+        latest.current.setQuery('')
+        latest.current.setFilter('active')
+      },
+    }
+    handlers.current.set(entry.key, created)
+    return created
+  }, [])
   return (
     <aside
       className="flex h-full w-full min-w-0 flex-col border-r bg-sidebar"
       aria-label="Task sidebar"
     >
-      <div className="flex shrink-0 items-center gap-1 px-2 py-2">
-        <div className="relative min-w-0 flex-1">
-          <Search
-            aria-hidden="true"
-            className="absolute left-2 top-2 size-3 text-muted-foreground"
-          />
-          <Input
-            aria-label="Search tasks"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search tasks"
-            className="h-7 border-transparent bg-transparent pl-7 text-xs shadow-none focus:border-border"
-          />
-        </div>
-        <ProjectsMenu
-          compact
-          allDevices
-          value={projectId}
-          onChange={onProjectChange}
-          disabled={busy}
-        />
+      <div className="shrink-0 space-y-1.5 px-2 pt-2 pb-1">
         <Button
           aria-label="New task"
           size="sm"
-          className="h-7 shrink-0 gap-1 px-2"
+          className="h-8 w-full justify-start gap-2 px-2.5"
           onClick={() => onCreate()}
           disabled={busy}
         >
-          <Plus size={14} aria-hidden="true" /> New
+          <Plus size={14} aria-hidden="true" /> New task
         </Button>
+        {/* Search gets the full row width; the project filter sits beside it. */}
+        <div className="flex items-center gap-1">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              aria-hidden="true"
+              className="absolute left-2 top-2 size-3 text-muted-foreground"
+            />
+            <Input
+              aria-label="Search tasks"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search tasks"
+              className="h-7 border-transparent bg-muted/40 pl-7 text-xs shadow-none focus:border-border"
+            />
+          </div>
+          <ProjectsMenu
+            compact
+            allDevices
+            value={projectId}
+            onChange={onProjectChange}
+            disabled={busy}
+          />
+        </div>
       </div>
       <details className="group/filter mx-2 mb-1 rounded-md border border-transparent open:border-border/70 open:bg-muted/35">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
@@ -207,41 +247,34 @@ export function TaskList({
               <span className="min-w-0 flex-1 truncate">{group.name}</span>
               <span>{group.tasks.length}</span>
             </summary>
-            {group.tasks.map((entry) => (
-              <TaskContextMenu
-                key={entry.key}
-                entry={entry}
-                selected={entry.key === selectedId}
-                busy={busy}
-                onOpen={() => onSelect(entry)}
-                onCreate={() => onCreate(entry.projectKey)}
-                onFilter={() => {
-                  onProjectChange(
-                    entry.source.workspace.repositories.find(
-                      (repo) => repo.id === entry.task.repositoryId,
-                    )?.gitIdentity
-                      ? `git:${entry.source.workspace.repositories.find((repo) => repo.id === entry.task.repositoryId)?.gitIdentity}`
-                      : entry.projectKey,
-                  )
-                  setQuery('')
-                  setFilter('active')
-                }}
-                onDeselect={onDeselect}
-                onError={setActionError}
-              >
-                <TaskRow
-                  task={entry.task}
-                  now={now}
+            {group.tasks.map((entry) => {
+              const handlers = entryHandlers(entry)
+              return (
+                <TaskContextMenu
+                  key={entry.key}
+                  entry={entry}
                   selected={entry.key === selectedId}
-                  source={entry.source}
-                  editable={entry.source.runtimeId === activeRuntimeId && !busy}
-                  disabled={
-                    busy || (!entry.source.online && entry.source.runtimeId !== activeRuntimeId)
-                  }
-                  onSelect={() => onSelect(entry)}
-                />
-              </TaskContextMenu>
-            ))}
+                  busy={busy}
+                  onOpen={handlers.open}
+                  onCreate={handlers.create}
+                  onFilter={handlers.filter}
+                  onDeselect={onDeselect}
+                  onError={setActionError}
+                >
+                  <TaskRow
+                    task={entry.task}
+                    now={now}
+                    selected={entry.key === selectedId}
+                    source={entry.source}
+                    editable={entry.source.runtimeId === activeRuntimeId && !busy}
+                    disabled={
+                      busy || (!entry.source.online && entry.source.runtimeId !== activeRuntimeId)
+                    }
+                    onSelect={handlers.open}
+                  />
+                </TaskContextMenu>
+              )
+            })}
           </details>
         ))}
         {!tasks.length && (

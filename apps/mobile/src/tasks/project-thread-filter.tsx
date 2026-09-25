@@ -13,9 +13,12 @@ import { colors, styles } from '../ui/theme'
 export function ProjectThreadFilter({
   value,
   onChange,
+  compact = false,
 }: {
   value: string
   onChange: (key: string) => void
+  /** Render as a filter chip beside the task status filters. */
+  compact?: boolean
 }) {
   const { overviews } = useRuntime()
   const [open, setOpen] = useApplicationState(false)
@@ -47,18 +50,42 @@ export function ProjectThreadFilter({
           setQuery('')
         }}
         style={({ pressed }) => ({
-          minHeight: 44,
+          minHeight: compact ? 36 : 44,
           flexDirection: 'row',
-          gap: 8,
+          gap: compact ? 6 : 8,
           alignItems: 'center',
           opacity: pressed ? 0.7 : 1,
+          ...(compact && {
+            maxWidth: 200,
+            paddingHorizontal: 12,
+            borderRadius: 18,
+            backgroundColor: selected ? colors.elevated : 'transparent',
+          }),
         })}
       >
-        <Icon name="folder" size={17} color={colors.muted} />
-        <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
+        <Icon
+          name="folder"
+          size={compact ? 14 : 17}
+          color={selected ? colors.text : colors.muted}
+        />
+        <Text
+          numberOfLines={1}
+          style={
+            compact
+              ? [
+                  styles.muted,
+                  {
+                    flexShrink: 1,
+                    fontWeight: '600',
+                    color: selected ? colors.text : colors.muted,
+                  },
+                ]
+              : [styles.text, { flex: 1 }]
+          }
+        >
           {selected?.name ?? 'All projects'}
         </Text>
-        <Icon name="down" size={13} color={colors.muted} />
+        <Icon name="down" size={compact ? 10 : 13} color={colors.muted} />
       </Pressable>
       {open && (
         <Sheet title="Projects" onClose={() => setOpen(false)}>

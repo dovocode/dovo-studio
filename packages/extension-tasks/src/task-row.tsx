@@ -5,10 +5,11 @@ import { TaskLifecycleActions } from './task-lifecycle-actions'
 import { isSnoozed } from './task-priority'
 import { taskPresentation } from './task-presentation'
 import { Bot, FolderGit2, GitBranch, GitPullRequest, Monitor, Pin } from 'lucide-react'
+import { memo } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
 import { Button, cn, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
 import type { TaskSource } from './task-collection'
-export function TaskRow({
+function TaskRowView({
   task,
   selected,
   onSelect,
@@ -189,3 +190,6 @@ export function TaskRow({
     </div>
   )
 }
+// Rows are rendered for every task in the sidebar and re-render on every list tick. Memoizing
+// keeps untouched rows out of work when the list itself re-renders.
+export const TaskRow = memo(TaskRowView)

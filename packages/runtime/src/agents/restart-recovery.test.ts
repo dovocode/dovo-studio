@@ -1,3 +1,4 @@
+import { runtimeIntegration, waitForRuntime as waitForRecovery } from '../testing/integration'
 import { afterEach, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { startRuntime } from '../index'
@@ -5,6 +6,7 @@ import { fixture } from '../testing/fixture'
 import { AgentRegistry } from './registry'
 import type { AgentAdapter, AgentRun } from './types'
 import type { Task } from '@dovo/protocol'
+vi.setConfig(runtimeIntegration)
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close()
@@ -51,7 +53,7 @@ it('defaults to manual continuation and keeps a recoverable interrupted task', a
   adapter(run)
   const runtime = await startRuntime(options)
   cleanups.push(runtime.close)
-  await vi.waitFor(() =>
+  await waitForRecovery(() =>
     expect(runtime.services.store.task(id).restartRecovery?.automatic).toBe(false),
   )
   expect(run).not.toHaveBeenCalled()
@@ -76,9 +78,9 @@ it('resumes the interrupted turn before consuming queued follow-ups', async () =
   })
   const runtime = await startRuntime(options)
   cleanups.push(runtime.close)
-  await vi.waitFor(() => expect(runtime.services.store.task(id).status).toBe('review'))
-  await vi.waitFor(() => expect(prompts).toHaveLength(2))
-  await vi.waitFor(() => expect(runtime.services.store.task(id).queue).toEqual([]))
+  await waitForRecovery(() => expect(runtime.services.store.task(id).status).toBe('review'))
+  await waitForRecovery(() => expect(prompts).toHaveLength(2))
+  await waitForRecovery(() => expect(runtime.services.store.task(id).queue).toEqual([]))
   expect(prompts[0]).toContain('Original request')
   expect(prompts[0]).not.toContain('Queued follow-up')
   expect(prompts[1]).toContain('Queued follow-up')
@@ -93,7 +95,7 @@ it.each([
   adapter(run)
   const runtime = await startRuntime(options)
   cleanups.push(runtime.close)
-  await vi.waitFor(() =>
+  await waitForRecovery(() =>
     expect(runtime.services.store.task(id).restartRecovery?.automatic ?? false).toBe(false),
   )
   expect(run).not.toHaveBeenCalled()
@@ -114,7 +116,7 @@ it('remembers graceful runtime shutdown separately from a user Stop', async () =
   cleanups.push(first.close)
   first.services.preferences.save({ autoContinueAfterRestart: true })
   await first.services.tasks.start(id)
-  await vi.waitFor(() => expect(active).toBeDefined())
+  await waitForRecovery(() => expect(active).toBeDefined())
   await first.close()
   const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Continued'))
   vi.spyOn(AgentRegistry.prototype, 'get').mockResolvedValue({
@@ -123,7 +125,7 @@ it('remembers graceful runtime shutdown separately from a user Stop', async () =
   })
   const second = await startRuntime(options)
   cleanups.push(second.close)
-  await vi.waitFor(() => expect(second.services.store.task(id).status).toBe('review'))
+  await waitForRecovery(() => expect(second.services.store.task(id).status).toBe('review'))
   expect(run).toHaveBeenCalledTimes(1)
   expect(run.mock.calls[0][0].sessionId).toBe('interrupted-provider-session')
   expect(run.mock.calls[0][0].prompt).toContain('continue only the unfinished work')
@@ -137,7 +139,7 @@ it('leaves a failed automatic continuation paused with a manual recovery action'
   })
   const runtime = await startRuntime(options)
   cleanups.push(runtime.close)
-  await vi.waitFor(() =>
+  await waitForRecovery(() =>
     expect(runtime.services.store.task(id).error).toContain('Could not continue after restart'),
   )
   expect(runtime.services.store.task(id).restartRecovery?.automatic).toBe(false)
@@ -211,8 +213,8 @@ it('continues an unpaused queue and persists the runtime preference through the 
   })
   const second = await startRuntime(options)
   cleanups.push(second.close)
-  await vi.waitFor(() => expect(second.services.store.task(id).queue).toEqual([]))
-  await vi.waitFor(() => expect(second.services.store.task(id).status).toBe('review'))
+  await waitForRecovery(() => expect(second.services.store.task(id).queue).toEqual([]))
+  await waitForRecovery(() => expect(second.services.store.task(id).status).toBe('review'))
   expect(prompts).toHaveLength(1)
   expect(prompts[0]).toContain('Next request')
 })
@@ -223,7 +225,7 @@ it('continues issue/PR tasks with source URLs instead of treating origin as auto
   adapter(run)
   const runtime = await startRuntime(options)
   cleanups.push(runtime.close)
-  await vi.waitFor(() => expect(runtime.services.store.task(id).status).toBe('review'))
+  await waitForRecovery(() => expect(runtime.services.store.task(id).status).toBe('review'))
   expect(run).toHaveBeenCalledTimes(1)
 })
 it('excludes tasks owned by the automation supervisor', async () => {
@@ -232,7 +234,7 @@ it('excludes tasks owned by the automation supervisor', async () => {
   adapter(run)
   const runtime = await startRuntime(options)
   cleanups.push(runtime.close)
-  await vi.waitFor(() =>
+  await waitForRecovery(() =>
     expect(runtime.services.store.task(id).restartRecovery?.automatic).toBe(false),
   )
   runtime.services.store.updateTask(id, (task) => ({
@@ -243,7 +245,7 @@ it('excludes tasks owned by the automation supervisor', async () => {
     () => true,
     (taskId) => taskId === id,
   )
-  await vi.waitFor(() =>
+  await waitForRecovery(() =>
     expect(runtime.services.store.task(id).restartRecovery?.automatic).toBe(false),
   )
   expect(run).not.toHaveBeenCalled()
@@ -285,7 +287,7 @@ it('does not replay the objective when recovery input is removed during checkout
   })
   vi.spyOn(runtime.services.checkouts, 'directory').mockReturnValue(gate)
   const starting = runtime.services.tasks.start(id)
-  await vi.waitFor(() => expect(runtime.services.store.task(id).status).toBe('running'))
+  await waitForRecovery(() => expect(runtime.services.store.task(id).status).toBe('running'))
   runtime.services.tasks.queue.change(id, 'remove', 'last')
   release()
   await (
@@ -341,7 +343,7 @@ it('dequeues an initial request after a crash before admission, without a phanto
   adapter(run)
   const runtime = await startRuntime(options)
   cleanups.push(runtime.close)
-  await vi.waitFor(() => expect(runtime.services.store.task(id).status).toBe('review'))
+  await waitForRecovery(() => expect(runtime.services.store.task(id).status).toBe('review'))
   expect(run).toHaveBeenCalledTimes(1)
   expect(run.mock.calls[0][0].prompt).toContain('The actual request')
   expect(run.mock.calls[0][0].prompt).not.toContain('runtime restarted')
@@ -378,7 +380,7 @@ it.each([false, true])(
       context.signal.throwIfAborted()
     })
     await runtime.services.tasks.start(task.id)
-    await vi.waitFor(() => expect(allocated).toBe(true))
+    await waitForRecovery(() => expect(allocated).toBe(true))
     expect(runtime.services.store.task(task.id).runAttempt?.promptAccepted).toBe(accepted)
     await runtime.close()
     const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Recovered'))
@@ -388,7 +390,9 @@ it.each([false, true])(
     })
     const restarted = await startRuntime(options)
     cleanups.push(restarted.close)
-    await vi.waitFor(() => expect(restarted.services.store.task(task.id).status).toBe('review'))
+    await waitForRecovery(() =>
+      expect(restarted.services.store.task(task.id).status).toBe('review'),
+    )
     expect(run).toHaveBeenCalledTimes(1)
     expect(run.mock.calls[0][0].sessionId).toBe('allocated-session')
     expect(run.mock.calls[0][0].prompt.includes('Do not lose this original request')).toBe(

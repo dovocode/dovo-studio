@@ -3,12 +3,12 @@ import { TaskMachineSelector } from './task-machine-selector'
 import { WorktreeBasePicker } from './worktree-base-picker'
 import { useApplicationState } from '../runtime/application-state'
 import { Glass } from '../ui/glass'
-import { MessageAttachments } from './message-attachments'
+import { MessageAttachments } from './conversation/message-attachments'
 import { ActivityIndicator, Keyboard, Linking, Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import { useRef } from 'react'
 import { resolveTaskDefaults, type Task } from '@dovo/protocol'
-import { useTaskConversation } from './conversation-provider'
+import { useTaskConversation } from './conversation/provider'
 import { Action } from '../ui/action'
 import { Field } from '../ui/field'
 import { Sheet } from '../ui/sheet'
@@ -159,7 +159,11 @@ export function Composer({ task }: { task: Task }) {
                     borderWidth: 0,
                     paddingLeft: showOptions ? 12 : 44,
                     paddingRight: showOptions ? 12 : 88,
-                    paddingVertical: 10,
+                    // iOS adds extra line height above multiline text; keep 17pt text on a
+                    // 22pt line so one line sits centered in the 44pt row.
+                    lineHeight: 22,
+                    paddingTop: 11,
+                    paddingBottom: 11,
                     backgroundColor: 'transparent',
                   },
                 ]}

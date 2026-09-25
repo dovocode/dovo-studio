@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { writeFile, rm, realpath } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { fixture } from '../testing/fixture'
 import { startRuntime } from '../index'
 import { listBranches, switchBranch } from './branches'
@@ -81,7 +81,7 @@ it('refuses dirty checkouts and running agents; task worktree changes leave the 
     objective: 'Test',
   })
   const worktree = await s.checkouts.directory(task.id)
-  cleanups.push(() => rm(dirname(worktree), { recursive: true, force: true }))
+  cleanups.push(() => rm(worktree, { recursive: true, force: true }))
   const original = (await s.git.inspect(cwd)).branch
   await writeFile(join(worktree, 'hello.txt'), 'Keep this change')
   const input = {

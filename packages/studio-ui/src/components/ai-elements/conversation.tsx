@@ -80,7 +80,8 @@ export function ConversationRail({
     }
     return () => observer.disconnect()
   }, [items, scrollRef])
-  if (!items.length) return null
+  // A single turn has nowhere to jump; its lone marker reads as a rendering glitch.
+  if (items.length < 2) return null
   return (
     <TooltipProvider delayDuration={250} skipDelayDuration={150}>
       <nav

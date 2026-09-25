@@ -139,6 +139,15 @@ try {
           { cwd: destination, stdio: 'inherit' },
         )
       },
+      // Without a Developer ID, electron-builder leaves Electron's linker signature, which no longer
+      // matches the renamed bundle; Apple Silicon then refuses to launch the app. Ad-hoc sign it
+      // before DMG/ZIP creation. Developer ID release builds are signed and notarized instead.
+      afterSign: async (context) => {
+        if (process.platform !== 'darwin' || process.env.CSC_NAME) return
+        const app = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
+        execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' })
+        execFileSync('codesign', ['--verify', '--deep', '--strict', app], { stdio: 'inherit' })
+      },
       npmRebuild: false,
       asar: true,
       publish: [

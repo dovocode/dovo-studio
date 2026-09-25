@@ -9,6 +9,12 @@ import type { PullSummary } from './pulls.js'
 import { pullNeedsAttention } from './pull-presentation.js'
 import { isSnoozed } from './task-priority.js'
 import type { Task } from './workspace.js'
+/** People type what their computer shows, often without a scheme. Plain HTTP is the
+ * supported LAN/VPN default, so a bare host is never upgraded to HTTPS. */
+export function normalizeRuntimeAddress(value: string) {
+  const address = value.trim().replace(/\/+$/, '')
+  return !address || /^[a-z][a-z\d+.-]*:\/\//i.test(address) ? address : `http://${address}`
+}
 export function runtimeProfile(connection: RuntimeConnection, name?: string) {
   const parsed = decode(connectionSchema, connection)
   const url = new URL(parsed.address)
@@ -114,6 +120,14 @@ export type RuntimeOverview = {
     partial: boolean
   } | null
   pullError: string | null
+}
+export type RuntimeReachability = 'online' | 'connecting' | 'offline'
+/** A host is offline only after a request to it failed. Until then (app launch, restored
+ * cache, first slow VPN round trip) it is still connecting and must not alarm the user. */
+export function runtimeReachability(
+  entry: Pick<RuntimeOverview, 'connected' | 'error'>,
+): RuntimeReachability {
+  return entry.connected ? 'online' : entry.error ? 'offline' : 'connecting'
 }
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
 export function loadRuntimeOverviewEffect(
@@ -237,6 +251,7 @@ export type RuntimeTask = {
   projectName: string
   needsInput: boolean
   online: boolean
+  reachability: RuntimeReachability
 }
 export function aggregateRuntimeTasks(
   entries: readonly RuntimeOverview[],
@@ -267,6 +282,7 @@ export function aggregateRuntimeTasks(
         projectName: projects.get(task.repositoryId) ?? 'No project',
         needsInput: needsInput.has(task.id),
         online: entry.connected,
+        reachability: runtimeReachability(entry),
       }))
   })
   const priority = (item: RuntimeTask) =>

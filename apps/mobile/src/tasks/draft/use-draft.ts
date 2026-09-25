@@ -1,10 +1,11 @@
 import { Effect } from 'effect'
 import { clientTaskScope, runClientEffect } from '@dovo/client-runtime'
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../../runtime/application-state'
 import { useEffect, useRef } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { useRuntime } from '../runtime/provider'
-import { createDraftStorage } from './draft-storage'
+import { useRuntime } from '../../runtime/provider'
+import { createDraftStorage } from './storage'
+import { hydrateDraft } from './hydration'
 const drafts = createDraftStorage(AsyncStorage)
 export function saveRuntimeDraft(runtimeId: string, taskId: string, text: string) {
   return drafts.write(`dovo.draft.${encodeURIComponent(runtimeId)}.${taskId}`, text)
@@ -29,14 +30,17 @@ export function useDraft(taskId: string, initial = '') {
       setText(value)
     })
     void commands.run(
-      drafts.readEffect(key, migrateLegacy ? `dovo.draft.${taskId}` : undefined).pipe(
-        Effect.tap((value) =>
+      hydrateDraft(drafts.readEffect(key, migrateLegacy ? `dovo.draft.${taskId}` : undefined), {
+        initial: () => initialText.current,
+        edited: () => edited,
+      }).pipe(
+        Effect.tap((hydration) =>
           Effect.sync(() => {
-            if (!edited) setText(value ?? initialText.current)
+            if (hydration.text !== undefined) setText(hydration.text)
             setReady(true)
+            setError(hydration.error)
           }),
         ),
-        Effect.catchAll((error) => Effect.sync(() => setError(String(error)))),
       ),
     )
     return () => {

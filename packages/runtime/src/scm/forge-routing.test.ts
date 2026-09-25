@@ -1,7 +1,6 @@
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
-import { dirname } from 'node:path'
 import { realpath, rm } from 'node:fs/promises'
 import { Schema } from 'effect'
 import { forgeConnectionSchema, pullDetailSchema, pullPageSchema } from '@dovo/protocol'
@@ -282,7 +281,7 @@ it('preserves provider checkout metadata through task creation and an isolated w
   })
   const directory = await services.checkouts.directory(id)
   cleanup.push(() =>
-    rm(dirname(directory), {
+    rm(directory, {
       recursive: true,
       force: true,
     }),

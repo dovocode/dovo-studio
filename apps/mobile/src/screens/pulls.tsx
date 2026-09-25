@@ -25,6 +25,7 @@ import { Choice } from '../ui/choice'
 import { SearchField } from '../ui/field'
 import { Action } from '../ui/action'
 import { colors, styles } from '../ui/theme'
+import { formatShortDate } from '../ui/format-date'
 import { Icon } from '../ui/icon'
 import { CreationTarget } from '../runtime/creation-target'
 import { collectionSources } from '../runtime/collection-sources'
@@ -326,12 +327,7 @@ function PullsContent({
                 {p.repositoryName} · #{p.number} · {p.runtimeName}
                 {!p.online ? ' · Offline' : ''}
               </Text>
-              <Text style={styles.muted}>
-                {new Date(p.updatedAt).toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </Text>
+              <Text style={styles.muted}>{formatShortDate(p.updatedAt)}</Text>
             </View>
             <View
               style={[

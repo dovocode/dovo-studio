@@ -27,7 +27,9 @@ export function Workbench(props: WorkbenchProps) {
     <ApplicationStateProvider>
       <WorkspaceProvider>
         <TooltipProvider delayDuration={350}>
-          <WorkbenchContent {...props} />
+          <ErrorBoundary scope="app">
+            <WorkbenchContent {...props} />
+          </ErrorBoundary>
         </TooltipProvider>
       </WorkspaceProvider>
     </ApplicationStateProvider>

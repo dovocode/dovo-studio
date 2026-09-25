@@ -2,7 +2,7 @@ import { Effect } from 'effect'
 import { runtimeFailure } from '../errors'
 import { afterEach, expect, it, vi } from 'vitest'
 import { writeFile, readFile, rm } from 'node:fs/promises'
-import { join, dirname } from 'node:path'
+import { join } from 'node:path'
 import { fixture } from '../testing/fixture'
 import { startRuntime } from '../index'
 import { createPullTask } from './pull-task'
@@ -110,7 +110,7 @@ it('creates a linked task at the PR head and leaves main edits untouched on firs
   expect(canChangeTaskProvider(s.store.task(id))).toBe(true)
   expect(canChangeTaskCheckout(s.store.task(id))).toBe(false)
   const cwd = await s.checkouts.directory(id)
-  cleanups.push(() => rm(dirname(cwd), { recursive: true, force: true }))
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
   expect((await s.git.command(cwd, ['rev-parse', 'HEAD'])).trim()).toBe(sha)
   expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('PR commit\n')
   expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('Unrelated local edit\n')

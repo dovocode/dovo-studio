@@ -1,10 +1,11 @@
 import { DesktopNetwork } from './desktop-network'
 import { PairingGuide } from './pairing-guide'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
-export function DeviceManager() {
+/** `connectPhone` starts pairing immediately, for entry points that exist only to pair. */
+export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean }) {
   const { snapshot, request, connected, activeRuntimeId, runtimeRegistry, refreshRuntime } =
     useWorkspace()
   const profile = runtimeRegistry.profiles.find((entry) => entry.id === activeRuntimeId)
@@ -33,6 +34,12 @@ export function DeviceManager() {
         setBusy(false)
       })
   }
+  const started = useRef(false)
+  useEffect(() => {
+    if (!connectPhone || started.current || !connected || !snapshot?.owner) return
+    started.current = true
+    act(async () => setCode(await request('/api/pair/code', {}, responses.pairCode)))
+  }, [connectPhone, connected, snapshot?.owner])
   return (
     <article className="space-y-3 rounded-md border p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">

@@ -9,7 +9,7 @@ import {
 } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { PipelineState } from '../pipeline-detail'
-import { WorkContent } from '../work-detail'
+import { WorkContent } from '../work/content'
 export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; sha: string }) {
   const { connected, request, workspace, readCache } = useWorkspace()
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)

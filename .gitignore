@@ -34,7 +34,7 @@ packages/protocol/src/generated/browser-viewer.ts
 packages/runtime/native/ios-device/target/
 
 # Local reference downloads, QA captures and release worktrees
-work/
+/work/
 # Secrets and signing material
 .env
 .env.*

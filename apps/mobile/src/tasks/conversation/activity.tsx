@@ -1,16 +1,16 @@
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../../runtime/application-state'
 import { Pressable, View } from 'react-native'
 import { activitySummary, toolPresentation, type Task } from '@dovo/protocol'
-import { Text } from '../ui/text'
-import { Icon } from '../ui/icon'
-import { colors, styles } from '../ui/theme'
+import { Text } from '../../ui/text'
+import { Icon } from '../../ui/icon'
+import { colors, styles } from '../../ui/theme'
 import {
   activityIdentity,
   activityOutcome,
   pendingActivity,
   taskToolEvents,
   type ToolEvents,
-} from './task-tool-events'
+} from './tool-events'
 import { ToolActivityRow, ReasoningActivity } from './tool-activity-row'
 export function TaskActivity({
   task,

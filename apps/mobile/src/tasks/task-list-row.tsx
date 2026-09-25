@@ -1,10 +1,9 @@
-import { Pressable, View } from 'react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
 import { Text } from '../ui/text'
 import { resolveTaskAgent, type RuntimeOverview, type RuntimeTask } from '@dovo/protocol'
 import { DeviceLabel } from './device-label'
 import { TaskRowMenu } from './task-row-menu'
 import { useTaskLifecycle } from './use-task-lifecycle'
-import { Icon } from '../ui/icon'
 import { colors, styles } from '../ui/theme'
 import { showTaskDone, taskRowStatus } from './task-row-status'
 
@@ -16,7 +15,10 @@ export function TaskListRow({
   disabled,
   onOpen,
   onDetails,
+  showDevice = true,
 }: {
+  /** Which computer ran a task is noise when only one computer is saved. */
+  showDevice?: boolean
   row: RuntimeTask
   runtime?: RuntimeOverview
   now: number
@@ -37,22 +39,44 @@ export function TaskListRow({
   const done = showTaskDone(task, row.needsInput, now)
   const failed = !row.needsInput && !done && status.startsWith('Failed')
   const worktree = task.execution === 'worktree'
+  // "Review · 23m" → state "Review" and a right-aligned age "23m".
+  const [state, age] = /^(.*) · (now|\d+[mhd])$/.exec(status)?.slice(1) ?? [status, '']
+  const working = task.status === 'running' && !row.needsInput
+  // Finished work waiting for review is something to act on, like an unread result.
+  const reviewable = !row.needsInput && !failed && !done && state === 'Review'
+  const dot = row.needsInput
+    ? colors.accent
+    : failed
+      ? colors.error
+      : done || reviewable
+        ? colors.success
+        : working
+          ? colors.warning
+          : undefined
+  const stateColor = row.needsInput
+    ? colors.accent
+    : failed
+      ? colors.error
+      : done
+        ? colors.success
+        : colors.muted
+  const branch =
+    task.checkoutBranch ??
+    (task.execution === 'worktree' ? 'Worktree' : repository?.branch) ??
+    'Project checkout'
   return (
     <View
       style={{
-        paddingVertical: 3,
-        paddingHorizontal: 2,
-        marginBottom: 2,
-        gap: 0,
-        borderBottomWidth: 1,
+        borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: colors.border,
       }}
     >
-      <View style={{ flexDirection: 'row', gap: 4 }}>
+      {/* Top-aligned so every row's menu sits on its title's first line, whatever the height. */}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
         <Pressable
           testID={testID}
           accessibilityRole="button"
-          accessibilityLabel={`${task.pinned ? 'Pinned, ' : ''}${row.projectName}, ${task.title}, ${status}, ${worktree ? 'Worktree' : 'Local checkout'}, ${executionDevice}${row.online ? '' : ', Offline'}`}
+          accessibilityLabel={`${task.pinned ? 'Pinned, ' : ''}${row.projectName}, ${task.title}, ${status}, ${worktree ? 'Worktree' : 'Local checkout'}, ${executionDevice}${row.online ? '' : ', Offline'}${agent ? `, ${agent.provider}${agent.model ? ` · ${agent.model}` : ''}` : ''}`}
           accessibilityHint="Open conversation. Touch and hold for task actions."
           disabled={disabled}
           onPress={onOpen}
@@ -60,85 +84,67 @@ export function TaskListRow({
           style={({ pressed }) => ({
             flex: 1,
             minWidth: 0,
-            gap: 5,
-            paddingVertical: 8,
-            paddingHorizontal: 6,
-            borderRadius: 8,
-            backgroundColor: pressed ? colors.elevated : 'transparent',
-            opacity: pressed ? 0.6 : 1,
+            flexDirection: 'row',
+            gap: 12,
+            paddingVertical: 14,
+            paddingLeft: 4,
+            opacity: pressed ? 0.55 : 1,
           })}
         >
-          <View style={[styles.row, { flexWrap: 'nowrap', gap: 6 }]}>
-            <Icon name="folder" size={14} color={colors.muted} />
-            <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 12 }]}>
-              {task.pinned ? '• ' : ''}
-              {row.projectName || 'No project'}
-            </Text>
-            {done && <Icon name="check" size={13} color={colors.success} />}
-            {failed && <Icon name="error" size={13} color={colors.error} />}
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.muted,
-                {
-                  maxWidth: '48%',
-                  fontSize: 12,
-                  color: row.needsInput
-                    ? colors.accent
-                    : failed
-                      ? colors.error
-                      : done
-                        ? colors.success
-                        : colors.muted,
-                },
-              ]}
-            >
-              {status}
-            </Text>
-          </View>
-          <Text
-            numberOfLines={2}
-            style={[styles.text, { fontSize: 15, lineHeight: 20, fontWeight: '600' }]}
-          >
-            {task.title}
-          </Text>
-          <View style={[styles.row, { flexWrap: 'nowrap', gap: 6 }]}>
-            <Icon name={worktree ? 'changes' : 'folder'} size={12} color={colors.muted} />
-            <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 12 }]}>
-              {task.checkoutBranch ??
-                (task.execution === 'worktree' ? 'Worktree' : repository?.branch) ??
-                'Project checkout'}
-            </Text>
-            <View style={{ maxWidth: '48%', flexShrink: 1 }}>
-              <DeviceLabel task={task} runtimeHost={row.runtimeName} compact />
+          {/* State at a glance: filled for something to act on, hollow when idle. */}
+          <View
+            style={{
+              width: 9,
+              height: 9,
+              borderRadius: 4.5,
+              marginTop: 7,
+              backgroundColor: dot ?? 'transparent',
+              borderWidth: dot ? 0 : 1.5,
+              borderColor: colors.muted,
+              opacity: dot ? 1 : 0.6,
+            }}
+          />
+          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+              <Text
+                numberOfLines={2}
+                style={{
+                  flex: 1,
+                  color: colors.text,
+                  fontSize: 17,
+                  lineHeight: 22,
+                  fontWeight: '600',
+                }}
+              >
+                {task.title}
+              </Text>
+              {!!age && <Text style={[styles.muted, { fontSize: 14, lineHeight: 22 }]}>{age}</Text>}
             </View>
-            {!row.online && <Text style={[styles.muted, { fontSize: 11 }]}>Offline</Text>}
-            <Text
-              accessibilityLabel={
-                agent
-                  ? `${agent.provider}${agent.model ? ` · ${agent.model}` : ''}`
-                  : 'Unassigned agent'
-              }
-              style={styles.muted}
-            >
-              {agent?.provider === 'claude'
-                ? '✳'
-                : agent?.provider === 'codex'
-                  ? '◎'
-                  : agent?.provider === 'opencode'
-                    ? '▣'
-                    : '◇'}
+            <Text numberOfLines={1} style={[styles.muted, { fontSize: 14 }]}>
+              {task.pinned ? 'Pinned · ' : ''}
+              {row.projectName || 'No project'} · {branch} ·{' '}
+              <Text style={{ color: stateColor }}>{state}</Text>
             </Text>
+            {showDevice && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <DeviceLabel task={task} runtimeHost={row.runtimeName} compact />
+                {row.reachability === 'offline' && (
+                  <Text style={[styles.muted, { fontSize: 13 }]}>· Offline</Text>
+                )}
+              </View>
+            )}
           </View>
         </Pressable>
-        <TaskRowMenu
-          testID={`${testID} actions`}
-          task={task}
-          actions={actions}
-          disabled={disabled}
-          onOpen={onOpen}
-          onDetails={onDetails}
-        />
+        <View style={{ marginTop: 3 }}>
+          <TaskRowMenu
+            testID={`${testID} actions`}
+            task={task}
+            actions={actions}
+            disabled={disabled}
+            onOpen={onOpen}
+            onDetails={onDetails}
+          />
+        </View>
       </View>
       {!!actions.error && (
         <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 8 }]}>

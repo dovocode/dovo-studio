@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { createConversationScroll } from './conversation-scroll'
+import { createConversationScroll } from './scroll'
 
 describe('conversation following', () => {
   it('uses the full measured height through Markdown, footer and final timestamp growth', () => {
