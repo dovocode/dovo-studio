@@ -1,5 +1,5 @@
 /** Use the title model's result without a second naming request on the send path. */
-export function taskBranchName(title: string, uniqueKey: string) {
+export function taskBranchName(title: string, uniqueKey: string, prefix = 'dovo/') {
   const slug =
     title
       .normalize('NFKD')
@@ -9,7 +9,7 @@ export function taskBranchName(title: string, uniqueKey: string) {
       .replace(/^-+|-+$/g, '')
       .slice(0, 60)
       .replace(/-+$/g, '') || 'task'
-  return `dovo/${slug}-${uniqueKey}`
+  return `${prefix}${slug}-${uniqueKey}`
 }
 
 const pathPart = (value: string) =>
@@ -26,11 +26,15 @@ export function taskWorktreePath(
   identity: string | undefined,
   repositoryPath: string,
   branch: string,
+  prefix = 'dovo/',
 ) {
   // Identity is `host/owner/…/repo` (see gitRemoteIdentity); local-only repos have none.
   const parts = identity?.split('/').filter(Boolean) ?? []
   const owner = parts.length >= 3 ? parts[1] : 'local'
   const repository = parts.length >= 3 ? parts.at(-1)! : (repositoryPath.split('/').at(-1) ?? '')
-  const name = branch.replace(/^dovo\//, '').replaceAll('/', '-')
+  const name = (branch.startsWith(prefix) ? branch.slice(prefix.length) : branch).replaceAll(
+    '/',
+    '-',
+  )
   return `${pathPart(owner)}/${pathPart(repository)}-${pathPart(name)}`
 }

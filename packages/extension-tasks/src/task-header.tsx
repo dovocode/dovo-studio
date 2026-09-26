@@ -67,7 +67,7 @@ export function TaskHeader({
         <PanelLeft size={14} />
       </IconButton>
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-1 text-[11px]">
+        <div className="flex min-w-0 items-center gap-1 text-[0.6875rem]">
           <span className="max-w-40 truncate text-muted-foreground" title={repo?.path}>
             {repo?.name ?? 'Choose a project'}
           </span>
@@ -76,12 +76,15 @@ export function TaskHeader({
           </span>
           <h1 className="min-w-0 truncate font-medium">{task.title}</h1>
           {task.example && (
-            <Badge variant="secondary" className="hidden text-[9px] font-normal sm:inline-flex">
+            <Badge
+              variant="secondary"
+              className="hidden text-[0.5625rem] font-normal sm:inline-flex"
+            >
               Example
             </Badge>
           )}
         </div>
-        <div className="flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-2 text-[0.625rem] text-muted-foreground">
           <span
             className={cn(
               'truncate',
@@ -116,7 +119,7 @@ export function TaskHeader({
             <Button
               size="sm"
               variant="link"
-              className="h-auto p-0 text-[11px]"
+              className="h-auto p-0 text-[0.6875rem]"
               title={task.workItem.title}
               onClick={() => {
                 if (!task.workItem) return
@@ -142,7 +145,7 @@ export function TaskHeader({
           <Button
             variant="ghost"
             size="sm"
-            className="h-5 shrink-0 gap-1 px-1 text-[10px] text-muted-foreground"
+            className="h-5 shrink-0 gap-1 px-1 text-[0.625rem] text-muted-foreground"
             aria-label="Manage linked pull requests"
             onClick={() => setLinking(true)}
           >
@@ -178,7 +181,7 @@ export function TaskHeader({
                 aria-pressed={surface === id}
                 onClick={() => onSurface(id)}
                 className={cn(
-                  'gap-1 rounded-sm text-[10px]',
+                  'gap-1 rounded-sm text-[0.625rem]',
                   compact ? 'size-7 px-1.5' : 'size-7 sm:h-7 sm:w-auto sm:px-2',
                   surface === id && 'bg-background text-foreground shadow-sm',
                 )}
@@ -186,7 +189,7 @@ export function TaskHeader({
                 <Icon className="size-3.5" />
                 {!compact && <span className="hidden sm:inline">{label}</span>}
                 {count > 0 && (
-                  <span className="hidden text-[9px] tabular-nums text-muted-foreground md:inline">
+                  <span className="hidden text-[0.5625rem] tabular-nums text-muted-foreground md:inline">
                     {count}
                   </span>
                 )}
@@ -198,7 +201,7 @@ export function TaskHeader({
           <Button
             size="sm"
             variant="outline"
-            className="h-7 text-[10px]"
+            className="h-7 text-[0.625rem]"
             onClick={() => setGitOpen(true)}
           >
             <GitBranch className="size-3.5" />

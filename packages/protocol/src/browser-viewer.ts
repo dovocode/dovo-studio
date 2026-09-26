@@ -129,7 +129,12 @@ new ResizeObserver(() => {
   clearTimeout(fitTimer)
   fitTimer = setTimeout(fit, 150)
 }).observe(viewport)
-preset.addEventListener('change', fit)
+// A viewport chosen here beats the host's default for the rest of the session.
+let presetChosen = false
+preset.addEventListener('change', () => {
+  presetChosen = true
+  fit()
+})
 rotate.onclick = () => {
   landscape = !landscape
   fit()
@@ -347,6 +352,12 @@ window.addEventListener('message', (event) => {
   }
   if ('type' in message && message.type === 'configure') {
     configure('device' in message ? message.device : undefined)
+    // Settings → General → Browser previews → Default viewport.
+    const viewport = 'viewport' in message ? message.viewport : undefined
+    if (!presetChosen && previewPresets.some((item) => item.id === viewport)) {
+      preset.value = String(viewport)
+      fit()
+    }
     return
   }
   if (

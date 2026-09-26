@@ -456,7 +456,7 @@ export function DirectoryPicker({
             Choose this folder
           </Button>
         </div>
-        <p className="hidden text-[11px] text-muted-foreground sm:block">
+        <p className="hidden text-[0.6875rem] text-muted-foreground sm:block">
           ↑ ↓ Navigate · Enter Open · Backspace Up · ⌘/Ctrl Enter Choose folder · Esc Close
         </p>
       </footer>

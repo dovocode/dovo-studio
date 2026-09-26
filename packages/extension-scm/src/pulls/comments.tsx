@@ -3,7 +3,7 @@ import type { PullComment } from '@dovo/studio-core'
 import { MessageResponse } from '@dovo/studio-ui'
 import { ReviewBadge } from './review-badge'
 import { PullCommentActions, type PullActionContext } from './actions'
-import { forgeLabels } from '@dovo/studio-core'
+import { forgeLabels, formatDateTime } from '@dovo/studio-core'
 export function PullComments({
   comments,
   fileBaseURL,
@@ -40,10 +40,10 @@ export function PullComments({
               target="_blank"
               rel="noreferrer"
               aria-label={`View ${comment.author}'s ${comment.kind} on ${forgeLabels[actionContext?.detail.pull.provider ?? 'github']}`}
-              className="ml-auto shrink-0 py-1 text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              className="ml-auto shrink-0 py-1 text-[0.6875rem] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
             >
               {comment.date ? (
-                <time dateTime={comment.date}>{new Date(comment.date).toLocaleString()}</time>
+                <time dateTime={comment.date}>{formatDateTime(comment.date)}</time>
               ) : (
                 'View original'
               )}

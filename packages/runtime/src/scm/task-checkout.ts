@@ -9,11 +9,32 @@ import { homedir } from 'node:os'
 import type { WorkspaceStore } from '../storage/workspace.js'
 import type { GitService } from './git.js'
 import { HttpError } from '../errors.js'
+export const worktreesRoot = () => join(homedir(), '.dovo', 'worktrees')
+
+/** Where a task's worktree lives. Tasks created before readable names keep their original
+ * hashed checkout (`legacy`); newer ones end in a short suffix unique to the repository and
+ * task, so a checkout is found again after the task's title (and readable name) changes. */
+export function taskWorktreeKeys(common: string, id: string) {
+  const worktrees = worktreesRoot()
+  const key = createHash('sha256').update(id).digest('hex').slice(0, 24)
+  const repositoryKey = createHash('sha256').update(common).digest('hex').slice(0, 24)
+  const suffix = createHash('sha256').update(`${common}\0${id}`).digest('hex').slice(0, 8)
+  return { key, repositoryKey, suffix, legacy: join(worktrees, repositoryKey, key), worktrees }
+}
+/** Whether a listed worktree path belongs to the task with these keys. */
+export function isTaskWorktree(path: string, keys: ReturnType<typeof taskWorktreeKeys>) {
+  return (
+    path === keys.legacy ||
+    (path.startsWith(keys.worktrees + sep) && basename(path).endsWith(`-${keys.suffix}`))
+  )
+}
 export class TaskCheckout {
   private pending = new Map<string, Promise<string>>()
   constructor(
     private store: WorkspaceStore,
     private git: GitService,
+    /** Settings → Coding → Task defaults → Branch prefix for new task branches. */
+    private branchPrefix: () => string = () => 'dovo/',
   ) {}
   directory(id: string): Promise<string> {
     const pending = this.pending.get(id)
@@ -33,28 +54,32 @@ export class TaskCheckout {
     const common = (
       await this.git.command(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
     ).trim()
-    const key = createHash('sha256').update(id).digest('hex').slice(0, 24)
-    const repositoryKey = createHash('sha256').update(common).digest('hex').slice(0, 24)
-    const worktrees = join(homedir(), '.dovo', 'worktrees')
-    // Tasks created before readable names keep their original hashed checkout.
-    const legacy = join(worktrees, repositoryKey, key)
+    const keys = taskWorktreeKeys(common, id)
+    const { key, suffix, worktrees } = keys
     const paths = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
       .split('\0')
       .flatMap((record) => (record.startsWith('worktree ') ? [record.slice(9)] : []))
-    // A short suffix unique to this repository and task keeps names readable and collision-free,
-    // and lets a task find its checkout after its title (and so its readable name) changes.
-    const suffix = createHash('sha256').update(`${common}\0${id}`).digest('hex').slice(0, 8)
-    const existing = paths.find(
-      (path) =>
-        path === legacy ||
-        (path.startsWith(worktrees + sep) && basename(path).endsWith(`-${suffix}`)),
-    )
+    const existing = paths.find((path) => isTaskWorktree(path, keys))
     if (existing) return this.prepare(id, existing)
-    const branch = taskBranchName(task.title, suffix)
+    // A removed worktree keeps its branch (Settings → Worktrees, or the archive cleanup). Reattach
+    // that branch so committed work carries on, even if the title or prefix changed since.
+    const kept = (
+      await this.git.command(root, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'])
+    )
+      .split('\n')
+      .find((name) => name.endsWith(`-${suffix}`))
+    const prefix = this.branchPrefix()
+    const branch = kept ?? taskBranchName(task.title, suffix, prefix)
     const identity = await this.git.repositoryIdentity(root).catch(() => undefined)
-    const directory = join(worktrees, taskWorktreePath(identity, root, branch))
+    const directory = join(worktrees, taskWorktreePath(identity, root, branch, prefix))
     // Never reset an existing branch or remove a checkout. A collision/missing checkout needs repair.
     await mkdir(dirname(directory), { recursive: true })
+    if (kept) {
+      await this.git.command(root, ['worktree', 'add', directory, kept])
+      // A fresh checkout lacks installed dependencies; run the setup command again.
+      this.store.updateTask(id, (current) => ({ ...current, worktreeSetupComplete: false }))
+      return this.prepare(id, directory)
+    }
     const refs = task.pullRequest ? undefined : await listBranches({ git: this.git }, root)
     const selection =
       task.worktreeBaseBranch ?? (refs && defaultWorktreeBase(refs.branches, refs.current))

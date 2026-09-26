@@ -80,3 +80,4 @@ export {
   shouldPublishOverview,
 } from './overview-state.js'
 export { visiblePendingMessage, type PendingMessage } from './pending-message.js'
+export * from './worktrees.js'

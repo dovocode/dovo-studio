@@ -1,4 +1,5 @@
 import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { updateMobilePreferences, useCarMode } from '../runtime/app-preferences'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/application-state'
@@ -37,7 +38,11 @@ export default function TasksScreen() {
     { refreshAll, overviews, profiles, activeId, selectRuntimeEffect, ready } = useRuntime(),
     { busy, error, act } = useAction()
   const { view, setView, scrollOffset } = useTaskListView()
-  const { search, filter, source, sort, project } = view
+  const car = useCarMode()
+  // Car mode shows what needs attention first; search, filters and project scope wait.
+  const { search, filter, source, sort, project } = car
+    ? { ...view, search: '', filter: 'active', sort: 'priority', project: '' }
+    : view
   const [details, setDetails] = useApplicationState(''),
     [filtersOpen, setFiltersOpen] = useApplicationState(false),
     [now, setNow] = useApplicationState(Date.now())
@@ -159,13 +164,23 @@ export default function TasksScreen() {
       <ScreenHeader
         title="Tasks"
         buttons={[
+          ...(car
+            ? []
+            : [
+                {
+                  label: 'Projects',
+                  icon: 'folder' as const,
+                  onPress: () => {
+                    retainPosition()
+                    navigate('scm')
+                  },
+                },
+              ]),
           {
-            label: 'Projects',
-            icon: 'folder',
-            onPress: () => {
-              retainPosition()
-              navigate('scm')
-            },
+            label: car ? 'Exit car mode' : 'Car mode',
+            icon: 'car',
+            selected: car,
+            onPress: () => updateMobilePreferences({ carMode: !car }),
           },
           {
             label: 'New task',
@@ -216,128 +231,132 @@ export default function TasksScreen() {
           },
         ]}
         ListHeaderComponent={
-          <View
-            style={{
-              gap: 8,
-              paddingBottom: 10,
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <SearchField
-                  label="Search tasks"
-                  placeholder="Search tasks"
-                  clearButtonMode="while-editing"
-                  returnKeyType="search"
-                  value={search}
-                  onChangeText={(search) =>
+          car ? null : (
+            <View
+              style={{
+                gap: 8,
+                paddingBottom: 10,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <SearchField
+                    label="Search tasks"
+                    placeholder="Search tasks"
+                    clearButtonMode="while-editing"
+                    returnKeyType="search"
+                    value={search}
+                    onChangeText={(search) =>
+                      setView((current) => ({
+                        ...current,
+                        search,
+                      }))
+                    }
+                  />
+                </View>
+                <IconButton
+                  label="Task filters and sorting"
+                  icon="filters"
+                  selected={filter !== 'active' || sort !== 'priority'}
+                  onPress={() => setFiltersOpen(true)}
+                />
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ gap: 6, alignItems: 'center' }}
+              >
+                {[
+                  { id: 'active', label: 'All', count: 0 },
+                  { id: 'input', label: 'Needs input', count: counts.input },
+                  { id: 'running', label: 'Working', count: counts.running },
+                ].map((item) => (
+                  <FilterChip
+                    key={item.id}
+                    label={item.label}
+                    count={item.count}
+                    selected={filter === item.id}
+                    urgent={item.id === 'input'}
+                    onPress={() => {
+                      scrollOffset.current = 0
+                      setView((current) => ({ ...current, filter: item.id }))
+                    }}
+                  />
+                ))}
+                <ProjectThreadFilter
+                  compact
+                  value={project}
+                  onChange={(project) => {
+                    scrollOffset.current = 0
+                    setView((current) => ({ ...current, project, source: 'all' }))
+                  }}
+                />
+              </ScrollView>
+              {overviews.some(
+                (entry) => entry.connected && entry.snapshot?.defaults?.configured === false,
+              ) && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Set up defaults"
+                  accessibilityHint="Choose default models for tasks and titles"
+                  onPress={() => router.push('/settings/agents')}
+                  style={({ pressed }) => [
+                    styles.card,
+                    { borderWidth: 0, borderRadius: 14 },
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <Icon name="agents" size={20} color={colors.accent} />
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[styles.text, { fontWeight: '600', fontSize: 15 }]}>
+                      Choose your default models
+                    </Text>
+                    <Text style={styles.muted}>
+                      Used for new tasks and titles on your computer.
+                    </Text>
+                  </View>
+                  <Icon name="next" size={12} color={colors.muted} />
+                </Pressable>
+              )}
+              {/* One computer's state is already in the connection banner. */}
+              {overviews.length > 1 && (
+                <FleetOverview
+                  compact
+                  source={source}
+                  entries={overviews}
+                  onSelectSource={(source) =>
                     setView((current) => ({
                       ...current,
-                      search,
+                      source,
                     }))
                   }
                 />
-              </View>
-              <IconButton
-                label="Task filters and sorting"
-                icon="filters"
-                selected={filter !== 'active' || sort !== 'priority'}
-                onPress={() => setFiltersOpen(true)}
-              />
+              )}
+              {(filter !== 'active' || sort !== 'priority') && (
+                <Text style={styles.muted}>
+                  {filter === 'archive'
+                    ? 'Archived'
+                    : filter === 'archived'
+                      ? 'Settled'
+                      : filter === 'input'
+                        ? 'Needs input'
+                        : filter[0]?.toUpperCase() + filter.slice(1)}{' '}
+                  · {taskSortOptions.find((item) => item.id === sort)?.name}
+                </Text>
+              )}
+              {!!(error || refreshError) && (
+                <Text accessibilityRole="alert" style={styles.error}>
+                  {error || refreshError}
+                </Text>
+              )}
             </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ gap: 6, alignItems: 'center' }}
-            >
-              {[
-                { id: 'active', label: 'All', count: 0 },
-                { id: 'input', label: 'Needs input', count: counts.input },
-                { id: 'running', label: 'Working', count: counts.running },
-              ].map((item) => (
-                <FilterChip
-                  key={item.id}
-                  label={item.label}
-                  count={item.count}
-                  selected={filter === item.id}
-                  urgent={item.id === 'input'}
-                  onPress={() => {
-                    scrollOffset.current = 0
-                    setView((current) => ({ ...current, filter: item.id }))
-                  }}
-                />
-              ))}
-              <ProjectThreadFilter
-                compact
-                value={project}
-                onChange={(project) => {
-                  scrollOffset.current = 0
-                  setView((current) => ({ ...current, project, source: 'all' }))
-                }}
-              />
-            </ScrollView>
-            {overviews.some(
-              (entry) => entry.connected && entry.snapshot?.defaults?.configured === false,
-            ) && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Set up defaults"
-                accessibilityHint="Choose default models for tasks and titles"
-                onPress={() => router.push('/settings/agents')}
-                style={({ pressed }) => [
-                  styles.card,
-                  { borderWidth: 0, borderRadius: 14 },
-                  {
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <Icon name="agents" size={20} color={colors.accent} />
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[styles.text, { fontWeight: '600', fontSize: 15 }]}>
-                    Choose your default models
-                  </Text>
-                  <Text style={styles.muted}>Used for new tasks and titles on your computer.</Text>
-                </View>
-                <Icon name="next" size={12} color={colors.muted} />
-              </Pressable>
-            )}
-            {/* One computer's state is already in the connection banner. */}
-            {overviews.length > 1 && (
-              <FleetOverview
-                compact
-                source={source}
-                entries={overviews}
-                onSelectSource={(source) =>
-                  setView((current) => ({
-                    ...current,
-                    source,
-                  }))
-                }
-              />
-            )}
-            {(filter !== 'active' || sort !== 'priority') && (
-              <Text style={styles.muted}>
-                {filter === 'archive'
-                  ? 'Archived'
-                  : filter === 'archived'
-                    ? 'Settled'
-                    : filter === 'input'
-                      ? 'Needs input'
-                      : filter[0]?.toUpperCase() + filter.slice(1)}{' '}
-                · {taskSortOptions.find((item) => item.id === sort)?.name}
-              </Text>
-            )}
-            {!!(error || refreshError) && (
-              <Text accessibilityRole="alert" style={styles.error}>
-                {error || refreshError}
-              </Text>
-            )}
-          </View>
+          )
         }
         renderItem={({ item }) => (
           <TaskListRow

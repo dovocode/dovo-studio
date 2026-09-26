@@ -1,5 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { resolveTaskAgent } from '@dovo/studio-core'
+import { readAppPreferences, resolveTaskAgent } from '@dovo/studio-core'
 import { compareTasks, taskSortOptions, isSnoozed } from '@dovo/studio-core'
 import { ProjectsMenu } from '@dovo/extension-scm/projects'
 import { ChoicePicker } from '@dovo/studio-ui'
@@ -45,7 +45,8 @@ export function TaskList({
   )
   const [query, setQuery] = useApplicationState(''),
     [filter, setFilter] = useApplicationState('active'),
-    [sort, setSort] = useApplicationState('priority'),
+    // Settings → General → Task list → Default sort.
+    [sort, setSort] = useApplicationState<string>(() => readAppPreferences().taskSort),
     [actionError, setActionError] = useApplicationState('')
   const projects = useMemo(
     () => new Map(entries.map((entry) => [entry.projectKey, entry.projectName])),
@@ -195,7 +196,7 @@ export function TaskList({
         </div>
       </div>
       <details className="group/filter mx-2 mb-1 rounded-md border border-transparent open:border-border/70 open:bg-muted/35">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded px-1.5 py-1 text-[0.625rem] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
           <SlidersHorizontal aria-hidden="true" className="size-3" />
           <span className="flex-1">Filters & sort</span>
           {filter !== 'active' || sort !== 'priority' || projectId ? <span>Custom</span> : null}
@@ -207,7 +208,7 @@ export function TaskList({
         <div className="flex min-w-0 items-center gap-1 px-1 pb-2">
           <ChoicePicker
             aria-label="Task status filter"
-            className="h-7 min-w-0 flex-1 rounded-sm bg-transparent px-2 text-[11px]"
+            className="h-7 min-w-0 flex-1 rounded-sm bg-transparent px-2 text-[0.6875rem]"
             value={filter}
             onValueChange={(selection) => setFilter(selection)}
           >
@@ -222,7 +223,7 @@ export function TaskList({
           </ChoicePicker>
           <ChoicePicker
             aria-label="Thread sort"
-            className="h-7 min-w-0 flex-1 rounded-sm bg-transparent px-2 text-[11px] text-muted-foreground"
+            className="h-7 min-w-0 flex-1 rounded-sm bg-transparent px-2 text-[0.6875rem] text-muted-foreground"
             value={sort}
             onValueChange={setSort}
           >
@@ -242,7 +243,7 @@ export function TaskList({
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5" aria-busy={busy}>
         {groups.map((group) => (
           <details key={`${group.id}-${filter}`} open={group.open} className="group mb-1">
-            <summary className="flex cursor-pointer list-none items-center gap-1 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <summary className="flex cursor-pointer list-none items-center gap-1 px-2 py-1 text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
               <ChevronDown size={11} />
               <span className="min-w-0 flex-1 truncate">{group.name}</span>
               <span>{group.tasks.length}</span>

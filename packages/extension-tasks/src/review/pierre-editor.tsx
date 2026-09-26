@@ -1,3 +1,4 @@
+import { useDiffOptions } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
 import { parseDiffFromFile, preloadHighlighter, getFiletypeFromFileName } from '@pierre/diffs'
@@ -38,7 +39,7 @@ export function PierreEditor({
     let cancelled = false
     // Prepare syntax resources before mounting the imperative diff renderer.
     preloadHighlighter({
-      themes: ['pierre-dark'],
+      themes: ['pierre-dark', 'pierre-light'],
       langs: [getFiletypeFromFileName(file.path)],
     })
       .then(() => {
@@ -57,7 +58,8 @@ export function PierreEditor({
     side: 'additions' | 'deletions'
   } | null>(null)
   const [editing, setEditing] = useApplicationState(false)
-  const [split, setSplit] = useApplicationState(false)
+  const diffs = useDiffOptions()
+  const [split, setSplit] = useApplicationState(diffs.defaultSplit)
   const [dirty, setDirty] = useApplicationState(false)
   const saveRef = useRef(onSave)
   saveRef.current = onSave
@@ -77,11 +79,9 @@ export function PierreEditor({
   )
   const options = useMemo<FileDiffOptions<undefined, undefined>>(
     () => ({
-      theme: 'pierre-dark',
-      themeType: 'dark',
+      ...diffs.options,
       diffStyle: split ? 'split' : 'unified',
       disableFileHeader: true,
-      overflow: 'wrap',
       enableLineSelection: !editing,
       enableGutterUtility: !editing,
       onLineSelectionEnd: (range) => {
@@ -101,7 +101,7 @@ export function PierreEditor({
           })
       },
     }),
-    [split, editing],
+    [split, editing, diffs.options],
   )
   const anchored = comments.filter((m) => {
     const c = m.diffComment
@@ -143,14 +143,14 @@ export function PierreEditor({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate font-mono text-[0.6875rem] text-muted-foreground">
           {file.path}
           {dirty ? ' •' : ''}
         </span>
         <Button
           size="sm"
           variant="ghost"
-          className="h-6 px-2 text-[10px]"
+          className="h-6 px-2 text-[0.625rem]"
           onClick={() => setSplit((v) => !v)}
         >
           {split ? 'Split' : 'Unified'}
@@ -159,7 +159,7 @@ export function PierreEditor({
           size="sm"
           disabled={!!selection}
           variant={editing ? 'default' : 'outline'}
-          className="h-6 px-2 text-[10px]"
+          className="h-6 px-2 text-[0.625rem]"
           onClick={() => setEditing((v) => !v)}
         >
           {editing ? 'Save draft' : 'Edit'}
@@ -235,7 +235,7 @@ export function PierreEditor({
             · {m.diffComment?.body}
           </p>
         ))}
-      <div className="border-t px-3 py-1 text-[10px] text-muted-foreground">
+      <div className="border-t px-3 py-1 text-[0.625rem] text-muted-foreground">
         {editing
           ? 'Editing draft · ⌘Z undo · ⌘F find · saved when leaving this file'
           : 'Drag line numbers or Shift-click for a range · Click + for one line · Edit changes file contents'}

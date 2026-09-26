@@ -43,7 +43,7 @@ export function DiskActions({ task, file }: { task: Task; file: ChangedFile }) {
         <Button
           size="sm"
           variant="outline"
-          className="h-6 text-[10px]"
+          className="h-6 text-[0.625rem]"
           disabled={!connected || task.example || busy || file.diskContents === file.after}
           onClick={apply}
         >
@@ -52,7 +52,7 @@ export function DiskActions({ task, file }: { task: Task; file: ChangedFile }) {
         <Button
           size="sm"
           variant="ghost"
-          className="h-6 text-[10px]"
+          className="h-6 text-[0.625rem]"
           disabled={!connected || task.example || busy}
           onClick={() => {
             setBusy(true)
@@ -73,7 +73,7 @@ export function DiskActions({ task, file }: { task: Task; file: ChangedFile }) {
         </Button>
       </div>
       {error && (
-        <p role="alert" className="text-[10px] text-destructive">
+        <p role="alert" className="text-[0.625rem] text-destructive">
           {error}
         </p>
       )}

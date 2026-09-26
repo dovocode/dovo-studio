@@ -100,7 +100,7 @@ export function PullStatus({ detail }: { detail: PullDetail }) {
                         key={`${annotation.path}:${annotation.startLine}:${index}`}
                         className="space-y-1 border-l-2 border-border pl-3"
                       >
-                        <p className="break-all font-mono text-[11px]">
+                        <p className="break-all font-mono text-[0.6875rem]">
                           {annotation.path}:{annotation.startLine}
                           {annotation.endLine !== annotation.startLine
                             ? `–${annotation.endLine}`

@@ -107,6 +107,15 @@ export class Activity {
           )
     }
   }
+  /** Deletes up to `limit` entries older than `before`, oldest first; returns how many. Small
+   * batches keep the database responsive while a large history is trimmed. */
+  pruneBefore(before: string, limit = 2000) {
+    return this.db
+      .prepare(
+        'DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE time < ? ORDER BY time LIMIT ?)',
+      )
+      .run(before, limit).changes
+  }
   list(query: string, kind: string, offset: number, scope = '') {
     return {
       events: decode(

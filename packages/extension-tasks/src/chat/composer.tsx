@@ -1,6 +1,11 @@
 import type { PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { generatedTitleSchema, resolveTaskAgent } from '@dovo/studio-core'
+import {
+  generatedTitleSchema,
+  readAppPreferences,
+  resolveTaskAgent,
+  useAppPreferences,
+} from '@dovo/studio-core'
 import { AttachmentPicker } from './attachment-picker'
 import { MessageAttachments } from './message-attachments'
 import { useAttachments } from './use-attachments'
@@ -68,7 +73,16 @@ export function Composer({
   } | null>(null)
   const firstMessage = task.messages.length === 0 && !task.queue?.length && !task.turns?.length
   const agent = resolveTaskAgent(task, workspace.agents)
+  // Settings → General → Follow-ups while a task runs: what Enter does mid-turn.
+  const steerFirst = useAppPreferences().followUp === 'steer' && task.status === 'running'
+  const other = steerFirst ? 'queue' : 'steer'
   const stop = async () => {
+    // Settings → General → Confirm before stopping a running task.
+    if (
+      readAppPreferences().confirmStop &&
+      !window.confirm(`Stop “${task.title}”? Queued messages stay paused until you resume.`)
+    )
+      return
     setStopping(true)
     setError('')
     try {
@@ -206,7 +220,7 @@ export function Composer({
         }}
         onSubmit={(e) => {
           e.preventDefault()
-          void send()
+          void send(steerFirst ? 'steer' : 'queue')
         }}
       >
         <div className={cn('px-3', pendingQuestion && 'hidden')}>
@@ -256,9 +270,13 @@ export function Composer({
                 <Button
                   type="button"
                   variant="ghost"
-                  className="h-8 gap-1.5 px-2 text-[11px]"
-                  title="Send guidance to the active turn; other harnesses interrupt and resume"
-                  aria-label="Steer agent"
+                  className="h-8 gap-1.5 px-2 text-[0.6875rem]"
+                  title={
+                    other === 'steer'
+                      ? 'Send guidance to the active turn; other harnesses interrupt and resume'
+                      : 'Send after the current turn finishes'
+                  }
+                  aria-label={other === 'steer' ? 'Steer agent' : 'Queue follow-up'}
                   disabled={
                     !connected ||
                     sending ||
@@ -267,9 +285,17 @@ export function Composer({
                     task.archived ||
                     (!draft.trim() && !attachments.files.length)
                   }
-                  onClick={() => void send('steer')}
+                  onClick={() => void send(other)}
                 >
-                  <CornerUpRight className="size-3.5" /> Steer
+                  {other === 'steer' ? (
+                    <>
+                      <CornerUpRight className="size-3.5" /> Steer
+                    </>
+                  ) : (
+                    <>
+                      <ListPlus className="size-3.5" /> Queue
+                    </>
+                  )}
                 </Button>
               </>
             )}
@@ -278,20 +304,24 @@ export function Composer({
                 busy={sending}
                 className={
                   task.status === 'running'
-                    ? 'h-8 w-auto gap-1.5 rounded-md bg-muted px-2 text-[11px] text-foreground hover:bg-accent'
+                    ? 'h-8 w-auto gap-1.5 rounded-md bg-muted px-2 text-[0.6875rem] text-foreground hover:bg-accent'
                     : 'size-8 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-35'
                 }
                 title={
-                  task.status === 'running' || task.queuePaused
-                    ? 'Queue follow-up (Enter)'
-                    : 'Send message (Enter)'
+                  steerFirst
+                    ? 'Steer agent (Enter)'
+                    : task.status === 'running' || task.queuePaused
+                      ? 'Queue follow-up (Enter)'
+                      : 'Send message (Enter)'
                 }
                 aria-label={
-                  task.status === 'running' || task.queuePaused
-                    ? 'Queue follow-up'
-                    : connected
-                      ? 'Send to agent'
-                      : 'Save message to task'
+                  steerFirst
+                    ? 'Steer agent'
+                    : task.status === 'running' || task.queuePaused
+                      ? 'Queue follow-up'
+                      : connected
+                        ? 'Send to agent'
+                        : 'Save message to task'
                 }
                 disabled={
                   (!draft.trim() && !attachments.files.length) ||
@@ -305,12 +335,14 @@ export function Composer({
               >
                 {sending ? (
                   <LoaderCircle className="size-4 animate-spin" />
+                ) : steerFirst ? (
+                  <CornerUpRight className="size-4" />
                 ) : task.status === 'running' || task.queuePaused ? (
                   <ListPlus className="size-4" />
                 ) : (
                   <ArrowUp className="size-4" />
                 )}
-                {task.status === 'running' && 'Queue'}
+                {task.status === 'running' && (steerFirst ? 'Steer' : 'Queue')}
               </PromptInputSubmit>
             )}
             {task.status === 'running' && (
@@ -344,7 +376,7 @@ export function Composer({
           disabled={sending || !!task.archived}
           onMachineMoving={setMachineMoving}
         />
-        <p className="mx-auto mt-1 hidden max-w-3xl text-right text-[10px] text-muted-foreground/70">
+        <p className="mx-auto mt-1 hidden max-w-3xl text-right text-[0.625rem] text-muted-foreground/70">
           {task.status === 'running' || task.queuePaused ? 'Enter to queue' : 'Enter to send'} ·
           Shift + Enter for a new line
         </p>

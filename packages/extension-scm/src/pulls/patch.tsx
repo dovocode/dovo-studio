@@ -7,7 +7,7 @@ import { useEffect, useMemo } from 'react'
 import { getFiletypeFromFileName, parsePatchFiles, preloadHighlighter } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { PullDetail } from '@dovo/studio-core'
-import { forgeLabels, pullFilePatch, type ForgeProvider } from '@dovo/studio-core'
+import { forgeLabels, pullFilePatch, type ForgeProvider, useDiffOptions } from '@dovo/studio-core'
 export function PullPatch({
   file,
   split,
@@ -39,6 +39,7 @@ export function PullPatch({
     side: 'additions' | 'deletions'
   } | null>(null)
   const [destination, setDestination] = useApplicationState<'github' | 'agent'>('agent')
+  const diffs = useDiffOptions()
   const [ready, setReady] = useApplicationState(false),
     [error, setError] = useApplicationState('')
   const parsed = useMemo(() => {
@@ -77,7 +78,7 @@ export function PullPatch({
     setReady(false)
     setError('')
     void preloadHighlighter({
-      themes: ['pierre-dark'],
+      themes: ['pierre-dark', 'pierre-light'],
       langs: [getFiletypeFromFileName(file.path)],
     })
       .then(() => {
@@ -113,12 +114,12 @@ export function PullPatch({
       }}
     >
       {onComment && (
-        <p className="py-2 text-[10px] text-muted-foreground">
+        <p className="py-2 text-[0.625rem] text-muted-foreground">
           Drag line numbers or Shift-click for a range. Click + for a single line.
         </p>
       )}
       {reviewContext && (
-        <p className="py-2 text-[10px] text-muted-foreground">
+        <p className="py-2 text-[0.625rem] text-muted-foreground">
           Review excerpt · original line numbers; surrounding changes may be omitted.
         </p>
       )}
@@ -178,11 +179,9 @@ export function PullPatch({
             )
           }
           options={{
-            theme: 'pierre-dark',
-            themeType: 'dark',
+            ...diffs.options,
             diffStyle: split ? 'split' : 'unified',
             disableFileHeader: true,
-            overflow: 'scroll',
             enableLineSelection: !!onComment,
             enableGutterUtility: !!onComment,
             onLineSelectionEnd: (range) => {

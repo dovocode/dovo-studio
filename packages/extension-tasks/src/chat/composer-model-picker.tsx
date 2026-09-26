@@ -402,7 +402,7 @@ export function ComposerModelPicker({
               )}
             </div>
             {lockedProvider && (
-              <p className="px-2 pt-2 text-[11px] text-muted-foreground">
+              <p className="px-2 pt-2 text-[0.6875rem] text-muted-foreground">
                 This conversation uses {providers[lockedProvider].short}. Choose models or custom
                 agents using the same provider.
               </p>

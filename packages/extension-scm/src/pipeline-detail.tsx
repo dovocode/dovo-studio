@@ -14,6 +14,7 @@ import {
   pipelineSignal,
   type ForgePipelineDetail,
   type ForgePipelineJob,
+  formatDateTime,
 } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { WorkTaskLinks } from './work-task-links'
@@ -269,7 +270,7 @@ function formatPipelineDate(value?: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime())
     ? value
-    : date.toLocaleString(undefined, {
+    : formatDateTime(date, {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',

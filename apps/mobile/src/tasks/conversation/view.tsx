@@ -1,3 +1,4 @@
+import { formatTime, useCarMode } from '../../runtime/app-preferences'
 import { useApplicationState } from '../../runtime/application-state'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
@@ -50,6 +51,7 @@ function AttachmentPart({ data }: DataMessagePartProps<unknown>) {
 function CheckpointPart({ data }: DataMessagePartProps<unknown>) {
   const checkpoint = decode(checkpointSchema, data)
   const { openCheckpoint } = useTaskConversation()
+  if (useCarMode()) return null
   return (
     <View
       style={{
@@ -102,17 +104,23 @@ const toolSchema = mutableStruct({
   },
 })
 function ToolPart({ artifact }: ToolCallMessagePartProps<unknown, unknown>) {
+  if (useCarMode()) return null
   return <ToolActivityRow event={decode(toolSchema, artifact)} />
 }
 function ReasoningPart({ data }: DataMessagePartProps<unknown>) {
+  if (useCarMode()) return null
   return <ReasoningActivity events={decode(mutableArray(toolSchema), data)} />
 }
 function AssistantText({ text }: { text: string }) {
   return <Markdown text={text} variant="chat" />
 }
+/** Car mode hides each turn's commands, edits and searches; only what the agent says stays. */
+function WorkGroup(props: Parameters<typeof ConversationWorkGroup>[0]) {
+  return useCarMode() ? null : <ConversationWorkGroup {...props} />
+}
 const parts = {
   Text: AssistantText,
-  ToolGroup: ConversationWorkGroup,
+  ToolGroup: WorkGroup,
   tools: {
     Fallback: ToolPart,
   },
@@ -144,7 +152,8 @@ function Message() {
   const text = useAuiState((state) =>
     state.message.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n\n'),
   )
-  const time = createdAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const car = useCarMode()
+  const time = createdAt && formatTime(createdAt, { hour: '2-digit', minute: '2-digit' })
   return (
     <MessagePrimitive.Root
       style={{
@@ -181,7 +190,7 @@ function Message() {
             : 'Sending…'}
         </Text>
       )}
-      {!!time && (user || !streaming) && (
+      {!!time && !car && (user || !streaming) && (
         <View
           style={{
             flexDirection: 'row',
@@ -218,6 +227,7 @@ function Message() {
 }
 export function Conversation() {
   const { task, legacyEvents, activityError, followRequest } = useTaskConversation()
+  const car = useCarMode()
   const { activeId } = useRuntime()
   const list = useRef<FlatList<ThreadMessage>>(null)
   const [scroll] = useApplicationState(createConversationScroll)
@@ -316,7 +326,15 @@ export function Conversation() {
               gap: 10,
             }}
           >
-            <TaskActivity task={task} events={legacyEvents} error={activityError} />
+            {car ? (
+              task.status === 'running' && (
+                <Text accessibilityRole="text" style={[styles.muted, { fontSize: 17 }]}>
+                  Working…
+                </Text>
+              )
+            ) : (
+              <TaskActivity task={task} events={legacyEvents} error={activityError} />
+            )}
             <TaskApprovals taskId={task.id} />
             {!!task.error && <Text style={styles.error}>{task.error}</Text>}
           </View>

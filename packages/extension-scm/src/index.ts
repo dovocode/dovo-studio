@@ -23,6 +23,8 @@ export const scmExtension = defineStudioExtension(
       icon: 'pulls',
       order: 3,
       navigationGroup: 'settings',
+      settingsSection: 'coding',
+      keywords: 'github gitlab bitbucket azure forgejo gitea jira accounts forges pull requests',
       load: () => import('./forge-settings'),
     },
     {

@@ -21,7 +21,7 @@ export function QuestionField({
         {!q.required && <span className="ml-1 text-muted-foreground">(optional)</span>}
       </legend>
       <p className="whitespace-pre-wrap text-xs leading-relaxed">{q.question}</p>
-      {q.multiple && <p className="text-[10px] text-muted-foreground">Select all that apply</p>}
+      {q.multiple && <p className="text-[0.625rem] text-muted-foreground">Select all that apply</p>}
       <div className="grid gap-1.5 sm:grid-cols-2">
         {q.options.map((option) => (
           <Button
@@ -44,7 +44,7 @@ export function QuestionField({
             <span className="min-w-0">
               <span className="block text-xs">{option.label}</span>
               {option.description && (
-                <span className="mt-0.5 block text-[11px] font-normal leading-relaxed text-muted-foreground">
+                <span className="mt-0.5 block text-[0.6875rem] font-normal leading-relaxed text-muted-foreground">
                   {option.description}
                 </span>
               )}

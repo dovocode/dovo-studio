@@ -3,7 +3,7 @@ import { mobileWorkflow } from '../../runtime/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/application-state'
 import { mutableStruct } from '@dovo/protocol'
-import { Keyboard } from 'react-native'
+import { Alert, Keyboard } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import { useEffect, useRef } from 'react'
 import { Schema, Effect } from 'effect'
@@ -16,6 +16,7 @@ import {
   type Task,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/provider'
+import { readMobilePreferences } from '../../runtime/app-preferences'
 import { useAction } from '../../ui/use-action'
 import { useDraft } from '../draft/use-draft'
 import { useAttachmentPicker } from '../attachment-picker'
@@ -210,16 +211,24 @@ export function useConversationActions(task: Task) {
     pendingMessage,
     call,
     stopping: cancellation.busy,
-    stop: () =>
-      cancellation.run(() =>
-        callEffect(
-          '/api/tasks/cancel',
-          {
-            id: task.id,
-          },
-          responses.ok,
-        ),
-      ),
+    stop: () => {
+      const run = () =>
+        cancellation.run(() =>
+          callEffect(
+            '/api/tasks/cancel',
+            {
+              id: task.id,
+            },
+            responses.ok,
+          ),
+        )
+      // Settings → General → Confirm before stopping a running task.
+      if (!readMobilePreferences().confirmStop) return run()
+      Alert.alert(`Stop “${task.title}”?`, 'Queued messages stay paused until you resume.', [
+        { text: 'Keep running', style: 'cancel' },
+        { text: 'Stop', style: 'destructive', onPress: run },
+      ])
+    },
     connected,
     snapshot,
     draft,

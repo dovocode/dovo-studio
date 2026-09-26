@@ -40,11 +40,11 @@ export function RunControls({ task }: { task: Task }) {
         )}
       {approvals.map((approval) => (
         <div key={approval.id} className="mx-auto max-w-3xl rounded-lg border bg-card p-3">
-          <p className="mb-1 text-[11px] text-muted-foreground">
+          <p className="mb-1 text-[0.6875rem] text-muted-foreground">
             Permission request · {executionHost}
           </p>
           <p className="text-xs font-medium">{approval.title}</p>
-          <pre className="my-2 max-h-40 overflow-auto whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
+          <pre className="my-2 max-h-40 overflow-auto whitespace-pre-wrap break-all text-[0.6875rem] text-muted-foreground">
             {approval.detail}
           </pre>
           <div className="flex gap-2">

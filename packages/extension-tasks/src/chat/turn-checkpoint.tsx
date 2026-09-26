@@ -1,3 +1,4 @@
+import { useDiffOptions } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo } from 'react'
 import { getFiletypeFromFileName, parseDiffFromFile, preloadHighlighter } from '@pierre/diffs'
@@ -33,7 +34,7 @@ function CheckpointDiff({ file }: { file: ChangedFile }) {
   useEffect(() => {
     let active = true
     void preloadHighlighter({
-      themes: ['pierre-dark'],
+      themes: ['pierre-dark', 'pierre-light'],
       langs: [getFiletypeFromFileName(file.path)],
     })
       .then(() => {
@@ -58,6 +59,7 @@ function CheckpointDiff({ file }: { file: ChangedFile }) {
         Loading diff…
       </p>
     )
+  const diffs = useDiffOptions()
   if (file.before === file.after)
     return (
       <p className="p-4 text-xs text-muted-foreground">
@@ -68,10 +70,8 @@ function CheckpointDiff({ file }: { file: ChangedFile }) {
     <FileDiff
       fileDiff={diff}
       options={{
-        theme: 'pierre-dark',
-        themeType: 'dark',
-        diffStyle: 'unified',
-        overflow: 'wrap',
+        ...diffs.options,
+        diffStyle: diffs.defaultSplit ? 'split' : 'unified',
       }}
     />
   )

@@ -21,7 +21,7 @@ export function ToolHeader({ title, status }: { title: string; status: string })
       <span className="min-w-0 flex-1 truncate text-xs font-medium" title={title}>
         {title}
       </span>
-      <span className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] capitalize text-muted-foreground">
+      <span className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[0.625rem] capitalize text-muted-foreground">
         <Icon
           className={cn(
             'size-3',

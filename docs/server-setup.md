@@ -300,10 +300,9 @@ unknown. Registry/network failures remain unknown; they are not treated as proof
 current. A newer upstream version is information, not a compatibility guarantee. Locked SDK updates
 should pass the repository's adapter tests before deployment.
 
-Configure executable paths in **Settings → Devices & runtime → CLI commands & shell**. Provider
-authentication stays on the host. Authenticate `gh` on that host for PRs; authenticate the chosen
-agent separately. OpenCode requires its server to be running; installing its CLI alone is not
-enough.
+Configure executable paths in **Settings → Coding → CLI commands & shell**. Provider authentication
+stays on the host. Authenticate `gh` on that host for PRs; authenticate the chosen agent separately.
+OpenCode requires its server to be running; installing its CLI alone is not enough.
 
 ## Caching and offline behavior
 
@@ -419,9 +418,9 @@ SQLite lock automatically; do not delete a lock database to force a second runti
 
 ## Runtime and project task defaults
 
-Open **Settings → Devices & runtime → your computer → Task defaults** to configure that runtime.
-Open a project's settings and choose **Task defaults** for project overrides. The same controls are
-available on mobile under the device and project settings.
+Open **Settings → Coding → Task defaults** (choose the computer at the top) to configure that
+runtime. Open a project's settings and choose **Task defaults** for project overrides. The same
+controls are available on mobile under the device and project settings.
 
 - Choose the harness, model/reasoning/service tier, access mode, instructions and optional
   executable or server URL.

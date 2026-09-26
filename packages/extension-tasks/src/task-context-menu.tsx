@@ -9,6 +9,7 @@ import {
   responses,
   useWorkspace,
   WorkspaceScope,
+  readAppPreferences,
 } from '@dovo/studio-core'
 import {
   Button,
@@ -148,7 +149,7 @@ export function TaskContextMenu({
               if (dialog) event.preventDefault()
             }}
           >
-            <ContextMenu.Label className="max-w-64 truncate px-2.5 py-1.5 text-[10px] text-muted-foreground">
+            <ContextMenu.Label className="max-w-64 truncate px-2.5 py-1.5 text-[0.625rem] text-muted-foreground">
               {repository?.name ?? 'No project'} · {source.name}
             </ContextMenu.Label>
             <ContextMenu.Item
@@ -355,7 +356,16 @@ export function TaskContextMenu({
             <ContextMenu.Item
               className={itemClass}
               disabled={!canEdit || task.status === 'running'}
-              onSelect={() =>
+              onSelect={() => {
+                // Settings → General → Confirm before archiving.
+                if (
+                  !task.archivedAt &&
+                  readAppPreferences().confirmArchive &&
+                  !window.confirm(
+                    `Archive “${task.title}”? You can restore it from Settings → Archived tasks.`,
+                  )
+                )
+                  return
                 void run(async () => {
                   await client.request(
                     '/api/tasks/lifecycle',
@@ -368,7 +378,7 @@ export function TaskContextMenu({
                   if (selected && !task.archivedAt) onDeselect()
                   await client.refresh()
                 })
-              }
+              }}
             >
               <Archive />
               {task.archivedAt ? 'Restore thread' : 'Archive thread'}
@@ -388,7 +398,7 @@ export function TaskContextMenu({
         </ContextMenu.Portal>
       </ContextMenu.Root>
       {pending && !dialog && (
-        <p role="status" className="px-2.5 pb-2 text-[11px] text-muted-foreground">
+        <p role="status" className="px-2.5 pb-2 text-[0.6875rem] text-muted-foreground">
           Updating task…
         </p>
       )}

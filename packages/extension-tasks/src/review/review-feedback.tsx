@@ -7,7 +7,7 @@ export function ReviewFeedback({ task, file }: { task: Task; file: ChangedFile }
   return (
     <div className="shrink-0 space-y-2 border-t p-3">
       <div className="flex items-center justify-between">
-        <label className="flex items-center gap-2 text-[11px]">
+        <label className="flex items-center gap-2 text-[0.6875rem]">
           <Checkbox
             checked={file.viewed}
             onCheckedChange={(checked) =>
@@ -28,7 +28,7 @@ export function ReviewFeedback({ task, file }: { task: Task; file: ChangedFile }
           />
           Viewed
         </label>
-        <span className="text-[10px] text-muted-foreground">
+        <span className="text-[0.625rem] text-muted-foreground">
           {task.files.filter((f) => f.viewed).length} / {task.files.length}
         </span>
       </div>
@@ -65,7 +65,7 @@ export function ReviewFeedback({ task, file }: { task: Task; file: ChangedFile }
           size="sm"
           variant="ghost"
           disabled={!feedback.trim()}
-          className="mt-1 h-6 text-[10px]"
+          className="mt-1 h-6 text-[0.625rem]"
         >
           Add feedback to chat
         </Button>

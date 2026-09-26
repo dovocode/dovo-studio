@@ -42,7 +42,7 @@ export function TerminalPane({ taskId, onClose }: { taskId: string; onClose: () 
             key={session.id}
             size="sm"
             variant="ghost"
-            className={cn('h-6 px-2 text-[10px]', session.id === active?.id && 'bg-accent')}
+            className={cn('h-6 px-2 text-[0.625rem]', session.id === active?.id && 'bg-accent')}
             onClick={() => setSelected(session.id)}
           >
             {session.title}

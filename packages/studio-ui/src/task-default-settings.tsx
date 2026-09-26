@@ -27,8 +27,10 @@ import { FormField } from './components/form-field'
 import { ChoicePicker } from './choice-picker'
 import { ModelSettings } from './model-settings'
 
-export function TaskDefaultSettings(props: { repository?: Repository }) {
+/** `inline` shows the form directly, for a dedicated settings page. */
+export function TaskDefaultSettings(props: { repository?: Repository; inline?: boolean }) {
   const [open, setOpen] = useApplicationState(false)
+  if (props.inline) return <TaskDefaultSettingsForm repository={props.repository} />
   return (
     <div className="space-y-3">
       <Button variant="outline" aria-expanded={open} onClick={() => setOpen(!open)}>

@@ -140,7 +140,9 @@ export function ProjectsMenu({
           <Button
             variant="ghost"
             className={
-              compact ? 'size-7 shrink-0 px-0' : 'h-7 w-full justify-start gap-2 px-2 text-[11px]'
+              compact
+                ? 'size-7 shrink-0 px-0'
+                : 'h-7 w-full justify-start gap-2 px-2 text-[0.6875rem]'
             }
             title={project?.name ?? 'Projects'}
             aria-label="Filter threads by project"
@@ -216,7 +218,7 @@ export function ProjectsMenu({
                           setMenuOpen(false)
                         }}
                       >
-                        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-[10px] font-semibold text-muted-foreground">
+                        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-[0.625rem] font-semibold text-muted-foreground">
                           {group.name
                             .split(/[^a-zA-Z0-9]+/)
                             .filter(Boolean)
@@ -291,7 +293,7 @@ export function ProjectsMenu({
                                         {item.source.name}
                                         {item.source.online ? '' : ' · Offline'}
                                       </span>
-                                      <span className="block truncate text-[10px] text-muted-foreground">
+                                      <span className="block truncate text-[0.625rem] text-muted-foreground">
                                         {item.path}
                                       </span>
                                     </span>

@@ -8,6 +8,8 @@ export const agentsExtension = defineStudioExtension(
       title: 'MCP & skills',
       icon: 'agents',
       order: 3,
+      settingsSection: 'agents',
+      keywords: 'mcp servers skills tools registry integrations',
       load: () => import('./resources/view'),
     },
     {
@@ -16,6 +18,9 @@ export const agentsExtension = defineStudioExtension(
       title: 'Agents',
       icon: 'agents',
       order: 2,
+      settingsSection: 'agents',
+      keywords:
+        'models defaults providers codex claude opencode acp permissions access titles dictation',
       load: () => import('./view'),
     },
   ],

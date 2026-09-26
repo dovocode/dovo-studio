@@ -37,6 +37,7 @@ export const symbols = {
   home: ['house', '⌂'],
   microphone: ['mic', '●'],
   waveform: ['waveform', '≋'],
+  car: ['car', '⛟'],
 } as const
 export type IconName = keyof typeof symbols
 export function Icon({

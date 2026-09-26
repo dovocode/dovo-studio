@@ -1,4 +1,5 @@
 // Adapted from Vercel AI Elements (MIT), prompt-input.tsx.
+import { useAppPreferences } from '@dovo/studio-core'
 import type { ComponentProps } from 'react'
 import { CornerDownLeft, LoaderCircle } from 'lucide-react'
 import { Button } from '../ui/button'
@@ -20,10 +21,11 @@ export function PromptInputTextarea({
   onKeyDown,
   ...props
 }: ComponentProps<typeof Textarea>) {
+  const { sendWith } = useAppPreferences()
   return (
     <Textarea
       className={cn(
-        'min-h-16 max-h-48 resize-none rounded-none border-0 bg-transparent px-3 py-3 text-[13px] shadow-none [field-sizing:content] focus-visible:ring-0',
+        'min-h-16 max-h-48 resize-none rounded-none border-0 bg-transparent px-3 py-3 text-[0.8125rem] shadow-none [field-sizing:content] focus-visible:ring-0',
         className,
       )}
       onKeyDown={(event) => {
@@ -32,7 +34,9 @@ export function PromptInputTextarea({
           event.defaultPrevented ||
           event.key !== 'Enter' ||
           event.shiftKey ||
-          event.nativeEvent.isComposing
+          event.nativeEvent.isComposing ||
+          // Settings → General → Send messages with ⌘/Ctrl+Enter: plain Enter adds a line.
+          (sendWith === 'mod-enter' && !event.metaKey && !event.ctrlKey)
         )
           return
         event.preventDefault()

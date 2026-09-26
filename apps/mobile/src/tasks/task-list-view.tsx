@@ -1,6 +1,8 @@
 import { useApplicationState } from '../runtime/application-state'
+import { preferencesReady, readMobilePreferences } from '../runtime/app-preferences'
 import {
   createContext,
+  useEffect,
   useContext,
   useMemo,
   useRef,
@@ -31,6 +33,16 @@ export function TaskListViewProvider({ children }: { children: ReactNode }) {
     source: 'all',
     sort: 'priority',
   })
+  // Settings → General → Default sort, once saved preferences are read on cold start.
+  useEffect(() => {
+    void preferencesReady.then(() =>
+      setView((current) =>
+        current.sort === 'priority'
+          ? { ...current, sort: readMobilePreferences().taskSort }
+          : current,
+      ),
+    )
+  }, [setView])
   // Scroll events don't need to rerender the list or the surrounding native tabs.
   const scrollOffset = useRef(0)
   const value = useMemo(

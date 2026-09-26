@@ -1,7 +1,7 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Effect, Schema } from 'effect'
 import { useEffect } from 'react'
-import { activitySchema, useWorkspace, startPolling } from '@dovo/studio-core'
+import { activitySchema, useWorkspace, startPolling, formatDateTime } from '@dovo/studio-core'
 import { Button, Input } from '@dovo/studio-ui'
 export function ActivityLog() {
   const { requestEffect: request, connected } = useWorkspace(),
@@ -57,7 +57,7 @@ export function ActivityLog() {
         {data.events.map((e) => (
           <details key={e.id} className="border-b py-2 text-xs">
             <summary>
-              {new Date(e.time).toLocaleString()} · {e.kind} · {e.summary}
+              {formatDateTime(e.time)} · {e.kind} · {e.summary}
             </summary>
             <pre className="overflow-auto whitespace-pre-wrap p-2">{e.payload}</pre>
           </details>

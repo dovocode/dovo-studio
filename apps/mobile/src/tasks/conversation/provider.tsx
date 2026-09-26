@@ -6,6 +6,7 @@ import { visiblePendingMessage, type PendingMessage, type Task } from '@dovo/pro
 import { useConversationActions } from './use-actions'
 import { useToolActivity } from './use-tool-activity'
 import { conversationMessages } from './messages'
+import { useKeepScreenOn } from '../keep-screen-on'
 import { taskToolEvents, type ToolEvents } from './tool-events'
 type Conversation = {
   visible: boolean
@@ -45,6 +46,7 @@ export function ConversationProvider({
   const answeringQuestion = actions.snapshot?.questions.some(
     (question) => question.taskId === task.id && question.prompt.blocking !== false,
   )
+  useKeepScreenOn(task.id, visible && task.status === 'running')
   useEffect(() => {
     if ((!visible || answeringQuestion || task.archived) && dictating) finishDictation()
   }, [visible, answeringQuestion, task.archived, dictating, finishDictation])

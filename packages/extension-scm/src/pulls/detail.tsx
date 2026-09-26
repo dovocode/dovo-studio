@@ -8,6 +8,7 @@ import {
   pullMergeability,
   latestPullReviews,
   forgeLabels,
+  formatDateTime,
 } from '@dovo/studio-core'
 import { Button, Badge, MessageResponse } from '@dovo/studio-ui'
 import { ArrowLeft, ArrowUpRight, GitBranch, RefreshCw } from 'lucide-react'
@@ -156,7 +157,7 @@ export function PullDetail({
               </div>
               <div>
                 <dt className="text-muted-foreground">Updated</dt>
-                <dd className="mt-1">{new Date(detail.pull.updatedAt).toLocaleString()}</dd>
+                <dd className="mt-1">{formatDateTime(detail.pull.updatedAt)}</dd>
               </div>
             </dl>
             {(detail.stale || detail.refreshError || !connected) && (
@@ -167,7 +168,7 @@ export function PullDetail({
                     ? `Refresh failed: ${detail.refreshError}`
                     : 'Showing cached details · refreshing in background.'}
                 {detail.cachedAt
-                  ? ` Last fetched ${new Date(detail.cachedAt).toLocaleTimeString()}.`
+                  ? ` Last fetched ${formatDateTime(detail.cachedAt, { timeStyle: 'medium' })}.`
                   : ''}
               </p>
             )}
@@ -273,7 +274,7 @@ export function PullDetail({
                             <ReviewBadge comment={review} />
                             {review.commitId && (
                               <span
-                                className="font-mono text-[11px] text-muted-foreground"
+                                className="font-mono text-[0.6875rem] text-muted-foreground"
                                 title={`Reviewed commit ${review.commitId}`}
                               >
                                 {review.commitId.slice(0, 8)}

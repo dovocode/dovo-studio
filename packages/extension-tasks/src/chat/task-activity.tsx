@@ -11,6 +11,8 @@ import {
   toolPresentation,
   useWorkspace,
   type TaskTurn,
+  formatDateTime,
+  readAppPreferences,
 } from '@dovo/studio-core'
 import { MessageResponse } from '@dovo/studio-ui'
 import {
@@ -119,7 +121,10 @@ export function TaskActivity({
   turn?: TaskTurn
   status?: TaskTurn['status']
 }) {
-  const [expanded, setExpanded] = useApplicationState(false)
+  // Settings → General → Conversation → Tool activity.
+  const [expanded, setExpanded] = useApplicationState(
+    () => readAppPreferences().toolActivity === 'expanded',
+  )
   const entries = useMemo(
     () =>
       tools
@@ -184,7 +189,7 @@ export function TaskActivity({
                 />
               ))}
               {turn && (
-                <details className="pt-1 text-[11px] text-muted-foreground/70">
+                <details className="pt-1 text-[0.6875rem] text-muted-foreground/70">
                   <summary className="w-fit cursor-pointer py-1 hover:text-muted-foreground">
                     Run details
                   </summary>
@@ -251,7 +256,9 @@ function ActivityEntry({
           {title}
         </span>
         {status && (
-          <span className={`shrink-0 text-[10px] ${state === 'failed' ? 'text-destructive' : ''}`}>
+          <span
+            className={`shrink-0 text-[0.625rem] ${state === 'failed' ? 'text-destructive' : ''}`}
+          >
             {status}
           </span>
         )}
@@ -260,13 +267,13 @@ function ActivityEntry({
           className="size-3 shrink-0 transition-transform group-open/action:rotate-90 motion-reduce:transition-none"
         />
       </summary>
-      <div className="mb-2 ml-2.5 space-y-3 border-l pl-4 text-[11px] leading-relaxed text-muted-foreground">
+      <div className="mb-2 ml-2.5 space-y-3 border-l pl-4 text-[0.6875rem] leading-relaxed text-muted-foreground">
         {!!presentation.input && (
           <div>
-            <p className="mb-1 text-[10px] text-muted-foreground/65">
+            <p className="mb-1 text-[0.625rem] text-muted-foreground/65">
               {presentation.kind === 'command' ? 'Command' : 'Input'}
             </p>
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-relaxed">
               {presentation.input}
             </pre>
           </div>
@@ -280,8 +287,8 @@ function ActivityEntry({
             </div>
           ) : (
             <div>
-              <p className="mb-1 text-[10px] text-muted-foreground/65">Output</p>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+              <p className="mb-1 text-[0.625rem] text-muted-foreground/65">Output</p>
+              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-relaxed">
                 {presentation.output}
               </pre>
             </div>
@@ -289,11 +296,12 @@ function ActivityEntry({
         {!presentation.input && !presentation.output && (
           <p>{state === 'running' ? 'Waiting for output…' : 'No text output recorded.'}</p>
         )}
-        <details className="text-[10px] text-muted-foreground/60">
+        <details className="text-[0.625rem] text-muted-foreground/60">
           <summary className="w-fit cursor-pointer py-1 hover:text-muted-foreground">
-            Raw event · <time dateTime={tool.time}>{new Date(tool.time).toLocaleTimeString()}</time>
+            Raw event ·{' '}
+            <time dateTime={tool.time}>{formatDateTime(tool.time, { timeStyle: 'medium' })}</time>
           </summary>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px]">
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.625rem]">
             {tool.payload.slice(0, 24000)}
           </pre>
           {tool.payload.length > 24000 && <p>Raw preview limited to 24,000 characters.</p>}

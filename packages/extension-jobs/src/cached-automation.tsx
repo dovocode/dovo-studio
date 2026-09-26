@@ -1,3 +1,4 @@
+import { formatDateTime } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowLeft, Monitor } from 'lucide-react'
 import { Button, ChoicePicker, IconButton } from '@dovo/studio-ui'
@@ -58,7 +59,7 @@ export function CachedAutomation({
             >
               {row.runs.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {new Date(item.createdAt).toLocaleString()} · {runLabels[item.status]}
+                  {formatDateTime(item.createdAt)} · {runLabels[item.status]}
                 </option>
               ))}
             </ChoicePicker>

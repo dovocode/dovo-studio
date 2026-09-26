@@ -4,9 +4,11 @@ import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/application-state'
 import { decode } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
-import { Switch, View } from 'react-native'
+import { View } from 'react-native'
+import { Switch } from '../ui/switch'
 import { pullCreateSchema, pullActionResultSchema, pullCreateOptionsSchema } from '@dovo/protocol'
 import { useRuntime } from '../runtime/provider'
+import { readMobilePreferences } from '../runtime/app-preferences'
 import { Sheet } from '../ui/sheet'
 import { Field } from '../ui/field'
 import { Choice } from '../ui/choice'
@@ -29,7 +31,8 @@ export function CreatePull({
     [body, setBody] = useApplicationState(''),
     [head, setHead] = useApplicationState(''),
     [base, setBase] = useApplicationState(''),
-    [draft, setDraft] = useApplicationState(false)
+    // Settings → General → Create pull requests as drafts.
+    [draft, setDraft] = useApplicationState(() => readMobilePreferences().pullDraft)
   const [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
@@ -41,7 +44,7 @@ export function CreatePull({
   useEffect(() => {
     let active = true
     setSupportsDraft(false)
-    setDraft(false)
+    setDraft(readMobilePreferences().pullDraft)
     if (repositoryId)
       void runClientEffect(
         callEffect(

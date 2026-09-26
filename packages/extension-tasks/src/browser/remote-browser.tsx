@@ -4,6 +4,7 @@ import {
   remoteBrowserHtml,
   remoteBrowserTicketSchema,
   responses,
+  readAppPreferences,
 } from '@dovo/studio-core'
 export function RemoteBrowser({ taskId, deviceId }: { taskId: string; deviceId?: string }) {
   const { connection, request } = useWorkspace()
@@ -17,6 +18,7 @@ export function RemoteBrowser({ taskId, deviceId }: { taskId: string; deviceId?:
     if (!connection || pending.current) return
     const generation = version.current
     pending.current = true
+    if (!deviceId) post({ type: 'configure', viewport: readAppPreferences().browserViewport })
     if (deviceId)
       post({
         type: 'configure',

@@ -52,7 +52,7 @@ export function ComposerWorkspace({
             <Button
               type="button"
               variant="ghost"
-              className="h-6 gap-1.5 px-2 text-[10px] font-normal"
+              className="h-6 gap-1.5 px-2 text-[0.625rem] font-normal"
               aria-label="Working directory"
               data-value={task.execution ?? 'main'}
               disabled={disabled}
@@ -116,7 +116,7 @@ export function ComposerWorkspace({
                       <span className="block font-medium text-foreground">
                         {mode === 'main' ? 'Local checkout' : 'New worktree'}
                       </span>
-                      <span className="block text-[11px] leading-relaxed text-muted-foreground">
+                      <span className="block text-[0.6875rem] leading-relaxed text-muted-foreground">
                         {mode === 'main'
                           ? `Use ${repository?.branch || 'the current branch'} and its local changes.`
                           : 'Separate folder and branch. Your current checkout stays untouched.'}
@@ -128,7 +128,7 @@ export function ComposerWorkspace({
                   </DropdownMenu.RadioItem>
                 ))}
               </DropdownMenu.RadioGroup>
-              <p className="px-3 pb-2 pt-1 text-[11px] leading-relaxed text-muted-foreground">
+              <p className="px-3 pb-2 pt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
                 Created on first send. The branch name uses your AI-generated task title.
               </p>
             </DropdownMenu.Content>
@@ -136,7 +136,7 @@ export function ComposerWorkspace({
         </DropdownMenu.Root>
       ) : (
         <span
-          className="inline-flex h-6 items-center gap-1.5 px-2 text-[10px]"
+          className="inline-flex h-6 items-center gap-1.5 px-2 text-[0.625rem]"
           aria-label={`Working directory: ${task.execution === 'worktree' ? 'Worktree' : 'Local checkout'}`}
           title="Checkout cannot be changed after a task starts."
         >
@@ -151,7 +151,7 @@ export function ComposerWorkspace({
             <Button
               type="button"
               variant="ghost"
-              className="h-6 min-w-0 max-w-40 gap-1 px-1 text-[10px] font-normal"
+              className="h-6 min-w-0 max-w-40 gap-1 px-1 text-[0.625rem] font-normal"
               aria-label="Task project"
               data-value={task.repositoryId}
               disabled={disabled || !!task.workItem}
@@ -225,7 +225,7 @@ export function ComposerWorkspace({
               task.status === 'running' ||
               (task.execution === 'worktree' && !task.checkoutBranch && !choosingBase)
             }
-            className="ml-auto h-6 min-w-0 max-w-48 gap-1 px-2 text-[10px] font-normal"
+            className="ml-auto h-6 min-w-0 max-w-48 gap-1 px-2 text-[0.625rem] font-normal"
           >
             <GitBranch className="size-3" />
             <span className="truncate">

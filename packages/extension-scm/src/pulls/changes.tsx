@@ -1,5 +1,10 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useWorkspace, pullLineCommentResponse, type PullDetail } from '@dovo/studio-core'
+import {
+  useWorkspace,
+  pullLineCommentResponse,
+  type PullDetail,
+  readAppPreferences,
+} from '@dovo/studio-core'
 import { Button, Checkbox, Input } from '@dovo/studio-ui'
 import { PullFileTree } from './file-tree'
 import { PullPatch } from './patch'
@@ -17,7 +22,7 @@ export function PullChanges({
 }) {
   const { request, connected } = useWorkspace()
   const [selected, setSelected] = useApplicationState(detail.files[0]?.path ?? ''),
-    [split, setSplit] = useApplicationState(false),
+    [split, setSplit] = useApplicationState(readAppPreferences().diffLayout === 'split'),
     [treeOpen, setTreeOpen] = useApplicationState(true),
     [query, setQuery] = useApplicationState(''),
     [viewed, setViewed] = useApplicationState<Set<string>>(new Set())

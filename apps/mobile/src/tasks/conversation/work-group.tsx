@@ -1,3 +1,4 @@
+import { readMobilePreferences } from '../../runtime/app-preferences'
 import { useApplicationState } from '../../runtime/application-state'
 import { useEffect, type PropsWithChildren } from 'react'
 import { Pressable, View } from 'react-native'
@@ -41,7 +42,10 @@ export function ConversationWorkGroup({
   const turn = task.turns?.find((item) => item.assistantId === id)
   const workStatus =
     turn?.status === 'running' && message.status?.type !== 'running' ? 'interrupted' : turn?.status
-  const [open, setOpen] = useApplicationState(false)
+  // Settings → General → Tool activity.
+  const [open, setOpen] = useApplicationState(
+    () => readMobilePreferences().toolActivity === 'expanded',
+  )
   const [now, setNow] = useApplicationState(Date.now())
   useEffect(() => {
     if (!visible || !open || workStatus !== 'running') return

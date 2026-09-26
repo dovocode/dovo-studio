@@ -8,7 +8,7 @@ export function TaskQuestions({ taskId }: { taskId: string }) {
   return (
     <div className="mx-auto w-full max-w-3xl shrink-0 px-5 pb-2">
       {questions.length > 1 && (
-        <p className="pb-1 text-[10px] text-muted-foreground">
+        <p className="pb-1 text-[0.625rem] text-muted-foreground">
           {questions.length} requests waiting
         </p>
       )}

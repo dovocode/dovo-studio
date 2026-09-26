@@ -106,7 +106,7 @@ export function TaskPullLinkDialog({ task, onClose }: { task: Task; onClose: () 
                   #{pull.number} · {pull.title}
                 </span>
                 {task.pullRequest?.url === pull.url && (
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-[0.625rem] text-muted-foreground">
                     Source PR · used for checkout
                   </span>
                 )}

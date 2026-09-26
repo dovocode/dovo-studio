@@ -1,4 +1,5 @@
 import { responses } from '@dovo/protocol'
+import { useCarMode } from '../runtime/app-preferences'
 import { useAction } from '../ui/use-action'
 import { useApplicationState } from '../runtime/application-state'
 import { TaskAgents } from './task-agents'
@@ -59,6 +60,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
                   : 'Draft'
   const [checkpoint, setCheckpoint] = useApplicationState('')
   const [terminalId, setTerminalId] = useApplicationState('')
+  const car = useCarMode()
   const [pane, setPane] = useApplicationState<'chat' | 'diff' | 'terminal' | 'browser' | 'agents'>(
     'chat',
   )
@@ -124,7 +126,8 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
                     : 'Browser',
           icon: tab === 'diff' ? 'changes' : tab === 'browser' ? 'web' : tab,
           selected: pane === tab,
-          overflow: tab === 'chat' || tab === 'browser' || tab === 'agents',
+          // Car mode keeps changes and terminals in the menu, out of sight.
+          overflow: car || tab === 'chat' || tab === 'browser' || tab === 'agents',
           onPress: () => {
             Keyboard.dismiss()
             setCheckpoint('')

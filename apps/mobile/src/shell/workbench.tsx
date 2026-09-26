@@ -9,6 +9,7 @@ import { taskHref } from './task-route'
 import { issueHref, jiraIssueHref, pipelineHref } from './source-route'
 import { collectionPaths as routes, workbenchRoute, type WorkbenchTab as Tab } from './route-paths'
 import { useShortcuts } from './shortcuts'
+import { preferencesReady, readMobilePreferences, useCarMode } from '../runtime/app-preferences'
 import { NewTask } from '../tasks/new-task'
 import { CreationTarget } from '../runtime/creation-target'
 import { TaskListViewProvider } from '../tasks/task-list-view'
@@ -178,6 +179,21 @@ export function Workbench() {
     if (runtime.ready && !runtime.profiles.length && active !== 'settings' && active !== 'tasks')
       router.replace('/')
   }, [runtime.ready, runtime.profiles.length, active])
+  // Settings → General → Open on launch: once per cold start, and only from the default Tasks
+  // tab, so deep links and notification taps still open where they point.
+  const launched = useRef(false)
+  useEffect(() => {
+    if (launched.current || !runtime.ready || !runtime.profiles.length) return
+    launched.current = true
+    void preferencesReady.then(() => {
+      const { launchTab, carMode } = readMobilePreferences()
+      // Car mode only has Tasks and Settings, so it always opens on Tasks.
+      const tab = carMode ? 'tasks' : launchTab
+      if (tab !== 'tasks' && pathname === '/') router.replace(`/${tab}`)
+    })
+  }, [runtime.ready, runtime.profiles.length, pathname])
+  // Car mode: Tasks and Settings only.
+  const car = useCarMode()
   const shortcuts = useShortcuts()
   const routedShortcut = useRef('')
   const hasOnlineComputer = runtime.overviews.some((entry) => entry.connected)
@@ -481,6 +497,7 @@ export function Workbench() {
               </NativeTabs.Trigger>
               <NativeTabs.Trigger
                 name="issues"
+                hidden={car}
                 disableAutomaticContentInsets={Platform.OS === 'ios'}
                 testID="Tab Issues"
                 disabled={!runtime.profiles.length}
@@ -493,6 +510,7 @@ export function Workbench() {
               </NativeTabs.Trigger>
               <NativeTabs.Trigger
                 name="pulls"
+                hidden={car}
                 disableAutomaticContentInsets={Platform.OS === 'ios'}
                 testID="Tab PRs"
                 disabled={!runtime.profiles.length}
@@ -505,6 +523,7 @@ export function Workbench() {
               </NativeTabs.Trigger>
               <NativeTabs.Trigger
                 name="jobs"
+                hidden={car}
                 disableAutomaticContentInsets={Platform.OS === 'ios'}
                 testID="Tab Automations"
                 disabled={!runtime.profiles.length}

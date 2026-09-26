@@ -17,7 +17,7 @@ export function TaskAgents({ task }: { task: Task }) {
   }, [working])
   return (
     <section className="flex min-h-full flex-col" aria-label="Subagents">
-      <div className="px-4 py-4 text-[10px] uppercase tracking-wider text-muted-foreground">
+      <div className="px-4 py-4 text-[0.625rem] uppercase tracking-wider text-muted-foreground">
         Spawned agents
       </div>
       {!agents.length && (
@@ -57,7 +57,7 @@ export function TaskAgents({ task }: { task: Task }) {
                     <span className="truncate text-xs font-medium" title={agent.name}>
                       {agent.name}
                     </span>
-                    <span className="ml-auto shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                    <span className="ml-auto shrink-0 text-[0.625rem] tabular-nums text-muted-foreground">
                       {subagentElapsed(
                         active
                           ? agent
@@ -69,10 +69,10 @@ export function TaskAgents({ task }: { task: Task }) {
                       )}
                     </span>
                   </div>
-                  <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                  <p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">
                     {active ? agent.activity || 'Working' : state}
                   </p>
-                  <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/70">
+                  <p className="mt-0.5 truncate font-mono text-[0.625rem] text-muted-foreground/70">
                     {subagentMetadata(agent) || agent.provider}
                   </p>
                 </div>
@@ -81,13 +81,13 @@ export function TaskAgents({ task }: { task: Task }) {
               <div className="ml-3.5 mt-3 space-y-2 break-words text-xs text-muted-foreground">
                 {agent.prompt && <p className="whitespace-pre-wrap">{agent.prompt}</p>}
                 {agent.activity && <p className="whitespace-pre-wrap">{agent.activity}</p>}
-                <p className="text-[10px]">{agent.id}</p>
+                <p className="text-[0.625rem]">{agent.id}</p>
               </div>
             </details>
           )
         })}
       </div>
-      <footer className="sticky bottom-0 mt-4 flex gap-3 border-t bg-background px-4 py-3 text-[11px] text-muted-foreground">
+      <footer className="sticky bottom-0 mt-4 flex gap-3 border-t bg-background px-4 py-3 text-[0.6875rem] text-muted-foreground">
         <span className={working ? 'text-blue-400' : ''}>{working} working</span>
         <span>{agents.length} total</span>
         {!connected && <span className="ml-auto">Offline · saved state</span>}

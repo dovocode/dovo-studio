@@ -24,7 +24,7 @@ export function FileTree({
     >
       {folders.map((folder) => (
         <details key={folder} open>
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1 text-[11px] text-muted-foreground">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1 text-[0.6875rem] text-muted-foreground">
             <ChevronDown size={12} />
             <Folder size={12} />
             {folder || 'Repository'}
@@ -39,7 +39,7 @@ export function FileTree({
                 key={file.path}
                 variant="ghost"
                 className={cn(
-                  'h-7 w-full justify-start gap-2 rounded px-6 text-[11px] font-normal',
+                  'h-7 w-full justify-start gap-2 rounded px-6 text-[0.6875rem] font-normal',
                   selected === file.path && 'bg-accent',
                 )}
                 onClick={() => onSelect(file.path)}
@@ -50,7 +50,7 @@ export function FileTree({
                   <FileCode className="size-3 text-muted-foreground" />
                 )}
                 <span className="truncate">{file.path.split('/').pop()}</span>
-                <span className="ml-auto text-[10px] text-muted-foreground">
+                <span className="ml-auto text-[0.625rem] text-muted-foreground">
                   {file.before ? 'M' : 'A'}
                 </span>
               </Button>

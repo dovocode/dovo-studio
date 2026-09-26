@@ -10,8 +10,11 @@ export class RuntimePreferences {
     )
     return decode(runtimePreferencesSchema, row ? JSON.parse(row.value) : {})
   }
+  /** Partial saves merge into the current preferences, so a client that knows only some fields
+   * (for example an older phone) never resets the others to their defaults. */
   save(value: unknown) {
-    const settings = decode(runtimePreferencesSchema, value)
+    const changes = value && typeof value === 'object' ? value : {}
+    const settings = decode(runtimePreferencesSchema, { ...this.get(), ...changes })
     this.db
       .prepare(
         'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',

@@ -265,7 +265,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
             </p>
           )}
           {!selected && !!pulls.length && (
-            <div className="mb-2 hidden items-center gap-3 px-10 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground lg:flex">
+            <div className="mb-2 hidden items-center gap-3 px-10 py-2 text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground lg:flex">
               <span className="flex-1">Pull request</span>
               <span className="w-44">Checks & review</span>
               <span className="w-24 text-right">Updated</span>

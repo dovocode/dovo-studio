@@ -168,7 +168,7 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
         </Button>
       </div>
       {files.length > 0 && (
-        <ul className="max-h-40 overflow-auto font-mono text-[11px] text-muted-foreground">
+        <ul className="max-h-40 overflow-auto font-mono text-[0.6875rem] text-muted-foreground">
           {files.map((file) => (
             <li key={file.path}>{file.path}</li>
           ))}

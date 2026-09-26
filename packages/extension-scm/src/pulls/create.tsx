@@ -1,7 +1,12 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Schema } from 'effect'
 import { useEffect, useRef } from 'react'
-import { pullActionResultSchema, pullCreateOptionsSchema, useWorkspace } from '@dovo/studio-core'
+import {
+  pullActionResultSchema,
+  pullCreateOptionsSchema,
+  readAppPreferences,
+  useWorkspace,
+} from '@dovo/studio-core'
 import {
   Button,
   Checkbox,
@@ -38,7 +43,8 @@ export function CreatePull({
   const sourceTasks = workspace.tasks.filter(
     (task) => task.repositoryId === repositoryId && task.workItem && task.checkoutBranch,
   )
-  const [draft, setDraft] = useApplicationState(false)
+  // Settings → General → Create pull requests as drafts.
+  const [draft, setDraft] = useApplicationState(() => readAppPreferences().pullDraft)
   const [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
   const [error, setError] = useApplicationState('')
@@ -50,7 +56,7 @@ export function CreatePull({
     let stopped = false
     setOptions(null)
     setOptionsError('')
-    setDraft(false)
+    setDraft(readAppPreferences().pullDraft)
     if (connected && repositoryId)
       void request(
         '/api/scm/pulls/options/read',

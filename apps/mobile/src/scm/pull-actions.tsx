@@ -1,3 +1,4 @@
+import { readMobilePreferences } from '../runtime/app-preferences'
 import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -46,9 +47,14 @@ export function PullActionSheet({
     [reviewers, setReviewers] = useApplicationState(''),
     [teams, setTeams] = useApplicationState('')
   const [event, setEvent] = useApplicationState('comment'),
-    [method, setMethod] = useApplicationState<string>(
-      detail.capabilities?.mergeMethods[0] ?? 'merge',
-    )
+    // Settings → General → Merge method, when this forge offers it.
+    [method, setMethod] = useApplicationState<string>(() => {
+      const preferred = readMobilePreferences().mergeMethod
+      const offered: readonly string[] = detail.capabilities?.mergeMethods ?? []
+      return preferred !== 'auto' && offered.includes(preferred)
+        ? preferred
+        : (offered[0] ?? 'merge')
+    })
   const [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
   const pending = useRef(false)

@@ -204,7 +204,7 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
                 <span className="min-w-0 break-words">{entry.profile.name}</span>
                 <span
                   className={cn(
-                    'inline-flex items-center gap-1 text-[11px]',
+                    'inline-flex items-center gap-1 text-[0.6875rem]',
                     entry.connected ? 'text-emerald-400' : 'text-muted-foreground',
                   )}
                 >

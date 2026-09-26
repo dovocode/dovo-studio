@@ -1,4 +1,5 @@
 import AppUpdates from '../../screens/app-updates'
+import GeneralScreen from '../../screens/general'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Platform, View } from 'react-native'
 import AgentsScreen from '../../screens/agents'
@@ -15,15 +16,17 @@ export default function SettingsSection() {
   const Screen =
     section === 'updates'
       ? AppUpdates
-      : section === 'devices'
-        ? DevicesScreen
-        : section === 'agents'
-          ? AgentsScreen
-          : section === 'resources'
-            ? ResourcesScreen
-            : section === 'source-control'
-              ? SourceControlSettings
-              : undefined
+      : section === 'general'
+        ? GeneralScreen
+        : section === 'devices'
+          ? DevicesScreen
+          : section === 'agents'
+            ? AgentsScreen
+            : section === 'resources'
+              ? ResourcesScreen
+              : section === 'source-control'
+                ? SourceControlSettings
+                : undefined
   return (
     <WorkbenchDetailRoute tab="settings" bottomInset>
       {Platform.OS !== 'ios' && (

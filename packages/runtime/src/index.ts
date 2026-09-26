@@ -1,3 +1,4 @@
+import { Housekeeping } from './agents/housekeeping.js'
 import { Context, Data, Effect, Layer, ManagedRuntime } from 'effect'
 import { openDatabase } from './storage/database.js'
 import { createServices, type Services } from './services.js'
@@ -55,7 +56,9 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       let tasksClosing: Promise<void> | undefined
       const closeTitles = () => (titlesClosing ??= services.titles.dispose())
       const closeTasks = () => (tasksClosing ??= services.tasks.dispose())
+      const housekeeping = new Housekeeping(services)
       const finalizers = [
+        () => housekeeping.dispose(),
         () => services.acpInstallations.dispose(),
         () => services.acpController.abort(),
         closeTitles,
@@ -132,6 +135,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         services.liveActivities.start()
         services.jobs.startScheduler()
         services.pullCache.start()
+        housekeeping.start()
       })
       return { services, port: address.port }
     }),

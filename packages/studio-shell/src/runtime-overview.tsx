@@ -16,6 +16,7 @@ import {
   taskSortOptions,
   useStudioHost,
   useWorkspace,
+  formatDateTime,
 } from '@dovo/studio-core'
 import { Button, ChoicePicker, IconButton, Input, cn } from '@dovo/studio-ui'
 import { useMemo } from 'react'
@@ -103,7 +104,7 @@ export function RuntimeOverview() {
       <header className="studio-page-header flex min-h-12 flex-wrap items-center gap-2 border-b px-4 py-2">
         <div className="mr-auto">
           <h1 className="text-base font-semibold tracking-tight">Overview</h1>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[0.6875rem] text-muted-foreground">
             Needs attention, current work and recent outcomes.
           </p>
         </div>
@@ -217,7 +218,7 @@ export function RuntimeOverview() {
                     <Search size={13} className="absolute left-2.5 top-2.5 text-muted-foreground" />
                     <Input
                       aria-label="Search all devices"
-                      className="h-7 w-full max-w-64 pl-8 text-[11px]"
+                      className="h-7 w-full max-w-64 pl-8 text-[0.6875rem]"
                       placeholder="Search tasks, projects, computers…"
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
@@ -227,7 +228,7 @@ export function RuntimeOverview() {
                     aria-label="Overview thread sort"
                     value={sort}
                     onValueChange={setSort}
-                    className="h-7 w-auto min-w-36 shrink-0 rounded-sm border px-2 text-[11px]"
+                    className="h-7 w-auto min-w-36 shrink-0 rounded-sm border px-2 text-[0.6875rem]"
                   >
                     {taskSortOptions.map((option) => (
                       <option key={option.id} value={option.id}>
@@ -247,7 +248,7 @@ export function RuntimeOverview() {
                       onClick={() => void open(entry.runtimeId, 'tasks', entry.task.id)}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="mb-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                        <div className="mb-0.5 flex items-center gap-2 text-[0.625rem] text-muted-foreground">
                           <span className="truncate">{entry.projectName || 'No project'}</span>
                           {entry.task.pinned && <Pin size={11} />}
                           <span
@@ -279,7 +280,7 @@ export function RuntimeOverview() {
                         <p className="truncate text-xs font-medium text-foreground">
                           {entry.task.title}
                         </p>
-                        <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                        <div className="mt-0.5 flex items-center gap-2 text-[0.625rem] text-muted-foreground">
                           <GitBranch size={11} />
                           <span className="min-w-0 flex-1 truncate">
                             {entry.task.checkoutBranch ||
@@ -333,7 +334,7 @@ export function RuntimeOverview() {
                         </h2>
                         <span
                           className={cn(
-                            'flex items-center gap-1.5 text-[11px]',
+                            'flex items-center gap-1.5 text-[0.6875rem]',
                             entry.connected ? 'text-emerald-400' : 'text-muted-foreground',
                           )}
                         >
@@ -341,7 +342,7 @@ export function RuntimeOverview() {
                           {entry.connected ? 'Online' : entry.error ? 'Offline' : 'Connecting…'}
                         </span>
                       </div>
-                      <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                      <p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">
                         {entry.profile.connection.address}
                       </p>
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -369,10 +370,10 @@ export function RuntimeOverview() {
                         </Button>
                       </div>
                       {(!entry.connected || entry.pullError || entry.pulls?.partial) && (
-                        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                        <p className="mt-2 text-[0.6875rem] leading-4 text-muted-foreground">
                           {!entry.connected
                             ? entry.lastSeen
-                              ? `Last seen ${new Date(entry.lastSeen).toLocaleString()}. Cached tasks shown.`
+                              ? `Last seen ${formatDateTime(entry.lastSeen)}. Cached tasks shown.`
                               : 'Waiting for this runtime. Reconnect from Settings.'
                             : entry.pullError
                               ? 'Some PRs could not be loaded. Open PRs for details.'

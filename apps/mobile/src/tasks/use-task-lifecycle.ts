@@ -1,3 +1,4 @@
+import { readMobilePreferences } from '../runtime/app-preferences'
 import { mobileWorkflow } from '../runtime/native-effect'
 import { mutableStruct } from '@dovo/protocol'
 import { Alert } from 'react-native'
@@ -108,17 +109,29 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
           yield* refreshRuntimeEffect(owner.profile)
         }),
       ),
-    toggleArchived: () =>
-      act(() =>
-        callEffect(
-          '/api/tasks/lifecycle',
-          {
-            id: task.id,
-            action: task.archivedAt ? 'restore' : 'archive',
-          },
-          responses.ok,
-        ),
-      ),
+    toggleArchived: () => {
+      const run = () =>
+        act(() =>
+          callEffect(
+            '/api/tasks/lifecycle',
+            {
+              id: task.id,
+              action: task.archivedAt ? 'restore' : 'archive',
+            },
+            responses.ok,
+          ),
+        )
+      // Settings → General → Confirm before archiving a task.
+      if (task.archivedAt || !readMobilePreferences().confirmArchive) return run()
+      Alert.alert(
+        `Archive “${task.title}”?`,
+        'You can restore it from Settings → Archived tasks.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Archive', onPress: run },
+        ],
+      )
+    },
     deleteThread: () =>
       Alert.alert(
         'Delete thread?',

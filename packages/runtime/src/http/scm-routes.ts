@@ -15,6 +15,7 @@ import { listDirectories } from '../scm/directories.js'
 import { listGithubRepositories } from '../scm/github-repositories.js'
 import { createPullTaskEffect } from '../scm/pull-task.js'
 import { createWorkTaskEffect } from '../scm/work-task.js'
+import { listWorktreesEffect, removeWorktreeEffect } from '../scm/worktrees.js'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
 import {
@@ -33,6 +34,15 @@ export function scmRoute(request: IncomingMessage, path: string) {
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/scm/worktrees/read')
+        return yield* listWorktreesEffect(s)
+      if (method === 'POST' && path === '/api/scm/worktrees/remove') {
+        const { path: worktree } = decode(
+          mutableStruct({ path: maxValue(minValue(Schema.String, 1), 4096) }),
+          yield* serviceResult(body(request)),
+        )
+        return yield* removeWorktreeEffect(s, worktree)
+      }
       if (method === 'POST' && path === '/api/scm/jira/projects/read')
         return yield* serviceResult(listJiraProjects(s.commands.get().acli, homedir()))
       if (method === 'POST' && path === '/api/scm/jira/sources/save')

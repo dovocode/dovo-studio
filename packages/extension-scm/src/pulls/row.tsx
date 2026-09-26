@@ -1,7 +1,7 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import type { PullSummary } from '@dovo/studio-core'
 import { Badge, ContextMenu } from '@dovo/studio-ui'
-import { pullChecks, pullReview, pullState, pullNextStep } from '@dovo/studio-core'
+import { pullChecks, pullReview, pullState, pullNextStep, formatDateTime } from '@dovo/studio-core'
 import { GitPullRequest, GitMerge } from 'lucide-react'
 import { Signal } from './status'
 export function PullRow({
@@ -61,10 +61,10 @@ export function PullRow({
                 />
               )}
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-2 text-[0.6875rem] text-muted-foreground">
                   <span className="truncate">{repository}</span>
                   <span className="shrink-0">#{pull.number}</span>
-                  <Badge variant="outline" className="ml-auto text-[10px]">
+                  <Badge variant="outline" className="ml-auto text-[0.625rem]">
                     {pullState(pull).label}
                   </Badge>
                 </div>
@@ -74,7 +74,7 @@ export function PullRow({
                   {pull.title}
                 </p>
                 <p
-                  className="mt-1 truncate text-[11px] text-muted-foreground"
+                  className="mt-1 truncate text-[0.6875rem] text-muted-foreground"
                   title={`${pull.head} → ${pull.base}`}
                 >
                   {pull.author} ·{' '}
@@ -88,7 +88,7 @@ export function PullRow({
                       <Badge
                         key={label}
                         variant="secondary"
-                        className="max-w-40 truncate text-[10px]"
+                        className="max-w-40 truncate text-[0.625rem]"
                         title={label}
                       >
                         {label}
@@ -96,7 +96,7 @@ export function PullRow({
                     ))}
                     {pull.labels.length > 3 && (
                       <span
-                        className="text-[10px] text-muted-foreground"
+                        className="text-[0.625rem] text-muted-foreground"
                         title={pull.labels.slice(3).join(', ')}
                       >
                         +{pull.labels.length - 3} labels
@@ -105,7 +105,7 @@ export function PullRow({
                   </div>
                 )}
                 {compact && (
-                  <p className="mt-1 text-[11px] text-muted-foreground">
+                  <p className="mt-1 text-[0.6875rem] text-muted-foreground">
                     Updated {new Date(pull.updatedAt).toLocaleDateString()}
                   </p>
                 )}
@@ -132,7 +132,7 @@ export function PullRow({
                 <time
                   className="hidden w-24 shrink-0 text-right text-xs text-muted-foreground sm:block"
                   dateTime={pull.updatedAt}
-                  title={new Date(pull.updatedAt).toLocaleString()}
+                  title={formatDateTime(pull.updatedAt)}
                 >
                   {new Date(pull.updatedAt).toLocaleDateString()}
                 </time>
@@ -145,7 +145,7 @@ export function PullRow({
               </div>
             )}
             {!!pull.statusError && (
-              <p className="mt-2 text-[10px] text-amber-400" title={pull.statusError}>
+              <p className="mt-2 text-[0.625rem] text-amber-400" title={pull.statusError}>
                 Status unavailable · refresh to retry
               </p>
             )}
@@ -156,7 +156,7 @@ export function PullRow({
             className="z-50 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
             collisionPadding={8}
           >
-            <ContextMenu.Label className="px-2 py-1.5 text-[10px] text-muted-foreground">
+            <ContextMenu.Label className="px-2 py-1.5 text-[0.625rem] text-muted-foreground">
               {repository} · #{pull.number}
             </ContextMenu.Label>
             <ContextMenu.Item className={menuItem} onSelect={onSelect}>

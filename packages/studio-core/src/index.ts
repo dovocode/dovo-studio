@@ -167,3 +167,13 @@ export {
   startSocketHeartbeat,
   clientTaskScope,
 } from '@dovo/client-runtime'
+export {
+  defaultAppPreferences,
+  formatDateTime,
+  readAppPreferences,
+  updateAppPreferences,
+  useAppPreferences,
+  useDiffOptions,
+  useResolvedTheme,
+  type AppPreferences,
+} from './preferences'

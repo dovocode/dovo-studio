@@ -50,7 +50,7 @@ export function MessageAttachments({
       {files.map((file) => (
         <div
           key={file.id}
-          className="flex max-w-full items-center rounded-md border bg-secondary/40 text-[11px]"
+          className="flex max-w-full items-center rounded-md border bg-secondary/40 text-[0.6875rem]"
         >
           <button
             type="button"

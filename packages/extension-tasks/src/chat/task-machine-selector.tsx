@@ -42,7 +42,7 @@ export function TaskMachineSelector({
           <Button
             type="button"
             variant="ghost"
-            className="h-6 gap-1 px-2 text-[10px] font-normal"
+            className="h-6 gap-1 px-2 text-[0.625rem] font-normal"
             disabled={disabled || !editable || busy}
             title={`Runs on ${current?.name ?? 'this machine'}`}
             aria-label="Task machine"
@@ -117,7 +117,7 @@ export function TaskMachineSelector({
                   : source.runtimeId === store.activeRuntimeId
                     ? ' · Current'
                     : ''}
-                <span className="block truncate text-[10px] text-muted-foreground">
+                <span className="block truncate text-[0.625rem] text-muted-foreground">
                   {target.path}
                 </span>
               </DropdownMenu.Item>
@@ -127,7 +127,7 @@ export function TaskMachineSelector({
                 No other saved machine has this Git repository checked out.
               </p>
             )}
-            <p className="max-w-64 px-2 py-1 text-[10px] text-muted-foreground">
+            <p className="max-w-64 px-2 py-1 text-[0.625rem] text-muted-foreground">
               Draft text moves with you. The destination’s task defaults apply. The original is
               archived after transfer.
             </p>

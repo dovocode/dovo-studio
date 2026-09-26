@@ -223,6 +223,38 @@ export const responses = {
 
 export const runtimePreferencesSchema = mutableStruct({
   autoContinueAfterRestart: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  /** Archive tasks with no activity for this many days; 0 turns it off. */
+  autoArchiveDays: Schema.optionalWith(Schema.Literal(0, 7, 14, 30), { default: () => 0 as const }),
+  /** macOS: keep the computer awake while any task is running. */
+  preventSleepWhileRunning: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  /** Housekeeping removes clean worktrees of archived tasks; branches are always kept. */
+  removeArchivedWorktrees: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  /** Delete activity history older than this many days; 0 keeps everything. */
+  activityRetentionDays: Schema.optionalWith(Schema.Literal(0, 30, 90, 365), {
+    default: () => 0 as const,
+  }),
+  /** Prefix for new task branches, e.g. `dovo/` or `feature/`; empty for none. */
+  branchPrefix: Schema.optionalWith(
+    Schema.String.pipe(
+      Schema.maxLength(40),
+      Schema.pattern(/^(?:[A-Za-z0-9][A-Za-z0-9._-]*\/)*$/, {
+        message: () => 'Use letters, numbers, dots, dashes or underscores, ending with /',
+      }),
+      // Git also rejects `..` and components ending in `.lock` or `.`.
+      Schema.filter((prefix) => !/\.\.|\.lock\/|\.\//.test(prefix), {
+        message: () => 'Git branch names cannot contain .. or end a part with .lock or .',
+      }),
+    ),
+    { default: () => 'dovo/' },
+  ),
 })
 
 export const runtimeRestartSchema = mutableStruct({ id: Schema.String })
+
+/** Tidies a typed branch prefix (`feature` → `feature/`) and reports whether Git accepts it. */
+export function normalizeBranchPrefix(input: string) {
+  const trimmed = input.trim()
+  const prefix = trimmed && !trimmed.endsWith('/') ? `${trimmed}/` : trimmed
+  const valid = Schema.decodeUnknownEither(runtimePreferencesSchema)({ branchPrefix: prefix })
+  return { prefix, valid: valid._tag === 'Right' }
+}

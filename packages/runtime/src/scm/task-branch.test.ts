@@ -24,3 +24,13 @@ it('names worktrees <org or user>/<repo>-<branch> and stays safe as a path', asy
   )
   expect(taskWorktreePath('github.com/../..', '/x', 'feature/../../etc')).not.toContain('..')
 })
+
+it('uses the configured branch prefix and keeps worktree names readable', async () => {
+  const { taskWorktreePath } = await import('./task-branch')
+  expect(taskBranchName('Fix login', 'a1b2', 'feature/')).toBe('feature/fix-login-a1b2')
+  expect(taskBranchName('Fix login', 'a1b2', '')).toBe('fix-login-a1b2')
+  expect(taskBranchName('Fix login', 'a1b2', 'team/dominic/')).toBe('team/dominic/fix-login-a1b2')
+  expect(taskWorktreePath('github.com/acme/app', '/x', 'feature/fix-login-a1b2', 'feature/')).toBe(
+    'acme/app-fix-login-a1b2',
+  )
+})

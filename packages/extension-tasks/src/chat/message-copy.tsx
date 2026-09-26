@@ -28,7 +28,7 @@ export function MessageCopy({ text }: { text: string }) {
         {copied ? <Check size={12} /> : <Copy size={12} />}
       </MessageAction>
       {error && (
-        <span role="alert" className="text-[10px] text-destructive">
+        <span role="alert" className="text-[0.625rem] text-destructive">
           {error}
         </span>
       )}

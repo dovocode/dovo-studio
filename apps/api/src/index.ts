@@ -13,7 +13,12 @@ import { knownToolDirectories, loginShellPath, mergePath } from './login-path.js
 class RuntimeProcessError extends Data.TaggedError('RuntimeProcessError')<{
   readonly operation: string
   readonly cause: unknown
-}> {}
+}> {
+  // Without this, startup failures log only "An error has occurred".
+  override get message() {
+    return `Could not ${this.operation}: ${this.cause instanceof Error ? this.cause.message : String(this.cause)}`
+  }
+}
 const attempt = <A>(operation: string, run: () => A) =>
   Effect.try({
     try: run,

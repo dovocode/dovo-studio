@@ -8,6 +8,7 @@ import {
   type PullAction,
   type PullComment,
   type PullDetail,
+  readAppPreferences,
 } from '@dovo/studio-core'
 import {
   Button,
@@ -212,9 +213,12 @@ function PullActionDialog({
     detail.capabilities?.reviewDecisions[0] ?? 'comment',
   )
   const [initialBase] = useApplicationState(base)
-  const [method, setMethod] = useApplicationState<'merge' | 'squash' | 'rebase'>(
-    detail.capabilities?.mergeMethods[0] ?? 'merge',
-  )
+  // Settings → General → Pull requests → Merge method, when this forge offers it.
+  const [method, setMethod] = useApplicationState<'merge' | 'squash' | 'rebase'>(() => {
+    const preferred = readAppPreferences().mergeMethod
+    const offered = detail.capabilities?.mergeMethods ?? []
+    return preferred !== 'auto' && offered.includes(preferred) ? preferred : (offered[0] ?? 'merge')
+  })
   const [reviewers, setReviewers] = useApplicationState('')
   const [teams, setTeams] = useApplicationState('')
   const [operation, setOperation] = useApplicationState<'add' | 'remove'>('add')

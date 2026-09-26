@@ -6,6 +6,7 @@ import { TaskRowMenu } from './task-row-menu'
 import { useTaskLifecycle } from './use-task-lifecycle'
 import { colors, styles } from '../ui/theme'
 import { showTaskDone, taskRowStatus } from './task-row-status'
+import { useCarMode } from '../runtime/app-preferences'
 
 export function TaskListRow({
   row,
@@ -35,6 +36,7 @@ export function TaskListRow({
     turn = task.turns?.at(-1)
   const executionDevice = turn ? (turn.runtimeHost ?? 'Unknown device') : row.runtimeName
   const actions = useTaskLifecycle(task, row.runtimeId)
+  const car = useCarMode()
   const status = taskRowStatus(task, row.needsInput, row.online, now)
   const done = showTaskDone(task, row.needsInput, now)
   const failed = !row.needsInput && !done && status.startsWith('Failed')
@@ -97,7 +99,8 @@ export function TaskListRow({
               width: 9,
               height: 9,
               borderRadius: 4.5,
-              marginTop: 7,
+              // Centered on the title's first line, which car mode enlarges.
+              marginTop: car ? 10 : 7,
               backgroundColor: dot ?? 'transparent',
               borderWidth: dot ? 0 : 1.5,
               borderColor: colors.muted,
@@ -120,12 +123,19 @@ export function TaskListRow({
               </Text>
               {!!age && <Text style={[styles.muted, { fontSize: 14, lineHeight: 22 }]}>{age}</Text>}
             </View>
-            <Text numberOfLines={1} style={[styles.muted, { fontSize: 14 }]}>
-              {task.pinned ? 'Pinned · ' : ''}
-              {row.projectName || 'No project'} · {branch} ·{' '}
-              <Text style={{ color: stateColor }}>{state}</Text>
-            </Text>
-            {showDevice && (
+            {car ? (
+              // Car mode: the state alone; project, branch and computer are detail.
+              <Text numberOfLines={1} style={[styles.muted, { fontSize: 14, color: stateColor }]}>
+                {state}
+              </Text>
+            ) : (
+              <Text numberOfLines={1} style={[styles.muted, { fontSize: 14 }]}>
+                {task.pinned ? 'Pinned · ' : ''}
+                {row.projectName || 'No project'} · {branch} ·{' '}
+                <Text style={{ color: stateColor }}>{state}</Text>
+              </Text>
+            )}
+            {showDevice && !car && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <DeviceLabel task={task} runtimeHost={row.runtimeName} compact />
                 {row.reachability === 'offline' && (
@@ -135,16 +145,18 @@ export function TaskListRow({
             )}
           </View>
         </Pressable>
-        <View style={{ marginTop: 3 }}>
-          <TaskRowMenu
-            testID={`${testID} actions`}
-            task={task}
-            actions={actions}
-            disabled={disabled}
-            onOpen={onOpen}
-            onDetails={onDetails}
-          />
-        </View>
+        {!car && (
+          <View style={{ marginTop: 3 }}>
+            <TaskRowMenu
+              testID={`${testID} actions`}
+              task={task}
+              actions={actions}
+              disabled={disabled}
+              onOpen={onOpen}
+              onDetails={onDetails}
+            />
+          </View>
+        )}
       </View>
       {!!actions.error && (
         <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 8 }]}>

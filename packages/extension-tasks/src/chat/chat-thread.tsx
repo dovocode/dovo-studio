@@ -110,7 +110,7 @@ export function ChatThread({
                     <MessageContent>
                       <MessageAttachments taskId={task.id} files={message.attachments} />
                       {message.file && (
-                        <span className="mb-1 font-mono text-[11px] text-muted-foreground">
+                        <span className="mb-1 font-mono text-[0.6875rem] text-muted-foreground">
                           {message.file}
                         </span>
                       )}
@@ -130,7 +130,7 @@ export function ChatThread({
                     </MessageContent>
                   )}
                   {pending?.message.id === message.id && (
-                    <p role="status" className="text-[11px] text-muted-foreground">
+                    <p role="status" className="text-[0.6875rem] text-muted-foreground">
                       {pending.state === 'failed'
                         ? 'Not confirmed · retry from the composer'
                         : 'Sending…'}

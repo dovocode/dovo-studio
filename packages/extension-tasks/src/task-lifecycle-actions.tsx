@@ -57,7 +57,7 @@ export function TaskLifecycleActions({ task }: { task: Task }) {
       <Button
         type="button"
         variant="ghost"
-        className="h-6 gap-1 px-1 text-[11px]"
+        className="h-6 gap-1 px-1 text-[0.6875rem]"
         aria-label={task.archived ? 'Reopen task' : 'Settle task'}
         disabled={task.status === 'running'}
         onClick={() =>

@@ -6,6 +6,7 @@ import {
   forgeWorkOptionsSchema,
   useWorkspace,
   type ForgePipeline,
+  formatDateTime,
 } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { PipelineState } from '../pipeline-detail'
@@ -200,7 +201,7 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
                 </div>
                 <p className="mt-1 truncate text-sm font-medium">{run.title}</p>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {run.workflow || run.ref} · {new Date(run.updatedAt).toLocaleString()}
+                  {run.workflow || run.ref} · {formatDateTime(run.updatedAt)}
                 </p>
               </div>
               <ChevronRight className="size-4 shrink-0 text-muted-foreground" />

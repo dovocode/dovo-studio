@@ -121,7 +121,7 @@ export function ProjectSelectionDialog({
                   <Folder className="size-3.5" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium text-foreground">{group.name}</span>
-                    <span className="block truncate text-[10px]">
+                    <span className="block truncate text-[0.625rem]">
                       {group.identity ?? 'Local repository'}
                     </span>
                   </span>

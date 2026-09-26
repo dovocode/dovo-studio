@@ -1,6 +1,7 @@
 import { ApplicationStateProvider, useApplicationState } from '@dovo/studio-core/state'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
+  readAppPreferences,
   StudioHostProvider,
   WorkspaceProvider,
   useWorkspace,
@@ -11,6 +12,10 @@ import {
 } from '@dovo/studio-core'
 import { Button, ErrorBoundary, TooltipProvider } from '@dovo/studio-ui'
 import { RuntimeOverview } from './runtime-overview'
+import { SettingsNav } from './settings-nav'
+import { appSettingsExtension } from './app-extension'
+import { useAppearance } from './appearance'
+import { useTaskNotifications } from './task-notifications'
 import { createExtensionCatalog } from './extension-catalog'
 import { ActivityBar } from './activity-bar'
 import { CommandPalette } from './command-palette'
@@ -36,6 +41,8 @@ export function Workbench(props: WorkbenchProps) {
   )
 }
 function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform }: WorkbenchProps) {
+  useAppearance()
+  useTaskNotifications()
   const {
     ready,
     snapshot,
@@ -50,9 +57,13 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
   } = useWorkspace()
   const [switchError, setSwitchError] = useApplicationState('')
   const [switching, setSwitching] = useApplicationState(false)
-  const [target, navigate] = useApplicationState<StudioNavigation>({
-    viewId: extensions[0]?.views[0]?.id ?? '',
-  })
+  // Settings → General → Open on launch.
+  const [target, navigate] = useApplicationState<StudioNavigation>(() => ({
+    viewId:
+      readAppPreferences().launchView === 'overview'
+        ? 'overview'
+        : (extensions[0]?.views[0]?.id ?? ''),
+  }))
   const [palette, setPalette] = useApplicationState(false)
   const [tour, setTour] = useApplicationState<number | null>(null)
   const commands = useRef(new Map<string, StudioCommand>())
@@ -75,7 +86,10 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
     }),
     [registerCommand, pickDirectory, browser],
   )
-  const catalog = useMemo(() => createExtensionCatalog(extensions, api), [extensions, api])
+  const catalog = useMemo(
+    () => createExtensionCatalog([appSettingsExtension, ...extensions], api),
+    [extensions, api],
+  )
   const views = useMemo(
     () => new Map(catalog.views.map((view) => [view.id, lazy(view.load)])),
     [catalog],
@@ -227,47 +241,33 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
             onHelp={() => setStep(0)}
           />
           <main className="studio-main" tabIndex={-1}>
-            {inSettings && (
-              <nav
-                aria-label="Settings sections"
-                className="flex shrink-0 flex-wrap items-center gap-1 border-b px-5 py-2"
-              >
-                <span className="mr-3 text-sm font-medium">
-                  Settings{' '}
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">
-                    All computers
-                  </span>
-                </span>
-                {settingsViews.map((view) => (
-                  <Button
-                    key={view.id}
-                    size="sm"
-                    variant={target.viewId === view.id ? 'secondary' : 'ghost'}
-                    aria-current={target.viewId === view.id ? 'page' : undefined}
-                    onClick={() =>
-                      navigate({
-                        viewId: view.id,
-                      })
+            {/* Settings get a grouped sidebar with search; other views use the full area. */}
+            <div className="flex min-h-0 min-w-0 flex-1">
+              {inSettings && (
+                <SettingsNav
+                  views={settingsViews}
+                  activeId={target.viewId}
+                  onSelect={(viewId) => navigate({ viewId })}
+                />
+              )}
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <ErrorBoundary key={target.viewId}>
+                  <Suspense
+                    fallback={
+                      <p className="p-6 text-xs text-muted-foreground">Loading extension…</p>
                     }
                   >
-                    {view.title}
-                  </Button>
-                ))}
-              </nav>
-            )}
-            <ErrorBoundary key={target.viewId}>
-              <Suspense
-                fallback={<p className="p-6 text-xs text-muted-foreground">Loading extension…</p>}
-              >
-                {ready && target.viewId === 'overview' ? (
-                  <RuntimeOverview />
-                ) : ready && View ? (
-                  <View entityId={target.entityId} />
-                ) : (
-                  <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
-                )}
-              </Suspense>
-            </ErrorBoundary>
+                    {ready && target.viewId === 'overview' ? (
+                      <RuntimeOverview />
+                    ) : ready && View ? (
+                      <View entityId={target.entityId} />
+                    ) : (
+                      <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
+                    )}
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+            </div>
           </main>
         </div>
         <footer className="studio-footer">

@@ -17,8 +17,14 @@ export interface StudioNavigation {
 export interface StudioViewProps {
   entityId?: string
 }
+/** Settings sidebar headings, grouped the way Codex and T3 Code organize theirs. */
+export type SettingsSection = 'app' | 'agents' | 'coding' | 'computers' | 'archived'
 export interface StudioView {
   navigationGroup?: 'settings' | 'hidden'
+  /** Heading a settings page is listed under. */
+  settingsSection?: SettingsSection
+  /** Extra words settings search matches, e.g. the controls a page contains. */
+  keywords?: string
   id: string
   title: string
   icon: StudioIcon

@@ -175,7 +175,7 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
                 <DropdownMenu.RadioItem key={effort.id} value={effort.id} className={itemClass}>
                   {effortName(effort.id || effort.name)}
                   {effort.id === selected?.defaultReasoning && (
-                    <span className="ml-2 rounded border border-border/60 px-1 text-[10px] text-muted-foreground">
+                    <span className="ml-2 rounded border border-border/60 px-1 text-[0.625rem] text-muted-foreground">
                       Default
                     </span>
                   )}
@@ -216,7 +216,7 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
                       <span>
                         {tier.name}
                         {tier.id === 'default' && (
-                          <span className="ml-2 rounded border border-border/60 px-1 text-[10px] text-muted-foreground">
+                          <span className="ml-2 rounded border border-border/60 px-1 text-[0.625rem] text-muted-foreground">
                             Default
                           </span>
                         )}
@@ -314,7 +314,7 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
           <Button
             type="button"
             variant="ghost"
-            className="h-8 gap-1.5 rounded-lg px-2 text-[11px] font-normal text-muted-foreground"
+            className="h-8 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal text-muted-foreground"
             disabled={locked}
             aria-label="Configure task permissions"
             title="Agent access"

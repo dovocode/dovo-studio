@@ -65,7 +65,7 @@ export function QuestionForm({
         <span className="min-w-0 flex-1 whitespace-pre-wrap font-medium">
           {request.prompt.title}
         </span>
-        <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">
+        <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[0.625rem] text-muted-foreground">
           {request.prompt.blocking === false ? 'Answer when ready' : 'Needs input'}
         </span>
       </div>
@@ -101,7 +101,7 @@ export function QuestionForm({
           Decline
         </Button>
         {!connected && (
-          <span className="text-[10px] text-muted-foreground">Reconnect to answer</span>
+          <span className="text-[0.625rem] text-muted-foreground">Reconnect to answer</span>
         )}
       </div>
       {error && (

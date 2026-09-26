@@ -1,3 +1,4 @@
+import { formatTime } from '../runtime/app-preferences'
 import { nativeEffect } from '../runtime/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -170,9 +171,7 @@ export function PullDetail({
                   : detail.refreshError
                     ? `Refresh failed: ${detail.refreshError}`
                     : 'Showing cached details · refreshing.'}
-                {detail.cachedAt
-                  ? ` Last fetched ${new Date(detail.cachedAt).toLocaleTimeString()}.`
-                  : ''}
+                {detail.cachedAt ? ` Last fetched ${formatTime(new Date(detail.cachedAt))}.` : ''}
               </Text>
             )}
             {detail.warnings.map((warning) => (

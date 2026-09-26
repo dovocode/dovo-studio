@@ -10,7 +10,13 @@ import {
   RotateCw,
   X,
 } from 'lucide-react'
-import { useStudioHost, useWorkspace, type Automation, type JobRun } from '@dovo/studio-core'
+import {
+  useStudioHost,
+  useWorkspace,
+  type Automation,
+  type JobRun,
+  formatDateTime,
+} from '@dovo/studio-core'
 import { Button, ChoicePicker, cn } from '@dovo/studio-ui'
 import {
   elapsed,
@@ -41,7 +47,7 @@ export function StepStatus({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 text-[11px]',
+        'inline-flex items-center gap-1.5 text-[0.6875rem]',
         step.status === 'failed'
           ? 'text-destructive'
           : step.status === 'waiting' || needsInput
@@ -131,7 +137,7 @@ export function RunDetails({
         >
           {runs.map((item) => (
             <option key={item.id} value={item.id}>
-              {new Date(item.createdAt).toLocaleString()} · {runLabels[item.status]}
+              {formatDateTime(item.createdAt)} · {runLabels[item.status]}
             </option>
           ))}
         </ChoicePicker>
@@ -245,7 +251,7 @@ export function RunDetails({
           )}
         </div>
         {canRetry && (
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
+          <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
             {anotherActive
               ? 'Wait for the current run to finish before retrying.'
               : 'Continues this run. Completed tasks will not run again.'}
@@ -272,7 +278,7 @@ export function RunDetails({
               )}
             >
               <div className="flex items-start gap-2">
-                <span className="mt-0.5 w-4 shrink-0 text-[11px] text-muted-foreground">
+                <span className="mt-0.5 w-4 shrink-0 text-[0.6875rem] text-muted-foreground">
                   {index + 1}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -291,10 +297,10 @@ export function RunDetails({
                       }
                     />
                     {duration && (
-                      <span className="text-[11px] text-muted-foreground">{duration}</span>
+                      <span className="text-[0.6875rem] text-muted-foreground">{duration}</span>
                     )}
                     {step.attempt > 1 && (
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="text-[0.6875rem] text-muted-foreground">
                         Attempt {step.attempt}
                       </span>
                     )}
@@ -327,7 +333,7 @@ export function RunDetails({
               onClick={() => openTask(task.id)}
             >
               <span className="min-w-0 truncate">{task.title}</span>
-              <span className="shrink-0 text-[11px] text-muted-foreground">{task.status}</span>
+              <span className="shrink-0 text-[0.6875rem] text-muted-foreground">{task.status}</span>
               <ArrowUpRight className="size-3.5 shrink-0" />
             </button>
           ))}

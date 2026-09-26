@@ -1,8 +1,6 @@
-import { TaskDefaultSettings } from '@dovo/studio-ui'
-import { RuntimePreferences } from './runtime-preferences'
 import { useApplicationState } from '@dovo/studio-core/state'
 import type { RuntimeProfile } from '@dovo/studio-core'
-import { useRuntimeSources, WorkspaceScope } from '@dovo/studio-core'
+import { useRuntimeSources, useStudioHost, WorkspaceScope } from '@dovo/studio-core'
 import {
   Button,
   Dialog,
@@ -11,12 +9,11 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@dovo/studio-ui'
-import { ActivityLog } from './activity'
-import { CommandSettings } from './command-settings'
 import { PairingClient } from './pairing-client'
 import { DeviceManager } from './device-manager'
 export default function RuntimeView() {
   const sources = useRuntimeSources()
+  const studio = useStudioHost()
   const [managing, setManaging] = useApplicationState<RuntimeProfile | null>(null)
   const [pairingPhone, setPairingPhone] = useApplicationState(false)
   // Phones pair with a computer this app owns: the local desktop runtime or an owned server.
@@ -90,9 +87,26 @@ export default function RuntimeView() {
             {source ? (
               <WorkspaceScope profile={managing}>
                 <DeviceManager />
-                <RuntimePreferences />
-                <TaskDefaultSettings />
-                <HostTools />
+                {/* Per-computer settings live on their own pages, like Codex and T3 Code. */}
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['task-defaults', 'Task defaults'],
+                    ['commands', 'CLI commands & shell'],
+                    ['activity', 'Activity & message history'],
+                  ].map(([viewId, label]) => (
+                    <Button
+                      key={viewId}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setManaging(null)
+                        studio.navigate({ viewId })
+                      }}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
               </WorkspaceScope>
             ) : (
               <Button onClick={() => setManaging(null)}>Close</Button>
@@ -101,27 +115,5 @@ export default function RuntimeView() {
         </Dialog>
       )}
     </section>
-  )
-}
-function HostTools() {
-  const [panel, setPanel] = useApplicationState<'commands' | 'activity' | null>(null)
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant={panel === 'commands' ? 'secondary' : 'outline'}
-          onClick={() => setPanel(panel === 'commands' ? null : 'commands')}
-        >
-          CLI commands & shell
-        </Button>
-        <Button
-          variant={panel === 'activity' ? 'secondary' : 'outline'}
-          onClick={() => setPanel(panel === 'activity' ? null : 'activity')}
-        >
-          Activity & message history
-        </Button>
-      </div>
-      {panel === 'commands' ? <CommandSettings /> : panel === 'activity' ? <ActivityLog /> : null}
-    </div>
   )
 }

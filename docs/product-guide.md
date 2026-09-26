@@ -248,6 +248,46 @@ removed on load. Real tasks are preserved. Unconnected clients keep drafts in `d
 localStorage. Corrupt saved data is preserved and reported. Connected credentials are persisted in
 client storage; paired devices are trusted to operate this personal workspace.
 
+### Settings
+
+Desktop and web settings use a grouped sidebar with search (matching words inside each page, such as
+"shell", "resume" or "worktree"):
+
+- **App** — **General** (open on launch; default task sort; 12- or 24-hour time; send messages with
+  Enter or ⌘/Ctrl+Enter; whether a follow-up typed while a task runs is queued or steers the current
+  turn; notifications, with or without sound, when a task needs input or finishes and when an
+  automation finishes, fails or reaches a review step, while Dovo is in the background; confirm
+  before archiving or stopping a running task), **Appearance** (dark, light or system theme; text
+  size; reduce animations), a Conversation option to start tool activity collapsed or expanded, a
+  preferred pull-request merge method, whether new pull requests start as drafts, a default viewport
+  for browser previews, **Diffs** (default unified/split layout, wrap or scroll long lines,
+  word/character highlights, line numbers; diffs follow the theme) and **Keyboard shortcuts**. App
+  settings are stored on this device only.
+- **Agents** — Agents, MCP & skills.
+- **Coding** — Source control, **Task defaults** (per computer: auto-continue after a restart,
+  auto-archive tasks inactive for 7, 14 or 30 days — never running, waiting, pinned or terminal-open
+  tasks — and, on macOS, keep the computer awake while tasks run; the branch prefix for new task
+  branches, `dovo/` by default or empty for none; removing worktrees of archived tasks in the
+  background; plus model defaults), CLI commands & shell, and **Worktrees**: task checkouts on each
+  computer, with removal for tasks that were archived or deleted. Worktrees with uncommitted changes
+  or an active task are never removed, and branches are always kept. Restoring a task whose worktree
+  was removed checks its branch out again and reruns the setup command. Per-computer pages have a
+  computer picker.
+- **Computers** — Devices & runtime, Activity & message history (with **Keep activity history**:
+  forever by default, or 1 year, 90 or 30 days; older entries are deleted from that computer in
+  small background batches, while task conversations stay).
+- **Archived** — Archived tasks across every computer, with Restore.
+
+On iPhone, **Settings → This app → General** sets the tab to open on launch, the default task sort,
+12- or 24-hour time, whether tool activity starts expanded, the preferred merge method, whether new
+pull requests start as drafts, whether the screen stays on while an open task is running, and
+whether archiving or stopping a task asks for confirmation. **Car mode** (at the top of General, or
+the car button on Tasks) enlarges text, keeps only the Tasks and Settings tabs, shows tasks as title
+and state without search, filters or row menus, hides tool activity, timestamps and the change and
+terminal buttons in conversations, and keeps the screen on while a task runs. Use dictation to
+reply. These preferences stay on the phone. Per-computer settings, including the branch prefix, are
+on each computer’s page under Settings → Devices.
+
 ### Mobile walkthrough
 
 The native app uses Expo UI buttons and pickers, SecureStore device credentials, and the shared
@@ -415,7 +455,7 @@ turns; Dovo never automatically removes or resets them. Choose the same task wor
 → Project settings** for staging, commits, and GitHub pull requests. Agents, terminals, diffs, and
 `gh` use that checkout as their working directory. Existing tasks default to the project checkout.
 
-Configure host CLI defaults in **Settings → Devices & runtime → CLI commands & shell**: terminal
+Configure host CLI defaults in **Settings → Coding → CLI commands & shell**: terminal
 executable/arguments, Git, GitHub CLI, Codex, Claude, and ACP. Executable fields accept a name on
 PATH or a literal path (including spaces); they are not shell command strings. Agent executable
 overrides take precedence; OpenCode keeps its Serve URL. Empty shell selects an available zsh/bash
@@ -488,7 +528,7 @@ checks the first open-PR page of every registered repository every minute, even 
 client. Visible clients check the cache every ten seconds. Failed refreshes retain cached data with
 an error and wait a minute before retrying; Refresh PRs/details requests a fresh read immediately.
 
-**Devices & runtime → Activity & message history** provides searchable, paginated history. Task
+**Settings → Computers → Activity & message history** provides searchable, paginated history. Task
 messages survive task removal; streamed responses update their existing record. Task
 status/activity, agent turns and approval decisions, automation progress, Git/gh command outcomes,
 authenticated integration requests/results and terminal connections/input metadata are recorded.

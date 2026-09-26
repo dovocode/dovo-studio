@@ -82,7 +82,7 @@ export function MessageQueue({ task }: { task: Task }) {
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 text-[11px]"
+          className="h-6 text-[0.6875rem]"
           disabled={!connected || busy || task.archived}
           onClick={() => void act(task.queuePaused ? 'resume' : 'pause')}
         >

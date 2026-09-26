@@ -81,7 +81,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   activity.workspace({ ...store.get(), tasks: [] }, store.get())
   const attachments = new Attachments(db, store, activity)
   const pullCache = new PullCache(db, pulls, store, (cwd, refresh) => pulls.identity(cwd, refresh))
-  const checkouts = new TaskCheckout(store, git)
+  const checkouts = new TaskCheckout(store, git, () => preferences.get().branchPrefix)
   const tasks = new Tasks(
       store,
       git,

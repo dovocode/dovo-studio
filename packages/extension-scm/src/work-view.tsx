@@ -330,7 +330,7 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
               <option value="title">Title</option>
             </ChoicePicker>
             {mode === 'issues' && (
-              <span className="self-center text-[11px] text-muted-foreground">
+              <span className="self-center text-[0.6875rem] text-muted-foreground">
                 Search your issue trackers · states filter loaded results
               </span>
             )}
@@ -502,7 +502,7 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
                 className="block w-full min-w-0 rounded-lg px-3 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
                 onClick={() => void open(source, item.id, item.url)}
               >
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] text-muted-foreground">
                   {'status' in item ? (
                     <PipelineState status={item.status} />
                   ) : (

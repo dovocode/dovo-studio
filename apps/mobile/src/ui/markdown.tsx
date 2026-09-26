@@ -6,6 +6,7 @@ import { Alert, Linking, Platform } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { resolveMarkdownLink } from '@dovo/protocol'
 import { colors, styles } from './theme'
+import { carZoom, useCarMode } from '../runtime/app-preferences'
 const monospace = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
 const heading = {
   color: colors.text,
@@ -194,6 +195,20 @@ const chatMarkdownStyle: MarkdownStyle = {
     borderColor: 'transparent',
   },
 }
+/** Car mode: the same styles with every font size and line height enlarged. */
+function zoomMarkdown(style: MarkdownStyle): MarkdownStyle {
+  return Object.fromEntries(
+    Object.entries(style).map(([element, value]) => {
+      if (!value || typeof value !== 'object') return [element, value]
+      const scaled: Record<string, unknown> = { ...value }
+      for (const field of ['fontSize', 'lineHeight', 'checkboxSize', 'bulletSize'])
+        if (typeof scaled[field] === 'number') scaled[field] = (scaled[field] as number) * carZoom
+      return [element, scaled]
+    }),
+  ) as MarkdownStyle
+}
+const carMarkdownStyle = zoomMarkdown(markdownStyle)
+const carChatMarkdownStyle = zoomMarkdown(chatMarkdownStyle)
 export const Markdown = memo(function Markdown({
   text,
   baseURL,
@@ -207,11 +222,20 @@ export const Markdown = memo(function Markdown({
   preserveLineBreaks?: boolean
   variant?: 'default' | 'chat'
 }) {
+  const car = useCarMode()
+  const style =
+    variant === 'chat'
+      ? car
+        ? carChatMarkdownStyle
+        : chatMarkdownStyle
+      : car
+        ? carMarkdownStyle
+        : markdownStyle
   return (
     <EnrichedMarkdownText
       markdown={text}
       flavor="github"
-      markdownStyle={variant === 'chat' ? chatMarkdownStyle : markdownStyle}
+      markdownStyle={style}
       selectable
       allowFontScaling
       lineBreakStrategyIOS="standard"

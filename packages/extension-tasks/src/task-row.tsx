@@ -1,6 +1,6 @@
 import { taskPullLinks } from './task-pull-links'
 import { AgentAvatar } from '@dovo/studio-ui'
-import { resolveTaskAgent } from '@dovo/studio-core'
+import { resolveTaskAgent, formatDateTime } from '@dovo/studio-core'
 import { TaskLifecycleActions } from './task-lifecycle-actions'
 import { isSnoozed } from './task-priority'
 import { taskPresentation } from './task-presentation'
@@ -49,7 +49,7 @@ function TaskRowView({
   const compactStatus = !source.online && source.runtimeId ? 'Offline' : presentation.compactLabel
   const statusDetail = [
     status,
-    Number.isFinite(finished) ? `Finished ${new Date(finished).toLocaleString()}` : '',
+    Number.isFinite(finished) ? `Finished ${formatDateTime(finished)}` : '',
     queue ? `${queue} queued` : '',
     task.queuePaused ? 'Queue paused' : '',
   ]
@@ -76,7 +76,7 @@ function TaskRowView({
           >
             <span
               className={cn(
-                'flex min-w-0 items-center gap-1.5 text-[10px] leading-4 text-muted-foreground',
+                'flex min-w-0 items-center gap-1.5 text-[0.625rem] leading-4 text-muted-foreground',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}
@@ -101,7 +101,7 @@ function TaskRowView({
               <span className="min-w-0 flex-1 truncate" title={`${statusDetail} · ${agentDetail}`}>
                 {repository?.name ?? 'No project'}
               </span>
-              <span className="shrink-0 text-[10px]">{compactStatus}</span>
+              <span className="shrink-0 text-[0.625rem]">{compactStatus}</span>
               {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
               {!!linkedPulls.length && (
                 <span
@@ -118,14 +118,14 @@ function TaskRowView({
             </span>
             <span
               className={cn(
-                'block w-full truncate text-[12px] font-medium leading-[17px]',
+                'block w-full truncate text-[0.75rem] font-medium leading-[17px]',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}
             >
               {task.title}
             </span>
-            <span className="flex min-w-0 items-center gap-1 text-[10px] leading-4 text-muted-foreground">
+            <span className="flex min-w-0 items-center gap-1 text-[0.625rem] leading-4 text-muted-foreground">
               <GitBranch className="size-3 shrink-0" />
               <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
               <Monitor className="size-3 shrink-0" aria-label={host ?? 'Unknown host'} />
@@ -174,7 +174,7 @@ function TaskRowView({
               </p>
             ))}
             {isSnoozed(task, now) && (
-              <p>Snoozed until {new Date(task.snoozedUntil ?? now).toLocaleString()}</p>
+              <p>Snoozed until {formatDateTime(task.snoozedUntil ?? now)}</p>
             )}
             <p>
               {terminals} terminal {terminals === 1 ? 'session' : 'sessions'} running

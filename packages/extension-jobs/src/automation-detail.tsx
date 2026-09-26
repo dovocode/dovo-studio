@@ -100,7 +100,7 @@ export function AutomationDetail({
         </IconButton>
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-medium">{flow?.name ?? 'Automation unavailable'}</h1>
-          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <p className="mt-1 flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
             <Monitor className="size-3" />
             Runs on {snapshot?.runtimeHost ?? 'the selected computer'}
             {!connected && ' · offline'}
@@ -256,7 +256,7 @@ export function AutomationDetail({
                       </DropdownMenu.Content>
                     </DropdownMenu.Portal>
                   </DropdownMenu.Root>
-                  <span className="ml-auto text-[11px] text-muted-foreground">
+                  <span className="ml-auto text-[0.6875rem] text-muted-foreground">
                     Connect steps in the order they run
                   </span>
                 </div>
