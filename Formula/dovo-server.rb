@@ -1,20 +1,20 @@
 class DovoServer < Formula
   desc "Dovo Studio personal agent runtime and pairing CLI"
   homepage "https://github.com/dovocode/dovo-studio"
-  version "0.0.4"
+  version "0.0.5"
   on_macos do
     depends_on arch: :arm64
-    url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.4/Dovo-Server-0.0.4-macos-arm64.tar.gz"
-      sha256 "27f73ff4904145f88c11e1d0fca084b8089fabc77b9e79aab09710e8f3320582"
+    url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.5/Dovo-Server-0.0.5-macos-arm64.tar.gz"
+      sha256 "1bf45f91005c7ecc67bd684dab0af7de991a519c8ce290b40d4394a8389d0d85"
   end
   on_linux do
     on_arm do
-      url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.4/Dovo-Server-0.0.4-linux-arm64.tar.gz"
-      sha256 "014390d2d121f0e1bf32f94f71fd452309e253c8b4d2f7190483e763d7c2ab4e"
+      url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.5/Dovo-Server-0.0.5-linux-arm64.tar.gz"
+      sha256 "e648da0fcce096fb17e5e069b6343762f67c520363a8851447602830a34395db"
     end
     on_intel do
-      url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.4/Dovo-Server-0.0.4-linux-x64.tar.gz"
-      sha256 "82dabe06cfdf570e0eb6a1ee3514fdab987a558a6f35416c3d7722e31609600a"
+      url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.5/Dovo-Server-0.0.5-linux-x64.tar.gz"
+      sha256 "dd10f0a1016d581a3c2a77fa0df14f2d73ce22fccc80858bb4d6c2f7798e77eb"
     end
   end
   def install
