@@ -9,6 +9,7 @@ import { Action } from '../ui/action'
 import { Pill } from '../ui/pill'
 import { Sheet } from '../ui/sheet'
 import { useAction } from '../ui/use-action'
+import { formatDateTime } from '../ui/format-date'
 import { styles } from '../ui/theme'
 
 /** Floating connection indicator: one quiet pill instead of a full-width banner. Tap to
@@ -74,9 +75,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                 {entry.profile.connection.address}
               </Text>
               {!!entry.lastSeen && (
-                <Text style={styles.muted}>
-                  Last connected {new Date(entry.lastSeen).toLocaleString()}
-                </Text>
+                <Text style={styles.muted}>Last connected {formatDateTime(entry.lastSeen)}</Text>
               )}
               {!!entry.error && (
                 <Text selectable style={styles.error}>

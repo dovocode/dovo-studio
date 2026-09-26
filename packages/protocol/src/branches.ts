@@ -12,6 +12,8 @@ export const branchesSchema = mutableStruct({
       checkedOut: Schema.Boolean,
     }),
   ),
+  /** origin's default branch (`refs/remotes/origin/HEAD` target), when known. */
+  originDefault: Schema.optional(Schema.String),
 })
 export const switchBranchSchema = mutableStruct({
   action: Schema.Literal('switch', 'create'),

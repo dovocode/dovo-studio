@@ -1,12 +1,18 @@
-import { useContext, type ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 import { Stack } from 'expo-router'
-import { Platform, View } from 'react-native'
+import { Platform, Pressable, View } from 'react-native'
 import { NavigationContext } from '../shell/navigation'
-import { useInsideSheet } from './sheet'
+import { Sheet, useInsideSheet } from './sheet'
+import { Icon } from './icon'
+import { useApplicationState } from '../runtime/application-state'
 import { symbols, type IconName } from './icon'
 import { IconButton } from './icon-button'
 import { Text } from './text'
 import { colors } from './theme'
+
+/** Android/web: a screen inside a stack can show a back arrow in its own header. iOS uses the
+ * native navigation bar's back button instead. */
+export const ScreenBackContext = createContext<(() => void) | null>(null)
 
 export type HeaderAction = {
   label: string
@@ -43,6 +49,9 @@ export function ScreenHeader({
 }) {
   const navigation = useContext(NavigationContext)
   const inSheet = useInsideSheet()
+  const [menu, setMenu] = useApplicationState(false)
+  // Sheets have their own close button; the page's back arrow belongs to the page header only.
+  const back = useContext(ScreenBackContext) ?? null
   if (Platform.OS === 'ios' && !inSheet) {
     // PRs and pipelines keep their content mounted; only the visible collection owns the bar.
     if (navigation && !navigation.focused) return null
@@ -134,7 +143,7 @@ export function ScreenHeader({
         gap: 10,
       }}
     >
-      {leading}
+      {leading ?? (back && !inSheet && <IconButton label="Back" icon="back" onPress={back} />)}
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         {titleContent ?? (
           <>
@@ -160,11 +169,58 @@ export function ScreenHeader({
       </View>
       {(!!actions || !!buttons?.length) && (
         <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 0, gap: 2 }}>
-          {buttons?.map((button) => (
-            <IconButton key={button.label} {...button} />
-          ))}
+          {buttons
+            ?.filter((button) => !button.overflow)
+            .map((button) => (
+              <IconButton key={button.label} {...button} />
+            ))}
+          {/* Android has no toolbar menu; the same overflow actions open in a sheet. */}
+          {buttons?.some((button) => button.overflow) && (
+            <IconButton label="More actions" icon="more" onPress={() => setMenu(true)} />
+          )}
           {actions}
         </View>
+      )}
+      {menu && (
+        <Sheet title={title} onClose={() => setMenu(false)}>
+          {buttons
+            ?.filter((button) => button.overflow)
+            .map((button) => (
+              <Pressable
+                key={button.label}
+                accessibilityRole="button"
+                accessibilityLabel={button.label}
+                accessibilityState={{ disabled: button.disabled, selected: button.selected }}
+                disabled={button.disabled}
+                onPress={() => {
+                  setMenu(false)
+                  button.onPress()
+                }}
+                style={({ pressed }) => ({
+                  minHeight: 52,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 14,
+                  opacity: button.disabled ? 0.4 : pressed ? 0.6 : 1,
+                })}
+              >
+                <Icon
+                  name={button.icon}
+                  size={20}
+                  color={button.selected ? colors.accent : colors.text}
+                />
+                <Text
+                  style={{
+                    color: button.selected ? colors.accent : colors.text,
+                    fontSize: 17,
+                    lineHeight: 22,
+                  }}
+                >
+                  {button.label}
+                </Text>
+              </Pressable>
+            ))}
+        </Sheet>
       )}
     </View>
   )

@@ -76,7 +76,7 @@ function TaskRowView({
           >
             <span
               className={cn(
-                'flex min-w-0 items-center gap-1.5 text-[0.625rem] leading-4 text-muted-foreground',
+                'flex min-w-0 items-center gap-1.5 text-[0.6875rem] leading-4 text-muted-foreground',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}
@@ -101,7 +101,7 @@ function TaskRowView({
               <span className="min-w-0 flex-1 truncate" title={`${statusDetail} · ${agentDetail}`}>
                 {repository?.name ?? 'No project'}
               </span>
-              <span className="shrink-0 text-[0.625rem]">{compactStatus}</span>
+              <span className="shrink-0 text-[0.6875rem]">{compactStatus}</span>
               {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
               {!!linkedPulls.length && (
                 <span
@@ -118,14 +118,14 @@ function TaskRowView({
             </span>
             <span
               className={cn(
-                'block w-full truncate text-[0.75rem] font-medium leading-[17px]',
+                'block w-full truncate text-[0.8125rem] font-medium leading-[18px]',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}
             >
               {task.title}
             </span>
-            <span className="flex min-w-0 items-center gap-1 text-[0.625rem] leading-4 text-muted-foreground">
+            <span className="flex min-w-0 items-center gap-1 text-[0.6875rem] leading-4 text-muted-foreground">
               <GitBranch className="size-3 shrink-0" />
               <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
               <Monitor className="size-3 shrink-0" aria-label={host ?? 'Unknown host'} />

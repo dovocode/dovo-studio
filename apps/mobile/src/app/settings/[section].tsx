@@ -1,14 +1,14 @@
 import AppUpdates from '../../screens/app-updates'
 import GeneralScreen from '../../screens/general'
 import { router, useLocalSearchParams } from 'expo-router'
-import { Platform, View } from 'react-native'
+import { View } from 'react-native'
 import AgentsScreen from '../../screens/agents'
 import DevicesScreen from '../../screens/devices'
 import ResourcesScreen from '../../screens/resources'
 import SourceControlSettings from '../../scm/connections'
 import { WorkbenchDetailRoute } from '../../shell/workbench'
 import { Action } from '../../ui/action'
-import { ScreenHeader } from '../../ui/screen-header'
+import { ScreenBackContext, ScreenHeader } from '../../ui/screen-header'
 import { styles } from '../../ui/theme'
 
 export default function SettingsSection() {
@@ -29,11 +29,10 @@ export default function SettingsSection() {
                 : undefined
   return (
     <WorkbenchDetailRoute tab="settings" bottomInset>
-      {Platform.OS !== 'ios' && (
-        <Action secondary label="Back to Settings" onPress={() => router.dismissTo('/settings')} />
-      )}
       {Screen ? (
-        <Screen />
+        <ScreenBackContext.Provider value={() => router.dismissTo('/settings')}>
+          <Screen />
+        </ScreenBackContext.Provider>
       ) : (
         <View style={styles.screen}>
           <ScreenHeader title="Settings" />

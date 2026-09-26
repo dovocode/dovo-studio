@@ -251,31 +251,41 @@ client storage; paired devices are trusted to operate this personal workspace.
 ### Settings
 
 Desktop and web settings use a grouped sidebar with search (matching words inside each page, such as
-"shell", "resume" or "worktree"):
+"shell", "resume" or "worktree"). Per-computer pages have a computer picker.
 
-- **App** — **General** (open on launch; default task sort; 12- or 24-hour time; send messages with
-  Enter or ⌘/Ctrl+Enter; whether a follow-up typed while a task runs is queued or steers the current
-  turn; notifications, with or without sound, when a task needs input or finishes and when an
-  automation finishes, fails or reaches a review step, while Dovo is in the background; confirm
-  before archiving or stopping a running task), **Appearance** (dark, light or system theme; text
-  size; reduce animations), a Conversation option to start tool activity collapsed or expanded, a
-  preferred pull-request merge method, whether new pull requests start as drafts, a default viewport
-  for browser previews, **Diffs** (default unified/split layout, wrap or scroll long lines,
-  word/character highlights, line numbers; diffs follow the theme) and **Keyboard shortcuts**. App
-  settings are stored on this device only.
+- **App** (stored on this device only):
+  - **General** — open on launch; default task sort; 12- or 24-hour time; Conversation: send
+    messages with Enter or ⌘/Ctrl+Enter, whether a follow-up typed while a task runs is queued or
+    steers the current turn, and whether tool activity starts collapsed or expanded; the default
+    viewport for browser previews; confirm before archiving or stopping a running task.
+  - **Notifications** — while Dovo is in the background: a task needs input, a task finishes, an
+    automation finishes, fails or reaches a review step; with or without sound.
+  - **Appearance** — dark, light or system theme; text size; reduce animations.
+  - **Diffs** — unified/split layout, wrap or scroll long lines, word/character highlights, line
+    numbers; diffs follow the theme.
+  - **Keyboard shortcuts**.
 - **Agents** — Agents, MCP & skills.
-- **Coding** — Source control, **Task defaults** (per computer: auto-continue after a restart,
-  auto-archive tasks inactive for 7, 14 or 30 days — never running, waiting, pinned or terminal-open
-  tasks — and, on macOS, keep the computer awake while tasks run; the branch prefix for new task
-  branches, `dovo/` by default or empty for none; removing worktrees of archived tasks in the
-  background; plus model defaults), CLI commands & shell, and **Worktrees**: task checkouts on each
-  computer, with removal for tasks that were archived or deleted. Worktrees with uncommitted changes
-  or an active task are never removed, and branches are always kept. Restoring a task whose worktree
-  was removed checks its branch out again and reruns the setup command. Per-computer pages have a
-  computer picker.
-- **Computers** — Devices & runtime, Activity & message history (with **Keep activity history**:
-  forever by default, or 1 year, 90 or 30 days; older entries are deleted from that computer in
-  small background batches, while task conversations stay).
+- **Coding**:
+  - **Source control** — forge accounts on each computer.
+  - **Pull requests** (this device) — whether new pull requests start as drafts and the preferred
+    merge method.
+  - **Task defaults** (per computer, projects can override) — agent and model, local checkout or
+    worktree, **Start from origin**, and the worktree setup command.
+  - **Worktrees** (per computer) — the branch prefix for new task branches (`dovo/` by default, or
+    empty for none), removing worktrees of archived tasks in the background, and the task checkouts
+    on that computer with removal for archived or deleted tasks. Worktrees with uncommitted changes
+    or an active task are never removed, and branches are always kept. Restoring a task whose
+    worktree was removed checks its branch out again and reruns the setup command.
+  - **CLI commands & shell** (per computer).
+- **Computers**:
+  - **Devices & runtime** — computers, pairing and trusted devices, with links to each computer's
+    pages.
+  - **Running tasks** (per computer) — continue interrupted tasks after a restart; keep the Mac
+    awake while tasks run; auto-archive tasks inactive for 7, 14 or 30 days (never running, waiting,
+    pinned or terminal-open tasks).
+  - **Activity & message history** (per computer) — the log, and **Keep activity history**: forever
+    by default, or 1 year, 90 or 30 days; older entries are deleted in small background batches,
+    while task conversations stay.
 - **Archived** — Archived tasks across every computer, with Restore.
 
 On iPhone, **Settings → This app → General** sets the tab to open on launch, the default task sort,
@@ -284,9 +294,11 @@ pull requests start as drafts, whether the screen stays on while an open task is
 whether archiving or stopping a task asks for confirmation. **Car mode** (at the top of General, or
 the car button on Tasks) enlarges text, keeps only the Tasks and Settings tabs, shows tasks as title
 and state without search, filters or row menus, hides tool activity, timestamps and the change and
-terminal buttons in conversations, and keeps the screen on while a task runs. Use dictation to
-reply. These preferences stay on the phone. Per-computer settings, including the branch prefix, are
-on each computer’s page under Settings → Devices.
+terminal buttons in conversations, and keeps the screen on while a task runs. Replies start with
+speech: one large **Tap to talk** button records and finishes dictation, the transcript shows in
+large text with **Send** and **Clear**, and **Type instead** opens the regular composer. These
+preferences stay on the phone. Each computer’s page under Settings → Devices groups its settings the
+same way as desktop: Running tasks, Worktrees, Activity and Task defaults.
 
 ### Mobile walkthrough
 
@@ -432,8 +444,10 @@ completed Codex, OpenCode and ACP tasks. Claude reached its CLI but needs a host
 task can pass. The Electron smoke check verifies actual runtime startup and the owner workspace
 connection. The mobile Maestro flow uses an isolated runtime and temporary Git repository; it pairs
 a named test device and exercises native navigation without running paid agent tasks. Android export
-and native configuration are checked; Android device execution requires an installed Android SDK
-platform/emulator and remains unverified on this host.
+and native configuration are checked, and the app runs on an Android emulator the same way as in the
+iOS Simulator: `pnpm --filter @dovo/mobile android` builds, installs and opens it against Metro.
+Pair it with the host's loopback address `http://10.0.2.2:<port>`. On Android, header buttons that
+iOS keeps in its toolbar menu open from a ⋮ sheet, and icons use Material Symbols.
 
 The multi-device flow verifies host-specific drafts and task routing, plus retained search, filters,
 sort and list position after returning from a remote task. For a focused PR list regression, run

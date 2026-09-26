@@ -148,7 +148,9 @@ it('persists project overrides, inherits runtime settings, and leaves existing t
     defaults: {
       ...selection.defaults,
       execution: 'worktree',
+      // An older app may still send the retired fixed base branch; it is accepted and dropped.
       worktreeBaseBranch: 'origin/main',
+      worktreeFromOrigin: true,
       setupCommand: 'pnpm install',
     },
   })
@@ -183,9 +185,10 @@ it('persists project overrides, inherits runtime settings, and leaves existing t
   expect(task).toMatchObject({
     harness: { model: 'project-model' },
     execution: 'worktree',
-    worktreeBaseBranch: 'origin/main',
+    worktreeFromOrigin: true,
     setupCommand: '',
   })
+  expect(task.worktreeBaseBranch).toBeUndefined()
   expect((await patch(null, {})).status).toBe(409)
   expect((await patch(overrides, {})).status).toBe(200)
   expect(runtime.services.store.task(task.id).harness?.model).toBe('project-model')
@@ -198,7 +201,7 @@ it('persists project overrides, inherits runtime settings, and leaves existing t
   cleanups.push(restarted.close)
   expect(restarted.services.store.taskDefaults('project')).toMatchObject({
     execution: 'worktree',
-    worktreeBaseBranch: 'origin/main',
+    worktreeFromOrigin: true,
     setupCommand: 'pnpm install',
   })
   expect(restarted.services.store.task(task.id).setupCommand).toBe('')

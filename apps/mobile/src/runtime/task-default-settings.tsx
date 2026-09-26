@@ -24,6 +24,7 @@ import { Text } from '../ui/text'
 import { Choice } from '../ui/choice'
 import { Field } from '../ui/field'
 import { Action } from '../ui/action'
+import { Switch } from '../ui/switch'
 import { styles } from '../ui/theme'
 import { ModelSettings } from '../agents/model-settings'
 export function TaskDefaultSettings(props: { repository?: Repository }) {
@@ -175,18 +176,29 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
           })
         }
       />
-      <Field
-        label="Worktree base branch"
-        editable={!disabled}
-        autoCapitalize="none"
-        value={draft.worktreeBaseBranch ?? ''}
-        placeholder={
-          repository
-            ? `Use runtime default (${setup?.defaults.worktreeBaseBranch ?? 'origin/main → origin/master'})`
-            : 'Automatic: origin/main → origin/master'
-        }
-        onChangeText={(value) => change({ ...draft, worktreeBaseBranch: value || undefined })}
-      />
+      <View style={{ gap: 4 }}>
+        <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
+          <Text style={[styles.text, { flex: 1 }]}>Start from origin</Text>
+          <Switch
+            accessibilityLabel="Start from origin"
+            disabled={disabled}
+            value={draft.worktreeFromOrigin ?? setup?.defaults.worktreeFromOrigin ?? false}
+            onValueChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
+          />
+        </View>
+        <Text style={styles.muted}>
+          Creates the worktree from the latest matching branch on origin instead of your local
+          branch. Without a matching branch, origin’s default branch is used.
+        </Text>
+        {!!repository && draft.worktreeFromOrigin !== undefined && (
+          <Action
+            secondary
+            label={`Use this computer’s setting (${setup?.defaults.worktreeFromOrigin ? 'on' : 'off'})`}
+            disabled={disabled}
+            onPress={() => change({ ...draft, worktreeFromOrigin: undefined })}
+          />
+        )}
+      </View>
       {repository && (
         <Choice
           label="Worktree setup"

@@ -18,6 +18,7 @@ export function createTask(
     | 'execution'
     | 'harness'
     | 'worktreeBaseBranch'
+    | 'worktreeFromOrigin'
     | 'setupCommand'
   > & {
     objective: string
@@ -32,6 +33,7 @@ export function createTask(
     harness: input.harness,
     execution: input.execution,
     worktreeBaseBranch: input.worktreeBaseBranch,
+    worktreeFromOrigin: input.worktreeFromOrigin,
     setupCommand: input.setupCommand,
     status: 'draft',
     createdAt: new Date().toISOString(),

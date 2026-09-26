@@ -195,19 +195,11 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
             <option value="worktree">New worktree</option>
           </ChoicePicker>
         </FormField>
-        <FormField label="Worktree base branch">
-          <Input
-            value={draft.worktreeBaseBranch ?? ''}
-            placeholder={
-              repository
-                ? `Use runtime default (${setup?.defaults.worktreeBaseBranch ?? 'origin/main → origin/master'})`
-                : 'Automatic: origin/main → origin/master'
-            }
-            onChange={(event) =>
-              change({ ...draft, worktreeBaseBranch: event.target.value || undefined })
-            }
-          />
-        </FormField>
+        <StartFromOrigin
+          value={draft.worktreeFromOrigin}
+          inherited={repository ? (setup?.defaults.worktreeFromOrigin ?? false) : undefined}
+          onChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
+        />
         {repository && (
           <FormField label="Worktree setup">
             <ChoicePicker
@@ -308,5 +300,49 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
         </div>
       )}
     </section>
+  )
+}
+
+/** Worktrees start from the project's current branch unless "Start from origin" is on. A project
+ * follows its computer's choice until changed here. */
+function StartFromOrigin({
+  value,
+  inherited,
+  onChange,
+}: {
+  value: boolean | undefined
+  /** The computer's choice, for project settings; undefined on the computer itself. */
+  inherited: boolean | undefined
+  onChange: (value: boolean | undefined) => void
+}) {
+  const checked = value ?? inherited ?? false
+  return (
+    <div className="space-y-1">
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span>
+          Start from origin
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            Creates the worktree from the latest matching branch on origin instead of your local
+            branch. Without a matching branch, origin’s default branch is used.
+          </span>
+        </span>
+      </label>
+      {inherited !== undefined && value !== undefined && (
+        <Button
+          type="button"
+          variant="link"
+          className="h-auto p-0 pl-6 text-xs"
+          onClick={() => onChange(undefined)}
+        >
+          Use this computer’s setting ({inherited ? 'on' : 'off'})
+        </Button>
+      )}
+    </div>
   )
 }

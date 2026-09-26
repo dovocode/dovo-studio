@@ -3,7 +3,7 @@ import { Effect } from 'effect'
 import { normalizeBranchPrefix, runtimePreferencesSchema } from '@dovo/protocol'
 import { clientTaskScope, useWorkspace } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { ChoicePicker, cn, Input } from '@dovo/studio-ui'
+import { ChoicePicker, Input, SettingRow, SettingsGroup, Toggle } from '@dovo/studio-ui'
 
 type Preferences = typeof runtimePreferencesSchema.Type
 
@@ -43,83 +43,61 @@ export function useRuntimePreferences() {
   return { value, save, error, disabled: !connected || busy || value === null }
 }
 
-/** Preferences stored on the computer itself, shared by every device that manages it. */
-export function RuntimePreferences() {
+/** Settings → Computers → Running tasks: what this computer does with tasks on its own. Stored
+ * on the computer, so every device that manages it sees the same choices. */
+export function RunningTaskPreferences() {
   const { value, save, error, disabled } = useRuntimePreferences()
   return (
-    <section className="divide-y rounded-lg border">
-      <label className="flex items-start gap-3 p-4 text-sm">
-        <input
-          type="checkbox"
-          className="mt-0.5"
-          checked={value?.autoContinueAfterRestart ?? false}
-          disabled={disabled}
-          onChange={(event) => save({ autoContinueAfterRestart: event.target.checked })}
-        />
-        <span>
-          Auto-continue tasks after runtime restart
-          <span className="mt-1 block text-xs text-muted-foreground">
-            Interrupted tasks and unpaused message queues resume one at a time on this computer.
-            Explicitly paused or stopped tasks stay paused. Automations still require Retry.
-          </span>
-        </span>
-      </label>
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm">Auto-archive inactive tasks</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Archives tasks with no activity for the chosen time. Tasks that are running, waiting for
-            you, pinned or have an open terminal are never archived. Restore them from Archived
-            tasks.
-          </p>
-        </div>
-        <ChoicePicker
-          aria-label="Auto-archive inactive tasks"
-          className="h-8 min-w-36 rounded-md px-2 text-xs"
-          disabled={disabled}
-          value={String(value?.autoArchiveDays ?? 0)}
-          onValueChange={(days) =>
-            save({ autoArchiveDays: Number(days) as Preferences['autoArchiveDays'] })
-          }
+    <>
+      <SettingsGroup title="After a restart">
+        <SettingRow
+          label="Continue interrupted tasks"
+          description="Interrupted tasks and unpaused message queues resume one at a time. Paused or stopped tasks stay paused. Automations still require Retry."
         >
-          <option value="0">Never</option>
-          <option value="7">After 7 days</option>
-          <option value="14">After 14 days</option>
-          <option value="30">After 30 days</option>
-        </ChoicePicker>
-      </div>
-      <label className="flex items-start gap-3 p-4 text-sm">
-        <input
-          type="checkbox"
-          className="mt-0.5"
-          checked={value?.preventSleepWhileRunning ?? false}
-          disabled={disabled}
-          onChange={(event) => save({ preventSleepWhileRunning: event.target.checked })}
-        />
-        <span>
-          Keep this computer awake while tasks run
-          <span className="mt-1 block text-xs text-muted-foreground">
-            macOS only. Prevents idle sleep only while a task is working, so long tasks keep going
-            while you follow them from your phone. The display can still sleep.
-          </span>
-        </span>
-      </label>
-      <WorktreeCleanup
-        checked={value?.removeArchivedWorktrees ?? false}
-        disabled={disabled}
-        onChange={(removeArchivedWorktrees) => save({ removeArchivedWorktrees })}
-      />
-      <BranchPrefix
-        value={value?.branchPrefix}
-        disabled={disabled}
-        onSave={(branchPrefix) => save({ branchPrefix })}
-      />
-      {error && (
-        <p role="alert" className="p-4 text-xs text-destructive">
-          {error}
-        </p>
-      )}
-    </section>
+          <Toggle
+            label="Continue interrupted tasks after a runtime restart"
+            checked={value?.autoContinueAfterRestart ?? false}
+            disabled={disabled}
+            onChange={(autoContinueAfterRestart) => save({ autoContinueAfterRestart })}
+          />
+        </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup title="While tasks run">
+        <SettingRow
+          label="Keep this computer awake"
+          description="macOS only. Prevents idle sleep only while a task is working, so long tasks keep going while you follow them from your phone. The display can still sleep."
+        >
+          <Toggle
+            label="Keep this computer awake while tasks run"
+            checked={value?.preventSleepWhileRunning ?? false}
+            disabled={disabled}
+            onChange={(preventSleepWhileRunning) => save({ preventSleepWhileRunning })}
+          />
+        </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup title="Tidying up">
+        <SettingRow
+          label="Auto-archive inactive tasks"
+          description="Tasks that are running, waiting for you, pinned or have an open terminal are never archived. Restore them from Archived tasks."
+        >
+          <ChoicePicker
+            aria-label="Auto-archive inactive tasks"
+            className="h-8 min-w-36 rounded-md px-2 text-xs"
+            disabled={disabled}
+            value={String(value?.autoArchiveDays ?? 0)}
+            onValueChange={(days) =>
+              save({ autoArchiveDays: Number(days) as Preferences['autoArchiveDays'] })
+            }
+          >
+            <option value="0">Never</option>
+            <option value="7">After 7 days</option>
+            <option value="14">After 14 days</option>
+            <option value="30">After 30 days</option>
+          </ChoicePicker>
+        </SettingRow>
+      </SettingsGroup>
+      <Problem error={error} />
+    </>
   )
 }
 
@@ -127,34 +105,63 @@ export function RuntimePreferences() {
 export function ActivityRetention() {
   const { value, save, error, disabled } = useRuntimePreferences()
   return (
-    <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm">Keep activity history</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Older requests, tool details and message history are deleted from this computer in the
-          background. Task conversations themselves are kept.
-        </p>
-        {error && (
-          <p role="alert" className="mt-1 text-xs text-destructive">
-            {error}
-          </p>
-        )}
-      </div>
-      <ChoicePicker
-        aria-label="Keep activity history"
-        className="h-8 min-w-36 rounded-md px-2 text-xs"
-        disabled={disabled}
-        value={String(value?.activityRetentionDays ?? 0)}
-        onValueChange={(days) =>
-          save({ activityRetentionDays: Number(days) as Preferences['activityRetentionDays'] })
-        }
+    <SettingsGroup title="History">
+      <SettingRow
+        label="Keep activity history"
+        description="Older requests, tool details and message history are deleted from this computer in the background. Task conversations themselves are kept."
       >
-        <option value="0">Forever</option>
-        <option value="365">For 1 year</option>
-        <option value="90">For 90 days</option>
-        <option value="30">For 30 days</option>
-      </ChoicePicker>
-    </section>
+        <ChoicePicker
+          aria-label="Keep activity history"
+          className="h-8 min-w-36 rounded-md px-2 text-xs"
+          disabled={disabled}
+          value={String(value?.activityRetentionDays ?? 0)}
+          onValueChange={(days) =>
+            save({ activityRetentionDays: Number(days) as Preferences['activityRetentionDays'] })
+          }
+        >
+          <option value="0">Forever</option>
+          <option value="365">For 1 year</option>
+          <option value="90">For 90 days</option>
+          <option value="30">For 30 days</option>
+        </ChoicePicker>
+      </SettingRow>
+      <Problem error={error} />
+    </SettingsGroup>
+  )
+}
+
+/** Settings → Coding → Worktrees: how task branches are named and when checkouts are removed. */
+export function WorktreePreferences() {
+  const { value, save, error, disabled } = useRuntimePreferences()
+  return (
+    <SettingsGroup title="Branches and cleanup">
+      <BranchPrefix
+        value={value?.branchPrefix}
+        disabled={disabled}
+        onSave={(branchPrefix) => save({ branchPrefix })}
+      />
+      <SettingRow
+        label="Remove worktrees of archived tasks"
+        description="Frees disk space in the background. Worktrees with uncommitted changes are kept, and the branch always stays, so restoring the task checks it out again."
+      >
+        <Toggle
+          label="Remove worktrees of archived tasks"
+          checked={value?.removeArchivedWorktrees ?? false}
+          disabled={disabled}
+          onChange={(removeArchivedWorktrees) => save({ removeArchivedWorktrees })}
+        />
+      </SettingRow>
+      <Problem error={error} />
+    </SettingsGroup>
+  )
+}
+
+function Problem({ error }: { error: string }) {
+  if (!error) return null
+  return (
+    <p role="alert" className="px-4 py-3 text-xs text-destructive">
+      {error}
+    </p>
   )
 }
 
@@ -177,20 +184,21 @@ function BranchPrefix({
     setDraft(null)
   }
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 p-4">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm">Branch prefix</p>
-        <p className="mt-1 text-xs text-muted-foreground">
+    <SettingRow
+      label="Branch prefix"
+      description={
+        <>
           New task branches start with this, e.g.{' '}
           <code className="font-mono">{normalized || ''}fix-login-1a2b3c4d</code>. Leave empty for
           none. Existing branches keep their names.
-        </p>
-        {!valid && (
-          <p role="alert" className="mt-1 text-xs text-destructive">
-            Use letters, numbers, dots, dashes or underscores, separated by /.
-          </p>
-        )}
-      </div>
+          {!valid && (
+            <span role="alert" className="mt-1 block text-destructive">
+              Use letters, numbers, dots, dashes or underscores, separated by /.
+            </span>
+          )}
+        </>
+      }
+    >
       <Input
         aria-label="Branch prefix"
         className="h-8 w-40 font-mono text-xs"
@@ -204,57 +212,6 @@ function BranchPrefix({
           if (event.key === 'Escape') setDraft(null)
         }}
       />
-    </div>
-  )
-}
-
-function WorktreeCleanup({
-  checked,
-  disabled,
-  onChange,
-  className,
-}: {
-  checked: boolean
-  disabled: boolean
-  onChange: (checked: boolean) => void
-  className?: string
-}) {
-  return (
-    <label className={cn('flex items-start gap-3 p-4 text-sm', className)}>
-      <input
-        type="checkbox"
-        className="mt-0.5"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <span>
-        Remove worktrees of archived tasks
-        <span className="mt-1 block text-xs text-muted-foreground">
-          Frees disk space in the background. Worktrees with uncommitted changes are kept, and the
-          branch always stays, so restoring the task checks it out again.
-        </span>
-      </span>
-    </label>
-  )
-}
-
-/** Settings → Coding → Worktrees: the same per-computer cleanup switch as Task defaults. */
-export function ArchivedWorktreeCleanup() {
-  const { value, save, error, disabled } = useRuntimePreferences()
-  return (
-    <div>
-      <WorktreeCleanup
-        className="rounded-lg border"
-        checked={value?.removeArchivedWorktrees ?? false}
-        disabled={disabled}
-        onChange={(removeArchivedWorktrees) => save({ removeArchivedWorktrees })}
-      />
-      {error && (
-        <p role="alert" className="mt-1 text-xs text-destructive">
-          {error}
-        </p>
-      )}
-    </div>
+    </SettingRow>
   )
 }

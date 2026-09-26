@@ -11,7 +11,7 @@ import { titleGenerationSettingsSchema } from './title-generation.js'
 export const runtimeDefaultsSchema = mutableStruct({
   setupCommand: projectTaskDefaultsSchema.fields.setupCommand,
   execution: projectTaskDefaultsSchema.fields.execution,
-  worktreeBaseBranch: projectTaskDefaultsSchema.fields.worktreeBaseBranch,
+  worktreeFromOrigin: projectTaskDefaultsSchema.fields.worktreeFromOrigin,
   configured: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   harness: Schema.optionalWith(
     taskHarnessSchema
@@ -36,6 +36,7 @@ export function resolveTaskDefaults(
     setupCommand: repository?.taskDefaults?.setupCommand ?? runtime?.setupCommand,
     harness: repository?.taskDefaults?.harness ?? runtime?.harness ?? defaultTaskHarness('codex'),
     execution: repository?.taskDefaults?.execution ?? runtime?.execution ?? 'main',
-    worktreeBaseBranch: repository?.taskDefaults?.worktreeBaseBranch ?? runtime?.worktreeBaseBranch,
+    worktreeFromOrigin:
+      repository?.taskDefaults?.worktreeFromOrigin ?? runtime?.worktreeFromOrigin ?? false,
   }
 }

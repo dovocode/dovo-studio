@@ -2,7 +2,18 @@ import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
 import { stageWorkspace } from './stage-workspace.mjs'
 import { desktopMiseArchive } from './desktop-mise-archive.mjs'
-import { mkdtemp, cp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises'
+import {
+  mkdtemp,
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  stat,
+  writeFile,
+  chmod,
+  rm,
+  realpath,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,6 +30,26 @@ if (
 if (Number(process.versions.node.split('.')[0]) !== 24)
   throw new Error('Package with Node 24, matching the runtime native modules.')
 const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
+
+// The installer copies the built renderer as is. Refuse a build older than its sources, so a direct
+// run (without `pnpm package:desktop`, which builds first) cannot ship a stale interface.
+async function newest(directory) {
+  let latest = 0
+  for (const entry of await readdir(directory, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile() || /\.test\.[jt]sx?$/.test(entry.name)) continue
+    latest = Math.max(latest, (await stat(join(entry.parentPath, entry.name))).mtimeMs)
+  }
+  return latest
+}
+const renderer = await stat(join(root, 'apps/desktop/dist/index.html')).catch(() => undefined)
+const sources = await Promise.all(
+  [
+    join(root, 'apps/desktop/src'),
+    ...(await readdir(join(root, 'packages'))).map((name) => join(root, 'packages', name, 'src')),
+  ].map((directory) => newest(directory).catch(() => 0)),
+)
+if (!renderer || renderer.mtimeMs < Math.max(...sources))
+  throw new Error('The desktop build is older than its sources. Run `pnpm build` first.')
 const platform =
   process.platform === 'darwin'
     ? Platform.MAC

@@ -80,9 +80,19 @@ export class TaskCheckout {
       this.store.updateTask(id, (current) => ({ ...current, worktreeSetupComplete: false }))
       return this.prepare(id, directory)
     }
-    const refs = task.pullRequest ? undefined : await listBranches({ git: this.git }, root)
+    let refs = task.pullRequest ? undefined : await listBranches({ git: this.git }, root)
+    // "Start from origin": fetch first so the worktree starts from origin's latest commit.
+    if (refs && !task.worktreeBaseBranch && task.worktreeFromOrigin)
+      refs = await this.fetchOrigin(root).then(() => listBranches({ git: this.git }, root))
     const selection =
-      task.worktreeBaseBranch ?? (refs && defaultWorktreeBase(refs.branches, refs.current))
+      task.worktreeBaseBranch ??
+      (refs &&
+        defaultWorktreeBase(
+          refs.branches,
+          refs.current,
+          task.worktreeFromOrigin,
+          refs.originDefault,
+        ))
     const base = refs?.branches.find(
       (branch) => branch.ref === selection || branch.name === selection,
     )?.ref
@@ -93,6 +103,23 @@ export class TaskCheckout {
       : (base ?? 'HEAD')
     await this.git.command(root, ['worktree', 'add', '-b', branch, directory, head])
     return this.prepare(id, directory)
+  }
+  /** Offline or credential-less fetches are not fatal: the last fetched origin refs are used. */
+  private async fetchOrigin(root: string) {
+    const remotes = (await this.git.command(root, ['remote']))
+      .split('\n')
+      .map((name) => name.trim())
+    if (!remotes.includes('origin')) return
+    await this.git.command(root, ['fetch', '--quiet', '--no-tags', 'origin']).catch(() => undefined)
+    // Learn origin's default branch once, for clones that never recorded origin/HEAD.
+    const known = await this.git
+      .command(root, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'])
+      .then(() => true)
+      .catch(() => false)
+    if (!known)
+      await this.git
+        .command(root, ['remote', 'set-head', 'origin', '--auto'])
+        .catch(() => undefined)
   }
   private async prepare(id: string, directory: string) {
     const cwd = (await this.git.inspect(directory)).path

@@ -42,6 +42,7 @@ it('resolves project overrides field by field and allows disabling inherited set
   const runtime = decode(runtimeDefaultsSchema, {
     harness: defaultTaskHarness('claude'),
     execution: 'worktree',
+    // Retired fixed base branch: older saved values are ignored.
     worktreeBaseBranch: 'origin/master',
     setupCommand: 'pnpm install',
   })
@@ -55,11 +56,36 @@ it('resolves project overrides field by field and allows disabling inherited set
   expect(resolveTaskDefaults(runtime, project)).toEqual({
     harness: runtime.harness,
     execution: 'worktree',
-    worktreeBaseBranch: 'release',
+    worktreeFromOrigin: false,
     setupCommand: '',
   })
+  // Start from origin: the project inherits its computer's choice until it overrides it.
+  const fromOrigin = decode(runtimeDefaultsSchema, { worktreeFromOrigin: true })
+  expect(resolveTaskDefaults(fromOrigin, project).worktreeFromOrigin).toBe(true)
+  expect(
+    resolveTaskDefaults(fromOrigin, { ...project, taskDefaults: { worktreeFromOrigin: false } })
+      .worktreeFromOrigin,
+  ).toBe(false)
   expect(resolveTaskDefaults(undefined, undefined)).toMatchObject({
     execution: 'main',
     harness: defaultTaskHarness('codex'),
   })
+})
+
+it('picks the worktree base: local branch, or origin’s matching or default branch', async () => {
+  const { defaultWorktreeBase } = await import('./worktree-base')
+  const refs = (...names: string[]) => names.map((ref) => ({ ref }))
+  const branches = refs(
+    'refs/heads/feature',
+    'refs/remotes/origin/trunk',
+    'refs/remotes/origin/main',
+  )
+  expect(defaultWorktreeBase(branches, 'feature')).toBe('refs/heads/feature')
+  expect(defaultWorktreeBase(branches, 'feature', true, 'refs/remotes/origin/trunk')).toBe(
+    'refs/remotes/origin/trunk',
+  )
+  expect(defaultWorktreeBase(branches, 'feature', true)).toBe('refs/remotes/origin/main')
+  expect(
+    defaultWorktreeBase(refs('refs/heads/main', 'refs/remotes/origin/main'), 'main', true),
+  ).toBe('refs/remotes/origin/main')
 })

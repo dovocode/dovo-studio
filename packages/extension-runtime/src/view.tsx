@@ -90,7 +90,9 @@ export default function RuntimeView() {
                 {/* Per-computer settings live on their own pages, like Codex and T3 Code. */}
                 <div className="flex flex-wrap gap-2">
                   {[
+                    ['running-tasks', 'Running tasks'],
                     ['task-defaults', 'Task defaults'],
+                    ['worktrees', 'Worktrees'],
                     ['commands', 'CLI commands & shell'],
                     ['activity', 'Activity & message history'],
                   ].map(([viewId, label]) => (

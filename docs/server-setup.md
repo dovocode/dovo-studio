@@ -424,10 +424,12 @@ controls are available on mobile under the device and project settings.
 
 - Choose the harness, model/reasoning/service tier, access mode, instructions and optional
   executable or server URL.
-- Choose local checkout or a new worktree. Worktree base branches accept short names such as
-  `origin/main` or full Git refs. Automatic selection prefers `origin/main`, then `origin/master`,
-  then the current local branch. Remote branches must already exist locally; this does not fetch or
-  switch the project checkout.
+- Choose local checkout or a new worktree. New worktrees start from the project's current local
+  branch. With **Start from origin**, Dovo first fetches origin, then starts from origin's copy of
+  that branch, or origin's default branch (detected from `origin/HEAD`) when origin has no matching
+  branch. A failed fetch falls back to the last fetched origin refs. Projects follow their
+  computer's choice until they override it. A branch picked for one task, before its first message,
+  still wins. The project checkout itself is never switched.
 - Projects inherit unset fields. An agent configuration override replaces the runtime's complete
   agent configuration. **Reset to runtime defaults**, followed by **Save defaults**, removes project
   overrides.

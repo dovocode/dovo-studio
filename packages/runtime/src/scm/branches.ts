@@ -16,6 +16,10 @@ export function listBranchesEffect(s: Pick<Services, 'git'>, cwd: string) {
           'refs/remotes/',
         ]),
       )
+      const originDefault = refs
+        .split('\n')
+        .map((line) => line.split('\0'))
+        .find(([ref]) => ref === 'refs/remotes/origin/HEAD')?.[2]
       const branches = refs
         .split('\n')
         .filter(Boolean)
@@ -43,6 +47,7 @@ export function listBranchesEffect(s: Pick<Services, 'git'>, cwd: string) {
         current,
         revision: `${head}:${current}`,
         branches,
+        ...(originDefault ? { originDefault } : {}),
       })
     }),
   )

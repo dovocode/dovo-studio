@@ -1,5 +1,9 @@
 import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
-import { updateMobilePreferences, useCarMode } from '../runtime/app-preferences'
+import {
+  updateMobilePreferences,
+  useCarMode,
+  useMobilePreferences,
+} from '../runtime/app-preferences'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/application-state'
@@ -39,6 +43,8 @@ export default function TasksScreen() {
     { busy, error, act } = useAction()
   const { view, setView, scrollOffset } = useTaskListView()
   const car = useCarMode()
+  // Settings → General → Default sort; only a different sort counts as customized.
+  const defaultSort = useMobilePreferences().taskSort
   // Car mode shows what needs attention first; search, filters and project scope wait.
   const { search, filter, source, sort, project } = car
     ? { ...view, search: '', filter: 'active', sort: 'priority', project: '' }
@@ -257,7 +263,7 @@ export default function TasksScreen() {
                 <IconButton
                   label="Task filters and sorting"
                   icon="filters"
-                  selected={filter !== 'active' || sort !== 'priority'}
+                  selected={filter !== 'active' || sort !== defaultSort}
                   onPress={() => setFiltersOpen(true)}
                 />
               </View>
@@ -338,7 +344,7 @@ export default function TasksScreen() {
                   }
                 />
               )}
-              {(filter !== 'active' || sort !== 'priority') && (
+              {(filter !== 'active' || sort !== defaultSort) && (
                 <Text style={styles.muted}>
                   {filter === 'archive'
                     ? 'Archived'

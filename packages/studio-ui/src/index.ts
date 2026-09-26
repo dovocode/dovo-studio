@@ -39,3 +39,4 @@ export { HarnessIcon } from './harness-icon'
 export { AgentAvatar, agentIconChoices } from './agent-avatar'
 
 export { TaskDefaultSettings } from './task-default-settings'
+export { SettingsPage, SettingsGroup, SettingRow, Segmented, Toggle } from './settings-layout'

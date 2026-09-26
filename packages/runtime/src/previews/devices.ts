@@ -230,19 +230,29 @@ export async function previewDevices() {
     const serials = (await run(adb, ['devices']))
       .split('\n')
       .flatMap((line) => line.match(/^(emulator-\d+)\s+device$/)?.[1] ?? [])
-    const running = new Map<string, string>()
+    const running = new Map<string, { serial: string; ready: boolean }>()
     for (const serial of serials) {
       const name = (await run(adb, ['-s', serial, 'emu', 'avd', 'name'])).split('\n')[0]?.trim()
-      if (name) running.set(name, serial)
+      // Like a Booted iOS simulator, an emulator counts as ready once Android finished booting.
+      const ready = await run(adb, ['-s', serial, 'shell', 'getprop', 'sys.boot_completed'])
+        .then((value) => value.trim() === '1')
+        .catch(() => false)
+      if (name) running.set(name, { serial, ready })
     }
-    for (const name of names)
+    for (const name of names) {
+      const emulator = running.get(name)
       devices.push({
         id: `android:${name}`,
         name,
         platform: 'android',
-        state: running.has(name) ? 'booted' : launching.has(name) ? 'starting' : 'stopped',
-        runtime: running.get(name) ?? 'Android emulator',
+        state: emulator?.ready
+          ? 'booted'
+          : emulator || launching.has(name)
+            ? 'starting'
+            : 'stopped',
+        runtime: emulator?.serial ?? 'Android emulator',
       })
+    }
   } catch {
     diagnostics.push(
       'Android: install SDK Platform Tools and Emulator, then create an AVD in Android Studio. Set ANDROID_HOME if needed.',
@@ -426,10 +436,25 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
       if (input.action === 'boot') {
         const emulator = await androidTool('emulator')
         await new Promise<void>((resolve, reject) => {
-          const child = spawn(emulator, ['-avd', id, '-grpc-use-token'], {
-            detached: true,
-            stdio: 'ignore',
-          })
+          // Headless like `simctl boot`: the preview streams into Dovo, so no Mac window or
+          // audio. Quick Boot snapshots still apply. Without a window the emulator falls back to
+          // software rendering; on a Mac the host GPU keeps previews smooth.
+          const child = spawn(
+            emulator,
+            [
+              '-avd',
+              id,
+              '-grpc-use-token',
+              '-no-window',
+              '-no-audio',
+              '-no-boot-anim',
+              ...(process.platform === 'darwin' ? ['-gpu', 'host'] : []),
+            ],
+            {
+              detached: true,
+              stdio: 'ignore',
+            },
+          )
           launchErrors.delete(id)
           launching.set(id, child)
           child.once('exit', (code) => {

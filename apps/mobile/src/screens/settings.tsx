@@ -61,7 +61,7 @@ export default function SettingsScreen() {
           title="Computers"
           footer={
             profiles.length
-              ? 'Task defaults, CLI commands and activity are in each computer’s settings.'
+              ? 'Running tasks, worktrees, task defaults, CLI commands and activity are on each computer’s page.'
               : undefined
           }
         >

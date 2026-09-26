@@ -25,7 +25,7 @@ export const runtimeExtension = defineStudioExtension(
       order: 3.5,
       settingsSection: 'coding',
       keywords:
-        'worktree checkout execution base branch prefix name remove archived disk setup command resume interrupted restart startup',
+        'agent model harness reasoning new task working directory local checkout worktree start from origin fetch remote default branch base setup command install',
       load: () => import('./task-defaults-view'),
     },
     {
@@ -33,7 +33,7 @@ export const runtimeExtension = defineStudioExtension(
       navigationGroup: 'settings',
       title: 'CLI commands & shell',
       icon: 'runtime',
-      order: 3.6,
+      order: 3.8,
       settingsSection: 'coding',
       keywords: 'codex claude gh git az path executable shell login terminal',
       load: () => import('./commands-view'),
@@ -45,8 +45,20 @@ export const runtimeExtension = defineStudioExtension(
       icon: 'runtime',
       order: 3.7,
       settingsSection: 'coding',
-      keywords: 'worktree cleanup storage disk remove delete checkouts branches archived automatic',
+      keywords:
+        'worktree cleanup storage disk remove delete checkouts branches archived automatic branch prefix name',
       load: () => import('./worktrees-view'),
+    },
+    {
+      id: 'running-tasks',
+      navigationGroup: 'settings',
+      title: 'Running tasks',
+      icon: 'runtime',
+      order: 4.2,
+      settingsSection: 'computers',
+      keywords:
+        'resume continue interrupted restart startup auto archive inactive keep awake sleep caffeinate',
+      load: () => import('./running-tasks-view'),
     },
     {
       id: 'activity',

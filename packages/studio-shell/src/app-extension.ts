@@ -12,8 +12,19 @@ export const appSettingsExtension = defineStudioExtension(
       order: 0.1,
       settingsSection: 'app',
       keywords:
-        'send enter shortcut composer follow up queue steer notifications notify sound confirm archive stop cancel automation job run launch startup open time clock 12 24 hour sort order tool activity commands expanded collapsed pull request draft merge squash rebase browser preview viewport phone tablet desktop size',
+        'send enter shortcut composer conversation chat follow up queue steer confirm archive stop cancel launch startup open time clock 12 24 hour sort order tool activity commands expanded collapsed browser preview viewport phone tablet desktop size',
       load: () => import('./app-settings/general'),
+    },
+    {
+      id: 'notifications',
+      navigationGroup: 'settings',
+      title: 'Notifications',
+      icon: 'runtime',
+      order: 0.15,
+      settingsSection: 'app',
+      keywords:
+        'notifications notify alert sound background input approval question finished failed automation job run',
+      load: () => import('./app-settings/notifications'),
     },
     {
       id: 'appearance',
@@ -35,6 +46,16 @@ export const appSettingsExtension = defineStudioExtension(
       keywords:
         'diff review split unified wrap scroll line numbers word character highlight changes',
       load: () => import('./app-settings/diffs'),
+    },
+    {
+      id: 'pull-request-settings',
+      navigationGroup: 'settings',
+      title: 'Pull requests',
+      icon: 'runtime',
+      order: 3.1,
+      settingsSection: 'coding',
+      keywords: 'pull request pr draft merge squash rebase method create',
+      load: () => import('./app-settings/pull-requests'),
     },
     {
       id: 'shortcuts',

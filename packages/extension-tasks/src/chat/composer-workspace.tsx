@@ -230,7 +230,7 @@ export function ComposerWorkspace({
             <GitBranch className="size-3" />
             <span className="truncate">
               {choosingBase
-                ? `From ${(task.worktreeBaseBranch ?? (branches && defaultWorktreeBase(branches.branches, branches.current)) ?? 'origin/main or origin/master').replace(/^refs\/(heads|remotes)\//, '')}`
+                ? `From ${(task.worktreeBaseBranch ?? (branches && defaultWorktreeBase(branches.branches, branches.current, task.worktreeFromOrigin, branches.originDefault)) ?? (task.worktreeFromOrigin ? 'origin' : 'current branch')).replace(/^refs\/(heads|remotes)\//, '')}`
                 : (task.checkoutBranch ?? repository?.branch ?? 'Branch')}
             </span>
             <ChevronDown className="size-3" />
@@ -287,7 +287,12 @@ export function ComposerWorkspace({
                 {(choosingBase
                   ? [branch.ref, branch.name].includes(
                       task.worktreeBaseBranch ??
-                        defaultWorktreeBase(branches.branches, branches.current) ??
+                        defaultWorktreeBase(
+                          branches.branches,
+                          branches.current,
+                          task.worktreeFromOrigin,
+                          branches.originDefault,
+                        ) ??
                         '',
                     )
                   : branch.name === branches.current) && <Check className="size-3" />}

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { MinicapFrames } from './simulator-native'
+import { androidScreenSize, MinicapFrames } from './simulator-native'
 it('assembles fragmented native video packets and multiple frames without JPEG parsing', () => {
   const header = Buffer.alloc(24)
   header[0] = 1
@@ -21,4 +21,13 @@ it('rejects unbounded or incompatible native video packets', () => {
   header[1] = 24
   header.writeUInt32LE(0xffffffff, 24)
   expect(() => new MinicapFrames().push(header, () => {})).toThrow('length')
+})
+
+it('reads the Android display size, preferring an override', () => {
+  expect(androidScreenSize('Physical size: 1080x2400\n')).toEqual({ width: 1080, height: 2400 })
+  expect(androidScreenSize('Physical size: 1080x2400\nOverride size: 720x1600\n')).toEqual({
+    width: 720,
+    height: 1600,
+  })
+  expect(androidScreenSize('error: device offline')).toBeUndefined()
 })

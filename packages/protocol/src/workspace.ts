@@ -46,9 +46,10 @@ export const projectTaskDefaultsSchema = mutableStruct({
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
   harness: Schema.optional(taskHarnessSchema.omit('resources')),
   execution: Schema.optional(executionSchema),
-  worktreeBaseBranch: Schema.optional(
-    maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 500),
-  ),
+  // A fixed default base branch was replaced by Start from origin; older saved values are dropped
+  // on read. A task can still pick its own base branch before its first message.
+  /** Start worktrees from origin (fetched first) instead of the local branch. */
+  worktreeFromOrigin: Schema.optional(Schema.Boolean),
 })
 export type ProjectTaskDefaults = Schema.Schema.Type<typeof projectTaskDefaultsSchema>
 export const repositorySchema = mutableStruct({
@@ -171,6 +172,7 @@ export const taskSchema = mutableStruct({
   worktreeSetupComplete: Schema.optional(Schema.Boolean),
   checkoutBranch: Schema.optional(Schema.String),
   worktreeBaseBranch: Schema.optional(Schema.String),
+  worktreeFromOrigin: Schema.optional(Schema.Boolean),
   checkoutLocked: Schema.optional(Schema.Boolean),
   // Captured on the first submitted input; queued input keeps the lock after removal.
   providerLock: Schema.optional(providerSchema),

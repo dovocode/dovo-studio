@@ -5,7 +5,7 @@ import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import { useApplicationState } from './application-state'
 import { useEffect, useRef, type ReactNode } from 'react'
-import { ActivityIndicator, AppState, Keyboard, Pressable, View } from 'react-native'
+import { ActivityIndicator, AppState, Keyboard, Platform, Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import {
   normalizeRuntimeAddress,
@@ -178,7 +178,8 @@ export function PairComputer({
             Settings → Devices & runtime.
           </Step>
           <Step number={2}>
-            Scan the QR code with the iPhone Camera, or type the address and code it shows.
+            Scan the QR code with the {Platform.OS === 'ios' ? 'iPhone' : 'phone'} Camera, or type
+            the address and code it shows.
           </Step>
         </View>
       )}

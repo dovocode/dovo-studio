@@ -6,6 +6,7 @@ import type { PullActionTarget } from './pull-actions'
 import { Action } from '../ui/action'
 import { Icon } from '../ui/icon'
 import { colors, styles } from '../ui/theme'
+import { formatShortDateTime } from '../ui/format-date'
 import { PullCommentLabel } from './pull-status'
 export function PullComments({
   comments,
@@ -45,14 +46,7 @@ export function PullComments({
                 <PullCommentLabel comment={c} />
               </View>
               <Text style={styles.muted}>
-                {c.date
-                  ? new Date(c.date).toLocaleString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                    })
-                  : 'Not submitted yet'}
+                {c.date ? formatShortDateTime(c.date) : 'Not submitted yet'}
                 {c.kind === 'review' && c.commitId ? ` · Reviewed ${c.commitId.slice(0, 8)}` : ''}
               </Text>
             </View>

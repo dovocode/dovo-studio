@@ -146,7 +146,7 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
   expect(await s.checkouts.directory(isolated.id)).toBe(cwd)
 })
 
-it('bases new worktrees on origin/main, then origin/master, or the explicitly selected branch', async () => {
+it('starts worktrees from the local branch, or with Start from origin from the latest origin branch', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const runtime = await startRuntime({
@@ -157,14 +157,22 @@ it('bases new worktrees on origin/main, then origin/master, or the explicitly se
   cleanups.push(() => runtime.close())
   const s = runtime.services
   s.store.update(() => f.workspace)
-  const initial = (await s.git.command(f.directory, ['rev-parse', 'HEAD'])).trim()
-  await s.git.command(f.directory, ['update-ref', 'refs/remotes/origin/main', initial])
-  await s.git.command(f.directory, ['update-ref', 'refs/remotes/origin/master', initial])
+  const git = (...args: string[]) => s.git.command(f.directory, args).then((out) => out.trim())
+  const current = await git('branch', '--show-current')
+  // origin gets a commit this clone has not fetched yet.
+  const origin = join(f.directory, '..', `${f.directory.split('/').pop()}-origin.git`)
+  cleanups.push(() => rm(origin, { recursive: true, force: true }))
+  await git('clone', '--quiet', '--bare', f.directory, origin)
+  const bare = (...args: string[]) =>
+    s.git.command(f.directory, ['--git-dir', origin, ...args]).then((out) => out.trim())
+  const remote = await bare('commit-tree', `${current}^{tree}`, '-p', current, '-m', 'Remote work')
+  await bare('update-ref', `refs/heads/${current}`, remote)
+  await git('remote', 'add', 'origin', origin)
   await writeFile(join(f.directory, 'hello.txt'), 'local branch only\n')
-  await s.git.command(f.directory, ['commit', '-am', 'Local branch work'])
-  const local = (await s.git.command(f.directory, ['rev-parse', 'HEAD'])).trim()
-  await s.git.command(f.directory, ['branch', 'chosen-base'])
-  const make = async (base?: string) => {
+  await git('commit', '-am', 'Local branch work')
+  const local = await git('rev-parse', 'HEAD')
+  await git('branch', 'chosen-base')
+  const make = async (fromOrigin: boolean, base?: string) => {
     const task = s.tasks.create({
       title: 'Base test',
       repositoryId: 'repo',
@@ -174,18 +182,24 @@ it('bases new worktrees on origin/main, then origin/master, or the explicitly se
     })
     s.store.update((w) => ({
       ...w,
-      tasks: w.tasks.map((t) => (t.id === task.id ? { ...t, worktreeBaseBranch: base } : t)),
+      tasks: w.tasks.map((t) =>
+        t.id === task.id ? { ...t, worktreeBaseBranch: base, worktreeFromOrigin: fromOrigin } : t,
+      ),
     }))
     const cwd = await s.checkouts.directory(task.id)
     cleanups.push(() => rm(cwd, { recursive: true, force: true }))
     return (await s.git.command(cwd, ['rev-parse', 'HEAD'])).trim()
   }
-  expect(await make()).toBe(initial)
-  await s.git.command(f.directory, ['update-ref', '-d', 'refs/remotes/origin/main'])
-  expect(await make()).toBe(initial)
-  expect(await make('refs/heads/chosen-base')).toBe(local)
-  await expect(make('refs/heads/missing')).rejects.toThrow('Choose an existing base branch')
-  expect((await s.git.command(f.directory, ['rev-parse', 'HEAD'])).trim()).toBe(local)
+  expect(await make(false)).toBe(local)
+  // Fetched first, so the worktree starts from origin's newest commit.
+  expect(await make(true)).toBe(remote)
+  // A branch origin does not have falls back to origin's detected default branch.
+  await git('checkout', '--quiet', '-b', 'feature-only-here')
+  expect(await make(true)).toBe(remote)
+  expect(await make(false)).toBe(local)
+  expect(await make(true, 'refs/heads/chosen-base')).toBe(local)
+  await expect(make(false, 'refs/heads/missing')).rejects.toThrow('Choose an existing base branch')
+  expect(await git('rev-parse', 'HEAD')).toBe(local)
 })
 
 it('snapshots project defaults and retries failed worktree setup without rerunning completed setup', async () => {

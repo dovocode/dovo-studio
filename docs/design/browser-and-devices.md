@@ -111,9 +111,15 @@ brew install facebook/fb/idb-companion
 
 Set `DOVO_IDB_COMPANION` if the executable is outside PATH. Dovo starts its own companion with a
 private Unix socket and stops only that helper when the preview closes. Android uses the emulator's
-local authenticated gRPC connection. Start the emulator through Dovo, or launch it with
-`-grpc-use-token`. An externally started emulator exposing only JWT authentication must be restarted
-with this option before streaming. Tokens stay on the runtime and are never sent to the viewer.
+local authenticated gRPC connection and works like the iOS simulator: any running emulator can be
+previewed, whether Dovo, Android Studio or the command line started it. Dovo uses the emulator's
+token when it has one; otherwise it places a temporary signed key in the emulator's `grpc.jwks`
+directory, as Android Studio does, and removes it when the preview closes. Tokens and keys stay on
+the runtime and are never sent to the viewer.
+
+Like `simctl boot`, **Start** runs the emulator headless (no window or audio, using the Mac's GPU),
+and a device counts as booted only once Android has finished starting. The emulator scales frames
+before sending them (at most 1600 px on the long side) and scrolling is a short swipe, as on iOS.
 
 These previews support a single touch pointer, keyboard input and explicit paste. They do not stream
 audio or implement multitouch gestures. Simulator screen pixels do not expose native accessibility
@@ -160,8 +166,10 @@ Results for this pass:
 - Desktop interactive smoke verification remains blocked by Electron native startup crashes/timeouts
   in this environment. IPC isolation, URL rejection, viewport bounds and view lifecycle have unit
   coverage, but this does not substitute for a successful desktop walkthrough.
-- Android commands are implemented, but actual emulator execution was not verified because this
-  machine has no usable Android emulator SDK installation.
+- Real Android emulator (API 36, arm64): headless start, boot-completed detection, live frames at
+  about 29 fps while the screen moves, touch drags, swipe scrolling, Home, and signed-key
+  authentication for an emulator Dovo did not start were verified; the temporary key was removed
+  after the preview closed.
 
 Those historical checks predate Host browser and live simulator streaming; see the current checks
 below.

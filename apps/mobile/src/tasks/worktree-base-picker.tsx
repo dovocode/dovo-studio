@@ -11,10 +11,12 @@ import { styles } from '../ui/theme'
 export function WorktreeBasePicker({
   repositoryId,
   value,
+  fromOrigin = false,
   onChange,
 }: {
   repositoryId: string
   value?: string
+  fromOrigin?: boolean
   onChange: (value: string) => void
 }) {
   const { callEffect } = useRuntime()
@@ -46,7 +48,8 @@ export function WorktreeBasePicker({
         value={
           data?.branches.find((branch) => branch.ref === value || branch.name === value)?.ref ??
           value ??
-          (data && defaultWorktreeBase(data.branches, data.current)) ??
+          (data &&
+            defaultWorktreeBase(data.branches, data.current, fromOrigin, data.originDefault)) ??
           ''
         }
         items={data?.branches.map((branch) => ({ id: branch.ref, name: branch.name })) ?? []}

@@ -20,6 +20,8 @@ import type { DraftSelection } from './dictation-draft'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { HarnessSettings } from './harness-settings'
 import { taskHarnessLabel } from './harness-choices'
+import { CarComposer } from './car-composer'
+import { useCarMode } from '../runtime/app-preferences'
 export function Composer({ task }: { task: Task }) {
   const insets = useSafeAreaInsets()
   const { actions, send, stop } = useTaskConversation()
@@ -48,6 +50,9 @@ export function Composer({ task }: { task: Task }) {
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
   const selection = useRef<DraftSelection | undefined>(undefined)
+  const car = useCarMode()
+  // Car mode starts with speech; the regular composer is one tap away for a passenger.
+  const [typing, setTyping] = useApplicationState(false)
   const showOptions = focused || hasInput || firstMessage
   const canDictate = draft.ready && !busy && !task.archived && !attaching
   const listening = dictation.isRecording || dictation.isStarting
@@ -82,6 +87,7 @@ export function Composer({ task }: { task: Task }) {
         {!!error && <Text style={styles.error}>{error}</Text>}
       </View>
     )
+  if (car && !typing) return <CarComposer task={task} onType={() => setTyping(true)} />
   return (
     <View
       testID="Composer"
@@ -461,7 +467,12 @@ export function Composer({ task }: { task: Task }) {
                     : {}),
                   worktreeBaseBranch: {
                     before: task.worktreeBaseBranch ?? null,
-                    after: defaults.worktreeBaseBranch ?? null,
+                    // A base branch picked for the old project does not apply to the new one.
+                    after: null,
+                  },
+                  worktreeFromOrigin: {
+                    before: task.worktreeFromOrigin ?? null,
+                    after: defaults.worktreeFromOrigin,
                   },
                   repositoryId: {
                     before: task.repositoryId,
@@ -493,6 +504,7 @@ export function Composer({ task }: { task: Task }) {
               key={task.repositoryId}
               repositoryId={task.repositoryId}
               value={task.worktreeBaseBranch}
+              fromOrigin={task.worktreeFromOrigin}
               onChange={(value) =>
                 act(() =>
                   patch({

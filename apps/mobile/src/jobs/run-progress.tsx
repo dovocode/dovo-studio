@@ -9,6 +9,7 @@ import { Action } from '../ui/action'
 import { Icon } from '../ui/icon'
 import { colors, styles } from '../ui/theme'
 import { useAction } from '../ui/use-action'
+import { formatDateTime } from '../ui/format-date'
 import { automationRunSummary } from './automation-summary'
 export function RunProgress({
   run,
@@ -230,7 +231,7 @@ export function RunProgress({
           }}
         >
           <Text style={styles.muted}>
-            {new Date(run.createdAt).toLocaleString()}
+            {formatDateTime(run.createdAt)}
             {(run.attempt ?? 1) > 1 ? ` · Attempt ${run.attempt}` : ''}
           </Text>
           {steps

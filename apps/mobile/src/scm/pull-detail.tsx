@@ -31,6 +31,7 @@ import { PullMenu } from './pull-menu'
 import { PullPrimaryAction, PullActionSheet, type PullActionTarget } from './pull-actions'
 import { pullActionOptions } from './pull-action-options'
 import { LineComment } from './line-comment'
+import { formatDateTime } from '../ui/format-date'
 import { invalidatePullList } from './pull-list-invalidation'
 export function PullDetail({
   repositoryId,
@@ -243,9 +244,7 @@ export function PullDetail({
                   <Text style={styles.muted}>
                     Assigned to: {detail.pull.assignees.join(', ') || 'Unassigned'}
                   </Text>
-                  <Text style={styles.muted}>
-                    Updated {new Date(detail.pull.updatedAt).toLocaleString()}
-                  </Text>
+                  <Text style={styles.muted}>Updated {formatDateTime(detail.pull.updatedAt)}</Text>
                 </View>
                 <View style={styles.row}>
                   <Signal signal={pullDetailChecks(detail)} />

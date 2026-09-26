@@ -4,16 +4,16 @@ import { responses, useWorkspace } from '@dovo/studio-core'
 import { worktreeListSchema, type WorktreeList } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
 import { HostPage } from './host-page'
-import { ArchivedWorktreeCleanup } from './runtime-preferences'
+import { WorktreePreferences } from './runtime-preferences'
 
 export default function WorktreesView() {
   return (
     <HostPage
       title="Worktrees"
-      description="Separate checkouts Dovo created for tasks. Remove the ones you no longer need; branches are always kept."
+      description="Separate checkouts Dovo creates for tasks: how their branches are named, when they are cleaned up, and the ones on this computer."
     >
       <div className="space-y-5">
-        <ArchivedWorktreeCleanup />
+        <WorktreePreferences />
         <WorktreeList />
       </div>
     </HostPage>

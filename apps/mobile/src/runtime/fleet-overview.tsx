@@ -6,6 +6,7 @@ import { useNavigation } from '../shell/navigation'
 import { colors, styles } from '../ui/theme'
 import { Icon } from '../ui/icon'
 import { Sheet } from '../ui/sheet'
+import { formatDateTime } from '../ui/format-date'
 import { Action } from '../ui/action'
 function status(entry: RuntimeOverview) {
   const reachability = runtimeReachability(entry)
@@ -258,9 +259,7 @@ export function FleetOverview({
                 <Text style={styles.muted}>Showing saved activity</Text>
               )}
               {!!detail.lastSeen && !detail.connected && (
-                <Text style={styles.muted}>
-                  Last connected {new Date(detail.lastSeen).toLocaleString()}
-                </Text>
+                <Text style={styles.muted}>Last connected {formatDateTime(detail.lastSeen)}</Text>
               )}
               <Text selectable style={styles.muted}>
                 {detail.profile.connection.address}

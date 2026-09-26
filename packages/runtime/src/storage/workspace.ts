@@ -400,6 +400,7 @@ export class WorkspaceStore {
             'harness',
             'execution',
             'worktreeBaseBranch',
+            'worktreeFromOrigin',
             'setupCommand',
           ])
         : null
@@ -415,6 +416,7 @@ export class WorkspaceStore {
         (key === 'execution' ||
           key === 'repositoryId' ||
           key === 'worktreeBaseBranch' ||
+          key === 'worktreeFromOrigin' ||
           key === 'setupCommand') &&
         'messages' in entity &&
         !canChangeTaskCheckout(entity)

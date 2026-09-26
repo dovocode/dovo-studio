@@ -37,6 +37,7 @@ import { WorkTaskAction } from './work-task-action'
 import { JiraIssueProject } from './jira-issue-project'
 import { WorkForm } from './work-form'
 import { assertWorkSource, workCacheKey } from './work-cache'
+import { formatDateTime } from '../ui/format-date'
 import { PipelineRunInfo, PipelineRunDetails, PipelineJobs } from './pipeline-details'
 type WorkItemProps = {
   mode: 'issues' | 'pipelines'
@@ -719,9 +720,7 @@ function WorkItemContent({
                 </Text>
               )}
               {issue.issue.updatedAt && !Number.isNaN(Date.parse(issue.issue.updatedAt)) && (
-                <Text style={styles.muted}>
-                  Updated {new Date(issue.issue.updatedAt).toLocaleString()}
-                </Text>
+                <Text style={styles.muted}>Updated {formatDateTime(issue.issue.updatedAt)}</Text>
               )}
             </View>
             <Text
@@ -797,7 +796,7 @@ function WorkItemContent({
                 }}
               >
                 <Text style={styles.muted}>
-                  {comment.author} · {new Date(comment.createdAt).toLocaleString()}
+                  {comment.author} · {formatDateTime(comment.createdAt)}
                 </Text>
                 <Markdown
                   text={comment.body}

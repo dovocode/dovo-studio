@@ -13,6 +13,7 @@ import type { BrowserFrame } from './browser.js'
 import { SimulatorRpc } from './simulator-rpc.js'
 import { androidProtocol, iosProtocol } from './simulator-protocols.js'
 import { HttpError } from '../errors.js'
+import { emulatorKey } from './emulator-auth.js'
 // sharp is a native image library that is only needed once a frame is decoded. Loading it
 // lazily keeps it out of the runtime's startup module graph.
 let sharpModule: typeof import('sharp').default | undefined
@@ -467,15 +468,16 @@ export async function emulatorEndpoint(device: PreviewDevice) {
         continue
       const port = Number(data['grpc.port'])
       if (!Number.isInteger(port) || port < 1 || port > 65535) continue
-      if (!data['grpc.token'])
-        throw new HttpError(
-          409,
-          'Restart this emulator using Dovo Start to enable authenticated live preview.',
-        )
-      return {
-        address: `127.0.0.1:${port}`,
-        token: data['grpc.token'],
-      }
+      const address = `127.0.0.1:${port}`
+      // Started by Dovo (-grpc-use-token) or by Android Studio (signed keys), like any booted
+      // iOS simulator.
+      if (data['grpc.token']) return { address, token: data['grpc.token'] }
+      if (data['grpc.jwks'] && data['grpc.jwk_active'])
+        return { address, keys: { directory: data['grpc.jwks'], active: data['grpc.jwk_active'] } }
+      throw new HttpError(
+        409,
+        'This emulator’s control port is not secured. Restart it from Dovo or Android Studio.',
+      )
     }
   }
   throw new HttpError(
@@ -483,27 +485,52 @@ export async function emulatorEndpoint(device: PreviewDevice) {
     'No authenticated emulator control endpoint. Start this emulator using Dovo or with -grpc-use-token.',
   )
 }
+/** `wm size` reports the physical size and, when set, an override that the display uses. */
+export function androidScreenSize(output: string) {
+  const sizes = [...output.matchAll(/(Physical|Override) size: (\d+)x(\d+)/g)]
+  const size = sizes.find((match) => match[1] === 'Override') ?? sizes[0]
+  if (!size) return undefined
+  const width = Number(size[2]),
+    height = Number(size[3])
+  return width > 0 && height > 0 && width <= 8192 && height <= 8192 ? { width, height } : undefined
+}
 export async function androidSimulator(device: PreviewDevice): Promise<NativeSimulator> {
   const endpoint = await emulatorEndpoint(device)
+  const signer = endpoint.keys
+    ? await emulatorKey(endpoint.keys.directory, endpoint.keys.active)
+    : undefined
   const rpc = new SimulatorRpc(
     endpoint.address,
     androidProtocol,
     'android.emulation.control.EmulatorController',
-    endpoint.token,
+    endpoint.token ?? signer?.token(),
   )
   try {
     await rpc.ready()
   } catch (error) {
     rpc.close()
+    await signer?.dispose()
     throw error
   }
-  let width = 0,
-    height = 0,
-    touching = false
-  const unary = (method: string, type: string, request: object) =>
-    rpc.unary(method, type, 'android.emulation.control.Empty', request, empty)
+  // Signed tokens are short-lived; renew before each call.
+  const authorize = () => {
+    if (signer) rpc.metadata.set('authorization', `Bearer ${signer.token()}`)
+  }
   const adb = await androidTool('adb')
   const execute = promisify(execFile)
+  // Touches use device pixels; the phone sees half of them, like points on iOS.
+  const screen = await execute(adb, ['-s', device.runtime, 'shell', 'wm', 'size'], {
+    timeout: 10000,
+  })
+    .then(({ stdout }) => androidScreenSize(stdout))
+    .catch(() => undefined)
+  let width = screen?.width ?? 0,
+    height = screen?.height ?? 0,
+    touching = false
+  const unary = (method: string, type: string, request: object) => {
+    authorize()
+    return rpc.unary(method, type, 'android.emulation.control.Empty', request, empty)
+  }
   const keyCodes: Record<string, number> = {
     Home: 3,
     GoHome: 3,
@@ -567,19 +594,17 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
     })
   }
   let stop: (() => void) | undefined
-  let wheelError: Error | null = null
-  const wheel = rpc.writeStream(
-    'injectWheel',
-    'android.emulation.control.WheelEvent',
-    'android.emulation.control.Empty',
-    empty,
-    (error) => {
-      wheelError = error
-    },
-  )
-  wheel.on('error', (error) => {
-    wheelError = error
-  })
+  const touch = (x: number, y: number, pressure: number) =>
+    unary('sendTouch', 'android.emulation.control.TouchEvent', {
+      touches: [
+        {
+          x: Math.round(Math.max(0, Math.min(width - 1, x))),
+          y: Math.round(Math.max(0, Math.min(height - 1, y))),
+          identifier: 0,
+          pressure,
+        },
+      ],
+    })
   return {
     start(publish, report) {
       const schema = mutableStruct({
@@ -607,13 +632,14 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
         }),
         image: bytes,
       })
+      authorize()
+      // Let the emulator scale frames (a 1080×2400 RGB frame is ~7.8 MB); the box fits both
+      // orientations because the emulator keeps the aspect ratio.
       const stream = rpc.stream(
         'streamScreenshot',
         'android.emulation.control.ImageFormat',
         'android.emulation.control.Image',
-        {
-          format: 2,
-        },
+        screen ? { format: 2, width: 1600, height: 1600 } : { format: 2 },
         schema,
       )
       let stopped = false
@@ -649,13 +675,21 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
               quality: 75,
             })
             .toBuffer()
-          width = w
-          height = h
+          // Scaled frames keep the device's orientation; touch space follows it.
+          if (screen) {
+            const long = Math.max(screen.width, screen.height),
+              short = Math.min(screen.width, screen.height)
+            width = w > h ? long : short
+            height = w > h ? short : long
+          } else {
+            width = w
+            height = h
+          }
           return {
             type: 'frame',
             data,
-            width: Math.round(w / 2),
-            height: Math.round(h / 2),
+            width: Math.round(width / 2),
+            height: Math.round(height / 2),
           }
         },
         publish,
@@ -681,16 +715,7 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
       if (input.type === 'pointer') {
         if (!width || !height || (input.phase === 'move' && !touching)) return
         touching = input.phase !== 'up'
-        await unary('sendTouch', 'android.emulation.control.TouchEvent', {
-          touches: [
-            {
-              x: Math.round(Math.min(width - 1, input.x * 2)),
-              y: Math.round(Math.min(height - 1, input.y * 2)),
-              identifier: 0,
-              pressure: touching ? 1 : 0,
-            },
-          ],
-        })
+        await touch(input.x * 2, input.y * 2, touching ? 1 : 0)
       } else if (input.type === 'text') {
         if (/^[\x20-\x7e]+$/.test(input.text) && !input.text.includes('%s')) {
           // adb joins shell arguments. Quote explicitly; input's %s escape means a space.
@@ -710,16 +735,20 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
           })
         }
       } else if (input.type === 'scroll') {
-        if (wheelError) throw wheelError
-        await new Promise<void>((resolve, reject) =>
-          wheel.write(
-            {
-              dx: -Math.round(input.deltaX),
-              dy: -Math.round(input.deltaY),
-            },
-            (error: Error | null | undefined) => (error ? reject(error) : resolve()),
-          ),
-        )
+        // A short swipe, like the iOS simulator; never while a finger is already down.
+        if (!width || !height || touching) return
+        const from = { x: input.x * 2, y: input.y * 2 }
+        const to = { x: from.x - input.deltaX * 2, y: from.y - input.deltaY * 2 }
+        await touch(from.x, from.y, 1)
+        for (let step = 1; step <= 4; step++) {
+          await new Promise((resolve) => setTimeout(resolve, 25))
+          await touch(
+            from.x + ((to.x - from.x) * step) / 4,
+            from.y + ((to.y - from.y) * step) / 4,
+            1,
+          )
+        }
+        await touch(to.x, to.y, 0)
       } else if (input.type === 'back') await key('GoBack')
       else if (input.type === 'key') await key(input.key)
     },
@@ -727,8 +756,8 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
     async close() {
       stop?.()
       await release().catch((error) => console.warn('Could not release simulator touch', error))
-      wheel.end()
       rpc.close()
+      await signer?.dispose()
     },
   }
 }

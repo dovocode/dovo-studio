@@ -11,6 +11,7 @@ import { Action } from '../ui/action'
 import { Icon } from '../ui/icon'
 import { Text } from '../ui/text'
 import { colors, styles } from '../ui/theme'
+import { formatDateTime } from '../ui/format-date'
 import { useNavigation } from '../shell/navigation'
 function usePipelineNow(active: boolean) {
   const { focused } = useNavigation()
@@ -50,7 +51,7 @@ export function WorkSignal({ status, emphasis = false }: { status: string; empha
 function date(value?: string) {
   if (!value) return undefined
   const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toLocaleString()
+  return Number.isNaN(parsed.getTime()) ? undefined : formatDateTime(parsed)
 }
 function Metadata({ label, value }: { label: string; value?: string }) {
   return value ? (

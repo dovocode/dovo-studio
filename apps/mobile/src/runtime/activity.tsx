@@ -8,6 +8,7 @@ import { activitySchema } from '@dovo/protocol'
 import { useRuntime } from './provider'
 import { Action } from '../ui/action'
 import { Field } from '../ui/field'
+import { formatDateTime } from '../ui/format-date'
 import { styles } from '../ui/theme'
 export function ActivityLog() {
   const { readEffect, connected } = useRuntime(),
@@ -72,7 +73,7 @@ export function ActivityLog() {
             label={`${e.kind} · ${e.summary}`}
             onPress={() => setExpanded(expanded === e.id ? '' : e.id)}
           />
-          <Text style={styles.muted}>{new Date(e.time).toLocaleString()}</Text>
+          <Text style={styles.muted}>{formatDateTime(e.time)}</Text>
           {expanded === e.id && (
             <Text selectable style={styles.text}>
               {e.payload}
