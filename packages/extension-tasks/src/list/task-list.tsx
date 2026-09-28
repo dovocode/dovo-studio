@@ -316,10 +316,27 @@ export function TaskList({
             onChange={onProjectChange}
             disabled={busy}
           />
-          <Button size="icon" variant="ghost" className="size-8 shrink-0" aria-label={selecting ? 'Cancel selection' : 'Select tasks'} aria-pressed={selecting} onClick={() => { setSelecting(!selecting); setSelected(new Set()) }}>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8 shrink-0"
+            aria-label={selecting ? 'Cancel selection' : 'Select tasks'}
+            aria-pressed={selecting}
+            onClick={() => {
+              setSelecting(!selecting)
+              setSelected(new Set())
+            }}
+          >
             <ListChecks size={16} aria-hidden="true" />
           </Button>
-          <Button size="icon" variant="ghost" className="size-8 shrink-0" aria-label="New task" onClick={() => onCreate()} disabled={busy}>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8 shrink-0"
+            aria-label="New task"
+            onClick={() => onCreate()}
+            disabled={busy}
+          >
             <Plus size={17} aria-hidden="true" />
           </Button>
         </div>

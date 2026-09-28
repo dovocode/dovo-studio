@@ -42,6 +42,7 @@ it('keeps an edit made while saved preferences are still loading', async () => {
     taskSort: 'title',
     keepScreenOn: true,
     launchTab: 'tasks',
+    speechRate: 1.25,
   })
   await vi.waitFor(() => expect(writes.length).toBeGreaterThan(0))
   expect(JSON.parse(writes.at(-1) ?? '{}')).toMatchObject({

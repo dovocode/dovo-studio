@@ -22,6 +22,7 @@ const tabs = [
   { id: 'pulls', name: 'PRs' },
   { id: 'jobs', name: 'Automations' },
 ] as const
+const speechRates = [1, 1.25, 1.5, 1.75, 2] as const
 
 export default function GeneralScreen() {
   const preferences = useMobilePreferences()
@@ -30,9 +31,8 @@ export default function GeneralScreen() {
   const [voices, setVoices] = useState<Voice[]>([])
   useEffect(() => {
     let active = true
-    const recognition = requireOptionalNativeModule<typeof ExpoSpeechRecognitionModule>(
-      'ExpoSpeechRecognition',
-    )
+    const recognition =
+      requireOptionalNativeModule<typeof ExpoSpeechRecognitionModule>('ExpoSpeechRecognition')
     void recognition
       ?.getSupportedLocales({})
       .then((result) => {
@@ -52,6 +52,11 @@ export default function GeneralScreen() {
   const matchingVoices = preferences.speechLanguage
     ? voices.filter((voice) => voice.language === preferences.speechLanguage)
     : voices
+  const orderedVoices = [...matchingVoices].sort((a, b) => {
+    const rank = (voice: Voice) =>
+      /siri/i.test(`${voice.name} ${voice.identifier}`) ? 0 : voice.quality === 'Enhanced' ? 1 : 2
+    return rank(a) - rank(b) || a.language.localeCompare(b.language) || a.name.localeCompare(b.name)
+  })
   return (
     <View style={styles.screen}>
       <ScreenHeader title="General" />
@@ -74,7 +79,7 @@ export default function GeneralScreen() {
         </SettingsGroup>
         <SettingsGroup
           title="Speech"
-          footer="These choices are saved on this phone. Automatic uses the phone's language and voice. Available voices depend on the voices installed in system settings."
+          footer="Saved on this phone. Siri voices appear when iOS makes them available to apps; additional voices can be downloaded in iPhone speech settings."
         >
           <View style={{ padding: 12 }}>
             <Choice
@@ -82,7 +87,9 @@ export default function GeneralScreen() {
               value={preferences.dictationLanguage}
               items={[
                 { id: '', name: 'Automatic' },
-                ...[...recognitionLanguages].sort().map((language) => ({ id: language, name: language })),
+                ...[...recognitionLanguages]
+                  .sort()
+                  .map((language) => ({ id: language, name: language })),
               ]}
               onChange={(dictationLanguage) => updateMobilePreferences({ dictationLanguage })}
             />
@@ -102,12 +109,24 @@ export default function GeneralScreen() {
               value={preferences.speechVoice}
               items={[
                 { id: '', name: 'System default' },
-                ...matchingVoices.map((voice) => ({
+                ...orderedVoices.map((voice) => ({
                   id: voice.identifier,
-                  name: `${voice.name} · ${voice.language}`,
+                  name: `${/siri/i.test(`${voice.name} ${voice.identifier}`) ? 'Siri · ' : ''}${voice.name} · ${voice.language}${voice.quality === 'Enhanced' ? ' · Enhanced' : ''}`,
                 })),
               ]}
               onChange={(speechVoice) => updateMobilePreferences({ speechVoice })}
+            />
+            <Choice
+              label="Speaking speed"
+              value={String(preferences.speechRate)}
+              items={speechRates.map((rate) => ({
+                id: String(rate),
+                name: rate === 1 ? 'Normal' : `${rate}×`,
+              }))}
+              onChange={(value) => {
+                const speechRate = speechRates.find((rate) => String(rate) === value)
+                if (speechRate) updateMobilePreferences({ speechRate })
+              }}
             />
           </View>
         </SettingsGroup>

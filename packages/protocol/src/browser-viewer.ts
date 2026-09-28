@@ -178,9 +178,7 @@ function configure(device: unknown) {
     'aria-label',
     simulator ? 'Close device preview' : 'Close browser session',
   )
-  empty.textContent = simulator
-    ? 'Connecting to device…'
-    : 'Enter an address to start browsing.'
+  empty.textContent = simulator ? 'Connecting to device…' : 'Enter an address to start browsing.'
   if (simulator) notice('Connecting to device…')
 }
 async function decodeImage(blob: Blob) {

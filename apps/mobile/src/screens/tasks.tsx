@@ -385,7 +385,9 @@ export default function TasksScreen() {
                 <IconButton
                   label="Task filters and sorting"
                   icon="filters"
-                  selected={filter !== 'active' || sort !== defaultSort || grouping !== 'none' || !!project}
+                  selected={
+                    filter !== 'active' || sort !== defaultSort || grouping !== 'none' || !!project
+                  }
                   onPress={() => setFiltersOpen(true)}
                 />
               </View>

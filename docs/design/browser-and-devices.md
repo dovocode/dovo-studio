@@ -63,13 +63,13 @@ flows requiring a separate popup window may need Direct preview or an external b
 The **Devices** list includes real iPhones/iPads reported by Xcode and Android phones reported by
 ADB, separately from simulators. Physical iOS live preview connects to the phone directly through
 the host Mac. Physical Android live preview uses ADB screenshots and input, including USB and
-wireless ADB devices. Its frame rate is limited by screenshot capture. One task at a time controls
-a physical phone.
+wireless ADB devices. Its frame rate is limited by screenshot capture. One task at a time controls a
+physical phone.
 
-Connect and unlock the iPhone, trust the Mac, and enable Developer Mode. The native helper is
-cached under `~/.dovo/helpers`. For Android, enable USB debugging and authorize the host when the
-phone prompts. Disconnected and unauthorized devices remain visible with their connection state,
-but cannot start a live preview until they are ready.
+Connect and unlock the iPhone, trust the Mac, and enable Developer Mode. The native helper is cached
+under `~/.dovo/helpers`. For Android, enable USB debugging and authorize the host when the phone
+prompts. Disconnected and unauthorized devices remain visible with their connection state, but
+cannot start a live preview until they are ready.
 
 Existing Android emulator and iOS simulator live controls remain available.
 

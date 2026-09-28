@@ -47,7 +47,8 @@ export function ConversationProvider({
   openTerminal: (terminalId: string) => void
   children: ReactNode
 }) {
-  const { carMode, readRepliesAloud, speechLanguage, speechVoice } = useMobilePreferences()
+  const { carMode, readRepliesAloud, speechLanguage, speechVoice, speechRate } =
+    useMobilePreferences()
   const speechAvailable =
     (Platform.OS === 'ios' || Platform.OS === 'android') &&
     !!requireOptionalNativeModule('ExpoSpeech')
@@ -85,6 +86,7 @@ export function ConversationProvider({
           speech.speak(plain.slice(at, at + length), {
             ...(speechLanguage ? { language: speechLanguage } : {}),
             ...(speechVoice ? { voice: speechVoice } : {}),
+            rate: speechRate,
           })
       })
       .catch((error: unknown) => console.error('Could not read reply aloud', error))
@@ -92,7 +94,17 @@ export function ConversationProvider({
       active = false
       void import('expo-speech').then((speech) => speech.stop())
     }
-  }, [latestTurn?.id, latestTurn?.status, visible, carMode, readRepliesAloud, speechAvailable, speechLanguage, speechVoice])
+  }, [
+    latestTurn?.id,
+    latestTurn?.status,
+    visible,
+    carMode,
+    readRepliesAloud,
+    speechAvailable,
+    speechLanguage,
+    speechVoice,
+    speechRate,
+  ])
   const actions = useConversationActions(task)
   const [followRequest, setFollowRequest] = useApplicationState(0)
   const { active: dictating, stop: finishDictation } = actions.dictation

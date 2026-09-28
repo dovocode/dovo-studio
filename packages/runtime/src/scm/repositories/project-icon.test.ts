@@ -37,7 +37,10 @@ it('discovers a favicon.ico when the project has no PNG icon', async () => {
     })
       .png()
       .toBuffer()
-    await writeFile(join(root, 'public', 'favicon.ico'), Buffer.from(await encodeIco([{ buffer: image }])))
+    await writeFile(
+      join(root, 'public', 'favicon.ico'),
+      Buffer.from(await encodeIco([{ buffer: image }])),
+    )
     expect(await discoverProjectIcon(root)).toMatch(/^data:image\/png;base64,/)
   } finally {
     await rm(root, { recursive: true, force: true })
