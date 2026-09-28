@@ -677,6 +677,9 @@ importers:
       file-type:
         specifier: ^22.0.2
         version: 22.0.2(supports-color@8.1.1)
+      icojs:
+        specifier: ^1.0.1
+        version: 1.0.1(supports-color@8.1.1)
       jose:
         specifier: ^6.2.12
         version: 6.2.12
@@ -685,7 +688,7 @@ importers:
         version: 1.2.1
       mdast-util-from-adf:
         specifier: ^2.2.0
-        version: 2.2.0(react@19.2.8)
+        version: 2.2.0(react@18.3.1)
       mdast-util-gfm:
         specifier: ^3.1.0
         version: 3.1.0(supports-color@8.1.1)
@@ -1390,6 +1393,9 @@ packages:
 
   '@borewit/text-codec@0.2.2':
     resolution: {integrity: sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ==}
+
+  '@canvas/image-data@1.1.0':
+    resolution: {integrity: sha512-QdObRRjRbcXGmM1tmJ+MrHcaz1MftF2+W7YI+MsphnsCrmtyfS0d5qJbk0MeSbUeyM/jCb0hmnkXPsy026L7dA==}
 
   '@effect-atom/atom-react@0.7.0':
     resolution: {integrity: sha512-o7TEsAIvz5HZ2bULBNn2UYDv+y/BSneTnSELG51pPIWP4PYj6V2//zefOzCMlp/Rw4Vws2dm+eaqse23+FCfwA==}
@@ -4166,6 +4172,9 @@ packages:
   bluebird@3.7.2:
     resolution: {integrity: sha512-XpNj6GDQzdfW+r2Wnn7xiSAd7TM3jzkxGXBGTtWKuSXv1xUV+azxAm8jdWZN06QTQk+2N2XB9jRDkvbmQmcRtg==}
 
+  bmp-ts@1.0.9:
+    resolution: {integrity: sha512-cTEHk2jLrPyi+12M3dhpEbnnPOsaZuq7C45ylbbQIiWgDFZq4UVYPEY5mlqjvsj/6gJv9qX5sa+ebDzLXT28Vw==}
+
   body-parser@2.3.0:
     resolution: {integrity: sha512-2cGmJupaNgg+QUwVLAucDuWuoMZ6EX9iHDRswZ5lsNYEmwPaRknMPCLZz07yTzVq/83p4o/wzbDZbBrTvGGTIw==}
     engines: {node: '>=18'}
@@ -4543,6 +4552,14 @@ packages:
   decamelize@1.2.0:
     resolution: {integrity: sha512-z2S+W9X73hAUUki+N+9Za2lBlun89zigOyGrsax+KUQ6wKW4ZoWpEYBkGhQjwAjjDCkWxhY0VKEhk8wzY7F5cA==}
     engines: {node: '>=0.10.0'}
+
+  decode-bmp@0.2.1:
+    resolution: {integrity: sha512-NiOaGe+GN0KJqi2STf24hfMkFitDUaIoUU3eKvP/wAbLe8o6FuW5n/x7MHPR0HKvBokp6MQY/j7w8lewEeVCIA==}
+    engines: {node: '>=8.6.0'}
+
+  decode-ico@0.4.1:
+    resolution: {integrity: sha512-69NZfbKIzux1vBOd31al3XnMnH+2mqDhEgLdpygErm4d60N+UwA5Sq5WFjmEDQzumgB9fElojGwWG0vybVfFmA==}
+    engines: {node: '>=8.6'}
 
   decode-named-character-reference@1.3.0:
     resolution: {integrity: sha512-GtpQYB283KrPp6nRw50q3U9/VfOutZOe103qlN7BPP6Ad27xYnOIWv4lPzo8HCAL+mMZofJ9KEy30fq6MfaK6Q==}
@@ -5315,6 +5332,10 @@ packages:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
 
+  icojs@1.0.1:
+    resolution: {integrity: sha512-6WG7MNK0kPsiX1zqilHX3plEVtGKEqojox5Of69YtIZH+0cPns+Cxab2MLrJSJabpfleQrQ9KqWLcs62P1pDfQ==}
+    engines: {node: '>=22.22.2'}
+
   iconv-lite@0.7.3:
     resolution: {integrity: sha512-IKXpvIzjnC9XTAUbVBcMfGS0EPaIXtW6v+zr+RRp+hqULEpo0owZax6wyRwPOJbWbzjYspQwusTsfVr0ifh4uQ==}
     engines: {node: '>=0.10.0'}
@@ -5450,6 +5471,9 @@ packages:
 
   jose@6.2.12:
     resolution: {integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==}
+
+  jpeg-js@0.4.4:
+    resolution: {integrity: sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -6693,6 +6717,10 @@ packages:
       '@types/react':
         optional: true
 
+  react@18.3.1:
+    resolution: {integrity: sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==}
+    engines: {node: '>=0.10.0'}
+
   react@19.2.3:
     resolution: {integrity: sha512-Ku/hhYbVjOQnXDZFv2+RibmLFGwFdeeKHFcOTlrt7xplBnya5OGn/hIRDsqDiSUcfORsDC7MPxwork8jBwsIWA==}
     engines: {node: '>=0.10.0'}
@@ -7202,6 +7230,9 @@ packages:
 
   tmpl@1.0.5:
     resolution: {integrity: sha512-3f0uOEAQwIqGuWW2MVzYg8fV/QNnc/IpuJNG837rLuczAaLVHslWHZQj4IGiEl5Hs3kkbhwL9Ab7Hrsmuj+Smw==}
+
+  to-data-view@1.1.0:
+    resolution: {integrity: sha512-1eAdufMg6mwgmlojAx3QeMnzB/BTVp7Tbndi3U7ftcT2zCZadjxkkmLmd97zmaxWi+sgGcgWrokmpEoy0Dn0vQ==}
 
   to-regex-range@5.0.1:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
@@ -7774,11 +7805,11 @@ snapshots:
       '@types/react': 19.2.18
       react: 19.2.3
 
-  '@atlaskit/adf-schema@24.0.3(react@19.2.8)':
+  '@atlaskit/adf-schema@24.0.3(react@18.3.1)':
     dependencies:
       '@atlaskit/codemod-utils': 4.3.0
       '@atlaskit/editor-palette': 0.1.0
-      '@atlaskit/editor-tables': 2.10.23(react@19.2.8)
+      '@atlaskit/editor-tables': 2.10.23(react@18.3.1)
       '@babel/runtime': 7.29.7
       '@types/linkify-it': 2.1.0
       '@types/prosemirror-model': 1.17.0
@@ -7791,15 +7822,15 @@ snapshots:
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/atlassian-context@0.11.0(react@19.2.8)':
+  '@atlaskit/atlassian-context@0.11.0(react@18.3.1)':
     dependencies:
       '@babel/runtime': 7.29.7
-      react: 19.2.8
+      react: 18.3.1
 
-  '@atlaskit/browser-apis@0.0.2(react@19.2.8)':
+  '@atlaskit/browser-apis@0.0.2(react@18.3.1)':
     dependencies:
       '@babel/runtime': 7.29.7
-      react: 19.2.8
+      react: 18.3.1
 
   '@atlaskit/codemod-utils@4.3.0':
     dependencies:
@@ -7823,18 +7854,18 @@ snapshots:
       prosemirror-utils: 1.2.2(prosemirror-model@1.25.4)(prosemirror-state@1.4.4)
       prosemirror-view: 1.41.5
 
-  '@atlaskit/editor-tables@2.10.23(react@19.2.8)':
+  '@atlaskit/editor-tables@2.10.23(react@18.3.1)':
     dependencies:
       '@atlaskit/editor-prosemirror': 7.3.0
-      '@atlaskit/platform-feature-flags': 1.1.3(react@19.2.8)
-      '@atlaskit/tmp-editor-statsig': 103.0.1(react@19.2.8)
+      '@atlaskit/platform-feature-flags': 1.1.3(react@18.3.1)
+      '@atlaskit/tmp-editor-statsig': 103.0.1(react@18.3.1)
       '@babel/runtime': 7.29.7
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/feature-gate-js-client@5.8.0(react@19.2.8)':
+  '@atlaskit/feature-gate-js-client@5.8.0(react@18.3.1)':
     dependencies:
-      '@atlaskit/atlassian-context': 0.11.0(react@19.2.8)
+      '@atlaskit/atlassian-context': 0.11.0(react@18.3.1)
       '@babel/runtime': 7.29.7
       '@statsig/client-core': 3.33.5
       '@statsig/js-client': 3.33.5
@@ -7842,40 +7873,40 @@ snapshots:
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/interaction-context@3.1.0(react@19.2.8)':
+  '@atlaskit/interaction-context@3.1.0(react@18.3.1)':
     dependencies:
       '@babel/runtime': 7.29.7
-      react: 19.2.8
+      react: 18.3.1
 
-  '@atlaskit/platform-feature-flags@1.1.3(react@19.2.8)':
+  '@atlaskit/platform-feature-flags@1.1.3(react@18.3.1)':
     dependencies:
-      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.2.8)
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@18.3.1)
       '@babel/runtime': 7.29.7
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/react-ufo@6.7.5(react@19.2.8)':
+  '@atlaskit/react-ufo@6.7.5(react@18.3.1)':
     dependencies:
-      '@atlaskit/atlassian-context': 0.11.0(react@19.2.8)
-      '@atlaskit/browser-apis': 0.0.2(react@19.2.8)
-      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.2.8)
-      '@atlaskit/interaction-context': 3.1.0(react@19.2.8)
-      '@atlaskit/platform-feature-flags': 1.1.3(react@19.2.8)
+      '@atlaskit/atlassian-context': 0.11.0(react@18.3.1)
+      '@atlaskit/browser-apis': 0.0.2(react@18.3.1)
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@18.3.1)
+      '@atlaskit/interaction-context': 3.1.0(react@18.3.1)
+      '@atlaskit/platform-feature-flags': 1.1.3(react@18.3.1)
       '@babel/runtime': 7.29.7
       '@opentelemetry/api': 1.9.1
       bind-event-listener: 3.0.0
       bowser-ultralight: 1.0.6
-      react: 19.2.8
+      react: 18.3.1
       scheduler: 0.23.2
       uuid: 11.1.1
 
-  '@atlaskit/tmp-editor-statsig@103.0.1(react@19.2.8)':
+  '@atlaskit/tmp-editor-statsig@103.0.1(react@18.3.1)':
     dependencies:
-      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.2.8)
-      '@atlaskit/platform-feature-flags': 1.1.3(react@19.2.8)
-      '@atlaskit/react-ufo': 6.7.5(react@19.2.8)
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@18.3.1)
+      '@atlaskit/platform-feature-flags': 1.1.3(react@18.3.1)
+      '@atlaskit/react-ufo': 6.7.5(react@18.3.1)
       '@babel/runtime': 7.29.7
-      react: 19.2.8
+      react: 18.3.1
 
   '@babel/code-frame@7.27.1':
     dependencies:
@@ -8370,6 +8401,8 @@ snapshots:
   '@blazediff/core@1.9.1': {}
 
   '@borewit/text-codec@0.2.2': {}
+
+  '@canvas/image-data@1.1.0': {}
 
   '@effect-atom/atom-react@0.7.0(@effect/experimental@0.61.1(@effect/platform@0.97.2(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.2(effect@3.22.1))(@effect/rpc@0.76.2(@effect/platform@0.97.2(effect@3.22.1))(effect@3.22.1))(effect@3.22.1)(react@19.2.3)(scheduler@0.27.0)':
     dependencies:
@@ -11347,6 +11380,8 @@ snapshots:
 
   bluebird@3.7.2: {}
 
+  bmp-ts@1.0.9: {}
+
   body-parser@2.3.0(supports-color@8.1.1):
     dependencies:
       bytes: 3.1.2
@@ -11728,6 +11763,17 @@ snapshots:
       supports-color: 8.1.1
 
   decamelize@1.2.0: {}
+
+  decode-bmp@0.2.1:
+    dependencies:
+      '@canvas/image-data': 1.1.0
+      to-data-view: 1.1.0
+
+  decode-ico@0.4.1:
+    dependencies:
+      '@canvas/image-data': 1.1.0
+      decode-bmp: 0.2.1
+      to-data-view: 1.1.0
 
   decode-named-character-reference@1.3.0:
     dependencies:
@@ -12723,6 +12769,16 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  icojs@1.0.1(supports-color@8.1.1):
+    dependencies:
+      bmp-ts: 1.0.9
+      decode-ico: 0.4.1
+      file-type: 22.0.2(supports-color@8.1.1)
+      jpeg-js: 0.4.4
+      pngjs: 7.0.0
+    transitivePeerDependencies:
+      - supports-color
+
   iconv-lite@0.7.3:
     dependencies:
       safer-buffer: 2.1.2
@@ -12833,6 +12889,8 @@ snapshots:
   jiti@2.7.0: {}
 
   jose@6.2.12: {}
+
+  jpeg-js@0.4.4: {}
 
   js-tokens@4.0.0: {}
 
@@ -13092,9 +13150,9 @@ snapshots:
       unist-util-is: 6.0.1
       unist-util-visit-parents: 6.0.2
 
-  mdast-util-from-adf@2.2.0(react@19.2.8):
+  mdast-util-from-adf@2.2.0(react@18.3.1):
     dependencies:
-      '@atlaskit/adf-schema': 24.0.3(react@19.2.8)
+      '@atlaskit/adf-schema': 24.0.3(react@18.3.1)
       '@types/mdast': 4.0.4
       unist-builder: 3.0.1
     transitivePeerDependencies:
@@ -14422,6 +14480,10 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.18
 
+  react@18.3.1:
+    dependencies:
+      loose-envify: 1.4.0
+
   react@19.2.3: {}
 
   react@19.2.8: {}
@@ -15016,6 +15078,8 @@ snapshots:
   tmp@0.2.7: {}
 
   tmpl@1.0.5: {}
+
+  to-data-view@1.1.0: {}
 
   to-regex-range@5.0.1:
     dependencies:

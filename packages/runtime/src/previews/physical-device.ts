@@ -213,19 +213,21 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
   decoder.stdin?.on('error', report)
   child.stdout?.pipe(decoder.stdin!)
   let diagnostics = ''
+  let nativeDiagnostics = ''
+  let nativeExited = false
   decoder.stderr?.on('data', (data: Buffer) => {
     diagnostics = (diagnostics + data.toString()).slice(-2000)
   })
-  for (const process of [child, decoder])
-    process.on('exit', () => {
-      report(
-        new Error(
-          process === child
-            ? 'Physical device disconnected. Reconnect to continue.'
-            : `Device video decoder stopped. ${diagnostics}`,
-        ),
-      )
-    })
+  child.on('exit', () => {
+    nativeExited = true
+    // Allow readline to consume the helper's final error line before reporting exit.
+    setImmediate(() =>
+      report(new Error(`Physical device connection ended. ${nativeDiagnostics}`.trim())),
+    )
+  })
+  decoder.on('exit', () => {
+    if (!nativeExited) report(new Error(`Device video decoder stopped. ${diagnostics}`))
+  })
   const lines = createInterface({
     input: child.stderr!,
   })
@@ -289,7 +291,7 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
             new Error(
               nativeReady
                 ? 'The phone connected but did not send a screen frame. Wake and unlock it, then reconnect.'
-                : 'Physical device did not become ready. Connect and unlock the phone, trust this Mac, and enable Developer Mode.',
+                : `Physical device did not become ready. Connect and unlock the phone, trust this Mac, and enable Developer Mode. ${nativeDiagnostics}`.trim(),
             ),
           ),
         20000,
@@ -305,7 +307,10 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
         reject(error)
       }
       lines.on('line', (line) => {
-        if (!line.startsWith('{')) return
+        if (!line.startsWith('{')) {
+          nativeDiagnostics = (nativeDiagnostics + line + '\n').slice(-2000)
+          return
+        }
         let value: unknown
         try {
           value = JSON.parse(line)

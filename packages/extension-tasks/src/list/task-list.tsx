@@ -8,7 +8,7 @@ import {
 import { compareTasks, taskSortOptions, taskGroupOptions, isSnoozed } from '@dovo/studio-core'
 import { ProjectsMenu } from '@dovo/extension-scm/projects'
 import { ChoicePicker } from '@dovo/studio-ui'
-import { Plus, Search, ChevronDown, SlidersHorizontal } from 'lucide-react'
+import { Plus, Search, ChevronDown, SlidersHorizontal, ListChecks } from 'lucide-react'
 import { useEffect, useCallback, useMemo, useRef } from 'react'
 import { Button, Input } from '@dovo/studio-ui'
 import { responses, useWorkspace } from '@dovo/studio-core'
@@ -277,28 +277,7 @@ export function TaskList({
       className="flex h-full w-full min-w-0 flex-col border-r bg-sidebar"
       aria-label="Task sidebar"
     >
-      <div className="shrink-0 space-y-1.5 px-2 pt-2 pb-1">
-        <Button
-          aria-label="New task"
-          size="sm"
-          className="h-8 w-full justify-start gap-2 px-2.5"
-          onClick={() => onCreate()}
-          disabled={busy}
-        >
-          <Plus size={14} aria-hidden="true" /> New task
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 w-full justify-start text-xs"
-          aria-pressed={selecting}
-          onClick={() => {
-            setSelecting(!selecting)
-            setSelected(new Set())
-          }}
-        >
-          {selecting ? 'Cancel selection' : 'Select tasks'}
-        </Button>
+      <div className="shrink-0 space-y-1.5 px-2 pt-3 pb-1">
         {selecting && (
           <div className="flex flex-wrap items-center gap-1 text-xs">
             <span className="mr-1">{selected.size} selected</span>
@@ -316,7 +295,6 @@ export function TaskList({
             ))}
           </div>
         )}
-        {/* Search gets the full row width; the project filter sits beside it. */}
         <div className="flex items-center gap-1">
           <div className="relative min-w-0 flex-1 text-sm">
             <Search
@@ -328,7 +306,7 @@ export function TaskList({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search tasks"
-              className="h-7 border-transparent bg-muted/40 pl-7 shadow-none focus:border-border"
+              className="h-8 border-transparent bg-transparent pl-7 shadow-none focus:border-border"
             />
           </div>
           <ProjectsMenu
@@ -338,6 +316,12 @@ export function TaskList({
             onChange={onProjectChange}
             disabled={busy}
           />
+          <Button size="icon" variant="ghost" className="size-8 shrink-0" aria-label={selecting ? 'Cancel selection' : 'Select tasks'} aria-pressed={selecting} onClick={() => { setSelecting(!selecting); setSelected(new Set()) }}>
+            <ListChecks size={16} aria-hidden="true" />
+          </Button>
+          <Button size="icon" variant="ghost" className="size-8 shrink-0" aria-label="New task" onClick={() => onCreate()} disabled={busy}>
+            <Plus size={17} aria-hidden="true" />
+          </Button>
         </div>
       </div>
       <details className="group/filter mx-2 mb-1 rounded-md border border-transparent open:border-border/70 open:bg-muted/35">

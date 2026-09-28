@@ -168,7 +168,15 @@ export const browserCommandSchema = Schema.Union(
       }),
     }),
     mutableStruct({
-      action: Schema.Literal('hide', 'back', 'forward', 'reload', 'status'),
+      action: Schema.Literal(
+        'hide',
+        'back',
+        'forward',
+        'reload',
+        'hard-reload',
+        'devtools',
+        'status',
+      ),
       key: maxValue(minValue(Schema.String, 1), 500),
     }),
   ],
@@ -177,6 +185,7 @@ export type BrowserCommand = Schema.Schema.Type<typeof browserCommandSchema>
 export type BrowserBridge = (command: BrowserCommand) => Promise<
   | {
       url: string
+      title?: string
       back: boolean
       forward: boolean
     }

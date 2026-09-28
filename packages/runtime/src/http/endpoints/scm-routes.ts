@@ -22,6 +22,7 @@ import { createWorkTaskEffect } from '../../scm/tasks/work-task.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
 import { branchChanges } from '../../scm/work/change-summary.js'
 import { ProjectInstructions } from '../../scm/repositories/project-instructions.js'
+import sharp from 'sharp'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
 import {
@@ -40,6 +41,45 @@ export function scmRoute(request: IncomingMessage, path: string) {
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/scm/repositories/icon') {
+        const input = decode(
+          mutableStruct({
+            repositoryId: idSchema,
+            data: Schema.optional(
+              maxValue(Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9+/=]+$/)), 3 * 1024 * 1024),
+            ),
+          }),
+          yield* serviceResult(body(request, 4 * 1024 * 1024)),
+        )
+        if (!s.store.get().repositories.some((repo) => repo.id === input.repositoryId))
+          throw new HttpError(404, 'Project not found')
+        let iconOverride: string | undefined
+        if (input.data) {
+          const source = Buffer.from(input.data, 'base64')
+          if (source.length > 2 * 1024 * 1024)
+            throw new HttpError(413, 'Choose an image smaller than 2 MB')
+          try {
+            const image = yield* serviceResult(
+              sharp(source, { limitInputPixels: 4 * 1024 * 1024 })
+                .resize(48, 48, { fit: 'contain', background: '#00000000' })
+                .png({ palette: true })
+                .toBuffer(),
+            )
+            iconOverride = `data:image/png;base64,${image.toString('base64')}`
+          } catch {
+            throw new HttpError(400, 'Choose a valid PNG, JPEG, or WebP image')
+          }
+          if (iconOverride.length > 50000)
+            throw new HttpError(413, 'This image is too detailed for a task icon')
+        }
+        s.store.update((workspace) => ({
+          ...workspace,
+          repositories: workspace.repositories.map((repo) =>
+            repo.id === input.repositoryId ? { ...repo, iconOverride } : repo,
+          ),
+        }))
+        return yield* serviceResult({ ok: true })
+      }
       if (method === 'POST' && path.startsWith('/api/scm/instructions/')) {
         const input = decode(
           mutableStruct({

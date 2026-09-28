@@ -47,8 +47,10 @@ export function ConversationProvider({
   openTerminal: (terminalId: string) => void
   children: ReactNode
 }) {
-  const { carMode, readRepliesAloud } = useMobilePreferences()
-  const speechAvailable = Platform.OS === 'ios' && !!requireOptionalNativeModule('ExpoSpeech')
+  const { carMode, readRepliesAloud, speechLanguage, speechVoice } = useMobilePreferences()
+  const speechAvailable =
+    (Platform.OS === 'ios' || Platform.OS === 'android') &&
+    !!requireOptionalNativeModule('ExpoSpeech')
   const latestTurn = task.turns?.at(-1)
   const spokenTurn = useRef(latestTurn?.status === 'completed' ? latestTurn.id : '')
   useEffect(() => {
@@ -79,14 +81,18 @@ export function ConversationProvider({
           .replace(/[`*_#>]/g, '')
           .trim()
         const length = Math.max(100, Math.min(speech.maxSpeechInputLength, 2500))
-        for (let at = 0; at < plain.length; at += length) speech.speak(plain.slice(at, at + length))
+        for (let at = 0; at < plain.length; at += length)
+          speech.speak(plain.slice(at, at + length), {
+            ...(speechLanguage ? { language: speechLanguage } : {}),
+            ...(speechVoice ? { voice: speechVoice } : {}),
+          })
       })
       .catch((error: unknown) => console.error('Could not read reply aloud', error))
     return () => {
       active = false
       void import('expo-speech').then((speech) => speech.stop())
     }
-  }, [latestTurn?.id, latestTurn?.status, visible, carMode, readRepliesAloud, speechAvailable])
+  }, [latestTurn?.id, latestTurn?.status, visible, carMode, readRepliesAloud, speechAvailable, speechLanguage, speechVoice])
   const actions = useConversationActions(task)
   const [followRequest, setFollowRequest] = useApplicationState(0)
   const { active: dictating, stop: finishDictation } = actions.dictation

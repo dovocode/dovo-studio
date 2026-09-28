@@ -137,7 +137,7 @@ export function parsePhysicalAndroidDevices(raw: string): PreviewDevice[] {
       {
         id: `physical-android:${match[1]}`,
         kind: 'physical' as const,
-        liveSupported: false,
+        liveSupported: true,
         name: match[3]?.match(/model:(\S+)/)?.[1].replaceAll('_', ' ') ?? match[1],
         platform: 'android' as const,
         state: match[2] === 'device' ? ('booted' as const) : ('stopped' as const),

@@ -35,6 +35,7 @@
     "diff": "^9.0.0",
     "effect": "^3.22.1",
     "file-type": "^22.0.2",
+    "icojs": "^1.0.1",
     "jose": "^6.2.12",
     "marklassian": "^1.2.1",
     "mdast-util-from-adf": "^2.2.0",

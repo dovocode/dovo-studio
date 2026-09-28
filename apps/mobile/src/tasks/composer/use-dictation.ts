@@ -5,6 +5,7 @@ import type { Locale } from 'expo-localization'
 import { AppState, Platform } from 'react-native'
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import { createDictation, type DictationCallbacks, type DictationDriver } from './dictation'
+import { readMobilePreferences } from '../../runtime/preferences/app-preferences'
 
 // Optional loading keeps old native builds and web usable until the native module is installed.
 const native =
@@ -17,10 +18,14 @@ const localization =
         getLocales: () => Locale[]
       }>('ExpoLocalization')
     : null
-const preferredLocales = () =>
-  localization?.getLocales().map((locale) => locale.languageTag) ?? [
-    Intl.DateTimeFormat().resolvedOptions().locale,
-  ]
+const preferredLocales = () => {
+  const selected = readMobilePreferences().dictationLanguage
+  return selected
+    ? [selected]
+    : (localization?.getLocales().map((locale) => locale.languageTag) ?? [
+        Intl.DateTimeFormat().resolvedOptions().locale,
+      ])
+}
 const driver: DictationDriver | null = native
   ? {
       available: () => native.isRecognitionAvailable(),

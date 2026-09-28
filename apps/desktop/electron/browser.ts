@@ -123,11 +123,14 @@ export function registerBrowser(indexPath: string) {
     if (command.action === 'status')
       return {
         url: entry.view.webContents.getURL(),
+        title: entry.view.webContents.getTitle(),
         back: navigation.canGoBack(),
         forward: navigation.canGoForward(),
       }
     if (command.action === 'back' && navigation.canGoBack()) navigation.goBack()
     if (command.action === 'forward' && navigation.canGoForward()) navigation.goForward()
     if (command.action === 'reload') entry.view.webContents.reload()
+    if (command.action === 'hard-reload') entry.view.webContents.reloadIgnoringCache()
+    if (command.action === 'devtools') entry.view.webContents.openDevTools({ mode: 'detach' })
   })
 }

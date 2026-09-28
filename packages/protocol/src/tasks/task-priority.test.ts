@@ -33,6 +33,7 @@ describe('Thread sorting', () => {
       'Alpha',
       'Beta',
       'Beta',
+      'Beta',
       'Alpha',
       'Alpha',
       'Beta',

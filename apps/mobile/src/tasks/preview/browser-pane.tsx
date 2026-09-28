@@ -506,7 +506,7 @@ function BrowserContent({
                 {device.kind === 'physical'
                   ? `Physical ${device.platform === 'ios' ? 'iPhone / iPad' : 'Android'} · ${device.connection}`
                   : `Simulator · ${device.state}`}
-                {device.kind === 'physical' && device.platform === 'ios' && ' · Direct control'}
+                {device.kind === 'physical' && device.state === 'booted' && ' · Direct control'}
               </Text>
               <View
                 style={[
@@ -520,6 +520,7 @@ function BrowserContent({
                   label={device.kind === 'physical' ? 'Control device' : 'Live preview'}
                   disabled={
                     device.liveSupported === false ||
+                    (device.kind === 'physical' && device.state !== 'booted') ||
                     !connected ||
                     busy ||
                     (device.kind !== 'physical' && device.state !== 'booted')

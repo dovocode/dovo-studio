@@ -112,13 +112,6 @@ export default function TasksScreen() {
     [projectGroups, project],
   )
   const allTasks = useMemo(() => aggregateRuntimeTasks(entries, now, true), [entries, now])
-  const counts = useMemo(() => {
-    const visible = allTasks.filter(({ task }) => !task.archived && !isSnoozed(task, now))
-    return {
-      input: visible.filter((row) => row.needsInput).length,
-      running: visible.filter((row) => row.task.status === 'running').length,
-    }
-  }, [allTasks, now])
   const detail = allTasks.find((item) => item.key === details)
   const detailRuntime = overviews.find((entry) => entry.profile.id === detail?.runtimeId)
   const detailAgent =
@@ -392,7 +385,7 @@ export default function TasksScreen() {
                 <IconButton
                   label="Task filters and sorting"
                   icon="filters"
-                  selected={filter !== 'active' || sort !== defaultSort || grouping !== 'none'}
+                  selected={filter !== 'active' || sort !== defaultSort || grouping !== 'none' || !!project}
                   onPress={() => setFiltersOpen(true)}
                 />
               </View>
@@ -418,38 +411,6 @@ export default function TasksScreen() {
                   ))}
                 </View>
               )}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ gap: 6, alignItems: 'center' }}
-              >
-                {[
-                  { id: 'active', label: 'All', count: 0 },
-                  { id: 'input', label: 'Needs input', count: counts.input },
-                  { id: 'running', label: 'Working', count: counts.running },
-                ].map((item) => (
-                  <FilterChip
-                    key={item.id}
-                    label={item.label}
-                    count={item.count}
-                    selected={filter === item.id}
-                    urgent={item.id === 'input'}
-                    onPress={() => {
-                      scrollOffset.current = 0
-                      setView((current) => ({ ...current, filter: item.id }))
-                    }}
-                  />
-                ))}
-                <ProjectThreadFilter
-                  compact
-                  value={project}
-                  onChange={(project) => {
-                    scrollOffset.current = 0
-                    setView((current) => ({ ...current, project, source: 'all' }))
-                  }}
-                />
-              </ScrollView>
               {overviews.some(
                 (entry) => entry.connected && entry.snapshot?.defaults?.configured === false,
               ) && (
@@ -627,6 +588,13 @@ export default function TasksScreen() {
       />
       {filtersOpen && (
         <Sheet title="Task filters & sorting" onClose={() => setFiltersOpen(false)}>
+          <ProjectThreadFilter
+            value={project}
+            onChange={(project) => {
+              scrollOffset.current = 0
+              setView((current) => ({ ...current, project, source: 'all' }))
+            }}
+          />
           <Choice
             label="Task filter"
             value={filter}
@@ -726,70 +694,6 @@ export default function TasksScreen() {
         </Sheet>
       )}
     </View>
-  )
-}
-
-function FilterChip({
-  label,
-  count,
-  selected,
-  urgent,
-  onPress,
-}: {
-  label: string
-  count: number
-  selected: boolean
-  urgent: boolean
-  onPress: () => void
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={count ? `${label}, ${count}` : label}
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        minHeight: 36,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: 12,
-        borderRadius: 18,
-        // Minimal chips: selection is a fill, not an outline.
-        backgroundColor: selected ? colors.elevated : 'transparent',
-        opacity: pressed ? 0.7 : 1,
-      })}
-    >
-      <Text
-        style={[styles.muted, { color: selected ? colors.text : colors.muted, fontWeight: '600' }]}
-      >
-        {label}
-      </Text>
-      {count > 0 && (
-        <View
-          style={{
-            minWidth: 20,
-            height: 20,
-            paddingHorizontal: 6,
-            borderRadius: 10,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: urgent ? colors.accent : colors.elevated,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 12,
-              fontWeight: '700',
-              color: urgent ? colors.onAccent : colors.text,
-              fontVariant: ['tabular-nums'],
-            }}
-          >
-            {count}
-          </Text>
-        </View>
-      )}
-    </Pressable>
   )
 }
 

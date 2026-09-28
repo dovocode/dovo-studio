@@ -37,6 +37,7 @@ export * as Popover from '@radix-ui/react-popover'
 
 export { HarnessIcon } from './harness-icon'
 export { AgentAvatar, agentIconChoices } from './agent-avatar'
+export { ProjectIcon } from './project-icon'
 
 export { TaskDefaultSettings } from './task-default-settings'
 export { SettingsPage, SettingsGroup, SettingRow, Segmented, Toggle } from './settings-layout'

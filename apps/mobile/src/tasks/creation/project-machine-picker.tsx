@@ -23,6 +23,7 @@ export function ProjectMachinePicker({
     repositoryId: string
   } | null>(null)
   const [query, setQuery] = useApplicationState('')
+  const [expandedProject, setExpandedProject] = useApplicationState<string | null>(null)
   const groups = useMemo(
     () =>
       projectMachineGroups(
@@ -76,15 +77,20 @@ export function ProjectMachinePicker({
               ({ entry, repository }) => entry.connected && !repository.gitIdentityError,
             )
           const choice = preferred ?? group.entries[0]
+          const expanded = expandedProject === group.key && devices > 1
           return (
             <View key={group.key} style={[styles.card, { padding: 0, gap: 0, overflow: 'hidden' }]}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ disabled: !preferred }}
-                accessibilityLabel={group.name}
-                disabled={!preferred}
+                accessibilityLabel={`${group.name}, ${devices} ${devices === 1 ? 'machine' : 'machines'}`}
+                accessibilityState={{
+                  expanded: devices > 1 ? expanded : undefined,
+                  disabled: devices === 1 && !preferred,
+                }}
+                disabled={devices === 1 && !preferred}
                 onPress={() => {
-                  if (preferred)
+                  if (devices > 1) setExpandedProject(expanded ? null : group.key)
+                  else if (preferred)
                     setSelection({
                       runtimeId: preferred.runtimeId,
                       repositoryId: preferred.repository.id,
@@ -105,13 +111,47 @@ export function ProjectMachinePicker({
                   </Text>
                   <Text numberOfLines={1} style={styles.muted}>
                     {devices > 1
-                      ? `${devices} devices · ${online} online`
+                      ? `${devices} machines · ${online} online · Choose where to run`
                       : `${choice?.entry.profile.name ?? 'Device'} · ${choice?.repository.branch ?? ''}`}
                   </Text>
                   {!preferred && <Text style={styles.muted}>Offline</Text>}
                 </View>
                 <Icon name="next" size={14} color={colors.muted} />
               </Pressable>
+              {expanded &&
+                group.entries.map(({ repository, runtimeId, entry }) => {
+                  const available = entry.connected && !repository.gitIdentityError
+                  return (
+                    <Pressable
+                      key={`${runtimeId}:${repository.id}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Run ${group.name} on ${entry.profile.name}${available ? '' : ', unavailable'}`}
+                      disabled={!available}
+                      onPress={() => setSelection({ runtimeId, repositoryId: repository.id })}
+                      style={({ pressed }) => ({
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 10,
+                        paddingHorizontal: 14,
+                        paddingVertical: 12,
+                        borderTopWidth: 1,
+                        borderTopColor: colors.border,
+                        backgroundColor: pressed ? colors.elevated : 'transparent',
+                        opacity: available ? 1 : 0.55,
+                      })}
+                    >
+                      <Icon name="device" size={17} color={colors.muted} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.text}>{entry.profile.name}</Text>
+                        <Text style={styles.muted}>
+                          {repository.branch || 'Project checkout'}
+                          {available ? '' : ` · ${repository.gitIdentityError || 'Offline'}`}
+                        </Text>
+                      </View>
+                      {available && <Icon name="next" size={14} color={colors.muted} />}
+                    </Pressable>
+                  )
+                })}
             </View>
           )
         })}

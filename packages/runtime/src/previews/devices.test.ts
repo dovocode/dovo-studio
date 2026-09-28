@@ -60,7 +60,7 @@ it('includes Android authorization problems without presenting phones as emulato
       'List of devices attached\nemulator-5554 device model:emulator\nusb-one device product:test model:Pixel_9 device:test\nusb-two unauthorized\nusb-three offline\n',
     ),
   ).toMatchObject([
-    { id: 'physical-android:usb-one', name: 'Pixel 9', state: 'booted' },
+    { id: 'physical-android:usb-one', name: 'Pixel 9', state: 'booted', liveSupported: true },
     { id: 'physical-android:usb-two', connection: 'unauthorized', state: 'stopped' },
     { id: 'physical-android:usb-three', connection: 'offline', state: 'stopped' },
   ])

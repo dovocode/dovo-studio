@@ -565,7 +565,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       compact ? 'flex-1' : 'w-[380px] max-w-[48%] shrink-0 border-l',
                     )}
                   >
-                    {!compact && (
+                    {!compact && surface !== 'browser' && surface !== 'devices' && (
                       <div className="flex h-9 shrink-0 items-center justify-between border-b px-3 text-xs text-muted-foreground">
                         <span>Thread tools</span>
                         <Button
@@ -601,6 +601,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                           key={surface}
                           taskId={task.id}
                           initialMode={surface === 'devices' ? 'devices' : 'remote'}
+                          onClose={() => selectSurface('chat', true)}
                         />
                       </div>
                     )}

@@ -58,23 +58,20 @@ flows requiring a separate popup window may need Direct preview or an external b
 
 ## Direct previews and simulators
 
-### Physical iPhones and Xcode Device Hub
+### Physical iPhones and Android phones
 
 The **Devices** list includes real iPhones/iPads reported by Xcode and Android phones reported by
-ADB, separately from simulators. Physical iOS **View screen** uses Apple Device Hub in Xcode 27: the
-runtime opens the selected phone's compact window, captures only that window with ScreenCaptureKit,
-and forwards input to Device Hub. It does not capture the desktop. Device Hub's native controls
-remain part of the mirrored window. One task at a time controls a physical phone.
+ADB, separately from simulators. Physical iOS live preview connects to the phone directly through
+the host Mac. Physical Android live preview uses ADB screenshots and input, including USB and
+wireless ADB devices. Its frame rate is limited by screenshot capture. One task at a time controls
+a physical phone.
 
-Connect and unlock the phone, trust the Mac, and enable Developer Mode. **Set up on Mac** opens
-Device Hub and the two relevant macOS permission panes. The automatically compiled
-`Dovo Device Hub Bridge` helper may need Accessibility and Screen Recording permission on the host
-Mac. The helper is cached under `~/.dovo/helpers`; no Appium server or phone automation runner is
-required. Xcode Device Hub must remain available on the host. Apple can pause mirroring while the
-phone's microphone/camera is active or its connection is unavailable.
+Connect and unlock the iPhone, trust the Mac, and enable Developer Mode. The native helper is
+cached under `~/.dovo/helpers`. For Android, enable USB debugging and authorize the host when the
+phone prompts. Disconnected and unauthorized devices remain visible with their connection state,
+but cannot start a live preview until they are ready.
 
-Physical Android devices support discovery and screenshots in this slice; their live-control button
-is disabled. Existing Android emulator and iOS simulator live controls remain available.
+Existing Android emulator and iOS simulator live controls remain available.
 
 On mobile, **Expand preview** hides the task header, mode picker and browser toolbars while
 retaining a visible **Show controls** button. The canvas stays mounted, so expanding does not

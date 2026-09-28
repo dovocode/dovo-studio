@@ -42,11 +42,12 @@ export function DeviceList({
             <div className="overflow-hidden rounded-lg border border-border/60 divide-y divide-border/50">
               {group.items.map((device) => {
                 const physical = device.kind === 'physical'
-                const running = physical || device.state === 'booted'
+                const running = device.state === 'booted'
                 const disabled =
                   busy ||
                   !connected ||
                   device.state === 'starting' ||
+                  (physical && !running) ||
                   (running && device.liveSupported === false)
                 const Icon = /ipad|tablet/i.test(device.name) ? Tablet : Smartphone
                 const actions: Array<{ action: Action; label: string; disabled?: boolean }> = [
@@ -87,7 +88,9 @@ export function DeviceList({
                                 .replace(/-/g, '.')}{' '}
                           ·{' '}
                           {physical
-                            ? 'Connected'
+                            ? running
+                              ? 'Ready'
+                              : 'Unavailable'
                             : device.state === 'booted'
                               ? 'Running'
                               : device.state === 'starting'

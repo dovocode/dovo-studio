@@ -91,3 +91,11 @@ it.skipIf(process.platform !== 'darwin')(
     expect(decoder.child.exitCode).toBe(0)
   },
 )
+
+it.skipIf(process.platform !== 'darwin')('preserves the native connection error during startup', async () => {
+  const { native } = processes()
+  const opening = physicalDevice(device).catch((error: unknown) => error)
+  await vi.waitFor(() => expect(mocked.spawn).toHaveBeenCalledTimes(2))
+  native.stderr.write(JSON.stringify({ type: 'error', message: 'Device pairing is unavailable' }) + '\n')
+  expect(await opening).toMatchObject({ message: 'Device pairing is unavailable' })
+})

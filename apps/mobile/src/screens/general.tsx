@@ -1,4 +1,8 @@
 import { ScrollView, StyleSheet, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { requireOptionalNativeModule } from 'expo'
+import type { ExpoSpeechRecognitionModule } from 'expo-speech-recognition'
+import { getAvailableVoicesAsync, type Voice } from 'expo-speech'
 import { Switch } from '../ui/controls/switch'
 import { taskGroupOptions, taskSortOptions } from '@dovo/protocol'
 import {
@@ -22,6 +26,32 @@ const tabs = [
 export default function GeneralScreen() {
   const preferences = useMobilePreferences()
   const { setView } = useTaskListView()
+  const [recognitionLanguages, setRecognitionLanguages] = useState<string[]>([])
+  const [voices, setVoices] = useState<Voice[]>([])
+  useEffect(() => {
+    let active = true
+    const recognition = requireOptionalNativeModule<typeof ExpoSpeechRecognitionModule>(
+      'ExpoSpeechRecognition',
+    )
+    void recognition
+      ?.getSupportedLocales({})
+      .then((result) => {
+        if (active) setRecognitionLanguages(result.locales)
+      })
+      .catch(() => undefined)
+    void getAvailableVoicesAsync()
+      .then((result) => {
+        if (active) setVoices(result)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [])
+  const speechLanguages = [...new Set(voices.map((voice) => voice.language))].sort()
+  const matchingVoices = preferences.speechLanguage
+    ? voices.filter((voice) => voice.language === preferences.speechLanguage)
+    : voices
   return (
     <View style={styles.screen}>
       <ScreenHeader title="General" />
@@ -41,6 +71,45 @@ export default function GeneralScreen() {
             value={preferences.readRepliesAloud}
             onValueChange={(readRepliesAloud) => updateMobilePreferences({ readRepliesAloud })}
           />
+        </SettingsGroup>
+        <SettingsGroup
+          title="Speech"
+          footer="These choices are saved on this phone. Automatic uses the phone's language and voice. Available voices depend on the voices installed in system settings."
+        >
+          <View style={{ padding: 12 }}>
+            <Choice
+              label="Dictation language"
+              value={preferences.dictationLanguage}
+              items={[
+                { id: '', name: 'Automatic' },
+                ...[...recognitionLanguages].sort().map((language) => ({ id: language, name: language })),
+              ]}
+              onChange={(dictationLanguage) => updateMobilePreferences({ dictationLanguage })}
+            />
+            <Choice
+              label="Read aloud language"
+              value={preferences.speechLanguage}
+              items={[
+                { id: '', name: 'Automatic' },
+                ...speechLanguages.map((language) => ({ id: language, name: language })),
+              ]}
+              onChange={(speechLanguage) =>
+                updateMobilePreferences({ speechLanguage, speechVoice: '' })
+              }
+            />
+            <Choice
+              label="Voice"
+              value={preferences.speechVoice}
+              items={[
+                { id: '', name: 'System default' },
+                ...matchingVoices.map((voice) => ({
+                  id: voice.identifier,
+                  name: `${voice.name} · ${voice.language}`,
+                })),
+              ]}
+              onChange={(speechVoice) => updateMobilePreferences({ speechVoice })}
+            />
+          </View>
         </SettingsGroup>
         <SettingsGroup title="Startup" footer="The tab Dovo shows when it opens.">
           <View style={{ padding: 12 }}>

@@ -14,6 +14,7 @@ export function compareTaskActivity(a: Task, b: Task, needsInput: ReadonlySet<st
 
 export const taskSortOptions = [
   { id: 'priority', name: 'Priority' },
+  { id: 'status', name: 'Status' },
   { id: 'activity', name: 'Recent activity' },
   { id: 'newest', name: 'Newest first' },
   { id: 'oldest', name: 'Oldest first' },
@@ -40,6 +41,10 @@ export function compareTasks(
     (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt) ||
     a.id.localeCompare(b.id)
   switch (sort) {
+    case 'status': {
+      const order = ['running', 'review', 'failed', 'draft', 'done', 'cancelled']
+      return order.indexOf(a.status) - order.indexOf(b.status) || recent
+    }
     case 'activity':
       return recent
     case 'newest':

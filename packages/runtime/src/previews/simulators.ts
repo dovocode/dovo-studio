@@ -1,4 +1,5 @@
 import { physicalDevice } from './physical-device.js'
+import { physicalAndroid } from './physical-android.js'
 import { randomUUID } from 'node:crypto'
 import type { PreviewDevice, RemoteBrowserInput } from '@dovo/protocol'
 import { previewDevices } from './devices.js'
@@ -60,6 +61,8 @@ export class SimulatorPreviews {
     if (existing) return { id: existing[0], device: (await existing[1].pending).device }
     const device = (await previewDevices()).devices.find((device) => device.id === deviceId)
     if (!device) throw new HttpError(404, 'Simulator is no longer available')
+    if (device.kind === 'physical' && device.state !== 'booted')
+      throw new HttpError(409, 'Connect and authorize this phone before opening its live preview')
     if (device.kind !== 'physical' && device.state !== 'booted')
       throw new HttpError(409, 'Start this simulator before opening its live preview')
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
@@ -88,7 +91,9 @@ export class SimulatorPreviews {
     const pending = (async (): Promise<Session> => ({
       device,
       driver: await (device.kind === 'physical'
-        ? physicalDevice(device)
+        ? device.platform === 'ios'
+          ? physicalDevice(device)
+          : physicalAndroid(device)
         : device.platform === 'ios'
           ? iosSimulator(device)
           : androidSimulator(device)),

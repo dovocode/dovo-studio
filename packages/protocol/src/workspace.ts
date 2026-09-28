@@ -79,6 +79,14 @@ export const taskTemplateSchema = mutableStruct({
 })
 export type TaskTemplate = Schema.Schema.Type<typeof taskTemplateSchema>
 export const repositorySchema = mutableStruct({
+  /** User-selected project icon, stored as a small PNG for every client. */
+  iconOverride: Schema.optional(
+    maxValue(Schema.String.pipe(Schema.pattern(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)), 50000),
+  ),
+  /** Derived from files in the project checkout by the runtime. */
+  discoveredIcon: Schema.optional(
+    maxValue(Schema.String.pipe(Schema.pattern(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)), 50000),
+  ),
   /** Exact commands the owner has approved for this project. */
   approvedCommands: Schema.optional(
     maxValue(mutableArray(maxValue(minValue(Schema.String, 1), 4000)), 100),
@@ -413,6 +421,9 @@ export const workspaceSchema = mutableStruct({
 })
 export type Agent = Schema.Schema.Type<typeof agentSchema>
 export type Repository = Schema.Schema.Type<typeof repositorySchema>
+export function projectIcon(repository: Repository | undefined) {
+  return repository?.iconOverride ?? repository?.discoveredIcon
+}
 export type Task = Schema.Schema.Type<typeof taskSchema>
 export type ChangedFile = Schema.Schema.Type<typeof fileSchema>
 export type ChatMessage = Schema.Schema.Type<typeof messageSchema>

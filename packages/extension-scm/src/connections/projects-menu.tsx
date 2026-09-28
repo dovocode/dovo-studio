@@ -27,6 +27,7 @@ import {
 import { RepositoryDialog } from './repository-dialog'
 import { RepositoryCheckouts } from './repository-checkouts'
 import { ProjectForgeBinding } from './forge-repository'
+import { ProjectIconSettings } from './project-icon-settings'
 export function ProjectsMenu({
   value,
   onChange,
@@ -369,6 +370,7 @@ export function ProjectsMenu({
           </DialogHeader>
           {managed && (
             <>
+              <ProjectIconSettings repository={managed} />
               <TaskDefaultSettings
                 key={`defaults-${activeRuntimeId}:${managed.id}`}
                 repository={managed}

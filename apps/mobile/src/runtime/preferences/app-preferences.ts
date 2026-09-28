@@ -17,6 +17,9 @@ const schema = mutableStruct({
   keepScreenOn: Schema.Boolean,
   carMode: Schema.Boolean,
   readRepliesAloud: Schema.Boolean,
+  dictationLanguage: Schema.String,
+  speechLanguage: Schema.String,
+  speechVoice: Schema.String,
 })
 export type MobilePreferences = Schema.Schema.Type<typeof schema>
 const defaults: MobilePreferences = {
@@ -32,6 +35,9 @@ const defaults: MobilePreferences = {
   keepScreenOn: false,
   carMode: false,
   readRepliesAloud: true,
+  dictationLanguage: '',
+  speechLanguage: '',
+  speechVoice: '',
 }
 const key = 'dovo.mobile-preferences.v1'
 let current = defaults

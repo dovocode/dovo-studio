@@ -10,6 +10,7 @@ import {
   Minimize2,
   Smartphone,
   PanelRightClose,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { useWorkspace, useStudioHost, startPolling } from '@dovo/studio-core'
 import {
@@ -19,7 +20,7 @@ import {
   previewResultSchema,
   type PreviewDevice,
 } from '@dovo/studio-core'
-import { Button, IconButton, Input } from '@dovo/studio-ui'
+import { Button, IconButton, Input, ProjectIcon } from '@dovo/studio-ui'
 import { RemoteBrowser } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
@@ -62,17 +63,22 @@ function BrowserContent({
   const [url, setUrl] = useApplicationState(addresses.get(scope) ?? '')
   const [history, setHistory] = useApplicationState({
     url: '',
+    title: '',
     back: false,
     forward: false,
   })
   const editing = useRef(false)
-  const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>(initialMode)
+  const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>(
+    initialMode === 'devices' ? 'devices' : browser ? 'web' : 'remote',
+  )
   const [preset, setPreset] = useApplicationState('fill'),
     [landscape, setLandscape] = useApplicationState(false)
   const [error, setError] = useApplicationState(''),
     [reload, setReload] = useApplicationState(0)
   const [turnReload, setTurnReload] = useApplicationState(0)
   const latestTurn = snapshot?.workspace.tasks.find((task) => task.id === taskId)?.turns?.at(-1)
+  const task = snapshot?.workspace.tasks.find((task) => task.id === taskId)
+  const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task?.repositoryId)
   const seenTurn = useRef(latestTurn?.status === 'completed' ? latestTurn.id : '')
   useEffect(() => {
     if (!latestTurn || latestTurn.status !== 'completed' || seenTurn.current === latestTurn.id)
@@ -166,7 +172,7 @@ function BrowserContent({
       Effect.tap((state) =>
         Effect.sync(() => {
           if (!alive || !state || !state.url.startsWith('http')) return
-          setHistory(state)
+          setHistory({ ...state, title: state.title ?? '' })
           if (!editing.current) setInput(state.url)
           addresses.set(scope, state.url)
         }),
@@ -191,7 +197,7 @@ function BrowserContent({
     const update = () => {
       const rect = slot.current?.getBoundingClientRect()
       const obscured = document.querySelector(
-        '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
+        'details[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
       )
       const command =
         rect && rect.width > 0 && rect.height > 0 && !obscured
@@ -227,6 +233,8 @@ function BrowserContent({
     mutations.observe(document.body, {
       childList: true,
       subtree: true,
+      attributes: true,
+      attributeFilter: ['open'],
     })
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
@@ -308,9 +316,117 @@ function BrowserContent({
       className="flex h-full min-h-0 flex-col"
       aria-label={initialMode === 'devices' ? 'Device previews' : 'Browser previews'}
     >
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2 text-xs">
+        <Button
+          size="sm"
+          className="h-7 max-w-[155px] rounded-lg px-2.5 text-xs"
+          variant={mode === 'web' ? 'secondary' : 'ghost'}
+          onClick={() => setMode('web')}
+        >
+          <ProjectIcon repository={repository} className="mr-1 size-3.5" />
+          <span className="min-w-0 truncate">
+            {mode === 'web' && history.title ? history.title : (repository?.name ?? 'Browser')}
+          </span>
+        </Button>
+        <Button
+          size="sm"
+          className="h-7 rounded-lg px-2.5 text-xs"
+          variant={mode === 'remote' ? 'secondary' : 'ghost'}
+          onClick={() => setMode('remote')}
+        >
+          Remote canvas
+        </Button>
+        <IconButton
+          label="Devices"
+          className="size-7"
+          aria-pressed={mode === 'devices'}
+          onClick={() => {
+            setMode('devices')
+            void act(loadDevices)
+          }}
+        >
+          <Smartphone size={15} />
+        </IconButton>
+        <span className="flex-1" />
+        {onClose && (
+          <IconButton label="Hide preview sidebar" className="size-7 shrink-0" onClick={onClose}>
+            <PanelRightClose size={15} />
+          </IconButton>
+        )}
+        {mode === 'web' && (
+          <details className="group/viewport relative">
+            <summary
+              className="flex size-7 cursor-pointer list-none items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+              aria-label="Viewport options"
+              title="Viewport options"
+            >
+              <SlidersHorizontal size={15} />
+            </summary>
+            <div className="absolute right-0 top-8 z-20 flex w-52 flex-col gap-1 rounded-lg border bg-popover p-2 shadow-lg">
+              {browser && url && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="justify-start text-xs"
+                    onClick={() => void act(() => browser({ action: 'hard-reload', key: scope }))}
+                  >
+                    Hard reload
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="justify-start text-xs"
+                    onClick={() => void act(() => browser({ action: 'devtools', key: scope }))}
+                  >
+                    Open DevTools
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="justify-start text-xs"
+                    onClick={() =>
+                      void act(() =>
+                        browser({ action: 'external', key: scope, url: history.url || url }),
+                      )
+                    }
+                  >
+                    Open in default browser
+                  </Button>
+                  <div className="h-px bg-border" />
+                </>
+              )}
+              <label className="text-xs text-muted-foreground" htmlFor="responsive-viewport">
+                Viewport
+              </label>
+              <select
+                id="responsive-viewport"
+                aria-label="Viewport"
+                className="rounded border bg-background p-1.5 text-xs"
+                value={preset}
+                onChange={(e) => setPreset(e.target.value)}
+              >
+                {previewPresets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={preset === 'fill'}
+                onClick={() => setLandscape((v) => !v)}
+              >
+                Rotate
+              </Button>
+            </div>
+          </details>
+        )}
+      </div>
       {mode === 'web' && (
         <form
-          className="flex shrink-0 items-center gap-1 border-b p-2"
+          className="flex h-10 shrink-0 items-center gap-1 border-b px-2"
           onSubmit={(e) => {
             e.preventDefault()
             navigate()
@@ -346,9 +462,9 @@ function BrowserContent({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="http://localhost:3000"
-            className="min-w-0 flex-1"
+            className="h-8 min-w-0 flex-1 border-transparent bg-transparent text-xs shadow-none focus:border-border"
           />
-          <Button size="sm" type="submit">
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" type="submit">
             Go
           </Button>
           <IconButton
@@ -398,63 +514,6 @@ function BrowserContent({
           )}
         </form>
       )}
-      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b px-2 py-1 text-xs">
-        {initialMode === 'devices' ? (
-          <span className="px-2 font-medium">Devices</span>
-        ) : (
-          <>
-            <Button
-              size="sm"
-              className="h-7 px-2 text-xs"
-              variant={mode === 'remote' ? 'secondary' : 'ghost'}
-              onClick={() => setMode('remote')}
-            >
-              Host browser
-            </Button>
-            <Button
-              size="sm"
-              className="h-7 px-2 text-xs"
-              variant={mode === 'web' ? 'secondary' : 'ghost'}
-              onClick={() => setMode('web')}
-            >
-              Responsive
-            </Button>
-          </>
-        )}
-        <span className="flex-1" />
-        {onClose && (
-          <IconButton label="Hide preview sidebar" className="size-7 shrink-0" onClick={onClose}>
-            <PanelRightClose size={15} />
-          </IconButton>
-        )}
-        {mode === 'web' && (
-          <>
-            <select
-              aria-label="Viewport"
-              className="rounded border bg-background p-1.5"
-              value={preset}
-              onChange={(e) => setPreset(e.target.value)}
-            >
-              {previewPresets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={preset === 'fill'}
-              onClick={() => setLandscape((v) => !v)}
-            >
-              Rotate
-            </Button>
-          </>
-        )}
-        <span className="ml-auto text-muted-foreground">
-          {snapshot?.runtimeHost ?? 'Selected runtime'}
-        </span>
-      </div>
       {error && (
         <p role="alert" className="p-3 text-xs text-destructive">
           {error}

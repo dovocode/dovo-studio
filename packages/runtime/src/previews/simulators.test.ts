@@ -106,3 +106,33 @@ it('waits for native teardown before reconnecting a physical device', async () =
     await sessions.dispose()
   }
 })
+
+it('rejects disconnected phones and opens connected Android phones with the physical driver', async () => {
+  const android = await import('./physical-android')
+  const create = vi.spyOn(android, 'physicalAndroid').mockResolvedValue({
+    input: async () => {},
+    start: () => () => {},
+    release: async () => {},
+    close: async () => {},
+  })
+  const device = {
+    id: 'physical-android:usb-qa',
+    kind: 'physical' as const,
+    name: 'Pixel',
+    platform: 'android' as const,
+    state: 'stopped' as const,
+    runtime: 'usb-qa',
+  }
+  vi.spyOn(discovery, 'previewDevices')
+    .mockResolvedValueOnce({ host: 'qa', diagnostics: [], devices: [device] })
+    .mockResolvedValueOnce({
+      host: 'qa',
+      diagnostics: [],
+      devices: [{ ...device, state: 'booted' }],
+    })
+  const sessions = new SimulatorPreviews()
+  await expect(sessions.open('task', device.id)).rejects.toThrow(/Connect and authorize/)
+  const { id } = await sessions.open('task', device.id)
+  expect(create).toHaveBeenCalledOnce()
+  await sessions.close(id)
+})

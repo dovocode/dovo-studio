@@ -1,6 +1,11 @@
-import { Pressable, StyleSheet, View } from 'react-native'
+import { Image, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { resolveTaskAgent, type RuntimeOverview, type RuntimeTask } from '@dovo/protocol'
+import {
+  projectIcon,
+  resolveTaskAgent,
+  type RuntimeOverview,
+  type RuntimeTask,
+} from '@dovo/protocol'
 import { DeviceLabel } from './device-label'
 import { TaskRowMenu } from './task-row-menu'
 import { useTaskLifecycle } from '../detail/use-task-lifecycle'
@@ -44,35 +49,22 @@ export function TaskListRow({
   // "Review · 23m" → state "Review" and a right-aligned age "23m".
   const [state, age] = /^(.*) · (now|\d+[mhd])$/.exec(status)?.slice(1) ?? [status, '']
   const working = task.status === 'running' && !row.needsInput
-  // Finished work waiting for review is something to act on, like an unread result.
-  const reviewable = !row.needsInput && !failed && !done && state === 'Review'
-  const dot = row.needsInput
-    ? colors.accent
-    : failed
-      ? colors.error
-      : done || reviewable
-        ? colors.success
-        : working
-          ? colors.warning
-          : undefined
   const stateColor = row.needsInput
     ? colors.accent
     : failed
       ? colors.error
       : done
         ? colors.success
-        : colors.muted
+        : working
+          ? colors.accent
+          : colors.muted
   const branch =
     task.checkoutBranch ??
     (task.execution === 'worktree' ? 'Worktree' : repository?.branch) ??
     'Project checkout'
+  const icon = projectIcon(repository)
   return (
-    <View
-      style={{
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: colors.border,
-      }}
-    >
+    <View style={{ marginVertical: 3, borderRadius: 12, backgroundColor: colors.surface }}>
       {/* Top-aligned so every row's menu sits on its title's first line, whatever the height. */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
         <Pressable
@@ -87,66 +79,73 @@ export function TaskListRow({
             flex: 1,
             minWidth: 0,
             flexDirection: 'row',
-            gap: 12,
-            paddingVertical: 14,
-            paddingLeft: 4,
+            paddingVertical: 12,
+            paddingLeft: 12,
+            paddingRight: 4,
             opacity: pressed ? 0.55 : 1,
           })}
         >
-          {/* State at a glance: filled for something to act on, hollow when idle. */}
-          <View
-            style={{
-              width: 9,
-              height: 9,
-              borderRadius: 4.5,
-              // Centered on the title's first line, which car mode enlarges.
-              marginTop: car ? 10 : 7,
-              backgroundColor: dot ?? 'transparent',
-              borderWidth: dot ? 0 : 1.5,
-              borderColor: colors.muted,
-              opacity: dot ? 1 : 0.6,
-            }}
-          />
-          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+          <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 5,
+                  overflow: 'hidden',
+                  backgroundColor: colors.accent,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {icon ? (
+                  <Image source={{ uri: icon }} style={{ width: 22, height: 22 }} />
+                ) : (
+                  <Text style={{ color: colors.surface, fontSize: 10, fontWeight: '700' }}>
+                    {(row.projectName || 'P').slice(0, 2).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
+                {row.projectName || 'No project'}
+              </Text>
+              <Text style={{ color: stateColor, fontSize: 13 }}>
+                {working || row.needsInput || done || failed
+                  ? `${state}${age ? ` ${age}` : ''}`
+                  : age || state}
+              </Text>
+            </View>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
               <Text
-                numberOfLines={2}
+                numberOfLines={1}
                 style={{
                   flex: 1,
                   color: colors.text,
                   fontSize: 17,
                   lineHeight: 22,
-                  fontWeight: '600',
+                  fontWeight: '500',
                 }}
               >
                 {task.title}
               </Text>
-              {!!age && <Text style={[styles.muted, { fontSize: 14, lineHeight: 22 }]}>{age}</Text>}
             </View>
-            {car ? (
-              <Text numberOfLines={1} style={[styles.muted, { fontSize: 14 }]}>
-                {row.projectName || 'No project'} ·{' '}
-                <Text style={{ color: stateColor }}>{state}</Text>
-              </Text>
-            ) : (
-              <Text numberOfLines={1} style={[styles.muted, { fontSize: 14 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
                 {task.pinned ? 'Pinned · ' : ''}
-                {row.projectName || 'No project'} · {branch} ·{' '}
-                <Text style={{ color: stateColor }}>{state}</Text>
+                {branch}
               </Text>
-            )}
-            {showDevice && !car && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {showDevice && !car && (
                 <DeviceLabel task={task} runtimeHost={row.runtimeName} compact />
-                {row.reachability === 'offline' && (
-                  <Text style={[styles.muted, { fontSize: 13 }]}>· Offline</Text>
-                )}
-              </View>
-            )}
+              )}
+              {row.reachability === 'offline' && (
+                <Text style={[styles.muted, { fontSize: 13 }]}>Offline</Text>
+              )}
+              {!!agent && <Text style={[styles.muted, { fontSize: 12 }]}>{agent.provider}</Text>}
+            </View>
           </View>
         </Pressable>
         {!car && (
-          <View style={{ marginTop: 3 }}>
+          <View style={{ marginTop: 27 }}>
             <TaskRowMenu
               testID={`${testID} actions`}
               task={task}

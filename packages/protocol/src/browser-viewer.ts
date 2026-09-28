@@ -180,7 +180,7 @@ function configure(device: unknown) {
   )
   empty.textContent = simulator
     ? 'Connecting to device…'
-    : 'Enter the address of a website or a development server on this computer.'
+    : 'Enter an address to start browsing.'
   if (simulator) notice('Connecting to device…')
 }
 async function decodeImage(blob: Blob) {

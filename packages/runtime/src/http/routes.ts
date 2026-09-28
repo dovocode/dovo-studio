@@ -12,6 +12,7 @@ import {
 import { hostname } from 'node:os'
 import { trackRequest } from './support/request-activity.js'
 import { defaultShell } from '../terminal/shell.js'
+import { discoverProjectIcon } from '../scm/repositories/project-icon.js'
 import { agentsRoute } from './endpoints/agents-routes.js'
 import { terminalsRoute } from './endpoints/terminals-routes.js'
 import { jobsRoute } from './endpoints/jobs-routes.js'
@@ -326,31 +327,36 @@ export function route(
             ...s.store.publicWorkspace(),
             repositories: yield* Effect.forEach(
               s.store.publicWorkspace().repositories,
-              (repo) => {
-                // Never block the snapshot on spawning git: use the last known identity and
-                // refresh it in the background. Unknown identity is not an error, it is pending.
-                const cached = s.git.cachedRepositoryIdentity(repo.path)
-                if (!cached)
-                  return Effect.succeed({
-                    ...repo,
-                    gitIdentity: undefined,
-                    gitIdentityError: undefined,
-                  })
-                return serviceResult(cached).pipe(
-                  Effect.map((gitIdentity) => ({
-                    ...repo,
-                    gitIdentity,
-                    gitIdentityError: undefined,
-                  })),
-                  Effect.catchAll(() =>
-                    Effect.succeed({
+              (repo) =>
+                Effect.gen(function* () {
+                  const discoveredIcon = yield* serviceResult(discoverProjectIcon(repo.path))
+                  // Never block the snapshot on spawning git: use the last known identity and
+                  // refresh it in the background. Unknown identity is not an error, it is pending.
+                  const cached = s.git.cachedRepositoryIdentity(repo.path)
+                  if (!cached)
+                    return {
                       ...repo,
+                      discoveredIcon,
                       gitIdentity: undefined,
-                      gitIdentityError: 'Checkout unavailable: could not inspect its Git remote',
-                    }),
-                  ),
-                )
-              },
+                      gitIdentityError: undefined,
+                    }
+                  return yield* serviceResult(cached).pipe(
+                    Effect.map((gitIdentity) => ({
+                      ...repo,
+                      discoveredIcon,
+                      gitIdentity,
+                      gitIdentityError: undefined,
+                    })),
+                    Effect.catchAll(() =>
+                      Effect.succeed({
+                        ...repo,
+                        discoveredIcon,
+                        gitIdentity: undefined,
+                        gitIdentityError: 'Checkout unavailable: could not inspect its Git remote',
+                      }),
+                    ),
+                  )
+                }),
               { concurrency: 4 },
             ),
           },

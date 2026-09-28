@@ -1,10 +1,19 @@
 import { taskPullLinks } from '../detail/task-pull-links'
-import { AgentAvatar } from '@dovo/studio-ui'
+import { AgentAvatar, ProjectIcon } from '@dovo/studio-ui'
 import { resolveTaskAgent, formatDateTime } from '@dovo/studio-core'
 import { TaskLifecycleActions } from '../detail/task-lifecycle-actions'
 import { isSnoozed } from './task-priority'
 import { taskPresentation } from './task-presentation'
-import { Bot, FolderGit2, GitBranch, GitPullRequest, Monitor, Pin } from 'lucide-react'
+import {
+  Bot,
+  CircleCheck,
+  CircleDashed,
+  FolderGit2,
+  GitBranch,
+  GitPullRequest,
+  Monitor,
+  Pin,
+} from 'lucide-react'
 import { memo } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
 import { Button, cn, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
@@ -66,9 +75,9 @@ function TaskRowView({
             variant="ghost"
             aria-current={selected ? 'true' : undefined}
             className={cn(
-              'mb-px h-auto min-h-11 w-full min-w-0 flex-col items-stretch gap-0.5 whitespace-normal rounded-md border border-transparent px-2 py-1.5 text-left font-normal',
+              'mb-1 h-auto min-h-[72px] w-full min-w-0 flex-col items-stretch gap-1 whitespace-normal rounded-xl border border-transparent px-2.5 py-2 text-left font-normal',
               selected
-                ? 'border-primary/20 bg-primary/8 shadow-[inset_2px_0_var(--primary)] hover:bg-primary/12 group-hover/task:bg-primary/12'
+                ? 'border-border/50 bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
                 : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
             )}
             onClick={onSelect}
@@ -76,32 +85,27 @@ function TaskRowView({
           >
             <span
               className={cn(
-                'flex min-w-0 items-center gap-1.5 text-[0.6875rem] leading-4 text-muted-foreground',
+                'flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}
             >
-              <span
-                className={cn(
-                  'size-1.5 shrink-0 rounded-full',
-                  !source.online && source.runtimeId
-                    ? 'bg-muted-foreground'
-                    : presentation.state === 'Needs input'
-                      ? 'bg-amber-400'
-                      : presentation.state === 'Working'
-                        ? 'bg-sky-400'
-                        : presentation.state === 'Done'
-                          ? 'bg-emerald-400'
-                          : presentation.state === 'Failed'
-                            ? 'bg-destructive'
-                            : 'bg-muted-foreground/60',
-                )}
-                aria-hidden="true"
-              />
+              <ProjectIcon repository={repository} className="size-4" />
               <span className="min-w-0 flex-1 truncate" title={`${statusDetail} · ${agentDetail}`}>
                 {repository?.name ?? 'No project'}
               </span>
-              <span className="shrink-0 text-[0.6875rem]">{compactStatus}</span>
+              <span
+                className={cn(
+                  'flex shrink-0 items-center gap-1 text-xs',
+                  presentation.state === 'Working' && 'text-sky-400',
+                  presentation.state === 'Done' && 'text-emerald-400',
+                  presentation.state === 'Failed' && 'text-destructive',
+                )}
+              >
+                {presentation.state === 'Working' && <CircleDashed className="size-3.5" />}
+                {presentation.state === 'Done' && <CircleCheck className="size-3.5" />}
+                {compactStatus}
+              </span>
               {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
               {!!linkedPulls.length && (
                 <span
@@ -118,14 +122,14 @@ function TaskRowView({
             </span>
             <span
               className={cn(
-                'block w-full truncate text-[0.8125rem] font-medium leading-[18px]',
+                'block w-full truncate text-sm font-medium leading-5',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}
             >
               {task.title}
             </span>
-            <span className="flex min-w-0 items-center gap-1 text-[0.6875rem] leading-4 text-muted-foreground">
+            <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
               <GitBranch className="size-3 shrink-0" />
               <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
               <Monitor className="size-3 shrink-0" aria-label={host ?? 'Unknown host'} />

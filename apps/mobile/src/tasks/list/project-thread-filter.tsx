@@ -3,6 +3,7 @@ import { Pressable, View } from 'react-native'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { RepositoryCheckouts } from '../../scm/connections/repository-checkouts'
+import { ProjectIconSettings } from '../../scm/connections/project-icon-settings'
 import { SearchField } from '../../ui/controls/field'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
@@ -171,7 +172,10 @@ export function ProjectThreadFilter({
                 </Text>
                 <Text style={styles.muted}>{repository.path}</Text>
                 {entry.connected ? (
-                  <RepositoryCheckouts repository={repository} />
+                  <>
+                    <ProjectIconSettings repository={repository} />
+                    <RepositoryCheckouts repository={repository} />
+                  </>
                 ) : (
                   <Text style={styles.muted}>
                     Reconnect this machine to edit its project settings.
