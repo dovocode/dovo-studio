@@ -338,5 +338,6 @@ jobs:
       - name: Update Homebrew and mise distribution
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.draft.outputs.tag }}
         run: gh workflow run distribution.yml -f tag="$TAG"
