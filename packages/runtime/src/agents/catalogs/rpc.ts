@@ -1,15 +1,17 @@
 import { spawn } from 'node:child_process'
 import { createMessageConnection, type MessageConnection } from 'vscode-jsonrpc/node'
-import { JsonLineReader, JsonLineWriter } from '../providers/codex-transport.js'
+import { JsonLineReader, JsonLineWriter } from '../providers/codex/codex-transport.js'
 import { processEnvironment } from '../../process.js'
-import { stopChild } from '../stop-child.js'
+import { stopOwnedChild } from '../execution/stop-owned-child.js'
 export async function withCatalogRpc<T>(
   executable: string,
   args: string[],
   load: (rpc: MessageConnection) => Promise<T>,
 ): Promise<T> {
+  // Detached like the other owned launchers, so helper processes stop with their group.
   const child = spawn(executable, args, {
     env: processEnvironment(),
+    detached: process.platform !== 'win32',
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const rpc = createMessageConnection(
@@ -37,6 +39,6 @@ export async function withCatalogRpc<T>(
   } finally {
     clearTimeout(timer)
     rpc.dispose()
-    stopChild(child)
+    await stopOwnedChild(child).catch(() => undefined)
   }
 }

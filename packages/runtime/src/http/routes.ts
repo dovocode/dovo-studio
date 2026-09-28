@@ -1,26 +1,34 @@
 import { RUNTIME_PROTOCOL_VERSION, PAIRING_PROTOCOL_VERSION } from '@dovo/protocol'
-import { routeProgram, serviceResult } from './effect.js'
+import { routeProgram, serviceResult } from './support/effect.js'
 import { uuidSchema } from '@dovo/protocol'
 import { mutableStruct } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import { previewDevices, previewDeviceAction } from '../previews/devices.js'
-import { previewActionSchema, remoteBrowserOpenSchema } from '@dovo/protocol'
+import {
+  previewActionSchema,
+  remoteBrowserOpenSchema,
+  remoteBrowserInputSchema,
+} from '@dovo/protocol'
 import { hostname } from 'node:os'
-import { trackRequest } from './request-activity.js'
+import { trackRequest } from './support/request-activity.js'
 import { defaultShell } from '../terminal/shell.js'
-import { agentsRoute } from './agents-routes.js'
-import { terminalsRoute } from './terminals-routes.js'
-import { jobsRoute } from './jobs-routes.js'
-import { scmRoute } from './scm-routes.js'
+import { agentsRoute } from './endpoints/agents-routes.js'
+import { terminalsRoute } from './endpoints/terminals-routes.js'
+import { jobsRoute } from './endpoints/jobs-routes.js'
+import { scmRoute } from './endpoints/scm-routes.js'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
 import { patchSchema, workspaceSchema } from '@dovo/protocol'
 import { RuntimeServices } from '../services.js'
 import { HttpError } from '../errors.js'
-import { body } from './body.js'
+import { body } from './support/body.js'
 import { hashSecret, equalSecret } from '../auth/devices.js'
 import { validateAutomation } from '../jobs/validation.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
+// Unauthenticated routes read at most what they need before any credential is checked.
+const PAIRING_BODY_LIMIT = 4 * 1024
+// A webhook payload is copied into the run record and the task's first message.
+const WEBHOOK_BODY_LIMIT = 256 * 1024
 export function route(
   request: IncomingMessage,
   url: URL,
@@ -45,7 +53,7 @@ export function route(
             code: Schema.String.pipe(Schema.pattern(/^\d{8}$/)),
             name: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 100),
           }),
-          yield* serviceResult(body(request)),
+          yield* serviceResult(body(request, PAIRING_BODY_LIMIT)),
         )
         if (input.protocolVersion !== PAIRING_PROTOCOL_VERSION)
           throw new HttpError(426, 'Update this app before pairing with this runtime.')
@@ -62,7 +70,7 @@ export function route(
             id: idSchema,
             secret: minValue(Schema.String, 20),
           }),
-          yield* serviceResult(body(request)),
+          yield* serviceResult(body(request, PAIRING_BODY_LIMIT)),
         )
         return yield* serviceResult(
           path === '/api/pair/cancel'
@@ -97,7 +105,7 @@ export function route(
         )
           throw new HttpError(409, 'Webhook automation is disabled')
         trackRequest(request, s.activity, id, 'Webhook received')
-        const payload = yield* serviceResult(body(request))
+        const payload = yield* serviceResult(body(request, WEBHOOK_BODY_LIMIT))
         const key = decode(idSchema, request.headers['x-idempotency-key'])
         return yield* serviceResult({
           id: s.jobs.start(id, `webhook:${key}`, payload),
@@ -172,9 +180,11 @@ export function route(
         s.store.task(taskId)
         const result = yield* serviceResult(s.simulators.open(taskId, id))
         return yield* serviceResult({
+          id: result.id,
           ticket: s.simulatorTickets.issue(token, result.id),
           host: hostname(),
           device: result.device,
+          screenPoints: yield* serviceResult(s.simulators.screenPoints(result.id)),
         })
       }
       if (method === 'POST' && path === '/api/previews/simulator/close') {
@@ -190,6 +200,24 @@ export function route(
         return yield* serviceResult({
           ok: true,
         })
+      }
+      if (method === 'POST' && path === '/api/previews/simulator/input') {
+        const { taskId, id, input } = decode(
+          mutableStruct({ taskId: idSchema, id: idSchema, input: remoteBrowserInputSchema }),
+          yield* serviceResult(body(request)),
+        )
+        s.store.task(taskId)
+        if (s.simulators.taskId(id) !== taskId)
+          throw new HttpError(403, 'Simulator preview belongs to another task')
+        yield* serviceResult(
+          s.simulators.input(id, input, () => {
+            s.devices.authenticate(token)
+            s.store.task(taskId)
+            if (s.simulators.taskId(id) !== taskId)
+              throw new HttpError(403, 'Simulator preview belongs to another task')
+          }),
+        )
+        return yield* serviceResult({ ok: true })
       }
       if (method === 'POST' && path === '/api/previews/browser/open') {
         const { taskId } = decode(remoteBrowserOpenSchema, yield* serviceResult(body(request)))
@@ -354,11 +382,17 @@ export function route(
           settings: s.commands.get(),
           defaultShell: defaultShell(),
         })
-      if (method === 'POST' && path === '/api/commands/save')
+      if (method === 'POST' && path === '/api/commands/save') {
+        const input = yield* serviceResult(body(request))
+        const checked =
+          input !== null && typeof input === 'object' && 'before' in input && 'after' in input
         return yield* serviceResult({
-          settings: s.commands.save(yield* serviceResult(body(request))),
+          settings: checked
+            ? s.commands.saveChecked(input.before, input.after)
+            : s.commands.save(input),
           defaultShell: defaultShell(),
         })
+      }
       if (method === 'GET' && path === '/api/extensions')
         return yield* serviceResult({
           extensions: s.agents.host.list(),

@@ -1,15 +1,27 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { ChevronDown, Plus, Trash2 } from 'lucide-react'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { Button, IconButton, cn } from '@dovo/studio-ui'
 import { TerminalSession } from './terminal-session'
-export function TerminalPane({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+export function TerminalPane({
+  taskId,
+  onClose,
+  focusId = '',
+}: {
+  taskId: string
+  onClose: () => void
+  /** Select this session, for example after a chat command ran in it. */
+  focusId?: string
+}) {
   const { snapshot, connected, request } = useWorkspace(),
-    [selected, setSelected] = useApplicationState(''),
+    [selected, setSelected] = useApplicationState(focusId),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
+  useEffect(() => {
+    if (focusId) setSelected(focusId)
+  }, [focusId])
   const sessions = snapshot?.terminals.filter((session) => session.taskId === taskId) ?? [],
     active = sessions.find((session) => session.id === selected) ?? sessions[0]
   const act = (operation: () => Promise<unknown>) => {

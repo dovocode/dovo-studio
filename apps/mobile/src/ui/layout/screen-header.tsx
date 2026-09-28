@@ -1,0 +1,227 @@
+import { createContext, useContext, type ReactNode } from 'react'
+import { Stack } from 'expo-router'
+import { Platform, Pressable, View } from 'react-native'
+import { NavigationContext } from '../../shell/navigation'
+import { Sheet, useInsideSheet } from './sheet'
+import { Icon } from '../controls/icon'
+import { useApplicationState } from '../../runtime/state/application-state'
+import { symbols, type IconName } from '../controls/icon'
+import { IconButton } from '../controls/icon-button'
+import { Text } from '../content/text'
+import { colors } from '../theme'
+
+/** Android/web: a screen inside a stack can show a back arrow in its own header. iOS uses the
+ * native navigation bar's back button instead. */
+export const ScreenBackContext = createContext<(() => void) | null>(null)
+
+export type HeaderAction = {
+  label: string
+  icon: IconName
+  onPress: () => void
+  disabled?: boolean
+  selected?: boolean
+  overflow?: boolean
+}
+
+/** UIKit owns navigation sizing, button grouping and back gestures on iOS. */
+export function ScreenHeader({
+  title,
+  titleContent,
+  subtitle,
+  leading,
+  actions,
+  buttons,
+  testID,
+  onBack,
+  gestureEnabled = true,
+  hidden = false,
+}: {
+  title: string
+  titleContent?: ReactNode
+  subtitle?: string
+  leading?: ReactNode
+  actions?: ReactNode
+  buttons?: HeaderAction[]
+  testID?: string
+  onBack?: () => void
+  gestureEnabled?: boolean
+  hidden?: boolean
+}) {
+  const navigation = useContext(NavigationContext)
+  const inSheet = useInsideSheet()
+  const [menu, setMenu] = useApplicationState(false)
+  // Sheets have their own close button; the page's back arrow belongs to the page header only.
+  const back = useContext(ScreenBackContext) ?? null
+  if (Platform.OS === 'ios' && !inSheet) {
+    // PRs and pipelines keep their content mounted; only the visible collection owns the bar.
+    if (navigation && !navigation.focused) return null
+    if (hidden)
+      return (
+        <Stack.Screen
+          options={{ headerShown: false, gestureEnabled: false, fullScreenGestureEnabled: false }}
+        />
+      )
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            title,
+            ...(titleContent ? { headerTitle: () => titleContent } : {}),
+            headerShown: true,
+            headerBackVisible: !onBack,
+            gestureEnabled,
+            fullScreenGestureEnabled: gestureEnabled ? undefined : false,
+          }}
+        />
+        {!!onBack && (
+          <Stack.Toolbar placement="left">
+            <Stack.Toolbar.Button icon="chevron.left" accessibilityLabel="Back" onPress={onBack}>
+              Back
+            </Stack.Toolbar.Button>
+          </Stack.Toolbar>
+        )}
+        <Stack.Toolbar placement="right">
+          {buttons
+            ?.filter((button) => !button.overflow)
+            .map((button) => (
+              <Stack.Toolbar.Button
+                key={button.label}
+                icon={symbols[button.icon][0]}
+                accessibilityLabel={button.label}
+                disabled={button.disabled}
+                selected={button.selected}
+                tintColor={button.selected ? colors.accent : colors.text}
+                onPress={button.onPress}
+              >
+                {button.label}
+              </Stack.Toolbar.Button>
+            ))}
+          {buttons?.some((button) => button.overflow) && (
+            <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Task tools">
+              <Stack.Toolbar.Label>Task tools</Stack.Toolbar.Label>
+              {buttons
+                .filter((button) => button.overflow)
+                .map((button) => (
+                  <Stack.Toolbar.MenuAction
+                    key={button.label}
+                    icon={symbols[button.icon][0]}
+                    onPress={button.onPress}
+                    disabled={button.disabled}
+                  >
+                    {button.label}
+                  </Stack.Toolbar.MenuAction>
+                ))}
+            </Stack.Toolbar.Menu>
+          )}
+          {!!actions && (
+            <Stack.Toolbar.View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>{actions}</View>
+            </Stack.Toolbar.View>
+          )}
+        </Stack.Toolbar>
+        {!!subtitle && (
+          <Text
+            numberOfLines={1}
+            style={{ color: colors.muted, fontSize: 13, paddingHorizontal: 16, paddingVertical: 6 }}
+          >
+            {subtitle}
+          </Text>
+        )}
+      </>
+    )
+  }
+  if (hidden) return null
+  return (
+    <View
+      testID="Screen header"
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        minHeight: 56,
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        gap: 10,
+      }}
+    >
+      {leading ?? (back && !inSheet && <IconButton label="Back" icon="back" onPress={back} />)}
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        {titleContent ?? (
+          <>
+            <Text
+              testID={testID}
+              accessibilityRole="header"
+              numberOfLines={2}
+              style={{ color: colors.text, fontSize: 22, fontWeight: '700', letterSpacing: -0.5 }}
+            >
+              {title}
+            </Text>
+            {!!subtitle && (
+              <Text
+                numberOfLines={1}
+                accessibilityLabel={subtitle}
+                style={{ color: colors.muted, fontSize: 13, lineHeight: 18 }}
+              >
+                {subtitle}
+              </Text>
+            )}
+          </>
+        )}
+      </View>
+      {(!!actions || !!buttons?.length) && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 0, gap: 2 }}>
+          {buttons
+            ?.filter((button) => !button.overflow)
+            .map((button) => (
+              <IconButton key={button.label} {...button} />
+            ))}
+          {/* Android has no toolbar menu; the same overflow actions open in a sheet. */}
+          {buttons?.some((button) => button.overflow) && (
+            <IconButton label="More actions" icon="more" onPress={() => setMenu(true)} />
+          )}
+          {actions}
+        </View>
+      )}
+      {menu && (
+        <Sheet title={title} onClose={() => setMenu(false)}>
+          {buttons
+            ?.filter((button) => button.overflow)
+            .map((button) => (
+              <Pressable
+                key={button.label}
+                accessibilityRole="button"
+                accessibilityLabel={button.label}
+                accessibilityState={{ disabled: button.disabled, selected: button.selected }}
+                disabled={button.disabled}
+                onPress={() => {
+                  setMenu(false)
+                  button.onPress()
+                }}
+                style={({ pressed }) => ({
+                  minHeight: 52,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 14,
+                  opacity: button.disabled ? 0.4 : pressed ? 0.6 : 1,
+                })}
+              >
+                <Icon
+                  name={button.icon}
+                  size={20}
+                  color={button.selected ? colors.accent : colors.text}
+                />
+                <Text
+                  style={{
+                    color: button.selected ? colors.accent : colors.text,
+                    fontSize: 17,
+                    lineHeight: 22,
+                  }}
+                >
+                  {button.label}
+                </Text>
+              </Pressable>
+            ))}
+        </Sheet>
+      )}
+    </View>
+  )
+}

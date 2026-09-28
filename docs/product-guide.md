@@ -78,6 +78,17 @@ guide before creating a separate workspace.
   background server continues when desktop closes; web/mobile pair with a running host.
 - Codex App Server, OpenCode Serve, Claude Agent SDK and ACP adapters load through the extension
   host. Task sessions resume, stream responses, request approvals and support cancellation.
+- Task conversations provide commit and pull request creation from Changes, generated commit and
+  pull request text, approval shortcuts (Y/N and question options 1–9), bookmarks, and a tool-based
+  summary after each turn. A finished turn with file changes refreshes its browser preview.
+- Project approval rules remember exact approved commands and can be removed from project actions or
+  mobile task settings. Project instructions can be edited with a diff and a disk-change check.
+- Tasks can schedule follow-ups and start after another task completes. The host runtime processes
+  these even when clients are closed. Task token and agent-time budgets warn without stopping work;
+  Usage shows Codex and Claude plan windows when those providers report them.
+- Desktop and mobile support bulk archive, snooze, pin and delete. Car mode can read completed
+  replies aloud, and the iPhone widget shows the last known running and waiting tasks. Speech and
+  widgets require a new native iPhone build.
 - Reusable agent configurations own provider, model, instructions and permissions. Changing the
   configuration starts a fresh session. Agents expose live model discovery and provider-supported
   reasoning choices (OpenCode variants and ACP thought-level configuration). Custom model IDs remain
@@ -89,9 +100,9 @@ guide before creating a separate workspace.
   GitHub pull requests through the host's `gh` login.
 - The automation canvas executes validated DAGs, schedules cron triggers with time zones, accepts
   authenticated/idempotent webhooks, and persists human review gates across restarts. Webhook JSON
-  becomes task context. Runs retain per-step progress, timing and task links; retry resumes
-  unfinished work in the same run. Enable triggers explicitly; manual runs work without enabling
-  schedules.
+  (up to 256 KB) becomes task context. Runs retain per-step progress, timing and task links; retry
+  resumes unfinished work in the same run. Finished runs are removed after 30 days. Enable triggers
+  explicitly; manual runs work without enabling schedules.
 - Pairing uses expiring codes, optional automatic host approval, hashed device credentials and
   revocation. Terminal sockets use short-lived single-use tickets, never permanent tokens in URLs.
 - Connected clients share the host workspace. Per-field compare-and-set patches reject conflicts;
@@ -283,9 +294,9 @@ Desktop and web settings use a grouped sidebar with search (matching words insid
   - **Running tasks** (per computer) — continue interrupted tasks after a restart; keep the Mac
     awake while tasks run; auto-archive tasks inactive for 7, 14 or 30 days (never running, waiting,
     pinned or terminal-open tasks).
-  - **Activity & message history** (per computer) — the log, and **Keep activity history**: forever
-    by default, or 1 year, 90 or 30 days; older entries are deleted in small background batches,
-    while task conversations stay.
+  - **Activity & message history** (per computer) — the log, and **Keep activity history**: 90 days
+    by default, or forever, 1 year or 30 days; older entries are deleted in small background
+    batches, while task conversations stay.
 - **Archived** — Archived tasks across every computer, with Restore.
 
 On iPhone, **Settings → This app → General** sets the tab to open on launch, the default task sort,
@@ -573,9 +584,11 @@ continue through the persisted shortcut inbox. Existing Expo UI controls remain 
 controls.
 
 - The task sidebar shows pinned tasks first and supports priority, recent activity, newest, project
-  and title sorting. Search includes message text; filters include working, review, failed, snoozed
-  and settled tasks. Settle retains the conversation, queue and checkout; reopen it from the Settled
-  filter.
+  and title sorting. It can show collapsible status or project sections, or an ungrouped list.
+  Search includes message text; filters include working, review, failed, snoozed and settled tasks.
+  Mobile offers the same grouping choices in its task filters. Settle retains the conversation,
+  queue and checkout; reopen it from the Settled filter. Car Mode keeps the project name beside each
+  task's status.
 - Task settings lets you rename a task, select a reusable agent and override its model/reasoning.
   Model discovery uses the configured provider executable. Overrides never mutate the reusable
   agent; changes start a fresh provider session. Stop the active turn before changing settings.
@@ -590,6 +603,11 @@ controls.
   Tool activity shows recent operations and expandable provider details. The full log remains in
   Devices & runtime. A diff-refresh failure reports a review error while preserving successful agent
   work and its response.
+- The conversation suggests **Compact** when reported context use reaches 80%. The composer can
+  compact an idle session on desktop or mobile; completed manual and automatic compactions appear in
+  the conversation. Codex uses its app-server command, Claude uses `/compact`, and OpenCode uses
+  session summarization. ACP uses `/compact` only when the connected agent advertises that command.
+  A provider error leaves the previous context meter and session intact.
 - Mobile provides queue/steer controls, tool history, pin/settle/snooze actions, task-specific model
   settings and read-only per-turn checkpoint diffs. Long-press a task for metadata and actions. The
   command palette supports arrow keys and Enter; the terminal remains fully collapsible.
@@ -919,6 +937,11 @@ Use Direct preview for a local browser or **Simulators** for devices on that tas
 uses Xcode Simulator; Android uses Emulator and ADB. See the
 [browser and device guide](design/browser-and-devices.md) for setup, remote addresses, current
 boundaries and planned improvements.
+
+Agents on Codex, Claude, OpenCode and ACP receive task-scoped `dovo_task` tools. They can discover
+devices, boot simulators, open URLs, capture screenshots, tap and type in live simulators, and run
+or read commands in the task’s shared terminal. Quick noninteractive commands still use each agent’s
+normal command tool; the Dovo terminal is for interactive, persistent or user-visible work.
 
 ## Updating and Live Activities
 

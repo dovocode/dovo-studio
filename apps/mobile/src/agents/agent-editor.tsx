@@ -1,6 +1,6 @@
-import { mobileWorkflow } from '../runtime/native-effect'
+import { mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import {
@@ -12,16 +12,16 @@ import {
 import { ModelSettings } from './model-settings'
 import { AcpRegistry } from './acp-registry'
 import { View } from 'react-native'
-import { Sheet } from '../ui/sheet'
-import { Text } from '../ui/text'
+import { Sheet } from '../ui/layout/sheet'
+import { Text } from '../ui/content/text'
 import { Schema } from 'effect'
 import { agentSchema, providerSchema, type Agent } from '@dovo/protocol'
-import { useRuntime } from '../runtime/provider'
-import { Action } from '../ui/action'
-import { Choice } from '../ui/choice'
-import { Field } from '../ui/field'
+import { useRuntime } from '../runtime/connection/provider'
+import { Action } from '../ui/controls/action'
+import { Choice } from '../ui/controls/choice'
+import { Field } from '../ui/controls/field'
 import { styles } from '../ui/theme'
-import { useAction } from '../ui/use-action'
+import { useAction } from '../ui/controls/use-action'
 export function AgentEditor({
   original,
   creating,

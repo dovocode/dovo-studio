@@ -100,6 +100,16 @@
     scroll-behavior: auto !important;
   }
 }
+/* Settings → Appearance → Chat width: how wide the conversation grows on large screens. */
+:root {
+  --chat-max: 48rem;
+}
+:root[data-chat-width='wide'] {
+  --chat-max: 72rem;
+}
+:root[data-chat-width='full'] {
+  --chat-max: 100%;
+}
 :root[data-text-size='small'] {
   font-size: 15px;
 }
@@ -675,4 +685,31 @@ a:focus-visible {
   background: #a5b4fc12;
   color: var(--primary);
   box-shadow: inset -2px 0 var(--primary);
+}
+
+/* Worktree setup progress: a light sweep over the progress bar, and a gentle entrance. */
+@keyframes dovo-sweep {
+  from {
+    left: -25%;
+  }
+  to {
+    left: 100%;
+  }
+}
+@keyframes dovo-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* A message opened from conversation search is briefly highlighted. */
+.studio-search-hit {
+  outline: 2px solid color-mix(in oklab, var(--primary) 60%, transparent);
+  outline-offset: 4px;
+  border-radius: 0.75rem;
+  transition: outline-color 1.2s ease-out;
 }

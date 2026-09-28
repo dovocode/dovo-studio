@@ -8,7 +8,16 @@ function open() {
   return (database ??= new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open('dovo-read-cache', 1)
     request.onupgradeneeded = () => request.result.createObjectStore('entries')
-    request.onsuccess = () => resolve(request.result)
+    request.onsuccess = () => {
+      const db = request.result
+      // The browser can close the connection (site data cleared, another tab upgrading);
+      // forget it so the next transaction reopens instead of failing until reload.
+      db.onclose = db.onversionchange = () => {
+        database = undefined
+        db.close()
+      }
+      resolve(db)
+    }
     request.onerror = () => {
       database = undefined
       reject(request.error)

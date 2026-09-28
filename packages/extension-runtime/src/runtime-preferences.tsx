@@ -95,6 +95,17 @@ export function RunningTaskPreferences() {
             <option value="30">After 30 days</option>
           </ChoicePicker>
         </SettingRow>
+        <SettingRow
+          label="Archive when the pull request merges"
+          description="Archives a task once its pull request is merged or closed. Pinned tasks and tasks that are busy stay put."
+        >
+          <Toggle
+            label="Archive tasks when their pull request merges"
+            checked={value?.archiveOnPullMerge ?? false}
+            disabled={disabled}
+            onChange={(archiveOnPullMerge) => save({ archiveOnPullMerge })}
+          />
+        </SettingRow>
       </SettingsGroup>
       <Problem error={error} />
     </>
@@ -114,7 +125,7 @@ export function ActivityRetention() {
           aria-label="Keep activity history"
           className="h-8 min-w-36 rounded-md px-2 text-xs"
           disabled={disabled}
-          value={String(value?.activityRetentionDays ?? 0)}
+          value={String(value?.activityRetentionDays ?? 90)}
           onValueChange={(days) =>
             save({ activityRetentionDays: Number(days) as Preferences['activityRetentionDays'] })
           }
@@ -178,10 +189,12 @@ function BranchPrefix({
   const [draft, setDraft] = useApplicationState<string | null>(null)
   const text = draft ?? value ?? ''
   const { prefix: normalized, valid } = normalizeBranchPrefix(text)
+  useEffect(() => {
+    if (draft !== null && normalized === value) setDraft(null)
+  }, [draft, normalized, value, setDraft])
   const commit = () => {
     if (draft === null || !valid || normalized === value) return setDraft(null)
     onSave(normalized)
-    setDraft(null)
   }
   return (
     <SettingRow

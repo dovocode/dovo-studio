@@ -1,19 +1,21 @@
-import { formatTime, useCarMode } from '../../runtime/app-preferences'
-import { useApplicationState } from '../../runtime/application-state'
+import { formatTime, useCarMode } from '../../runtime/preferences/app-preferences'
+import { MessageActions } from './components/message-actions'
+import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { useCallback, useEffect, useRef } from 'react'
 import {
   FlatList,
   Pressable,
-  Share,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  Alert,
 } from 'react-native'
-import { Text } from '../../ui/text'
+import { Text } from '../../ui/content/text'
 import { Schema } from 'effect'
-import { attachmentSchema, activitySchema } from '@dovo/protocol'
+import { attachmentSchema, activitySchema, responses, type TaskTurn } from '@dovo/protocol'
+import { useAction } from '../../ui/controls/use-action'
 import {
   MessagePrimitive,
   ThreadPrimitive,
@@ -22,19 +24,19 @@ import {
   type ToolCallMessagePartProps,
   type ThreadMessage,
 } from '@assistant-ui/react-native'
-import { usePendingConversationMessage, useTaskConversation } from './provider'
-import { Markdown } from '../../ui/markdown'
-import { MessageAttachments } from './message-attachments'
+import { usePendingConversationMessage, useTaskConversation } from './state/provider'
+import { Markdown } from '../../ui/content/markdown'
+import { MessageAttachments } from './components/message-attachments'
 import { colors, styles } from '../../ui/theme'
-import { Icon } from '../../ui/icon'
-import { ToolActivityRow, ReasoningActivity } from './tool-activity-row'
-import { TaskActivity } from './activity'
-import { TaskApprovals } from '../approvals'
-import { Pill } from '../../ui/pill'
-import { ConnectionPill } from '../../runtime/connection-status'
-import { useRuntime } from '../../runtime/provider'
-import { createConversationScroll } from './scroll'
-import { ConversationWorkGroup } from './work-group'
+import { Icon } from '../../ui/controls/icon'
+import { ToolActivityRow, ReasoningActivity } from './components/tool-activity-row'
+import { TaskActivity } from './components/activity'
+import { TaskApprovals } from '../detail/approvals'
+import { Pill } from '../../ui/controls/pill'
+import { ConnectionPill } from '../../runtime/connection/connection-status'
+import { useRuntime } from '../../runtime/connection/provider'
+import { createConversationScroll } from './state/scroll'
+import { ConversationWorkGroup } from './components/work-group'
 const checkpointSchema = mutableStruct({
   turnId: Schema.String,
   files: Schema.Number.pipe(Schema.finite()),
@@ -48,10 +50,67 @@ function AttachmentPart({ data }: DataMessagePartProps<unknown>) {
     <MessageAttachments taskId={task.id} files={decode(mutableArray(attachmentSchema), data)} />
   )
 }
+function TurnSummaryPart({ data }: DataMessagePartProps<unknown>) {
+  return <Text style={[styles.muted, { fontSize: 12 }]}>{decode(Schema.String, data)}</Text>
+}
 function CheckpointPart({ data }: DataMessagePartProps<unknown>) {
   const checkpoint = decode(checkpointSchema, data)
-  const { openCheckpoint } = useTaskConversation()
-  if (useCarMode()) return null
+  const { openCheckpoint, task } = useTaskConversation()
+  const car = useCarMode()
+  if (car) return null
+  const turn = task.turns?.find((item) => item.id === checkpoint.turnId)
+  return (
+    <CheckpointRow
+      checkpoint={checkpoint}
+      openCheckpoint={openCheckpoint}
+      taskId={task.id}
+      taskRunning={task.status === 'running'}
+      turn={turn}
+    />
+  )
+}
+function CheckpointRow({
+  checkpoint,
+  openCheckpoint,
+  taskId,
+  taskRunning,
+  turn,
+}: {
+  checkpoint: Schema.Schema.Type<typeof checkpointSchema>
+  openCheckpoint: (turnId: string) => void
+  taskId: string
+  taskRunning: boolean
+  turn: TaskTurn | undefined
+}) {
+  const { connected, callEffect } = useRuntime()
+  const restore = useAction()
+  const undone = !!turn?.checkpoint?.undone
+  const canRestore =
+    !!turn &&
+    turn.status !== 'running' &&
+    (undone || (!!turn.checkpoint?.after && !turn.checkpoint.error && checkpoint.files > 0))
+  const confirmRestore = () =>
+    Alert.alert(
+      undone ? 'Redo this turn’s changes?' : 'Undo this turn’s changes?',
+      undone
+        ? 'The files go back to how they were right before you undid this turn. The agent gets a note about it.'
+        : 'The files this turn changed go back to how they were before it. Your current files are saved first, so you can redo this. The agent gets a note about it.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: undone ? 'Redo changes' : 'Undo changes',
+          style: undone ? 'default' : 'destructive',
+          onPress: () =>
+            restore.act(() =>
+              callEffect(
+                '/api/tasks/turn/restore',
+                { id: taskId, turnId: checkpoint.turnId, direction: undone ? 'redo' : 'undo' },
+                responses.ok,
+              ),
+            ),
+        },
+      ],
+    )
   return (
     <View
       style={{
@@ -92,6 +151,28 @@ function CheckpointPart({ data }: DataMessagePartProps<unknown>) {
         <Text style={styles.muted}>{checkpoint.omitted} files omitted from snapshot</Text>
       )}
       {!!checkpoint.error && <Text style={styles.error}>{checkpoint.error}</Text>}
+      {canRestore && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={undone ? 'Redo this turn’s changes' : 'Undo this turn’s changes'}
+          accessibilityHint={taskRunning ? 'Stop the agent first.' : undefined}
+          disabled={!connected || taskRunning || restore.busy}
+          onPress={confirmRestore}
+          style={({ pressed }) => ({
+            minHeight: 36,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            opacity: pressed || !connected || taskRunning || restore.busy ? 0.5 : 1,
+          })}
+        >
+          <Icon name="refresh" size={14} color={colors.muted} />
+          <Text style={styles.muted}>
+            {undone ? 'Changes undone · Redo' : 'Undo these changes'}
+          </Text>
+        </Pressable>
+      )}
+      {!!restore.error && <Text style={styles.error}>{restore.error}</Text>}
     </View>
   )
 }
@@ -129,6 +210,7 @@ const parts = {
       'dovo.attachments': AttachmentPart,
       'dovo.checkpoint': CheckpointPart,
       'dovo.reasoning': ReasoningPart,
+      'dovo.turn-summary': TurnSummaryPart,
     },
   },
 }
@@ -144,6 +226,7 @@ const userParts = {
   Text: UserText,
 }
 function Message() {
+  const { task } = useTaskConversation()
   const pendingMessage = usePendingConversationMessage()
   const id = useAuiState((state) => state.message.id)
   const user = useAuiState((state) => state.message.role === 'user')
@@ -153,6 +236,8 @@ function Message() {
     state.message.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n\n'),
   )
   const car = useCarMode()
+  const turn = task.turns?.find((item) => item.assistantId === id)
+  const compactions = turn ? (task.compactions ?? []).filter((item) => item.turnId === turn.id) : []
   const time = createdAt && formatTime(createdAt, { hour: '2-digit', minute: '2-digit' })
   return (
     <MessagePrimitive.Root
@@ -200,33 +285,25 @@ function Message() {
             marginLeft: user ? 0 : -10,
           }}
         >
-          {!user && !!text && (
-            <Pressable
-              testID="Copy message"
-              accessibilityRole="button"
-              accessibilityLabel="Copy message"
-              hitSlop={6}
-              // The system share sheet offers Copy without adding a native clipboard module.
-              onPress={() => void Share.share({ message: text }).catch(() => undefined)}
-              style={({ pressed }) => ({
-                width: 36,
-                height: 32,
-                alignItems: 'center',
-                justifyContent: 'center',
-                opacity: pressed ? 0.5 : 1,
-              })}
-            >
-              <Icon name="copy" size={14} color={colors.muted} />
-            </Pressable>
-          )}
-          <Text style={[styles.muted, { fontSize: 13 }]}>{time}</Text>
+          {user && <Text style={[styles.muted, { fontSize: 13 }]}>{time}</Text>}
+          {!!text && <MessageActions text={text} user={user} messageId={id} />}
+          {!user && <Text style={[styles.muted, { fontSize: 13 }]}>{time}</Text>}
         </View>
       )}
+      {compactions.map((item) => (
+        <Text key={item.at} accessibilityRole="text" style={[styles.muted, { fontSize: 12 }]}>
+          Context compacted {formatTime(new Date(item.at), { hour: '2-digit', minute: '2-digit' })}{' '}
+          · {item.trigger === 'auto' ? 'Automatic' : 'Manual'}
+        </Text>
+      ))}
     </MessagePrimitive.Root>
   )
 }
 export function Conversation() {
   const { task, legacyEvents, activityError, followRequest } = useTaskConversation()
+  const bookmarks = task.messages.flatMap((message, index) =>
+    message.role === 'assistant' && message.bookmarked ? [{ message, index }] : [],
+  )
   const car = useCarMode()
   const { activeId } = useRuntime()
   const list = useRef<FlatList<ThreadMessage>>(null)
@@ -258,8 +335,37 @@ export function Conversation() {
         flex: 1,
       }}
     >
+      {!!bookmarks.length && (
+        <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingVertical: 5 }}>
+          {bookmarks.map(({ message, index }, position) => (
+            <Pressable
+              key={message.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Jump to bookmarked reply ${position + 1}`}
+              onPress={() =>
+                list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 })
+              }
+              style={{
+                paddingHorizontal: 8,
+                paddingVertical: 5,
+                borderRadius: 8,
+                backgroundColor: colors.elevated,
+              }}
+            >
+              <Text style={styles.muted}>★ {position + 1}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
       <ThreadPrimitive.MessagesFlatList
         ref={list}
+        onScrollToIndexFailed={({ index, averageItemLength }) => {
+          list.current?.scrollToOffset({ offset: index * averageItemLength, animated: false })
+          setTimeout(
+            () => list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 }),
+            100,
+          )
+        }}
         testID="Conversation messages"
         // FlatList.scrollToEnd uses estimated cell frames. Native Markdown may finish
         // measuring later, so follow the actual content extent with one scroll owner.

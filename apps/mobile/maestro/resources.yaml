@@ -201,7 +201,7 @@ appId: com.dovo.studio
       id: Message
     timeout: 10000
 - assertNotVisible: Create task
-- tapOn: Project & checkout
+- tapOn: Checkout & branch
 - tapOn:
     id: Working directory
 - tapOn:

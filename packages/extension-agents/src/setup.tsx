@@ -66,6 +66,7 @@ export function Setup() {
 function SetupForm({ onClose }: { onClose: () => void }) {
   const { workspace, connected, request } = useWorkspace()
   const [settings, setSettings] = useApplicationState<RuntimeSetup | null>(null)
+  const [baseline, setBaseline] = useApplicationState<RuntimeSetup | null>(null)
   const [step, setStep] = useApplicationState(0)
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
@@ -73,11 +74,15 @@ function SetupForm({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     let active = true
     setSettings(null)
+    setBaseline(null)
     setError('')
     if (!connected) return
     void request('/api/agents/setup/read', {}, runtimeSetupSchema)
       .then((value) => {
-        if (active) setSettings(value)
+        if (active) {
+          setSettings(value)
+          setBaseline(value)
+        }
       })
       .catch((error) => {
         if (active) setError(String(error))
@@ -129,7 +134,7 @@ function SetupForm({ onClose }: { onClose: () => void }) {
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault()
-        if (busy || !connected) return
+        if (busy || !connected || !baseline) return
         if (step === 0) {
           setStep(1)
           return
@@ -139,11 +144,14 @@ function SetupForm({ onClose }: { onClose: () => void }) {
         void request(
           '/api/agents/setup/save',
           {
-            ...settings,
-            titles:
-              settings.titles.harness || settings.titles.agentId
-                ? settings.titles
-                : titleSettingsForHarness(agent),
+            before: baseline,
+            after: {
+              ...settings,
+              titles:
+                settings.titles.harness || settings.titles.agentId
+                  ? settings.titles
+                  : titleSettingsForHarness(agent),
+            },
           },
           runtimeSetupSchema,
         )

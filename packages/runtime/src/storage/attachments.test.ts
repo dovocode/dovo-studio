@@ -4,8 +4,8 @@ import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
-import { claudeInput } from '../agents/providers/claude-input'
-import type { AgentRun } from '../agents/types'
+import { claudeInput } from '../agents/providers/claude/claude-input'
+import type { AgentRun } from '../agents/execution/types'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()

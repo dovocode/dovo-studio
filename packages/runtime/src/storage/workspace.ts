@@ -3,12 +3,18 @@ import { RuntimeDefaults, validateDefaultHarness } from './runtime-defaults.js'
 import { McpSecrets } from './mcp-secrets.js'
 import { newSecret } from '../auth/devices.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
-import { decode } from '@dovo/protocol'
+import { decode, decodeResult } from '@dovo/protocol'
 import { migrateJiraSources } from './jira-migration.js'
 import type Database from 'better-sqlite3'
 import { Schema } from 'effect'
 import {
+  agentSchema,
+  automationSchema,
   canChangeTaskCheckout,
+  jiraIssueLinkSchema,
+  jiraSourceSchema,
+  repositorySchema,
+  taskSchema,
   latestCompletedTaskTurn,
   lockedTaskProvider,
   resolveTaskAgent,
@@ -23,6 +29,51 @@ import { isDeepStrictEqual } from 'node:util'
 const rowSchema = mutableStruct({
   value: Schema.String,
 })
+const collectionSchemas = {
+  agents: agentSchema,
+  repositories: repositorySchema,
+  tasks: taskSchema,
+  automations: automationSchema,
+  jiraSources: jiraSourceSchema,
+  jiraIssueLinks: jiraIssueLinkSchema,
+} as const
+/** Loads the stored workspace. A document written by another version, or one that a tightened
+ * limit now rejects, must not stop the runtime: keep a full copy, then load every entry that
+ * still validates. Entries left out stay recoverable from that copy. */
+export function loadStoredWorkspace(db: Database.Database, raw: string): Workspace {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('The stored workspace is not valid JSON. Restore it from a runtime backup.')
+  }
+  const strict = decodeResult(workspaceSchema, parsed)
+  if (strict.success) return strict.data
+  const backupId = `workspace-backup:${new Date().toISOString()}`
+  db.prepare('INSERT OR REPLACE INTO documents VALUES (?, ?)').run(backupId, raw)
+  const source = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
+  const repaired: Record<string, unknown> = { ...source }
+  const omitted: string[] = []
+  for (const [key, schema] of Object.entries(collectionSchemas)) {
+    const items = source[key]
+    if (!Array.isArray(items)) continue
+    repaired[key] = items.flatMap((item, index) => {
+      const result = decodeResult(schema, item)
+      if (result.success) return [result.data]
+      omitted.push(`${key}[${index}]`)
+      return []
+    })
+  }
+  const recovered = decodeResult(workspaceSchema, repaired)
+  if (!recovered.success)
+    throw new Error(
+      `The stored workspace could not be loaded. A copy was kept as ${backupId}. ${recovered.error.message}`,
+    )
+  console.error(
+    `Loaded the workspace without ${omitted.length} unreadable ${omitted.length === 1 ? 'entry' : 'entries'} (${omitted.join(', ')}). The original is kept as ${backupId}.`,
+  )
+  return recovered.data
+}
 export class WorkspaceStore {
   private readonly secrets: McpSecrets
   private workspace: Workspace
@@ -38,7 +89,7 @@ export class WorkspaceStore {
     this.secrets = new McpSecrets(key)
     const row = db.prepare('SELECT value FROM documents WHERE id = ?').get('workspace')
     this.workspace = row
-      ? decode(workspaceSchema, JSON.parse(decode(rowSchema, row).value))
+      ? loadStoredWorkspace(db, decode(rowSchema, row).value)
       : {
           version: 1,
           agents: [],
@@ -86,6 +137,7 @@ export class WorkspaceStore {
                   ...task,
                   status: 'failed',
                   runPhase: undefined,
+                  preparation: undefined,
                   activity: undefined,
                   restartRecovery: {
                     kind:
@@ -154,8 +206,14 @@ export class WorkspaceStore {
     const parsed = migrateJiraSources(
       decode(workspaceSchema, this.restoreSecrets(fn(this.workspace))),
     )
-    for (const repository of parsed.repositories)
-      if (repository.taskDefaults?.harness) validateDefaultHarness(repository.taskDefaults.harness)
+    // A business rule for edits only: a stored harness that a newer or older build no longer
+    // supports must not keep the workspace from loading at startup.
+    for (const repository of parsed.repositories) {
+      const harness = repository.taskDefaults?.harness
+      const previous = this.workspace.repositories.find((item) => item.id === repository.id)
+      if (harness && !isDeepStrictEqual(previous?.taskDefaults?.harness, harness))
+        validateDefaultHarness(harness)
+    }
     const previousTasks = new Map(this.workspace.tasks.map((task) => [task.id, task]))
     const next = {
       ...parsed,
@@ -345,6 +403,10 @@ export class WorkspaceStore {
           record.queue !== undefined ||
           record.runPhase !== undefined ||
           record.runAttempt !== undefined ||
+          record.preparation !== undefined ||
+          record.pullStatus !== undefined ||
+          record.contextUsage !== undefined ||
+          record.forkedFrom !== undefined ||
           record.consumedMessageIds !== undefined)
       )
         throw new HttpError(400, 'New tasks must be drafts')

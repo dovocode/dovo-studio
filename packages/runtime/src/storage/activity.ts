@@ -51,12 +51,18 @@ export class Activity {
       db.transaction(() => {
         const rows = decode(mutableArray(record), db.prepare('SELECT * FROM activity').all())
         const update = db.prepare('UPDATE activity SET payload=?,summary=? WHERE id=?')
-        for (const row of rows)
-          update.run(
-            JSON.stringify(redact(JSON.parse(row.payload))),
-            String(redact(row.summary)),
-            row.id,
-          )
+        const remove = db.prepare('DELETE FROM activity WHERE id=?')
+        for (const row of rows) {
+          let payload: unknown
+          try {
+            payload = JSON.parse(row.payload)
+          } catch {
+            // Unreadable historical payloads cannot be safely redacted.
+            remove.run(row.id)
+            continue
+          }
+          update.run(JSON.stringify(redact(payload)), String(redact(row.summary)), row.id)
+        }
         db.prepare('INSERT INTO documents VALUES (?, ?)').run('activity-redaction-v3', 'done')
       })()
     }

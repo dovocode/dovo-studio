@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest'
 import { defaultTaskHarness, type Agent, type Task } from '@dovo/protocol'
-import { TaskQueue } from '../agents/task-queue.js'
+import { TaskQueue } from '../agents/tasks/task-queue.js'
 import { openDatabase } from './database.js'
 import { WorkspaceStore } from './workspace.js'
 const cleanup: Array<() => void> = []

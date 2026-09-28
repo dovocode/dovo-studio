@@ -1,5 +1,5 @@
 import { WorkbenchDetailRoute } from '../../../../../shell/workbench'
-import { WorkItemRoute } from '../../../../../scm/work-item-route'
+import { WorkItemRoute } from '../../../../../scm/work/work-item-route'
 
 export default function JiraIssueRoute() {
   return (

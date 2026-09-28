@@ -31,9 +31,9 @@ Current verification captures include [Tasks](../../work/verification/primary-ta
 [Issues](../../work/verification/work-desktop.png) and
 [failed pipeline details](../../work/verification/pipeline-desktop-failed.png). The relevant
 implementation is in [the shell](../../packages/studio-shell/src/workbench.tsx),
-[task rows](../../packages/extension-tasks/src/task-row.tsx),
-[PR details](../../packages/extension-scm/src/pulls/detail.tsx),
-[pipeline details](../../packages/extension-scm/src/pipeline-detail.tsx) and
+[task rows](../../packages/extension-tasks/src/list/task-row.tsx),
+[PR details](../../packages/extension-scm/src/pulls/detail/detail.tsx),
+[pipeline details](../../packages/extension-scm/src/work/pipeline-detail.tsx) and
 [mobile navigation](../../apps/mobile/src/shell/workbench.tsx).
 
 ## Navigation and scope

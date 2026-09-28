@@ -8,11 +8,13 @@ export function QuestionField({
   value,
   onChange,
   disabled,
+  shortcutNumbers = false,
 }: {
   question: AgentQuestion
   value: QuestionDraft
   onChange: (next: QuestionDraft) => void
   disabled?: boolean
+  shortcutNumbers?: boolean
 }) {
   return (
     <fieldset disabled={disabled} className="min-w-0 space-y-2">
@@ -23,7 +25,7 @@ export function QuestionField({
       <p className="whitespace-pre-wrap text-xs leading-relaxed">{q.question}</p>
       {q.multiple && <p className="text-[0.625rem] text-muted-foreground">Select all that apply</p>}
       <div className="grid gap-1.5 sm:grid-cols-2">
-        {q.options.map((option) => (
+        {q.options.map((option, index) => (
           <Button
             key={option.value}
             type="button"
@@ -40,6 +42,9 @@ export function QuestionField({
               <Check className="mt-0.5 size-3 shrink-0" />
             ) : (
               <Circle className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+            )}
+            {shortcutNumbers && index < 9 && (
+              <kbd className="text-[0.625rem] text-muted-foreground">{index + 1}</kbd>
             )}
             <span className="min-w-0">
               <span className="block text-xs">{option.label}</span>

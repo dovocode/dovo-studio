@@ -16,6 +16,7 @@ export function TitleSettings() {
   const { workspace, request, connected, snapshot } = useWorkspace()
   const [open, setOpen] = useApplicationState(false)
   const [settings, setSettings] = useApplicationState<Settings | null>(null)
+  const [baseline, setBaseline] = useApplicationState<Settings | null>(null)
   const [error, setError] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const [saved, setSaved] = useApplicationState(false)
@@ -23,10 +24,14 @@ export function TitleSettings() {
     let stopped = false
     if (!open || !connected) return
     setSettings(null)
+    setBaseline(null)
     setError('')
     void request('/api/agents/title-settings/read', {}, titleGenerationSettingsSchema)
       .then((value) => {
-        if (!stopped) setSettings(value)
+        if (!stopped) {
+          setSettings(value)
+          setBaseline(value)
+        }
       })
       .catch((e) => {
         if (!stopped) setError(String(e))
@@ -65,16 +70,18 @@ export function TitleSettings() {
               className="space-y-3"
               onSubmit={(e) => {
                 e.preventDefault()
+                if (!baseline) return
                 setBusy(true)
                 setError('')
                 setSaved(false)
                 void request(
                   '/api/agents/title-settings/save',
-                  settings,
+                  { before: baseline, after: settings },
                   titleGenerationSettingsSchema,
                 )
                   .then((value) => {
                     setSettings(value)
+                    setBaseline(value)
                     setSaved(true)
                   })
                   .catch((e) => setError(String(e)))

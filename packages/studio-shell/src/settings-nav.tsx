@@ -24,15 +24,14 @@ export function SettingsNav({
 }) {
   const [query, setQuery] = useApplicationState('')
   const needle = query.trim().toLowerCase()
-  const matches = views.filter(
-    (view) =>
-      !needle ||
-      `${view.title} ${view.keywords ?? ''}`
-        .toLowerCase()
-        .split(/\s+/)
-        .some((word) => word.startsWith(needle)) ||
-      view.title.toLowerCase().includes(needle),
-  )
+  const matches = views.filter((view) => {
+    if (!needle) return true
+    const words = `${view.title} ${view.keywords ?? ''}`.toLowerCase().split(/\s+/)
+    return (
+      needle.split(/\s+/).every((term) => words.some((word) => word.startsWith(term))) ||
+      view.title.toLowerCase().includes(needle)
+    )
+  })
   return (
     <nav
       aria-label="Settings sections"

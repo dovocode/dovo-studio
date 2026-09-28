@@ -1,18 +1,22 @@
-import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { useApplicationState } from '../runtime/application-state'
-import { ConnectionPill, FloatingPills } from '../runtime/connection-status'
+import { useApplicationState } from '../runtime/state/application-state'
+import { ConnectionPill, FloatingPills } from '../runtime/connection/connection-status'
 import { NativeTabs } from 'expo-router/unstable-native-tabs'
 import { router, useGlobalSearchParams, useIsFocused, usePathname } from 'expo-router'
 import { taskHref } from './task-route'
 import { issueHref, jiraIssueHref, pipelineHref } from './source-route'
 import { collectionPaths as routes, workbenchRoute, type WorkbenchTab as Tab } from './route-paths'
 import { useShortcuts } from './shortcuts'
-import { preferencesReady, readMobilePreferences, useCarMode } from '../runtime/app-preferences'
-import { NewTask } from '../tasks/new-task'
-import { CreationTarget } from '../runtime/creation-target'
-import { TaskListViewProvider } from '../tasks/task-list-view'
+import {
+  preferencesReady,
+  readMobilePreferences,
+  useCarMode,
+} from '../runtime/preferences/app-preferences'
+import { NewTask } from '../tasks/creation/new-task'
+import { CreationTarget } from '../runtime/connection/creation-target'
+import { TaskListViewProvider } from '../tasks/list/task-list-view'
 import { responses } from '@dovo/protocol'
 import { NavigationContext, type StudioNavigation, type WorkTarget } from './navigation'
 import {
@@ -26,10 +30,10 @@ import {
   type ReactNode,
 } from 'react'
 import { ActivityIndicator, KeyboardAvoidingView, Keyboard, Platform } from 'react-native'
-import { Text } from '../ui/text'
+import { Text } from '../ui/content/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SafeAreaView as NativeSafeAreaView } from 'react-native-screens/experimental'
-import { useRuntime } from '../runtime/provider'
+import { useRuntime } from '../runtime/connection/provider'
 import { createMobileExtensions } from './extensions'
 import { colors, styles } from '../ui/theme'
 const SceneContext = createContext<{

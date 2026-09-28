@@ -1,2 +1,2 @@
 export { default } from '../App'
-export { RouteError as ErrorBoundary } from '../ui/route-error'
+export { RouteError as ErrorBoundary } from '../ui/layout/route-error'

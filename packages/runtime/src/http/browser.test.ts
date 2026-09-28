@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import { WebSocket } from 'ws'
 import { startRuntime } from '../index'
 import { RemoteBrowsers } from '../previews/browser'
-import { SocketTickets } from './socket-tickets'
+import { SocketTickets } from './support/socket-tickets'
 import { decodeBrowserFrame, remoteBrowserMessageSchema } from '@dovo/protocol'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {

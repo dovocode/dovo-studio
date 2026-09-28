@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { commandsSchema } from '@dovo/protocol'
 import { openDatabase } from './database'
 import { Commands } from './commands'
-import { GitService } from '../scm/git'
-import { AgentRegistry } from '../agents/registry'
+import { GitService } from '../scm/git/git'
+import { AgentRegistry } from '../agents/configuration/registry'
 import { Terminals } from '../terminal/terminals'
 import { defaultShell } from '../terminal/shell'
 afterEach(() => vi.unstubAllEnvs())
@@ -39,6 +39,22 @@ it('persists command defaults and validates executable paths', () => {
     expect(defaultShell()).toBe('/bin/bash')
     vi.stubEnv('SHELL', '/missing/fish')
     expect(defaultShell()).toMatch(/\/bin\/(zsh|bash)$/)
+  } finally {
+    db.close()
+  }
+})
+it('rejects a stale command-settings save without losing either device’s edits', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const commands = new Commands(db)
+    const original = commands.get()
+    const updated = commands.saveChecked(original, { ...original, git: '/custom/git' })
+    expect(updated.git).toBe('/custom/git')
+    expect(() => commands.saveChecked(original, { ...original, gh: '/custom/gh' })).toThrow(
+      'CLI settings changed on another device',
+    )
+    expect(commands.get().gh).toBe(original.gh)
+    expect(commands.saveChecked(original, updated)).toEqual(updated)
   } finally {
     db.close()
   }

@@ -1,4 +1,4 @@
-import { harnessNames } from '../tasks/harness-choices'
+import { harnessNames } from '../tasks/creation/harness-choices'
 import { useEffect } from 'react'
 import { View } from 'react-native'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -13,16 +13,16 @@ import {
   type Agent,
   type RuntimeSetup,
 } from '@dovo/protocol'
-import { useApplicationState } from '../runtime/application-state'
-import { mobileWorkflow } from '../runtime/native-effect'
-import { useRuntime } from '../runtime/provider'
-import { Action } from '../ui/action'
-import { Choice } from '../ui/choice'
-import { Field } from '../ui/field'
-import { Sheet } from '../ui/sheet'
-import { Text } from '../ui/text'
+import { useApplicationState } from '../runtime/state/application-state'
+import { mobileWorkflow } from '../runtime/state/native-effect'
+import { useRuntime } from '../runtime/connection/provider'
+import { Action } from '../ui/controls/action'
+import { Choice } from '../ui/controls/choice'
+import { Field } from '../ui/controls/field'
+import { Sheet } from '../ui/layout/sheet'
+import { Text } from '../ui/content/text'
 import { colors, styles } from '../ui/theme'
-import { useAction } from '../ui/use-action'
+import { useAction } from '../ui/controls/use-action'
 import { ModelSettings } from './model-settings'
 import { AcpRegistry } from './acp-registry'
 
@@ -60,6 +60,7 @@ function SetupForm({ onClose }: { onClose: () => void }) {
   const { snapshot, connected, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
   const [settings, setSettings] = useApplicationState<RuntimeSetup | null>(null)
+  const [baseline, setBaseline] = useApplicationState<RuntimeSetup | null>(null)
   const [step, setStep] = useApplicationState(0)
   const [loadError, setLoadError] = useApplicationState('')
   const [retry, setRetry] = useApplicationState(0)
@@ -67,12 +68,16 @@ function SetupForm({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     let active = true
     setSettings(null)
+    setBaseline(null)
     setLoadError('')
     if (!connected) return
     void runClientEffect(
       mobileWorkflow(function* () {
         const value = yield* callEffect('/api/agents/setup/read', {}, runtimeSetupSchema)
-        if (active) setSettings(value)
+        if (active) {
+          setSettings(value)
+          setBaseline(value)
+        }
       }),
     ).catch((error) => {
       if (active) setLoadError(String(error))
@@ -197,7 +202,7 @@ function SetupForm({ onClose }: { onClose: () => void }) {
         />
         <Action
           label={busy ? 'Saving…' : step ? 'Save setup' : 'Next: title model'}
-          disabled={busy || !connected}
+          disabled={busy || !connected || !baseline}
           onPress={() => {
             if (!step) {
               setStep(1)
@@ -208,11 +213,14 @@ function SetupForm({ onClose }: { onClose: () => void }) {
                 yield* callEffect(
                   '/api/agents/setup/save',
                   {
-                    ...settings,
-                    titles:
-                      settings.titles.harness || settings.titles.agentId
-                        ? settings.titles
-                        : titleSettingsForHarness(agent),
+                    before: baseline,
+                    after: {
+                      ...settings,
+                      titles:
+                        settings.titles.harness || settings.titles.agentId
+                          ? settings.titles
+                          : titleSettingsForHarness(agent),
+                    },
                   },
                   runtimeSetupSchema,
                 )

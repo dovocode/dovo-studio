@@ -1,8 +1,8 @@
 import { View } from 'react-native'
-import { Text } from '../ui/text'
+import { Text } from '../ui/content/text'
 import type { AutomationData, Workspace } from '@dovo/protocol'
-import { Choice } from '../ui/choice'
-import { Field } from '../ui/field'
+import { Choice } from '../ui/controls/choice'
+import { Field } from '../ui/controls/field'
 import { styles } from '../ui/theme'
 
 export function StepFields({

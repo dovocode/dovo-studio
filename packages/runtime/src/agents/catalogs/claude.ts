@@ -1,4 +1,4 @@
-import { claudeCommand } from '../claude-command.js'
+import { claudeCommand } from '../configuration/claude-command.js'
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import { processEnvironment } from '../../process.js'

@@ -107,7 +107,7 @@ export default function GeneralSettings() {
         </SettingRow>
         <SettingRow
           label="Tool activity"
-          description="Whether commands, edits and searches in each turn start open or folded."
+          description="Whether commands, edits and searches in each turn start open, folded, or stay hidden so only replies show. Ctrl+O switches between them."
         >
           <Segmented
             label="Tool activity"
@@ -115,6 +115,7 @@ export default function GeneralSettings() {
             options={[
               ['collapsed', 'Collapsed'],
               ['expanded', 'Expanded'],
+              ['hidden', 'Replies only'],
             ]}
             onChange={(toolActivity) => updateAppPreferences({ toolActivity })}
           />

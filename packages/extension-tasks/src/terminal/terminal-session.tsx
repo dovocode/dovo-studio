@@ -101,8 +101,11 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
       },
       (error) => setError(error.message),
     )
+    // Only replace a socket that is not open; the heartbeat already detects dead ones, and a
+    // restart resets the screen and loses the cursor and scroll position.
     const wake = () => {
-      if (document.visibilityState === 'visible') reconnect.restart()
+      if (document.visibilityState === 'visible' && socket?.readyState !== WebSocket.OPEN)
+        reconnect.restart()
     }
     window.addEventListener('online', wake)
     document.addEventListener('visibilitychange', wake)

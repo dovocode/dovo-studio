@@ -1,9 +1,9 @@
-import { nativeEffect } from '../runtime/native-effect'
+import { nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../runtime/state/application-state'
 import { useEffect } from 'react'
-import { useRuntime } from '../runtime/provider'
+import { useRuntime } from '../runtime/connection/provider'
 import { useNavigation } from './navigation'
 
 /** A host-qualified link selects its owner only while that route is in the foreground. */

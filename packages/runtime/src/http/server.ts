@@ -1,7 +1,7 @@
-import { pairingAddresses } from './pairing-addresses.js'
+import { pairingAddresses } from './support/pairing-addresses.js'
 import { ValidationError, safeValidationIssues, safeValidationMessage } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
-import { completeRequest } from './request-activity.js'
+import { completeRequest } from './support/request-activity.js'
 import { createServer, type IncomingMessage } from 'node:http'
 import type { Socket } from 'node:net'
 import { WebSocketServer, WebSocket } from 'ws'
@@ -11,9 +11,9 @@ import { RuntimeServices, type Services } from '../services.js'
 import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { route } from './routes.js'
-import { json } from './body.js'
+import { json } from './support/body.js'
 import { HttpError, errorMessage } from '../errors.js'
-import { attachBrowserSocket } from './browser-socket.js'
+import { attachBrowserSocket } from './support/browser-socket.js'
 export function createRuntimeServer(services: Services) {
   let stopping = false
   let closing: Promise<void> | undefined
@@ -104,6 +104,30 @@ export function createRuntimeServer(services: Services) {
     noServer: true,
     maxPayload: 128 * 1024,
   })
+  // One activity row per keystroke would grow the database with every character typed.
+  // Record terminal input as a count per terminal, at most every few seconds.
+  const typed = new Map<string, { characters: number; timer: ReturnType<typeof setTimeout> }>()
+  const recordInput = (terminalId: string, characters: number) => {
+    const pending = typed.get(terminalId)
+    if (pending) {
+      pending.characters += characters
+      return
+    }
+    const timer = setTimeout(() => {
+      const entry = typed.get(terminalId)
+      typed.delete(terminalId)
+      if (!entry) return
+      try {
+        services.activity.add('terminal', terminalId, 'Terminal input', {
+          characters: entry.characters,
+        })
+      } catch (error) {
+        console.error('Could not record terminal input', error)
+      }
+    }, 5_000)
+    timer.unref()
+    typed.set(terminalId, { characters, timer })
+  }
   const authenticated = new Map<WebSocket, string>()
   const responsive = new WeakSet<WebSocket>()
   const track = (client: WebSocket, token: string) => {
@@ -179,9 +203,7 @@ export function createRuntimeServer(services: Services) {
               // Binary control frames cannot be confused with raw terminal text.
               client.send(JSON.stringify({ type: 'pong', nonce: input.nonce }), { binary: true })
             } else if (input.type === 'input') {
-              services.activity.add('terminal', ticket.resourceId, 'Terminal input', {
-                characters: input.data.length,
-              })
+              recordInput(ticket.resourceId, input.data.length)
               services.terminals.input(ticket.resourceId, input.data)
             } else services.terminals.resize(ticket.resourceId, input.cols, input.rows)
           } catch {
@@ -231,6 +253,8 @@ export function createRuntimeServer(services: Services) {
   const closeSockets = () => {
     clearInterval(revocations)
     clearInterval(liveness)
+    for (const { timer } of typed.values()) clearTimeout(timer)
+    typed.clear()
     for (const socket of authenticated.keys()) socket.terminate()
     sockets.close()
   }
@@ -245,9 +269,17 @@ export function createRuntimeServer(services: Services) {
       )
       closeSockets()
       closeIncompleteConnections()
+      // A client that stopped reading (phone backgrounded mid-download) never lets its
+      // response finish. Bound the drain so shutdown cannot wait on that socket forever.
+      const grace = setTimeout(() => {
+        for (const socket of connections) socket.destroy()
+      }, 15_000)
+      grace.unref()
       // A disconnected client does not cancel its asynchronous route handler.
       // Keep services and SQLite available until those handlers have settled too.
-      closing = Promise.all([closed, ...requests.values()]).then(() => {})
+      closing = Promise.all([closed, ...requests.values()])
+        .then(() => {})
+        .finally(() => clearTimeout(grace))
       return closing
     },
   }

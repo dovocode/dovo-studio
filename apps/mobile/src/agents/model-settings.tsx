@@ -1,11 +1,11 @@
-import { nativeEffect } from '../runtime/native-effect'
+import { nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
 import { useEffect } from 'react'
 import { View } from 'react-native'
-import { Text } from '../ui/text'
+import { Text } from '../ui/content/text'
 import {
   agentSchema,
   daybreakChoices,
@@ -16,10 +16,10 @@ import {
   type ModelCatalog,
   type Agent,
 } from '@dovo/protocol'
-import { useRuntime } from '../runtime/provider'
-import { Choice } from '../ui/choice'
-import { Field } from '../ui/field'
-import { Action } from '../ui/action'
+import { useRuntime } from '../runtime/connection/provider'
+import { Choice } from '../ui/controls/choice'
+import { Field } from '../ui/controls/field'
+import { Action } from '../ui/controls/action'
 import { styles } from '../ui/theme'
 export function ModelSettings({
   agent,

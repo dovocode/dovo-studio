@@ -1,11 +1,14 @@
 import { ScrollView, StyleSheet, View } from 'react-native'
-import { Switch } from '../ui/switch'
-import { taskSortOptions } from '@dovo/protocol'
-import { updateMobilePreferences, useMobilePreferences } from '../runtime/app-preferences'
-import { useTaskListView } from '../tasks/task-list-view'
-import { Choice } from '../ui/choice'
-import { ScreenHeader } from '../ui/screen-header'
-import { Text } from '../ui/text'
+import { Switch } from '../ui/controls/switch'
+import { taskGroupOptions, taskSortOptions } from '@dovo/protocol'
+import {
+  updateMobilePreferences,
+  useMobilePreferences,
+} from '../runtime/preferences/app-preferences'
+import { useTaskListView } from '../tasks/list/task-list-view'
+import { Choice } from '../ui/controls/choice'
+import { ScreenHeader } from '../ui/layout/screen-header'
+import { Text } from '../ui/content/text'
 import { colors, styles } from '../ui/theme'
 import { SettingsGroup } from './settings-group'
 
@@ -33,6 +36,11 @@ export default function GeneralScreen() {
             value={preferences.carMode}
             onValueChange={(carMode) => updateMobilePreferences({ carMode })}
           />
+          <SwitchRow
+            label="Read replies aloud"
+            value={preferences.readRepliesAloud}
+            onValueChange={(readRepliesAloud) => updateMobilePreferences({ readRepliesAloud })}
+          />
         </SettingsGroup>
         <SettingsGroup title="Startup" footer="The tab Dovo shows when it opens.">
           <View style={{ padding: 12 }}>
@@ -48,7 +56,7 @@ export default function GeneralScreen() {
         </SettingsGroup>
         <SettingsGroup
           title="Task list"
-          footer="Used when Dovo opens. You can still change the sort in the task filters."
+          footer="Used when Dovo opens. You can change sorting and grouping in the task filters."
         >
           <View style={{ padding: 12 }}>
             <Choice
@@ -60,6 +68,16 @@ export default function GeneralScreen() {
                 updateMobilePreferences({ taskSort })
                 setView((current) => ({ ...current, sort: taskSort }))
               }}
+            />
+            <Choice
+              label="Group by"
+              value={preferences.taskGrouping}
+              items={[...taskGroupOptions]}
+              onChange={(taskGrouping) =>
+                updateMobilePreferences({
+                  taskGrouping: taskGrouping as typeof preferences.taskGrouping,
+                })
+              }
             />
           </View>
         </SettingsGroup>

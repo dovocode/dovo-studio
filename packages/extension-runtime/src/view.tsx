@@ -15,7 +15,7 @@ export default function RuntimeView() {
   const sources = useRuntimeSources()
   const studio = useStudioHost()
   const [managing, setManaging] = useApplicationState<RuntimeProfile | null>(null)
-  const [pairingPhone, setPairingPhone] = useApplicationState(false)
+  const [pairingPhone, setPairingPhone] = useApplicationState<RuntimeProfile | null>(null)
   // Phones pair with a computer this app owns: the local desktop runtime or an owned server.
   const host = sources.find((entry) => entry.connected && entry.snapshot?.owner)
   const source = sources.find(
@@ -43,7 +43,7 @@ export default function RuntimeView() {
                   type an eight-digit code.
                 </p>
               </div>
-              <Button onClick={() => setPairingPhone(true)}>Connect your phone</Button>
+              <Button onClick={() => setPairingPhone(host.profile)}>Connect your phone</Button>
             </article>
           )}
           <PairingClient onManage={setManaging} />
@@ -53,17 +53,20 @@ export default function RuntimeView() {
           </p>
         </div>
       </div>
-      {pairingPhone && host && (
-        <Dialog open onOpenChange={(open) => !open && setPairingPhone(false)}>
+      {pairingPhone && (
+        <Dialog open onOpenChange={(open) => !open && setPairingPhone(null)}>
           <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Connect your phone</DialogTitle>
               <DialogDescription>
-                Pairing with {host.name}. Keep this window open until your phone finishes.
+                Pairing with{' '}
+                {sources.find((entry) => entry.profile.id === pairingPhone.id)?.name ??
+                  pairingPhone.name}
+                . Keep this window open until your phone finishes.
               </DialogDescription>
             </DialogHeader>
-            <WorkspaceScope profile={host.profile}>
-              <DeviceManager connectPhone />
+            <WorkspaceScope profile={pairingPhone}>
+              <DeviceManager key={pairingPhone.id} connectPhone />
             </WorkspaceScope>
           </DialogContent>
         </Dialog>
@@ -86,7 +89,7 @@ export default function RuntimeView() {
             </DialogHeader>
             {source ? (
               <WorkspaceScope profile={managing}>
-                <DeviceManager />
+                <DeviceManager key={managing.id} />
                 {/* Per-computer settings live on their own pages, like Codex and T3 Code. */}
                 <div className="flex flex-wrap gap-2">
                   {[
@@ -102,7 +105,7 @@ export default function RuntimeView() {
                       size="sm"
                       onClick={() => {
                         setManaging(null)
-                        studio.navigate({ viewId })
+                        studio.navigate({ viewId, entityId: managing.id })
                       }}
                     >
                       {label}

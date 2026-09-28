@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Effect, Schema } from 'effect'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { activitySchema, useWorkspace, startPolling, formatDateTime } from '@dovo/studio-core'
 import { Button, Input } from '@dovo/studio-ui'
 export function ActivityLog() {
@@ -11,6 +11,12 @@ export function ActivityLog() {
       events: [],
     }),
     [error, setError] = useApplicationState('')
+  // Search as typed, but query the runtime once the user pauses instead of per keystroke.
+  const [search, setSearch] = useState(query)
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(query), 300)
+    return () => clearTimeout(timer)
+  }, [query])
   useEffect(() => {
     let stopped = false
     let first = true
@@ -20,7 +26,7 @@ export function ActivityLog() {
         yield* Effect.sleep(200)
       }
       if (!connected || document.visibilityState !== 'visible') return
-      const value = yield* request('/api/activity', { query, offset }, activitySchema)
+      const value = yield* request('/api/activity', { query: search, offset }, activitySchema)
       if (!stopped) {
         setData(value)
         setError('')
@@ -38,7 +44,7 @@ export function ActivityLog() {
       document.removeEventListener('visibilitychange', polling.refresh)
       void polling.stop()
     }
-  }, [request, connected, query, offset])
+  }, [request, connected, search, offset])
 
   return (
     <section className="space-y-2">

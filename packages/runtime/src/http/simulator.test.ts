@@ -15,6 +15,7 @@ it('authorizes task/device access, isolates tickets and releases input when a vi
     close = vi.fn<native.NativeSimulator['close']>(async () => {}),
     input = vi.fn<native.NativeSimulator['input']>(async () => {})
   const driver: native.NativeSimulator = {
+    screenPoints: () => ({ width: 393, height: 852 }),
     start: vi.fn<native.NativeSimulator['start']>(() => stop),
     release,
     close,
@@ -60,6 +61,16 @@ it('authorizes task/device access, isolates tickets and releases input when a vi
   const deviceToken = 'simulator-viewer-token-at-least-thirty-two-characters'
   const deviceId = runtime.services.devices.add('QA viewer', deviceToken)
   const opened = await (await call('task', 'ios:qa', deviceToken)).json()
+  expect(opened.screenPoints).toEqual({ width: 393, height: 852 })
+  const sendInput = (taskId: string, credential = deviceToken) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/previews/simulator/input`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, id: opened.id, input: { type: 'key', key: 'Home' } }),
+    })
+  expect((await sendInput('task', 'bad')).status).toBe(401)
+  expect((await sendInput('task')).status).toBe(200)
+  expect(input).toHaveBeenCalledWith({ type: 'key', key: 'Home' })
   const url = `ws://127.0.0.1:${runtime.port}/ws/simulator?ticket=${opened.ticket}`
   const socket = new WebSocket(url)
   await once(socket, 'open')

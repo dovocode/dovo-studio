@@ -6,7 +6,7 @@ import {
   type ForgeWorkOptions,
 } from '@dovo/studio-core'
 import { Button, MessageResponse } from '@dovo/studio-ui'
-import { WorkTaskLinks } from '../work-task-links'
+import { WorkTaskLinks } from './work-task-links'
 import { formatDate } from './format-date'
 
 export function IssueDetail({

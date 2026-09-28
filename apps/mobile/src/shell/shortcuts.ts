@@ -1,8 +1,8 @@
 import { clientTaskScope, runClientEffect } from '@dovo/client-runtime'
-import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
-import { useApplicationState } from '../runtime/application-state'
-import { mutableStruct, mutableArray } from '@dovo/protocol'
-import { minValue, maxValue, decode } from '@dovo/protocol'
+import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
+import { useApplicationState } from '../runtime/state/application-state'
+import { mutableStruct } from '@dovo/protocol'
+import { minValue, maxValue, decode, decodeResult } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
 import { Linking } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
@@ -21,7 +21,21 @@ const storage = 'dovo.shortcut.inbox'
 const inboxLock = Effect.unsafeMakeSemaphore(1)
 const readInbox = mobileWorkflow(function* () {
   const value = yield* nativeEffect(() => AsyncStorage.getItem(storage))
-  return decode(mutableArray(item), JSON.parse(value ?? '[]'))
+  // One unreadable entry must not block every later shortcut; drop it and keep the rest.
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value ?? '[]')
+  } catch {
+    parsed = []
+  }
+  const entries = Array.isArray(parsed) ? parsed : []
+  const items = entries.flatMap((entry) => {
+    const result = decodeResult(item, entry)
+    return result.success ? [result.data] : []
+  })
+  if (!Array.isArray(parsed) || items.length !== entries.length)
+    yield* nativeEffect(() => AsyncStorage.setItem(storage, JSON.stringify(items)))
+  return items
 })
 export function useShortcuts() {
   const [queue, setQueue] = useApplicationState<ShortcutInput[]>([])

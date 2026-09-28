@@ -1,6 +1,16 @@
 import { ApplicationStateProvider, useApplicationState } from '@dovo/studio-core/state'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+} from 'react'
+import {
+  type StudioViewProps,
   readAppPreferences,
   StudioHostProvider,
   WorkspaceProvider,
@@ -26,6 +36,69 @@ type WorkbenchProps = {
   pickDirectory?: StudioHostApi['pickDirectory']
   browser?: StudioHostApi['browser']
   desktopPlatform?: DesktopPlatform
+}
+type ViewModule = { default: ComponentType<StudioViewProps> }
+/** React.lazy remembers a rejected import forever, so one failed chunk fetch or activation
+ * would disable the view until reload. Resolve to a retry screen that loads again on demand. */
+function loadView(load: () => Promise<ViewModule>) {
+  // Once a retry succeeds, later visits render the view instead of the failure screen.
+  let loaded: ViewModule | undefined
+  const retry = () =>
+    load().then((module) => {
+      loaded = module
+      return module
+    })
+  return lazy(async (): Promise<ViewModule> => {
+    try {
+      return (loaded = await load())
+    } catch (error) {
+      return {
+        default: (props) =>
+          loaded ? (
+            <loaded.default {...props} />
+          ) : (
+            <ViewLoadFailure load={retry} error={error} props={props} />
+          ),
+      }
+    }
+  })
+}
+function ViewLoadFailure({
+  load,
+  error,
+  props,
+}: {
+  load: () => Promise<ViewModule>
+  error: unknown
+  props: StudioViewProps
+}) {
+  const [state, setState] = useState<{
+    Loaded?: ComponentType<StudioViewProps>
+    error: unknown
+    busy: boolean
+  }>({ error, busy: false })
+  if (state.Loaded) return <state.Loaded {...props} />
+  return (
+    <div role="alert" className="m-6 space-y-3 rounded-lg border border-destructive/30 p-5">
+      <h2>This view could not load</h2>
+      <p className="text-xs text-muted-foreground">
+        {state.error instanceof Error ? state.error.message : String(state.error)}
+      </p>
+      <Button
+        size="sm"
+        disabled={state.busy}
+        onClick={() => {
+          setState((current) => ({ ...current, busy: true }))
+          void load().then(
+            (module) => setState({ Loaded: module.default, error: null, busy: false }),
+            (cause: unknown) => setState({ error: cause, busy: false }),
+          )
+        }}
+      >
+        Retry view
+      </Button>
+    </div>
+  )
 }
 export function Workbench(props: WorkbenchProps) {
   return (
@@ -91,7 +164,7 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
     [extensions, api],
   )
   const views = useMemo(
-    () => new Map(catalog.views.map((view) => [view.id, lazy(view.load)])),
+    () => new Map(catalog.views.map((view) => [view.id, loadView(view.load)])),
     [catalog],
   )
   // Delay disposal one microtask so StrictMode's setup/cleanup rehearsal does not kill a live host.
@@ -126,6 +199,19 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
       ) {
         event.preventDefault()
         setPalette((v) => !v)
+        return
+      }
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        event.key === '/' &&
+        !event.defaultPrevented &&
+        !event.isComposing &&
+        !event.repeat
+      ) {
+        event.preventDefault()
+        setPalette(false)
+        navigate({ viewId: 'shortcuts' })
       }
     }
     window.addEventListener('keydown', key)

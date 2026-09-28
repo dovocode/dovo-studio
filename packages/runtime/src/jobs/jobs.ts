@@ -8,7 +8,7 @@ import { jobRunSchema, type JobRun, type AutomationNode } from '@dovo/protocol'
 import { Cause, Effect, Exit, Fiber, Layer, ManagedRuntime, Schema } from 'effect'
 import { runClientEffect, startPolling } from '@dovo/client-runtime'
 import { WorkspaceStore } from '../storage/workspace.js'
-import { Tasks } from '../agents/tasks.js'
+import { Tasks } from '../agents/tasks/tasks.js'
 import { HttpError, errorMessage } from '../errors.js'
 import { validateAutomation } from './validation.js'
 import {
@@ -21,6 +21,15 @@ import {
 const recordSchema = mutableStruct({
   value: Schema.String,
 })
+const TRIGGER_CONTEXT_LIMIT = 32 * 1024
+/** Pretty-printed trigger data for the task prompt, bounded so one delivery cannot inflate
+ * the workspace document that every snapshot sends. */
+function triggerContext(payload: unknown) {
+  const text = JSON.stringify(payload, null, 2) ?? String(payload)
+  return text.length > TRIGGER_CONTEXT_LIMIT
+    ? `${text.slice(0, TRIGGER_CONTEXT_LIMIT)}\n… (truncated; ${text.length} characters in total)`
+    : text
+}
 export class Jobs {
   private runs = new Map<string, StoredRun>()
   private active = new Map<string, Fiber.RuntimeFiber<void, never>>()
@@ -42,7 +51,14 @@ export class Jobs {
     private activity?: Pick<Activity, 'add'>,
   ) {
     for (const row of db.prepare('SELECT value FROM job_runs').all()) {
-      const stored = decode(storedRunSchema, JSON.parse(decode(recordSchema, row).value))
+      let stored: StoredRun
+      try {
+        stored = decode(storedRunSchema, JSON.parse(decode(recordSchema, row).value))
+      } catch (error) {
+        // One unreadable run must not keep the runtime from starting.
+        console.error('Skipping unreadable automation run', error)
+        continue
+      }
       const run = {
         ...stored,
         steps: runSteps(stored),
@@ -104,7 +120,8 @@ export class Jobs {
       waitingNodeId: run.waitingNodeId,
       taskIds: run.taskIds,
       error: run.error,
-      triggerPayload: run.triggerPayload,
+      // The payload is stored once with the run; repeating it in every row multiplies it.
+      triggerPayload: run.triggerPayload === undefined ? undefined : 'Stored with the run',
     })
   }
   private save(input: StoredRun) {
@@ -334,7 +351,7 @@ export class Jobs {
           objective:
             run.triggerPayload === undefined
               ? node.data.objective
-              : `${node.data.objective}\n\nExternal trigger data (event context):\n${JSON.stringify(run.triggerPayload, null, 2)}`,
+              : `${node.data.objective}\n\nExternal trigger data (event context):\n${triggerContext(run.triggerPayload)}`,
           origin: run.automationId,
         })
         next = {
@@ -390,7 +407,10 @@ export class Jobs {
         })
         if (node.data.kind === 'review') return
         if (node.data.kind === 'task') {
-          const task = step.taskId ? this.store.task(step.taskId) : this.createTask(run, node)
+          // A deleted thread must not make every retry fail; start the step over instead.
+          const task =
+            (step.taskId && this.store.get().tasks.find((item) => item.id === step.taskId)) ||
+            this.createTask(run, node)
           if (!['review', 'done'].includes(task.status)) {
             const execution = yield* this.tasks.startEffect(task.id)
             const current = this.runs.get(id)
@@ -456,6 +476,23 @@ export class Jobs {
   }
   shutdown() {
     return runClientEffect(this.shutdownEffect())
+  }
+  /** Removes finished runs and consumed trigger receipts past the retention window, so a
+   * per-minute schedule cannot grow the database and startup time without bound. */
+  prune(now = Date.now(), retentionDays = 30) {
+    const before = new Date(now - retentionDays * 86_400_000).toISOString()
+    const stale = [...this.runs.values()].filter(
+      (run) =>
+        !['running', 'waiting'].includes(run.status) &&
+        !this.active.has(run.id) &&
+        (run.finishedAt ?? run.updatedAt ?? run.createdAt) < before,
+    )
+    this.db.transaction(() => {
+      for (const run of stale) this.db.prepare('DELETE FROM job_runs WHERE id=?').run(run.id)
+      this.db.prepare('DELETE FROM deliveries WHERE created_at<?').run(before)
+    })()
+    for (const run of stale) this.runs.delete(run.id)
+    return stale.length
   }
   tick(now = Date.now()) {
     const flows = this.store.get().automations

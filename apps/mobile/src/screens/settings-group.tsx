@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
-import { Text } from '../ui/text'
-import { Icon } from '../ui/icon'
+import { Text } from '../ui/content/text'
+import { Icon } from '../ui/controls/icon'
 import { colors, styles } from '../ui/theme'
 
 export function SettingsGroup({

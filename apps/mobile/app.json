@@ -2,7 +2,7 @@
   "expo": {
     "name": "Dovo Studio",
     "slug": "dovo-studio",
-    "version": "0.0.5",
+    "version": "0.0.6",
     "icon": "./assets/icon.png",
     "orientation": "default",
     "userInterfaceStyle": "dark",
@@ -54,7 +54,15 @@
       [
         "expo-widgets",
         {
-          "enablePushNotifications": false
+          "enablePushNotifications": false,
+          "widgets": [
+            {
+              "name": "DovoTasks",
+              "displayName": "Dovo Tasks",
+              "description": "Tasks working and waiting for you",
+              "ios": { "supportedFamilies": ["systemSmall", "systemMedium", "systemLarge"] }
+            }
+          ]
         }
       ]
     ]

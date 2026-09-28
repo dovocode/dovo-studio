@@ -1,10 +1,15 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { TaskTools } from './task-tools'
-import { TaskAgents } from './task-agents'
+import { TaskTools } from './detail/task-tools'
+import { TaskAgents } from './detail/task-agents'
 import { BrowserPane } from './browser/browser-pane'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { X } from 'lucide-react'
+import { templateTaskFields } from '@dovo/protocol'
 import {
   createTask,
+  readAppPreferences,
+  responses,
+  updateAppPreferences,
   resolveTaskDefaults,
   useStudioHost,
   useWorkspace,
@@ -13,6 +18,7 @@ import {
 import {
   EmptyState,
   Button,
+  IconButton,
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -23,13 +29,21 @@ import {
   useCompactLayout,
   cn,
 } from '@dovo/studio-ui'
-import { TaskList } from './task-list'
-import { TaskHeader, type TaskSurface } from './task-header'
-import { TaskConversation } from './task-conversation'
+import { TaskList } from './list/task-list'
+import { TaskHeader, type TaskSurface } from './detail/task-header'
+import { TaskConversation } from './detail/task-conversation'
 import { ReviewPane } from './review/review-pane'
 import { TerminalPane } from './terminal/terminal-pane'
-import { taskSources, taskCollectionKey, type TaskEntry } from './task-collection'
+import {
+  collectTasks,
+  taskSources,
+  taskCollectionKey,
+  type TaskEntry,
+} from './list/task-collection'
+import { TaskSearchDialog, type TaskSearchMode } from './dialogs/task-search-dialog'
 import { ProjectSelectionDialog } from './task-creation/project-selection-dialog'
+import { SideQuestion } from './chat/thread/side-question'
+const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 export default function TasksView({ entityId }: StudioViewProps) {
   const store = useWorkspace()
   const { workspace, setWorkspace, activeRuntimeId, switchRuntime } = store
@@ -60,6 +74,12 @@ export default function TasksView({ entityId }: StudioViewProps) {
         : (localTasks.find((t) => !t.archived && !t.archivedAt) ??
           localTasks.find((t) => !t.archivedAt))))
   const compact = useCompactLayout()
+  // Split view: a second task from the connected computer, next to the selected one.
+  const [splitId, setSplitId] = useApplicationState('')
+  const splitTask =
+    !compact && splitId && splitId !== task?.id
+      ? localTasks.find((item) => item.id === splitId && !item.archivedAt)
+      : undefined
   const [listOpen, setListOpen] = useApplicationState(false)
   const [sidebar, setSidebar] = useApplicationState(true)
   const threadKey = taskCollectionKey(activeRuntimeId, task?.id ?? selectedId)
@@ -72,6 +92,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
     [threadKey],
   )
   const [terminalVisited, setTerminalVisited] = useApplicationState(false)
+  // The terminal a chat command just ran in, so the pane shows it.
+  const [terminalFocus, setTerminalFocus] = useApplicationState('')
   const panes = useRef<Record<TaskSurface, HTMLDivElement | null>>({
     chat: null,
     changes: null,
@@ -118,6 +140,13 @@ export default function TasksView({ entityId }: StudioViewProps) {
       preventScroll: true,
     })
   }, [surface, terminalVisited])
+  const showTerminal = useCallback(
+    (terminalId: string) => {
+      setTerminalFocus(terminalId)
+      selectSurface('terminal', true)
+    },
+    [selectSurface],
+  )
   const toggleTerminal = useCallback(() => {
     selectSurface(surface === 'terminal' ? 'chat' : 'terminal', true)
   }, [selectSurface, surface])
@@ -137,9 +166,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const [pendingCreate, setPendingCreate] = useApplicationState<{
     runtimeId: string | null
     repositoryId: string
+    templateId?: string
   } | null>(null)
   const startTask = useCallback(
-    async (requestedProject?: string, confirmed = false) => {
+    async (requestedProject?: string, confirmed = false, templateId?: string) => {
       if (busy) return
       if (!confirmed) {
         setSuggestedProject(requestedProject ?? projectId)
@@ -178,6 +208,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
         setPendingCreate({
           runtimeId,
           repositoryId,
+          templateId,
         })
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error))
@@ -197,16 +228,17 @@ export default function TasksView({ entityId }: StudioViewProps) {
       setBusy(false)
       return
     }
-    const task = createTask({
-      title: 'New task',
+    const repository = workspace.repositories.find((repo) => repo.id === pendingCreate.repositoryId)
+    const template = repository?.templates?.find((item) => item.id === pendingCreate.templateId)
+    const created = createTask({
+      title: template?.name ?? 'New task',
       objective: '',
       agentId: '',
-      ...resolveTaskDefaults(
-        store.snapshot?.defaults,
-        workspace.repositories.find((repo) => repo.id === pendingCreate.repositoryId),
-      ),
+      ...resolveTaskDefaults(store.snapshot?.defaults, repository),
       repositoryId: pendingCreate.repositoryId,
     })
+    // A template prefills the draft and settings; nothing is sent until the user sends it.
+    const task = template ? { ...created, ...templateTaskFields(template) } : created
     setWorkspace((w) => ({
       ...w,
       tasks: [task, ...w.tasks],
@@ -272,6 +304,23 @@ export default function TasksView({ entityId }: StudioViewProps) {
       }),
     [host, startTask],
   )
+  useEffect(() => {
+    const disposers = [
+      host.registerCommand({
+        id: 'tasks.switch',
+        title: 'Go to task…',
+        run: () => setSearching('tasks'),
+      }),
+      host.registerCommand({
+        id: 'tasks.search',
+        title: 'Search conversations…',
+        run: () => setSearching('messages'),
+      }),
+    ]
+    return () => {
+      for (const dispose of disposers) dispose()
+    }
+  }, [host])
   useEffect(
     () =>
       host.registerCommand({
@@ -281,36 +330,161 @@ export default function TasksView({ entityId }: StudioViewProps) {
       }),
     [host, toggleTerminal],
   )
+  // Sidebar order, reported by the visible task list, for switching tasks from the keyboard.
+  const order = useRef<TaskEntry[]>([])
+  const reportOrder = useCallback((entries: TaskEntry[]) => {
+    order.current = entries
+  }, [])
+  const shortcuts = useRef({
+    toggleTerminal,
+    startTask,
+    selectTask: (_entry: TaskEntry) => {},
+    selectSurface,
+    surface,
+    task,
+    selectedKey: '',
+    stop: () => {},
+    split: false,
+  })
+  const { request } = store
+  const [stopError, setStopError] = useApplicationState('')
+  const [transcriptNotice, setTranscriptNotice] = useApplicationState('')
+  const [asking, setAsking] = useApplicationState(false)
+  const [searching, setSearching] = useApplicationState<TaskSearchMode | null>(null)
+  // After opening a search result, scroll its message into view once the thread renders.
+  const [revealMessage, setRevealMessage] = useApplicationState('')
+  useEffect(() => {
+    if (!revealMessage) return
+    let attempts = 0
+    let frame = 0
+    const reveal = () => {
+      const element = document.getElementById(revealMessage)
+      if (element) {
+        element.scrollIntoView({ block: 'center' })
+        element.classList.add('studio-search-hit')
+        setTimeout(() => element.classList.remove('studio-search-hit'), 1600)
+        setRevealMessage('')
+      } else if (attempts++ < 30) frame = requestAnimationFrame(reveal)
+      else setRevealMessage('')
+    }
+    frame = requestAnimationFrame(reveal)
+    return () => cancelAnimationFrame(frame)
+  }, [revealMessage])
+  const allEntries = useMemo(() => collectTasks(sources), [sources])
+  useEffect(() => {
+    if (!transcriptNotice) return
+    const timer = setTimeout(() => setTranscriptNotice(''), 1800)
+    return () => clearTimeout(timer)
+  }, [transcriptNotice])
+  shortcuts.current = {
+    toggleTerminal,
+    startTask,
+    selectTask: (entry) => void selectTask(entry),
+    selectSurface,
+    surface,
+    task,
+    selectedKey: task ? taskCollectionKey(activeRuntimeId, task.id) : '',
+    split: !!splitTask,
+    stop: () => {
+      if (task?.status !== 'running' || !connected) return
+      setStopError('')
+      void request('/api/tasks/cancel', { id: task.id }, responses.ok).catch((error: unknown) =>
+        setStopError(error instanceof Error ? error.message : String(error)),
+      )
+    },
+  }
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing || e.repeat) return
       if (
-        e.ctrlKey &&
+        e.target instanceof Element &&
+        e.target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')
+      )
+        return
+      const current = shortcuts.current
+      const mod = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey
+      const key = e.key.toLowerCase()
+      const run = (action: () => void) => {
+        e.preventDefault()
+        action()
+      }
+      if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === '`') return run(current.toggleTerminal)
+      // ⌘P jumps to a task; ⌘⇧F searches every conversation.
+      if (mod && !e.altKey && !e.shiftKey && key === 'p') return run(() => setSearching('tasks'))
+      if (mod && !e.altKey && e.shiftKey && key === 'f') return run(() => setSearching('messages'))
+      // ⌘\ (Ctrl+\ elsewhere) closes the side-by-side task.
+      if (mod && !e.altKey && !e.shiftKey && e.key === '\\' && current.split)
+        return run(() => setSplitId(''))
+      // ⌘; (Ctrl+; elsewhere) asks a side question about the open task.
+      if (mod && !e.altKey && !e.shiftKey && e.key === ';' && current.task)
+        return run(() => setAsking(true))
+      if (mod && !e.altKey && !e.shiftKey && key === 'n') return run(() => void current.startTask())
+      // Ctrl+O cycles how much of each turn shows: folded steps, every step, replies only.
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === 'o')
+        return run(() => {
+          const next = (
+            { collapsed: 'expanded', expanded: 'hidden', hidden: 'collapsed' } as const
+          )[readAppPreferences().toolActivity]
+          updateAppPreferences({ toolActivity: next })
+          setTranscriptNotice(
+            next === 'expanded'
+              ? 'Showing every step'
+              : next === 'hidden'
+                ? 'Showing replies only'
+                : 'Showing folded steps',
+          )
+        })
+      if (mod && !e.altKey && e.shiftKey && key === 'd')
+        return run(() =>
+          current.selectSurface(current.surface === 'changes' ? 'chat' : 'changes', true),
+        )
+      // Ctrl+Tab everywhere, and ⌘⇧] / ⌘⇧[ like other Mac apps, move through the sidebar.
+      const step =
+        e.ctrlKey && !e.metaKey && !e.altKey && e.key === 'Tab'
+          ? e.shiftKey
+            ? -1
+            : 1
+          : mod &&
+              e.shiftKey &&
+              !e.altKey &&
+              (e.code === 'BracketRight' || e.code === 'BracketLeft')
+            ? e.code === 'BracketRight'
+              ? 1
+              : -1
+            : 0
+      if (step) {
+        const entries = order.current
+        if (!entries.length) return
+        const index = entries.findIndex((entry) => entry.key === current.selectedKey)
+        const next = entries[(index + step + entries.length) % entries.length]
+        if (next && next.key !== current.selectedKey) run(() => current.selectTask(next))
+        else e.preventDefault()
+        return
+      }
+      // Esc stops a running agent, but never inside the terminal or a tool pane that uses Esc.
+      if (
+        e.key === 'Escape' &&
         !e.altKey &&
         !e.metaKey &&
-        e.key === '`' &&
-        !e.defaultPrevented &&
-        !e.isComposing &&
-        !e.repeat &&
-        !(
-          e.target instanceof Element &&
-          e.target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')
-        )
-      ) {
-        e.preventDefault()
-        toggleTerminal()
-      }
+        !e.ctrlKey &&
+        !e.shiftKey &&
+        current.task?.status === 'running' &&
+        (e.target === document.body ||
+          (e.target instanceof Node && !!panes.current.chat?.contains(e.target)))
+      )
+        return run(current.stop)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [toggleTerminal])
+  }, [])
   const selectedKey = task ? taskCollectionKey(activeRuntimeId, task.id) : ''
   return (
     <>
-      <div className="flex min-h-0 flex-1">
-        <ResizablePanelGroup direction="horizontal">
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <ResizablePanelGroup direction="horizontal" className="min-w-0">
           {(sidebar || !task) && !compact && (
             <>
-              <ResizablePanel id="task-list" order={1} defaultSize={18} minSize={16} maxSize={30}>
+              <ResizablePanel id="task-list" order={1} defaultSize={22} minSize={15} maxSize={45}>
                 <TaskList
                   projectId={projectId}
                   onProjectChange={setProjectId}
@@ -322,6 +496,13 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   onSelect={(entry) => void selectTask(entry)}
                   onCreate={(project) => void startTask(project)}
                   onDeselect={deselectTask}
+                  onOrderChange={reportOrder}
+                  onSplit={(entry) => {
+                    if (entry.source.runtimeId === activeRuntimeId) setSplitId(entry.task.id)
+                  }}
+                  onTemplate={(entry, templateId) =>
+                    void startTask(entry.projectKey, true, templateId)
+                  }
                 />
               </ResizablePanel>
               <ResizableHandle />
@@ -339,6 +520,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   onSurface={selectSurface}
                   compact={compact}
                   onSidebar={() => (compact ? setListOpen(true) : setSidebar((value) => !value))}
+                  onTerminal={showTerminal}
                 />
                 <div className="flex min-h-0 min-w-0 flex-1">
                   <div
@@ -347,15 +529,32 @@ export default function TasksView({ entityId }: StudioViewProps) {
                     }}
                     tabIndex={-1}
                     className={cn(
-                      'min-h-0 min-w-0 flex-1',
+                      'relative min-h-0 min-w-0 flex-1',
                       surface !== 'chat' && compact && 'hidden',
                     )}
                   >
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      className={cn(
+                        'pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border bg-popover px-2.5 py-1 text-xs shadow-sm transition-opacity motion-reduce:transition-none',
+                        transcriptNotice ? 'opacity-100' : 'opacity-0',
+                      )}
+                    >
+                      {transcriptNotice}
+                    </p>
+                    {stopError && (
+                      <p role="alert" className="px-5 pt-2 text-xs text-destructive">
+                        Could not stop the agent. {stopError}
+                      </p>
+                    )}
                     <TaskConversation
                       key={taskCollectionKey(activeRuntimeId, task.id)}
                       task={task}
                       visible={!listOpen && (!compact || surface === 'chat')}
                       onReview={() => selectSurface('changes')}
+                      onTerminal={showTerminal}
+                      onAside={() => setAsking(true)}
                     />
                   </div>
                   <aside
@@ -425,6 +624,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         <TerminalPane
                           key={task.id}
                           taskId={task.id}
+                          focusId={terminalFocus}
                           onClose={() => selectSurface('chat', true)}
                         />
                       )}
@@ -457,6 +657,56 @@ export default function TasksView({ entityId }: StudioViewProps) {
               />
             )}
           </ResizablePanel>
+          {splitTask && (
+            <>
+              <ResizableHandle />
+              <ResizablePanel id="split" order={3} defaultSize={36} minSize={24}>
+                <section
+                  aria-label={`Side by side: ${splitTask.title}`}
+                  className="flex h-full min-h-0 flex-col border-l"
+                >
+                  <header className="flex h-9 shrink-0 items-center gap-1 border-b px-3 text-xs">
+                    <span className="min-w-0 flex-1 truncate font-medium" title={splitTask.title}>
+                      {splitTask.title}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-[0.6875rem]"
+                      onClick={() => {
+                        const previous = task?.id ?? ''
+                        setSelectedId(splitTask.id)
+                        setDeselected(false)
+                        setSplitId(previous)
+                        host.navigate({ viewId: 'tasks', entityId: splitTask.id })
+                      }}
+                    >
+                      Swap
+                    </Button>
+                    <IconButton
+                      label="Close side-by-side task (⌘/Ctrl+\)"
+                      className="size-6"
+                      onClick={() => setSplitId('')}
+                    >
+                      <X className="size-3.5" />
+                    </IconButton>
+                  </header>
+                  <div className="min-h-0 flex-1">
+                    <TaskConversation
+                      key={`split:${splitTask.id}`}
+                      task={splitTask}
+                      visible
+                      onReview={() => {
+                        setSelectedId(splitTask.id)
+                        setSplitId(task?.id ?? '')
+                        selectSurface('changes')
+                      }}
+                    />
+                  </div>
+                </section>
+              </ResizablePanel>
+            </>
+          )}
         </ResizablePanelGroup>
       </div>
       <Dialog open={compact && listOpen} onOpenChange={setListOpen}>
@@ -474,9 +724,24 @@ export default function TasksView({ entityId }: StudioViewProps) {
             onSelect={(entry) => void selectTask(entry)}
             onCreate={(project) => void startTask(project)}
             onDeselect={deselectTask}
+            onOrderChange={reportOrder}
           />
         </DialogContent>
       </Dialog>
+      <TaskSearchDialog
+        mode={searching}
+        entries={allEntries}
+        onModeChange={setSearching}
+        onClose={() => setSearching(null)}
+        onSelect={(entry, messageId) => {
+          void selectTask(entry)
+          if (messageId) {
+            selectSurface('chat')
+            setRevealMessage(`message-${entry.task.id}-${messageId}`)
+          }
+        }}
+      />
+      {task && <SideQuestion key={task.id} task={task} open={asking} onOpenChange={setAsking} />}
       <ProjectSelectionDialog
         open={choosingProject}
         onOpenChange={(open) => {

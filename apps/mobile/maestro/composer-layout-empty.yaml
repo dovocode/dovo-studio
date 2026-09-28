@@ -54,7 +54,7 @@ appId: com.dovo.studio
     text: New task
 - extendedWaitUntil:
     visible:
-      id: Project & checkout
+      id: Checkout & branch
     timeout: 10000
 - assertVisible: What are we building?
 - tapOn:
@@ -82,5 +82,5 @@ appId: com.dovo.studio
     tolerance: 1
 - assertVisible: Model & access
 - assertVisible:
-    id: Project & checkout
+    id: Checkout & branch
 - takeScreenshot: dovo-mobile-new-draft-keyboard-empty

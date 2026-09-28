@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { registryEntry, searchRegistry } from './registry'
 import { installCatalogSkill, searchSkills } from './skills'
 import { catalogJson } from './fetch'
-import { mcpServerEnvironment, mcpHeaders } from '../mcp-settings'
+import { mcpServerEnvironment, mcpHeaders } from '../configuration/mcp-settings'
 const roots: string[] = []
 afterEach(async () => {
   vi.unstubAllGlobals()

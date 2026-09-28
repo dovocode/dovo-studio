@@ -6,7 +6,15 @@ import {
   responses,
   readAppPreferences,
 } from '@dovo/studio-core'
-export function RemoteBrowser({ taskId, deviceId }: { taskId: string; deviceId?: string }) {
+export function RemoteBrowser({
+  taskId,
+  deviceId,
+  reloadToken,
+}: {
+  taskId: string
+  deviceId?: string
+  reloadToken?: number
+}) {
   const { connection, request } = useWorkspace()
   const frame = useRef<HTMLIFrameElement>(null)
   const version = useRef(0)
@@ -14,6 +22,9 @@ export function RemoteBrowser({ taskId, deviceId }: { taskId: string; deviceId?:
   const post = useCallback((message: object) => {
     frame.current?.contentWindow?.postMessage({ channel: 'dovo-browser', ...message }, '*')
   }, [])
+  useEffect(() => {
+    if (reloadToken) post({ type: 'reload' })
+  }, [reloadToken, post])
   const connect = useCallback(async () => {
     if (!connection || pending.current) return
     const generation = version.current

@@ -1,50 +1,60 @@
-import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import {
   updateMobilePreferences,
   useCarMode,
   useMobilePreferences,
-} from '../runtime/app-preferences'
+} from '../runtime/preferences/app-preferences'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../runtime/state/application-state'
 import {
   aggregateRuntimeTasks,
   projectMachineGroups,
   compareTasks,
+  taskGroupOptions,
   taskSortOptions,
   isSnoozed,
   resolveTaskAgent,
+  type RuntimeTask,
 } from '@dovo/protocol'
 import { useNavigation } from '../shell/navigation'
 import { useDeferredValue, useEffect, useMemo } from 'react'
-import { FlatList, Pressable, ScrollView, View } from 'react-native'
-import { Text } from '../ui/text'
-import { useRuntime } from '../runtime/provider'
-import { FleetOverview } from '../runtime/fleet-overview'
-import { ProjectThreadFilter } from '../tasks/project-thread-filter'
-import { TaskListRow } from '../tasks/task-list-row'
-import { taskRowStatus } from '../tasks/task-row-status'
-import { useTaskListView } from '../tasks/task-list-view'
-import { useListScroll } from '../ui/use-list-scroll'
+import { Alert, FlatList, Pressable, ScrollView, View } from 'react-native'
+import { Schema } from 'effect'
+import { mutableStruct, responses } from '@dovo/protocol'
+import { Text } from '../ui/content/text'
+import { useRuntime } from '../runtime/connection/provider'
+import { FleetOverview } from '../runtime/connection/fleet-overview'
+import { ProjectThreadFilter } from '../tasks/list/project-thread-filter'
+import { TaskListRow } from '../tasks/list/task-list-row'
+import { taskRowStatus } from '../tasks/list/task-row-status'
+import { useTaskListView } from '../tasks/list/task-list-view'
+import { useListScroll } from '../ui/layout/use-list-scroll'
 import { router } from 'expo-router'
-import { LifecycleActions } from '../tasks/lifecycle-actions'
-import { Action } from '../ui/action'
-import { Choice } from '../ui/choice'
-import { SearchField } from '../ui/field'
-import { Sheet } from '../ui/sheet'
-import { Icon } from '../ui/icon'
-import { IconButton } from '../ui/icon-button'
-import { ScreenHeader } from '../ui/screen-header'
-import { useAction } from '../ui/use-action'
+import { LifecycleActions } from '../tasks/detail/lifecycle-actions'
+import { Action } from '../ui/controls/action'
+import { Choice } from '../ui/controls/choice'
+import { SearchField } from '../ui/controls/field'
+import { Sheet } from '../ui/layout/sheet'
+import { Icon } from '../ui/controls/icon'
+import { IconButton } from '../ui/controls/icon-button'
+import { ScreenHeader } from '../ui/layout/screen-header'
+import { useAction } from '../ui/controls/use-action'
 import { colors, styles } from '../ui/theme'
+type TaskListItem =
+  | { kind: 'group'; key: string; name: string; count: number }
+  | { kind: 'task'; entry: RuntimeTask }
 export default function TasksScreen() {
   const { navigate, focused } = useNavigation(),
-    { refreshAll, overviews, profiles, activeId, selectRuntimeEffect, ready } = useRuntime(),
+    { refreshAll, overviews, profiles, activeId, selectRuntimeEffect, readRuntime, ready } =
+      useRuntime(),
     { busy, error, act } = useAction()
   const { view, setView, scrollOffset } = useTaskListView()
   const car = useCarMode()
   // Settings → General → Default sort; only a different sort counts as customized.
-  const defaultSort = useMobilePreferences().taskSort
+  const preferences = useMobilePreferences()
+  const defaultSort = preferences.taskSort
+  const grouping = car ? 'none' : preferences.taskGrouping
   // Car mode shows what needs attention first; search, filters and project scope wait.
   const { search, filter, source, sort, project } = car
     ? { ...view, search: '', filter: 'active', sort: 'priority', project: '' }
@@ -52,6 +62,10 @@ export default function TasksScreen() {
   const [details, setDetails] = useApplicationState(''),
     [filtersOpen, setFiltersOpen] = useApplicationState(false),
     [now, setNow] = useApplicationState(Date.now())
+  const [selecting, setSelecting] = useApplicationState(false)
+  const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
+  const [bulkBusy, setBulkBusy] = useApplicationState(false)
+  const [collapsed, setCollapsed] = useApplicationState<Set<string>>(() => new Set())
   useEffect(() => {
     if (!focused) return
     setNow(Date.now())
@@ -148,10 +162,123 @@ export default function TasksScreen() {
         return compareTasks(first, second, sort, needsInput, projects)
       })
   }, [allTasks, filter, now, query, sort, project, projectMembers])
-  const { retainPosition, ...listScroll } = useListScroll<(typeof tasks)[number]>(
-    scrollOffset,
-    focused,
-  )
+  const listItems = useMemo(() => {
+    if (grouping === 'none') return tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))
+    const groups: { key: string; name: string; tasks: RuntimeTask[] }[] = []
+    if (grouping === 'status') {
+      const active = tasks.filter(
+        ({ task }) => !task.archived && !task.archivedAt && !isSnoozed(task, now),
+      )
+      groups.push(
+        { key: 'pinned', name: 'Pinned', tasks: active.filter(({ task }) => task.pinned) },
+        { key: 'active', name: 'Active', tasks: active.filter(({ task }) => !task.pinned) },
+        {
+          key: 'snoozed',
+          name: 'Snoozed',
+          tasks: tasks.filter(
+            ({ task }) => !task.archived && !task.archivedAt && isSnoozed(task, now),
+          ),
+        },
+        {
+          key: 'settled',
+          name: filter === 'archive' ? 'Archived' : 'Settled',
+          tasks: tasks.filter(({ task }) => task.archived || !!task.archivedAt),
+        },
+      )
+    } else {
+      const identities = new Map(
+        projectGroups.flatMap((group) =>
+          group.entries.map(
+            ({ runtimeId, repository }) =>
+              [
+                JSON.stringify([runtimeId, repository.id]),
+                { key: group.key, name: group.name },
+              ] as const,
+          ),
+        ),
+      )
+      const projects = new Map<string, (typeof groups)[number]>()
+      for (const entry of tasks) {
+        const identity = identities.get(JSON.stringify([entry.runtimeId, entry.task.repositoryId]))
+        const key = identity?.key ?? JSON.stringify([entry.runtimeId, entry.task.repositoryId])
+        const group = projects.get(key) ?? {
+          key,
+          name: identity?.name ?? entry.projectName,
+          tasks: [],
+        }
+        group.tasks.push(entry)
+        projects.set(key, group)
+      }
+      groups.push(
+        ...[...projects.values()].sort(
+          (a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key),
+        ),
+      )
+    }
+    return groups
+      .filter((group) => group.tasks.length)
+      .flatMap((group): TaskListItem[] => [
+        { kind: 'group', key: group.key, name: group.name, count: group.tasks.length },
+        ...(collapsed.has(`${grouping}:${group.key}`)
+          ? []
+          : group.tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))),
+      ])
+  }, [tasks, grouping, now, filter, projectGroups, collapsed])
+  const bulk = async (action: 'archive' | 'snooze' | 'pin' | 'delete') => {
+    const chosen = allTasks.filter((item) => selected.has(item.key))
+    if (!chosen.length || bulkBusy) return
+    setBulkBusy(true)
+    try {
+      for (const item of chosen) {
+        const profile = profiles.find((entry) => entry.id === item.runtimeId)
+        if (!profile) throw new Error(`${item.runtimeName} is unavailable`)
+        if (action === 'archive' || action === 'delete')
+          await readRuntime(
+            profile,
+            '/api/tasks/lifecycle',
+            { id: item.task.id, action },
+            responses.ok,
+          )
+        else {
+          const field = action === 'pin' ? 'pinned' : 'snoozedUntil'
+          const before =
+            action === 'pin' ? (item.task.pinned ?? null) : (item.task.snoozedUntil ?? null)
+          const after = action === 'pin' ? true : new Date(Date.now() + 24 * 3600000).toISOString()
+          await readRuntime(
+            profile,
+            '/api/workspace',
+            {
+              collection: 'tasks',
+              id: item.task.id,
+              changes: { [field]: { before, after } },
+            },
+            mutableStruct({ revision: Schema.Number.pipe(Schema.finite()) }),
+            'PATCH',
+          )
+        }
+      }
+      setSelected(new Set())
+      setSelecting(false)
+    } catch (cause) {
+      Alert.alert('Bulk action stopped', cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      await refreshAll().catch(() => undefined)
+      setBulkBusy(false)
+    }
+  }
+  const chooseBulk = (action: 'archive' | 'snooze' | 'pin' | 'delete') => {
+    if (action === 'delete')
+      Alert.alert(
+        'Delete selected threads?',
+        `${selected.size} threads will be deleted. This cannot be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: () => void bulk(action) },
+        ],
+      )
+    else void bulk(action)
+  }
+  const { retainPosition, ...listScroll } = useListScroll<TaskListItem>(scrollOffset, focused)
   const openTask = (item: (typeof allTasks)[number]) => {
     retainPosition()
     setDetails('')
@@ -204,7 +331,7 @@ export default function TasksScreen() {
       <FlatList
         {...listScroll}
         contentInsetAdjustmentBehavior="automatic"
-        data={tasks}
+        data={listItems}
         testID="Task list"
         scrollEventThrottle={32}
         keyboardDismissMode="on-drag"
@@ -227,7 +354,9 @@ export default function TasksScreen() {
         }}
         initialNumToRender={12}
         windowSize={7}
-        keyExtractor={(item) => item.key}
+        keyExtractor={(item) =>
+          item.kind === 'group' ? `group:${grouping}:${item.key}` : item.entry.key
+        }
         contentContainerStyle={[
           styles.content,
           {
@@ -263,10 +392,32 @@ export default function TasksScreen() {
                 <IconButton
                   label="Task filters and sorting"
                   icon="filters"
-                  selected={filter !== 'active' || sort !== defaultSort}
+                  selected={filter !== 'active' || sort !== defaultSort || grouping !== 'none'}
                   onPress={() => setFiltersOpen(true)}
                 />
               </View>
+              <Action
+                secondary
+                label={selecting ? 'Cancel selection' : 'Select tasks'}
+                onPress={() => {
+                  setSelecting(!selecting)
+                  setSelected(new Set())
+                }}
+              />
+              {selecting && (
+                <View style={styles.row}>
+                  <Text style={styles.muted}>{selected.size} selected</Text>
+                  {(['archive', 'snooze', 'pin', 'delete'] as const).map((action) => (
+                    <Action
+                      key={action}
+                      secondary
+                      label={action[0].toUpperCase() + action.slice(1)}
+                      disabled={!selected.size || bulkBusy}
+                      onPress={() => chooseBulk(action)}
+                    />
+                  ))}
+                </View>
+              )}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -364,18 +515,74 @@ export default function TasksScreen() {
             </View>
           )
         }
-        renderItem={({ item }) => (
-          <TaskListRow
-            row={item}
-            runtime={overviews.find((entry) => entry.profile.id === item.runtimeId)}
-            now={now}
-            testID={profiles.length === 1 ? `Task ${item.task.id}` : `Task ${item.key}`}
-            disabled={busy}
-            showDevice={profiles.length > 1}
-            onOpen={() => openTask(item)}
-            onDetails={() => setDetails(item.key)}
-          />
-        )}
+        renderItem={({ item }) =>
+          item.kind === 'group' ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${item.name}, ${item.count} tasks`}
+              accessibilityState={{ expanded: !collapsed.has(`${grouping}:${item.key}`) }}
+              onPress={() =>
+                setCollapsed((current) => {
+                  const next = new Set(current)
+                  const key = `${grouping}:${item.key}`
+                  if (next.has(key)) next.delete(key)
+                  else next.add(key)
+                  return next
+                })
+              }
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 }}
+            >
+              <Icon
+                name={collapsed.has(`${grouping}:${item.key}`) ? 'next' : 'down'}
+                size={12}
+                color={colors.muted}
+              />
+              <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontWeight: '600' }]}>
+                {item.name}
+              </Text>
+              <Text style={styles.muted}>{item.count}</Text>
+            </Pressable>
+          ) : (
+            <View
+              style={
+                selecting && selected.has(item.entry.key)
+                  ? { backgroundColor: colors.elevated, borderRadius: 10 }
+                  : undefined
+              }
+            >
+              <TaskListRow
+                row={item.entry}
+                runtime={overviews.find((entry) => entry.profile.id === item.entry.runtimeId)}
+                now={now}
+                testID={
+                  profiles.length === 1 ? `Task ${item.entry.task.id}` : `Task ${item.entry.key}`
+                }
+                disabled={busy}
+                showDevice={profiles.length > 1}
+                onOpen={() =>
+                  selecting
+                    ? setSelected((current) => {
+                        const next = new Set(current)
+                        if (next.has(item.entry.key)) next.delete(item.entry.key)
+                        else next.add(item.entry.key)
+                        return next
+                      })
+                    : openTask(item.entry)
+                }
+                onDetails={() =>
+                  selecting
+                    ? setSelected((current) => {
+                        const next = new Set(current)
+                        if (next.has(item.entry.key)) next.delete(item.entry.key)
+                        else next.add(item.entry.key)
+                        return next
+                      })
+                    : setDetails(item.entry.key)
+                }
+              />
+            </View>
+          )
+        }
         ListEmptyComponent={
           <View style={styles.empty}>
             <Icon name="tasks" size={32} color={colors.accent} />
@@ -469,6 +676,16 @@ export default function TasksScreen() {
                 ...current,
                 sort,
               }))
+            }
+          />
+          <Choice
+            label="Group by"
+            value={preferences.taskGrouping}
+            items={[...taskGroupOptions]}
+            onChange={(taskGrouping) =>
+              updateMobilePreferences({
+                taskGrouping: taskGrouping as typeof preferences.taskGrouping,
+              })
             }
           />
           <Text style={styles.muted}>

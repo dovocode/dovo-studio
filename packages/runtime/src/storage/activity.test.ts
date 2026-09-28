@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { Approvals } from '../agents/approvals'
+import { Approvals } from '../agents/execution/approvals'
 import { Activity, redact } from './activity'
 import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'
@@ -69,6 +69,62 @@ it('retains approval requests and decisions, redacting CLI credentials without l
   }
 })
 
+it('remembers exact command approvals per project and allows them after restart', async () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      repositories: [{ id: 'repo', name: 'Project', path: '/tmp/project', branch: 'main' }],
+      tasks: [
+        {
+          id: 'task',
+          title: 'Test',
+          repositoryId: 'repo',
+          agentId: 'agent',
+          status: 'running',
+          createdAt: new Date().toISOString(),
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+        },
+      ],
+    }))
+    const approvals = new Approvals(undefined, store)
+    const first = approvals.request(
+      'task',
+      'Run command',
+      JSON.stringify({ command: 'pnpm test' }),
+      new AbortController().signal,
+    )
+    approvals.respond(approvals.list()[0].id, true, true)
+    await expect(first).resolves.toBe(true)
+    expect(store.get().repositories[0].approvedCommands).toEqual(['pnpm test'])
+    const reopened = new Approvals(undefined, new WorkspaceStore(db))
+    await expect(
+      reopened.request(
+        'task',
+        'Run command',
+        JSON.stringify({ command: 'pnpm test' }),
+        new AbortController().signal,
+      ),
+    ).resolves.toBe(true)
+    expect(reopened.list()).toHaveLength(0)
+    const other = reopened.request(
+      'task',
+      'Run command',
+      JSON.stringify({ command: 'pnpm build' }),
+      new AbortController().signal,
+    )
+    expect(reopened.list()).toHaveLength(1)
+    reopened.respond(reopened.list()[0].id, false)
+    await expect(other).resolves.toBe(false)
+  } finally {
+    db.close()
+  }
+})
+
 it('reads tools and reasoning together while excluding raw diagnostics and other task scopes', () => {
   const db = openDatabase(':memory:')
   try {
@@ -105,11 +161,20 @@ it('redacts historical literal credentials when upgrading the activity database'
         error: 'env.KEY: Expected string, actual "historical-error-secret"',
       }),
     )
+    db.prepare('INSERT INTO activity VALUES (?, ?, ?, ?, ?, ?)').run(
+      'corrupt',
+      new Date().toISOString(),
+      'request',
+      'mcp',
+      'historical-unknown-secret',
+      '{"envValues":{"KEY":"historical-unknown-secret"',
+    )
     const upgraded = new Activity(db)
     const encoded = JSON.stringify(upgraded.list('', '', 0))
     expect(encoded).not.toContain('historical-secret')
     expect(encoded).not.toContain('historical-key')
     expect(encoded).not.toContain('historical-error-secret')
+    expect(encoded).not.toContain('historical-unknown-secret')
   } finally {
     db.close()
   }

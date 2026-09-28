@@ -1,11 +1,11 @@
-import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
+import { mobileWorkflow, nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
 import { useEffect } from 'react'
 import { View } from 'react-native'
-import { Text } from '../ui/text'
+import { Text } from '../ui/content/text'
 import {
   agentSchema,
   defaultTaskHarness,
@@ -14,20 +14,21 @@ import {
   titleGenerationSettingsSchema,
   type TitleGenerationSettings,
 } from '@dovo/protocol'
-import { useRuntime } from '../runtime/provider'
+import { useRuntime } from '../runtime/connection/provider'
 import { AcpRegistry } from './acp-registry'
 import { ModelSettings } from './model-settings'
-import { Choice } from '../ui/choice'
-import { Field } from '../ui/field'
-import { Action } from '../ui/action'
+import { Choice } from '../ui/controls/choice'
+import { Field } from '../ui/controls/field'
+import { Action } from '../ui/controls/action'
 import { styles } from '../ui/theme'
-import { useAction } from '../ui/use-action'
+import { useAction } from '../ui/controls/use-action'
 export function TitleSettings() {
   const { call, connected, snapshot, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   const [settings, setSettings] = useApplicationState<TitleGenerationSettings | undefined>(
       undefined,
     ),
+    [baseline, setBaseline] = useApplicationState<TitleGenerationSettings | undefined>(undefined),
     [loadError, setLoadError] = useApplicationState('')
   useEffect(() => {
     let active = true
@@ -37,7 +38,10 @@ export function TitleSettings() {
           .pipe(
             Effect.flatMap((value) =>
               nativeEffect(() => {
-                if (active) setSettings(value)
+                if (active) {
+                  setSettings(value)
+                  setBaseline(value)
+                }
               }),
             ),
           )
@@ -162,17 +166,17 @@ export function TitleSettings() {
       )}
       <Action
         label="Save title settings"
-        disabled={!connected || busy}
+        disabled={!connected || busy || !baseline}
         onPress={() =>
           act(() =>
             mobileWorkflow(function* () {
-              return setSettings(
-                yield* callEffect(
-                  '/api/agents/title-settings/save',
-                  settings,
-                  titleGenerationSettingsSchema,
-                ),
+              const saved = yield* callEffect(
+                '/api/agents/title-settings/save',
+                { before: baseline, after: settings },
+                titleGenerationSettingsSchema,
               )
+              setSettings(saved)
+              setBaseline(saved)
             }),
           )
         }

@@ -1,5 +1,6 @@
 export * from './frontend'
 export { pullCreateOptionsSchema } from '@dovo/protocol'
+export { usageSummary, formatUsageDuration, formatUsageTokens, type UsageRow } from '@dovo/protocol'
 export {
   forgeLabels,
   forgeProviderSchema,

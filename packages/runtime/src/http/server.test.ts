@@ -5,7 +5,7 @@ import { request as httpRequest } from 'node:http'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import { activitySchema, responses, snapshotSchema } from '@dovo/protocol'
-import type { AgentAdapter } from '../agents/types'
+import type { AgentAdapter } from '../agents/execution/types'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()

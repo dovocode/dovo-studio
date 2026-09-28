@@ -7,6 +7,7 @@ import {
   patchSchema,
   workspaceSchema,
   runtimeRequestEffect,
+  RuntimeRequestError,
   type RuntimeConnection,
   type Workspace,
   type WorkspacePatch,
@@ -34,6 +35,15 @@ const failure = (cause: unknown) =>
     message: cause instanceof Error ? cause.message : String(cause),
     cause,
   })
+/** The runtime was unreachable or timed out. It may or may not have applied the patch, and
+ * resending is safe either way: it treats an identical, already-applied patch as a no-op. */
+const transient = (error: SynchronizationError) =>
+  error.cause instanceof RuntimeRequestError &&
+  (error.cause.kind === 'connection' ||
+    error.cause.kind === 'timeout' ||
+    error.cause.status === 502 ||
+    error.cause.status === 503 ||
+    error.cause.status === 504)
 const attempt = <A>(run: () => Promise<A> | Effect.Effect<A, unknown>) =>
   Effect.try({ try: run, catch: failure }).pipe(
     Effect.flatMap((value) =>
@@ -171,7 +181,11 @@ export class WorkspaceSynchronization {
     })
   }
   clearNetworkError() {
-    if (!this.conflicted) this.onError(null)
+    if (this.conflicted) return
+    // The host answered a poll: resume edits that were held back by a transient failure.
+    if (this.pending.length && !this.draining && this.connection)
+      void runClientEffect(this.flushEffect()).catch(() => undefined)
+    else this.onError(null)
   }
   isSending() {
     return this.draining !== null
@@ -272,10 +286,15 @@ export class WorkspaceSynchronization {
           }).pipe(
             Effect.tapError((error) =>
               Effect.sync(() => {
-                if (generation === this.generation) {
-                  this.conflicted = true
-                  this.onError(error.message)
+                if (generation !== this.generation) return
+                // A dropped connection is not a conflict: keep the queue and retry on the
+                // next request or successful poll instead of blocking every action.
+                if (transient(error)) {
+                  this.onError(`Changes will sync when the runtime is reachable. ${error.message}`)
+                  return
                 }
+                this.conflicted = true
+                this.onError(error.message)
               }),
             ),
             Effect.onInterrupt(() =>

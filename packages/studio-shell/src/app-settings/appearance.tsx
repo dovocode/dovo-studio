@@ -2,7 +2,7 @@ import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
 import { SettingRow, SettingsGroup, SettingsPage, Segmented } from './layout'
 
 export default function AppearanceSettings() {
-  const { theme, textSize, motion } = useAppPreferences()
+  const { theme, textSize, motion, chatWidth } = useAppPreferences()
   return (
     <SettingsPage title="Appearance" description="How Dovo looks on this device.">
       <SettingsGroup title="Theme">
@@ -33,6 +33,20 @@ export default function AppearanceSettings() {
               ['large', 'Large'],
             ]}
             onChange={(textSize) => updateAppPreferences({ textSize })}
+          />
+        </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup title="Conversation">
+        <SettingRow label="Chat width" description="How wide conversations grow on large screens.">
+          <Segmented
+            label="Chat width"
+            value={chatWidth}
+            options={[
+              ['standard', 'Standard'],
+              ['wide', 'Wide'],
+              ['full', 'Full width'],
+            ]}
+            onChange={(chatWidth) => updateAppPreferences({ chatWidth })}
           />
         </SettingRow>
       </SettingsGroup>

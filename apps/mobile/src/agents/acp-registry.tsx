@@ -15,16 +15,16 @@ import {
   type AcpRegistryResponse,
   type Agent,
 } from '@dovo/protocol'
-import { useApplicationState } from '../runtime/application-state'
-import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
+import { useApplicationState } from '../runtime/state/application-state'
+import { mobileWorkflow, nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { useRuntime } from '../runtime/provider'
-import { Action } from '../ui/action'
-import { Choice } from '../ui/choice'
-import { SearchField } from '../ui/field'
-import { Text } from '../ui/text'
+import { useRuntime } from '../runtime/connection/provider'
+import { Action } from '../ui/controls/action'
+import { Choice } from '../ui/controls/choice'
+import { SearchField } from '../ui/controls/field'
+import { Text } from '../ui/content/text'
 import { styles } from '../ui/theme'
-import { useAction } from '../ui/use-action'
+import { useAction } from '../ui/controls/use-action'
 import { TerminalSession } from '../terminal/terminal-session'
 
 const installationsResponseSchema = mutableStruct({

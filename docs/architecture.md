@@ -83,14 +83,20 @@ Related UI, domain logic, and tests should be discoverable together:
 
 - `apps/mobile/src/tasks/conversation/`: message rendering, provider integration, activity groups,
   tool events, and scrolling. `tasks/draft/` owns draft persistence and hydration.
+- `apps/mobile/src/tasks/` groups creation, composer, list, detail, preview, and conversation code;
+  `apps/mobile/src/scm/` groups connections, pull requests, and work items.
+- `packages/protocol/src/` groups contracts by auth, automation, conversation, runtime, SCM, and
+  tasks. `index.ts` remains the public package entrypoint.
 - `packages/extension-tasks/src/task-creation/`: the project/device picker; the task workspace
   coordinates the selected host and draft creation.
 - `packages/extension-scm/src/work/`: issue/pipeline collection orchestration, issue detail, forms,
-  and formatting. `work-detail.tsx` retains the existing public imports.
+  and formatting. Package subpath exports retain the existing public imports.
 - `packages/runtime/src/scm/work/cache.ts`: issue/pipeline cache reads, stale fallback, and
   invalidation, separate from forge routing and provider commands.
+- `packages/runtime/src/scm/` groups Git, forges, pull requests, repositories, tasks, and work;
+  `agents/` groups configuration, execution, task ownership, and provider adapters.
 - `packages/runtime/src/agents/acp-installation/`: registry schemas and distribution selection;
-  `acp-installations.ts` owns transport and installation lifecycle.
+  `agents/configuration/acp-installations.ts` owns transport and installation lifecycle.
 - `packages/studio-core/src/workspace/`: `context.ts` defines the client contract, `scope.tsx` binds
   editors to a specific host, and `provider.tsx` coordinates connections and sync.
 

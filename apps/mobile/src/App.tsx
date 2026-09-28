@@ -4,8 +4,9 @@ import { LiveActivityProvider } from './live-activities/provider'
 import { DarkTheme, ThemeProvider } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
-import { RuntimeProvider } from './runtime/provider'
+import { RuntimeProvider } from './runtime/connection/provider'
 import { Workbench } from './shell/workbench'
+import { TaskWidgetProvider } from './widgets/provider'
 const theme = {
   ...DarkTheme,
   colors: {
@@ -26,7 +27,9 @@ export default function App() {
         <RegistryProvider>
           <RuntimeProvider>
             <LiveActivityProvider>
-              <Workbench />
+              <TaskWidgetProvider>
+                <Workbench />
+              </TaskWidgetProvider>
             </LiveActivityProvider>
           </RuntimeProvider>
         </RegistryProvider>

@@ -1,8 +1,8 @@
-export { CORE_EXTENSION_ID, createCoreExtension } from './core-extension.js'
-export { ExtensionHost } from './extension-host.js'
-export { StateStore } from './state.js'
-export { appendUniqueRows, clientScopeKey, RequestScope } from './request-scope.js'
-export { cliProfileOptions } from './cli-profile-options.js'
+export { CORE_EXTENSION_ID, createCoreExtension } from './extensions/core-extension.js'
+export { ExtensionHost } from './extensions/extension-host.js'
+export { StateStore } from './state/state.js'
+export { appendUniqueRows, clientScopeKey, RequestScope } from './effects/request-scope.js'
+export { cliProfileOptions } from './extensions/cli-profile-options.js'
 export type {
   ActivationEvent,
   Command,
@@ -14,12 +14,12 @@ export type {
   ExtensionInfo,
   ExtensionManifest,
   ExtensionState,
-} from './types.js'
-export { startPolling } from './polling.js'
-export { runClientEffect } from './effect-boundary.js'
-export { applicationState } from './application-state.js'
-export { ExtensionError, type ExtensionOperation } from './operation.js'
+} from './state/types.js'
+export { startPolling } from './effects/polling.js'
+export { runClientEffect } from './effects/effect-boundary.js'
+export { applicationState } from './state/application-state.js'
+export { ExtensionError, type ExtensionOperation } from './effects/operation.js'
 
-export { clientTaskScope } from './task-scope.js'
-export { startReconnecting } from './reconnecting.js'
-export { startSocketHeartbeat } from './socket-heartbeat.js'
+export { clientTaskScope } from './effects/task-scope.js'
+export { startReconnecting } from './effects/reconnecting.js'
+export { startSocketHeartbeat } from './effects/socket-heartbeat.js'

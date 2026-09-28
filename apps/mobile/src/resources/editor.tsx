@@ -1,10 +1,10 @@
 import { CredentialEditor } from './credential-editor'
 import { credentialFields, credentialValues } from '@dovo/protocol'
-import { mobileWorkflow } from '../runtime/native-effect'
-import { useApplicationState } from '../runtime/application-state'
+import { mobileWorkflow } from '../runtime/state/native-effect'
+import { useApplicationState } from '../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
 import { Linking } from 'react-native'
-import { Text } from '../ui/text'
+import { Text } from '../ui/content/text'
 import {
   managedSkillSchema,
   mcpServerSchema,
@@ -12,13 +12,13 @@ import {
   type ManagedSkill,
   type McpServer,
 } from '@dovo/protocol'
-import { useRuntime } from '../runtime/provider'
-import { Sheet } from '../ui/sheet'
-import { Action } from '../ui/action'
-import { Choice } from '../ui/choice'
-import { Field } from '../ui/field'
+import { useRuntime } from '../runtime/connection/provider'
+import { Sheet } from '../ui/layout/sheet'
+import { Action } from '../ui/controls/action'
+import { Choice } from '../ui/controls/choice'
+import { Field } from '../ui/controls/field'
 import { styles } from '../ui/theme'
-import { useAction } from '../ui/use-action'
+import { useAction } from '../ui/controls/use-action'
 export type ResourceSelection =
   | {
       kind: 'mcp'

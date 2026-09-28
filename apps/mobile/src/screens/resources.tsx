@@ -1,11 +1,11 @@
-import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
-import { useApplicationState } from '../runtime/application-state'
+import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
+import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
-import { ScreenHeader } from '../ui/screen-header'
+import { ScreenHeader } from '../ui/layout/screen-header'
 import { ScrollView, View } from 'react-native'
-import { Switch } from '../ui/switch'
-import { Text } from '../ui/text'
+import { Switch } from '../ui/controls/switch'
+import { Text } from '../ui/content/text'
 import { Schema, Effect } from 'effect'
 import {
   resourceSettingsSchema,
@@ -13,13 +13,13 @@ import {
   type ManagedSkill,
   type ResourceSettings,
 } from '@dovo/protocol'
-import { RuntimeScope, useRuntime } from '../runtime/provider'
+import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { clientScopeKey, runClientEffect } from '@dovo/client-runtime'
-import { Sheet } from '../ui/sheet'
+import { Sheet } from '../ui/layout/sheet'
 import { SettingsGroup, SettingsRow } from './settings-group'
-import { Action } from '../ui/action'
+import { Action } from '../ui/controls/action'
 import { styles } from '../ui/theme'
-import { useAction } from '../ui/use-action'
+import { useAction } from '../ui/controls/use-action'
 import { ResourceEditor } from '../resources/editor'
 import { CatalogPicker } from '../resources/catalog-picker'
 export default function ResourcesScreen() {

@@ -3,7 +3,7 @@ import { decode } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import { withCatalogRpc } from './rpc.js'
-import { daybreakProgram, supportsCodexDaybreak } from '../codex-modes.js'
+import { daybreakProgram, supportsCodexDaybreak } from '../configuration/codex-modes.js'
 import { ResponseError } from 'vscode-jsonrpc/node'
 const pageSchema = mutableStruct({
   data: mutableArray(

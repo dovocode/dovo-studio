@@ -58,6 +58,16 @@ export const appSettingsExtension = defineStudioExtension(
       load: () => import('./app-settings/pull-requests'),
     },
     {
+      id: 'usage',
+      navigationGroup: 'settings',
+      title: 'Usage',
+      icon: 'runtime',
+      order: 0.35,
+      settingsSection: 'app',
+      keywords: 'usage tokens time turns models cost statistics activity week month',
+      load: () => import('./app-settings/usage'),
+    },
+    {
       id: 'shortcuts',
       navigationGroup: 'settings',
       title: 'Keyboard shortcuts',

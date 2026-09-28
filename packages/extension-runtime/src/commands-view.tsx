@@ -1,9 +1,10 @@
 import { CommandSettings } from './command-settings'
 import { HostPage } from './host-page'
 
-export default function CommandsView() {
+export default function CommandsView({ entityId }: { entityId?: string }) {
   return (
     <HostPage
+      initialRuntimeId={entityId}
       title="CLI commands & shell"
       description="Executables and the terminal shell this computer uses for agents, Git and forges."
     >

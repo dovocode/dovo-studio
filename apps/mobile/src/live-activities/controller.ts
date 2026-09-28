@@ -1,11 +1,11 @@
-import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { clientTaskScope } from '@dovo/client-runtime'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
-import { decode } from '@dovo/protocol'
+import { decodeResult } from '@dovo/protocol'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Schema, Effect } from 'effect'
 import { liveTaskProps, liveActivityStatusSchema, type RuntimeOverview } from '@dovo/protocol'
-import type { useRuntime } from '../runtime/provider'
+import type { useRuntime } from '../runtime/connection/provider'
 import TaskActivity from './task-activity'
 const storageKey = 'dovo.live-activities.v1'
 const recordSchema = mutableStruct({
@@ -23,12 +23,17 @@ type Record = Schema.Schema.Type<typeof recordSchema>
 type Read = ReturnType<typeof useRuntime>['readRuntimeEffect']
 export function createActivityController(onError: (message: string) => void) {
   return mobileWorkflow(function* () {
-    const saved = decode(
-      savedSchema,
-      JSON.parse(
-        (yield* nativeEffect(() => AsyncStorage.getItem(storageKey))) ?? '{"records":[],"seen":[]}',
-      ),
-    )
+    // A record from an older build must not disable Live Activities until reinstall.
+    const raw = yield* nativeEffect(() => AsyncStorage.getItem(storageKey))
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw ?? '{"records":[],"seen":[]}')
+    } catch {
+      parsed = undefined
+    }
+    const restored = decodeResult(savedSchema, parsed)
+    if (!restored.success) yield* nativeEffect(() => AsyncStorage.removeItem(storageKey))
+    const saved = restored.success ? restored.data : { records: [], seen: [] }
     const seen = new Set(saved.seen)
     const records = new Map(saved.records.map((record) => [record.key, record]))
     const fingerprints = new Map<string, string>()

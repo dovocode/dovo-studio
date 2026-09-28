@@ -30,6 +30,14 @@ if (
 if (Number(process.versions.node.split('.')[0]) !== 24)
   throw new Error('Package with Node 24, matching the runtime native modules.')
 const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
+// A stable signing identity keeps macOS Keychain access consistent across local installs.
+const macSigningIdentity =
+  process.env.CSC_NAME ||
+  (process.platform === 'darwin'
+    ? execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], {
+        encoding: 'utf8',
+      }).match(/"(Developer ID Application: [^"]+)"/)?.[1]
+    : undefined)
 
 // The installer copies the built renderer as is. Refuse a build older than its sources, so a direct
 // run (without `pnpm package:desktop`, which builds first) cannot ship a stale interface.
@@ -136,7 +144,7 @@ try {
       },
     }),
   )
-  if (process.argv.includes('--publish') && process.platform === 'darwin' && !process.env.CSC_NAME)
+  if (process.argv.includes('--publish') && process.platform === 'darwin' && !macSigningIdentity)
     throw new Error(
       'Publishing desktop updates requires a Developer ID signing identity (CSC_NAME).',
     )
@@ -170,11 +178,10 @@ try {
           { cwd: destination, stdio: 'inherit' },
         )
       },
-      // Without a Developer ID, electron-builder leaves Electron's linker signature, which no longer
-      // matches the renamed bundle; Apple Silicon then refuses to launch the app. Ad-hoc sign it
-      // before DMG/ZIP creation. Developer ID release builds are signed and notarized instead.
+      // Without a Developer ID, Electron's linker signature no longer matches the renamed bundle.
+      // Ad-hoc sign that fallback so Apple Silicon can launch it.
       afterSign: async (context) => {
-        if (process.platform !== 'darwin' || process.env.CSC_NAME) return
+        if (process.platform !== 'darwin' || macSigningIdentity) return
         const app = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
         execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' })
         execFileSync('codesign', ['--verify', '--deep', '--strict', app], { stdio: 'inherit' })
@@ -194,7 +201,7 @@ try {
       mac: {
         icon: join(root, 'apps/desktop/build/icon.icns'),
         category: 'public.app-category.developer-tools',
-        identity: process.env.CSC_NAME?.replace(/^Developer ID Application:\s*/, '') ?? null,
+        identity: macSigningIdentity?.replace(/^Developer ID Application:\s*/, '') ?? null,
         hardenedRuntime: true,
         notarize: !!(
           process.env.APPLE_API_KEY ||

@@ -1,0 +1,63 @@
+import { expect, it } from 'vitest'
+import { formatUsageDuration, formatUsageTokens, usageSummary } from './usage-summary.js'
+import type { Task } from '../../workspace.js'
+
+const turn = (
+  startedAt: string,
+  minutes: number,
+  model: string,
+  tokens?: number,
+  status = 'completed',
+) => ({
+  id: startedAt,
+  assistantId: startedAt,
+  agentId: 'a',
+  provider: 'codex' as const,
+  model,
+  startedAt,
+  finishedAt: new Date(Date.parse(startedAt) + minutes * 60_000).toISOString(),
+  status: status as 'completed' | 'failed',
+  ...(tokens !== undefined ? { tokens } : {}),
+})
+const task = (id: string, turns: ReturnType<typeof turn>[]) =>
+  ({ id, title: id, example: false, turns }) as unknown as Task
+
+it('sums recent turns per model and per task', () => {
+  const since = Date.parse('2026-09-20T00:00:00Z')
+  const summary = usageSummary(
+    [
+      {
+        computer: 'Mac',
+        tasks: [
+          task('auth', [
+            turn('2026-09-10T00:00:00Z', 60, 'gpt-5'),
+            turn('2026-09-21T00:00:00Z', 30, 'gpt-5', 10_000),
+            turn('2026-09-22T00:00:00Z', 10, 'gpt-5-mini', undefined, 'failed'),
+          ]),
+        ],
+      },
+      {
+        computer: 'Server',
+        tasks: [task('docs', [turn('2026-09-23T00:00:00Z', 5, 'gpt-5', 2_000)])],
+      },
+    ],
+    since,
+  )
+  expect(summary.total).toMatchObject({
+    turns: 3,
+    failed: 1,
+    durationMs: 45 * 60_000,
+    tokens: 12_000,
+    tokenTurns: 2,
+  })
+  expect(summary.models.map((row) => [row.label, row.turns])).toEqual([
+    ['gpt-5', 2],
+    ['gpt-5-mini', 1],
+  ])
+  expect(summary.tasks.map((row) => [row.label, row.detail])).toEqual([
+    ['auth', 'Mac'],
+    ['docs', 'Server'],
+  ])
+  expect(formatUsageDuration(125 * 60_000)).toBe('2h 05m')
+  expect(formatUsageTokens(12_345)).toBe('12k')
+})

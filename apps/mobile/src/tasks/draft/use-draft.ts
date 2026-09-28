@@ -1,9 +1,9 @@
 import { Effect } from 'effect'
 import { clientTaskScope, runClientEffect } from '@dovo/client-runtime'
-import { useApplicationState } from '../../runtime/application-state'
+import { useApplicationState } from '../../runtime/state/application-state'
 import { useEffect, useRef } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { useRuntime } from '../../runtime/provider'
+import { useRuntime } from '../../runtime/connection/provider'
 import { createDraftStorage } from './storage'
 import { hydrateDraft } from './hydration'
 const drafts = createDraftStorage(AsyncStorage)

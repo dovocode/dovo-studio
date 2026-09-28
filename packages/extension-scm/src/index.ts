@@ -7,7 +7,7 @@ export const scmExtension = defineStudioExtension(
       title: 'Issues',
       icon: 'issues',
       order: 1.4,
-      load: () => import('./work-view'),
+      load: () => import('./work/work-view'),
     },
     {
       id: 'pipelines',
@@ -15,7 +15,7 @@ export const scmExtension = defineStudioExtension(
       icon: 'pipelines',
       order: 1.7,
       navigationGroup: 'hidden',
-      load: () => import('./pipelines-view'),
+      load: () => import('./work/pipelines-view'),
     },
     {
       id: 'source-control',
@@ -25,14 +25,14 @@ export const scmExtension = defineStudioExtension(
       navigationGroup: 'settings',
       settingsSection: 'coding',
       keywords: 'github gitlab bitbucket azure forgejo gitea jira accounts forges pull requests',
-      load: () => import('./forge-settings'),
+      load: () => import('./connections/forge-settings'),
     },
     {
       id: 'pulls',
       title: 'Pull requests',
       icon: 'pulls',
       order: 1.5,
-      load: () => import('./pulls/view'),
+      load: () => import('./pulls/list/view'),
     },
   ],
 )

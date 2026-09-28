@@ -1,4 +1,4 @@
-import { nativeEffect, mobileWorkflow } from '../runtime/native-effect'
+import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { Effect } from 'effect'
 import { ExtensionHost, runClientEffect } from '@dovo/client-runtime'
 import type { ComponentType } from 'react'

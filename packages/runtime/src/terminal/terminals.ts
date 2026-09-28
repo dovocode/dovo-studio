@@ -1,4 +1,4 @@
-import type { AcpLaunch } from '../agents/types.js'
+import type { AcpLaunch } from '../agents/execution/types.js'
 import { decode } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
 import { defaultShell, shellArguments } from './shell.js'
@@ -15,6 +15,16 @@ let ptyModule: typeof pty | undefined
 function loadPty() {
   ptyModule ??= createRequire(import.meta.url)('node-pty') as typeof pty
   return ptyModule
+}
+function notify(listeners: Set<(data: string) => void>, data: string) {
+  for (const listener of listeners) {
+    try {
+      listener(data)
+    } catch (error) {
+      // A disconnected client must not stop the shell or the other attached clients.
+      console.error('Terminal client failed', error)
+    }
+  }
 }
 type Session = {
   info: TerminalInfo
@@ -77,7 +87,7 @@ export class Terminals {
     })
     process.onData((data) => {
       session.buffer = (session.buffer + data).slice(-1024 * 1024)
-      for (const listener of session.listeners) listener(data)
+      notify(session.listeners, data)
     })
     process.onExit(({ exitCode }) => {
       session.info = {
@@ -90,7 +100,7 @@ export class Terminals {
           taskId,
           exitCode,
         })
-      for (const listener of session.listeners) listener(`\r\n[Process exited ${exitCode}]\r\n`)
+      notify(session.listeners, `\r\n[Process exited ${exitCode}]\r\n`)
     })
     return session.info
   }

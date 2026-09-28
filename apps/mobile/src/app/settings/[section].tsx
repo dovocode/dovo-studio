@@ -1,14 +1,15 @@
 import AppUpdates from '../../screens/app-updates'
+import UsageScreen from '../../screens/usage'
 import GeneralScreen from '../../screens/general'
 import { router, useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
 import AgentsScreen from '../../screens/agents'
 import DevicesScreen from '../../screens/devices'
 import ResourcesScreen from '../../screens/resources'
-import SourceControlSettings from '../../scm/connections'
+import SourceControlSettings from '../../scm/connections/connections'
 import { WorkbenchDetailRoute } from '../../shell/workbench'
-import { Action } from '../../ui/action'
-import { ScreenBackContext, ScreenHeader } from '../../ui/screen-header'
+import { Action } from '../../ui/controls/action'
+import { ScreenBackContext, ScreenHeader } from '../../ui/layout/screen-header'
 import { styles } from '../../ui/theme'
 
 export default function SettingsSection() {
@@ -26,7 +27,9 @@ export default function SettingsSection() {
               ? ResourcesScreen
               : section === 'source-control'
                 ? SourceControlSettings
-                : undefined
+                : section === 'usage'
+                  ? UsageScreen
+                  : undefined
   return (
     <WorkbenchDetailRoute tab="settings" bottomInset>
       {Screen ? (

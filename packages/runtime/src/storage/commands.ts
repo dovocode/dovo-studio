@@ -3,6 +3,8 @@ import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { Schema } from 'effect'
 import { commandsSchema, type CommandSettings } from '@dovo/protocol'
+import { isDeepStrictEqual } from 'node:util'
+import { HttpError } from '../errors.js'
 export class Commands {
   private settings: CommandSettings
   constructor(private db: Database.Database) {
@@ -28,5 +30,13 @@ export class Commands {
       .run('commands', JSON.stringify(settings))
     this.settings = settings
     return settings
+  }
+  saveChecked(before: unknown, after: unknown) {
+    const expected = decode(commandsSchema, before)
+    const next = decode(commandsSchema, after)
+    if (isDeepStrictEqual(this.settings, next)) return this.settings
+    if (!isDeepStrictEqual(this.settings, expected))
+      throw new HttpError(409, 'CLI settings changed on another device. Reload before saving.')
+    return this.save(next)
   }
 }

@@ -71,6 +71,25 @@ function BrowserContent({
     [landscape, setLandscape] = useApplicationState(false)
   const [error, setError] = useApplicationState(''),
     [reload, setReload] = useApplicationState(0)
+  const [turnReload, setTurnReload] = useApplicationState(0)
+  const latestTurn = snapshot?.workspace.tasks.find((task) => task.id === taskId)?.turns?.at(-1)
+  const seenTurn = useRef(latestTurn?.status === 'completed' ? latestTurn.id : '')
+  useEffect(() => {
+    if (!latestTurn || latestTurn.status !== 'completed' || seenTurn.current === latestTurn.id)
+      return
+    seenTurn.current = latestTurn.id
+    if (
+      !latestTurn.checkpoint ||
+      (!latestTurn.checkpoint.files.length && !latestTurn.checkpoint.omitted.length)
+    )
+      return
+    if (mode === 'remote') setTurnReload((value) => value + 1)
+    if (mode === 'web' && url) {
+      if (browser)
+        void browser({ action: 'reload', key: scope }).catch((cause) => setError(String(cause)))
+      else setReload((value) => value + 1)
+    }
+  }, [latestTurn?.id, latestTurn?.status, latestTurn?.checkpoint, mode, url, browser, scope])
   const [devices, setDevices] = useApplicationState<PreviewDevice[]>([]),
     [diagnostics, setDiagnostics] = useApplicationState<string[]>([])
   const [liveDevice, setLiveDevice] = useApplicationState<PreviewDevice | undefined>(undefined)
@@ -442,7 +461,7 @@ function BrowserContent({
         </p>
       )}
       {mode === 'remote' ? (
-        <RemoteBrowser taskId={taskId} />
+        <RemoteBrowser taskId={taskId} reloadToken={turnReload} />
       ) : mode === 'web' ? (
         <div className="min-h-0 flex-1 overflow-auto bg-muted/30 p-3">
           {!url ? (

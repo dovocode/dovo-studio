@@ -1,22 +1,25 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useRuntimeSources, useWorkspace, WorkspaceScope } from '@dovo/studio-core'
 import { ChoicePicker } from '@dovo/studio-ui'
 
 /** A settings page for one computer, with a picker like Codex's host selector. Pages list
- * every saved computer; the active one is selected first. */
+ * every saved computer; a linked host takes precedence over the active one. */
 export function HostPage({
   title,
   description,
+  initialRuntimeId,
   children,
 }: {
   title: string
   description: string
+  initialRuntimeId?: string
   children: ReactNode
 }) {
   const sources = useRuntimeSources()
   const { activeRuntimeId } = useWorkspace()
-  const [chosen, setChosen] = useApplicationState('')
+  const [chosen, setChosen] = useApplicationState(initialRuntimeId ?? '')
+  useEffect(() => setChosen(initialRuntimeId ?? ''), [initialRuntimeId, setChosen])
   const source =
     sources.find((entry) => entry.profile.id === chosen) ??
     sources.find((entry) => entry.profile.id === activeRuntimeId) ??

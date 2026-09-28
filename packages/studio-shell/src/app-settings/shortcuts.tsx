@@ -19,7 +19,13 @@ function Keys({ keys }: { keys: string }) {
 export default function KeyboardShortcuts() {
   const { sendWith } = useAppPreferences()
   const groups: [string, [string, string][]][] = [
-    ['Everywhere', [['Open the command palette', `${mod}+K`]]],
+    [
+      'Everywhere',
+      [
+        ['Open the command palette', `${mod}+K`],
+        ['Show keyboard shortcuts', `${mod}+/`],
+      ],
+    ],
     [
       'Composer',
       [
@@ -27,7 +33,28 @@ export default function KeyboardShortcuts() {
         ['New line', sendWith === 'enter' ? 'Shift+Enter' : 'Enter'],
       ],
     ],
-    ['Task', [['Show or hide the terminal', 'Ctrl+`']]],
+    [
+      'Tasks',
+      [
+        ['New task', `${mod}+N`],
+        ['Go to a task', `${mod}+P`],
+        ['Search all conversations', `${mod}+Shift+F`],
+        ['Next task', 'Ctrl+Tab'],
+        ['Previous task', 'Ctrl+Shift+Tab'],
+        ...(mac
+          ? ([
+              ['Next task', '⌘+Shift+]'],
+              ['Previous task', '⌘+Shift+['],
+            ] as [string, string][])
+          : []),
+        ['Stop the running agent', 'Esc'],
+        ['Ask a side question', `${mod}+;`],
+        ['Close the side-by-side task', `${mod}+\\`],
+        ['Show or hide changes', `${mod}+Shift+D`],
+        ['Switch folded steps, every step and replies only', 'Ctrl+O'],
+        ['Show or hide the terminal', 'Ctrl+`'],
+      ],
+    ],
     [
       'Folder picker',
       [
@@ -44,7 +71,7 @@ export default function KeyboardShortcuts() {
       {groups.map(([title, rows]) => (
         <SettingsGroup key={title} title={title}>
           {rows.map(([label, keys]) => (
-            <SettingRow key={label} label={label}>
+            <SettingRow key={`${label}${keys}`} label={label}>
               <Keys keys={keys} />
             </SettingRow>
           ))}

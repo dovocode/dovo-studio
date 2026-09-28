@@ -25,11 +25,33 @@ let owned:
       child: ChildProcess
       scope: Scope.CloseableScope
       connection: Connection
+      stopping?: boolean
     }
   | undefined
+let relaunches = 0
+let relaunchTimer: ReturnType<typeof setTimeout> | undefined
+let quitting = false
 const failure = (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause)))
 const exited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null
 class RuntimeCompatibilityError extends Error {}
+/** launchd restarts a runtime that fails at startup every few seconds. Name the reason from
+ * its log instead of a generic timeout, so a busy port or stale lock can be acted on. */
+function backgroundStartupFailure(port: string) {
+  let tail = ''
+  try {
+    tail = readFileSync(join(app.getPath('userData'), 'runtime-service.log'), 'utf8').slice(-4000)
+  } catch {
+    /* No log yet: launchd has not started the runtime. */
+  }
+  const lines = tail
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const reason = [...lines].reverse().find((line) => /fail|error|EADDRINUSE/i.test(line))
+  if (/EADDRINUSE/.test(tail))
+    return `The Mac background runtime cannot start because port ${port} is in use by another app. Quit that app, then reopen Dovo Studio.`
+  return `The Mac background runtime did not become ready.${reason ? ` ${reason}` : ''} See runtime-service.log in the desktop data directory.`
+}
 const existingRuntime = (requireCompatible = true) =>
   Effect.gen(function* () {
     const saved = yield* Effect.try({
@@ -89,7 +111,13 @@ const existingRuntime = (requireCompatible = true) =>
                 try {
                   process.kill(saved.pid, 0)
                 } catch (error) {
-                  if (error instanceof Error && 'code' in error && error.code === 'ESRCH')
+                  // ESRCH: gone. EPERM: after a reboot the recorded PID belongs to another
+                  // user's process, never to this profile's runtime.
+                  if (
+                    error instanceof Error &&
+                    'code' in error &&
+                    (error.code === 'ESRCH' || error.code === 'EPERM')
+                  )
                     return undefined
                   throw error
                 }
@@ -106,6 +134,29 @@ const existingRuntime = (requireCompatible = true) =>
     )
   })
 
+// Windows has no SIGTERM: kill() there ends the process at once and no finalizer runs. The
+// runtime treats a closed IPC channel as a shutdown request on every platform, so ask first.
+function disconnect(child: ChildProcess) {
+  return Effect.async<void, Error>((resume) => {
+    if (exited(child) || child.pid === undefined) {
+      resume(Effect.void)
+      return
+    }
+    if (!child.connected) {
+      resume(Effect.fail(new Error('Runtime IPC channel is already closed')))
+      return
+    }
+    const done = () => resume(Effect.void)
+    child.once('exit', done)
+    try {
+      child.disconnect()
+    } catch (error) {
+      child.removeListener('exit', done)
+      resume(Effect.fail(failure(error)))
+    }
+    return Effect.sync(() => child.removeListener('exit', done))
+  })
+}
 // Subscribe before signalling so a fast exit cannot be missed. Interruption removes the listener.
 function terminate(child: ChildProcess, signal: NodeJS.Signals) {
   return Effect.async<void, Error>((resume) => {
@@ -125,12 +176,21 @@ function terminate(child: ChildProcess, signal: NodeJS.Signals) {
   })
 }
 function stopChild(child: ChildProcess) {
-  return terminate(child, 'SIGTERM').pipe(
+  return disconnect(child).pipe(
     Effect.interruptible,
     Effect.timeoutFail({
       duration: '5 seconds',
-      onTimeout: () => new Error('Runtime did not stop gracefully'),
+      onTimeout: () => new Error('Runtime did not stop after disconnect'),
     }),
+    Effect.catchAll(() =>
+      terminate(child, 'SIGTERM').pipe(
+        Effect.interruptible,
+        Effect.timeoutFail({
+          duration: '5 seconds',
+          onTimeout: () => new Error('Runtime did not stop gracefully'),
+        }),
+      ),
+    ),
     Effect.catchAll(() =>
       terminate(child, 'SIGKILL').pipe(
         Effect.interruptible,
@@ -234,13 +294,38 @@ function launch(directory: string) {
       diagnostics = (diagnostics + String(data)).slice(-4000)
     }
     const reportError = (error: Error) => console.error('Local runtime process error:', error)
+    const startedAt = Date.now()
+    // A runtime that dies after startup (native crash, OOM) is otherwise never noticed: the
+    // renderer keeps retrying a dead address. Relaunch it on the same saved port, with a cap.
+    const crashed = (code: number | null, signal: NodeJS.Signals | null) => {
+      // Leave `owned` in place: startLocalRuntime sees the exited child and closes its scope.
+      if (owned?.child !== child || owned.stopping || quitting) return
+      console.error(`Local runtime exited (${signal ?? code}). ${diagnostics}`.trim())
+      if (Date.now() - startedAt > 60_000) relaunches = 0
+      if (relaunches >= 5) {
+        console.error('Local runtime keeps exiting; not relaunching. Restart Dovo Studio.')
+        return
+      }
+      relaunches++
+      clearTimeout(relaunchTimer)
+      relaunchTimer = setTimeout(() => {
+        relaunchTimer = undefined
+        if (quitting) return
+        void startLocalRuntime(directory).catch((error: unknown) =>
+          console.error('Local runtime relaunch failed:', error),
+        )
+      }, 2_000)
+      relaunchTimer.unref()
+    }
     child.stdout?.on('data', stdout)
     child.stderr?.on('data', stderr)
     child.on('error', reportError)
+    child.on('exit', crashed)
     cleanupProcess = () => {
       child.stdout?.removeListener('data', stdout)
       child.stderr?.removeListener('data', stderr)
       child.removeListener('error', reportError)
+      child.removeListener('exit', crashed)
     }
     let cleanup = () => {}
     const connection = yield* Effect.async<Connection, Error>((resume) => {
@@ -324,6 +409,7 @@ export function startLocalRuntime(
           )
         if (owned && !exited(owned.child)) return owned.connection
         if (owned) {
+          owned.stopping = true
           yield* Scope.close(owned.scope, Exit.void)
           owned = undefined
         }
@@ -356,10 +442,7 @@ export function startLocalRuntime(
           }).pipe(
             Effect.timeoutFail({
               duration: '30 seconds',
-              onTimeout: () =>
-                new Error(
-                  'Mac background runtime did not become ready. Check runtime-service.log.',
-                ),
+              onTimeout: () => new Error(backgroundStartupFailure(env.PORT ?? '8787')),
             }),
           )
         }
@@ -377,11 +460,16 @@ export function startLocalRuntime(
     ),
   )
 }
+/** Quit: stop the owned runtime and never relaunch it afterwards. */
 export function stopLocalRuntime() {
+  quitting = true
+  clearTimeout(relaunchTimer)
+  relaunchTimer = undefined
   return Effect.runPromise(
     lifecycle.withPermits(1)(
       Effect.gen(function* () {
         if (!owned) return
+        owned.stopping = true
         yield* Scope.close(owned.scope, Exit.void)
         owned = undefined
       }),
@@ -400,6 +488,7 @@ export async function prepareLocalRuntimeUpdate(directory: string) {
             return yield* Effect.fail(new Error('A runtime update is already in progress'))
           updateOwner = owner
           if (owned) {
+            owned.stopping = true
             yield* Scope.close(owned.scope, Exit.void)
             owned = undefined
             return

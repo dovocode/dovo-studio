@@ -4,7 +4,16 @@ import { Button } from '@dovo/studio-ui'
 export function DiskActions({ task, file }: { task: Task; file: ChangedFile }) {
   const { connected, request, setWorkspace } = useWorkspace(),
     [error, setError] = useApplicationState(''),
-    [busy, setBusy] = useApplicationState(false)
+    [busy, setBusy] = useApplicationState(false),
+    [confirming, setConfirming] = useApplicationState(false)
+  const discard = () => {
+    setBusy(true)
+    setError('')
+    void request('/api/tasks/file/restore', { id: task.id, path: file.path }, responses.ok)
+      .then(() => setConfirming(false))
+      .catch((error) => setError(String(error)))
+      .finally(() => setBusy(false))
+  }
   const apply = () => {
     setBusy(true)
     setError('')
@@ -71,6 +80,40 @@ export function DiskActions({ task, file }: { task: Task; file: ChangedFile }) {
         >
           Reload disk changes
         </Button>
+        {confirming ? (
+          <span className="flex items-center gap-1 text-[0.625rem]">
+            Discard changes to {file.path.slice(file.path.lastIndexOf('/') + 1)}?
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-6 text-[0.625rem]"
+              disabled={busy || !connected}
+              onClick={discard}
+            >
+              Discard
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 text-[0.625rem]"
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+            >
+              Cancel
+            </Button>
+          </span>
+        ) : (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[0.625rem]"
+            title="Back to the last commit. The current file is saved first, so this can be recovered."
+            disabled={!connected || task.example || busy || task.status === 'running'}
+            onClick={() => setConfirming(true)}
+          >
+            Discard file changes
+          </Button>
+        )}
       </div>
       {error && (
         <p role="alert" className="text-[0.625rem] text-destructive">

@@ -231,9 +231,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [install],
   )
+  // False once the saved registry could not be read: writing would replace every saved
+  // computer with the empty fallback the session started from.
+  const registryWritable = useRef(true)
   const persistRegistryEffect = useCallback(
     (value: RuntimeRegistry) =>
-      Effect.tryPromise({ try: () => writeRuntimeRegistry(value), catch: connectionError }).pipe(
+      Effect.tryPromise({
+        try: () => {
+          if (!registryWritable.current)
+            throw new Error(
+              'Saved computers could not be loaded at startup. Restart the app before changing connections.',
+            )
+          return writeRuntimeRegistry(value)
+        },
+        catch: connectionError,
+      }).pipe(
         Effect.tap(() =>
           Effect.sync(() => {
             setRegistry(value)
@@ -960,7 +972,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           }),
         ),
       )
-      let registry = yield* native(readRuntimeRegistry)
+      // A locked keychain or missing Linux keyring must not leave the workbench on
+      // "Opening workspace…" forever; continue read-only with no saved computers.
+      let registry = yield* native(readRuntimeRegistry).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            registryWritable.current = false
+            setStorageError(
+              `Saved computers could not be loaded. Connection changes cannot be saved until the app restarts. ${error.message}`,
+            )
+            return emptyRegistry()
+          }),
+        ),
+      )
       let cached: Record<string, RuntimeSnapshot> = {}
       yield* Effect.try({
         try: () => {
@@ -1121,7 +1145,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   ])
   useEffect(() => {
     if (!ready || !writable.current) return
-    void writeWorkspaceDocument(storageKey, encodeWorkspace(workspace)).catch(() =>
+    // Encoding validates the workspace; a throw here would unmount the whole application.
+    let encoded: string
+    try {
+      encoded = encodeWorkspace(workspace)
+    } catch (error) {
+      setStorageError(
+        `Could not save workspace. Keep this window open. ${error instanceof Error ? error.message : String(error)}`,
+      )
+      return
+    }
+    void writeWorkspaceDocument(storageKey, encoded).catch(() =>
       setStorageError('Could not save workspace. Keep this window open.'),
     )
   }, [workspace, ready])

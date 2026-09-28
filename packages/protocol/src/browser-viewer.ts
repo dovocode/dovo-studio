@@ -1,8 +1,11 @@
-import { decode } from './schema.js'
+import { decode } from './shared/schema.js'
 // Browser-only entry point, bundled into a self-contained canvas viewer by build-browser-viewer.mjs.
-import { remoteBrowserMessageSchema, type RemoteBrowserInput } from './remote-browser'
-import { decodeBrowserFrame } from './browser-frames'
-import { previewPresets } from './previews'
+import {
+  remoteBrowserMessageSchema,
+  type RemoteBrowserInput,
+} from './runtime/previews/remote-browser'
+import { decodeBrowserFrame } from './runtime/previews/browser-frames'
+import { previewPresets } from './runtime/previews/previews'
 
 declare global {
   interface Window {
@@ -348,6 +351,10 @@ window.addEventListener('message', (event) => {
     return
   if ('type' in message && message.type === 'presentation') {
     document.body.classList.toggle('expanded', 'expanded' in message && message.expanded === true)
+    return
+  }
+  if ('type' in message && message.type === 'reload') {
+    if (online) send({ type: 'reload' })
     return
   }
   if ('type' in message && message.type === 'configure') {

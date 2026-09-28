@@ -1,13 +1,13 @@
 import { homedir } from 'node:os'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
-import type { AcpLaunch } from '../types.js'
+import type { AcpLaunch } from '../execution/types.js'
 import {
   acpControl,
   initializeAcp,
   legacyAcpLaunch,
   openAcpConnection,
-} from '../providers/acp-connection.js'
+} from '../providers/acp/acp-connection.js'
 
 function options(config: SessionConfigOption[] | null | undefined, category: string) {
   const entry = config?.find((item) => item.category === category && item.type === 'select')

@@ -1,15 +1,15 @@
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
 import { startReconnecting } from '@dovo/client-runtime'
 import { AppState, View } from 'react-native'
-import { Text } from '../ui/text'
+import { Text } from '../ui/content/text'
 import { WebView } from 'react-native-webview'
 import { Schema } from 'effect'
 import { responses } from '@dovo/protocol'
 import terminalHtml from '../../assets/terminal.json'
-import { useRuntime } from '../runtime/provider'
+import { useRuntime } from '../runtime/connection/provider'
 import { styles } from '../ui/theme'
 export function TerminalSession({ id }: { id: string }) {
   const { call, connection } = useRuntime(),
@@ -69,8 +69,15 @@ export function TerminalSession({ id }: { id: string }) {
       },
       (error) => setError(`${error.message} Reconnecting…`),
     )
+    // Only a real background stay can leave a dead socket behind; Control Center or a
+    // permission prompt (inactive → active) must not reset a healthy terminal.
+    let backgrounded = false
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') reconnect.restart()
+      if (state === 'background') backgrounded = true
+      else if (state === 'active' && backgrounded) {
+        backgrounded = false
+        reconnect.restart()
+      }
     })
     return () => {
       subscription.remove()

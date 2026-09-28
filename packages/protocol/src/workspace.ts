@@ -1,12 +1,12 @@
-import { mutableArray, mutableStruct } from './schema.js'
-import { minValue, maxValue, refine, urlSchema, isoDateTime } from './schema.js'
-import { subagentSchema } from './subagents.js'
-import { jiraBindingSchema, jiraSourceSchema, jiraIssueLinkSchema } from './jira.js'
-import { taskWorkItemSchema } from './work-task.js'
-import { resourceSettingsSchema } from './resources.js'
-import { attachmentSchema, MAX_ATTACHMENTS } from './attachments.js'
+import { mutableArray, mutableStruct } from './shared/schema.js'
+import { minValue, maxValue, refine, urlSchema, isoDateTime } from './shared/schema.js'
+import { subagentSchema } from './conversation/workflow/subagents.js'
+import { jiraBindingSchema, jiraSourceSchema, jiraIssueLinkSchema } from './scm/forges/jira.js'
+import { taskWorkItemSchema } from './scm/work/work-task.js'
+import { resourceSettingsSchema } from './shared/resources.js'
+import { attachmentSchema, MAX_ATTACHMENTS } from './shared/attachments.js'
 import { Schema } from 'effect'
-import { forgeBindingSchema, forgeProviderSchema } from './forges.js'
+import { forgeBindingSchema, forgeProviderSchema } from './scm/forges/forges.js'
 export const executionSchema = Schema.Literal('main', 'worktree')
 export const providerSchema = Schema.Literal('codex', 'opencode', 'claude', 'acp')
 export const agentIconSchema = Schema.Literal(
@@ -52,7 +52,40 @@ export const projectTaskDefaultsSchema = mutableStruct({
   worktreeFromOrigin: Schema.optional(Schema.Boolean),
 })
 export type ProjectTaskDefaults = Schema.Schema.Type<typeof projectTaskDefaultsSchema>
+/** A one-tap command for a project, such as "Run tests", run in the task's terminal. */
+export const projectActionSchema = mutableStruct({
+  id: maxValue(minValue(Schema.String, 1), 100),
+  name: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 60),
+  command: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 4000),
+})
+export type ProjectAction = Schema.Schema.Type<typeof projectActionSchema>
+/** A reusable prompt for a project, inserted in the composer by typing "#" and its name. */
+export const savedPromptSchema = mutableStruct({
+  id: maxValue(minValue(Schema.String, 1), 100),
+  name: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 60),
+  text: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 20000),
+})
+export type SavedPrompt = Schema.Schema.Type<typeof savedPromptSchema>
+/** A saved starting point for new tasks in a project: goal, agent and checkout choices. */
+export const taskTemplateSchema = mutableStruct({
+  id: maxValue(minValue(Schema.String, 1), 100),
+  name: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 80),
+  objective: maxValue(Schema.String, 20000),
+  agentId: Schema.optional(maxValue(Schema.String, 200)),
+  harness: Schema.optional(taskHarnessSchema),
+  execution: Schema.optional(executionSchema),
+  worktreeFromOrigin: Schema.optional(Schema.Boolean),
+  setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
+})
+export type TaskTemplate = Schema.Schema.Type<typeof taskTemplateSchema>
 export const repositorySchema = mutableStruct({
+  /** Exact commands the owner has approved for this project. */
+  approvedCommands: Schema.optional(
+    maxValue(mutableArray(maxValue(minValue(Schema.String, 1), 4000)), 100),
+  ),
+  templates: Schema.optional(maxValue(mutableArray(taskTemplateSchema), 30)),
+  actions: Schema.optional(maxValue(mutableArray(projectActionSchema), 20)),
+  prompts: Schema.optional(maxValue(mutableArray(savedPromptSchema), 40)),
   gitIdentity: Schema.optional(Schema.String),
   gitIdentityError: Schema.optional(Schema.String),
   taskDefaults: Schema.optional(projectTaskDefaultsSchema),
@@ -97,10 +130,15 @@ export const messageSchema = mutableStruct({
   id: Schema.String,
   role: Schema.Literal('user', 'assistant'),
   text: Schema.String,
+  bookmarked: Schema.optional(Schema.Boolean),
   file: Schema.optional(Schema.String),
   attachments: Schema.optional(maxValue(mutableArray(attachmentSchema), MAX_ATTACHMENTS)),
   diffComment: Schema.optional(diffCommentSchema),
   createdAt: Schema.optional(Schema.String),
+  /** Sent in plan mode: the agent is asked to propose a plan before changing anything. */
+  plan: Schema.optional(Schema.Boolean),
+  /** A request for the agent to review its changes; its reply lists findings. */
+  review: Schema.optional(Schema.Boolean),
 })
 export const taskPullSchema = mutableStruct({
   provider: Schema.optional(forgeProviderSchema),
@@ -136,6 +174,9 @@ export const turnCheckpointSchema = mutableStruct({
   files: mutableArray(fileSchema),
   omitted: mutableArray(Schema.String),
   error: Schema.optional(Schema.String),
+  // Set while this turn's file changes are undone; `backup` is the snapshot taken just before
+  // undoing, so redo can bring back exactly what was there (including later edits).
+  undone: Schema.optional(mutableStruct({ at: Schema.String, backup: Schema.String })),
 })
 export const turnSchema = mutableStruct({
   runtimeHost: Schema.optional(Schema.String),
@@ -151,6 +192,8 @@ export const turnSchema = mutableStruct({
   finishedAt: Schema.optional(Schema.String),
   status: Schema.Literal('running', 'completed', 'failed', 'cancelled'),
   error: Schema.optional(Schema.String),
+  /** Tokens this turn used, when the provider reports them. */
+  tokens: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.nonNegative())),
 })
 export const taskModelSchema = mutableStruct({
   acpInstallationId: Schema.optional(Schema.NullOr(agentSchema.fields.acpInstallationId.from)),
@@ -163,6 +206,34 @@ export const taskModelSchema = mutableStruct({
   cyberAccessProgram: Schema.optional(Schema.NullOr(agentSchema.fields.cyberAccessProgram.from)),
 })
 export const taskSchema = mutableStruct({
+  budget: Schema.optional(
+    mutableStruct({
+      tokens: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.positive())),
+      minutes: Schema.optional(
+        Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.positive()),
+      ),
+    }),
+  ),
+  scheduledMessages: Schema.optional(
+    maxValue(
+      mutableArray(
+        mutableStruct({
+          id: Schema.String,
+          text: maxValue(minValue(Schema.String, 1), 20000),
+          at: isoDateTime(Schema.String),
+          failed: Schema.optional(Schema.String),
+        }),
+      ),
+      50,
+    ),
+  ),
+  startAfter: Schema.optional(
+    mutableStruct({
+      taskId: Schema.String,
+      messageId: Schema.String,
+      text: maxValue(Schema.String, 20000),
+    }),
+  ),
   runPhase: Schema.optional(Schema.Literal('preparing', 'provider', 'finalizing')),
   // Admission is durable before checkout preparation; a session alone proves no delivery.
   runAttempt: Schema.optional(
@@ -170,6 +241,61 @@ export const taskSchema = mutableStruct({
   ),
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
   worktreeSetupComplete: Schema.optional(Schema.Boolean),
+  // Runtime-owned: this task was forked from another task's turn. `snapshot` is that turn's
+  // files; the fork's new worktree is restored to it once, then it is cleared.
+  forkedFrom: Schema.optional(
+    mutableStruct({
+      taskId: Schema.String,
+      turnId: Schema.String,
+      title: maxValue(Schema.String, 400),
+      snapshot: Schema.optional(Schema.String),
+    }),
+  ),
+  // Runtime-owned: how full the agent's context window is, from its latest usage report.
+  contextUsage: Schema.optional(
+    mutableStruct({
+      used: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.nonNegative())),
+      limit: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.positive())),
+      updatedAt: Schema.String,
+    }),
+  ),
+  // Provider-confirmed context reductions; retained across reconnects and restarts.
+  compactions: Schema.optional(
+    mutableArray(
+      mutableStruct({
+        at: Schema.String,
+        turnId: Schema.String,
+        sessionId: Schema.String,
+        provider: providerSchema,
+        trigger: Schema.Literal('manual', 'auto'),
+      }),
+    ),
+  ),
+  // Runtime-owned: the task's pull request state and check summary, refreshed in the background.
+  // Strings, not literals, so a new forge state never breaks an older client's snapshot.
+  pullStatus: Schema.optional(
+    mutableStruct({
+      number: Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.positive()),
+      url: maxValue(Schema.String, 2000),
+      state: maxValue(Schema.String, 40),
+      // 'passed', 'failed' or 'pending'; absent when the pull request has no checks.
+      checks: Schema.optional(maxValue(Schema.String, 20)),
+      failedChecks: Schema.optional(maxValue(mutableArray(maxValue(Schema.String, 200)), 20)),
+      checkedAt: Schema.String,
+    }),
+  ),
+  // Runtime-owned checkout progress while runPhase is 'preparing'. Step ids are strings, not
+  // literals, so a newer runtime's extra step never breaks an older client's snapshot.
+  preparation: Schema.optional(
+    mutableStruct({
+      steps: maxValue(mutableArray(maxValue(minValue(Schema.String, 1), 40)), 12),
+      current: maxValue(Schema.String, 40),
+      branch: Schema.optional(maxValue(Schema.String, 300)),
+      startedAt: Schema.String,
+      // Set when the run failed on `current`; kept so clients can show where and offer retry.
+      failed: Schema.optional(Schema.Boolean),
+    }),
+  ),
   checkoutBranch: Schema.optional(Schema.String),
   worktreeBaseBranch: Schema.optional(Schema.String),
   worktreeFromOrigin: Schema.optional(Schema.Boolean),
@@ -271,6 +397,17 @@ export const workspaceSchema = mutableStruct({
   tasks: mutableArray(taskSchema),
   automations: mutableArray(automationSchema),
   runtimeAddress: Schema.String,
+  planLimits: Schema.optional(
+    mutableArray(
+      mutableStruct({
+        provider: Schema.Literal('codex', 'claude'),
+        window: Schema.String,
+        usedPercent: Schema.Number.pipe(Schema.finite()),
+        resetsAt: Schema.optional(Schema.Number.pipe(Schema.finite())),
+        updatedAt: Schema.String,
+      }),
+    ),
+  ),
   jiraSources: Schema.optional(mutableArray(jiraSourceSchema)),
   jiraIssueLinks: Schema.optional(mutableArray(jiraIssueLinkSchema)),
 })
@@ -292,7 +429,7 @@ export function latestCompletedTaskTurn(task: Task): TaskTurn | undefined {
   return turn?.status === 'completed' ? turn : undefined
 }
 export function hasUnviewedTaskCompletion(task: Task): boolean {
-  if (task.archived) return false
+  if (task.archived || task.archivedAt) return false
   const turn = latestCompletedTaskTurn(task)
   return !!turn && turn.id !== task.lastViewedTurnId
 }

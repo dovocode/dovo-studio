@@ -2,9 +2,9 @@ import { router } from 'expo-router'
 import { View, ScrollView } from 'react-native'
 import { SettingsGroup, SettingsRow } from './settings-group'
 import { colors, styles } from '../ui/theme'
-import { useRuntime } from '../runtime/provider'
-import { ScreenHeader } from '../ui/screen-header'
-import { useTaskListView } from '../tasks/task-list-view'
+import { useRuntime } from '../runtime/connection/provider'
+import { ScreenHeader } from '../ui/layout/screen-header'
+import { useTaskListView } from '../tasks/list/task-list-view'
 
 export default function SettingsScreen() {
   const { profiles, overviews } = useRuntime()
@@ -102,6 +102,13 @@ export default function SettingsScreen() {
             subtitle="Launch tab, sorting, time, conversation and merging"
             icon="settings"
             onPress={() => router.push('/settings/general')}
+          />
+          <SettingsRow
+            title="Usage"
+            subtitle="Agent time, turns and tokens"
+            icon="jobs"
+            disabled={!profiles.length}
+            onPress={() => router.push('/settings/usage')}
           />
           <SettingsRow
             title="App & updates"

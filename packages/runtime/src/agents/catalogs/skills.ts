@@ -6,7 +6,7 @@ import { basename, dirname, join, posix } from 'node:path'
 import { Schema } from 'effect'
 import { catalogSearchSchema, skillCatalogSchema, skillCatalogImportSchema } from '@dovo/protocol'
 import { catalogBytes, catalogJson } from './fetch.js'
-import { importSkill } from '../resources.js'
+import { importSkill } from '../configuration/resources.js'
 export async function searchSkills(input: unknown) {
   const { query } = decode(catalogSearchSchema, input)
   if (query.length < 2)

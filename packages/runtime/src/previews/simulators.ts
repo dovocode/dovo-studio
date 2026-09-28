@@ -6,6 +6,16 @@ import { iosSimulator, androidSimulator, type NativeSimulator } from './simulato
 import type { BrowserFrame, BrowserOutput } from './browser.js'
 import { HttpError, errorMessage } from '../errors.js'
 type Listener = (message: BrowserOutput) => void
+function notify(listeners: Set<Listener>, message: BrowserOutput) {
+  for (const listener of listeners) {
+    try {
+      listener(message)
+    } catch (error) {
+      // One disconnected controller must not stop the device stream or its teardown.
+      console.error('Simulator client failed', error)
+    }
+  }
+}
 type Session = {
   device: PreviewDevice
   driver: NativeSimulator
@@ -29,6 +39,9 @@ export class SimulatorPreviews {
   private disposed = false
   taskId(id: string) {
     return this.get(id).taskId
+  }
+  async screenPoints(id: string) {
+    return (await this.get(id).pending).driver.screenPoints?.()
   }
   private get(id: string) {
     const entry = this.sessions.get(id)
@@ -132,11 +145,10 @@ export class SimulatorPreviews {
           )
             return
           session.frame = frame
-          for (const notify of session.listeners) notify(frame)
+          notify(session.listeners, frame)
         },
         (error) => {
-          for (const notify of session.listeners)
-            notify({ type: 'error', message: errorMessage(error) })
+          notify(session.listeners, { type: 'error', message: errorMessage(error) })
           void this.close(id).catch((failure) =>
             console.error('Could not dispose failed simulator preview', failure),
           )
@@ -230,8 +242,7 @@ export class SimulatorPreviews {
     session.closed = true
     clearTimeout(session.idle)
     session.stop?.()
-    for (const listener of session.listeners)
-      listener({ type: 'closed', message: 'Simulator preview closed' })
+    notify(session.listeners, { type: 'closed', message: 'Simulator preview closed' })
     session.listeners.clear()
     await session.queue
     await session.driver.close()

@@ -45,6 +45,10 @@ tools. Only macOS publishing with `--publish` requires a Developer ID identity a
 credentials. The workflow uses native GitHub-hosted ARM runners; repository/plan eligibility must
 allow those runner labels. Unsigned Windows installers may show SmartScreen prompts.
 
+On macOS, local packaging uses an available Developer ID Application identity so updates keep the
+same Keychain identity. Set `CSC_NAME` to select a specific identity. Without one, local builds fall
+back to ad hoc signing and macOS may ask for Keychain access again after an update.
+
 ## Local iPhone updates
 
 No EAS Update or TestFlight service is used. Settings → App & updates shows the installed version,

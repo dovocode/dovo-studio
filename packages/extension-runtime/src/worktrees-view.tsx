@@ -6,9 +6,10 @@ import { Button } from '@dovo/studio-ui'
 import { HostPage } from './host-page'
 import { WorktreePreferences } from './runtime-preferences'
 
-export default function WorktreesView() {
+export default function WorktreesView({ entityId }: { entityId?: string }) {
   return (
     <HostPage
+      initialRuntimeId={entityId}
       title="Worktrees"
       description="Separate checkouts Dovo creates for tasks: how their branches are named, when they are cleaned up, and the ones on this computer."
     >

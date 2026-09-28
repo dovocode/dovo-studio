@@ -11,7 +11,7 @@ export const tasksExtension = defineStudioExtension(
       navigationGroup: 'settings',
       settingsSection: 'archived',
       keywords: 'archive restore threads history deleted old',
-      load: () => import('./archived-view'),
+      load: () => import('./list/archived-view'),
     },
   ],
 )

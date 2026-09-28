@@ -3,7 +3,7 @@ import { Effect } from 'effect'
 import { decode } from '@dovo/protocol'
 import { beforeEach, expect, it, vi } from 'vite-plus/test'
 import { runtimeProfile, snapshotSchema, taskSchema, type RuntimeOverview } from '@dovo/protocol'
-import type { useRuntime } from '../runtime/provider'
+import type { useRuntime } from '../runtime/connection/provider'
 const native = vi.hoisted(() => {
   const instance = {
     getId: () => 'activity',

@@ -1,6 +1,6 @@
 import { runtimeIntegration, waitForRuntime as waitForJob } from '../testing/integration'
 import { decode } from '@dovo/protocol'
-import type { AgentAdapter } from '../agents/types'
+import type { AgentAdapter } from '../agents/execution/types'
 import { afterEach, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { startRuntime } from '../index'
@@ -684,4 +684,29 @@ it('rolls back task creation when persisting its step association fails', async 
   await waitForJob(() => expect(s.jobs.list()[0].status).toBe('waiting'))
   expect(s.store.get().tasks).toHaveLength(1)
   expect(execute).toHaveBeenCalledTimes(1)
+})
+it('prunes finished runs and delivery receipts past the retention window', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: join(f.directory, 'runtime.sqlite'),
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  runtime.services.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+  vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => run.onText('Done'),
+  })
+  const id = runtime.services.jobs.start('flow', 'delivery-old')
+  await waitForJob(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
+  runtime.services.jobs.cancel(id)
+  const db = runtime.services.db
+  expect(runtime.services.jobs.prune(Date.now(), 30)).toBe(0)
+  const later = Date.now() + 31 * 86_400_000
+  expect(runtime.services.jobs.prune(later, 30)).toBe(1)
+  expect(runtime.services.jobs.list()).toEqual([])
+  expect(db.prepare('SELECT COUNT(*) AS count FROM job_runs').get()).toEqual({ count: 0 })
+  expect(db.prepare('SELECT COUNT(*) AS count FROM deliveries').get()).toEqual({ count: 0 })
 })

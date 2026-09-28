@@ -3,11 +3,12 @@ import { useAppPreferences } from '@dovo/studio-core'
 
 /** Applies Settings → Appearance to the document; "System" follows the OS live. */
 export function useAppearance() {
-  const { theme, textSize, motion } = useAppPreferences()
+  const { theme, textSize, motion, chatWidth } = useAppPreferences()
   useEffect(() => {
     const root = document.documentElement
     root.dataset.textSize = textSize
     root.dataset.motion = motion
+    root.dataset.chatWidth = chatWidth
     const media = window.matchMedia('(prefers-color-scheme: light)')
     const apply = () => {
       root.dataset.theme = theme === 'system' ? (media.matches ? 'light' : 'dark') : theme
@@ -16,5 +17,5 @@ export function useAppearance() {
     if (theme !== 'system') return
     media.addEventListener('change', apply)
     return () => media.removeEventListener('change', apply)
-  }, [theme, textSize, motion])
+  }, [theme, textSize, motion, chatWidth])
 }

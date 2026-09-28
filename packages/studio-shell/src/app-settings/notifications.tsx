@@ -11,13 +11,24 @@ export default function NotificationSettings() {
     enabled: boolean,
   ) => {
     setNotice('')
-    if (enabled && typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
-      const permission = await Notification.requestPermission()
-      if (permission !== 'granted') {
-        setNotice(
-          'Notifications are blocked. Allow Dovo Studio in your system notification settings.',
-        )
+    if (enabled) {
+      if (typeof Notification === 'undefined') {
+        setNotice('Notifications are unavailable on this device.')
         return
+      }
+      if (Notification.permission !== 'granted') {
+        try {
+          const permission = await Notification.requestPermission()
+          if (permission !== 'granted') {
+            setNotice(
+              'Notifications are blocked. Allow Dovo Studio in your system notification settings.',
+            )
+            return
+          }
+        } catch {
+          setNotice('Could not request notification permission. Try again in your system settings.')
+          return
+        }
       }
     }
     updateAppPreferences({ [key]: enabled })

@@ -6,11 +6,10 @@ import {
   DialogDescription,
   DialogTitle,
   Input,
-  cn,
 } from '@dovo/studio-ui'
 import { ChevronRight, Folder, Monitor } from 'lucide-react'
 import { useMemo } from 'react'
-import { taskCollectionKey, type TaskSource } from '../task-collection'
+import { taskCollectionKey, type TaskSource } from '../list/task-collection'
 
 type ProjectSelectionDialogProps = {
   open: boolean
@@ -57,8 +56,7 @@ export function ProjectSelectionDialog({
       <DialogContent className="max-w-md">
         <DialogTitle>New task</DialogTitle>
         <DialogDescription>
-          Choose a project, then a device if it’s available on more than one. Nothing runs until you
-          send your first message.
+          Choose a project. You can switch devices before sending your first message.
         </DialogDescription>
         {error && (
           <p role="alert" className="text-xs text-destructive">
@@ -79,8 +77,25 @@ export function ProjectSelectionDialog({
                 .includes(normalizedProjectQuery),
             )
             if (!matches.length) return null
-            if (group.entries.length === 1) {
-              const { source, repository } = group.entries[0]
+            const preferred =
+              matches.find(
+                ({ source, repository }) =>
+                  taskCollectionKey(source.runtimeId, repository.id) === suggestedProject &&
+                  source.online &&
+                  !repository.gitIdentityError,
+              ) ??
+              matches.find(
+                ({ source, repository }) => source.online && !repository.gitIdentityError,
+              )
+            const choice = preferred ?? matches[0]
+            if (choice) {
+              const { source, repository } = choice
+              const deviceCount = new Set(group.entries.map((entry) => entry.runtimeId)).size
+              const onlineCount = new Set(
+                group.entries
+                  .filter((entry) => entry.source.online)
+                  .map((entry) => entry.runtimeId),
+              ).size
               return (
                 <Button
                   key={group.key}
@@ -94,7 +109,9 @@ export function ProjectSelectionDialog({
                     <span className="block truncate text-sm">{group.name}</span>
                     <span className="mt-1 flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
                       <Monitor className="size-3" />
-                      {source.name} · {repository.branch}
+                      {deviceCount > 1
+                        ? `${deviceCount} devices · ${onlineCount} online${normalizedProjectQuery && matches.length === 1 ? ` · ${source.name}` : ''}`
+                        : `${source.name} · ${repository.branch}`}
                     </span>
                     {!!repository.gitIdentityError && (
                       <span className="block text-xs text-destructive">
@@ -110,62 +127,7 @@ export function ProjectSelectionDialog({
                 </Button>
               )
             }
-            return (
-              <details
-                key={`${group.key}:${!!projectQuery}`}
-                open={normalizedProjectQuery ? true : undefined}
-                className="group rounded-lg border border-border/50"
-                aria-label={group.name}
-              >
-                <summary className="flex cursor-pointer items-center gap-2 px-3 py-3 text-xs text-muted-foreground">
-                  <Folder className="size-3.5" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium text-foreground">{group.name}</span>
-                    <span className="block truncate text-[0.625rem]">
-                      {group.identity ?? 'Local repository'}
-                    </span>
-                  </span>
-                  <span className="ml-auto">
-                    {
-                      new Set(
-                        group.entries
-                          .filter(({ source }) => source.online)
-                          .map((entry) => entry.runtimeId),
-                      ).size
-                    }
-                    /{new Set(group.entries.map((entry) => entry.runtimeId)).size} online
-                  </span>
-                  <ChevronRight className="size-3 shrink-0 transition-transform group-open:rotate-90" />
-                </summary>
-                {matches.map(({ repository, source }) => {
-                  const key = taskCollectionKey(source.runtimeId, repository.id)
-                  return (
-                    <Button
-                      key={key}
-                      variant="ghost"
-                      disabled={busy || !source.online || !!repository.gitIdentityError}
-                      className={cn(
-                        'h-auto w-full justify-start gap-2 px-3 py-2 text-left',
-                        key === suggestedProject && 'bg-muted/50',
-                      )}
-                      onClick={() => onSelect(key)}
-                    >
-                      <Monitor className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0">
-                        <span className="block truncate">
-                          {source.name}
-                          {!source.online ? ' · Offline' : ''}
-                        </span>
-                        <span className="block truncate text-xs font-normal text-muted-foreground">
-                          {repository.gitIdentityError ??
-                            `${repository.path} · ${repository.branch}`}
-                        </span>
-                      </span>
-                    </Button>
-                  )
-                })}
-              </details>
-            )
+            return null
           })}
           {projectQuery &&
             !sources.some((source) =>

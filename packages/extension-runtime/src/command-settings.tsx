@@ -10,6 +10,7 @@ import { Button, FormField, Input, Textarea } from '@dovo/studio-ui'
 export function CommandSettings() {
   const { request, connected } = useWorkspace()
   const [settings, setSettings] = useApplicationState<Settings | null>(null)
+  const [baseline, setBaseline] = useApplicationState<Settings | null>(null)
   const [defaultShell, setDefaultShell] = useApplicationState('')
   const [error, setError] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
@@ -17,12 +18,14 @@ export function CommandSettings() {
   useEffect(() => {
     let stopped = false
     setSettings(null)
+    setBaseline(null)
     setError('')
     if (connected)
       void request('/api/commands/read', {}, commandSettingsResponse)
         .then((result) => {
           if (!stopped) {
             setSettings(result.settings)
+            setBaseline(result.settings)
             setDefaultShell(result.defaultShell)
           }
         })
@@ -48,19 +51,21 @@ export function CommandSettings() {
           className="grid gap-3"
           onSubmit={(event) => {
             event.preventDefault()
+            if (!baseline) return
             setBusy(true)
             setError('')
             setSaved(false)
             void request(
               '/api/commands/save',
               {
-                ...settings,
-                shellArgs: settings.shellArgs.filter(Boolean),
+                before: baseline,
+                after: { ...settings, shellArgs: settings.shellArgs.filter(Boolean) },
               },
               commandSettingsResponse,
             )
               .then((result) => {
                 setSettings(result.settings)
+                setBaseline(result.settings)
                 setSaved(true)
               })
               .catch((error) => setError(String(error)))
@@ -100,7 +105,7 @@ export function CommandSettings() {
             Automatic shell: {defaultShell}. Default argument: -l (login shell). Empty arguments use
             the shell’s normal interactive startup.
           </p>
-          <Button type="submit" disabled={busy || !connected}>
+          <Button type="submit" disabled={busy || !connected || !baseline}>
             Save command settings
           </Button>
           {saved && (

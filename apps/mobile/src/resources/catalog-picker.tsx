@@ -1,10 +1,10 @@
-import { mobileWorkflow, nativeEffect } from '../runtime/native-effect'
+import { mobileWorkflow, nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../runtime/state/application-state'
 import { useEffect, useRef } from 'react'
 import { Linking, View } from 'react-native'
-import { Text } from '../ui/text'
+import { Text } from '../ui/content/text'
 import {
   managedSkillSchema,
   registryCatalogSchema,
@@ -12,13 +12,13 @@ import {
   type RegistryEntry,
   type SkillCatalogEntry,
 } from '@dovo/protocol'
-import { useRuntime } from '../runtime/provider'
-import { Sheet } from '../ui/sheet'
-import { Action } from '../ui/action'
-import { Field } from '../ui/field'
-import { Choice } from '../ui/choice'
+import { useRuntime } from '../runtime/connection/provider'
+import { Sheet } from '../ui/layout/sheet'
+import { Action } from '../ui/controls/action'
+import { Field } from '../ui/controls/field'
+import { Choice } from '../ui/controls/choice'
 import { styles } from '../ui/theme'
-import { useAction } from '../ui/use-action'
+import { useAction } from '../ui/controls/use-action'
 import type { ResourceSelection } from './editor'
 export function CatalogPicker({
   kind,

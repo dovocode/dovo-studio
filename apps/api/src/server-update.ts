@@ -39,6 +39,8 @@ async function execute(command: string, args: string[], cwd: string, logPath: st
   const child = spawn(command, args, {
     cwd,
     stdio: ['ignore', log, log],
+    // pnpm is pnpm.cmd on Windows, which Node only runs through the shell.
+    shell: process.platform === 'win32',
     env: {
       ...process.env,
       CI: 'true',

@@ -22,6 +22,7 @@ async function loadSharp() {
   return sharpModule
 }
 export interface NativeSimulator {
+  screenPoints?: () => { width: number; height: number }
   start(frame: (frame: BrowserFrame) => void, error: (error: Error) => void): () => void
   input(input: RemoteBrowserInput): Promise<void>
   release(): Promise<void>
@@ -170,9 +171,17 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
   child.on('error', (error) => {
     startupError = error
   })
+  // A missing or crashing companion fails now instead of after the 15 second ready timeout.
+  const exited = new Promise<never>((_, reject) => {
+    child.once('error', (error) => reject(error))
+    child.once('exit', (code, signal) =>
+      reject(new Error(`idb_companion exited (${signal ?? code}). ${diagnostic}`.trim())),
+    )
+  })
+  exited.catch(() => undefined)
   const rpc = new SimulatorRpc(`unix:${socket}`, iosProtocol, 'idb.CompanionService')
   try {
-    await rpc.ready()
+    await Promise.race([rpc.ready(), exited])
     const description = await rpc.unary(
       'describe',
       'idb.Empty',
@@ -245,6 +254,7 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
     }
     let stop: (() => void) | undefined
     return {
+      screenPoints: () => ({ width: size.widthPoints, height: size.heightPoints }),
       start(publish, report) {
         const parser = new MinicapFrames()
         const stream = rpc.duplex(

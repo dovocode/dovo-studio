@@ -1,0 +1,41 @@
+import { Schema } from 'effect'
+import { mutableStruct } from '../../shared/schema.js'
+import {
+  defaultTaskHarness,
+  taskHarnessSchema,
+  projectTaskDefaultsSchema,
+  type Repository,
+} from '../../workspace.js'
+import { titleGenerationSettingsSchema } from '../../tasks/title-generation.js'
+
+export const runtimeDefaultsSchema = mutableStruct({
+  setupCommand: projectTaskDefaultsSchema.fields.setupCommand,
+  execution: projectTaskDefaultsSchema.fields.execution,
+  worktreeFromOrigin: projectTaskDefaultsSchema.fields.worktreeFromOrigin,
+  configured: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  // Ignore unknown keys like the rest of the protocol: a newer runtime's extra field must
+  // not break an older client's snapshot, nor a downgraded runtime's stored defaults.
+  harness: Schema.optionalWith(taskHarnessSchema.omit('resources'), {
+    default: () => defaultTaskHarness('codex'),
+  }),
+})
+export const runtimeSetupSchema = mutableStruct({
+  defaults: runtimeDefaultsSchema,
+  titles: titleGenerationSettingsSchema,
+})
+export type RuntimeDefaults = Schema.Schema.Type<typeof runtimeDefaultsSchema>
+export type RuntimeSetup = Schema.Schema.Type<typeof runtimeSetupSchema>
+
+/** Copy these settings into a new task; later changes never mutate existing conversations. */
+export function resolveTaskDefaults(
+  runtime: RuntimeDefaults | undefined,
+  repository: Repository | undefined,
+) {
+  return {
+    setupCommand: repository?.taskDefaults?.setupCommand ?? runtime?.setupCommand,
+    harness: repository?.taskDefaults?.harness ?? runtime?.harness ?? defaultTaskHarness('codex'),
+    execution: repository?.taskDefaults?.execution ?? runtime?.execution ?? 'main',
+    worktreeFromOrigin:
+      repository?.taskDefaults?.worktreeFromOrigin ?? runtime?.worktreeFromOrigin ?? false,
+  }
+}

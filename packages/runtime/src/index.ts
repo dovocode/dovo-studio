@@ -1,10 +1,11 @@
-import { Housekeeping } from './agents/housekeeping.js'
+import { Housekeeping } from './agents/tasks/housekeeping.js'
+import { TaskPullWatcher } from './scm/tasks/task-pulls.js'
 import { Context, Data, Effect, Layer, ManagedRuntime } from 'effect'
 import { openDatabase } from './storage/database.js'
 import { createServices, type Services } from './services.js'
 import { createRuntimeServer } from './http/server.js'
 export { backupRuntimeDatabase } from './storage/backup.js'
-export { checkAdapterUpdates, type AdapterDiagnostic } from './agents/diagnostics.js'
+export { checkAdapterUpdates, type AdapterDiagnostic } from './agents/execution/diagnostics.js'
 
 export interface RuntimeOptions {
   databasePath: string
@@ -57,8 +58,10 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       const closeTitles = () => (titlesClosing ??= services.titles.dispose())
       const closeTasks = () => (tasksClosing ??= services.tasks.dispose())
       const housekeeping = new Housekeeping(services)
+      const taskPulls = new TaskPullWatcher(services)
       const finalizers = [
         () => housekeeping.dispose(),
+        () => taskPulls.dispose(),
         () => services.acpInstallations.dispose(),
         () => services.acpController.abort(),
         closeTitles,
@@ -128,14 +131,17 @@ export const runtimeLayer = (options: RuntimeOptions) =>
           }),
         )
       yield* Effect.sync(() => {
+        services.tasks.setTaskTools(address.port, options.ownerToken, address.address)
         services.tasks.continueAfterRestart(
           () => services.preferences.get().autoContinueAfterRestart,
           (id) => services.jobs.ownsTask(id),
         )
         services.liveActivities.start()
         services.jobs.startScheduler()
+        services.tasks.startScheduler()
         services.pullCache.start()
         housekeeping.start()
+        taskPulls.start()
       })
       return { services, port: address.port }
     }),

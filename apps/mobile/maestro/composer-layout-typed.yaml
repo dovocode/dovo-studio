@@ -6,7 +6,7 @@ appId: com.dovo.studio
     id: Message
     text: Keyboard layout draft
 - assertVisible:
-    id: Project & checkout
+    id: Checkout & branch
 - assertVisible:
     id: Dismiss keyboard
     width: 44

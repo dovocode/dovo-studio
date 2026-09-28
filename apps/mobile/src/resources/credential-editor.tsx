@@ -1,8 +1,8 @@
 import type { CredentialField } from '@dovo/protocol'
 import { View } from 'react-native'
-import { Field } from '../ui/field'
-import { Text } from '../ui/text'
-import { Action } from '../ui/action'
+import { Field } from '../ui/controls/field'
+import { Text } from '../ui/content/text'
+import { Action } from '../ui/controls/action'
 import { styles } from '../ui/theme'
 export function CredentialEditor({
   fields,

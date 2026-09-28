@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { tmpdir, uptime } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { acquireProcessLock } from './process-lock.js'
@@ -65,3 +65,18 @@ it('admits only one stale-lock contender and recovers after that owner crashes',
   release()
   acquireProcessLock(path)()
 }, 10000)
+it('treats a lock record from before this boot as stale even if its PID is in use', () => {
+  const path = fixture()
+  // Our own PID is certainly alive; only the record's age says it belongs to an earlier boot.
+  writeFileSync(path, JSON.stringify({ pid: process.pid, nonce: 'before-reboot' }))
+  const beforeBoot = new Date(Date.now() - (uptime() + 60) * 1000)
+  utimesSync(path, beforeBoot, beforeBoot)
+  const release = acquireProcessLock(path)
+  expect(JSON.parse(readFileSync(path, 'utf8')).nonce).not.toBe('before-reboot')
+  release()
+})
+it('names the lock file when its record is unreadable', () => {
+  const path = fixture()
+  writeFileSync(path, '')
+  expect(() => acquireProcessLock(path)).toThrow(`Invalid process lock: ${path}`)
+})

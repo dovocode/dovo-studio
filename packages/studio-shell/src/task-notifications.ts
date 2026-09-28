@@ -11,6 +11,9 @@ export type TaskState = {
   /** Automation runs notify under their own setting; cancelled runs never notify. */
   automation?: boolean
   cancelled?: boolean
+  /** The task's pull request checks: 'pending', 'passed' or 'failed'. */
+  checks?: string
+  pullNumber?: number
 }
 
 export function taskStates(entries: readonly RuntimeOverview[]) {
@@ -27,6 +30,8 @@ export function taskStates(entries: readonly RuntimeOverview[]) {
         running: task.status === 'running',
         needsInput: waiting.has(task.id),
         failed: task.status === 'failed',
+        checks: task.pullStatus?.state === 'open' ? task.pullStatus.checks : undefined,
+        pullNumber: task.pullStatus?.number,
       })
     const names = new Map(snapshot.workspace.automations.map((item) => [item.id, item.name]))
     for (const run of snapshot.runs)
@@ -51,7 +56,7 @@ export function taskNotificationEvents(
 ) {
   const events: {
     key: string
-    kind: 'input' | 'done' | 'failed'
+    kind: 'input' | 'done' | 'failed' | 'checks-passed' | 'checks-failed'
     title: string
     automation: boolean
   }[] = []
@@ -63,6 +68,18 @@ export function taskNotificationEvents(
       events.push({ key, kind: 'input', title: state.title, automation })
     else if (before.running && !state.running && !state.cancelled)
       events.push({ key, kind: state.failed ? 'failed' : 'done', title: state.title, automation })
+    // Checks that were running on the task's pull request have finished.
+    if (
+      before.checks === 'pending' &&
+      (state.checks === 'passed' || state.checks === 'failed') &&
+      before.pullNumber === state.pullNumber
+    )
+      events.push({
+        key: `${key}:checks`,
+        kind: state.checks === 'passed' ? 'checks-passed' : 'checks-failed',
+        title: state.title,
+        automation,
+      })
   }
   return events
 }
@@ -85,13 +102,17 @@ export function useTaskNotifications() {
         continue
       const subject = event.automation ? 'Automation' : 'Task'
       const notification = new Notification(
-        event.kind === 'input'
-          ? event.automation
-            ? 'Automation needs review'
-            : 'Needs your input'
-          : event.kind === 'failed'
-            ? `${subject} failed`
-            : `${subject} finished`,
+        event.kind === 'checks-passed'
+          ? 'Pull request checks passed'
+          : event.kind === 'checks-failed'
+            ? 'Pull request checks failed'
+            : event.kind === 'input'
+              ? event.automation
+                ? 'Automation needs review'
+                : 'Needs your input'
+              : event.kind === 'failed'
+                ? `${subject} failed`
+                : `${subject} finished`,
         { body: event.title, tag: event.key, silent: !notifySound },
       )
       notification.onclick = () => window.focus()

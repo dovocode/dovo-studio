@@ -151,7 +151,8 @@ export async function startServer(directory: string, entrypoint: string) {
     try {
       const connection = readConnection(join(directory, 'runtime-connection.json'))
       if (connection.pid === pid) {
-        await accessible(connection, 1000)
+        // A large workspace on a cold database can take more than a second to answer.
+        await accessible(connection, 5000)
         return serverStatus(directory)
       }
     } catch {

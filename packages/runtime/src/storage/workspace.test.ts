@@ -1,5 +1,5 @@
 import { decode } from '@dovo/protocol'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { taskHarnessSchema, type Task, type Workspace, type WorkspacePatch } from '@dovo/protocol'
 import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'
@@ -555,6 +555,46 @@ it('persists manual PR links independently from execution checkout and rejects u
     })
     expect(new WorkspaceStore(db).task('linked').linkedPullRequests).toEqual([])
     expect(store.task('linked').pullRequest).toEqual(source)
+  } finally {
+    db.close()
+  }
+})
+it('loads the valid entries of a stored workspace that no longer validates and keeps a copy', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.patch({
+      collection: 'agents',
+      id: 'kept',
+      changes: {},
+      create: {
+        id: 'kept',
+        name: 'Reviewer',
+        provider: 'opencode',
+        model: '',
+        instructions: '',
+        permission: 'ask',
+        endpoint: '',
+      },
+    })
+    const stored = JSON.parse(
+      String(
+        (db.prepare("SELECT value FROM documents WHERE id='workspace'").get() as { value: string })
+          .value,
+      ),
+    )
+    stored.agents.push({ id: 'broken', name: '', provider: 'not-a-provider' })
+    const raw = JSON.stringify(stored)
+    db.prepare("UPDATE documents SET value=? WHERE id='workspace'").run(raw)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const reopened = new WorkspaceStore(db)
+    expect(reopened.get().agents.map((agent) => agent.id)).toEqual(['kept'])
+    expect(error.mock.calls[0]?.[0]).toContain('agents[1]')
+    const backups = db
+      .prepare("SELECT value FROM documents WHERE id LIKE 'workspace-backup:%'")
+      .all() as { value: string }[]
+    expect(backups.map((row) => row.value)).toEqual([raw])
+    error.mockRestore()
   } finally {
     db.close()
   }

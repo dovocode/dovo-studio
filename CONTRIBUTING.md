@@ -28,7 +28,7 @@ the required native modules. Choose a simulator or connected device through Expo
 Run one test file while iterating, then the full suite when the change warrants it:
 
 ```sh
-pnpm exec vp test packages/protocol/src/pending-message.test.ts
+pnpm exec vp test packages/protocol/src/conversation/workflow/pending-message.test.ts
 pnpm test
 ```
 

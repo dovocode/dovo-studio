@@ -1,9 +1,10 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { MessageCircleQuestion, LoaderCircle } from 'lucide-react'
 import {
   questionAnswerError,
   questionDraftAnswers,
+  toggleQuestionChoice,
   type QuestionAnswers,
   type QuestionDraft,
   type PendingQuestion,
@@ -33,6 +34,40 @@ export function QuestionForm({
     [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
   const submitting = useRef(false)
+  const form = useRef<HTMLFormElement>(null)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        !connected ||
+        busy ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        !(event.target instanceof Element) ||
+        event.target.closest(
+          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]',
+        ) ||
+        document.querySelector('form[aria-label="Agent questions"]') !== form.current
+      )
+        return
+      const index = Number(event.key) - 1
+      if (!Number.isInteger(index) || index < 0 || index > 8) return
+      const question = request.prompt.questions[0]
+      const option = question?.options[index]
+      if (!question || !option) return
+      event.preventDefault()
+      setDrafts((current) => ({
+        ...current,
+        [question.id]: toggleQuestionChoice(question, current[question.id], option.value),
+      }))
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [request, connected, busy])
   const submit = async (answers: QuestionAnswers | null) => {
     if (submitting.current || !connected) return
     const invalid = answers && questionAnswerError(request.prompt.questions, answers)
@@ -53,6 +88,7 @@ export function QuestionForm({
   }
   return (
     <form
+      ref={form}
       aria-label="Agent questions"
       className="overflow-hidden rounded-xl border bg-card shadow-xs"
       onSubmit={(event) => {
@@ -70,12 +106,13 @@ export function QuestionForm({
         </span>
       </div>
       <div className="max-h-64 space-y-4 overflow-auto p-3">
-        {request.prompt.questions.map((q) => (
+        {request.prompt.questions.map((q, index) => (
           <QuestionField
             key={q.id}
             question={q}
             value={drafts[q.id]}
             disabled={busy || !connected}
+            shortcutNumbers={index === 0}
             onChange={(draft) => {
               setDrafts((current) => ({
                 ...current,

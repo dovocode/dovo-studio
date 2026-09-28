@@ -1,83 +1,101 @@
 export * from './workspace.js'
-export * from './runtime.js'
+export * from './tasks/task-budget.js'
+export * from './conversation/workflow/turn-summary.js'
+export * from './conversation/workflow/plan-limits.js'
+export * from './runtime/connection/runtime.js'
 export {
   runtimeRequest,
   runtimeRequestEffect,
   RuntimeRequestError,
   clearRuntimeRequestCache,
   getRuntimeSnapshotTag,
-} from './client.js'
+} from './shared/client.js'
 
-export * from './models.js'
+export * from './tasks/models.js'
 
-export * from './commands.js'
+export * from './shared/commands.js'
 
-export * from './pulls.js'
+export * from './scm/pulls/pulls.js'
 
-export * from './activity.js'
-export * from './questions.js'
+export * from './automation/activity.js'
+export * from './conversation/workflow/questions.js'
 
-export * from './branches.js'
+export * from './scm/repositories/branches.js'
 
-export * from './attachments.js'
-export * from './repositories.js'
-export * from './repository-pickers.js'
+export * from './shared/attachments.js'
+export * from './scm/repositories/repositories.js'
+export * from './scm/repositories/repository-pickers.js'
 
-export * from './access.js'
+export * from './auth/access.js'
 
-export * from './title-generation.js'
+export * from './tasks/title-generation.js'
 
-export * from './resources.js'
+export * from './shared/resources.js'
 
-export * from './resource-catalogs.js'
+export * from './shared/resource-catalogs.js'
 
-export * from './task-priority.js'
-export * from './pull-presentation.js'
-export * from './markdown-links.js'
-export * from './runtime-fleet.js'
-export * from './read-cache.js'
-export * from './automations.js'
-export * from './forges.js'
-export * from './forge-work.js'
+export * from './tasks/task-priority.js'
+export * from './tasks/task-preparation.js'
+export * from './tasks/task-transcript.js'
+export * from './conversation/workflow/review-comments.js'
+export * from './conversation/presentation/code-blocks.js'
+export * from './tasks/task-pull-status.js'
+export * from './conversation/presentation/file-mentions.js'
+export * from './conversation/presentation/resource-mentions.js'
+export * from './conversation/workflow/plan-mode.js'
+export * from './conversation/workflow/review-mode.js'
+export * from './tasks/task-templates.js'
+export * from './conversation/presentation/usage-summary.js'
+export * from './conversation/presentation/context-meter.js'
+export * from './scm/pulls/pull-presentation.js'
+export * from './conversation/presentation/markdown-links.js'
+export * from './runtime/connection/runtime-fleet.js'
+export * from './runtime/cache/read-cache.js'
+export * from './automation/automations.js'
+export * from './scm/forges/forges.js'
+export * from './scm/forges/forge-work.js'
 
-export * from './jira.js'
-export * from './work-task.js'
-export * from './work-navigation.js'
-export * from './work-presentation.js'
-export * from './previews.js'
-export * from './remote-browser.js'
-export * from './browser-frames.js'
+export * from './scm/forges/jira.js'
+export * from './scm/work/work-task.js'
+export * from './scm/work/work-navigation.js'
+export * from './scm/work/work-presentation.js'
+export * from './runtime/previews/previews.js'
+export * from './runtime/previews/remote-browser.js'
+export * from './runtime/previews/browser-frames.js'
 
-export * from './issue-edit.js'
+export * from './scm/forges/issue-edit.js'
 
-export * from './tool-presentation.js'
+export * from './conversation/presentation/tool-presentation.js'
 
-export * from './live-activities.js'
+export * from './runtime/previews/live-activities.js'
 
-export * from './subagents.js'
+export * from './conversation/workflow/subagents.js'
 
-export * from './schema.js'
+export * from './shared/schema.js'
 
-export * from './runtime-pairing.js'
-export * from './credential-fields.js'
-export * from './pairing-invitation.js'
-export * from './acp-registry.js'
+export * from './runtime/connection/runtime-pairing.js'
+export * from './auth/credential-fields.js'
+export * from './auth/pairing-invitation.js'
+export * from './auth/acp-registry.js'
 
-export * from './acp-auth.js'
+export * from './auth/acp-auth.js'
 
-export * from './runtime-setup.js'
-export * from './repository-tools.js'
+export * from './runtime/connection/runtime-setup.js'
+export * from './scm/repositories/repository-tools.js'
 
-export * from './worktree-base.js'
+export * from './scm/work/worktree-base.js'
 
-export * from './project-machines.js'
+export * from './runtime/connection/project-machines.js'
 
-export * from './task-machine-draft.js'
+export * from './tasks/task-machine-draft.js'
 
 export {
   retainRuntimeSnapshot,
   retainOverviewSnapshot,
   shouldPublishOverview,
-} from './overview-state.js'
-export { visiblePendingMessage, type PendingMessage } from './pending-message.js'
-export * from './worktrees.js'
+} from './runtime/cache/overview-state.js'
+export {
+  visiblePendingMessage,
+  type PendingMessage,
+} from './conversation/workflow/pending-message.js'
+export * from './scm/work/worktrees.js'

@@ -1,5 +1,5 @@
 import { WorkbenchDetailRoute } from '../../../../../shell/workbench'
-import { PullRouteScreen } from '../../../../../scm/pull-route-screen'
+import { PullRouteScreen } from '../../../../../scm/pulls/list/pull-route-screen'
 
 export default function PullRoute() {
   return (

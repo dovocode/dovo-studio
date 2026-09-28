@@ -1,12 +1,12 @@
-import { nativeEffect } from '../runtime/native-effect'
+import { nativeEffect } from '../runtime/state/native-effect'
 import { Effect } from 'effect'
 import { clientTaskScope, startPolling, runClientEffect } from '@dovo/client-runtime'
-import { useApplicationState } from '../runtime/application-state'
+import { useApplicationState } from '../runtime/state/application-state'
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { AppState, Platform } from 'react-native'
 import { requireOptionalNativeModule } from 'expo'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { useRuntime } from '../runtime/provider'
+import { useRuntime } from '../runtime/connection/provider'
 const preferenceKey = 'dovo.live-activities.enabled'
 const Context = createContext({
   enabled: true,

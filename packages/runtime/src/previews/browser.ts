@@ -225,7 +225,14 @@ export class RemoteBrowsers {
     }
   }
   private emit(session: Session, message: BrowserOutput) {
-    for (const listener of session.listeners) listener(message)
+    for (const listener of session.listeners) {
+      try {
+        listener(message)
+      } catch (error) {
+        // One disconnected controller must not stop capture or the other controllers.
+        console.error('Browser client failed', error)
+      }
+    }
   }
   private report(session: Session, error: unknown) {
     if (!session.page.isClosed())
