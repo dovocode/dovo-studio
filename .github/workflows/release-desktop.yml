@@ -185,7 +185,7 @@ jobs:
             release/*.rpm
             release/*.AppImage
             release/*.blockmap
-            release/latest*.yml
+            release/*.yml
   server:
     needs: draft
     if: ${{ needs.draft.outputs.build == 'true' }}
