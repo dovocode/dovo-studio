@@ -6,11 +6,16 @@ and Apple signing team between iPhone builds.
 
 ## Desktop
 
-Installed builds use **Dovo Studio → Check for Updates…** (also in Help). The flow checks the latest
-stable GitHub Release, asks before downloading, shows download progress in the Dock/taskbar, then
-asks before restarting. Installation checks the local runtime and waits if tasks or automations are
-running. Choosing Later does not install unexpectedly on quit. Remote runtimes are not restarted.
-Source builds explain how to update the checkout instead of attempting an installer update.
+Installed builds use **Dovo Studio → Check for Updates…** (also in Help). Stable checks stable
+GitHub Releases; **Dovo Studio (Nightly)** checks the Nightly prerelease channel. Source launches
+show **Dovo Studio (Dev)** in the window and menu. The flow asks before downloading, shows download
+progress in the Dock/taskbar, then asks before restarting. Installation checks the local runtime and
+waits if tasks or automations are running. Choosing Later does not install unexpectedly on quit.
+Remote runtimes are not restarted. Source builds explain how to update the checkout instead of
+attempting an installer update. Stable and Nightly have separate app identities and installers but
+use the same workspace and pairing data. Run one version's local runtime at a time; opening the
+other version connects to the existing compatible runtime without restarting it. Incompatible
+runtime protocol versions require a runtime update before the other app can connect.
 
 The feed is the public `dovocode/dovo-studio` GitHub repository. A source push alone is not a binary
 release. The Release workflow produces:
@@ -38,6 +43,14 @@ release.
    selected commit. The workflow creates a draft and verifies every expected architecture/format and
    update feed. Inspect the artifacts and publish the draft only after native installation tests.
 5. On an older install, exercise download, Later, restart/install and retained runtime data.
+
+Merging into `main` builds and publishes `vX.Y.Z-nightly.N` automatically after all platform
+artifacts pass verification. Nightly releases are GitHub prereleases and do not replace the latest
+Stable release. They include separate signed **Dovo Studio (Nightly)** Mac bundles, Windows/Linux
+installers, server archives, update metadata, Homebrew definitions, and a pinned mise config. The
+Stable release remains an explicit review and publish step. When preparing the next Stable version,
+update the `version_prefix` for both Nightly tools in `distribution/mise.toml` to the new base
+version.
 
 Use Node 24, `pnpm build`, then `pnpm exec node scripts/packaging/package-desktop.mjs` on the target
 OS and architecture. Append `--dir` for an unpacked build. Linux packaging requires Ruby/FPM and RPM
@@ -151,6 +164,8 @@ workflow can be rerun with a published tag.
 brew tap dovocode/studio https://github.com/dovocode/dovo-studio
 brew install dovocode/studio/dovo-server
 brew install --cask dovocode/studio/dovo-studio
+brew install dovocode/studio/dovo-server-nightly
+brew install --cask dovocode/studio/dovo-studio-nightly
 
 dovo-server setup --host local
 dovo-server start
@@ -165,7 +180,8 @@ a package does not delete data or pairings. This formula uses Dovo's managed bac
 
 For mise, merge the relevant entries from [distribution/mise.toml](../distribution/mise.toml) into
 your personal or project mise config. The two aliases select different assets from the same GitHub
-release, and `bin_path` exposes `dovo-server` and `dovo-studio` without exposing bundled Node. On
+release, and `bin_path` exposes `dovo-server` and `dovo-studio` without exposing bundled Node.
+Nightly entries select prereleases and expose `dovo-server-nightly` and `dovo-studio-nightly`. On
 Linux and Windows, select only `dovo-server`. The `dovo-studio` command launches its versioned macOS
 app bundle. Use `mise install`, then `mise exec -- dovo-server --help` or
 `mise exec -- dovo-studio`. `mise upgrade dovo-server` / `mise upgrade dovo-studio` select newer

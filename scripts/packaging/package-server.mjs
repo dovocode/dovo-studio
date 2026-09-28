@@ -1,7 +1,8 @@
 import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
 import { stageWorkspace } from './stage-workspace.mjs'
-import { mkdtemp, cp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises'
+import { releaseVariant } from './release-variant.mjs'
+import { mkdtemp, cp, mkdir, writeFile, chmod, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,7 +17,8 @@ if (
 if (Number(process.versions.node.split('.')[0]) !== 24) throw new Error('Package with Node 24.')
 const windows = process.platform === 'win32'
 const nodeName = windows ? 'node.exe' : 'node'
-const version = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version
+const { version, nightly } = await releaseVariant(root)
+const launcher = nightly ? 'dovo-server-nightly' : 'dovo-server'
 const stage = await mkdtemp(join(tmpdir(), 'dovo-server-package-'))
 try {
   const source = join(stage, 'source'),
@@ -52,12 +54,12 @@ try {
   await mkdir(join(archive, 'bin'))
   if (windows)
     await writeFile(
-      join(archive, 'bin/dovo-server.cmd'),
+      join(archive, `bin/${launcher}.cmd`),
       '@echo off\r\nsetlocal\r\nset DOVO_SERVER_DISTRIBUTION=archive\r\n"%~dp0..\\libexec\\node.exe" "%~dp0..\\libexec\\server\\dist\\server-cli.js" %*\r\nexit /b %errorlevel%\r\n',
     )
   else
     await writeFile(
-      join(archive, 'bin/dovo-server'),
+      join(archive, `bin/${launcher}`),
       `#!/bin/sh
 set -eu
 entry="$0"
@@ -83,7 +85,7 @@ exec "$base/libexec/node" "$base/libexec/server/dist/server-cli.js" "$@"
   )
   const output = resolve(root, 'release')
   await mkdir(output, { recursive: true })
-  const name = `Dovo-Server-${version}-${windows ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux'}-${process.arch}.${windows ? 'zip' : 'tar.gz'}`
+  const name = `Dovo-Server${nightly ? '-Nightly' : ''}-${version}-${windows ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux'}-${process.arch}.${windows ? 'zip' : 'tar.gz'}`
   execFileSync('tar', [windows ? '-acf' : '-czf', join(output, name), '-C', archive, '.'], {
     stdio: 'inherit',
   })

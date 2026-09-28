@@ -11,6 +11,7 @@ const fixture = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   app: {
     isPackaged: true,
+    getVersion: () => '0.0.7',
     getPath: () => '/tmp/dovo-startup-unit-test',
     commandLine: { hasSwitch: () => true },
     setName: vi.fn<(...args: unknown[]) => void>(),

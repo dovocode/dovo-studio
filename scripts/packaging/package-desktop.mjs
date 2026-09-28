@@ -2,6 +2,7 @@ import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
 import { stageWorkspace } from './stage-workspace.mjs'
 import { desktopMiseArchive } from './desktop-mise-archive.mjs'
+import { releaseVariant } from './release-variant.mjs'
 import {
   mkdtemp,
   cp,
@@ -73,6 +74,7 @@ const targets =
 const stage = await mkdtemp(join(tmpdir(), 'dovo-package-'))
 const require = createRequire(join(root, 'apps/desktop/package.json'))
 const electron = JSON.parse(await readFile(require.resolve('electron/package.json'), 'utf8'))
+const variant = await releaseVariant(root)
 
 try {
   const runtime = join(stage, 'runtime'),
@@ -129,8 +131,8 @@ try {
   await writeFile(
     join(application, 'package.json'),
     JSON.stringify({
-      name: 'dovo-studio',
-      version: JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version,
+      name: variant.nightly ? 'dovo-studio-nightly' : 'dovo-studio',
+      version: variant.version,
       description: 'Personal agent workspace',
       author: { name: 'Dovocode', email: 'noreply@github.com' },
       homepage: 'https://github.com/dovocode/dovo-studio',
@@ -155,8 +157,8 @@ try {
       process.arch === 'arm64' ? Arch.arm64 : Arch.x64,
     ),
     config: {
-      appId: 'com.dovo.studio',
-      productName: 'Dovo Studio',
+      appId: variant.appId,
+      productName: variant.productName,
       electronVersion: electron.version,
       directories: { app: application, output: join(root, 'release') },
       files: ['dist/**/*', 'dist-electron/**/*', 'package.json'],
@@ -164,7 +166,7 @@ try {
         const destination = join(
           context.appOutDir,
           process.platform === 'darwin'
-            ? 'Dovo Studio.app/Contents/Resources/runtime'
+            ? `${variant.productName}.app/Contents/Resources/runtime`
             : 'resources/runtime',
         )
         await cp(runtime, destination, {
@@ -194,8 +196,13 @@ try {
           owner: 'dovocode',
           repo: 'dovo-studio',
           releaseType: 'draft',
-          channel:
-            process.platform === 'win32' && process.arch === 'arm64' ? 'latest-arm64' : 'latest',
+          channel: variant.nightly
+            ? process.platform === 'win32' && process.arch === 'arm64'
+              ? 'nightly-arm64'
+              : 'nightly'
+            : process.platform === 'win32' && process.arch === 'arm64'
+              ? 'latest-arm64'
+              : 'latest',
         },
       ],
       mac: {
@@ -214,16 +221,16 @@ try {
       nsis: {
         oneClick: false,
         allowToChangeInstallationDirectory: true,
-        artifactName: 'Dovo-Studio-${version}-windows-${arch}.${ext}',
+        artifactName: `${variant.artifactPrefix}-\${version}-windows-\${arch}.\${ext}`,
       },
       linux: {
         icon: join(root, 'apps/desktop/build/icon.png'),
         category: 'Development',
-        executableName: 'dovo-studio',
+        executableName: variant.nightly ? 'dovo-studio-nightly' : 'dovo-studio',
         maintainer: 'Dovocode <noreply@github.com>',
-        artifactName: 'Dovo-Studio-${version}-linux-${arch}.${ext}',
+        artifactName: `${variant.artifactPrefix}-\${version}-linux-\${arch}.\${ext}`,
       },
-      artifactName: 'Dovo-Studio-${version}-${arch}.${ext}',
+      artifactName: `${variant.artifactPrefix}-\${version}-\${arch}.\${ext}`,
     },
   })
   if (process.platform === 'darwin') await desktopMiseArchive(root)

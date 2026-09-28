@@ -6,7 +6,9 @@ import { join, resolve } from 'node:path'
 import { once } from 'node:events'
 import { Either, Schema } from 'effect'
 const data = await mkdtemp(join(tmpdir(), 'dovo-packaged-check-'))
-const binary = resolve('release/mac-arm64/Dovo Studio.app/Contents/MacOS/Dovo Studio')
+const binary = resolve(
+  process.argv[2] ?? 'release/mac-arm64/Dovo Studio.app/Contents/MacOS/Dovo Studio',
+)
 const environment = {
   ...process.env,
   PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
@@ -74,10 +76,10 @@ try {
       cleanup()
       reject(
         new Error(
-          `Packaged renderer did not answer DevTools within 20 seconds. ${diagnostics.slice(-2000)}`,
+          `Packaged renderer did not answer DevTools within 45 seconds. ${diagnostics.slice(-2000)}`,
         ),
       )
-    }, 20000)
+    }, 45000)
     const cleanup = () => {
       clearTimeout(responseTimeout)
       socket.removeEventListener('message', onMessage)

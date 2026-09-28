@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Published stable release tag
+        description: Published stable or nightly release tag
         required: true
 permissions:
   contents: write
@@ -28,9 +28,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Stable version required'; exit 1; }
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-nightly\.[0-9]+)?$ ]] || { echo 'Stable or nightly version required'; exit 1; }
           test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = false
-          test "$(gh release view --json tagName --jq .tagName)" = "$TAG"
+          if [[ "$TAG" == *-nightly.* ]]; then
+            test "$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)" = true
+          else
+            test "$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)" = false
+            test "$(gh release view --json tagName --jq .tagName)" = "$TAG"
+          fi
           gh release download "$TAG" --dir work/release-assets
           node scripts/packaging/generate-distribution.mjs work/release-assets work/distribution "${TAG#v}"
           cp -R work/distribution/Formula work/distribution/Casks .
@@ -42,5 +47,6 @@ jobs:
           git add Formula Casks
           if ! git diff --cached --quiet; then
             git commit -m 'Update Homebrew distribution definitions'
+            git pull --rebase origin "${{ github.event.repository.default_branch }}"
             git push
           fi

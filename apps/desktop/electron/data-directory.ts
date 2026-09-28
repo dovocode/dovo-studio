@@ -31,8 +31,15 @@ export function selectDesktopDataDirectory(options: {
   explicitDirectory: boolean
   current: DesktopProfile
   legacy: DesktopProfile
+  shared?: DesktopProfile
 }): string {
-  const { packaged, explicitDirectory, current, legacy } = options
+  const { packaged, explicitDirectory, current, legacy, shared } = options
+  if (packaged && !explicitDirectory && shared)
+    return shared.configured
+      ? shared.directory
+      : legacy.configured
+        ? legacy.directory
+        : shared.directory
   return packaged && !explicitDirectory && !current.configured && legacy.configured
     ? legacy.directory
     : current.directory

@@ -48,6 +48,36 @@ await test('generates matching Homebrew and mise checksums and rejects incomplet
   }
 })
 
+await test('generates separate nightly Homebrew and mise definitions', async () => {
+  const temporary = await mkdtemp(join(tmpdir(), 'dovo-nightly-distribution-test-'))
+  try {
+    const version = '1.2.3-nightly.42'
+    const files = [
+      `Dovo-Server-Nightly-${version}-macos-arm64.tar.gz`,
+      `Dovo-Server-Nightly-${version}-linux-arm64.tar.gz`,
+      `Dovo-Server-Nightly-${version}-linux-x64.tar.gz`,
+      `Dovo-Studio-Nightly-${version}-arm64.zip`,
+      `Dovo-Studio-Nightly-mise-${version}-macos-arm64.tar.gz`,
+      `Dovo-Server-Nightly-${version}-windows-x64.zip`,
+      `Dovo-Server-Nightly-${version}-windows-arm64.zip`,
+    ]
+    for (const file of files) await writeFile(join(temporary, file), file)
+    const output = join(temporary, 'distribution')
+    execFileSync(process.execPath, [script.pathname, temporary, output, version])
+    const formula = await readFile(join(output, 'Formula/dovo-server-nightly.rb'), 'utf8')
+    const cask = await readFile(join(output, 'Casks/dovo-studio-nightly.rb'), 'utf8')
+    const mise = await readFile(join(output, 'mise.toml'), 'utf8')
+    assert.match(formula, /class DovoServerNightly/)
+    assert.match(formula, /bin\/dovo-server-nightly/)
+    assert.match(cask, /Dovo Studio \(Nightly\)\.app/)
+    assert.match(mise, /http:dovo-server-nightly/)
+    assert.match(mise, /http:dovo-studio-nightly/)
+    assert.ok(!formula.includes('Dovo-Server-1.2.3-'))
+  } finally {
+    await rm(temporary, { recursive: true, force: true })
+  }
+})
+
 await test('stages the release version for server diagnostics without editing source manifests', async () => {
   const { stageWorkspace } = await import('./stage-workspace.mjs')
   const { mkdir } = await import('node:fs/promises')
@@ -74,6 +104,28 @@ await test('stages the release version for server diagnostics without editing so
       '0.1.0',
     )
   } finally {
+    await rm(temporary, { recursive: true, force: true })
+  }
+})
+
+await test('nightly packaging keeps source manifests intact and uses a separate app identity', async () => {
+  const { releaseVariant } = await import('./release-variant.mjs')
+  const temporary = await mkdtemp(join(tmpdir(), 'dovo-nightly-version-test-'))
+  const previous = process.env.DOVO_RELEASE_VERSION
+  try {
+    await writeFile(join(temporary, 'package.json'), JSON.stringify({ version: '1.2.3' }))
+    process.env.DOVO_RELEASE_VERSION = '1.2.3-nightly.42'
+    const variant = await releaseVariant(temporary)
+    assert.equal(variant.productName, 'Dovo Studio (Nightly)')
+    assert.equal(variant.appId, 'com.dovo.studio.nightly')
+    assert.equal(variant.version, '1.2.3-nightly.42')
+    assert.equal(
+      JSON.parse(await readFile(join(temporary, 'package.json'), 'utf8')).version,
+      '1.2.3',
+    )
+  } finally {
+    if (previous === undefined) delete process.env.DOVO_RELEASE_VERSION
+    else process.env.DOVO_RELEASE_VERSION = previous
     await rm(temporary, { recursive: true, force: true })
   }
 })

@@ -10,7 +10,13 @@ export function registerUpdates(
 ) {
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
-  autoUpdater.allowPrerelease = false
+  const nightly = app.isPackaged && /-nightly\.\d+$/.test(app.getVersion())
+  const appName = !app.isPackaged
+    ? 'Dovo Studio (Dev)'
+    : nightly
+      ? 'Dovo Studio (Nightly)'
+      : 'Dovo Studio'
+  autoUpdater.allowPrerelease = nightly
   let busy = false
   let restoreRuntime: (() => Promise<void>) | undefined
   const recover = async () => {
@@ -47,7 +53,11 @@ export function registerUpdates(
         cancelId: 1,
       })
       if (answer.response === 0)
-        await shell.openExternal('https://github.com/dovocode/dovo-studio/releases/latest')
+        await shell.openExternal(
+          nightly
+            ? 'https://github.com/dovocode/dovo-studio/releases?q=nightly'
+            : 'https://github.com/dovocode/dovo-studio/releases/latest',
+        )
       return
     }
     busy = true
@@ -56,14 +66,14 @@ export function registerUpdates(
       if (!result?.isUpdateAvailable) {
         await dialog.showMessageBox({
           type: 'info',
-          message: 'Dovo Studio is up to date.',
+          message: `${appName} is up to date.`,
           detail: `Installed version: ${app.getVersion()}`,
         })
         return
       }
       const answer = await dialog.showMessageBox({
         type: 'info',
-        message: `Dovo Studio ${result?.updateInfo.version ?? ''} is available`,
+        message: `${appName} ${result?.updateInfo.version ?? ''} is available`,
         detail:
           'Download the update now? Installation waits for your confirmation and keeps your projects, conversations and paired devices.',
         buttons: ['Download update', 'Later'],
@@ -86,7 +96,7 @@ export function registerUpdates(
       const install = await dialog.showMessageBox({
         type: 'info',
         message: 'Update ready',
-        detail: 'Restart Dovo Studio to install. Active tasks and automations must finish first.',
+        detail: `Restart ${appName} to install. Active tasks and automations must finish first.`,
         buttons: ['Restart and install', 'Later'],
         cancelId: 1,
         defaultId: 1,
@@ -127,7 +137,7 @@ export function registerUpdates(
       }
       await dialog.showMessageBox({
         type: 'error',
-        message: 'Could not update Dovo Studio',
+        message: `Could not update ${appName}`,
         detail: message,
       })
     } finally {
@@ -144,7 +154,7 @@ export function registerUpdates(
     ...(process.platform === 'darwin'
       ? [
           {
-            label: 'Dovo Studio',
+            label: appName,
             submenu: [
               {
                 role: 'about' as const,

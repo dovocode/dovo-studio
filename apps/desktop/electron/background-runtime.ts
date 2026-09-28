@@ -90,6 +90,12 @@ export function ensureBackgroundRuntime(
       const path = join(agents, `${label}.plist`)
       await mkdir(agents, { recursive: true, mode: 0o700 })
       await mkdir(options.directory, { recursive: true, mode: 0o700 })
+      try {
+        await command(['print', `${domain}/${label}`])
+        return // A second app variant must not rewrite the active service definition.
+      } catch {
+        // bootstrap supplies the actionable error if the job cannot be loaded.
+      }
       const environmentPath = persistRuntimeEnvironment(options.directory, {
         ...options.environment,
         ...(options.ownerToken ? { DOVO_OWNER_TOKEN: options.ownerToken } : {}),
@@ -106,12 +112,6 @@ export function ensureBackgroundRuntime(
       await handle.close()
       await writeFile(path + '.tmp', plist, { mode: 0o600 })
       await rename(path + '.tmp', path)
-      try {
-        await command(['print', `${domain}/${label}`])
-        return // Never restart an existing service or interrupt its work.
-      } catch {
-        // bootstrap supplies the actionable error if the job cannot be loaded.
-      }
       await command(['bootstrap', domain, path])
     },
     catch: (cause) =>

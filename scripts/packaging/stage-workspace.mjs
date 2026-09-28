@@ -1,9 +1,10 @@
 import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { releaseVariant } from './release-variant.mjs'
 // pnpm's production deploy can prune development links in its source workspace.
 // Stage manifests and compiled runtime packages so packaging never changes the working install.
 export async function stageWorkspace(root, target) {
-  const { version } = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
+  const { version } = await releaseVariant(root)
   await mkdir(target)
   for (const name of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches'])
     await cp(join(root, name), join(target, name), { recursive: true })

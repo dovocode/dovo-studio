@@ -26,12 +26,19 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const rendererPath = join(__dirname, '../dist/index.html')
+const nightly = app.isPackaged && /-nightly\.\d+$/.test(app.getVersion())
+const appName = !app.isPackaged
+  ? 'Dovo Studio (Dev)'
+  : nightly
+    ? 'Dovo Studio (Nightly)'
+    : 'Dovo Studio'
 const currentDirectory = app.getPath('userData')
 const dataDirectory = selectDesktopDataDirectory({
   packaged: app.isPackaged,
   explicitDirectory: app.commandLine.hasSwitch('user-data-dir'),
   current: desktopProfile(currentDirectory),
   legacy: desktopProfile(join(app.getPath('appData'), '@dovo', 'desktop')),
+  ...(nightly ? { shared: desktopProfile(join(app.getPath('appData'), 'Dovo Studio')) } : {}),
 })
 // Development and packaged builds share saved connections, so they must also
 // use the same Keychain identity. Preserve the selected profile before renaming.
@@ -46,7 +53,7 @@ function createWindow(): void {
     height: 760,
     minWidth: 840,
     minHeight: 560,
-    title: 'Dovo Studio',
+    title: appName,
     backgroundColor: '#0a0a0a',
     titleBarStyle: 'hidden',
     ...(process.platform === 'darwin'

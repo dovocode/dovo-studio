@@ -48,6 +48,12 @@ it('leaves a loaded background service running', async () => {
   const command = vi.fn<(args: string[]) => Promise<void>>(async () => {})
   await Effect.runPromise(ensureBackgroundRuntime(options, command))
   expect(command).toHaveBeenCalledTimes(1)
+  const { label } = backgroundRuntimeDefinition(options)
+  await expect(
+    readFile(join(home, 'Library', 'LaunchAgents', `${label}.plist`)),
+  ).rejects.toMatchObject({
+    code: 'ENOENT',
+  })
 })
 it('surfaces bootstrap failures instead of falling back to a desktop-owned process', async () => {
   const options = await fixture()
@@ -61,7 +67,11 @@ it('surfaces bootstrap failures instead of falling back to a desktop-owned proce
 
 it('stores provider credentials outside the plist and restores them on the next launch', async () => {
   const options = await fixture()
-  const command = vi.fn<(args: string[]) => Promise<void>>(async () => {})
+  let loaded = false
+  const command = vi.fn<(args: string[]) => Promise<void>>(async (args) => {
+    if (args[0] === 'print' && !loaded) throw new Error('No service')
+    if (args[0] === 'bootstrap') loaded = true
+  })
   await Effect.runPromise(
     ensureBackgroundRuntime(
       {
@@ -103,7 +113,11 @@ it('unloads only the expected app-owned process before an update', async () => {
 
 it('restores Node startup certificate settings before the service process launches', async () => {
   const options = await fixture()
-  const command = vi.fn<(args: string[]) => Promise<void>>(async () => {})
+  let loaded = false
+  const command = vi.fn<(args: string[]) => Promise<void>>(async (args) => {
+    if (args[0] === 'print' && !loaded) throw new Error('No service')
+    if (args[0] === 'bootstrap') loaded = true
+  })
   await Effect.runPromise(
     ensureBackgroundRuntime(
       {

@@ -6,9 +6,10 @@ const f = vi.hoisted(() => ({
   message: vi.fn<(options: unknown) => Promise<{ response: number }>>(async () => ({
     response: 0,
   })),
+  version: 'fixture',
 }))
 vi.mock('electron', () => ({
-  app: { isPackaged: true, getVersion: () => 'fixture' },
+  app: { isPackaged: true, getVersion: () => f.version },
   dialog: { showMessageBox: f.message },
   shell: { openExternal: f.open },
   Menu: { buildFromTemplate: (value: unknown) => value, setApplicationMenu: () => {} },
@@ -36,6 +37,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.clearAllMocks()
   f.listeners.clear()
+  f.version = 'fixture'
 })
 const snapshot = {
   revision: 0,
@@ -99,4 +101,15 @@ it('opens Linux package downloads without attempting an AppImage update for DEB/
   expect(f.open).toHaveBeenCalledWith('https://github.com/dovocode/dovo-studio/releases/latest')
   expect(prepare).not.toHaveBeenCalled()
   expect(f.install).not.toHaveBeenCalled()
+})
+
+it('keeps nightly updates on the prerelease channel and links nightly packages', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+  vi.stubEnv('APPIMAGE', '')
+  f.version = '0.0.7-nightly.42'
+  const { registerUpdates } = await import('./updates')
+  const updater = (await import('electron-updater')).default.autoUpdater
+  await registerUpdates('/unused', async () => async () => {})()
+  expect(updater.allowPrerelease).toBe(true)
+  expect(f.open).toHaveBeenCalledWith('https://github.com/dovocode/dovo-studio/releases?q=nightly')
 })

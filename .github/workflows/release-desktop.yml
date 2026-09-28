@@ -2,6 +2,10 @@ name: Release
 on:
   push:
     tags: ['v*']
+    branches: [main]
+    paths-ignore:
+      - 'Casks/**'
+      - 'Formula/**'
   workflow_dispatch:
     inputs:
       tag:
@@ -15,7 +19,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: release-${{ inputs.tag || github.ref_name }}
+  group: release-${{ github.ref_type == 'branch' && 'nightly' || inputs.tag || github.ref_name }}
   cancel-in-progress: false
 jobs:
   draft:
@@ -23,19 +27,41 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       build: ${{ steps.prepare.outputs.build }}
+      tag: ${{ steps.prepare.outputs.tag }}
+      version: ${{ steps.prepare.outputs.version }}
+      channel: ${{ steps.prepare.outputs.channel }}
+      app_name: ${{ steps.prepare.outputs.app_name }}
     steps:
       - uses: actions/checkout@v4
-      - name: Verify version
-        env:
-          TAG: ${{ inputs.tag || github.ref_name }}
-        run: node -e 'const p=require("./package.json"); if(process.env.TAG!==`v${p.version}`) throw Error("Release tag must match package.json version")'
       - name: Create release draft
         id: prepare
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ inputs.tag || github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
+          VERSION=$(node -p 'require("./package.json").version')
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            VERSION="${VERSION}-nightly.${GITHUB_RUN_NUMBER}"
+            TAG="v${VERSION}"
+            CHANNEL=nightly
+            APP_NAME='Dovo Studio (Nightly)'
+          elif [[ "$GITHUB_REF" == refs/tags/v*-nightly.* ]]; then
+            TAG="$GITHUB_REF_NAME"
+            [[ "$TAG" =~ ^v${VERSION}-nightly\.[0-9]+$ ]] || { echo 'Nightly tag must match package.json base version'; exit 1; }
+            VERSION="${TAG#v}"
+            CHANNEL=nightly
+            APP_NAME='Dovo Studio (Nightly)'
+          else
+            TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
+            test "$TAG" = "v${VERSION}" || { echo 'Release tag must match package.json version'; exit 1; }
+            CHANNEL=stable
+            APP_NAME='Dovo Studio'
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
           if gh release view "$TAG" --json isDraft --jq .isDraft >/tmp/dovo-release-draft 2>/dev/null; then
             if test "$(cat /tmp/dovo-release-draft)" != true; then
               echo 'Release is already published; skipping duplicate tag-triggered build.'
@@ -44,7 +70,11 @@ jobs:
             fi
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
-            gh release create "$TAG" --draft --title "Dovo Studio ${TAG#v}" --target "$GITHUB_SHA" --generate-notes
+            if test "$CHANNEL" = nightly; then
+              gh release create "$TAG" --draft --prerelease --title "Dovo Studio (Nightly) ${TAG#v}" --target "$GITHUB_SHA" --generate-notes
+            else
+              gh release create "$TAG" --draft --title "Dovo Studio ${TAG#v}" --target "$GITHUB_SHA" --generate-notes
+            fi
           fi
           echo 'build=true' >> "$GITHUB_OUTPUT"
   mac:
@@ -52,16 +82,15 @@ jobs:
     if: ${{ needs.draft.outputs.build == 'true' }}
     runs-on: macos-15
     timeout-minutes: 45
+    env:
+      DOVO_RELEASE_VERSION: ${{ needs.draft.outputs.version }}
+      DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
       - uses: pnpm/action-setup@v4
-      - name: Verify release version
-        env:
-          TAG: ${{ inputs.tag || github.ref_name }}
-        run: node -e 'const p=require("./package.json"); if(process.env.TAG!==`v${p.version}`) throw Error("Tag must match package.json version")'
       - name: Verify Apple signing secrets
         env:
           MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
@@ -85,21 +114,23 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          GITHUB_REF_NAME: ${{ inputs.tag || github.ref_name }}
+          GITHUB_REF_NAME: ${{ needs.draft.outputs.tag }}
         run: |
           # Signing scans the bundled Node runtime and its dependency tree concurrently.
           ulimit -n 65536
           node scripts/packaging/package-desktop.mjs --publish
       - name: Verify Mac signature and notarization
+        env:
+          APP_NAME: ${{ needs.draft.outputs.app_name }}
         run: |
-          codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Dovo Studio.app"
-          spctl --assess --type execute --verbose=2 "release/mac-arm64/Dovo Studio.app"
-          xcrun stapler validate "release/mac-arm64/Dovo Studio.app"
+          codesign --verify --deep --strict --verbose=2 "release/mac-arm64/$APP_NAME.app"
+          spctl --assess --type execute --verbose=2 "release/mac-arm64/$APP_NAME.app"
+          xcrun stapler validate "release/mac-arm64/$APP_NAME.app"
       - name: Upload mise desktop archive
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.tag || github.ref_name }}
-        run: gh release upload "$TAG" release/Dovo-Studio-mise-*.tar.gz --clobber
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: gh release upload "$TAG" release/*-mise-*.tar.gz --clobber
   desktop:
     needs: draft
     if: ${{ needs.draft.outputs.build == 'true' }}
@@ -120,6 +151,8 @@ jobs:
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       USE_SYSTEM_FPM: 'true'
+      DOVO_RELEASE_VERSION: ${{ needs.draft.outputs.version }}
+      DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -161,16 +194,15 @@ jobs:
         runner: [macos-15, ubuntu-24.04, ubuntu-24.04-arm, windows-2025, windows-11-arm]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    env:
+      DOVO_RELEASE_VERSION: ${{ needs.draft.outputs.version }}
+      DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
       - uses: pnpm/action-setup@v4
-      - name: Verify release version
-        env:
-          TAG: ${{ inputs.tag || github.ref_name }}
-        run: node -e 'const p=require("./package.json"); if(process.env.TAG!==`v${p.version}`) throw Error("Tag must match package.json version")'
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @dovo/api... -r build
       - run: pnpm run package:server
@@ -181,7 +213,8 @@ jobs:
           $archive = (Get-ChildItem release/Dovo-Server-*.zip).FullName
           $destination = Join-Path $env:RUNNER_TEMP 'Dovo Server Extracted'
           Expand-Archive -LiteralPath $archive -DestinationPath $destination
-          $launcher = Join-Path $destination 'bin/dovo-server.cmd'
+          $name = if ($env:DOVO_RELEASE_CHANNEL -eq 'nightly') { 'dovo-server-nightly.cmd' } else { 'dovo-server.cmd' }
+          $launcher = Join-Path $destination "bin/$name"
           $data = Join-Path $env:RUNNER_TEMP 'Dovo Server Smoke Data'
           & $launcher --help
           if ($LASTEXITCODE -ne 0) { throw 'Extracted launcher failed' }
@@ -202,7 +235,7 @@ jobs:
           if-no-files-found: error
           path: release/Dovo-Server-*
   upload:
-    needs: [server, desktop]
+    needs: [draft, server, desktop]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
@@ -219,43 +252,64 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ inputs.tag || github.ref_name }}
+          TAG: ${{ needs.draft.outputs.tag }}
         run: |
           gh release upload "$TAG" release/* --clobber
   verify:
     if: ${{ always() && (inputs.verify_only || (needs.mac.result == 'success' && needs.upload.result == 'success')) }}
-    needs: [mac, upload]
+    needs: [draft, mac, upload]
     runs-on: ubuntu-24.04
     steps:
       - name: Verify release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ inputs.tag || github.ref_name }}
+          TAG: ${{ needs.draft.outputs.tag || inputs.tag || github.ref_name }}
+          CHANNEL: ${{ needs.draft.outputs.channel || 'stable' }}
         run: |
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort > /tmp/dovo-release-assets
+          if test "$CHANNEL" = nightly; then
+            PREFIX=Dovo-Studio-Nightly
+            SERVER=Dovo-Server-Nightly
+            FEED=nightly
+          else
+            PREFIX=Dovo-Studio
+            SERVER=Dovo-Server
+            FEED=latest
+          fi
           for pattern in \
-            "Dovo-Studio-${TAG#v}-arm64.dmg" \
-            "Dovo-Studio-${TAG#v}-arm64.zip" \
-            "Dovo-Studio-mise-${TAG#v}-macos-arm64.tar.gz" \
-            "Dovo-Server-${TAG#v}-macos-arm64.tar.gz" \
-            "Dovo-Server-${TAG#v}-linux-x64.tar.gz" \
-            "Dovo-Server-${TAG#v}-linux-arm64.tar.gz" \
-            "Dovo-Server-${TAG#v}-windows-x64.zip" \
-            "Dovo-Server-${TAG#v}-windows-arm64.zip" \
-            "Dovo-Studio-${TAG#v}-windows-x64.exe" \
-            "Dovo-Studio-${TAG#v}-windows-arm64.exe" \
-            "Dovo-Studio-${TAG#v}-linux-amd64.deb" \
-            "Dovo-Studio-${TAG#v}-linux-arm64.deb" \
-            "Dovo-Studio-${TAG#v}-linux-x86_64.rpm" \
-            "Dovo-Studio-${TAG#v}-linux-aarch64.rpm" \
-            "Dovo-Studio-${TAG#v}-linux-x86_64.AppImage" \
-            "Dovo-Studio-${TAG#v}-linux-arm64.AppImage" \
-            latest.yml \
-            latest-arm64.yml \
-            latest-linux.yml \
-            latest-linux-arm64.yml \
-            latest-mac.yml; do
+            "$PREFIX-${TAG#v}-arm64.dmg" \
+            "$PREFIX-${TAG#v}-arm64.zip" \
+            "$PREFIX-mise-${TAG#v}-macos-arm64.tar.gz" \
+            "$SERVER-${TAG#v}-macos-arm64.tar.gz" \
+            "$SERVER-${TAG#v}-linux-x64.tar.gz" \
+            "$SERVER-${TAG#v}-linux-arm64.tar.gz" \
+            "$SERVER-${TAG#v}-windows-x64.zip" \
+            "$SERVER-${TAG#v}-windows-arm64.zip" \
+            "$PREFIX-${TAG#v}-windows-x64.exe" \
+            "$PREFIX-${TAG#v}-windows-arm64.exe" \
+            "$PREFIX-${TAG#v}-linux-amd64.deb" \
+            "$PREFIX-${TAG#v}-linux-arm64.deb" \
+            "$PREFIX-${TAG#v}-linux-x86_64.rpm" \
+            "$PREFIX-${TAG#v}-linux-aarch64.rpm" \
+            "$PREFIX-${TAG#v}-linux-x86_64.AppImage" \
+            "$PREFIX-${TAG#v}-linux-arm64.AppImage" \
+            "$FEED.yml" \
+            "$FEED-arm64.yml" \
+            "$FEED-linux.yml" \
+            "$FEED-linux-arm64.yml" \
+            "$FEED-mac.yml"; do
             grep -Fx "$pattern" /tmp/dovo-release-assets || { echo "::error::Missing release asset: $pattern"; exit 1; }
           done
           echo "Release $TAG has all required assets." >> "$GITHUB_STEP_SUMMARY"
+  publish-nightly:
+    needs: [draft, verify]
+    if: ${{ needs.draft.outputs.channel == 'nightly' && needs.verify.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish verified nightly
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false --prerelease --latest=false

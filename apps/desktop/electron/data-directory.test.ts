@@ -66,3 +66,21 @@ it('does not adopt an empty legacy directory', () => {
   rmSync(join(legacy, 'runtime-connection.json'))
   expect(select()).toBe(current)
 })
+
+it('uses the stable workspace for a nightly install, including on a fresh machine', () => {
+  const { current, legacy } = profiles()
+  const nightly = join(current, '..', 'Dovo Studio (Nightly)')
+  const select = () =>
+    selectDesktopDataDirectory({
+      packaged: true,
+      explicitDirectory: false,
+      current: desktopProfile(nightly),
+      shared: desktopProfile(current),
+      legacy: desktopProfile(legacy),
+    })
+  expect(select()).toBe(legacy)
+  rmSync(join(legacy, 'runtime-connection.json'))
+  expect(select()).toBe(current)
+  writeFileSync(join(current, 'runtime.sqlite'), '')
+  expect(select()).toBe(current)
+})
