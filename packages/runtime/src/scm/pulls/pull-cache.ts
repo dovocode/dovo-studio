@@ -74,14 +74,15 @@ export class PullCache {
           yield* Effect.yieldNow()
           const fetched = yield* runtimeOperation(fetch)
           return yield* runtimeOperation(() => {
+            const updated = Date.now()
             const value = {
               ...(reconcile ? reconcile(fetched, cached) : fetched),
-              cachedAt: new Date().toISOString(),
+              cachedAt: new Date(updated).toISOString(),
               stale: this.invalidated.has(key),
             }
             this.db
               .prepare('INSERT OR REPLACE INTO pull_cache(key,value,updated) VALUES(?,?,?)')
-              .run(key, JSON.stringify(value), Date.now())
+              .run(key, JSON.stringify(value), updated)
             this.db
               .prepare(
                 'DELETE FROM pull_cache WHERE key IN (SELECT key FROM pull_cache ORDER BY updated DESC LIMIT -1 OFFSET 500)',
