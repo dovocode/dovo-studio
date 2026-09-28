@@ -174,7 +174,8 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
           child.stderr.on('data', append)
           terminal.exit = new Promise((resolveExit, reject) => {
             child.once('error', reject)
-            child.once('exit', (code, signal) => {
+            // `exit` can fire before the final stdout/stderr chunks are delivered.
+            child.once('close', (code, signal) => {
               terminal.status = { exitCode: code, signal: signal ?? undefined }
               resolveExit(terminal.status)
             })

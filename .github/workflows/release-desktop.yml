@@ -18,6 +18,7 @@ on:
         default: false
 permissions:
   contents: write
+  actions: read
 concurrency:
   group: release-${{ github.ref_type == 'branch' && 'nightly' || inputs.tag || github.ref_name }}
   cancel-in-progress: false
@@ -307,6 +308,23 @@ jobs:
     if: ${{ needs.draft.outputs.channel == 'nightly' && needs.verify.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Require passing Check workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          for attempt in {1..40}; do
+            result=$(gh run list --workflow Check --commit "$SHA" --limit 1 --json status,conclusion --jq '.[0] | if . == null then "missing" else (.status + ":" + .conclusion) end')
+            if test "$result" = completed:success; then exit 0; fi
+            if [[ "$result" == completed:* ]]; then
+              echo "::error::Check workflow did not pass for $SHA: $result"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "::error::Check workflow did not complete for $SHA"
+          exit 1
       - name: Publish verified nightly
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
