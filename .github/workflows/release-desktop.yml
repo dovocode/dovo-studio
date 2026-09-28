@@ -185,7 +185,8 @@ jobs:
             release/*.rpm
             release/*.AppImage
             release/*.blockmap
-            release/*.yml
+            release/latest*.yml
+            release/nightly*.yml
   server:
     needs: draft
     if: ${{ needs.draft.outputs.build == 'true' }}
@@ -307,6 +308,9 @@ jobs:
     needs: [draft, verify]
     if: ${{ needs.draft.outputs.channel == 'nightly' && needs.verify.result == 'success' }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: write
     steps:
       - name: Require passing Check workflow
         env:
@@ -331,3 +335,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.draft.outputs.tag }}
         run: gh release edit "$TAG" --draft=false --prerelease --latest=false
+      - name: Update Homebrew and mise distribution
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: gh workflow run distribution.yml -f tag="$TAG"
