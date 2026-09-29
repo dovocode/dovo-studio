@@ -298,7 +298,7 @@ export function ChatThread({
                   )}
                   {turn && turn.status !== 'running' && (
                     <p className="text-[0.6875rem] text-muted-foreground" aria-label="Turn summary">
-                      {turnSummary(turn, tools)}
+                      {turnSummary(turn, tools, false)}
                     </p>
                   )}
                 </Message>
