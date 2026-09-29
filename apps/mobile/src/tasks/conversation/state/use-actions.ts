@@ -195,8 +195,6 @@ export function useConversationActions(task: Task) {
             responses.ok,
           ),
         )
-        if (task.status === 'cancelled' && mode === 'queue')
-          yield* callEffect('/api/tasks/queue', { id: task.id, action: 'resume' }, responses.ok)
         if (clearDraft) draft.update('')
       }).pipe(
         Effect.catchAll((error) =>
@@ -236,10 +234,14 @@ export function useConversationActions(task: Task) {
         )
       // Settings → General → Confirm before stopping a running task.
       if (!readMobilePreferences().confirmStop) return run()
-      Alert.alert(`Stop “${task.title}”?`, 'Queued messages stay paused until you resume.', [
-        { text: 'Keep running', style: 'cancel' },
-        { text: 'Stop', style: 'destructive', onPress: run },
-      ])
+      Alert.alert(
+        `Stop “${task.title}”?`,
+        'Queued messages stay paused until you continue or send a follow-up.',
+        [
+          { text: 'Keep running', style: 'cancel' },
+          { text: 'Stop', style: 'destructive', onPress: run },
+        ],
+      )
     },
     connected,
     snapshot,

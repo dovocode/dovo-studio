@@ -103,7 +103,7 @@ export function CarComposer({ task, onType }: { task: Task; onType: () => void }
           )}
           {text ? (
             <CarButton
-              label={running || task.queuePaused ? 'Queue' : 'Send'}
+              label={running ? 'Queue' : 'Send'}
               disabled={!canSend || finishing}
               onPress={() => send()}
             />

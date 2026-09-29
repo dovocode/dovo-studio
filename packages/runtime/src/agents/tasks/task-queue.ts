@@ -40,6 +40,7 @@ export class TaskQueue {
     attachments: Attachment[] = [],
     response?: { id: string; fingerprint: string },
     review = false,
+    resumePaused = false,
   ) {
     if (this.accepted(id, messageId, text, attachments)) return false
     const task = this.store.task(id)
@@ -51,6 +52,7 @@ export class TaskQueue {
       (t) => ({
         ...t,
         checkoutLocked: true,
+        ...(resumePaused ? { queuePaused: false, restartRecovery: undefined } : {}),
         draftAttachments: t.draftAttachments?.filter(
           (f) => !attachments.some((a) => a.id === f.id),
         ),

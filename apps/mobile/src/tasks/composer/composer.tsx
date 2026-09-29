@@ -499,13 +499,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
             <IconButton
               variant="filled"
               icon={task.status === 'running' ? 'stop' : 'send'}
-              label={
-                task.status === 'running'
-                  ? 'Stop'
-                  : task.queuePaused && task.status !== 'cancelled'
-                    ? 'Queue'
-                    : 'Send'
-              }
+              label={task.status === 'running' ? 'Stop' : 'Send'}
               disabled={
                 machineMoving || (task.status === 'running' ? !connected || stopping : !canSend)
               }

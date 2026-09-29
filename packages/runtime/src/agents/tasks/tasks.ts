@@ -382,12 +382,14 @@ export class Tasks {
     }))
     return { ok: true }
   }
+  /** Explicit sends can resume an idle queue; scheduled input keeps its paused state. */
   sendEffect(
     id: string,
     messageId: string,
     text: string,
     attachmentIds: string[] = [],
     review = false,
+    resumePaused = false,
   ) {
     return runtimeOperation(() => {
       this.queue.add(
@@ -397,6 +399,7 @@ export class Tasks {
         this.attachments.metadata(id, attachmentIds),
         undefined,
         review,
+        resumePaused && !this.running.has(id),
       )
       return (
         this.store.task(id).queue?.some((message) => message.id === messageId) &&

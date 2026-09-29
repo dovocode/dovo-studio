@@ -384,6 +384,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           input.text,
           input.attachmentIds,
           input.review,
+          true,
         )
       }
       if (method === 'POST' && path === '/api/tasks/queue') {
