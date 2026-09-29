@@ -94,8 +94,17 @@ export const managedSkillSchema = mutableStruct({
   sourceRevision: Schema.optional(maxValue(Schema.String, 200)),
   sourcePath: Schema.optional(maxValue(Schema.String, 4000)),
 })
+export const agentHookSchema = mutableStruct({
+  name,
+  enabled: Schema.Boolean,
+  event: Schema.Literal('before-turn', 'after-turn'),
+  command: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 4000),
+  timeoutSeconds: Schema.Number.pipe(Schema.int(), Schema.between(1, 600)),
+})
+export type AgentHook = Schema.Schema.Type<typeof agentHookSchema>
 export const resourceSettingsSchema = superRefine(
   mutableStruct({
+    hooks: Schema.optional(maxValue(mutableArray(agentHookSchema), 20)),
     mcpServers: Schema.optionalWith(maxValue(mutableArray(mcpServerSchema), 30), {
       default: () => [],
     }),
@@ -104,8 +113,11 @@ export const resourceSettingsSchema = superRefine(
     }),
   }),
   (settings, context) => {
-    for (const key of ['mcpServers', 'skills'] as const)
-      if (new Set(settings[key].map((item) => item.name)).size !== settings[key].length)
+    for (const key of ['mcpServers', 'skills', 'hooks'] as const)
+      if (
+        new Set((settings[key] ?? []).map((item) => item.name)).size !==
+        (settings[key] ?? []).length
+      )
         context.addIssue({
           code: 'custom',
           path: [key],
@@ -131,6 +143,9 @@ export function mergeResources(
   agent?: ResourceSettings,
 ): ResourceSettings {
   return {
+    ...(project?.hooks || agent?.hooks
+      ? { hooks: [...(project?.hooks ?? []), ...(agent?.hooks ?? [])] }
+      : {}),
     mcpServers: [
       ...new Map(
         [...(project?.mcpServers ?? []), ...(agent?.mcpServers ?? [])].map((server) => [

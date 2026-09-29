@@ -1,4 +1,5 @@
 import { nativeEffect, mobileWorkflow } from '../../../runtime/state/native-effect'
+import { useEffect } from 'react'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../../runtime/state/application-state'
@@ -64,6 +65,7 @@ export function MessageAttachments({
     >
       {files.map((file) => (
         <View key={file.id} style={styles.row}>
+          {isImageAttachment(file) && <AttachmentThumbnail taskId={taskId} file={file} />}
           <Action
             secondary
             label={`File: ${file.name}`}
@@ -176,6 +178,35 @@ export function MessageAttachments({
         </SafeAreaProvider>
       </Modal>
     </View>
+  )
+}
+
+function AttachmentThumbnail({ taskId, file }: { taskId: string; file: Attachment }) {
+  const { connected, callEffect } = useRuntime()
+  const [uri, setUri] = useApplicationState('')
+  useEffect(() => {
+    if (!connected) return
+    let cancelled = false
+    void runClientEffect(
+      callEffect('/api/attachments/read', { taskId, id: file.id }, attachmentReadSchema),
+    )
+      .then((result) => {
+        if (!cancelled) setUri(`data:${file.mime};base64,${result.data}`)
+      })
+      .catch(() => {
+        /* The attachment remains available through its file action. */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [connected, callEffect, taskId, file.id, file.mime])
+  return (
+    <Image
+      source={uri ? { uri } : undefined}
+      accessibilityLabel={file.name}
+      style={{ width: 40, height: 40, borderRadius: 6 }}
+      resizeMode="cover"
+    />
   )
 }
 function textPreview(data: string) {

@@ -11,6 +11,7 @@ import {
   WorkspaceScope,
   type McpServer,
   type ManagedSkill,
+  type AgentHook,
   type ResourceSettings,
 } from '@dovo/studio-core'
 import { Button, Checkbox } from '@dovo/studio-ui'
@@ -21,10 +22,10 @@ export default function ResourcesView() {
   const sources = useRuntimeSources()
   return (
     <section className="min-h-0 flex-1 overflow-y-auto p-4">
-      <h1 className="text-base font-semibold">MCP servers & skills</h1>
+      <h1 className="text-base font-semibold">Agent resources & hooks</h1>
       <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">
-        Resources across all projects and agents. Agent entries override matching project names.
-        Changes apply on the next turn.
+        Resources across all projects and agents. Agent MCP servers and skills override matching
+        project names; hooks from both scopes run. Changes apply on the next turn.
       </p>
       {!sources.length && (
         <p className="mt-6 text-sm text-muted-foreground">
@@ -76,12 +77,18 @@ function ComputerResources() {
           <details
             key={`${collection}:${item.id}`}
             className="rounded-md border"
-            open={resources.mcpServers.length + resources.skills.length > 0 || undefined}
+            open={
+              resources.mcpServers.length +
+                resources.skills.length +
+                (resources.hooks?.length ?? 0) >
+                0 || undefined
+            }
           >
             <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
               {label} · {item.name}
               <span className="ml-3 text-xs font-normal text-muted-foreground">
-                {resources.mcpServers.length} MCP · {resources.skills.length} skills
+                {resources.mcpServers.length} MCP · {resources.skills.length} skills ·{' '}
+                {resources.hooks?.length ?? 0} hooks
               </span>
             </summary>
             <ResourceScopeView collection={collection} id={item.id} />
@@ -179,6 +186,7 @@ function ResourceScopeView({
             </p>
           )}
           <div className="grid gap-6 xl:grid-cols-2">
+            <HookSettings hooks={settings.hooks ?? []} disabled={!connected || busy} change={act} />
             <section className="rounded-md border p-4">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-sm font-medium">MCP servers</h3>
@@ -420,5 +428,190 @@ function ResourceScopeView({
         />
       )}
     </div>
+  )
+}
+
+function HookSettings({
+  hooks,
+  disabled,
+  change,
+}: {
+  hooks: AgentHook[]
+  disabled: boolean
+  change: (update: (value: ResourceSettings) => ResourceSettings) => void
+}) {
+  const [draft, setDraft] = useApplicationState<AgentHook | null>(null)
+  const [previousName, setPreviousName] = useApplicationState<string | null>(null)
+  const [validation, setValidation] = useApplicationState('')
+  const save = () => {
+    if (!draft) return
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(draft.name)) {
+      setValidation('Use a name of up to 80 letters, numbers, underscores, or hyphens.')
+      return
+    }
+    if (
+      !draft.command.trim() ||
+      !Number.isInteger(draft.timeoutSeconds) ||
+      draft.timeoutSeconds < 1 ||
+      draft.timeoutSeconds > 600
+    ) {
+      setValidation('Enter a command and a timeout between 1 and 600 seconds.')
+      return
+    }
+    if (hooks.some((hook) => hook.name === draft.name && hook.name !== previousName)) {
+      setValidation('Hook names must be unique within this scope.')
+      return
+    }
+    change((value) => ({
+      ...value,
+      hooks: [...(value.hooks ?? []).filter((hook) => hook.name !== previousName), draft],
+    }))
+    setDraft(null)
+    setPreviousName(null)
+    setValidation('')
+  }
+  return (
+    <section className="rounded-md border p-4">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-sm font-medium">Agent loop hooks</h3>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={disabled}
+          onClick={() => {
+            setPreviousName(null)
+            setDraft({
+              name: '',
+              enabled: true,
+              event: 'after-turn',
+              command: '',
+              timeoutSeconds: 120,
+            })
+          }}
+        >
+          <Plus className="size-3" /> Add hook
+        </Button>
+      </div>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Run commands in the task checkout. Failed after-turn checks ask the agent to repair the
+        result, up to two times.
+      </p>
+      {hooks.map((hook) => (
+        <div key={hook.name} className="flex items-center gap-2 border-t py-2">
+          <Checkbox
+            aria-label={`Enable hook ${hook.name}`}
+            checked={hook.enabled}
+            disabled={disabled}
+            onCheckedChange={(checked) =>
+              change((value) => ({
+                ...value,
+                hooks: (value.hooks ?? []).map((item) =>
+                  item.name === hook.name ? { ...item, enabled: checked === true } : item,
+                ),
+              }))
+            }
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm">
+              {hook.name} · {hook.event}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">{hook.command}</p>
+          </div>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={`Edit hook ${hook.name}`}
+            disabled={disabled}
+            onClick={() => {
+              setPreviousName(hook.name)
+              setDraft(hook)
+            }}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={`Remove hook ${hook.name}`}
+            disabled={disabled}
+            onClick={() =>
+              change((value) => ({
+                ...value,
+                hooks: (value.hooks ?? []).filter((item) => item.name !== hook.name),
+              }))
+            }
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      ))}
+      {draft && (
+        <div className="space-y-2 border-t pt-3 text-sm">
+          <label className="block">
+            Name
+            <input
+              className="mt-1 w-full rounded border bg-background p-2"
+              value={draft.name}
+              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            />
+          </label>
+          <label className="block">
+            When
+            <select
+              className="mt-1 w-full rounded border bg-background p-2"
+              value={draft.event}
+              onChange={(event) =>
+                setDraft({ ...draft, event: event.target.value as AgentHook['event'] })
+              }
+            >
+              <option value="before-turn">Before each turn</option>
+              <option value="after-turn">After each turn</option>
+            </select>
+          </label>
+          <label className="block">
+            Command
+            <input
+              className="mt-1 w-full rounded border bg-background p-2 font-mono"
+              value={draft.command}
+              onChange={(event) => setDraft({ ...draft, command: event.target.value })}
+              placeholder="pnpm lint"
+            />
+          </label>
+          <label className="block">
+            Timeout (seconds)
+            <input
+              className="mt-1 w-full rounded border bg-background p-2"
+              type="number"
+              min={1}
+              max={600}
+              value={draft.timeoutSeconds}
+              onChange={(event) =>
+                setDraft({ ...draft, timeoutSeconds: Number(event.target.value) })
+              }
+            />
+          </label>
+          {validation && (
+            <p role="alert" className="text-destructive">
+              {validation}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button size="sm" disabled={disabled} onClick={save}>
+              Save hook
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setDraft(null)
+                setValidation('')
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+    </section>
   )
 }

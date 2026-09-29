@@ -1,3 +1,4 @@
+import { runWithHooks } from './agent-hooks.js'
 import { Cause, Effect } from 'effect'
 import { OwnedProcessShutdownError } from './stop-owned-child.js'
 import { contextUsage, turnTokenCounter } from '../tasks/context-usage.js'
@@ -411,194 +412,238 @@ ${
           const adapter = yield* runtimeOperation(() => this.registry.get(agent.provider))
           controller.signal.throwIfAborted()
           yield* runtimeOperation(() =>
-            adapter.run({
-              taskId: id,
-              agent: {
-                ...agent,
-                instructions: [
-                  agent.instructions,
-                  `Project working directory: ${JSON.stringify(cwd)}. Run project commands, including git and gh, from this checkout. Configured Git executable: ${JSON.stringify(commands.git)}; GitHub CLI executable: ${JSON.stringify(commands.gh)}. Use gh for GitHub operations in the repository linked to this checkout; do not target another repository unless the user explicitly requests it.`,
-                  this.taskTools
-                    ? 'The dovo_task tools let you operate this task’s visible terminal and simulators. Use your normal command tool for quick, noninteractive commands. Use the Dovo terminal when a command needs an interactive or persistent session, or when the user should follow it in the task panel. Use simulator tools when the task needs device interaction.'
-                    : '',
-                ]
-                  .filter(Boolean)
-                  .join('\n\n'),
-              },
-              cwd,
-              prompt: compact
-                ? '/compact'
-                : [prompt, mentionContext, attachmentContext].filter(Boolean).join('\n\n'),
-              compact,
-              attachments,
-              sessionId,
-              signal: controller.signal,
-              onPromptAccepted: acceptPrompt,
-              onQuestions: (prompt) => {
-                acceptPrompt()
-                if (acceptsProviderEvents()) onQuestions?.(prompt)
-              },
-              onSteer: (steer) => {
-                if (!acceptsProviderEvents()) return
-                if (!steer) {
-                  onSteer?.(undefined)
-                  return
-                }
-                const apply = async (messageId: string, send: AgentSteer) => {
-                  const message = this.store.task(id).queue?.find((m) => m.id === messageId)
-                  if (!message)
-                    throw new HttpError(409, 'This message already started or was removed')
-                  const files = await Promise.all(
-                    (message.attachments ?? []).map((file) =>
-                      this.attachments.materialize(id, file),
-                    ),
-                  )
-                  controller.signal.throwIfAborted()
-                  await send({
-                    id: messageId,
-                    prompt: [message.text, attachmentPrompt(files)].filter(Boolean).join('\n\n'),
-                    attachments: files,
+            runWithHooks(
+              adapter,
+              {
+                taskId: id,
+                agent: {
+                  ...agent,
+                  instructions: [
+                    agent.instructions,
+                    `Project working directory: ${JSON.stringify(cwd)}. Run project commands, including git and gh, from this checkout. Configured Git executable: ${JSON.stringify(commands.git)}; GitHub CLI executable: ${JSON.stringify(commands.gh)}. Use gh for GitHub operations in the repository linked to this checkout; do not target another repository unless the user explicitly requests it.`,
+                    this.taskTools
+                      ? 'The dovo_task tools let you operate this task’s visible terminal and simulators. Use your normal command tool for quick, noninteractive commands. Use the Dovo terminal when a command needs an interactive or persistent session, or when the user should follow it in the task panel. Use simulator tools when the task needs device interaction.'
+                      : '',
+                  ]
+                    .filter(Boolean)
+                    .join('\n\n'),
+                },
+                cwd,
+                prompt: compact
+                  ? '/compact'
+                  : [prompt, mentionContext, attachmentContext].filter(Boolean).join('\n\n'),
+                compact,
+                attachments,
+                sessionId,
+                signal: controller.signal,
+                onPromptAccepted: acceptPrompt,
+                onQuestions: (prompt) => {
+                  acceptPrompt()
+                  if (acceptsProviderEvents()) onQuestions?.(prompt)
+                },
+                onSteer: (steer) => {
+                  if (!acceptsProviderEvents()) return
+                  if (!steer) {
+                    onSteer?.(undefined)
+                    return
+                  }
+                  const apply = async (messageId: string, send: AgentSteer) => {
+                    const message = this.store.task(id).queue?.find((m) => m.id === messageId)
+                    if (!message)
+                      throw new HttpError(409, 'This message already started or was removed')
+                    const files = await Promise.all(
+                      (message.attachments ?? []).map((file) =>
+                        this.attachments.materialize(id, file),
+                      ),
+                    )
+                    controller.signal.throwIfAborted()
+                    await send({
+                      id: messageId,
+                      prompt: [message.text, attachmentPrompt(files)].filter(Boolean).join('\n\n'),
+                      attachments: files,
+                    })
+                    flush()
+                    acceptedIds.add(messageId)
+                    acceptedIds.add(assistantId)
+                    const nextAssistantId = randomUUID()
+                    acceptedIds.add(nextAssistantId)
+                    this.store.updateTask(id, (t) => ({
+                      ...t,
+                      queue: t.queue?.filter((m) => m.id !== messageId),
+                      messages: [
+                        ...t.messages,
+                        message,
+                        {
+                          id: nextAssistantId,
+                          role: 'assistant',
+                          text: '',
+                          createdAt: new Date().toISOString(),
+                        },
+                      ],
+                      consumedMessageIds: [
+                        ...new Set([...(t.consumedMessageIds ?? []), ...acceptedIds]),
+                      ],
+                      turns: t.turns?.map((turn) =>
+                        turn.id === turnId ? { ...turn, assistantId: nextAssistantId } : turn,
+                      ),
+                    }))
+                    assistantId = nextAssistantId
+                  }
+                  onSteer?.((messageId) => {
+                    steering = apply(messageId, steer)
+                    return steering
                   })
-                  flush()
-                  acceptedIds.add(messageId)
-                  acceptedIds.add(assistantId)
-                  const nextAssistantId = randomUUID()
-                  acceptedIds.add(nextAssistantId)
-                  this.store.updateTask(id, (t) => ({
-                    ...t,
-                    queue: t.queue?.filter((m) => m.id !== messageId),
-                    messages: [
-                      ...t.messages,
-                      message,
-                      {
-                        id: nextAssistantId,
-                        role: 'assistant',
-                        text: '',
-                        createdAt: new Date().toISOString(),
-                      },
-                    ],
-                    consumedMessageIds: [
-                      ...new Set([...(t.consumedMessageIds ?? []), ...acceptedIds]),
-                    ],
-                    turns: t.turns?.map((turn) =>
-                      turn.id === turnId ? { ...turn, assistantId: nextAssistantId } : turn,
-                    ),
-                  }))
-                  assistantId = nextAssistantId
-                }
-                onSteer?.((messageId) => {
-                  steering = apply(messageId, steer)
-                  return steering
-                })
-              },
-              onSession: (sessionId) => {
-                if (!acceptsProviderEvents()) return
-                if (
-                  this.store.task(id).sessionId !== sessionId ||
-                  this.store.task(id).sessionAgentId !== fingerprint
-                )
-                  this.store.updateTask(id, (t) => ({
-                    ...t,
-                    sessionId,
-                    sessionAgentId: fingerprint,
-                  }))
-              },
-              onText: (text) => {
-                if (!acceptsProviderEvents()) return
-                acceptPrompt()
-                buffer += text
-                if (!timer)
-                  timer = setTimeout(() => {
-                    try {
-                      flush()
-                    } catch (error) {
-                      flushError = error
-                      controller.abort(new TurnStoreFailure(error))
-                    }
-                  }, 100)
-              },
-              onEvent: (name, payload) => {
-                if (!acceptsProviderEvents()) return
-                const compaction = completedCompaction(agent.provider, name, payload)
-                const currentSession = this.store.task(id).sessionId ?? sessionId
-                if (compaction && currentSession) {
-                  const at = new Date().toISOString()
-                  this.store.updateTask(id, (task) => ({
-                    ...task,
-                    contextUsage: undefined,
-                    compactions: [
-                      ...(task.compactions ?? []),
-                      {
-                        at,
-                        turnId,
-                        textOffset: textOffset(),
-                        sessionId: currentSession,
-                        provider: agent.provider,
-                        trigger: compact ? 'manual' : compaction,
-                      },
-                    ],
-                  }))
-                }
-                if (agent.provider === 'codex' || agent.provider === 'claude') {
-                  const limits = reportedPlanLimits(agent.provider, name, payload)
-                  if (limits.length)
-                    this.store.update((workspace) => ({
-                      ...workspace,
-                      planLimits: [
-                        ...(workspace.planLimits ?? []).filter(
-                          (previous) =>
-                            !limits.some(
-                              (limit) =>
-                                limit.provider === previous.provider &&
-                                limit.window === previous.window,
-                            ),
-                        ),
-                        ...limits,
+                },
+                onSession: (sessionId) => {
+                  if (!acceptsProviderEvents()) return
+                  if (
+                    this.store.task(id).sessionId !== sessionId ||
+                    this.store.task(id).sessionAgentId !== fingerprint
+                  )
+                    this.store.updateTask(id, (t) => ({
+                      ...t,
+                      sessionId,
+                      sessionAgentId: fingerprint,
+                    }))
+                },
+                onText: (text) => {
+                  if (!acceptsProviderEvents()) return
+                  acceptPrompt()
+                  buffer += text
+                  if (!timer)
+                    timer = setTimeout(() => {
+                      try {
+                        flush()
+                      } catch (error) {
+                        flushError = error
+                        controller.abort(new TurnStoreFailure(error))
+                      }
+                    }, 100)
+                },
+                onEvent: (name, payload) => {
+                  if (!acceptsProviderEvents()) return
+                  const compaction = completedCompaction(agent.provider, name, payload)
+                  const currentSession = this.store.task(id).sessionId ?? sessionId
+                  if (compaction && currentSession) {
+                    const at = new Date().toISOString()
+                    this.store.updateTask(id, (task) => ({
+                      ...task,
+                      contextUsage: undefined,
+                      compactions: [
+                        ...(task.compactions ?? []),
+                        {
+                          at,
+                          turnId,
+                          textOffset: textOffset(),
+                          sessionId: currentSession,
+                          provider: agent.provider,
+                          trigger: compact ? 'manual' : compaction,
+                        },
                       ],
                     }))
-                }
-                recordUsage(name, payload)
-                tokens.accept(name, payload)
-                const current = this.store.task(id).subagents ?? []
-                const subagents = updateSubagents(
-                  current,
-                  agent.provider,
-                  payload,
-                  new Date().toISOString(),
-                  name,
-                )
-                if (subagents !== current)
-                  this.store.updateTask(id, (task) => ({ ...task, subagents }))
-                const reasoningOnly = reasoning.accept(name, payload)
-                const tool = toolEvent(agent.provider, name, payload)
-                if (tool && buffer) flush()
-                if (reasoningOnly && !tool) return
-                this.activity?.add(
-                  tool ? 'tool' : 'agent-event',
-                  id,
-                  tool?.title || `${agent.provider} · ${name}`,
-                  { turnId, ...tool, textOffset: textOffset(), event: safeReasoningEvent(payload) },
-                )
+                  }
+                  if (agent.provider === 'codex' || agent.provider === 'claude') {
+                    const limits = reportedPlanLimits(agent.provider, name, payload)
+                    if (limits.length)
+                      this.store.update((workspace) => ({
+                        ...workspace,
+                        planLimits: [
+                          ...(workspace.planLimits ?? []).filter(
+                            (previous) =>
+                              !limits.some(
+                                (limit) =>
+                                  limit.provider === previous.provider &&
+                                  limit.window === previous.window,
+                              ),
+                          ),
+                          ...limits,
+                        ],
+                      }))
+                  }
+                  recordUsage(name, payload)
+                  tokens.accept(name, payload)
+                  const current = this.store.task(id).subagents ?? []
+                  const subagents = updateSubagents(
+                    current,
+                    agent.provider,
+                    payload,
+                    new Date().toISOString(),
+                    name,
+                  )
+                  if (subagents !== current)
+                    this.store.updateTask(id, (task) => ({ ...task, subagents }))
+                  const reasoningOnly = reasoning.accept(name, payload)
+                  const tool = toolEvent(agent.provider, name, payload)
+                  if (tool && buffer) flush()
+                  if (reasoningOnly && !tool) return
+                  this.activity?.add(
+                    tool ? 'tool' : 'agent-event',
+                    id,
+                    tool?.title || `${agent.provider} · ${name}`,
+                    {
+                      turnId,
+                      ...tool,
+                      textOffset: textOffset(),
+                      event: safeReasoningEvent(payload),
+                    },
+                  )
+                },
+                onActivity: (text) => {
+                  if (!acceptsProviderEvents()) return
+                  this.activity?.add('agent', id, `${agent.provider} activity`, { text })
+                  this.store.updateTask(id, (t) => ({ ...t, activity: text }))
+                },
+                approve: (title, detail) =>
+                  acceptsProviderEvents()
+                    ? this.approvals.request(id, title, detail, questionSignal)
+                    : Promise.resolve(false),
+                ask: (prompt, signal, validate) =>
+                  acceptsProviderEvents()
+                    ? this.questions.request(
+                        id,
+                        prompt,
+                        signal ? AbortSignal.any([questionSignal, signal]) : questionSignal,
+                        validate,
+                      )
+                    : Promise.resolve(null),
               },
-              onActivity: (text) => {
-                if (!acceptsProviderEvents()) return
-                this.activity?.add('agent', id, `${agent.provider} activity`, { text })
-                this.store.updateTask(id, (t) => ({ ...t, activity: text }))
+              resources.hooks ?? [],
+              (result) => {
+                flush()
+                this.activity?.add('tool', id, `Hook · ${result.hook.name}`, {
+                  turnId,
+                  textOffset: textOffset(),
+                  toolId: randomUUID(),
+                  category: 'command',
+                  status: result.ok ? 'completed' : 'failed',
+                  command: result.hook.command,
+                  output: result.output,
+                })
               },
-              approve: (title, detail) =>
-                acceptsProviderEvents()
-                  ? this.approvals.request(id, title, detail, questionSignal)
-                  : Promise.resolve(false),
-              ask: (prompt, signal, validate) =>
-                acceptsProviderEvents()
-                  ? this.questions.request(
-                      id,
-                      prompt,
-                      signal ? AbortSignal.any([questionSignal, signal]) : questionSignal,
-                      validate,
-                    )
-                  : Promise.resolve(null),
-            }),
+              () => {
+                flush()
+                const nextAssistantId = randomUUID()
+                acceptedIds.add(assistantId)
+                acceptedIds.add(nextAssistantId)
+                this.store.updateTask(id, (task) => ({
+                  ...task,
+                  activity: 'Fixing failed hooks',
+                  messages: [
+                    ...task.messages,
+                    {
+                      id: nextAssistantId,
+                      role: 'assistant',
+                      text: '',
+                      createdAt: new Date().toISOString(),
+                    },
+                  ],
+                  turns: task.turns?.map((turn) =>
+                    turn.id === turnId ? { ...turn, assistantId: nextAssistantId } : turn,
+                  ),
+                }))
+                assistantId = nextAssistantId
+              },
+            ),
           ).pipe(
             Effect.ensuring(
               Effect.gen(function* () {

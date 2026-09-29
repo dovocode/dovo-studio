@@ -1,4 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
+import { useEffect, useRef } from 'react'
 import { Paperclip, X } from 'lucide-react'
 import { attachmentReadSchema, isImageAttachment, type Attachment } from '@dovo/studio-core'
 import { useWorkspace } from '@dovo/studio-core'
@@ -59,7 +60,11 @@ export function MessageAttachments({
             onClick={() => void open(file.id)}
             aria-label={`Preview ${file.name}`}
           >
-            <Paperclip className="size-3 shrink-0" />
+            {isImageAttachment(file) ? (
+              <AttachmentThumbnail taskId={taskId} file={file} />
+            ) : (
+              <Paperclip className="size-3 shrink-0" />
+            )}
             <span className="truncate">{file.name}</span>
             <span className="shrink-0 text-muted-foreground">{Math.ceil(file.size / 1024)} KB</span>
           </button>
@@ -136,4 +141,46 @@ function textPreview(data: string) {
   } catch {
     return 'Download this file to inspect its contents.'
   }
+}
+
+function AttachmentThumbnail({ taskId, file }: { taskId: string; file: Attachment }) {
+  const { request, connected } = useWorkspace()
+  const [src, setSrc] = useApplicationState('')
+  const [failed, setFailed] = useApplicationState(false)
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!connected || !ref.current) return
+    let cancelled = false
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      observer.disconnect()
+      void request('/api/attachments/read', { taskId, id: file.id }, attachmentReadSchema)
+        .then((result) => {
+          if (!cancelled) setSrc(`data:${file.mime};base64,${result.data}`)
+        })
+        .catch(() => {
+          if (!cancelled) setFailed(true)
+        })
+    })
+    observer.observe(ref.current)
+    return () => {
+      cancelled = true
+      observer.disconnect()
+    }
+  }, [connected, request, taskId, file.id, file.mime])
+  return (
+    <span
+      ref={ref}
+      className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded bg-muted"
+    >
+      {src ? (
+        <img src={src} alt={file.name} className="size-full object-cover" />
+      ) : (
+        <Paperclip
+          className="size-3"
+          aria-label={failed ? 'Preview unavailable; click to retry' : 'Loading image preview'}
+        />
+      )}
+    </span>
+  )
 }

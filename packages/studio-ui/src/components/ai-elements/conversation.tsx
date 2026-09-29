@@ -99,9 +99,9 @@ export function ConversationRail({
                 onBlur={() => setHovered(null)}
                 aria-label={`Jump to turn ${index + 1}: ${item.label}`}
                 aria-current={visible.has(item.id) ? 'location' : undefined}
-                className="group flex min-h-4 w-12 flex-1 items-center justify-start rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="group flex min-h-[7px] w-12 shrink-0 items-center justify-start rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 style={{
-                  maxHeight: 16,
+                  height: 7,
                 }}
                 onClick={() => {
                   const root = scrollRef.current

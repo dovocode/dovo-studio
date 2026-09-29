@@ -5,11 +5,11 @@ export const agentsExtension = defineStudioExtension(
     {
       id: 'resources',
       navigationGroup: 'settings',
-      title: 'MCP & skills',
+      title: 'Resources & hooks',
       icon: 'agents',
       order: 3,
       settingsSection: 'agents',
-      keywords: 'mcp servers skills tools registry integrations',
+      keywords: 'mcp servers skills tools registry integrations hooks formatting checks',
       load: () => import('./resources/view'),
     },
     {
