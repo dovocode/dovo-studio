@@ -380,7 +380,7 @@ export function Conversation() {
     message.role === 'assistant' && message.bookmarked ? [{ message, index }] : [],
   )
   const car = useCarMode()
-  const { activeId } = useRuntime()
+  const { activeId, connected } = useRuntime()
   const list = useRef<FlatList<ThreadMessage>>(null)
   const [scroll] = useApplicationState(createConversationScroll)
   const [following, setFollowing] = useApplicationState(true)
@@ -468,11 +468,11 @@ export function Conversation() {
         contentContainerStyle={[
           styles.content,
           {
-            gap: 18,
+            gap: 10,
             paddingTop: 12,
             paddingHorizontal: 20,
-            // Room for the floating status pills so they never cover the last message.
-            paddingBottom: 64,
+            // Reserve overlay space only when a status pill is actually shown.
+            paddingBottom: !connected || !following ? 44 : 8,
           },
         ]}
         ListEmptyComponent={

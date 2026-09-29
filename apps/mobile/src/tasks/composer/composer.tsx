@@ -322,7 +322,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
             <IconButton
               variant="plain"
               icon="add"
-              label="Attach files"
+              label="Attach photos or files"
               disabled={!connected || busy || attaching || dictation.active || task.archived}
               onPress={attachmentPicker.pick}
             />
@@ -336,86 +336,68 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                 gap: 8,
               }}
             >
-              {showOptions &&
-                !dictation.active &&
-                (task.status === 'running' && hasInput ? (
-                  <View
+              {showOptions && !dictation.active && !(task.status === 'running' && hasInput) && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Agent & model"
+                  accessibilityValue={{
+                    text: taskHarnessLabel(task, agent, snapshot?.acpInstallations),
+                  }}
+                  accessibilityState={{
+                    disabled: busy || task.status === 'running' || !!task.archived,
+                  }}
+                  disabled={busy || task.status === 'running' || task.archived}
+                  onPress={() => {
+                    if (dictation.active) dictation.stop()
+                    Keyboard.dismiss()
+                    setSettings(true)
+                  }}
+                  style={({ pressed }) => ({
+                    flex: 1,
+                    minWidth: 44,
+                    minHeight: 44,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 5,
+                    opacity:
+                      pressed || busy || task.status === 'running' || task.archived ? 0.5 : 1,
+                  })}
+                >
+                  <Text
+                    numberOfLines={1}
                     style={[
-                      styles.row,
+                      styles.muted,
                       {
-                        flex: 1,
-                        minWidth: 0,
-                        gap: 0,
+                        flexShrink: 1,
+                        fontSize: 13,
                       },
                     ]}
                   >
-                    <Action secondary label="Queue" disabled={!canSend} onPress={() => send()} />
-                    <Action
-                      secondary
-                      label="Steer"
-                      disabled={!canSend}
-                      onPress={() => send('steer')}
-                    />
-                  </View>
-                ) : (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Agent & model"
-                    accessibilityValue={{
-                      text: taskHarnessLabel(task, agent, snapshot?.acpInstallations),
-                    }}
-                    accessibilityState={{
-                      disabled: busy || task.status === 'running' || !!task.archived,
-                    }}
-                    disabled={busy || task.status === 'running' || task.archived}
-                    onPress={() => {
-                      if (dictation.active) dictation.stop()
-                      Keyboard.dismiss()
-                      setSettings(true)
-                    }}
-                    style={({ pressed }) => ({
-                      flex: 1,
-                      minWidth: 44,
-                      minHeight: 44,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 5,
-                      opacity:
-                        pressed || busy || task.status === 'running' || task.archived ? 0.5 : 1,
-                    })}
-                  >
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        styles.muted,
-                        {
-                          flexShrink: 1,
-                          fontSize: 13,
-                        },
-                      ]}
-                    >
-                      {taskHarnessLabel(task, agent, snapshot?.acpInstallations)}
-                    </Text>
-                    <Icon name="down" size={10} color={colors.muted} />
-                  </Pressable>
-                ))}
-              {showOptions && !dictation.active && !!meter && (
-                <Text
-                  accessibilityLabel={meter.label}
-                  style={{
-                    fontSize: 12,
-                    fontVariant: ['tabular-nums'],
-                    color:
-                      meter.level === 'full'
-                        ? colors.error
-                        : meter.level === 'warn'
-                          ? colors.warning
-                          : colors.muted,
-                  }}
-                >
-                  {meter.short}
-                </Text>
+                    {taskHarnessLabel(task, agent, snapshot?.acpInstallations)}
+                  </Text>
+                  <Icon name="down" size={10} color={colors.muted} />
+                </Pressable>
               )}
+              {showOptions &&
+                !dictation.active &&
+                !(task.status === 'running' && hasInput) &&
+                !!meter && (
+                  <Text
+                    accessibilityLabel={meter.label}
+                    style={{
+                      fontSize: 12,
+                      fontVariant: ['tabular-nums'],
+                      color:
+                        meter.level === 'full'
+                          ? colors.error
+                          : meter.level === 'warn'
+                            ? colors.warning
+                            : colors.muted,
+                    }}
+                  >
+                    {meter.short}
+                  </Text>
+                )}
               {showOptions && checkoutEditable && !dictation.active && (
                 <Pressable
                   testID="Checkout & branch"
@@ -495,6 +477,12 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                 disabled={!connected}
                 onPress={onAsk}
               />
+            )}
+            {showOptions && !dictation.active && task.status === 'running' && hasInput && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Action secondary label="Queue" disabled={!canSend} onPress={() => send()} />
+                <Action secondary label="Steer" disabled={!canSend} onPress={() => send('steer')} />
+              </View>
             )}
             <IconButton
               variant="filled"
