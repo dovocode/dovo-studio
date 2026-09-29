@@ -5,6 +5,7 @@ import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { useCallback, useEffect, useRef } from 'react'
 import {
+  ActivityIndicator,
   FlatList,
   Pressable,
   View,
@@ -206,6 +207,23 @@ function AssistantText({ text }: { text: string }) {
 function WorkGroup(props: Parameters<typeof ConversationWorkGroup>[0]) {
   return useCarMode() ? null : <ConversationWorkGroup {...props} />
 }
+function WorkingIndicator({ turn }: { turn: TaskTurn }) {
+  const [now, setNow] = useApplicationState(Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const seconds = Math.max(0, Math.floor((now - Date.parse(turn.startedAt)) / 1000))
+  const duration = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
+      <ActivityIndicator size="small" color={colors.muted} />
+      <Text accessibilityRole="text" style={[styles.muted, { fontSize: 13 }]}>
+        Working for {duration}
+      </Text>
+    </View>
+  )
+}
 const parts = {
   Text: AssistantText,
   ToolGroup: WorkGroup,
@@ -300,6 +318,7 @@ function Message() {
 }
 export function Conversation() {
   const { task, legacyEvents, activityError, followRequest } = useTaskConversation()
+  const lastTurn = task.turns?.at(-1)
   const bookmarks = task.messages.flatMap((message, index) =>
     message.role === 'assistant' && message.bookmarked ? [{ message, index }] : [],
   )
@@ -431,15 +450,8 @@ export function Conversation() {
               gap: 10,
             }}
           >
-            {car ? (
-              task.status === 'running' && (
-                <Text accessibilityRole="text" style={[styles.muted, { fontSize: 17 }]}>
-                  Working…
-                </Text>
-              )
-            ) : (
-              <TaskActivity task={task} events={legacyEvents} error={activityError} />
-            )}
+            {!car && <TaskActivity task={task} events={legacyEvents} error={activityError} />}
+            {lastTurn?.status === 'running' && <WorkingIndicator turn={lastTurn} />}
             <TaskApprovals taskId={task.id} />
             {!!task.error && <Text style={styles.error}>{task.error}</Text>}
           </View>

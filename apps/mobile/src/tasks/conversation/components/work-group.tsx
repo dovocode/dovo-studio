@@ -1,6 +1,6 @@
 import { readMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { useApplicationState } from '../../../runtime/state/application-state'
-import { useEffect, type PropsWithChildren } from 'react'
+import { type PropsWithChildren } from 'react'
 import { Pressable, View } from 'react-native'
 import { activitySchema, activitySummary, decodeResult, mutableStruct } from '@dovo/protocol'
 import { Schema } from 'effect'
@@ -27,7 +27,7 @@ export function ConversationWorkGroup({
   startIndex: number
   endIndex: number
 }>) {
-  const { task, visible } = useTaskConversation()
+  const { task } = useTaskConversation()
   const message = useAuiState((state) => state.message)
   const id = message.id
   const groupEvents = message.content.slice(startIndex, endIndex + 1).flatMap((part) => {
@@ -46,12 +46,7 @@ export function ConversationWorkGroup({
   const [open, setOpen] = useApplicationState(
     () => readMobilePreferences().toolActivity === 'expanded',
   )
-  const [now, setNow] = useApplicationState(Date.now())
-  useEffect(() => {
-    if (!visible || !open || workStatus !== 'running') return
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [workStatus, visible, open])
+  const now = Date.now()
   const seconds = turn
     ? Math.max(
         0,
@@ -61,12 +56,11 @@ export function ConversationWorkGroup({
         ),
       )
     : 0
-  const duration =
-    workStatus === 'running' || turn?.finishedAt
-      ? seconds >= 60
-        ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-        : `${seconds}s`
-      : undefined
+  const duration = turn?.finishedAt
+    ? seconds >= 60
+      ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+      : `${seconds}s`
+    : undefined
   const count = endIndex - startIndex + 1
   if (groupEvents.length === 1 && active)
     return <ToolActivityRow key={activityIdentity(active)} event={active} compact />
@@ -78,7 +72,6 @@ export function ConversationWorkGroup({
         accessibilityHint={`${count} ${count === 1 ? 'tool call' : 'tool calls'}`}
         accessibilityState={{ expanded: open }}
         onPress={() => {
-          setNow(Date.now())
           setOpen(!open)
         }}
         style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}
@@ -87,10 +80,10 @@ export function ConversationWorkGroup({
         <Text style={[styles.muted, { flex: 1, fontSize: 13, lineHeight: 18 }]}>{summary}</Text>
         <Icon name={open ? 'down' : 'next'} size={10} color={colors.muted} />
       </Pressable>
-      {turn && open && (
+      {turn && open && workStatus !== 'running' && (
         <Text style={[styles.muted, { paddingLeft: 22, fontSize: 12, paddingBottom: 4 }]}>
           {duration
-            ? `${workStatus === 'running' ? 'Working' : workStatus === 'failed' ? 'Failed after' : workStatus === 'cancelled' ? 'Cancelled after' : 'Worked for'} ${duration}`
+            ? `${workStatus === 'failed' ? 'Failed after' : workStatus === 'cancelled' ? 'Cancelled after' : 'Worked for'} ${duration}`
             : workStatus === 'failed'
               ? 'Failed'
               : workStatus === 'cancelled'
