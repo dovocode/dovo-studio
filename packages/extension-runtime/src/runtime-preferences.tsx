@@ -52,7 +52,7 @@ export function RunningTaskPreferences() {
       <SettingsGroup title="After a restart">
         <SettingRow
           label="Continue interrupted tasks"
-          description="Interrupted tasks and unpaused message queues resume one at a time. Paused or stopped tasks stay paused. Automations still require Retry."
+          description="Interrupted turns can resume automatically. Queued messages stay paused until you resume them. Stopped tasks and automations still require Retry."
         >
           <Toggle
             label="Continue interrupted tasks after a runtime restart"

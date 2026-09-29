@@ -144,7 +144,9 @@ export class WorkspaceStore {
                       task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length
                         ? 'queue'
                         : 'turn',
-                    automatic: !task.queuePaused,
+                    automatic:
+                      !(task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length) &&
+                      !task.queuePaused,
                   },
                   queuePaused: true,
                   turns: task.turns?.map((turn) =>
@@ -170,7 +172,7 @@ export class WorkspaceStore {
                     ...task,
                     restartRecovery:
                       task.restartRecovery ??
-                      (!task.queuePaused ? { kind: 'queue', automatic: true } : undefined),
+                      (!task.queuePaused ? { kind: 'queue', automatic: false } : undefined),
                     queuePaused: true,
                   }
                 : task,

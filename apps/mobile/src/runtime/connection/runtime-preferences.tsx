@@ -61,10 +61,10 @@ export function RuntimePreferences() {
         <View style={{ gap: 6 }}>
           <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
             <Text style={[styles.text, { flex: 1 }]}>
-              Auto-continue tasks after runtime restart
+              Continue interrupted turns after runtime restart
             </Text>
             <Switch
-              accessibilityLabel="Auto-continue tasks after runtime restart"
+              accessibilityLabel="Continue interrupted turns after runtime restart"
               value={value?.autoContinueAfterRestart ?? false}
               disabled={disabled}
               onValueChange={(autoContinueAfterRestart) => save({ autoContinueAfterRestart })}

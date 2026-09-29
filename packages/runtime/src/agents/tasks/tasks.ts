@@ -840,6 +840,7 @@ export class Tasks {
           if (
             !enabled() ||
             !task.restartRecovery.automatic ||
+            task.restartRecovery.kind === 'queue' ||
             task.archived ||
             automationOwns(id)
           ) {
@@ -856,7 +857,7 @@ export class Tasks {
           this.activity?.add('task', id, 'Continuing after runtime restart')
           yield* this.startEffect(
             id,
-            false,
+            true,
             () =>
               enabled() &&
               this.store.task(id).restartRecovery?.automatic === true &&
@@ -921,7 +922,9 @@ export class Tasks {
                 task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length
                   ? 'queue'
                   : 'turn',
-              automatic: !task.queuePaused,
+              automatic:
+                !(task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length) &&
+                !task.queuePaused,
             },
           }))
         run.controller.abort(new Error('Runtime shutting down'))

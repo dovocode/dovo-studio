@@ -64,7 +64,7 @@ it('defaults to manual continuation and keeps a recoverable interrupted task', a
   expect(run).toHaveBeenCalledTimes(1)
   expect(runtime.services.store.task(id).restartRecovery).toBeUndefined()
 })
-it('resumes the interrupted turn before consuming queued follow-ups', async () => {
+it('resumes the interrupted turn but leaves queued follow-ups paused after restart', async () => {
   const { options, id } = await seed(true, {
     queue: [
       { id: 'next', role: 'user', text: 'Queued follow-up', createdAt: new Date().toISOString() },
@@ -79,10 +79,15 @@ it('resumes the interrupted turn before consuming queued follow-ups', async () =
   const runtime = await startRuntime(options)
   cleanups.push(runtime.close)
   await waitForRecovery(() => expect(runtime.services.store.task(id).status).toBe('review'))
-  await waitForRecovery(() => expect(prompts).toHaveLength(2))
-  await waitForRecovery(() => expect(runtime.services.store.task(id).queue).toEqual([]))
+  await waitForRecovery(() => expect(prompts).toHaveLength(1))
   expect(prompts[0]).toContain('Original request')
   expect(prompts[0]).not.toContain('Queued follow-up')
+  expect(runtime.services.store.task(id).queue?.map((message) => message.id)).toEqual(['next'])
+  expect(runtime.services.store.task(id).queuePaused).toBe(true)
+  await (
+    await runtime.services.tasks.start(id)
+  ).done
+  expect(prompts).toHaveLength(2)
   expect(prompts[1]).toContain('Queued follow-up')
   expect(runtime.services.store.task(id).queue).toEqual([])
 })
@@ -146,7 +151,7 @@ it('leaves a failed automatic continuation paused with a manual recovery action'
   expect(runtime.services.store.task(id).queuePaused).toBe(true)
 })
 
-it('continues an unpaused queue and persists the runtime preference through the authenticated API', async () => {
+it('keeps a queued-only task paused despite auto-continue and persists the runtime preference', async () => {
   const { options, id } = await seed(false, {
     status: 'review',
     queuePaused: false,
@@ -213,8 +218,14 @@ it('continues an unpaused queue and persists the runtime preference through the 
   })
   const second = await startRuntime(options)
   cleanups.push(second.close)
-  await waitForRecovery(() => expect(second.services.store.task(id).queue).toEqual([]))
-  await waitForRecovery(() => expect(second.services.store.task(id).status).toBe('review'))
+  expect(second.services.store.task(id).queue?.map((message) => message.id)).toEqual([
+    'queued-only',
+  ])
+  expect(second.services.store.task(id).queuePaused).toBe(true)
+  expect(prompts).toHaveLength(0)
+  await (
+    await second.services.tasks.start(id)
+  ).done
   expect(prompts).toHaveLength(1)
   expect(prompts[0]).toContain('Next request')
 })
@@ -333,7 +344,7 @@ it('atomically blocks new task admission while the owner prepares a restart', as
   ).done
 })
 
-it('dequeues an initial request after a crash before admission, without a phantom continuation', async () => {
+it('keeps an initial queued request after a crash until resumed, without a phantom continuation', async () => {
   const { options, id } = await seed(true, {
     runPhase: 'preparing',
     messages: [],
@@ -343,7 +354,12 @@ it('dequeues an initial request after a crash before admission, without a phanto
   adapter(run)
   const runtime = await startRuntime(options)
   cleanups.push(runtime.close)
-  await waitForRecovery(() => expect(runtime.services.store.task(id).status).toBe('review'))
+  expect(runtime.services.store.task(id).queue?.map((message) => message.id)).toEqual(['initial'])
+  expect(runtime.services.store.task(id).queuePaused).toBe(true)
+  expect(run).not.toHaveBeenCalled()
+  await (
+    await runtime.services.tasks.start(id)
+  ).done
   expect(run).toHaveBeenCalledTimes(1)
   expect(run.mock.calls[0][0].prompt).toContain('The actual request')
   expect(run.mock.calls[0][0].prompt).not.toContain('runtime restarted')
