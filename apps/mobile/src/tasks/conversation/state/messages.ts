@@ -30,7 +30,13 @@ export function conversationMessages(task: Task, events: ToolEvents): ThreadMess
       })
     if (turn) {
       const turnEvents = [...(toolsByTurn.get(turn.id) ?? [])].reverse()
-      const at = new Map<number, typeof turnEvents>()
+      const at = new Map<
+        number,
+        Array<
+          | { kind: 'tool'; tool: (typeof turnEvents)[number] }
+          | { kind: 'compaction'; event: NonNullable<Task['compactions']>[number] }
+        >
+      >()
       for (const tool of turnEvents) {
         // Older activity events have no offset; keep them after the reply text.
         const offset = Math.min(
@@ -38,7 +44,16 @@ export function conversationMessages(task: Task, events: ToolEvents): ThreadMess
           Math.max(0, tool.textOffset ?? message.text.length),
         )
         const group = at.get(offset) ?? []
-        group.push(tool)
+        group.push({ kind: 'tool', tool })
+        at.set(offset, group)
+      }
+      for (const event of (task.compactions ?? []).filter((item) => item.turnId === turn.id)) {
+        const offset = Math.min(
+          message.text.length,
+          Math.max(0, event.textOffset ?? message.text.length),
+        )
+        const group = at.get(offset) ?? []
+        group.push({ kind: 'compaction', event })
         at.set(offset, group)
       }
       let cursor = 0
@@ -50,7 +65,18 @@ export function conversationMessages(task: Task, events: ToolEvents): ThreadMess
           if (reasoning.length)
             content.push({ type: 'data', name: 'dovo.reasoning', data: reasoning.splice(0) })
         }
-        for (const tool of at.get(offset) ?? []) {
+        const entries = at.get(offset)!.sort((left, right) => {
+          const a = left.kind === 'tool' ? left.tool.time : left.event.at
+          const b = right.kind === 'tool' ? right.tool.time : right.event.at
+          return a.localeCompare(b)
+        })
+        for (const entry of entries) {
+          if (entry.kind === 'compaction') {
+            flushReasoning()
+            content.push({ type: 'data', name: 'dovo.compaction', data: entry.event })
+            continue
+          }
+          const tool = entry.tool
           if (
             tool.kind === 'reasoning' ||
             toolPresentation(tool.payload, tool.summary, tool.inputPayload).kind === 'reasoning'

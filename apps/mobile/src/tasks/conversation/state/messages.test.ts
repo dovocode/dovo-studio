@@ -108,6 +108,30 @@ describe('Dovo conversation adapter', () => {
       expect.objectContaining({ type: 'tool-call', toolCallId: 't2:later' }),
     ])
   })
+  it('places compaction where it happened in the assistant timeline', () => {
+    const result = conversationMessages(
+      {
+        ...task,
+        messages: [{ id: 'a2', role: 'assistant', text: 'BeforeAfter' }],
+        compactions: [
+          {
+            at: startedAt,
+            turnId: 't2',
+            sessionId: 'session',
+            provider: 'codex',
+            trigger: 'auto',
+            textOffset: 6,
+          },
+        ],
+      },
+      [],
+    )[0]
+    expect(result.content).toEqual([
+      { type: 'text', text: 'Before' },
+      expect.objectContaining({ type: 'data', name: 'dovo.compaction' }),
+      { type: 'text', text: 'After' },
+    ])
+  })
   it('hides an in-progress snapshot until the turn has changes to inspect', () => {
     const result = conversationMessages(
       {

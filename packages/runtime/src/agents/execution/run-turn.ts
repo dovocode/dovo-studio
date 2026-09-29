@@ -523,6 +523,7 @@ ${
                       {
                         at,
                         turnId,
+                        textOffset: textOffset(),
                         sessionId: currentSession,
                         provider: agent.provider,
                         trigger: compact ? 'manual' : compaction,

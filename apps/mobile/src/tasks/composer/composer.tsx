@@ -55,7 +55,6 @@ export function Composer({ task }: { task: Task }) {
   const selection = useRef<DraftSelection | undefined>(undefined)
   const [caret, setCaret] = useApplicationState(0)
   const meter = contextMeter(task)
-  const lastCompaction = task.compactions?.at(-1)
   const { callEffect: commandCall } = useRuntime()
   const commandAction = useAction()
   useEffect(() => {
@@ -395,14 +394,6 @@ export function Composer({ task }: { task: Task }) {
                   {meter.short}
                 </Text>
               )}
-              {showOptions &&
-                !dictation.active &&
-                lastCompaction &&
-                lastCompaction.sessionId === task.sessionId && (
-                  <Text style={[styles.muted, { fontSize: 11 }]}>
-                    Compacted {new Date(lastCompaction.at).toLocaleTimeString()}
-                  </Text>
-                )}
               {showOptions && checkoutEditable && !dictation.active && (
                 <Pressable
                   testID="Checkout & branch"

@@ -274,6 +274,9 @@ export const taskSchema = mutableStruct({
       mutableStruct({
         at: Schema.String,
         turnId: Schema.String,
+        textOffset: Schema.optional(
+          Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative()),
+        ),
         sessionId: Schema.String,
         provider: providerSchema,
         trigger: Schema.Literal('manual', 'auto'),

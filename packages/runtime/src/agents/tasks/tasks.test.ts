@@ -184,7 +184,7 @@ it('records a provider-confirmed manual compaction on the resumed session', asyn
   ).done
   expect(runs[1]).toMatchObject({ compact: true, prompt: '/compact', sessionId: 'session-1' })
   expect(s.store.task(task.id).compactions).toMatchObject([
-    { provider: 'codex', trigger: 'manual', sessionId: 'session-1' },
+    { provider: 'codex', trigger: 'manual', sessionId: 'session-1', textOffset: 0 },
   ])
   expect(s.store.task(task.id).contextUsage).toBeUndefined()
 })

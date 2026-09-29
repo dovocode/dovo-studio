@@ -52,6 +52,18 @@ function AttachmentPart({ data }: DataMessagePartProps<unknown>) {
 function TurnSummaryPart({ data }: DataMessagePartProps<unknown>) {
   return <Text style={[styles.muted, { fontSize: 12 }]}>{decode(Schema.String, data)}</Text>
 }
+function CompactionPart({ data }: DataMessagePartProps<unknown>) {
+  const item = decode(
+    mutableStruct({ at: Schema.String, trigger: Schema.Literal('manual', 'auto') }),
+    data,
+  )
+  return (
+    <Text accessibilityRole="text" style={[styles.muted, { fontSize: 12 }]}>
+      Context compacted {formatTime(new Date(item.at), { hour: '2-digit', minute: '2-digit' })} ·{' '}
+      {item.trigger === 'auto' ? 'Automatic' : 'Manual'}
+    </Text>
+  )
+}
 function CheckpointPart({ data }: DataMessagePartProps<unknown>) {
   const checkpoint = decode(checkpointSchema, data)
   const { openCheckpoint, task } = useTaskConversation()
@@ -205,6 +217,7 @@ const parts = {
       'dovo.attachments': AttachmentPart,
       'dovo.checkpoint': CheckpointPart,
       'dovo.reasoning': ReasoningPart,
+      'dovo.compaction': CompactionPart,
       'dovo.turn-summary': TurnSummaryPart,
     },
   },
@@ -221,7 +234,6 @@ const userParts = {
   Text: UserText,
 }
 function Message() {
-  const { task } = useTaskConversation()
   const pendingMessage = usePendingConversationMessage()
   const id = useAuiState((state) => state.message.id)
   const user = useAuiState((state) => state.message.role === 'user')
@@ -231,8 +243,6 @@ function Message() {
     state.message.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n\n'),
   )
   const car = useCarMode()
-  const turn = task.turns?.find((item) => item.assistantId === id)
-  const compactions = turn ? (task.compactions ?? []).filter((item) => item.turnId === turn.id) : []
   const time = createdAt && formatTime(createdAt, { hour: '2-digit', minute: '2-digit' })
   return (
     <MessagePrimitive.Root
@@ -285,12 +295,6 @@ function Message() {
           {!user && <Text style={[styles.muted, { fontSize: 13 }]}>{time}</Text>}
         </View>
       )}
-      {compactions.map((item) => (
-        <Text key={item.at} accessibilityRole="text" style={[styles.muted, { fontSize: 12 }]}>
-          Context compacted {formatTime(new Date(item.at), { hour: '2-digit', minute: '2-digit' })}{' '}
-          · {item.trigger === 'auto' ? 'Automatic' : 'Manual'}
-        </Text>
-      ))}
     </MessagePrimitive.Root>
   )
 }

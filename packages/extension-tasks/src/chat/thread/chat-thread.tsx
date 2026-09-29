@@ -131,7 +131,9 @@ export function ChatThread({
                 : []
               const tools = turn ? (activityGroups.byTurn.get(turn.id) ?? []) : []
               const timeline =
-                turn && message.role === 'assistant' ? threadTimeline(message.text, tools) : null
+                turn && message.role === 'assistant'
+                  ? threadTimeline(message.text, tools, compactions)
+                  : null
               const showContent =
                 !!message.text ||
                 !!message.file ||
@@ -176,6 +178,15 @@ export function ChatThread({
                             status={turn.status}
                             tools={block.tools}
                           />
+                        ) : block.kind === 'compaction' ? (
+                          <p
+                            key={`compaction-${block.event.at}`}
+                            role="status"
+                            className="text-[0.6875rem] text-muted-foreground"
+                          >
+                            Context compacted {new Date(block.event.at).toLocaleString()} ·{' '}
+                            {block.event.trigger === 'auto' ? 'Automatic' : 'Manual'}
+                          </p>
                         ) : (
                           <MessageContent key={`text-${block.offset}`}>
                             <MessageResponse
@@ -279,16 +290,6 @@ export function ChatThread({
                       {turn.error}
                     </p>
                   )}
-                  {compactions.map((item) => (
-                    <p
-                      key={item.at}
-                      role="status"
-                      className="text-[0.6875rem] text-muted-foreground"
-                    >
-                      Context compacted {new Date(item.at).toLocaleString()} ·{' '}
-                      {item.trigger === 'auto' ? 'Automatic' : 'Manual'}
-                    </p>
-                  ))}
                   {turn && (
                     <TurnCheckpoint
                       turn={turn}
