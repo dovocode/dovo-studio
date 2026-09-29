@@ -2,7 +2,6 @@ import {
   Settings,
   Bot,
   CircleDot,
-  CircleHelp,
   GitBranch,
   GitPullRequest,
   LayoutDashboard,
@@ -11,6 +10,8 @@ import {
   MessagesSquare,
   Workflow,
   Download,
+  RefreshCw,
+  PanelsTopLeft,
 } from 'lucide-react'
 import type { DesktopUpdateState } from '@dovo/protocol'
 import type { StudioIcon, StudioView } from '@dovo/studio-core'
@@ -19,6 +20,7 @@ import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from '@dovo/studi
 const icons: Record<StudioIcon, typeof Bot> = {
   tasks: MessagesSquare,
   issues: CircleDot,
+  jira: PanelsTopLeft,
   scm: GitBranch,
   pulls: GitPullRequest,
   pipelines: ListChecks,
@@ -32,17 +34,17 @@ export function ActivityBar({
   views,
   activeId,
   onSelect,
-  onHelp,
   update,
   onUpdate,
+  onCheckUpdates,
 }: {
   taskHeader?: boolean
   views: readonly StudioView[]
   activeId: string
   onSelect: (id: string) => void
-  onHelp: () => void
   update?: DesktopUpdateState
   onUpdate?: () => void
+  onCheckUpdates?: () => void
 }) {
   const settings = views.filter((view) => view.navigationGroup === 'settings')
   const settingsActive = settings.some((view) => view.id === activeId)
@@ -89,6 +91,8 @@ export function ActivityBar({
           ),
         )}
       <div className="studio-navigation-settings">
+        {onCheckUpdates &&
+          item('check-updates', 'Check for Updates', RefreshCw, false, onCheckUpdates)}
         {!!onUpdate && !!update && update.status !== 'idle' && update.status !== 'error' && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -126,7 +130,6 @@ export function ActivityBar({
         )}
         {!!settings.length &&
           item('settings', 'Settings', Settings, settingsActive, () => onSelect(settings[0].id))}
-        {item('help', 'Walkthrough', CircleHelp, false, onHelp)}
       </div>
     </nav>
   )

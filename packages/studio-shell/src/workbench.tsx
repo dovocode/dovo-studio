@@ -12,6 +12,7 @@ import {
 import {
   type StudioViewProps,
   readAppPreferences,
+  useAppPreferences,
   StudioHostProvider,
   WorkspaceProvider,
   useWorkspace,
@@ -30,7 +31,6 @@ import { createExtensionCatalog } from './extension-catalog'
 import { ActivityBar } from './activity-bar'
 import type { DesktopUpdateBridge, DesktopUpdateState } from '@dovo/protocol'
 import { CommandPalette } from './command-palette'
-import { Walkthrough, walkthroughSteps } from './walkthrough'
 import { TitleBar, type DesktopPlatform } from './title-bar'
 type WorkbenchProps = {
   extensions: readonly StudioExtension[]
@@ -123,6 +123,7 @@ function WorkbenchContent({
   updates,
 }: WorkbenchProps) {
   const compact = useCompactLayout()
+  const { showIssues, showJira } = useAppPreferences()
   useAppearance()
   useTaskNotifications()
   const [update, setUpdate] = useState<DesktopUpdateState>({ status: 'idle' })
@@ -150,7 +151,6 @@ function WorkbenchContent({
     connected,
     syncError,
     runtimeRegistry,
-    activeRuntimeId,
     runtimes,
     pendingSync,
     retrySync,
@@ -165,7 +165,6 @@ function WorkbenchContent({
         : (extensions[0]?.views[0]?.id ?? ''),
   }))
   const [palette, setPalette] = useApplicationState(false)
-  const [tour, setTour] = useApplicationState<number | null>(null)
   const commands = useRef(new Map<string, StudioCommand>())
   const [, refreshCommands] = useApplicationState(0)
   const registerCommand = useCallback((command: StudioCommand) => {
@@ -244,12 +243,6 @@ function WorkbenchContent({
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   }, [palette])
-  const activeDevice = runtimes.find((entry) => entry.profile.id === activeRuntimeId)
-  const activeDeviceName = activeDevice
-    ? activeDevice.profile.name === new URL(activeDevice.profile.connection.address).hostname
-      ? (activeDevice.snapshot?.runtimeHost ?? activeDevice.profile.name)
-      : activeDevice.profile.name
-    : 'Local'
   const settingsViews = catalog.views.filter((view) => view.navigationGroup === 'settings')
   const inSettings = settingsViews.some((view) => view.id === target.viewId)
   const taskChrome = target.viewId === 'tasks' && !compact
@@ -264,12 +257,6 @@ function WorkbenchContent({
           viewId: view.id,
         }),
     }))
-  const setStep = (step: number) => {
-    setTour(step)
-    navigate({
-      viewId: walkthroughSteps[step].view,
-    })
-  }
   return (
     <StudioHostProvider api={api}>
       <div className="studio dark" data-platform={desktopPlatform}>
@@ -302,9 +289,6 @@ function WorkbenchContent({
               Set up defaults
             </Button>
           </div>
-        )}
-        {tour !== null && (
-          <Walkthrough step={tour} onStep={setStep} onClose={() => setTour(null)} />
         )}
         {(storageError || syncError || switchError) && (
           <p
@@ -350,14 +334,16 @@ function WorkbenchContent({
             taskHeader={taskChrome}
             update={update}
             onUpdate={updates ? () => void updates.install() : undefined}
-            views={catalog.views}
+            onCheckUpdates={updates ? () => void updates.check() : undefined}
+            views={catalog.views.filter((view) =>
+              view.id === 'issues' ? showIssues : view.id === 'jira' ? showJira : true,
+            )}
             activeId={target.viewId}
             onSelect={(viewId) =>
               navigate({
                 viewId,
               })
             }
-            onHelp={() => setStep(0)}
           />
           <main className="studio-main" tabIndex={-1}>
             {/* Settings get a grouped sidebar with search; other views use the full area. */}
@@ -389,23 +375,6 @@ function WorkbenchContent({
             </div>
           </main>
         </div>
-        <footer className="studio-footer">
-          <span>
-            {connected
-              ? pendingSync
-                ? syncError
-                  ? 'Unsent workspace changes · retry required'
-                  : 'Saving workspace changes…'
-                : 'Workspace synced'
-              : activeRuntimeId
-                ? `${activeDeviceName} offline · cached workspace`
-                : 'Local drafts'}
-          </span>
-          <span>
-            {runtimeRegistry.profiles.length}{' '}
-            {runtimeRegistry.profiles.length === 1 ? 'device' : 'devices'}
-          </span>
-        </footer>
         <CommandPalette
           open={palette}
           onOpenChange={setPalette}

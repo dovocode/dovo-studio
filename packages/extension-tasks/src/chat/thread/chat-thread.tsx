@@ -135,7 +135,7 @@ export function ChatThread({
                 !!message.text ||
                 !!message.file ||
                 !!message.attachments?.length ||
-                !(turn?.status === 'running' && tools.length)
+                turn?.status !== 'running'
               return (
                 <Message
                   id={`message-${task.id}-${message.id}`}
@@ -167,13 +167,11 @@ export function ChatThread({
                         </MessageResponse>
                       ) : (
                         <span className="text-xs text-muted-foreground">
-                          {turn?.status === 'running'
-                            ? 'Working…'
-                            : compactions.length
-                              ? 'Context compacted'
-                              : message.attachments?.length
-                                ? ''
-                                : 'No response text'}
+                          {compactions.length
+                            ? 'Context compacted'
+                            : message.attachments?.length
+                              ? ''
+                              : 'No response text'}
                         </span>
                       )}
                     </MessageContent>

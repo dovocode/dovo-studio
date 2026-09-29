@@ -163,6 +163,10 @@ const startup = Effect.gen(function* () {
       requireTrustedRenderer(event, rendererPath)
       return updates.state()
     })
+    ipcMain.handle('updates:check', async (event) => {
+      requireTrustedRenderer(event, rendererPath)
+      await updates.check()
+    })
     ipcMain.handle('updates:install', async (event) => {
       requireTrustedRenderer(event, rendererPath)
       await updates.install()

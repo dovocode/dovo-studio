@@ -30,12 +30,23 @@ import { SourcePicker } from '../connections/source-picker'
 import { useWorkSources } from './use-work-sources'
 type Mode = 'issues' | 'pipelines'
 export default function IssuesView({ entityId }: StudioViewProps) {
-  return <WorkView mode="issues" entityId={entityId} />
+  return <WorkView mode="issues" sourceKind="issues" entityId={entityId} />
+}
+export function JiraView({ entityId }: StudioViewProps) {
+  return <WorkView mode="issues" sourceKind="jira" entityId={entityId} />
 }
 export function PipelinesView({ entityId }: StudioViewProps) {
   return <WorkView mode="pipelines" entityId={entityId} />
 }
-function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
+function WorkView({
+  mode,
+  sourceKind = 'issues',
+  entityId,
+}: {
+  mode: Mode
+  sourceKind?: 'issues' | 'jira'
+  entityId?: string
+}) {
   const { activeRuntimeId, switchRuntime, connected, request } = useWorkspace()
   const [project, setProject] = useApplicationState('')
   const [search, setSearch] = useApplicationState('')
@@ -44,7 +55,7 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
     const timer = setTimeout(() => setQuery(mode === 'issues' ? search.trim() : ''), 300)
     return () => clearTimeout(timer)
   }, [mode, search])
-  const { sources, pages, busy, refresh, more } = useWorkSources(mode, query)
+  const { sources, pages, busy, refresh, more } = useWorkSources(mode, query, sourceKind)
   const [state, setState] = useApplicationState('all')
   const [sort, setSort] = useApplicationState('updated')
   const [linked, setLinked] = useApplicationState('all')
@@ -227,7 +238,7 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
 
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="mr-2 text-lg font-semibold tracking-tight">
-              {mode === 'issues' ? 'Issues' : 'Pipelines'}
+              {mode === 'issues' ? (sourceKind === 'jira' ? 'Jira' : 'Issues') : 'Pipelines'}
             </h1>
             <span className="text-xs text-muted-foreground">
               {rows.length} loaded · {visibleSources.length}{' '}
@@ -398,7 +409,9 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
           )}
           {!sources.length && (
             <p className="py-8 text-sm text-muted-foreground">
-              Connect Jira from Sources to browse issues. You can link them to a code project later.
+              {sourceKind === 'jira'
+                ? 'Connect Jira from Sources to browse Jira issues.'
+                : 'Connect a code project to browse its issues.'}
             </p>
           )}
           {!!sourceProblems.length && (
@@ -469,7 +482,9 @@ function WorkView({ mode, entityId }: { mode: Mode; entityId?: string }) {
                   : mode === 'issues'
                     ? project
                       ? 'No issues are available for this source.'
-                      : 'Browse Jira and code-host issues together. Link a Jira issue to a code project when you are ready to work on it.'
+                      : sourceKind === 'jira'
+                        ? 'Browse Jira issues and link them to code projects when you are ready to work on them.'
+                        : 'Browse issues from your code projects.'
                     : 'Runs from your connected project will appear here.'}
               </p>
               {hasFilters ? (

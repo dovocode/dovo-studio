@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import {
   startPolling,
   clientTaskScope,
@@ -60,8 +60,19 @@ const cacheKey = (source: WorkSource, mode: string, kind: string, query = '') =>
     kind === 'list' ? 'all' : undefined,
     kind === 'list' ? query || undefined : undefined,
   ])
-export function useWorkSources(mode: 'issues' | 'pipelines', search = '') {
-  const sources = useIssueSources(mode === 'issues')
+export function useWorkSources(
+  mode: 'issues' | 'pipelines',
+  search = '',
+  sourceKind: 'issues' | 'jira' = 'issues',
+) {
+  const issueSources = useIssueSources(mode === 'issues')
+  const sources = useMemo(
+    () =>
+      issueSources.filter((source) =>
+        mode === 'pipelines' || sourceKind === 'issues' ? !source.jira : !!source.jira,
+      ),
+    [issueSources, mode, sourceKind],
+  )
   const [stored, setStored, pagesRef] = useApplicationState<Record<string, Page>>({})
   const generation = useRef(0)
   const moreRef = useRef<(key: string) => Promise<void>>(async () => {})

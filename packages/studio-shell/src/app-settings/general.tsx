@@ -30,6 +30,22 @@ export default function GeneralSettings() {
           />
         </SettingRow>
       </SettingsGroup>
+      <SettingsGroup title="Navigation">
+        <SettingRow label="Issues" description="Show code-host issues in the sidebar.">
+          <Toggle
+            label="Show Issues"
+            checked={preferences.showIssues}
+            onChange={(showIssues) => updateAppPreferences({ showIssues })}
+          />
+        </SettingRow>
+        <SettingRow label="Jira" description="Show Jira issues in a separate sidebar view.">
+          <Toggle
+            label="Show Jira"
+            checked={preferences.showJira}
+            onChange={(showJira) => updateAppPreferences({ showJira })}
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Task list">
         <SettingRow
           label="Default sort"

@@ -4,6 +4,7 @@ import type { Extension, ExtensionManifest } from '@dovo/client-runtime'
 export type StudioIcon =
   | 'tasks'
   | 'issues'
+  | 'jira'
   | 'scm'
   | 'pulls'
   | 'pipelines'

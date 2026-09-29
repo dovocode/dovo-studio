@@ -507,6 +507,7 @@ export function Composer({
               <Button
                 type="button"
                 size="icon"
+                variant="destructive"
                 className="size-8 shrink-0 rounded-full"
                 aria-label="Stop"
                 title="Stop the agent and pause queued messages"

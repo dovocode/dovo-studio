@@ -253,9 +253,10 @@ export function registerUpdates(
     },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
-  return Object.assign(check, {
+  return {
+    check,
     state: () => state,
     refresh,
     install: () => check(true),
-  })
+  }
 }

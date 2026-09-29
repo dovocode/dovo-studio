@@ -372,20 +372,6 @@ textarea {
   --diffs-line-height: 22px;
   --diffs-font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-/* Compact navigation stays beside the workspace; the footer only reports status. */
-.studio-footer {
-  display: flex;
-  flex: none;
-  min-height: 26px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-top: 1px solid var(--border);
-  padding: 2px 10px 2px 6px;
-  background: var(--sidebar);
-  color: var(--muted-foreground);
-  font-size: 10px;
-}
 .studio-navigation {
   display: flex;
   flex: none;
@@ -763,9 +749,6 @@ a:focus-visible {
 }
 
 @media (pointer: coarse) {
-  .studio-footer {
-    flex-wrap: wrap;
-  }
   .studio-navigation .studio-navigation-item {
     min-height: 44px;
     width: 44px;

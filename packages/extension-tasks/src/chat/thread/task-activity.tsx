@@ -211,7 +211,6 @@ export function TaskActivity({
                       .filter(Boolean)
                       .join(' · ')}
                   </p>
-                  <TurnLabel turn={turn} />
                 </details>
               )}
             </div>

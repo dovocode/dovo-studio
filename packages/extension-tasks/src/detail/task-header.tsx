@@ -242,7 +242,12 @@ export function TaskHeader({
                 onClick={() => {
                   if (!task.workItem) return
                   host.navigate({
-                    viewId: task.workItem.kind === 'issue' ? 'issues' : 'pipelines',
+                    viewId:
+                      task.workItem.kind === 'issue'
+                        ? task.workItem.jiraSourceId
+                          ? 'jira'
+                          : 'issues'
+                        : 'pipelines',
                     entityId: encodeWorkTarget({
                       ...(task.workItem.kind === 'issue' && task.workItem.jiraSourceId
                         ? {

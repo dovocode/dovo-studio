@@ -10,6 +10,13 @@ export const scmExtension = defineStudioExtension(
       load: () => import('./work/work-view'),
     },
     {
+      id: 'jira',
+      title: 'Jira',
+      icon: 'jira',
+      order: 1.45,
+      load: () => import('./work/jira-view'),
+    },
+    {
       id: 'pipelines',
       title: 'Pipelines',
       icon: 'pipelines',
