@@ -304,6 +304,7 @@ export function TaskSettings({
               )}
               {agent && (
                 <ModelSettings
+                  preferences={snapshot?.defaults?.modelPreferences}
                   key={agentId}
                   agent={agent}
                   connected={connected}

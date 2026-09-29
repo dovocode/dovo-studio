@@ -11,6 +11,12 @@ import { titleGenerationSettingsSchema } from '../../tasks/title-generation.js'
 import { supportsAccess } from '../../auth/access.js'
 
 export const runtimeDefaultsSchema = mutableStruct({
+  modelPreferences: Schema.optional(
+    Schema.Record({
+      key: Schema.String,
+      value: mutableStruct({ favorite: Schema.Boolean, disabled: Schema.Boolean }),
+    }),
+  ),
   setupCommand: projectTaskDefaultsSchema.fields.setupCommand,
   execution: projectTaskDefaultsSchema.fields.execution,
   worktreeFromOrigin: projectTaskDefaultsSchema.fields.worktreeFromOrigin,

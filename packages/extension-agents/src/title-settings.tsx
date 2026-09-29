@@ -198,6 +198,7 @@ export function TitleSettings() {
                 )}
                 {harness && (
                   <ModelSettings
+                    preferences={snapshot?.defaults?.modelPreferences}
                     modes={false}
                     agent={{
                       ...harness,

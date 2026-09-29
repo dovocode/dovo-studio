@@ -6,10 +6,10 @@ import { TitleSettings } from '../agents/title-settings'
 import { accessLabel } from '@dovo/protocol'
 import { AgentEditor } from '../agents/agent-editor'
 import { AcpRegistrySettings } from '../agents/acp-registry'
-import { ScrollView, View } from 'react-native'
+import { Alert, ScrollView, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import { randomUUID } from 'expo-crypto'
-import { type Agent, responses } from '@dovo/protocol'
+import { type Agent, responses, defaultTaskHarness, runtimeDefaultsSchema } from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { clientScopeKey } from '@dovo/client-runtime'
 import { Sheet } from '../ui/layout/sheet'
@@ -68,7 +68,7 @@ function ComputerAgents({ name }: { name: string }) {
           <Text style={styles.muted}>{connected ? 'Online' : 'Offline · Saved agents'}</Text>
         </View>
         <Action
-          label="New agent"
+          label="New configuration"
           disabled={!connected}
           onPress={() =>
             setEditing({
@@ -87,49 +87,164 @@ function ComputerAgents({ name }: { name: string }) {
         />
       </View>
       <Setup />
-      {snapshot?.workspace.agents.map((agent) => (
-        <View key={agent.id} style={styles.card}>
-          <Text style={styles.text}>{agent.name}</Text>
-          <Text style={styles.muted}>
-            {agent.provider} · {agent.model || 'Provider default'}
-            {agent.reasoning ? ` · ${agent.reasoning}` : ''} · {accessLabel(agent.permission)}
-          </Text>
-          <View style={styles.row}>
-            <Action
-              secondary
-              disabled={!connected}
-              label={`Edit ${agent.name}`}
-              onPress={() =>
-                setEditing({
-                  agent,
-                  creating: false,
-                })
-              }
-            />
-            <Action
-              secondary
-              label="Check provider"
-              disabled={!connected || busy}
-              onPress={() =>
-                act(() =>
-                  mobileWorkflow(function* () {
-                    const result = yield* callEffect(
-                      '/api/agents/probe',
-                      {
-                        id: agent.id,
-                      },
-                      responses.provider,
-                    )
-                    setAvailability(
-                      `${agent.name}: ${result.available ? 'Available' : 'Unavailable'} · ${result.detail}`,
-                    )
-                  }),
-                )
-              }
-            />
-          </View>
+      <Text style={styles.muted}>
+        Save multiple configurations for each provider with different models, access and
+        instructions.
+      </Text>
+      {[
+        ...(['codex', 'claude', 'opencode'] as const).map((provider) => ({
+          id: provider,
+          name: provider === 'codex' ? 'Codex' : provider === 'claude' ? 'Claude' : 'OpenCode',
+          provider,
+          installationId: undefined,
+        })),
+        ...(snapshot?.acpInstallations ?? []).map((installation) => ({
+          id: installation.id,
+          name: installation.name,
+          provider: 'acp' as const,
+          installationId: installation.id,
+        })),
+      ].map((installation) => (
+        <View key={installation.id} style={styles.card}>
+          <Text style={styles.text}>{installation.name}</Text>
+          <Action
+            label="Configure"
+            disabled={!connected}
+            onPress={() =>
+              setEditing({
+                creating: !snapshot?.workspace.agents.some(
+                  (agent) =>
+                    agent.provider === installation.provider &&
+                    agent.acpInstallationId === installation.installationId,
+                ),
+                agent: snapshot?.workspace.agents.find(
+                  (agent) =>
+                    agent.provider === installation.provider &&
+                    agent.acpInstallationId === installation.installationId,
+                ) ?? {
+                  ...defaultTaskHarness(installation.provider),
+                  id: randomUUID(),
+                  name: installation.name,
+                  acpInstallationId: installation.installationId,
+                },
+              })
+            }
+          />
         </View>
       ))}
+      {snapshot?.workspace.agents
+        .slice()
+        .sort(
+          (a, b) =>
+            Number(snapshot.defaults?.modelPreferences?.[`agent:${b.id}`]?.favorite ?? false) -
+            Number(snapshot.defaults?.modelPreferences?.[`agent:${a.id}`]?.favorite ?? false),
+        )
+        .map((agent) => (
+          <View key={agent.id} style={styles.card}>
+            <Text style={styles.text}>{agent.name}</Text>
+            <Text style={styles.muted}>
+              {agent.provider} · {agent.model || 'Provider default'}
+              {agent.reasoning ? ` · ${agent.reasoning}` : ''} · {accessLabel(agent.permission)}
+            </Text>
+            <View style={[styles.row, { flexWrap: 'wrap' }]}>
+              <Action
+                secondary
+                label={
+                  snapshot?.defaults?.modelPreferences?.[`agent:${agent.id}`]?.favorite
+                    ? '★ Favorite'
+                    : '☆ Favorite'
+                }
+                disabled={!connected || busy}
+                onPress={() =>
+                  act(() =>
+                    mobileWorkflow(function* () {
+                      yield* callEffect(
+                        '/api/agents/models/preference',
+                        {
+                          key: `agent:${agent.id}`,
+                          favorite:
+                            !snapshot?.defaults?.modelPreferences?.[`agent:${agent.id}`]?.favorite,
+                        },
+                        runtimeDefaultsSchema,
+                      )
+                    }),
+                  )
+                }
+              />
+              <Action
+                secondary
+                label="Duplicate"
+                disabled={!connected}
+                onPress={() =>
+                  setEditing({
+                    creating: true,
+                    agent: { ...agent, id: randomUUID(), name: `${agent.name} copy` },
+                  })
+                }
+              />
+              <Action
+                secondary
+                label="Delete"
+                disabled={!connected || busy}
+                onPress={() =>
+                  Alert.alert(
+                    'Delete configuration?',
+                    `Delete ${agent.name}? Existing threads keep their settings.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () =>
+                          act(() =>
+                            mobileWorkflow(function* () {
+                              yield* callEffect(
+                                '/api/agents/remove',
+                                { id: agent.id },
+                                responses.ok,
+                              )
+                            }),
+                          ),
+                      },
+                    ],
+                  )
+                }
+              />
+              <Action
+                secondary
+                disabled={!connected}
+                label={`Edit ${agent.name}`}
+                onPress={() =>
+                  setEditing({
+                    agent,
+                    creating: false,
+                  })
+                }
+              />
+              <Action
+                secondary
+                label="Check provider"
+                disabled={!connected || busy}
+                onPress={() =>
+                  act(() =>
+                    mobileWorkflow(function* () {
+                      const result = yield* callEffect(
+                        '/api/agents/probe',
+                        {
+                          id: agent.id,
+                        },
+                        responses.provider,
+                      )
+                      setAvailability(
+                        `${agent.name}: ${result.available ? 'Available' : 'Unavailable'} · ${result.detail}`,
+                      )
+                    }),
+                  )
+                }
+              />
+            </View>
+          </View>
+        ))}
       <SettingsGroup>
         <SettingsRow
           title="ACP registry"

@@ -1,3 +1,4 @@
+import { runtimeDefaultsSchema } from '@dovo/protocol'
 import { useCallback } from 'react'
 import {
   modelCatalogSchema,
@@ -13,10 +14,22 @@ export function ModelSettings({
   agent: Agent
   onChange: (agent: Agent) => void
 }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, snapshot, refreshRuntimes } = useWorkspace()
   const load = useCallback(
     (input: AgentDiscovery) => request('/api/agents/models', input, modelCatalogSchema),
     [request],
   )
-  return <Fields agent={agent} onChange={onChange} connected={connected} loadModels={load} />
+  return (
+    <Fields
+      agent={agent}
+      onChange={onChange}
+      connected={connected}
+      loadModels={load}
+      preferences={snapshot?.defaults?.modelPreferences}
+      onPreference={async (key, change) => {
+        await request('/api/agents/models/preference', { key, ...change }, runtimeDefaultsSchema)
+        await refreshRuntimes()
+      }}
+    />
+  )
 }

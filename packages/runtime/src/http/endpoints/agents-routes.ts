@@ -31,6 +31,43 @@ export function agentsRoute(request: IncomingMessage, path: string) {
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/agents/remove') {
+        const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        if (s.titles.read().agentId === id)
+          throw new HttpError(
+            409,
+            'Choose another configuration for titles and dictation before deleting this one',
+          )
+        s.store.removeAgent(id)
+        return yield* serviceResult({ ok: true })
+      }
+      if (method === 'POST' && path === '/api/agents/models/preference') {
+        const input = decode(
+          mutableStruct({
+            key: maxValue(minValue(Schema.String, 1), 1000),
+            favorite: Schema.optional(Schema.Boolean),
+            disabled: Schema.optional(Schema.Boolean),
+          }),
+          yield* serviceResult(body(request)),
+        )
+        const current = s.defaults.get()
+        const preferences = current.modelPreferences ?? {}
+        return yield* serviceResult(
+          s.defaults.save(
+            {
+              ...current,
+              modelPreferences: {
+                ...preferences,
+                [input.key]: {
+                  favorite: input.favorite ?? preferences[input.key]?.favorite ?? false,
+                  disabled: input.disabled ?? preferences[input.key]?.disabled ?? false,
+                },
+              },
+            },
+            false,
+          ),
+        )
+      }
       if (path.startsWith('/api/agents/acp/')) return yield* acpRoute(request, path)
       if (method === 'POST' && path === '/api/agents/catalogs/mcp')
         return yield* serviceResult(searchRegistry(yield* serviceResult(body(request))))

@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Schema } from 'effect'
 import type { AgentRun } from '../../execution/types'
+import * as warmProcesses from '../../execution/warm-processes'
 import { codexAdapter } from './codex'
 const cleanups: string[] = []
 afterEach(async () => {
@@ -96,6 +97,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
 it('reuses the Codex app-server for follow-up turns and closes it with the adapter', async () => {
   const { run, requests } = await fixture()
   run.taskId = 'warm-task'
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
   try {
     await codexAdapter.run(run)
     run.sessionId = 'thread'
@@ -106,6 +108,7 @@ it('reuses the Codex app-server for follow-up turns and closes it with the adapt
     expect(rows.filter((row) => row.method === 'turn/start')).toHaveLength(2)
   } finally {
     await codexAdapter.dispose?.()
+    pressure.mockRestore()
   }
 })
 it('compacts an existing thread without starting a model turn', async () => {

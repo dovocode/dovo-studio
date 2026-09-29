@@ -212,6 +212,7 @@ function SetupForm({ onClose }: { onClose: () => void }) {
           <AcpRegistry key={`${step}:${agent.provider}`} agent={agent} onChange={change} />
         )}
         <ModelSettings
+          preferences={snapshot?.defaults?.modelPreferences}
           key={`${step}:${agent.provider}`}
           agent={agent}
           onChange={change}

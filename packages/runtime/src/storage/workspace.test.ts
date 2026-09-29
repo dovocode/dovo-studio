@@ -599,3 +599,129 @@ it('loads the valid entries of a stored workspace that no longer validates and k
     db.close()
   }
 })
+
+it('deletes a configuration while preserving existing thread settings and templates', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const agent = {
+      id: 'saved',
+      name: 'Codex review',
+      provider: 'codex' as const,
+      model: 'model',
+      instructions: 'Review',
+      permission: 'ask' as const,
+      endpoint: '',
+      resources: {
+        hooks: [
+          {
+            name: 'format',
+            enabled: true,
+            event: 'after-turn',
+            command: 'pnpm fmt',
+            timeoutSeconds: 60,
+          },
+        ],
+      },
+    }
+    store.patch({ collection: 'agents', id: agent.id, changes: {}, create: agent })
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'thread',
+          title: 'Existing',
+          agentId: agent.id,
+          repositoryId: '',
+          status: 'review',
+          createdAt: '',
+          draft: '',
+          messages: [{ id: 'sent', role: 'user', text: 'Review' }],
+          files: [],
+          example: false,
+          agentOverrides: { model: 'override' },
+        },
+      ],
+    }))
+    store.update((workspace) => ({
+      ...workspace,
+      repositories: [
+        {
+          id: 'repo',
+          name: 'Repo',
+          path: '/tmp/repo',
+          branch: 'main',
+          templates: [{ id: 'template', name: 'Review', objective: '', agentId: agent.id }],
+        },
+      ],
+    }))
+    store.removeAgent(agent.id)
+    expect(store.get().repositories[0]?.templates?.[0]).toMatchObject({
+      harness: { provider: 'codex', model: 'model' },
+    })
+    expect(store.get().repositories[0]?.templates?.[0]?.agentId).toBeUndefined()
+    expect(store.get().agents).toEqual([])
+    expect(store.get().tasks[0]?.harness).toMatchObject({
+      resources: { hooks: [{ name: 'format' }] },
+      provider: 'codex',
+      instructions: 'Review',
+    })
+    expect(store.get().tasks[0]?.agentOverrides?.model).toBe('override')
+    expect(new WorkspaceStore(db).get().tasks[0]?.harness).toEqual(store.get().tasks[0]?.harness)
+    expect(() => store.removeAgent(agent.id)).not.toThrow()
+  } finally {
+    db.close()
+  }
+})
+
+it('does not delete a configuration used by an automation', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.patch({
+      collection: 'agents',
+      id: 'used',
+      changes: {},
+      create: {
+        id: 'used',
+        name: 'Used',
+        provider: 'claude',
+        model: '',
+        instructions: '',
+        permission: 'ask',
+        endpoint: '',
+      },
+    })
+    store.update((workspace) => ({
+      ...workspace,
+      automations: [
+        {
+          id: 'flow',
+          name: 'Review',
+          edges: [],
+          nodes: [
+            {
+              id: 'node',
+              type: 'automation',
+              position: { x: 0, y: 0 },
+              data: {
+                kind: 'task',
+                label: 'Review',
+                trigger: 'manual',
+                schedule: '',
+                timezone: '',
+                objective: '',
+                agentId: 'used',
+                repositoryId: '',
+              },
+            },
+          ],
+        },
+      ],
+    }))
+    expect(() => store.removeAgent('used')).toThrow(/automations/)
+    expect(store.get().agents).toHaveLength(1)
+  } finally {
+    db.close()
+  }
+})

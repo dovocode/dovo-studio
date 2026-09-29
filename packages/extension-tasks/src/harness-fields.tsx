@@ -99,6 +99,7 @@ export function HarnessFields({
         </p>
       )}
       <ModelSettings
+        preferences={snapshot?.defaults?.modelPreferences}
         agent={{
           ...value,
           id: 'task-harness',

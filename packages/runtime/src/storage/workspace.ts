@@ -15,6 +15,7 @@ import {
   jiraSourceSchema,
   repositorySchema,
   taskSchema,
+  taskHarnessSchema,
   latestCompletedTaskTurn,
   lockedTaskProvider,
   resolveTaskAgent,
@@ -181,6 +182,35 @@ export class WorkspaceStore {
   }
   get() {
     return this.workspace
+  }
+  removeAgent(id: string) {
+    const agent = this.workspace.agents.find((entry) => entry.id === id)
+    if (!agent) return
+    if (
+      this.workspace.automations.some((flow) => flow.nodes.some((node) => node.data.agentId === id))
+    )
+      throw new HttpError(
+        409,
+        'Choose another configuration in automations before deleting this one',
+      )
+    if (this.workspace.tasks.some((task) => task.agentId === id && task.status === 'running'))
+      throw new HttpError(409, 'Stop running threads before deleting their configuration')
+    const harness = decode(taskHarnessSchema, agent)
+    this.update((workspace) => ({
+      ...workspace,
+      agents: workspace.agents.filter((entry) => entry.id !== id),
+      tasks: workspace.tasks.map((task) =>
+        task.agentId === id ? { ...task, agentId: '', harness: task.harness ?? harness } : task,
+      ),
+      repositories: workspace.repositories.map((repository) => ({
+        ...repository,
+        templates: repository.templates?.map((template) =>
+          template.agentId === id
+            ? { ...template, agentId: undefined, harness: template.harness ?? harness }
+            : template,
+        ),
+      })),
+    }))
   }
   publicWorkspace() {
     if (this.projected?.revision !== this.revision)

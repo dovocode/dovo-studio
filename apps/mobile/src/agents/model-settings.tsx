@@ -8,6 +8,8 @@ import { View } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
   agentSchema,
+  modelPreferenceKey,
+  runtimeDefaultsSchema,
   daybreakChoices,
   modelServiceTiers,
   selectedCatalogModel,
@@ -32,7 +34,7 @@ export function ModelSettings({
   disabled?: boolean
   onChange: (agent: Agent) => void
 }) {
-  const { connected, callEffect } = useRuntime()
+  const { connected, callEffect, snapshot, refresh: refreshRuntime } = useRuntime()
   const [catalog, setCatalog] = useApplicationState<ModelCatalog | null>(null),
     [error, setError] = useApplicationState(''),
     [loading, setLoading] = useApplicationState(false),
@@ -90,7 +92,22 @@ export function ModelSettings({
       clearTimeout(timer)
     }
   }, [key, canDiscover, callEffect, refresh])
-  const models = catalog?.models ?? [],
+  const [manage, setManage] = useApplicationState(false)
+  const [saving, setSaving] = useApplicationState(false)
+  const preferences = snapshot?.defaults?.modelPreferences ?? {}
+  const preferenceKey = (model: string) =>
+    modelPreferenceKey(agent.provider, model, agent.acpInstallationId)
+  const allModels = catalog?.models ?? []
+  const models = allModels
+      .filter(
+        (model) => !preferences[preferenceKey(model.id)]?.disabled || model.id === agent.model,
+      )
+      .slice()
+      .sort(
+        (a, b) =>
+          Number(preferences[preferenceKey(b.id)]?.favorite ?? false) -
+          Number(preferences[preferenceKey(a.id)]?.favorite ?? false),
+      ),
     selected = selectedCatalogModel(catalog, agent.model),
     efforts =
       selected?.reasoning ??
@@ -110,6 +127,59 @@ export function ModelSettings({
         gap: 12,
       }}
     >
+      <Action
+        secondary
+        label={manage ? 'Done managing models' : 'Model visibility & favorites'}
+        disabled={disabled}
+        onPress={() => setManage(!manage)}
+      />
+      {manage &&
+        allModels.map((model) => {
+          const key = preferenceKey(model.id)
+          const preference = preferences[key]
+          const save = (change: { favorite?: boolean; disabled?: boolean }) => {
+            setSaving(true)
+            void runClientEffect(
+              callEffect(
+                '/api/agents/models/preference',
+                { key, ...change },
+                runtimeDefaultsSchema,
+              ),
+            )
+              .then(() => refreshRuntime())
+              .catch((error: unknown) =>
+                setError(error instanceof Error ? error.message : String(error)),
+              )
+              .finally(() => setSaving(false))
+          }
+          return (
+            <View key={model.id} style={styles.row}>
+              <Text style={[styles.muted, { flex: 1 }]}>{model.name}</Text>
+              <Action
+                secondary
+                disabled={saving || disabled || !connected}
+                label={preference?.favorite ? '★ Favorite' : '☆ Favorite'}
+                onPress={() => save({ favorite: !preference?.favorite })}
+              />
+              <Action
+                secondary
+                disabled={saving || disabled || !connected}
+                label={preference?.disabled ? 'Enable' : 'Disable'}
+                onPress={() => save({ disabled: !preference?.disabled })}
+              />
+            </View>
+          )
+        })}
+      {!!models.some((model) => preferences[preferenceKey(model.id)]?.favorite) && (
+        <Choice
+          row
+          label="Favorites"
+          disabled={disabled}
+          value={agent.model}
+          items={models.filter((model) => preferences[preferenceKey(model.id)]?.favorite)}
+          onChange={changeModel}
+        />
+      )}
       <Choice
         row
         label="Model"

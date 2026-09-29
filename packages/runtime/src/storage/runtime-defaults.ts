@@ -19,14 +19,17 @@ export class RuntimeDefaults {
     )
     return decode(runtimeDefaultsSchema, row ? JSON.parse(row.value) : {})
   }
-  save(value: unknown) {
+  save(value: unknown, configure = true) {
     const settings = decode(runtimeDefaultsSchema, value)
     validateDefaultHarness(settings.harness)
     this.db
       .prepare(
         'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
       )
-      .run('runtime-defaults', JSON.stringify({ ...settings, configured: true }))
+      .run(
+        'runtime-defaults',
+        JSON.stringify({ ...settings, configured: configure || settings.configured }),
+      )
     return this.get()
   }
 }

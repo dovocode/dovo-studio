@@ -62,7 +62,12 @@ export function HarnessSettings({
   const custom = selection.startsWith('agent:')
   const agents = snapshot?.workspace.agents ?? []
   const installations = snapshot?.acpInstallations ?? []
-  const choices = taskHarnessChoices(task, agents, installations)
+  const choices = taskHarnessChoices(
+    task,
+    agents,
+    installations,
+    snapshot?.defaults?.modelPreferences,
+  )
   const lockedProvider = lockedTaskProvider(task, agents)
   const providerLocked = !canChangeTaskProvider(task)
   const selectionAllowed = choices.some(

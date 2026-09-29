@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useId } from 'react'
-import { Bot, Check, ChevronDown, Search, Star, Settings2 } from 'lucide-react'
+import { useEffect, useId } from 'react'
+import { Bot, Check, ChevronDown, Search, Star, Eye, EyeOff, Settings2 } from 'lucide-react'
 import {
   defaultTaskHarness,
   providers,
@@ -14,6 +14,7 @@ import {
 import { AgentAvatar, Button, Input, Popover, cn } from '@dovo/studio-ui'
 import { HarnessIcon } from './harness-icon'
 import { useHarnessCatalog } from './harness-catalog'
+import { modelPreferenceKey, runtimeDefaultsSchema, type RuntimeDefaults } from '@dovo/protocol'
 const favoritesKey = 'dovo:model-favorites'
 type PickerItem = {
   id: string
@@ -46,7 +47,7 @@ export function ComposerModelPicker({
   onChange: (next: TaskHarness) => Promise<boolean>
   onConfigure: () => void
 }) {
-  const { snapshot } = useWorkspace()
+  const { snapshot, request } = useWorkspace()
   const installations = snapshot?.acpInstallations ?? []
   const [open, setOpen] = useApplicationState(false)
   const [provider, setProvider] = useApplicationState(value.provider)
@@ -55,7 +56,7 @@ export function ComposerModelPicker({
   const [query, setQuery] = useApplicationState('')
   const [active, setActive] = useApplicationState(0)
   const [legacy, setLegacy] = useApplicationState(false)
-  const [favorites, setFavorites] = useApplicationState<string[]>(() => {
+  const [legacyFavorites, setLegacyFavorites] = useApplicationState<string[]>(() => {
     try {
       return localStorage.getItem(favoritesKey)?.split('\n').filter(Boolean) ?? []
     } catch {
@@ -63,6 +64,43 @@ export function ComposerModelPicker({
     }
   })
   const [storageError, setStorageError] = useApplicationState('')
+  const [savedPreferences, setSavedPreferences] =
+    useApplicationState<RuntimeDefaults['modelPreferences']>(undefined)
+  const [manageModels, setManageModels] = useApplicationState(false)
+  const snapshotPreferences = JSON.stringify(snapshot?.defaults?.modelPreferences ?? {})
+  useEffect(() => setSavedPreferences(undefined), [snapshotPreferences])
+  const preferences = savedPreferences ?? snapshot?.defaults?.modelPreferences ?? {}
+  const favorites = [
+    ...new Set([
+      ...legacyFavorites.filter((key) => preferences[key]?.favorite !== false),
+      ...Object.keys(preferences).filter((key) => preferences[key].favorite),
+    ]),
+  ]
+  const itemKey = (item: PickerItem) =>
+    item.agent
+      ? `agent:${item.id}`
+      : modelPreferenceKey(item.provider, item.id, item.installationId)
+  const savePreference = async (
+    key: string,
+    change: { favorite?: boolean; disabled?: boolean },
+  ) => {
+    try {
+      const result = await request(
+        '/api/agents/models/preference',
+        { key, ...change },
+        runtimeDefaultsSchema,
+      )
+      setSavedPreferences(result.modelPreferences)
+      if (change.favorite !== undefined) {
+        const next = legacyFavorites.filter((entry) => entry !== key)
+        setLegacyFavorites(next)
+        localStorage.setItem(favoritesKey, next.join('\n'))
+      }
+      setStorageError('')
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : String(error))
+    }
+  }
   const activeProvider = lockedProvider ?? provider
   const selectedHarness =
     activeProvider === value.provider &&
@@ -87,7 +125,21 @@ export function ComposerModelPicker({
           agent,
         }))
       : mode === 'favorites'
-        ? favorites.flatMap((key) => {
+        ? favorites.flatMap<PickerItem>((key) => {
+            if (key.startsWith('agent:')) {
+              const agent = agents.find((entry) => entry.id === key.slice(6))
+              return agent
+                ? [
+                    {
+                      id: agent.id,
+                      name: agent.name,
+                      provider: agent.provider,
+                      agent,
+                      hidden: false,
+                    },
+                  ]
+                : []
+            }
             const provider = providerSchema.literals.find((p) => key.startsWith(`${p}:`))
             const installation =
               provider === 'acp'
@@ -137,6 +189,7 @@ export function ComposerModelPicker({
           ]
   const filtered = items.filter(
     (item) =>
+      ((mode === 'models' && manageModels) || !preferences[itemKey(item)]?.disabled) &&
       (!lockedProvider || item.provider === lockedProvider) &&
       (lockedInstallationId === undefined ||
         (item.installationId ?? item.agent?.acpInstallationId ?? '') === lockedInstallationId) &&
@@ -145,9 +198,13 @@ export function ComposerModelPicker({
         .toLowerCase()
         .includes(query.toLowerCase().trim()),
   )
+  filtered.sort(
+    (a, b) => Number(favorites.includes(itemKey(b))) - Number(favorites.includes(itemKey(a))),
+  )
   const choose = async (item: (typeof items)[number]) => {
     if (
       disabled ||
+      preferences[itemKey(item)]?.disabled ||
       (lockedProvider && item.provider !== lockedProvider) ||
       (lockedInstallationId !== undefined &&
         (item.installationId ?? item.agent?.acpInstallationId ?? '') !== lockedInstallationId)
@@ -246,8 +303,8 @@ export function ComposerModelPicker({
               type="button"
               size="icon"
               variant="ghost"
-              aria-label="Custom agents"
-              title="Custom agents"
+              aria-label="Configurations"
+              title="Configurations"
               aria-pressed={mode === 'agents'}
               className={cn('size-9', mode === 'agents' && 'bg-accent')}
               onClick={() => {
@@ -356,14 +413,14 @@ export function ComposerModelPicker({
               <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
               <Input
                 autoFocus
-                aria-label={mode === 'agents' ? 'Search custom agents' : 'Search models'}
+                aria-label={mode === 'agents' ? 'Search configurations' : 'Search models'}
                 role="combobox"
                 aria-expanded="true"
                 aria-controls={listId}
                 aria-activedescendant={
                   filtered.length ? `${listId}-${Math.min(active, filtered.length - 1)}` : undefined
                 }
-                placeholder={mode === 'agents' ? 'Search custom agents…' : 'Search models…'}
+                placeholder={mode === 'agents' ? 'Search configurations…' : 'Search models…'}
                 value={query}
                 onChange={(event) => {
                   setQuery(event.target.value)
@@ -409,14 +466,24 @@ export function ComposerModelPicker({
                 </Button>
               </div>
             )}
+            {mode === 'models' && (
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-pressed={manageModels}
+                onClick={() => setManageModels(!manageModels)}
+              >
+                {manageModels ? 'Done managing models' : 'Manage model visibility'}
+              </Button>
+            )}
             <div
               id={listId}
               role="listbox"
-              aria-label={mode === 'agents' ? 'Custom agents' : 'Models'}
+              aria-label={mode === 'agents' ? 'Configurations' : 'Models'}
               className="min-h-0 flex-1 overflow-y-auto"
             >
               {filtered.map((item, index) => {
-                const key = `${item.agent ? 'agent' : item.provider}:${item.installationId ? `${item.installationId}:` : ''}${item.id}`
+                const key = itemKey(item)
                 const favorite = favorites.includes(key)
                 const selected = item.agent
                   ? item.agent.id === selectedAgent?.id
@@ -457,28 +524,32 @@ export function ComposerModelPicker({
                         {item.agent && ` · ${item.agent.model || 'Default model'}`}
                       </span>
                     </button>
-                    {!item.agent && (
+                    {!item.agent && manageModels && (
                       <button
                         type="button"
-                        aria-label={`${favorite ? 'Unfavorite' : 'Favorite'} ${item.name}`}
-                        aria-pressed={favorite}
-                        className="mr-2 rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => {
-                          const next = favorite
-                            ? favorites.filter((value) => value !== key)
-                            : [...favorites, key]
-                          setFavorites(next)
-                          try {
-                            localStorage.setItem(favoritesKey, next.join('\n'))
-                            setStorageError('')
-                          } catch {
-                            setStorageError('Favorites could not be saved on this device.')
-                          }
-                        }}
+                        aria-label={`${preferences[key]?.disabled ? 'Enable' : 'Disable'} ${item.name}`}
+                        aria-pressed={!!preferences[key]?.disabled}
+                        className="mr-2 rounded p-1 text-muted-foreground"
+                        onClick={() =>
+                          void savePreference(key, { disabled: !preferences[key]?.disabled })
+                        }
                       >
-                        <Star className={cn('size-3.5', favorite && 'fill-current')} />
+                        {preferences[key]?.disabled ? (
+                          <EyeOff className="size-3.5" />
+                        ) : (
+                          <Eye className="size-3.5" />
+                        )}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      aria-label={`${favorite ? 'Unfavorite' : 'Favorite'} ${item.name}`}
+                      aria-pressed={favorite}
+                      className="mr-2 rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => void savePreference(key, { favorite: !favorite })}
+                    >
+                      <Star className={cn('size-3.5', favorite && 'fill-current')} />
+                    </button>
                   </div>
                 )
               })}
@@ -486,8 +557,8 @@ export function ComposerModelPicker({
                 <p className="p-6 text-center text-xs text-muted-foreground">
                   {mode === 'agents'
                     ? agents.length
-                      ? 'No matching custom agents.'
-                      : 'Create custom agents in Settings → Agents.'
+                      ? 'No matching configurations.'
+                      : 'Create configurations in Settings → Agents.'
                     : mode === 'favorites'
                       ? 'Star models to keep them here.'
                       : 'No models found.'}

@@ -133,3 +133,8 @@ export function daybreakChoices(
       : []),
   ]
 }
+
+/** Stable identities keep ACP models from different installations separate. */
+export function modelPreferenceKey(provider: string, model: string, installationId?: string) {
+  return `${provider}:${installationId ? `${installationId}:` : ''}${model}`
+}

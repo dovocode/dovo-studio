@@ -4,6 +4,8 @@ import { ChoicePicker } from './choice-picker'
 import { useEffect } from 'react'
 import {
   agentSchema,
+  modelPreferenceKey,
+  type RuntimeDefaults,
   daybreakChoices,
   modelServiceTiers,
   selectedCatalogModel,
@@ -21,11 +23,15 @@ export function ModelSettings({
   loadModels,
   connected,
   modes = true,
+  preferences = {},
+  onPreference,
 }: {
   agent: Agent
   onChange: (agent: Agent) => void
   loadModels: (agent: AgentDiscovery) => Promise<ModelCatalog>
   connected: boolean
+  preferences?: RuntimeDefaults['modelPreferences']
+  onPreference?: (key: string, change: { favorite?: boolean; disabled?: boolean }) => Promise<void>
   modes?: boolean
 }) {
   const [catalog, setCatalog] = useApplicationState<ModelCatalog | null>(null),
@@ -71,7 +77,19 @@ export function ModelSettings({
       clearTimeout(timer)
     }
   }, [key, canDiscover, loadModels, refresh])
-  const models = catalog?.models ?? [],
+  const preferenceKey = (model: string) =>
+    modelPreferenceKey(agent.provider, model, agent.acpInstallationId)
+  const allModels = catalog?.models ?? []
+  const models = allModels
+      .filter(
+        (model) => !preferences[preferenceKey(model.id)]?.disabled || model.id === agent.model,
+      )
+      .slice()
+      .sort(
+        (a, b) =>
+          Number(preferences[preferenceKey(b.id)]?.favorite ?? false) -
+          Number(preferences[preferenceKey(a.id)]?.favorite ?? false),
+      ),
     selected = selectedCatalogModel(catalog, agent.model)
   const efforts =
     selected?.reasoning ??
@@ -87,6 +105,44 @@ export function ModelSettings({
     })
   return (
     <div className="grid gap-3">
+      {onPreference && (
+        <details>
+          <summary className="cursor-pointer text-xs text-muted-foreground">
+            Model visibility & favorites
+          </summary>
+          <div className="mt-2 max-h-60 overflow-y-auto">
+            {allModels.map((model) => {
+              const key = preferenceKey(model.id)
+              const preference = preferences[key]
+              const save = (change: { favorite?: boolean; disabled?: boolean }) =>
+                void onPreference(key, change).catch((error: unknown) =>
+                  setError(error instanceof Error ? error.message : String(error)),
+                )
+              return (
+                <div key={model.id} className="flex items-center gap-2 py-1 text-xs">
+                  <span className="min-w-0 flex-1 truncate">{model.name}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={!!preference?.favorite}
+                    onClick={() => save({ favorite: !preference?.favorite })}
+                  >
+                    {preference?.favorite ? '★' : '☆'} Favorite
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={!preference?.disabled}
+                    onClick={() => save({ disabled: !preference?.disabled })}
+                  >
+                    {preference?.disabled ? 'Enable' : 'Disable'}
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        </details>
+      )}
       <FormField label="Model">
         <ChoicePicker
           aria-label="Model"

@@ -12,6 +12,7 @@ import {
   type Agent,
   type AcpInstallation,
   type Task,
+  type RuntimeDefaults,
 } from '@dovo/protocol'
 export const harnessNames: Record<Agent['provider'], string> = {
   codex: 'Codex',
@@ -23,6 +24,7 @@ export function taskHarnessChoices(
   task: Task,
   agents: Agent[],
   installations: readonly AcpInstallation[] = [],
+  preferences: RuntimeDefaults['modelPreferences'] = {},
 ) {
   const unlocked = canChangeTaskProvider(task)
   const provider = lockedTaskProvider(task, agents)
@@ -43,15 +45,20 @@ export function taskHarnessChoices(
       name: `${agent.name} · ${harnessNames[agent.provider]}`,
       provider: agent.provider,
     })),
-  ].filter((choice) => {
-    if (unlocked) return true
-    if (choice.provider !== provider) return false
-    if (installationId === undefined) return true
-    if (choice.id === 'harness:acp') return installationId === ''
-    if (choice.id.startsWith('acp:')) return choice.id === acpHarnessChoiceId(installationId)
-    const agent = agents.find((entry) => choice.id === `agent:${entry.id}`)
-    return (agent?.acpInstallationId ?? '') === installationId
-  })
+  ]
+    .filter((choice) => {
+      if (unlocked) return true
+      if (choice.provider !== provider) return false
+      if (installationId === undefined) return true
+      if (choice.id === 'harness:acp') return installationId === ''
+      if (choice.id.startsWith('acp:')) return choice.id === acpHarnessChoiceId(installationId)
+      const agent = agents.find((entry) => choice.id === `agent:${entry.id}`)
+      return (agent?.acpInstallationId ?? '') === installationId
+    })
+    .sort(
+      (a, b) =>
+        Number(preferences[b.id]?.favorite ?? false) - Number(preferences[a.id]?.favorite ?? false),
+    )
 }
 export function taskHarnessSelection(task: Task) {
   return task.harness

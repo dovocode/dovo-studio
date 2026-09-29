@@ -316,3 +316,13 @@ it('clears the custom binding and overrides when selecting a built-in agent', ()
     ),
   ).toBeUndefined()
 })
+
+it('shows favorite configurations before built-in providers without changing thread locks', () => {
+  const preferences = { 'agent:builder': { favorite: true, disabled: false } }
+  expect(taskHarnessChoices(draft, agents, [], preferences)[0]?.id).toBe('agent:builder')
+  expect(
+    taskHarnessChoices(sent, agents, [], preferences).every(
+      (choice) => choice.provider === 'codex',
+    ),
+  ).toBe(true)
+})
