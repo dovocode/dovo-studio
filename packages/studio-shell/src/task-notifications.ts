@@ -3,7 +3,14 @@ import { readAppPreferences, useWorkspace } from '@dovo/studio-core'
 
 type RuntimeOverview = ReturnType<typeof useWorkspace>['runtimes'][number]
 
+export type NotificationTarget = {
+  runtimeId: string
+  viewId: 'tasks' | 'jobs'
+  entityId: string
+}
+
 export type TaskState = {
+  target: NotificationTarget
   title: string
   running: boolean
   needsInput: boolean
@@ -27,6 +34,7 @@ export function taskStates(entries: readonly RuntimeOverview[]) {
     for (const task of snapshot.workspace.tasks)
       states.set(JSON.stringify([entry.profile.id, task.id]), {
         title: task.title,
+        target: { runtimeId: entry.profile.id, viewId: 'tasks', entityId: task.id },
         running: task.status === 'running',
         needsInput: waiting.has(task.id),
         failed: task.status === 'failed',
@@ -37,6 +45,7 @@ export function taskStates(entries: readonly RuntimeOverview[]) {
     for (const run of snapshot.runs)
       states.set(JSON.stringify([entry.profile.id, 'run', run.id]), {
         title: names.get(run.automationId) ?? 'Automation',
+        target: { runtimeId: entry.profile.id, viewId: 'jobs', entityId: run.id },
         running: run.status === 'running' || run.status === 'waiting',
         // A review step waits for a person to approve the run.
         needsInput: run.status === 'waiting',
@@ -59,15 +68,22 @@ export function taskNotificationEvents(
     kind: 'input' | 'done' | 'failed' | 'checks-passed' | 'checks-failed'
     title: string
     automation: boolean
+    target: NotificationTarget
   }[] = []
   for (const [key, state] of current) {
     const before = previous.get(key)
     if (!before) continue
     const automation = !!state.automation
     if (state.needsInput && !before.needsInput)
-      events.push({ key, kind: 'input', title: state.title, automation })
+      events.push({ key, kind: 'input', title: state.title, automation, target: state.target })
     else if (before.running && !state.running && !state.cancelled)
-      events.push({ key, kind: state.failed ? 'failed' : 'done', title: state.title, automation })
+      events.push({
+        key,
+        kind: state.failed ? 'failed' : 'done',
+        title: state.title,
+        automation,
+        target: state.target,
+      })
     // Checks that were running on the task's pull request have finished.
     if (
       before.checks === 'pending' &&
@@ -79,13 +95,14 @@ export function taskNotificationEvents(
         kind: state.checks === 'passed' ? 'checks-passed' : 'checks-failed',
         title: state.title,
         automation,
+        target: state.target,
       })
   }
   return events
 }
 
 /** Settings → General → Notifications: tell the user while Dovo is in the background. */
-export function useTaskNotifications() {
+export function useTaskNotifications(onOpen: (target: NotificationTarget) => void) {
   const { runtimes } = useWorkspace()
   const previous = useRef<Map<string, TaskState> | null>(null)
   useEffect(() => {
@@ -115,7 +132,11 @@ export function useTaskNotifications() {
                 : `${subject} finished`,
         { body: event.title, tag: event.key, silent: !notifySound },
       )
-      notification.onclick = () => window.focus()
+      notification.onclick = () => {
+        window.focus()
+        notification.close()
+        onOpen(event.target)
+      }
     }
-  }, [runtimes])
+  }, [runtimes, onOpen])
 }

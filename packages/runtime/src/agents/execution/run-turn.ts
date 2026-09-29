@@ -268,12 +268,20 @@ ${
             ),
           )
         }
+        let buffer = '',
+          timer: ReturnType<typeof setTimeout> | undefined
+        const textOffset = () =>
+          (this.store.task(id).messages.find((message) => message.id === assistantId)?.text
+            .length ?? 0) + buffer.length
+        const reasoningOffsets = new Map<string, number>()
         const reasoning = new ReasoningEvents(agent.provider, (row) => {
+          const offset = reasoningOffsets.get(row.toolId) ?? textOffset()
+          reasoningOffsets.set(row.toolId, offset)
           this.activity?.add(
             'reasoning',
             id,
             'Reasoning',
-            { turnId, ...row },
+            { turnId, textOffset: offset, ...row },
             `reasoning:${id}:${turnId}:${row.toolId}`,
           )
         })
@@ -327,8 +335,6 @@ ${
         }
         let steering: Promise<void> | undefined
         let flushError: unknown
-        let buffer = '',
-          timer: ReturnType<typeof setTimeout> | undefined
         const flush = () => {
           if (timer) clearTimeout(timer)
           timer = undefined
@@ -556,12 +562,13 @@ ${
                   this.store.updateTask(id, (task) => ({ ...task, subagents }))
                 const reasoningOnly = reasoning.accept(name, payload)
                 const tool = toolEvent(agent.provider, name, payload)
+                if (tool && buffer) flush()
                 if (reasoningOnly && !tool) return
                 this.activity?.add(
                   tool ? 'tool' : 'agent-event',
                   id,
                   tool?.title || `${agent.provider} · ${name}`,
-                  { turnId, ...tool, event: safeReasoningEvent(payload) },
+                  { turnId, ...tool, textOffset: textOffset(), event: safeReasoningEvent(payload) },
                 )
               },
               onActivity: (text) => {

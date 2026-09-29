@@ -89,6 +89,23 @@ it('splits batched Claude tools and preserves each input when separate results a
   })
   expect(activitySummary(calls)).toBe('Ran 1 command and 1 file operation')
 })
+it('keeps the tool start position when later updates arrive after more text', () => {
+  const start = event('start', 'same', 'running', {})
+  start.payload = JSON.stringify({
+    turnId: 'turn',
+    toolId: 'same',
+    status: 'running',
+    textOffset: 6,
+  })
+  const end = event('end', 'same', 'completed', {}, 'Tool', '2026-09-22T10:00:01Z')
+  end.payload = JSON.stringify({
+    turnId: 'turn',
+    toolId: 'same',
+    status: 'completed',
+    textOffset: 13,
+  })
+  expect(recentTools([start, end])[0]?.textOffset).toBe(6)
+})
 it('keeps completion when start and result share a timestamp', () => {
   const calls = recentTools([
     event('a', 'same', 'running', { item: { command: 'pwd' } }, 'pwd'),

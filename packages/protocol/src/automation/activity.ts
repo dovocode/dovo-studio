@@ -17,6 +17,9 @@ const toolPayload = mutableStruct({
   turnId: Schema.String,
   toolId: Schema.String,
   status: Schema.String,
+  textOffset: Schema.optional(
+    Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative()),
+  ),
 })
 const record = Schema.mutable(
   Schema.Record({
@@ -52,6 +55,7 @@ type Tool = Event & {
   status: string
   turnId?: string
   inputPayload?: string
+  textOffset?: number
 }
 
 // Claude can send several calls in one message and return their results individually.
@@ -108,6 +112,7 @@ export function recentTools(events: Event[]): Tool[] {
           tool.success && tool.data.toolId ? `${tool.data.turnId}:${tool.data.toolId}` : event.id,
         status: tool.success ? tool.data.status : 'recorded',
         turnId: tool.success ? tool.data.turnId : undefined,
+        textOffset: tool.success ? tool.data.textOffset : undefined,
       }
     })
     .sort(
@@ -129,6 +134,9 @@ export function recentTools(events: Event[]): Tool[] {
         ...previous,
         summary,
         inputPayload: pending(event.status) ? event.payload : previous.inputPayload,
+        textOffset: pending(event.status)
+          ? (event.textOffset ?? previous.textOffset)
+          : previous.textOffset,
       })
     }
   }

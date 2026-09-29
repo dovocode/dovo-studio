@@ -1,7 +1,12 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import { ArrowRight, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
-import { clientScopeKey, useWorkspace, type RuntimeConnection } from '@dovo/studio-core'
+import {
+  clientScopeKey,
+  useWorkspace,
+  type RuntimeConnection,
+  type StudioViewProps,
+} from '@dovo/studio-core'
 import {
   Button,
   ChoicePicker,
@@ -28,7 +33,7 @@ type Creation = {
   id: string
   name: string
 }
-export default function JobsView() {
+export default function JobsView({ entityId }: StudioViewProps) {
   const {
     runtimes,
     activeRuntimeId,
@@ -73,6 +78,20 @@ export default function JobsView() {
       : entry,
   )
   const rows = aggregateAutomations(entries)
+  const notifiedRun = entityId
+    ? entries
+        .flatMap((entry) =>
+          (entry.snapshot?.runs ?? []).map((run) => ({ run, runtimeId: entry.profile.id })),
+        )
+        .find(({ run }) => run.id === entityId)
+    : undefined
+  const notifiedRow = notifiedRun
+    ? rows.find(
+        (row) =>
+          row.runtime.profile.id === notifiedRun.runtimeId &&
+          row.flow.id === notifiedRun.run.automationId,
+      )
+    : undefined
   const query = search.trim().toLowerCase()
   const visible = rows.filter((row) =>
     [row.flow.name, row.runtimeName, ...row.projects, row.status].some((value) =>
@@ -114,6 +133,9 @@ export default function JobsView() {
       if (request.current === attempt) setBusy(false)
     }
   }
+  useEffect(() => {
+    if (notifiedRow) void open(notifiedRow)
+  }, [entityId, notifiedRow?.key])
   const startCreation = async () => {
     const destination = entries.find((entry) => entry.profile.id === owner)
     if (busy || !destination?.connected || !name.trim()) return
@@ -321,8 +343,11 @@ export default function JobsView() {
             {chosen ? (
               ownDetail ? (
                 <AutomationDetail
-                  key={`${chosen.key}:${clientScopeKey(connection)}`}
+                  key={`${chosen.key}:${clientScopeKey(connection)}:${entityId ?? ''}`}
                   automationId={chosen.flow.id}
+                  initialRunId={
+                    notifiedRun?.run.automationId === chosen.flow.id ? entityId : undefined
+                  }
                   initialSurface={selected.canvas ? 'canvas' : 'runs'}
                   onBack={back}
                 />

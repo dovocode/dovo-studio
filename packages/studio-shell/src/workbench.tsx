@@ -26,7 +26,7 @@ import { RuntimeOverview } from './runtime-overview'
 import { SettingsNav } from './settings-nav'
 import { appSettingsExtension } from './app-extension'
 import { useAppearance } from './appearance'
-import { useTaskNotifications } from './task-notifications'
+import { useTaskNotifications, type NotificationTarget } from './task-notifications'
 import { createExtensionCatalog } from './extension-catalog'
 import { ActivityBar } from './activity-bar'
 import type { DesktopUpdateBridge, DesktopUpdateState } from '@dovo/protocol'
@@ -125,7 +125,6 @@ function WorkbenchContent({
   const compact = useCompactLayout()
   const { showIssues, showJira } = useAppPreferences()
   useAppearance()
-  useTaskNotifications()
   const [update, setUpdate] = useState<DesktopUpdateState>({ status: 'idle' })
   useEffect(() => {
     if (!updates) return
@@ -154,6 +153,7 @@ function WorkbenchContent({
     runtimes,
     pendingSync,
     retrySync,
+    switchRuntime,
   } = useWorkspace()
   const [switchError, setSwitchError] = useApplicationState('')
   const [switching, setSwitching] = useApplicationState(false)
@@ -164,6 +164,20 @@ function WorkbenchContent({
         ? 'overview'
         : (extensions[0]?.views[0]?.id ?? ''),
   }))
+  const openNotification = useCallback(
+    (destination: NotificationTarget) => {
+      setSwitchError('')
+      void (async () => {
+        if (destination.runtimeId !== runtimeRegistry.activeId)
+          await switchRuntime(destination.runtimeId)
+        navigate({ viewId: destination.viewId, entityId: destination.entityId })
+      })().catch((error: unknown) =>
+        setSwitchError(error instanceof Error ? error.message : String(error)),
+      )
+    },
+    [runtimeRegistry.activeId, switchRuntime, navigate, setSwitchError],
+  )
+  useTaskNotifications(openNotification)
   const [palette, setPalette] = useApplicationState(false)
   const commands = useRef(new Map<string, StudioCommand>())
   const [, refreshCommands] = useApplicationState(0)

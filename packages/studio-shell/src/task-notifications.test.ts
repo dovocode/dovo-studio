@@ -3,6 +3,7 @@ import { taskNotificationEvents, type TaskState } from './task-notifications'
 
 const state = (changes: Partial<TaskState> = {}): TaskState => ({
   title: 'Fix login',
+  target: { runtimeId: 'computer', viewId: 'tasks', entityId: 'task' },
   running: false,
   needsInput: false,
   failed: false,
@@ -43,4 +44,23 @@ it('notifies when a task starts waiting, finishes or fails, but never for new ta
   ).toEqual(['r1:input:true', 'r2:done:true'])
   // An unchanged snapshot repeats nothing.
   expect(taskNotificationEvents(after, after)).toEqual([])
+})
+
+it('retains the destination for task and automation notifications', () => {
+  const task = state({ target: { runtimeId: 'computer-a', viewId: 'tasks', entityId: 'task-1' } })
+  const run = state({
+    automation: true,
+    target: { runtimeId: 'computer-b', viewId: 'jobs', entityId: 'run-1' },
+  })
+  const events = taskNotificationEvents(
+    new Map([
+      ['task', { ...task, running: true }],
+      ['run', { ...run, running: true }],
+    ]),
+    new Map([
+      ['task', task],
+      ['run', run],
+    ]),
+  )
+  expect(events.map((event) => event.target)).toEqual([task.target, run.target])
 })

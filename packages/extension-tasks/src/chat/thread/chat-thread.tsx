@@ -1,5 +1,6 @@
 import { turnSummary, type PendingMessage } from '@dovo/protocol'
 import { conversationTurns, conversationTurnLabel } from './conversation-turns'
+import { threadTimeline } from './thread-timeline'
 import { useMemo } from 'react'
 import { TurnCheckpoint } from './turn-checkpoint'
 import { MessageAttachments } from '../composer/message-attachments'
@@ -131,6 +132,8 @@ export function ChatThread({
                 ? (task.compactions ?? []).filter((item) => item.turnId === turn.id)
                 : []
               const tools = turn ? (activityGroups.byTurn.get(turn.id) ?? []) : []
+              const timeline =
+                turn && message.role === 'assistant' ? threadTimeline(message.text, tools) : null
               const showContent =
                 !!message.text ||
                 !!message.file ||
@@ -142,39 +145,95 @@ export function ChatThread({
                   key={message.id}
                   from={message.role}
                 >
-                  {turn && <TaskActivity turn={turn} tools={tools} />}
-                  {showContent && (
-                    <MessageContent>
-                      <MessageAttachments taskId={task.id} files={message.attachments} />
-                      {message.review && (
-                        <span className="mb-1 w-fit rounded bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium text-muted-foreground">
-                          Review
-                        </span>
+                  {timeline && turn ? (
+                    <>
+                      {(message.file ||
+                        message.attachments?.length ||
+                        message.review ||
+                        message.plan) && (
+                        <MessageContent>
+                          <MessageAttachments taskId={task.id} files={message.attachments} />
+                          {message.review && (
+                            <span className="mb-1 w-fit rounded bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium text-muted-foreground">
+                              Review
+                            </span>
+                          )}
+                          {message.plan && (
+                            <span className="mb-1 w-fit rounded bg-primary/15 px-1.5 py-0.5 text-[0.625rem] font-medium text-primary">
+                              Plan mode
+                            </span>
+                          )}
+                          {message.file && (
+                            <span className="mb-1 font-mono text-[0.6875rem] text-muted-foreground">
+                              {message.file}
+                            </span>
+                          )}
+                        </MessageContent>
                       )}
-                      {message.plan && (
-                        <span className="mb-1 w-fit rounded bg-primary/15 px-1.5 py-0.5 text-[0.625rem] font-medium text-primary">
-                          Plan mode
-                        </span>
+                      {timeline.map((block, index) =>
+                        block.kind === 'activity' ? (
+                          <TaskActivity
+                            key={`activity-${block.offset}`}
+                            turn={index === 0 ? turn : undefined}
+                            status={turn.status}
+                            tools={block.tools}
+                          />
+                        ) : (
+                          <MessageContent key={`text-${block.offset}`}>
+                            <MessageResponse
+                              isStreaming={
+                                turn.status === 'running' && index === timeline.length - 1
+                              }
+                            >
+                              {block.text}
+                            </MessageResponse>
+                          </MessageContent>
+                        ),
                       )}
-                      {message.file && (
-                        <span className="mb-1 font-mono text-[0.6875rem] text-muted-foreground">
-                          {message.file}
-                        </span>
+                      {!message.text && turn.status !== 'running' && (
+                        <MessageContent>
+                          <span className="text-xs text-muted-foreground">
+                            {compactions.length
+                              ? 'Context compacted'
+                              : message.attachments?.length
+                                ? ''
+                                : 'No response text'}
+                          </span>
+                        </MessageContent>
                       )}
-                      {message.text ? (
-                        <MessageResponse isStreaming={turn?.status === 'running'}>
-                          {message.text}
-                        </MessageResponse>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          {compactions.length
-                            ? 'Context compacted'
-                            : message.attachments?.length
-                              ? ''
-                              : 'No response text'}
-                        </span>
-                      )}
-                    </MessageContent>
+                    </>
+                  ) : (
+                    showContent && (
+                      <MessageContent>
+                        <MessageAttachments taskId={task.id} files={message.attachments} />
+                        {message.review && (
+                          <span className="mb-1 w-fit rounded bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium text-muted-foreground">
+                            Review
+                          </span>
+                        )}
+                        {message.plan && (
+                          <span className="mb-1 w-fit rounded bg-primary/15 px-1.5 py-0.5 text-[0.625rem] font-medium text-primary">
+                            Plan mode
+                          </span>
+                        )}
+                        {message.file && (
+                          <span className="mb-1 font-mono text-[0.6875rem] text-muted-foreground">
+                            {message.file}
+                          </span>
+                        )}
+                        {message.text ? (
+                          <MessageResponse>{message.text}</MessageResponse>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {compactions.length
+                              ? 'Context compacted'
+                              : message.attachments?.length
+                                ? ''
+                                : 'No response text'}
+                          </span>
+                        )}
+                      </MessageContent>
+                    )
                   )}
                   {pending?.message.id === message.id && (
                     <p role="status" className="text-[0.6875rem] text-muted-foreground">

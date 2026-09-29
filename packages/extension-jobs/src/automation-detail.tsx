@@ -25,17 +25,19 @@ export function AutomationDetail({
   automationId,
   onBack,
   initialSurface = 'runs',
+  initialRunId,
 }: {
   automationId: string
   onBack: () => void
   initialSurface?: 'runs' | 'canvas'
+  initialRunId?: string
 }) {
   const { workspace, flow, selectedNode, selectNode, messages, setMessages, update, drafts } =
     useAutomation(automationId)
   const { snapshot, connected } = useWorkspace()
   const compact = useCompactLayout()
   const actions = useJobActions()
-  const [runId, setRunId] = useApplicationState<string | null>(null)
+  const [runId, setRunId] = useApplicationState<string | null>(initialRunId ?? null)
   const [surface, setSurface] = useApplicationState<'runs' | 'canvas' | 'triggers'>(initialSurface)
   const [inspectorOpen, setInspectorOpen] = useApplicationState(false)
   const runs = (snapshot?.runs.filter((run) => run.automationId === flow?.id) ?? []).sort(
