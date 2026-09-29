@@ -311,6 +311,8 @@ export const taskSchema = mutableStruct({
     }),
   ),
   checkoutBranch: Schema.optional(Schema.String),
+  /** Reuse a registered Git worktree instead of creating one for this task. */
+  existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 4096)),
   worktreeBaseBranch: Schema.optional(Schema.String),
   worktreeFromOrigin: Schema.optional(Schema.Boolean),
   checkoutLocked: Schema.optional(Schema.Boolean),

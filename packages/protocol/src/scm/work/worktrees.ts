@@ -21,3 +21,10 @@ export const worktreeListSchema = mutableStruct({
   ),
 })
 export type WorktreeList = Schema.Schema.Type<typeof worktreeListSchema>
+/** Git worktrees selectable as an existing checkout for a new task. */
+export const worktreeChoicesSchema = mutableStruct({
+  worktrees: mutableArray(
+    mutableStruct({ path: Schema.String, branch: Schema.String, dirty: Schema.Boolean }),
+  ),
+})
+export type WorktreeChoices = Schema.Schema.Type<typeof worktreeChoicesSchema>

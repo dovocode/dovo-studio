@@ -72,6 +72,19 @@ export function switchBranchEffect(
             if (before.revision !== input.revision)
               throw new HttpError(409, 'Checkout changed. Refresh branches before switching.')
             if (
+              (taskId && s.store.task(taskId).existingWorktreePath) ||
+              s.store
+                .get()
+                .tasks.some(
+                  (task) =>
+                    task.id !== taskId && !task.archivedAt && task.existingWorktreePath === cwd,
+                )
+            )
+              throw new HttpError(
+                409,
+                'This worktree is shared with another task. Switch its branch outside the task.',
+              )
+            if (
               (yield* runtimeOperation(() =>
                 s.git.command(cwd, ['status', '--porcelain=v1', '--untracked-files=all']),
               )).trim()

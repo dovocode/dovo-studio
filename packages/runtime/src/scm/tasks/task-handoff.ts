@@ -36,6 +36,11 @@ async function applyStash(s: HandoffServices, cwd: string, stash: string) {
 export async function handoffTask(s: HandoffServices, id: string, target: 'worktree' | 'main') {
   const task = s.store.task(id)
   if ((task.execution ?? 'main') === target) return { ok: true }
+  if (task.existingWorktreePath)
+    throw new HttpError(
+      409,
+      'This task uses an existing worktree. Choose a different checkout in a new task.',
+    )
   if (canChangeTaskCheckout(task))
     throw new HttpError(
       409,
@@ -104,6 +109,14 @@ export async function handoffTask(s: HandoffServices, id: string, target: 'workt
       'The project folder has uncommitted changes. Commit or stash them before moving this task there.',
     )
   const cwd = await s.checkouts.directory(id)
+  if (
+    s.store
+      .get()
+      .tasks.some(
+        (other) => other.id !== id && !other.archivedAt && other.existingWorktreePath === cwd,
+      )
+  )
+    throw new HttpError(409, 'Another task uses this worktree. Move or archive that task first.')
   const { branch } = await s.git.inspect(cwd)
   if (branch === 'detached HEAD')
     throw new HttpError(409, 'The task’s worktree is not on a branch.')

@@ -27,6 +27,8 @@ export function TaskConversation({
   onAside,
   visible,
   codeReference,
+  composerInsert,
+  onComposerInsertApplied,
 }: {
   task: Task
   onReview: () => void
@@ -35,6 +37,8 @@ export function TaskConversation({
   onAside?: () => void
   visible: boolean
   codeReference?: CodeReference | null
+  composerInsert?: { id: string; text: string } | null
+  onComposerInsertApplied?: () => void
 }) {
   const [pending, setPending] = useApplicationState<PendingMessage | null>(null)
   const { id, messages, queue, turns, status, compactions } = task
@@ -128,6 +132,8 @@ export function TaskConversation({
         onPending={setPending}
         onAside={onAside}
         codeReference={codeReference}
+        composerInsert={composerInsert}
+        onComposerInsertApplied={onComposerInsertApplied}
       />
     </div>
   )

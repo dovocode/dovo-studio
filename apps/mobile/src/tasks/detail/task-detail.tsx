@@ -518,7 +518,14 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
           <ReviewFindings task={task} onOpen={() => setPane('diff')} />
           <ReviewComments task={task} />
           <MessageQueue task={task} />
-          <Composer key={task.id} task={task} />
+          <Composer
+            key={task.id}
+            task={task}
+            onAsk={() => {
+              Keyboard.dismiss()
+              setAsking(true)
+            }}
+          />
         </View>
         {pane === 'agents' && <TaskAgents task={task} />}
         {asking && <SideQuestion task={task} onClose={() => setAsking(false)} />}

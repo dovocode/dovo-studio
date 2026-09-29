@@ -7,7 +7,16 @@ import { MessageAttachments } from '../conversation/components/message-attachmen
 import { ActivityIndicator, Alert, Keyboard, Linking, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { useEffect, useRef } from 'react'
-import { REVIEW_PROMPT, contextMeter, responses, taskResources, type Task } from '@dovo/protocol'
+import {
+  REVIEW_PROMPT,
+  contextMeter,
+  responses,
+  taskResources,
+  worktreeChoicesSchema,
+  type WorktreeChoices,
+  type Task,
+} from '@dovo/protocol'
+import { Effect } from 'effect'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
@@ -25,7 +34,7 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 import { randomUUID } from 'expo-crypto'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
-export function Composer({ task }: { task: Task }) {
+export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
   const insets = useSafeAreaInsets()
   const { actions, send, stop } = useTaskConversation()
   const {
@@ -57,6 +66,19 @@ export function Composer({ task }: { task: Task }) {
   const meter = contextMeter(task)
   const { callEffect: commandCall } = useRuntime()
   const commandAction = useAction()
+  const worktreeAction = useAction()
+  const [worktrees, setWorktrees] = useApplicationState<WorktreeChoices | null>(null)
+  const [choosingWorktree, setChoosingWorktree] = useApplicationState(false)
+  const loadWorktrees = () => {
+    setChoosingWorktree(true)
+    worktreeAction.act(() =>
+      commandCall(
+        '/api/scm/worktrees/choices',
+        { repositoryId: task.repositoryId },
+        worktreeChoicesSchema,
+      ).pipe(Effect.tap((list) => Effect.sync(() => setWorktrees(list)))),
+    )
+  }
   useEffect(() => {
     if (commandAction.error) Alert.alert('Could not run the command', commandAction.error)
   }, [commandAction.error])
@@ -400,7 +422,11 @@ export function Composer({ task }: { task: Task }) {
                   accessibilityRole="button"
                   accessibilityLabel="Checkout & branch"
                   accessibilityValue={{
-                    text: task.execution === 'worktree' ? 'New worktree' : 'Local checkout',
+                    text: task.existingWorktreePath
+                      ? 'Existing worktree'
+                      : task.execution === 'worktree'
+                        ? 'New worktree'
+                        : 'Local checkout',
                   }}
                   accessibilityState={{
                     disabled: busy,
@@ -436,7 +462,11 @@ export function Composer({ task }: { task: Task }) {
                       },
                     ]}
                   >
-                    {task.execution === 'worktree' ? 'Worktree' : 'Local'}
+                    {task.existingWorktreePath
+                      ? 'Existing'
+                      : task.execution === 'worktree'
+                        ? 'Worktree'
+                        : 'Local'}
                   </Text>
                   <Icon name="down" size={10} color={colors.muted} />
                 </Pressable>
@@ -457,6 +487,15 @@ export function Composer({ task }: { task: Task }) {
                     }
               }
             />
+            {onAsk && task.messages.length > 0 && (
+              <IconButton
+                variant="plain"
+                icon="chat"
+                label="Ask a side question"
+                disabled={!connected}
+                onPress={onAsk}
+              />
+            )}
             <IconButton
               variant="filled"
               icon={task.status === 'running' ? 'stop' : 'send'}
@@ -565,23 +604,71 @@ export function Composer({ task }: { task: Task }) {
       {checkout && checkoutEditable && (
         <Sheet title="Checkout & branch" onClose={() => setCheckout(false)}>
           <CheckoutChoice
-            value={task.execution ?? 'main'}
+            value={task.existingWorktreePath ? 'existing' : (task.execution ?? 'main')}
             branch={
               snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.branch
             }
             disabled={busy || !connected}
-            onChange={(execution) =>
+            onChange={(execution) => {
+              if (execution === 'existing') {
+                loadWorktrees()
+                return
+              }
               act(() =>
                 patch({
-                  execution: {
-                    before: task.execution ?? null,
-                    after: execution,
+                  execution: { before: task.execution ?? null, after: execution },
+                  existingWorktreePath: { before: task.existingWorktreePath ?? null, after: null },
+                  worktreeSetupComplete: {
+                    before: task.worktreeSetupComplete ?? null,
+                    after: null,
                   },
                 }),
               )
-            }
+            }}
           />
-          {task.execution === 'worktree' && !task.pullRequest && (
+          {choosingWorktree && (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.muted}>
+                Choose a worktree on this computer. The task uses its current files; only one task
+                can run there at a time.
+              </Text>
+              {!!worktreeAction.error && <Text style={styles.error}>{worktreeAction.error}</Text>}
+              {worktrees?.worktrees.map((item) => (
+                <Action
+                  key={item.path}
+                  secondary
+                  label={`${item.branch || item.path.split('/').at(-1)}${item.dirty ? ' · Changed files' : ''}`}
+                  disabled={!connected || busy || worktreeAction.busy}
+                  onPress={() =>
+                    act(() =>
+                      patch({
+                        execution: { before: task.execution ?? null, after: 'worktree' },
+                        existingWorktreePath: {
+                          before: task.existingWorktreePath ?? null,
+                          after: item.path,
+                        },
+                        worktreeBaseBranch: {
+                          before: task.worktreeBaseBranch ?? null,
+                          after: null,
+                        },
+                        worktreeSetupComplete: {
+                          before: task.worktreeSetupComplete ?? null,
+                          after: true,
+                        },
+                      }).then(() => setChoosingWorktree(false)),
+                    )
+                  }
+                />
+              ))}
+              {worktrees && !worktrees.worktrees.length && (
+                <Text style={styles.muted}>No available worktrees for this project.</Text>
+              )}
+              {!worktrees && !worktreeAction.error && (
+                <Text style={styles.muted}>Loading worktrees…</Text>
+              )}
+            </View>
+          )}
+          {task.execution === 'worktree' && !task.pullRequest && !task.existingWorktreePath && (
             <WorktreeBasePicker
               key={task.repositoryId}
               repositoryId={task.repositoryId}

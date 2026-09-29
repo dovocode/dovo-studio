@@ -89,6 +89,11 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const [listOpen, setListOpen] = useApplicationState(false)
   const [sidebar, setSidebar] = useApplicationState(true)
   const [codeReference, setCodeReference] = useState<CodeReference | null>(null)
+  const [composerInsert, setComposerInsert] = useState<{
+    taskId: string
+    id: string
+    text: string
+  } | null>(null)
   const threadKey = taskCollectionKey(activeRuntimeId, task?.id ?? selectedId)
   const [threadSurfaces, setThreadSurfaces] = useApplicationState<Record<string, TaskSurface>>({})
   const surface = threadSurfaces[threadKey] ?? 'chat'
@@ -586,6 +591,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       onReview={() => selectSurface('changes')}
                       onTerminal={showTerminal}
                       onAside={() => setAsking(true)}
+                      composerInsert={composerInsert?.taskId === task.id ? composerInsert : null}
+                      onComposerInsertApplied={() => setComposerInsert(null)}
                     />
                   </div>
                   <aside
@@ -809,7 +816,17 @@ export default function TasksView({ entityId }: StudioViewProps) {
           }
         }}
       />
-      {task && <SideQuestion key={task.id} task={task} open={asking} onOpenChange={setAsking} />}
+      {task && (
+        <SideQuestion
+          key={task.id}
+          task={task}
+          open={asking}
+          onOpenChange={setAsking}
+          onAddToComposer={(text) =>
+            setComposerInsert({ taskId: task.id, id: crypto.randomUUID(), text })
+          }
+        />
+      )}
       <ProjectSelectionDialog
         open={choosingProject}
         onOpenChange={(open) => {

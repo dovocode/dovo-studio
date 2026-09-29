@@ -6,11 +6,13 @@ import {
   branchesSchema,
   defaultWorktreeBase,
   canChangeTaskCheckout,
+  worktreeChoicesSchema,
+  type WorktreeChoices,
   updateTask,
   useWorkspace,
   type Task,
 } from '@dovo/studio-core'
-import { Button, DropdownMenu, Popover } from '@dovo/studio-ui'
+import { Button, Dialog, DialogContent, DialogTitle, DropdownMenu, Popover } from '@dovo/studio-ui'
 export function ComposerWorkspace({
   task,
   disabled,
@@ -22,7 +24,8 @@ export function ComposerWorkspace({
 }) {
   const { workspace, setWorkspace, request, connected } = useWorkspace()
   const editable = canChangeTaskCheckout(task)
-  const choosingBase = editable && task.execution === 'worktree' && !task.pullRequest
+  const choosingBase =
+    editable && task.execution === 'worktree' && !task.pullRequest && !task.existingWorktreePath
   const repository = workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const [branches, setBranches] = useApplicationState<Schema.Schema.Type<
     typeof branchesSchema
@@ -30,6 +33,22 @@ export function ComposerWorkspace({
   const [open, setOpen] = useApplicationState(false)
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
+  const [worktreePicker, setWorktreePicker] = useApplicationState(false)
+  const [worktrees, setWorktrees] = useApplicationState<WorktreeChoices | null>(null)
+  const [worktreeError, setWorktreeError] = useApplicationState('')
+  const showWorktrees = () => {
+    setWorktreePicker(true)
+    setWorktreeError('')
+    void request(
+      '/api/scm/worktrees/choices',
+      { repositoryId: task.repositoryId },
+      worktreeChoicesSchema,
+    )
+      .then(setWorktrees)
+      .catch((cause: unknown) =>
+        setWorktreeError(cause instanceof Error ? cause.message : String(cause)),
+      )
+  }
   const itemClass =
     'flex cursor-default items-center justify-between gap-4 rounded-md px-3 py-2 text-xs outline-none focus:bg-accent data-[state=checked]:bg-accent'
   const act = async (operation: () => Promise<Schema.Schema.Type<typeof branchesSchema>>) => {
@@ -59,7 +78,11 @@ export function ComposerWorkspace({
               disabled={disabled}
             >
               <Folder className="size-3" />
-              {task.execution === 'worktree' ? 'Worktree' : 'Local checkout'}
+              {task.existingWorktreePath
+                ? 'Existing worktree'
+                : task.execution === 'worktree'
+                  ? 'Worktree'
+                  : 'Local checkout'}
               <ChevronDown className="size-3" />
             </Button>
           </DropdownMenu.Trigger>
@@ -74,9 +97,13 @@ export function ComposerWorkspace({
               className="z-50 w-80 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
             >
               <DropdownMenu.RadioGroup
-                value={task.execution ?? 'main'}
+                value={task.existingWorktreePath ? 'existing' : (task.execution ?? 'main')}
                 onValueChange={(execution) => {
                   if (disabled || !editable) return
+                  if (execution === 'existing') {
+                    showWorktrees()
+                    return
+                  }
                   if (execution === 'worktree') {
                     setOpen(true)
                     void act(() =>
@@ -94,6 +121,8 @@ export function ComposerWorkspace({
                           ? {
                               ...t,
                               execution,
+                              existingWorktreePath: undefined,
+                              worktreeSetupComplete: undefined,
                             }
                           : t,
                       ),
@@ -128,9 +157,26 @@ export function ComposerWorkspace({
                     </DropdownMenu.ItemIndicator>
                   </DropdownMenu.RadioItem>
                 ))}
+                <DropdownMenu.RadioItem
+                  value="existing"
+                  disabled={disabled}
+                  className={`${itemClass} my-1 min-h-16 justify-start gap-3 border border-transparent data-[state=checked]:border-border`}
+                >
+                  <GitFork className="size-5 shrink-0" />
+                  <span className="flex-1 space-y-1">
+                    <span className="block font-medium text-foreground">Existing worktree</span>
+                    <span className="block text-[0.6875rem] leading-relaxed text-muted-foreground">
+                      Use its current branch and uncommitted files.
+                    </span>
+                  </span>
+                  <DropdownMenu.ItemIndicator>
+                    <Check className="size-3" />
+                  </DropdownMenu.ItemIndicator>
+                </DropdownMenu.RadioItem>
               </DropdownMenu.RadioGroup>
               <p className="px-3 pb-2 pt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
-                Created on first send. The branch name uses your AI-generated task title.
+                New worktrees are created on first send. Existing worktrees keep their current
+                files.
               </p>
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
@@ -170,6 +216,7 @@ export function ComposerWorkspace({
             disabled={
               disabled ||
               !connected ||
+              !!task.existingWorktreePath ||
               task.status === 'running' ||
               (task.execution === 'worktree' && !task.checkoutBranch && !choosingBase)
             }
@@ -177,9 +224,11 @@ export function ComposerWorkspace({
           >
             <GitBranch className="size-3" />
             <span className="truncate">
-              {choosingBase
-                ? `From ${(task.worktreeBaseBranch ?? (branches && defaultWorktreeBase(branches.branches, branches.current, task.worktreeFromOrigin, branches.originDefault)) ?? (task.worktreeFromOrigin ? 'origin' : 'current branch')).replace(/^refs\/(heads|remotes)\//, '')}`
-                : (task.checkoutBranch ?? repository?.branch ?? 'Branch')}
+              {task.existingWorktreePath
+                ? task.existingWorktreePath.split('/').at(-1)
+                : choosingBase
+                  ? `From ${(task.worktreeBaseBranch ?? (branches && defaultWorktreeBase(branches.branches, branches.current, task.worktreeFromOrigin, branches.originDefault)) ?? (task.worktreeFromOrigin ? 'origin' : 'current branch')).replace(/^refs\/(heads|remotes)\//, '')}`
+                  : (task.checkoutBranch ?? repository?.branch ?? 'Branch')}
             </span>
             <ChevronDown className="size-3" />
           </Button>
@@ -259,6 +308,63 @@ export function ComposerWorkspace({
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
+      <Dialog open={worktreePicker} onOpenChange={setWorktreePicker}>
+        <DialogContent className="max-w-lg">
+          <DialogTitle>Use an existing worktree</DialogTitle>
+          <p className="text-xs text-muted-foreground">
+            The new task works in this checkout, including its uncommitted files. Only one task can
+            run there at a time.
+          </p>
+          {worktreeError && (
+            <p role="alert" className="text-xs text-destructive">
+              {worktreeError}
+            </p>
+          )}
+          <div className="max-h-[50dvh] space-y-1 overflow-y-auto">
+            {worktrees?.worktrees.map((item) => (
+              <Button
+                key={item.path}
+                variant="ghost"
+                className="h-auto w-full justify-start py-2 text-left"
+                onClick={() => {
+                  setWorkspace((w) =>
+                    updateTask(w, task.id, (current) =>
+                      canChangeTaskCheckout(current)
+                        ? {
+                            ...current,
+                            execution: 'worktree',
+                            existingWorktreePath: item.path,
+                            worktreeBaseBranch: undefined,
+                            worktreeSetupComplete: true,
+                          }
+                        : current,
+                    ),
+                  )
+                  setWorktreePicker(false)
+                }}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-xs font-medium">
+                    {item.branch || item.path.split('/').at(-1)}
+                  </span>
+                  <span className="block truncate text-[0.6875rem] text-muted-foreground">
+                    {item.path}
+                    {item.dirty ? ' · Uncommitted changes' : ''}
+                  </span>
+                </span>
+              </Button>
+            ))}
+            {worktrees && !worktrees.worktrees.length && (
+              <p className="p-2 text-xs text-muted-foreground">
+                No available worktrees for this project.
+              </p>
+            )}
+            {!worktrees && !worktreeError && (
+              <p className="p-2 text-xs text-muted-foreground">Loading worktrees…</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

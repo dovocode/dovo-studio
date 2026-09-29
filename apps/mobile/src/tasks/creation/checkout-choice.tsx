@@ -9,14 +9,14 @@ export function CheckoutChoice({
   branch,
   onChange,
 }: {
-  value: 'main' | 'worktree'
+  value: 'main' | 'worktree' | 'existing'
   disabled: boolean
   branch?: string
-  onChange: (value: 'main' | 'worktree') => void
+  onChange: (value: 'main' | 'worktree' | 'existing') => void
 }) {
   return (
     <View style={{ gap: 8 }} accessibilityLabel="Working directory">
-      {(['main', 'worktree'] as const).map((mode) => {
+      {(['main', 'worktree', 'existing'] as const).map((mode) => {
         const selected = value === mode
         return (
           <Pressable
@@ -45,12 +45,18 @@ export function CheckoutChoice({
             />
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={[styles.text, { fontWeight: '600' }]}>
-                {mode === 'main' ? 'Local checkout' : 'New worktree'}
+                {mode === 'main'
+                  ? 'Local checkout'
+                  : mode === 'worktree'
+                    ? 'New worktree'
+                    : 'Existing worktree'}
               </Text>
               <Text style={styles.muted}>
                 {mode === 'main'
                   ? `Work in ${branch || 'the current branch'}, including local changes.`
-                  : 'A separate folder and branch. Keep your current checkout untouched.'}
+                  : mode === 'worktree'
+                    ? 'A separate folder and branch. Keep your current checkout untouched.'
+                    : 'Use its current branch and uncommitted files.'}
               </Text>
             </View>
             {selected && <Icon name="check" size={18} color={colors.accent} />}

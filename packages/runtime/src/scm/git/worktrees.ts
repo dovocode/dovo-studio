@@ -8,6 +8,36 @@ import { worktreeListSchema } from '@dovo/protocol'
 
 type Worktree = (typeof worktreeListSchema.Type.worktrees)[number]
 
+/** All registered worktrees for one project, including worktrees made outside Dovo. */
+export function worktreeChoicesEffect(s: Pick<Services, 'git' | 'store'>, repositoryId: string) {
+  return runtimeProgram(
+    runtimeOperation(async () => {
+      const repository = s.store.get().repositories.find((item) => item.id === repositoryId)
+      if (!repository) throw new HttpError(404, 'Project not found')
+      const { path: root } = await s.git.inspect(repository.path)
+      const records = (await s.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
+        .split('\0\0')
+        .map((block) => block.split('\0'))
+      const worktrees = await Promise.all(
+        records.flatMap((record) => {
+          const path = record.find((line) => line.startsWith('worktree '))?.slice(9)
+          if (!path || path === root || record.includes('prunable')) return []
+          const branch = (
+            record.find((line) => line.startsWith('branch '))?.slice(7) ?? ''
+          ).replace(/^refs\/heads\//, '')
+          return [
+            s.git
+              .command(path, ['status', '--porcelain'])
+              .then((status) => ({ path, branch, dirty: !!status.trim() }))
+              .catch(() => undefined),
+          ]
+        }),
+      )
+      return { worktrees: worktrees.filter((item) => item !== undefined) }
+    }),
+  )
+}
+
 /** Dovo-created task worktrees across registered projects (Settings → Coding → Worktrees). */
 export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
   return runtimeProgram(
@@ -41,7 +71,11 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
           seen.add(path)
           const branch = record.find((line) => line.startsWith('branch '))?.slice(7) ?? ''
           const owner = tasks.find(({ keys }) => isTaskWorktree(path, keys))?.task
-          const state = !owner ? 'missing' : owner.archivedAt ? 'archived' : 'active'
+          const inUse = workspace.tasks.some(
+            (task) => task.existingWorktreePath === path && !task.archivedAt,
+          )
+          const state =
+            inUse || (owner && !owner.archivedAt) ? 'active' : owner ? 'archived' : 'missing'
           const prunable = record.some((line) => line.startsWith('prunable'))
           // A prunable entry has no directory left to inspect; nothing there can be lost.
           const dirty = prunable

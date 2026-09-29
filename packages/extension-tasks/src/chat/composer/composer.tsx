@@ -45,12 +45,16 @@ export function Composer({
   onPending,
   onAside,
   codeReference,
+  composerInsert,
+  onComposerInsertApplied,
 }: {
   task: Task
   onPending: (pending: PendingMessage | null) => void
   /** Opens the side question dialog. */
   onAside?: () => void
   codeReference?: CodeReference | null
+  composerInsert?: { id: string; text: string } | null
+  onComposerInsertApplied?: () => void
 }) {
   const { workspace, setWorkspace, request, connected, connection, flush, snapshot } =
     useWorkspace()
@@ -66,6 +70,14 @@ export function Composer({
   // workspace, re-rendering every useWorkspace consumer on each character typed.
   const [draft, setDraft] = useState(task.draft)
   const insertedReference = useRef<string | null>(null)
+  const insertedAnswer = useRef<string | null>(null)
+  useEffect(() => {
+    if (!composerInsert || insertedAnswer.current === composerInsert.id) return
+    insertedAnswer.current = composerInsert.id
+    setDraft((current) => [current.trimEnd(), composerInsert.text].filter(Boolean).join('\n\n'))
+    input.current?.focus()
+    onComposerInsertApplied?.()
+  }, [composerInsert])
   useEffect(() => {
     if (
       !codeReference ||
@@ -362,6 +374,7 @@ export function Composer({
           ref={input}
           autoFocus={firstMessage}
           aria-label="Message task"
+          data-task-id={task.id}
           aria-autocomplete="list"
           aria-expanded={mentions.open}
           className={cn('min-h-24 max-h-64 px-4 pt-4 pb-2', pendingQuestion && 'hidden')}

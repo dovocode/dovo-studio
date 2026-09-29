@@ -51,6 +51,23 @@ export class TaskCheckout {
     if (task.execution !== 'worktree') return root
     if (canChangeTaskCheckout(task))
       throw new HttpError(409, 'Send the first prompt before creating the worktree')
+    if (task.existingWorktreePath) {
+      const records = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
+        .split('\0\0')
+        .map((block) => block.split('\0'))
+      const listed = records.find(
+        (record) =>
+          record.includes(`worktree ${task.existingWorktreePath}`) &&
+          task.existingWorktreePath !== root &&
+          !record.includes('prunable'),
+      )
+      if (!listed)
+        throw new HttpError(
+          409,
+          'The selected worktree is no longer available. Restore it or start a new task in another checkout.',
+        )
+      return (await this.git.inspect(task.existingWorktreePath)).path
+    }
     const common = (
       await this.git.command(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
     ).trim()

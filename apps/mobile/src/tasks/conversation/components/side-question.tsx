@@ -10,12 +10,14 @@ import { Markdown } from '../../../ui/content/markdown'
 import { Sheet } from '../../../ui/layout/sheet'
 import { Text } from '../../../ui/content/text'
 import { styles } from '../../../ui/theme'
+import { useTaskConversation } from '../state/provider'
 
 const answerSchema = mutableStruct({ answer: Schema.String })
 
 /** Ask about the thread without adding to the conversation. */
 export function SideQuestion({ task, onClose }: { task: Task; onClose: () => void }) {
   const { connected, callEffect } = useRuntime()
+  const { actions } = useTaskConversation()
   const { act, busy, error } = useAction()
   const [question, setQuestion] = useState('')
   const [answers, setAnswers] = useState<{ question: string; answer: string }[]>([])
@@ -41,7 +43,27 @@ export function SideQuestion({ task, onClose }: { task: Task; onClose: () => voi
       {answers.map((entry, index) => (
         <View key={index} style={[styles.card, { gap: 6 }]}>
           <Text style={[styles.muted, { fontWeight: '600' }]}>{entry.question}</Text>
+          <Action
+            secondary
+            label="Add question to composer"
+            onPress={() => {
+              actions.draft.update(
+                [actions.draft.text.trimEnd(), entry.question].filter(Boolean).join('\n\n'),
+              )
+              onClose()
+            }}
+          />
           <Markdown text={entry.answer} variant="chat" />
+          <Action
+            secondary
+            label="Add answer to composer"
+            onPress={() => {
+              actions.draft.update(
+                [actions.draft.text.trimEnd(), entry.answer].filter(Boolean).join('\n\n'),
+              )
+              onClose()
+            }}
+          />
         </View>
       ))}
       <Field

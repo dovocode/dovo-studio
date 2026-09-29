@@ -19,7 +19,11 @@ import { listDirectories } from '../../scm/repositories/directories.js'
 import { listGithubRepositories } from '../../scm/forges/providers/github-repositories.js'
 import { createPullTaskEffect } from '../../scm/pulls/pull-task.js'
 import { createWorkTaskEffect } from '../../scm/tasks/work-task.js'
-import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
+import {
+  listWorktreesEffect,
+  removeWorktreeEffect,
+  worktreeChoicesEffect,
+} from '../../scm/git/worktrees.js'
 import { branchChanges } from '../../scm/work/change-summary.js'
 import { ProjectInstructions } from '../../scm/repositories/project-instructions.js'
 import sharp from 'sharp'
@@ -106,6 +110,13 @@ export function scmRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/scm/worktrees/read')
         return yield* listWorktreesEffect(s)
+      if (method === 'POST' && path === '/api/scm/worktrees/choices') {
+        const { repositoryId } = decode(
+          mutableStruct({ repositoryId: idSchema }),
+          yield* serviceResult(body(request)),
+        )
+        return yield* worktreeChoicesEffect(s, repositoryId)
+      }
       if (method === 'POST' && path === '/api/scm/worktrees/remove') {
         const { path: worktree } = decode(
           mutableStruct({ path: maxValue(minValue(Schema.String, 1), 4096) }),
