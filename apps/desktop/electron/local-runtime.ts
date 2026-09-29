@@ -5,7 +5,11 @@ import {
   RUNTIME_PROTOCOL_VERSION,
 } from '@dovo/protocol'
 import { homedir } from 'node:os'
-import { ensureBackgroundRuntime, stopBackgroundRuntimeForUpdate } from './background-runtime.js'
+import {
+  ensureBackgroundRuntime,
+  stopBackgroundRuntimeForUpdate,
+  clearFailedBackgroundRuntime,
+} from './background-runtime.js'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
@@ -247,7 +251,11 @@ const runtimeOptions = () =>
         DOVO_OWNER_TOKEN: token,
         DOVO_DATABASE_PATH: join(app.getPath('userData'), 'runtime.sqlite'),
         DOVO_SETTINGS_PATH: join(homedir(), '.dovo', 'settings.json'),
-        PORT: networkPort ?? process.env.DOVO_PORT ?? saved?.port ?? '8787',
+        PORT:
+          networkPort ??
+          (process.env.DOVO_PORT && process.env.DOVO_PORT !== '0'
+            ? process.env.DOVO_PORT
+            : (saved?.port ?? process.env.DOVO_PORT ?? '8787')),
         DOVO_HOST: process.env.DOVO_HOST ?? saved?.host ?? '127.0.0.1',
       }
       delete env.ELECTRON_RUN_AS_NODE
@@ -543,16 +551,26 @@ export async function prepareLocalRuntimeUpdate(directory: string) {
 /** Explicit desktop action; never silently widen a listener on ordinary startup. */
 export async function localRuntimeNetwork(directory: string, address: string) {
   const local = await startLocalRuntime(directory)
-  if (local.address !== address) return { local: false, host: '', canChange: false }
+  if (local.address !== address) return { local: false, host: '', port: 0, canChange: false }
   const discovery = readConnection(join(app.getPath('userData'), 'runtime-connection.json'))
   return {
     local: true,
     host: discovery.bindHost ?? new URL(discovery.address).hostname,
+    port: Number(new URL(discovery.address).port),
     canChange:
-      !process.env.DOVO_HOST && (!!owned || (app.isPackaged && process.platform === 'darwin')),
+      !process.env.DOVO_HOST &&
+      (!process.env.DOVO_PORT || process.env.DOVO_PORT === '0') &&
+      (!!owned || (app.isPackaged && process.platform === 'darwin')),
   }
 }
-export async function setLocalRuntimeNetwork(directory: string, address: string, enabled: boolean) {
+export async function setLocalRuntimeNetwork(
+  directory: string,
+  address: string,
+  enabled: boolean,
+  port?: number,
+) {
+  if (port !== undefined && (!Number.isInteger(port) || port < 1 || port > 65535))
+    throw new Error('Choose a port between 1 and 65535')
   const status = await localRuntimeNetwork(directory, address)
   if (!status.local || !status.canChange)
     throw new Error(
@@ -584,6 +602,7 @@ export async function setLocalRuntimeNetwork(directory: string, address: string,
   }
   const path = join(app.getPath('userData'), 'runtime-listen.json')
   const previous = { address: local.address, bindHost: status.host }
+  const previousPort = new URL(local.address).port || '80'
   const save = (value: typeof previous) => {
     writeFileSync(path + '.tmp', JSON.stringify(value), { mode: 0o600 })
     renameSync(path + '.tmp', path)
@@ -595,18 +614,24 @@ export async function setLocalRuntimeNetwork(directory: string, address: string,
     await release()
     throw error
   }
-  networkPort = new URL(local.address).port || '80'
+  networkPort = String(port ?? Number(previousPort))
+  let restartAttempted = false
   try {
-    save({ address: local.address, bindHost: enabled ? '0.0.0.0' : '127.0.0.1' })
+    const nextAddress = new URL(local.address)
+    nextAddress.port = networkPort
+    save({ address: nextAddress.origin, bindHost: enabled ? '0.0.0.0' : '127.0.0.1' })
+    restartAttempted = true
     await restart()
   } catch (cause) {
     try {
       save(previous)
-      try {
-        await restart()
-      } catch {
+      networkPort = previousPort
+      if (restartAttempted) {
+        const uid = process.getuid?.()
+        if (app.isPackaged && process.platform === 'darwin' && uid !== undefined)
+          await Effect.runPromise(clearFailedBackgroundRuntime(app.getPath('userData'), uid))
         await startLocalRuntime(directory)
-      }
+      } else await restart()
     } catch (recovery) {
       throw new AggregateError([cause, recovery], 'Network change and runtime recovery failed')
     }
@@ -615,5 +640,6 @@ export async function setLocalRuntimeNetwork(directory: string, address: string,
     networkPort = undefined
     await release()
   }
-  return localRuntimeNetwork(directory, address)
+  const current = await startLocalRuntime(directory)
+  return localRuntimeNetwork(directory, current.address)
 }

@@ -121,7 +121,10 @@ it('publishes update notes and downloads directly from the sidebar action', asyn
       total: 10_000_000,
     }),
   )
-  expect(f.message).not.toHaveBeenCalled()
+  expect(f.message).toHaveBeenCalledOnce()
+  expect(f.message).toHaveBeenCalledWith(
+    expect.objectContaining({ buttons: ['Restart and install', 'Later'] }),
+  )
   expect(f.install).toHaveBeenCalledOnce()
 })
 it('loads release notes from the release when updater metadata omits them', async () => {
@@ -135,15 +138,29 @@ it('loads release notes from the release when updater metadata omits them', asyn
   await updates.refresh()
   await vi.waitFor(() => expect(updates.state().notes).toBe('New release changes'))
 })
-it('uses one confirmation to download and restart', async () => {
+it('asks again after the download before restarting', async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>(async () => Response.json(snapshot)),
   )
   const { registerUpdates } = await import('./updates')
   await registerUpdates('/unused', async () => async () => {}).check()
-  expect(f.message).toHaveBeenCalledOnce()
+  expect(f.message).toHaveBeenCalledTimes(2)
   expect(f.install).toHaveBeenCalledOnce()
+})
+it('keeps the downloaded update ready when restart is deferred', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+  )
+  f.message.mockResolvedValueOnce({ response: 1 })
+  const { registerUpdates } = await import('./updates')
+  const prepare = vi.fn<() => Promise<() => Promise<void>>>()
+  const updates = registerUpdates('/unused', prepare)
+  await updates.install()
+  expect(updates.state().status).toBe('downloaded')
+  expect(prepare).not.toHaveBeenCalled()
+  expect(f.install).not.toHaveBeenCalled()
 })
 it('uses the same check action from the application menu and sidebar bridge', async () => {
   const { registerUpdates } = await import('./updates')

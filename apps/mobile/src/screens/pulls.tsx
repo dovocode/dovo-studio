@@ -1,3 +1,4 @@
+import { openAppLink } from '../ui/content/open-link'
 import { nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -16,7 +17,7 @@ import { Signal, pullSignalColor } from '../scm/pulls/detail/pull-status'
 import { PullTabs } from '../scm/pulls/detail/pull-tabs'
 import { Sheet } from '../ui/layout/sheet'
 import { useDeferredValue, useMemo, useRef } from 'react'
-import { Alert, Keyboard, Linking, FlatList, Pressable, View } from 'react-native'
+import { Alert, Keyboard, FlatList, Pressable, View } from 'react-native'
 import { router } from 'expo-router'
 import { Text } from '../ui/content/text'
 import { useRuntime } from '../runtime/connection/provider'
@@ -283,7 +284,7 @@ function PullsContent({
                   text: `Open on ${forgeLabels[p.provider ?? 'github']}`,
                   onPress: () => {
                     void runClientEffect(
-                      nativeEffect(() => Linking.openURL(p.url)).pipe(
+                      nativeEffect(() => openAppLink(p.url)).pipe(
                         Effect.catchAll((error) =>
                           nativeEffect(() => Alert.alert('Could not open PR', String(error))),
                         ),

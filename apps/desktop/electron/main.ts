@@ -1,6 +1,7 @@
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { registerUpdates } from './updates.js'
 import { registerBrowser } from './browser.js'
+import { offerLink } from './links.js'
 import {
   startLocalRuntime,
   stopLocalRuntime,
@@ -141,10 +142,15 @@ function createWindow(): void {
     },
   })
 
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    void offerLink(window, url)
+    return { action: 'deny' }
+  })
   const guardNavigation = (event: Electron.Event, url: string) => {
-    if (!trustedRendererUrl(url, rendererPath, process.env.VITE_DEV_SERVER_URL))
+    if (!trustedRendererUrl(url, rendererPath, process.env.VITE_DEV_SERVER_URL)) {
       event.preventDefault()
+      void offerLink(window, url)
+    }
   }
   window.webContents.on('will-navigate', guardNavigation)
   window.webContents.on('will-redirect', guardNavigation)
@@ -167,13 +173,17 @@ ipcMain.handle('runtime:connection', (event) => {
   return startLocalRuntime(__dirname)
 })
 
-ipcMain.handle('runtime:network', (event, address: unknown, enabled?: unknown) => {
+ipcMain.handle('runtime:network', (event, address: unknown, enabled?: unknown, port?: unknown) => {
   requireTrustedRenderer(event, rendererPath)
-  if (typeof address !== 'string' || (enabled !== undefined && typeof enabled !== 'boolean'))
+  if (
+    typeof address !== 'string' ||
+    (enabled !== undefined && typeof enabled !== 'boolean') ||
+    (port !== undefined && (typeof port !== 'number' || enabled === undefined))
+  )
     throw new Error('Invalid runtime network settings')
   return enabled === undefined
     ? localRuntimeNetwork(__dirname, address)
-    : setLocalRuntimeNetwork(__dirname, address, enabled)
+    : setLocalRuntimeNetwork(__dirname, address, enabled, port)
 })
 
 ipcMain.handle('repositories:pick-directory', (event, runtimeAddress: unknown) =>

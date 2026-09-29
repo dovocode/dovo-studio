@@ -47,6 +47,7 @@ vi.mock('electron', () => ({
 }))
 vi.mock('./updates.js', () => ({ registerUpdates: fixture.updates }))
 vi.mock('./browser.js', () => ({ registerBrowser: vi.fn<(...args: unknown[]) => void>() }))
+vi.mock('./links.js', () => ({ offerLink: vi.fn<(...args: unknown[]) => Promise<void>>() }))
 vi.mock('./connection-storage.js', () => ({
   registerConnectionStorage: vi.fn<(...args: unknown[]) => void>(),
 }))

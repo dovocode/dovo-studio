@@ -1,3 +1,4 @@
+import { openAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { Effect, Schema } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -10,7 +11,7 @@ import {
 } from '@dovo/client-runtime'
 import { AppState } from 'react-native'
 import { useEffect, useRef, useState } from 'react'
-import { Linking, RefreshControl, ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView, View } from 'react-native'
 import {
   forgeWorkOptionsSchema,
   mutableStruct,
@@ -501,7 +502,7 @@ function WorkItemContent({
   }
   const open = (url: string) => {
     void runClientEffect(
-      nativeEffect(() => Linking.openURL(url)).pipe(
+      nativeEffect(() => openAppLink(url)).pipe(
         Effect.catchAll((cause) => nativeEffect(() => setError(String(cause)))),
       ),
     )

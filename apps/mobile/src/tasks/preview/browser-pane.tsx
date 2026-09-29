@@ -1,8 +1,9 @@
+import { openAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { useEffect, useRef } from 'react'
-import { Image, Linking, Platform, ScrollView, View } from 'react-native'
+import { Image, Platform, ScrollView, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import {
   previewDevicesSchema,
@@ -319,7 +320,7 @@ function BrowserContent({
               label="Open externally"
               icon="web"
               disabled={!url}
-              onPress={() => act(() => Linking.openURL(history.url || url))}
+              onPress={() => act(() => openAppLink(history.url || url))}
             />
             <Action label="Go" disabled={mode !== 'web'} onPress={navigate} />
           </View>

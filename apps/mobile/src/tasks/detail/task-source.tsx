@@ -1,8 +1,9 @@
+import { openAppLink } from '../../ui/content/open-link'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { Linking, View } from 'react-native'
+import { View } from 'react-native'
 import { type Task, issueLabel } from '@dovo/protocol'
 import { useNavigation } from '../../shell/navigation'
 import { Action } from '../../ui/controls/action'
@@ -55,7 +56,7 @@ export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () =
           label="Open source on server"
           onPress={() =>
             void runClientEffect(
-              nativeEffect(() => Linking.openURL(source.url)).pipe(
+              nativeEffect(() => openAppLink(source.url)).pipe(
                 Effect.catchAll((cause) => nativeEffect(() => setError(String(cause)))),
               ),
             )

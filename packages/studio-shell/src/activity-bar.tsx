@@ -154,9 +154,7 @@ export function ActivityBar({
                 )}
                 {(update.status === 'available' || update.status === 'downloaded') && (
                   <Button className="mt-4 w-full" size="sm" onClick={onUpdate}>
-                    {update.status === 'downloaded'
-                      ? 'Restart and install'
-                      : 'Download and restart'}
+                    {update.status === 'downloaded' ? 'Restart and install' : 'Download'}
                   </Button>
                 )}
               </Popover.Content>

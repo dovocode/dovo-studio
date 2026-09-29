@@ -129,6 +129,27 @@ export function ensureBackgroundRuntime(
 export const backgroundRuntimeLabel = (directory: string) =>
   `com.dovo.studio.runtime.${createHash('sha256').update(directory).digest('hex').slice(0, 16)}`
 
+/** A failed bind may leave a loaded launchd job with no live runtime. Clear that job before
+ * restoring the previous listener. This is called only after this app attempted the restart. */
+export function clearFailedBackgroundRuntime(
+  directory: string,
+  uid: number,
+  command: (args: string[]) => Promise<string | void> = launchctl,
+) {
+  return Effect.tryPromise({
+    try: async () => {
+      const target = `gui/${uid}/${backgroundRuntimeLabel(directory)}`
+      try {
+        await command(['print', target])
+      } catch {
+        return
+      }
+      await command(['bootout', target])
+    },
+    catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+  })
+}
+
 /** Only stop a service whose launchd PID matches this profile's authenticated discovery. */
 export function stopBackgroundRuntimeForUpdate(
   directory: string,

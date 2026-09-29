@@ -1,3 +1,4 @@
+import { openAppLink } from '../../../ui/content/open-link'
 import { formatTime } from '../../../runtime/preferences/app-preferences'
 import { nativeEffect } from '../../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -8,7 +9,7 @@ import { Markdown } from '../../../ui/content/markdown'
 import { router } from 'expo-router'
 import { pipelineRunsHref } from '../../../shell/source-route'
 import { useRef } from 'react'
-import { Linking, Pressable, RefreshControl, ScrollView, View } from 'react-native'
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import {
   pullState,
@@ -60,7 +61,7 @@ export function PullDetail({
   const [lineComment, setLineComment] = useApplicationState<string | null>(null)
   const open = (url: string) => {
     void runClientEffect(
-      nativeEffect(() => Linking.openURL(url)).pipe(
+      nativeEffect(() => openAppLink(url)).pipe(
         Effect.catchAll((error) => nativeEffect(() => setError(String(error)))),
       ),
     )

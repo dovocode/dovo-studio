@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { RuntimeProvider } from './runtime/connection/provider'
 import { Workbench } from './shell/workbench'
+import { LinkBrowser } from './ui/content/open-link'
 import { TaskWidgetProvider } from './widgets/provider'
 const theme = {
   ...DarkTheme,
@@ -29,6 +30,7 @@ export default function App() {
             <LiveActivityProvider>
               <TaskWidgetProvider>
                 <Workbench />
+                <LinkBrowser />
               </TaskWidgetProvider>
             </LiveActivityProvider>
           </RuntimeProvider>

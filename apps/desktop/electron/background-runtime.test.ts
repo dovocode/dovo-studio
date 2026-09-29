@@ -3,7 +3,11 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Effect } from 'effect'
-import { backgroundRuntimeDefinition, ensureBackgroundRuntime } from './background-runtime'
+import {
+  backgroundRuntimeDefinition,
+  ensureBackgroundRuntime,
+  clearFailedBackgroundRuntime,
+} from './background-runtime'
 
 let home = ''
 afterEach(async () => {
@@ -54,6 +58,13 @@ it('leaves a loaded background service running', async () => {
   ).rejects.toMatchObject({
     code: 'ENOENT',
   })
+})
+it('clears a failed app-owned service before restoring the previous listener', async () => {
+  const options = await fixture()
+  const command = vi.fn<(args: string[]) => Promise<void>>(async () => {})
+  await Effect.runPromise(clearFailedBackgroundRuntime(options.directory, 501, command))
+  const target = `gui/501/${backgroundRuntimeDefinition(options).label}`
+  expect(command.mock.calls).toEqual([[['print', target]], [['bootout', target]]])
 })
 it('surfaces bootstrap failures instead of falling back to a desktop-owned process', async () => {
   const options = await fixture()

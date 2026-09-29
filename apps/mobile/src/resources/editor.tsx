@@ -1,9 +1,9 @@
+import { openAppLink } from '../ui/content/open-link'
 import { CredentialEditor } from './credential-editor'
 import { credentialFields, credentialValues } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
-import { Linking } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
   managedSkillSchema,
@@ -106,7 +106,7 @@ export function ResourceEditor({
         <Action
           secondary
           label={`Source · ${value.sourceRevision?.slice(0, 12) ?? 'Catalog'}`}
-          onPress={() => act(() => Linking.openURL(value.sourceUrl!))}
+          onPress={() => act(() => openAppLink(value.sourceUrl!))}
         />
       )}
       {editing.kind === 'mcp' ? (

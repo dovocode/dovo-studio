@@ -1,9 +1,10 @@
+import { openAppLink } from '../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { urlSchema, decode } from '@dovo/protocol'
-import { Linking, Platform, ScrollView, View } from 'react-native'
+import { Platform, ScrollView, View } from 'react-native'
 import { Switch } from '../ui/controls/switch'
 import Constants from 'expo-constants'
 import { Schema, Effect } from 'effect'
@@ -94,7 +95,7 @@ export default function AppUpdates() {
             label={`View release ${release.tag_name}`}
             onPress={() =>
               void runClientEffect(
-                nativeEffect(() => Linking.openURL(release.html_url)).pipe(
+                nativeEffect(() => openAppLink(release.html_url)).pipe(
                   Effect.catchAll(() =>
                     nativeEffect(() => setMessage('Could not open release notes.')),
                   ),

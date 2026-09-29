@@ -1,8 +1,9 @@
+import { openAppLink } from './open-link'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { memo } from 'react'
-import { Alert, Linking, Platform } from 'react-native'
+import { Alert, Platform } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { resolveMarkdownLink } from '@dovo/protocol'
 import { colors, styles } from '../theme'
@@ -254,7 +255,7 @@ export const Markdown = memo(function Markdown({
         const target = resolveMarkdownLink(url, baseURL, fileBaseURL)
         if (target) {
           void runClientEffect(
-            nativeEffect(() => Linking.openURL(target)).pipe(
+            nativeEffect(() => openAppLink(target)).pipe(
               Effect.catchAll((error) =>
                 nativeEffect(() => Alert.alert('Could not open link', String(error))),
               ),

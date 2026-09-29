@@ -145,11 +145,8 @@ export function registerUpdates(
           type: 'info',
           message: `${appName} ${state.version ?? ''} is available`,
           detail:
-            'Download and restart to install when active work has finished. Your projects, conversations and paired devices are kept.',
-          buttons: [
-            state.status === 'downloaded' ? 'Restart and install' : 'Download and restart',
-            'Later',
-          ],
+            'Download now. You can decide when to restart after the download finishes. Your projects, conversations and paired devices are kept.',
+          buttons: [state.status === 'downloaded' ? 'Restart and install' : 'Download', 'Later'],
           cancelId: 1,
           defaultId: 0,
         })
@@ -185,6 +182,16 @@ export function registerUpdates(
           autoUpdater.removeListener('download-progress', progress)
           for (const window of BrowserWindow.getAllWindows()) window.setProgressBar(-1)
         }
+        const answer = await dialog.showMessageBox({
+          type: 'info',
+          message: `${appName} ${state.version ?? ''} is ready`,
+          detail:
+            'The update is downloaded. Restart now to install it, or keep working and restart later.',
+          buttons: ['Restart and install', 'Later'],
+          cancelId: 1,
+          defaultId: 1,
+        })
+        if (answer.response !== 0) return
       }
       const connection = await startLocalRuntime(directory, { allowIncompatible: true })
       const response = await fetch(`${connection.address}/api/snapshot`, {

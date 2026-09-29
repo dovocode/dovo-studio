@@ -607,7 +607,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         address: new URL(value.address).origin,
       })
       const previous = registryRef.current.profiles.find((item) => item.id === replaceId)
-      if (replaceId && (!previous || !proof))
+      if (replaceId && (!previous || (!proof && previous.connection.token !== next.token)))
         throw new Error('Select a saved computer and pair its new address before replacing it.')
       await openProfile(
         { ...runtimeProfile(next, previous?.name), ...(previous ? { id: previous.id } : {}) },

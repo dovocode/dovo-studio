@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
+import { Effect } from 'effect'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -14,6 +15,9 @@ vi.mock('electron', () => ({
   },
 }))
 vi.mock('./background-runtime.js', () => ({
+  clearFailedBackgroundRuntime: vi.fn<
+    typeof import('./background-runtime.js').clearFailedBackgroundRuntime
+  >(() => Effect.void),
   stopBackgroundRuntimeForUpdate:
     vi.fn<typeof import('./background-runtime.js').stopBackgroundRuntimeForUpdate>(),
   ensureBackgroundRuntime:
@@ -423,6 +427,26 @@ it('restores the prior listener after a failed network restart', async () => {
   })
   expect(f.ensureBackgroundRuntime).toHaveBeenLastCalledWith(
     expect.objectContaining({ host: '127.0.0.1', port: '51464' }),
+  )
+})
+
+it('moves to a selected port and restores the old port if a later change fails', async () => {
+  const f = await networkFixture()
+  expect(
+    await f.setLocalRuntimeNetwork('/unused', f.connection.address, true, 51465),
+  ).toMatchObject({ host: '0.0.0.0', port: 51465 })
+  expect(f.ensureBackgroundRuntime).toHaveBeenLastCalledWith(
+    expect.objectContaining({ port: '51465' }),
+  )
+  const { Effect } = await import('effect')
+  vi.mocked(f.ensureBackgroundRuntime).mockReturnValueOnce(
+    Effect.fail(new Error('Port unavailable')),
+  )
+  await expect(
+    f.setLocalRuntimeNetwork('/unused', 'http://127.0.0.1:51465', true, 51466),
+  ).rejects.toThrow('Port unavailable')
+  expect(f.ensureBackgroundRuntime).toHaveBeenLastCalledWith(
+    expect.objectContaining({ port: '51465', host: '0.0.0.0' }),
   )
 })
 

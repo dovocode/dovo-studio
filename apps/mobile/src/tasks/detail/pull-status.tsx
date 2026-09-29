@@ -1,4 +1,5 @@
-import { Linking, Pressable, View } from 'react-native'
+import { openAppLink } from '../../ui/content/open-link'
+import { Pressable, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import { fixChecksPrompt, pullStatusLabel, responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -28,7 +29,7 @@ export function PullStatus({ task }: { task: Task }) {
         <Pressable
           accessibilityRole="link"
           accessibilityLabel={`${pullStatusLabel(status)}. Opens the pull request.`}
-          onPress={() => void Linking.openURL(status.url).catch(() => undefined)}
+          onPress={() => void openAppLink(status.url).catch(() => undefined)}
           style={({ pressed }) => ({
             flex: 1,
             flexDirection: 'row',

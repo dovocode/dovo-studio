@@ -1,9 +1,10 @@
+import { openAppLink } from '../ui/content/open-link'
 import { mobileWorkflow, nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { useEffect, useRef } from 'react'
-import { Linking, View } from 'react-native'
+import { View } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
   managedSkillSchema,
@@ -164,7 +165,7 @@ export function CatalogPicker({
                 secondary
                 label="View source"
                 disabled={busy}
-                onPress={() => act(() => Linking.openURL(entry.url))}
+                onPress={() => act(() => openAppLink(entry.url))}
               />
               <Action
                 label={`Import ${entry.name}`}

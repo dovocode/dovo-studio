@@ -1,8 +1,9 @@
+import { openAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { BranchPicker } from './branch-picker'
-import { Linking, View } from 'react-native'
+import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { Schema } from 'effect'
 import { responses, type Repository, type ChangedFile } from '@dovo/protocol'
@@ -147,7 +148,7 @@ export function RepositoryCard({
           key={pr.number}
           secondary
           label={`#${pr.number} ${pr.title}`}
-          onPress={() => act(() => Linking.openURL(pr.url))}
+          onPress={() => act(() => openAppLink(pr.url))}
         />
       ))}
       {!!result && <Text style={styles.muted}>{result}</Text>}
