@@ -232,6 +232,7 @@ export class TitleGeneration {
           const adapter = yield* runtimeOperation(() => this.agents.get(harness.provider))
           yield* runtimeOperation(() =>
             adapter.run({
+              ephemeral: true,
               agent: {
                 ...harness,
                 model: settings.model,

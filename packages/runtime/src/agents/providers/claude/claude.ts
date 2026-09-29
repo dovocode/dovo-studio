@@ -42,6 +42,7 @@ function claudeStream(
           }
         : {}),
       pathToClaudeCodeExecutable: command,
+      ...(run.ephemeral ? { persistSession: false } : {}),
       systemPrompt:
         run.tools === 'none'
           ? run.agent.instructions

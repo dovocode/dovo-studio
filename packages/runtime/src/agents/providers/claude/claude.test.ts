@@ -50,6 +50,11 @@ it('runs the Claude compact command and reports its boundary', async () => {
   await claudeAdapter.run(run)
   expect(mocks.query).toHaveBeenCalledWith(expect.objectContaining({ prompt: '/compact' }))
   expect(events).toContain('system')
+  mocks.query.mockClear()
+  await claudeAdapter.run({ ...run, compact: undefined, sessionId: undefined, ephemeral: true })
+  expect(mocks.query).toHaveBeenCalledWith(
+    expect.objectContaining({ options: expect.objectContaining({ persistSession: false }) }),
+  )
 })
 it('keeps a streaming Claude connection across turns', async () => {
   mocks.query.mockClear()

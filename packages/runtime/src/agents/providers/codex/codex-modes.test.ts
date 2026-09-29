@@ -182,6 +182,13 @@ it('leaves Automatic omitted and never inherits a custom agent Daybreak override
       .every((row) => !('cyberAccessProgram' in row.params)),
   ).toBe(true)
 })
+it('starts a title-style utility turn as an ephemeral Codex thread even with tools available', async () => {
+  const { run, requests } = await fixture()
+  run.ephemeral = true
+  await codexAdapter.run(run)
+  const rows = await requests()
+  expect(rows.find((row) => row.method === 'thread/start')?.params.ephemeral).toBe(true)
+})
 it('fails before a turn on older harnesses that could silently ignore Daybreak', async () => {
   const { run, requests } = await fixture('0.150.0')
   run.agent.cyberAccessProgram = 'daybreakBlue'

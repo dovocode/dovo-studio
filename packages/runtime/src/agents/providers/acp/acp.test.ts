@@ -49,11 +49,12 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   const input = JSON.parse(line)
   messages.push(input)
   writeFileSync(process.env.TEST_ACP_RECORD, JSON.stringify(messages))
-  if (input.method === 'initialize') respond(input.id, { protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: ${lifecycle ? '{ resume: {}, close: {} }' : '{}'} } })
+  if (input.method === 'initialize') respond(input.id, { protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: ${lifecycle ? '{ resume: {}, close: {}, delete: {} }' : '{}'} } })
   if (input.method === 'session/new') respond(input.id, { sessionId: 'session', modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions })
   if (input.method === 'session/load') { update('old'); respond(input.id, { modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions }) }
   if (input.method === 'session/resume') { if (${compactCommand}) commands(); respond(input.id, { modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions }) }
   if (input.method === 'session/close') respond(input.id, {})
+  if (input.method === 'session/delete') respond(input.id, {})
   if (input.method === 'session/set_mode') respond(input.id, {})
   if (input.method === 'session/set_config_option') respond(input.id, { configOptions })
   if (input.method === 'session/prompt') { update('new'); if (${holdPrompt} || permissionKinds.length) pendingPrompt = input.id; else respond(input.id, { stopReason: 'end_turn' }); if (permissionKinds.length) requestPermission() }
@@ -181,6 +182,13 @@ it('selects the restrictive mode for a tools-none turn', async () => {
   const input = run(cwd, launch, { tools: 'none' })
   await acpAdapter.run(input.run)
   expect(input.output).toEqual(['new'])
+})
+it('closes and deletes an ephemeral ACP utility session when supported', async () => {
+  const { cwd, record, launch } = await fixture(false, true)
+  await acpAdapter.run(run(cwd, launch, { ephemeral: true }).run)
+  const messages = JSON.parse(await readFile(record, 'utf8')) as Array<{ method: string }>
+  expect(messages.map((item) => item.method)).toContain('session/close')
+  expect(messages.map((item) => item.method)).toContain('session/delete')
 })
 
 it('auto-accepts ACP edits while asking for commands in auto-accept edits mode', async () => {

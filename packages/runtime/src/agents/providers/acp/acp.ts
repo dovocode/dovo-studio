@@ -171,6 +171,9 @@ export function createAcpAdapter(): AgentAdapter {
       let succeeded = false
       let canCloseSession =
         reusable?.initialization.agentCapabilities?.sessionCapabilities?.close ?? false
+      let canDeleteSession =
+        reusable?.initialization.agentCapabilities?.sessionCapabilities?.delete ?? false
+      let cleanupError: unknown
       const abort = () => {
         cancelling = true
         if (sessionId) {
@@ -192,6 +195,7 @@ export function createAcpAdapter(): AgentAdapter {
             elicitation: { form: {} },
           }))
         canCloseSession = !!initialization.agentCapabilities?.sessionCapabilities?.close
+        canDeleteSession = !!initialization.agentCapabilities?.sessionCapabilities?.delete
         if (
           run.sessionId &&
           !reusable &&
@@ -418,6 +422,14 @@ export function createAcpAdapter(): AgentAdapter {
             )
           }
         }
+        if (run.ephemeral && !run.sessionId && sessionId && canDeleteSession && !rpc.signal.aborted) {
+          try {
+            await acpControl(connection, rpc.deleteSession({ sessionId }), 'session deletion')
+          } catch (error) {
+            cleanupError = error
+            console.error('Could not delete ephemeral ACP session:', error)
+          }
+        }
         try {
           await tools.close()
         } catch (error) {
@@ -440,6 +452,7 @@ export function createAcpAdapter(): AgentAdapter {
         if (!succeeded || !run.taskId || run.tools === 'none' || run.signal.aborted)
           await connection.close()
       }
+      if (cleanupError) throw cleanupError
     },
     dispose: async () => {
       const connections = [...idle.values()]

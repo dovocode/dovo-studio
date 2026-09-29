@@ -87,6 +87,7 @@ export const opencodeAdapter: AgentAdapter = {
     if (await isOpencodeV2(run.agent.endpoint)) return opencodeV2Adapter.run(run)
     const api = client(run.agent.endpoint, run.cwd)
     const registered: string[] = []
+    let ephemeralSessionId: string | undefined
     try {
       const namespace = `dovo_${createHash('sha256')
         .update(JSON.stringify([run.cwd, run.agent.id, run.agent.resources]))
@@ -185,6 +186,7 @@ export const opencodeAdapter: AgentAdapter = {
             },
           )
         ).data.id
+      if (run.ephemeral && !run.sessionId) ephemeralSessionId = sessionID
       if (run.sessionId)
         await api.session.update(
           {
@@ -469,6 +471,11 @@ export const opencodeAdapter: AgentAdapter = {
         if (result.status === 'rejected')
           run.onActivity(`Could not disconnect managed MCP server ${registered[index]}`)
       })
+      if (ephemeralSessionId)
+        await api.session.delete(
+          { sessionID: ephemeralSessionId, directory: run.cwd },
+          { signal: AbortSignal.timeout(5000), throwOnError: true },
+        )
     }
   },
 }

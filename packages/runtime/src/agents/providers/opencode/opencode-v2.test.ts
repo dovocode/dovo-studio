@@ -27,6 +27,11 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
       requests.push({ path, body })
       response.setHeader('Content-Type', 'application/json')
       if (path === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
+      if (path.endsWith('/session') && request.method === 'POST') {
+        return response.end(JSON.stringify({ data: { id: 'session' } }))
+      }
+      if (path === '/api/session/session' && request.method === 'DELETE')
+        return response.writeHead(204).end()
       if (request.method === 'PATCH' || request.method === 'PUT' || path.endsWith('/model')) {
         response.statusCode = 204
         return response.end()
@@ -84,6 +89,7 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
   const eventNames: string[] = []
   try {
     await opencodeAdapter.run({
+      ephemeral: true,
       agent: {
         id: 'agent',
         name: 'Test',
@@ -95,7 +101,6 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
       },
       cwd: '/tmp',
       prompt: 'Hi',
-      sessionId: 'session',
       signal: AbortSignal.timeout(5000),
       onSession: () => {},
       onText: (part) => text.push(part),
@@ -107,6 +112,7 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
     expect(text).toEqual(['Hello'])
     expect(eventNames.filter((name) => name === 'message.part.updated')).toHaveLength(3)
     expect(requests.map((request) => request.path)).toContain('/api/session/session/prompt')
+    expect(requests.map((request) => request.path)).toContain('/api/session/session')
   } finally {
     stream?.end()
     server.close()

@@ -171,6 +171,7 @@ it.each([false, true])('streams assistant text with text-only tool policy %s', a
   const journal: unknown[] = []
   try {
     await opencodeAdapter.run({
+      ephemeral: true,
       ...(textOnly
         ? {
             tools: 'none' as const,
@@ -219,6 +220,7 @@ it.each([false, true])('streams assistant text with text-only tool policy %s', a
       ask: async () => null,
     })
     const session = JSON.parse(requests.find((request) => request.path === '/session')!.body)
+    expect(requests.map((request) => request.path)).toContain('/session/session')
     expect(session.permission).toContainEqual({
       permission: 'dovo_*',
       pattern: '*',

@@ -14,6 +14,8 @@ export interface AcpLaunch {
 export interface AgentRun {
   /** Stable task identity for a warm provider transport. Utility runs omit it. */
   taskId?: string
+  /** Do not retain this one-off conversation in the provider's session history. */
+  ephemeral?: boolean
   /** Non-blocking message forms: answers arrive as a new user message, possibly after this turn. */
   onQuestions?: (prompt: QuestionPrompt) => void
   /** Available only while the harness accepts input into its active turn. */

@@ -326,7 +326,7 @@ export function createCodexAdapter(): AgentAdapter {
                 config,
               }
             : {}),
-          ...(run.tools === 'none'
+          ...(run.ephemeral || run.tools === 'none'
             ? {
                 ephemeral: true,
               }

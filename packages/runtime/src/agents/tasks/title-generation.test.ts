@@ -4,6 +4,8 @@ import { openDatabase } from '../../storage/database'
 import { WorkspaceStore } from '../../storage/workspace'
 import { AgentRegistry } from '../configuration/registry'
 import { TitleGeneration } from './title-generation'
+import { decode, taskSchema } from '@dovo/protocol'
+import { runClientEffect } from '@dovo/client-runtime'
 import type { AgentAdapter, AgentRun } from '../execution/types'
 function setup() {
   const db = openDatabase(':memory:')
@@ -57,6 +59,7 @@ it('persists independent title settings and generates using a temporary read-onl
     expect(captured?.agent.instructions).not.toContain('Perform project work')
     expect(captured?.prompt).toContain(JSON.stringify('Improve task creation\nKeep all context'))
     expect(captured?.sessionId).toBeUndefined()
+    expect(captured?.ephemeral).toBe(true)
     expect(existsSync(captured?.cwd ?? '')).toBe(false)
     expect(await captured?.approve('Write', 'file')).toBe(false)
     expect(s.store.get().agents[0].model).toBe('task-model')
@@ -106,6 +109,39 @@ it('generates titles with a direct harness when no saved agents exist', async ()
       model: 'selected-model',
       reasoning: 'low',
     })
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+it('answers side questions in an ephemeral session without joining the task', async () => {
+  const s = setup()
+  const task = decode(taskSchema, {
+    id: 'aside-task',
+    title: 'Existing task',
+    repositoryId: 'repo',
+    agentId: 'harness',
+    status: 'draft',
+    createdAt: new Date().toISOString(),
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+  })
+  s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
+  s.titles.save({ agentId: 'harness', model: '', reasoning: '' })
+  const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('The answer.'))
+  vi.spyOn(s.registry, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  try {
+    expect(
+      await runClientEffect(s.titles.askEffect({ id: task.id, question: 'What happened?' })),
+    ).toEqual({
+      answer: 'The answer.',
+    })
+    expect(run.mock.calls[0][0]).toMatchObject({ ephemeral: true, tools: 'none' })
+    expect(run.mock.calls[0][0].sessionId).toBeUndefined()
+    expect(s.store.task(task.id).messages).toEqual(task.messages)
   } finally {
     await s.titles.dispose()
     await s.registry.dispose()
