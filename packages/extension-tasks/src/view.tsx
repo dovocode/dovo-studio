@@ -123,6 +123,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     browser: null,
     devices: null,
     agents: null,
+    'side-chats': null,
   })
   const lastFocus = useRef<Partial<Record<TaskSurface, HTMLElement>>>({})
   const focusNext = useRef<TaskSurface | null>(null)
@@ -136,6 +137,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
         'browser',
         'devices',
         'agents',
+        'side-chats',
       ] as const) {
         const focused = document.activeElement
         if (focused instanceof HTMLElement && panes.current[id]?.contains(focused)) {
@@ -401,7 +403,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const { request } = store
   const [stopError, setStopError] = useApplicationState('')
   const [transcriptNotice, setTranscriptNotice] = useApplicationState('')
-  const [asking, setAsking] = useApplicationState(false)
+  const setAsking = (open: boolean) => selectSurface(open ? 'side-chats' : 'chat', true)
   const [searching, setSearching] = useApplicationState<TaskSearchMode | null>(null)
   // After opening a search result, scroll its message into view once the thread renders.
   const [revealMessage, setRevealMessage] = useApplicationState('')
@@ -678,6 +680,24 @@ export default function TasksView({ entityId }: StudioViewProps) {
                           </Button>
                         </div>
                       )}
+                    {surface === 'side-chats' && (
+                      <div
+                        className="flex min-h-0 flex-1 flex-col"
+                        ref={(element) => {
+                          panes.current['side-chats'] = element
+                        }}
+                        tabIndex={-1}
+                      >
+                        <SideQuestion
+                          key={task.id}
+                          task={task}
+                          onAddToComposer={(text) => {
+                            setComposerInsert({ taskId: task.id, id: crypto.randomUUID(), text })
+                            selectSurface('chat', true)
+                          }}
+                        />
+                      </div>
+                    )}
                     {surface === 'agents' && (
                       <div
                         ref={(element) => {
@@ -879,17 +899,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
           }
         }}
       />
-      {task && (
-        <SideQuestion
-          key={task.id}
-          task={task}
-          open={asking}
-          onOpenChange={setAsking}
-          onAddToComposer={(text) =>
-            setComposerInsert({ taskId: task.id, id: crypto.randomUUID(), text })
-          }
-        />
-      )}
       <ProjectSelectionDialog
         open={choosingProject}
         onOpenChange={(open) => {

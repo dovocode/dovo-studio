@@ -447,6 +447,7 @@ export class WorkspaceStore {
           record.preparation !== undefined ||
           record.pullStatus !== undefined ||
           record.contextUsage !== undefined ||
+          record.sideChats !== undefined ||
           record.forkedFrom !== undefined ||
           record.consumedMessageIds !== undefined)
       )

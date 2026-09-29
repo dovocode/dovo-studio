@@ -255,6 +255,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           s.tasks.requireIdle(id)
           s.jobs.requireTaskIdle(id)
         }
+        if (action !== 'restore') s.titles.cancelSideChats(id)
         if (action === 'delete') {
           s.db.transaction(() => {
             s.db.prepare('DELETE FROM activity WHERE scope = ?').run(id)
@@ -302,6 +303,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/title')
         return yield* s.titles.generateEffect(yield* serviceResult(body(request)))
+      if (method === 'POST' && path === '/api/tasks/side-chat/save')
+        return yield* serviceResult(s.titles.saveSideChat(yield* serviceResult(body(request))))
+      if (method === 'POST' && path === '/api/tasks/side-chat/ask')
+        return yield* s.titles.askSideChatEffect(yield* serviceResult(body(request)))
       if (method === 'POST' && path === '/api/tasks/aside')
         return yield* s.titles.askEffect(yield* serviceResult(body(request)))
       if (method === 'POST' && path === '/api/tasks/dictation/cleanup')

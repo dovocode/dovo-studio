@@ -148,3 +148,122 @@ it('answers side questions in an ephemeral session without joining the task', as
     s.db.close()
   }
 })
+
+it('persists separate side chats, includes their history, and follows archive and delete lifecycle', async () => {
+  const s = setup()
+  const task = decode(taskSchema, {
+    id: 'side-owner',
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'harness',
+    status: 'draft',
+    createdAt: new Date().toISOString(),
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+  })
+  s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
+  s.titles.save({ agentId: 'harness', model: '', reasoning: '' })
+  const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Saved answer'))
+  vi.spyOn(s.registry, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  try {
+    const first = s.titles.saveSideChat({ id: task.id })
+    const second = s.titles.saveSideChat({ id: task.id, title: 'Other topic' })
+    await runClientEffect(
+      s.titles.askSideChatEffect({ id: task.id, chatId: first.id, question: 'First question' }),
+    )
+    await runClientEffect(
+      s.titles.askSideChatEffect({ id: task.id, chatId: first.id, question: 'Follow-up' }),
+    )
+    expect(run.mock.calls[1][0].prompt).toContain('First question')
+    expect(run.mock.calls[1][0].prompt).toContain('Saved answer')
+    expect(run.mock.calls[0][0]).toMatchObject({ ephemeral: true, tools: 'none' })
+    expect(
+      s.store.task(task.id).sideChats?.find((chat) => chat.id === first.id)?.messages,
+    ).toHaveLength(2)
+    expect(
+      s.store.task(task.id).sideChats?.find((chat) => chat.id === second.id)?.messages,
+    ).toEqual([])
+    expect(new WorkspaceStore(s.db).task(task.id).sideChats).toEqual(
+      s.store.task(task.id).sideChats,
+    )
+    s.store.updateTask(task.id, (current) => ({ ...current, archived: true }))
+    expect(() => s.titles.saveSideChat({ id: task.id })).toThrow('Restore this thread')
+    await expect(
+      runClientEffect(
+        s.titles.askSideChatEffect({ id: task.id, chatId: first.id, question: 'Archived' }),
+      ),
+    ).rejects.toThrow('Restore this thread')
+    s.store.updateTask(task.id, (current) => ({ ...current, archived: false }))
+    s.store.updateTask(task.id, (current) => ({
+      ...current,
+      sideChats: current.sideChats?.map((chat) =>
+        chat.id === first.id
+          ? {
+              ...chat,
+              messages: chat.messages.map((message, index) =>
+                index === 0 ? { ...message, status: 'pending', answer: undefined } : message,
+              ),
+            }
+          : chat,
+      ),
+    }))
+    expect(() =>
+      s.titles.saveSideChat({ id: task.id, chatId: first.id, draft: 'Already sent' }),
+    ).toThrow('Wait for this side chat')
+    const restarted = new TitleGeneration(s.db, s.store, s.registry)
+    expect(
+      s.store.task(task.id).sideChats?.find((chat) => chat.id === first.id)?.messages[0],
+    ).toMatchObject({ status: 'failed', error: expect.stringContaining('Server restarted') })
+    await restarted.dispose()
+    s.titles.saveSideChat({ id: task.id, chatId: first.id, remove: true })
+    expect(s.store.task(task.id).sideChats?.map((chat) => chat.id)).toEqual([second.id])
+    expect(s.store.task(task.id).messages).toEqual([])
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+
+it('cancels a deleted parent’s side request without recreating its saved data', async () => {
+  const s = setup()
+  const task = decode(taskSchema, {
+    id: 'deleted-parent',
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'harness',
+    status: 'draft',
+    createdAt: new Date().toISOString(),
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+  })
+  s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
+  s.titles.save({ agentId: 'harness', model: '', reasoning: '' })
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    await new Promise<void>((_, reject) => {
+      if (input.signal.aborted) reject(new Error('Cancelled'))
+      else
+        input.signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true })
+    })
+  })
+  vi.spyOn(s.registry, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  try {
+    const chat = s.titles.saveSideChat({ id: task.id })
+    const result = runClientEffect(
+      s.titles.askSideChatEffect({ id: task.id, chatId: chat.id, question: 'Question' }),
+    ).catch((error: unknown) => error)
+    await vi.waitFor(() => expect(run).toHaveBeenCalledOnce())
+    s.titles.cancelSideChats(task.id)
+    s.store.update((workspace) => ({ ...workspace, tasks: [] }))
+    expect(await result).toBeInstanceOf(Error)
+    expect(s.store.get().tasks).toEqual([])
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { RuntimeDefaults } from '../../storage/runtime-defaults.js'
 import { runClientEffect } from '@dovo/client-runtime'
 import { maxValue, minValue, mutableStruct, taskTranscript } from '@dovo/protocol'
@@ -22,11 +23,44 @@ export class TitleGeneration {
   private running = new Map<AbortController, Fiber.RuntimeFiber<unknown, unknown>>()
   private executor = ManagedRuntime.make(Layer.empty)
   private stopped = false
+  private sideRuns = new Map<string, AbortController>()
   constructor(
     private db: Database.Database,
     private store: WorkspaceStore,
     private agents: AgentRegistry,
-  ) {}
+  ) {
+    if (
+      this.store
+        .get()
+        .tasks.some((task) =>
+          task.sideChats?.some((chat) =>
+            chat.messages.some((message) => message.status === 'pending'),
+          ),
+        )
+    )
+      this.store.update((workspace) => ({
+        ...workspace,
+        tasks: workspace.tasks.map((task) => ({
+          ...task,
+          ...(task.sideChats
+            ? {
+                sideChats: task.sideChats.map((chat) => ({
+                  ...chat,
+                  messages: chat.messages.map((message) =>
+                    message.status === 'pending'
+                      ? {
+                          ...message,
+                          status: 'failed' as const,
+                          error: 'Server restarted before this answer completed. Ask again.',
+                        }
+                      : message,
+                  ),
+                })),
+              }
+            : {}),
+        })),
+      }))
+  }
   read() {
     const row = decode(
       Schema.UndefinedOr(
@@ -125,6 +159,163 @@ export class TitleGeneration {
       this.running.set(controller, fiber)
       return Fiber.join(fiber)
     })
+  }
+  cancelSideChats(taskId: string) {
+    for (const [key, controller] of this.sideRuns)
+      if (key.startsWith(`${taskId}:`)) controller.abort(new Error('Thread archived or deleted'))
+  }
+  saveSideChat(value: unknown) {
+    const input = decode(
+      mutableStruct({
+        id: Schema.String,
+        chatId: Schema.optional(Schema.String),
+        title: Schema.optional(maxValue(Schema.String, 100)),
+        draft: Schema.optional(maxValue(Schema.String, 4000)),
+        remove: Schema.optional(Schema.Boolean),
+      }),
+      value,
+    )
+    const task = this.store.task(input.id)
+    if (task.archived)
+      throw new HttpError(409, 'Restore this thread before changing its side chats')
+    const chats = task.sideChats ?? []
+    const id = input.chatId ?? randomUUID()
+    const existing = chats.find((chat) => chat.id === id)
+    if (input.chatId && !existing) throw new HttpError(404, 'Side chat not found')
+    if (
+      input.draft !== undefined &&
+      existing?.messages.some((message) => message.status === 'pending')
+    )
+      throw new HttpError(409, 'Wait for this side chat’s answer before saving another draft')
+    if (!existing && chats.length >= 20)
+      throw new HttpError(400, 'A thread can have up to 20 side chats')
+    if (input.remove) this.sideRuns.get(`${input.id}:${id}`)?.abort()
+    const chat = {
+      id,
+      title: input.title?.trim() || existing?.title || 'Side chat',
+      draft: input.draft ?? existing?.draft ?? '',
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+      messages: existing?.messages ?? [],
+    }
+    this.store.updateTask(input.id, (current) => ({
+      ...current,
+      sideChats: input.remove
+        ? current.sideChats?.filter((item) => item.id !== id)
+        : existing
+          ? current.sideChats?.map((item) => (item.id === id ? chat : item))
+          : [...(current.sideChats ?? []), chat],
+    }))
+    return { id }
+  }
+  askSideChatEffect(value: unknown) {
+    return runtimeProgram(
+      Effect.gen(this, function* () {
+        const input = decode(
+          mutableStruct({
+            id: Schema.String,
+            chatId: Schema.String,
+            question: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 4000),
+          }),
+          value,
+        )
+        const task = this.store.task(input.id)
+        if (task.archived)
+          throw new HttpError(409, 'Restore this thread before asking a side question')
+        const chat = task.sideChats?.find((item) => item.id === input.chatId)
+        if (!chat) throw new HttpError(404, 'Side chat not found')
+        if (chat.messages.some((item) => item.status === 'pending'))
+          throw new HttpError(409, 'Wait for this side chat’s answer')
+        if (chat.messages.length >= 100)
+          throw new HttpError(400, 'Start a new side chat to continue')
+        const messageId = randomUUID()
+        const key = `${input.id}:${input.chatId}`
+        const update = (answer?: string, error?: string) => {
+          if (!this.store.get().tasks.some((item) => item.id === input.id)) return
+          this.store.updateTask(input.id, (current) => ({
+            ...current,
+            sideChats: current.sideChats?.map((item) =>
+              item.id === input.chatId
+                ? {
+                    ...item,
+                    messages: item.messages.map((message) =>
+                      message.id === messageId
+                        ? {
+                            ...message,
+                            status: error ? ('failed' as const) : ('completed' as const),
+                            answer,
+                            error,
+                          }
+                        : message,
+                    ),
+                  }
+                : item,
+            ),
+          }))
+        }
+        this.store.updateTask(input.id, (current) => ({
+          ...current,
+          sideChats: current.sideChats?.map((item) =>
+            item.id === input.chatId
+              ? {
+                  ...item,
+                  draft: '',
+                  title: item.messages.length ? item.title : input.question.slice(0, 100),
+                  messages: [
+                    ...item.messages,
+                    {
+                      id: messageId,
+                      question: input.question,
+                      status: 'pending' as const,
+                      createdAt: new Date().toISOString(),
+                    },
+                  ],
+                }
+              : item,
+          ),
+        }))
+        return yield* this.trackEffect((controller) => {
+          this.sideRuns.set(key, controller)
+          const parent = this.store.get().tasks.find((item) => item.id === input.id)
+          if (
+            !parent ||
+            parent.archived ||
+            parent.archivedAt ||
+            !parent.sideChats?.some((item) => item.id === input.chatId)
+          )
+            controller.abort()
+          return this.runEffect(
+            JSON.stringify({
+              transcript: taskTranscript(task).slice(-60000),
+              history: JSON.stringify(
+                chat.messages
+                  .filter((item) => item.answer)
+                  .map((item) => ({ question: item.question, answer: item.answer })),
+              ).slice(-40000),
+              question: input.question,
+            }),
+            controller,
+            'aside',
+          ).pipe(
+            Effect.flatMap((output) =>
+              output.trim()
+                ? Effect.succeed(output.trim())
+                : Effect.fail(runtimeFailure(new HttpError(502, 'The model returned no answer'))),
+            ),
+            Effect.tap((answer) => Effect.sync(() => update(answer))),
+            Effect.catchAll((error) => {
+              update(undefined, 'Could not finish this answer. Ask again.')
+              return Effect.fail(error)
+            }),
+            Effect.map((answer) => ({ answer })),
+            Effect.ensuring(
+              Effect.sync(() => {
+                this.sideRuns.delete(key)
+              }),
+            ),
+          )
+        })
+      }),
+    )
   }
   /** A side question about a task: answered from its conversation without joining it. */
   askEffect(value: unknown) {
@@ -332,7 +523,7 @@ const oneShotModes: Record<
     usedTools: 'The cleanup model tried to use tools. Your dictation is unchanged.',
   },
   aside: {
-    instructions: `Answer the question about this coding conversation briefly and accurately, using only the JSON transcript. Plain text or light Markdown. If the transcript does not contain the answer, say so. ${noToolsNote}`,
+    instructions: `Answer the question about this coding conversation briefly and accurately, using the JSON transcript and this side chat’s history. Plain text or light Markdown. If the transcript does not contain the answer, say so. ${noToolsNote}`,
     prompt: (text) =>
       `Answer the question in this JSON object using its conversation transcript:\n${text}`,
     timeout: 90_000,

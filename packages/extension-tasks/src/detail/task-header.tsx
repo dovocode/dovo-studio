@@ -52,6 +52,7 @@ export type TaskSurface =
   | 'browser'
   | 'devices'
   | 'agents'
+  | 'side-chats'
 export function TaskHeader({
   task,
   onSidebar,

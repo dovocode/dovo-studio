@@ -1,5 +1,14 @@
 import { Fragment } from 'react'
-import { Bot, Files, FileCode2, Globe, PanelBottom, Smartphone, Terminal } from 'lucide-react'
+import {
+  Bot,
+  MessageCircleQuestion,
+  Files,
+  FileCode2,
+  Globe,
+  PanelBottom,
+  Smartphone,
+  Terminal,
+} from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from '@dovo/studio-ui'
 import type { TaskSurface } from './task-header'
 
@@ -27,6 +36,7 @@ export function TaskTools({
           ...(hasDiff ? [['changes', 'Diff', FileCode2] as const] : []),
           ['terminal', 'Terminal', Terminal],
           ['agents', 'Agents', Bot],
+          ['side-chats', 'Side chats', MessageCircleQuestion],
           ['browser', 'Browsers', Globe],
           ['devices', 'Devices', Smartphone],
         ] as const

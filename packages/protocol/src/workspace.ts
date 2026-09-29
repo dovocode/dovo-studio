@@ -254,6 +254,26 @@ export const taskSchema = mutableStruct({
   worktreeSetupComplete: Schema.optional(Schema.Boolean),
   // Runtime-owned: this task was forked from another task's turn. `snapshot` is that turn's
   // files; the fork's new worktree is restored to it once, then it is cleared.
+  sideChats: Schema.optional(
+    mutableArray(
+      mutableStruct({
+        id: Schema.String,
+        title: maxValue(Schema.String, 100),
+        draft: maxValue(Schema.String, 4000),
+        createdAt: Schema.String,
+        messages: mutableArray(
+          mutableStruct({
+            id: Schema.String,
+            question: Schema.String,
+            answer: Schema.optional(Schema.String),
+            error: Schema.optional(Schema.String),
+            status: Schema.Literal('pending', 'completed', 'failed'),
+            createdAt: Schema.String,
+          }),
+        ),
+      }),
+    ),
+  ),
   forkedFrom: Schema.optional(
     mutableStruct({
       taskId: Schema.String,

@@ -1,169 +1,208 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Schema } from 'effect'
-import { GripHorizontal, MessageCircleQuestion, X } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { mutableStruct } from '@dovo/protocol'
 import { useWorkspace, type Task } from '@dovo/studio-core'
 import { Button, MessageResponse, Textarea } from '@dovo/studio-ui'
 
 const answerSchema = mutableStruct({ answer: Schema.String })
+const savedSchema = mutableStruct({ id: Schema.String })
 
-/** Ask about the thread ("what did it change in auth?") without adding to the conversation. */
+/** Saved side conversations belong to the thread, separate from its agent session. */
 export function SideQuestion({
   task,
-  open,
-  onOpenChange,
   onAddToComposer,
 }: {
   task: Task
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onAddToComposer: (answer: string) => void
+  onAddToComposer: (text: string) => void
 }) {
   const { request, connected } = useWorkspace()
-  const [question, setQuestion] = useState('')
-  const [answers, setAnswers] = useState<{ question: string; answer: string }[]>([])
+  const [selected, setSelected] = useState('')
+  const chats = task.sideChats ?? []
+  const chat = chats.find((item) => item.id === selected) ?? chats[0]
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState<Record<string, boolean>>({})
   const [error, setError] = useState('')
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
-  const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
-  const ask = () => {
-    const text = question.trim()
-    if (!text || busy) return
+  const question = chat ? (drafts[chat.id] ?? chat.draft) : ''
+  const disabled = !connected || !!task.archived || busy
+  const asking =
+    !!chat && (!!pending[chat.id] || chat.messages.some((item) => item.status === 'pending'))
+  const perform = (run: () => Promise<unknown>) => {
     setBusy(true)
     setError('')
-    void request('/api/tasks/aside', { id: task.id, question: text }, answerSchema)
-      .then((result) => {
-        setAnswers((current) => [...current, { question: text, answer: result.answer }])
-        setQuestion('')
-      })
+    void run()
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(false))
   }
-  const close = () => {
-    onOpenChange(false)
-    setPosition(null)
-  }
-  const addToComposer = (answer: string) => {
-    onAddToComposer(answer)
-    close()
-    requestAnimationFrame(() =>
-      [...document.querySelectorAll<HTMLTextAreaElement>('textarea[data-task-id]')]
-        .find((input) => input.dataset.taskId === task.id)
-        ?.focus(),
-    )
-  }
-  if (!open) return null
   return (
-    <section
-      role="dialog"
-      aria-label="Side question"
-      aria-modal="false"
-      className="fixed z-50 flex max-h-[min(70dvh,680px)] w-[min(420px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-2xl"
-      style={position ? { left: position.x, top: position.y } : { right: 16, bottom: 16 }}
-    >
-      <div
-        className="flex cursor-move touch-none items-center gap-2 border-b px-3 py-2"
-        onPointerDown={(event) => {
-          if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
-          const rect = event.currentTarget.parentElement?.getBoundingClientRect()
-          if (!rect) return
-          drag.current = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top }
-          event.currentTarget.setPointerCapture(event.pointerId)
-        }}
-        onPointerMove={(event) => {
-          if (!drag.current) return
-          const width = event.currentTarget.parentElement?.clientWidth ?? 420
-          const height = event.currentTarget.parentElement?.clientHeight ?? 300
-          setPosition({
-            x: Math.max(
-              8,
-              Math.min(
-                window.innerWidth - width - 8,
-                drag.current.left + event.clientX - drag.current.x,
-              ),
-            ),
-            y: Math.max(
-              8,
-              Math.min(
-                window.innerHeight - height - 8,
-                drag.current.top + event.clientY - drag.current.y,
-              ),
-            ),
-          })
-        }}
-        onPointerUp={() => {
-          drag.current = null
-        }}
-        onPointerCancel={() => {
-          drag.current = null
-        }}
-      >
-        <GripHorizontal className="size-4 text-muted-foreground" aria-hidden="true" />
-        <MessageCircleQuestion className="size-4" aria-hidden="true" />
-        <h2 className="flex-1 text-sm font-medium">Side question</h2>
+    <section aria-label="Side chats" className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-1 border-b p-2">
+        {chats.map((item) => (
+          <Button
+            key={item.id}
+            size="sm"
+            variant={item.id === chat?.id ? 'secondary' : 'ghost'}
+            className="h-7 max-w-40 truncate text-xs"
+            onClick={() => setSelected(item.id)}
+          >
+            {item.title}
+          </Button>
+        ))}
         <Button
-          size="icon"
+          size="sm"
           variant="ghost"
-          className="size-7 cursor-pointer"
-          aria-label="Close side question"
-          onClick={close}
+          disabled={disabled}
+          aria-label="New side chat"
+          onClick={() =>
+            perform(async () => {
+              const result = await request(
+                '/api/tasks/side-chat/save',
+                { id: task.id },
+                savedSchema,
+              )
+              setSelected(result.id)
+            })
+          }
         >
-          <X className="size-4" />
+          <Plus className="size-3.5" /> New chat
         </Button>
       </div>
-      <p className="px-3 pt-2 text-xs text-muted-foreground">
-        Ask about this thread without interrupting the agent.
+      <p className="px-3 py-2 text-xs text-muted-foreground">
+        Ask about this thread without interrupting its agent.
       </p>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-2">
-        {answers.map((entry, index) => (
-          <div key={index} className="space-y-1">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        {!chat && (
+          <p className="text-xs text-muted-foreground">Create a side chat to ask a question.</p>
+        )}
+        {chat?.messages.map((entry) => (
+          <div key={entry.id} className="space-y-1">
             <p className="text-xs font-medium">{entry.question}</p>
-            <Button size="sm" variant="ghost" onClick={() => addToComposer(entry.question)}>
+            <Button size="sm" variant="ghost" onClick={() => onAddToComposer(entry.question)}>
               Add question to composer
             </Button>
-            <div className="rounded-md bg-muted/40 p-3 text-sm">
-              <MessageResponse>{entry.answer}</MessageResponse>
-            </div>
-            <Button size="sm" variant="ghost" onClick={() => addToComposer(entry.answer)}>
-              Add answer to composer
-            </Button>
+            {entry.answer && (
+              <>
+                <div className="rounded-md bg-muted/40 p-3 text-sm">
+                  <MessageResponse>{entry.answer}</MessageResponse>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onAddToComposer(entry.answer ?? '')}
+                >
+                  Add answer to composer
+                </Button>
+              </>
+            )}
+            {entry.status === 'pending' && (
+              <p role="status" className="text-xs text-muted-foreground">
+                Asking…
+              </p>
+            )}
+            {entry.error && (
+              <p role="alert" className="text-xs text-destructive">
+                {entry.error}
+              </p>
+            )}
           </div>
         ))}
       </div>
-      <form
-        className="space-y-2 border-t p-3"
-        onSubmit={(event) => {
-          event.preventDefault()
-          ask()
-        }}
-      >
-        <Textarea
-          autoFocus
-          aria-label="Side question"
-          placeholder="What did the agent change so far?"
-          value={question}
-          maxLength={4000}
-          disabled={busy}
-          onChange={(event) => setQuestion(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault()
-              ask()
-            }
+      {chat && (
+        <form
+          className="space-y-2 border-t p-3"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (
+              !question.trim() ||
+              disabled ||
+              asking ||
+              chat.messages.some((item) => item.status === 'pending')
+            )
+              return
+            setPending((current) => ({ ...current, [chat.id]: true }))
+            setError('')
+            void (async () => {
+              await request(
+                '/api/tasks/side-chat/ask',
+                { id: task.id, chatId: chat.id, question },
+                answerSchema,
+              )
+              setDrafts((current) => ({ ...current, [chat.id]: '' }))
+            })()
+              .catch((cause: unknown) =>
+                setError(cause instanceof Error ? cause.message : String(cause)),
+              )
+              .finally(() => setPending((current) => ({ ...current, [chat.id]: false })))
           }}
-          className="min-h-16 text-sm"
-        />
-        {error && (
-          <p role="alert" className="text-xs text-destructive">
-            {error}
-          </p>
-        )}
-        <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={!connected || busy || !question.trim()}>
-            {busy ? 'Asking…' : 'Ask'}
-          </Button>
-        </div>
-      </form>
+        >
+          <Textarea
+            aria-label="Side question"
+            placeholder="What did the agent change so far?"
+            value={question}
+            maxLength={4000}
+            disabled={disabled || asking}
+            onChange={(event) =>
+              setDrafts((current) => ({ ...current, [chat.id]: event.target.value }))
+            }
+            className="min-h-16 text-sm"
+          />
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={disabled || asking}
+              onClick={() =>
+                perform(() =>
+                  request(
+                    '/api/tasks/side-chat/save',
+                    { id: task.id, chatId: chat.id, draft: question },
+                    savedSchema,
+                  ),
+                )
+              }
+            >
+              Save draft
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={disabled}
+              aria-label="Delete side chat"
+              onClick={() => {
+                if (window.confirm('Delete this side chat?'))
+                  perform(() =>
+                    request(
+                      '/api/tasks/side-chat/save',
+                      { id: task.id, chatId: chat.id, remove: true },
+                      savedSchema,
+                    ),
+                  )
+              }}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={
+                disabled ||
+                !question.trim() ||
+                chat.messages.some((item) => item.status === 'pending')
+              }
+            >
+              Ask
+            </Button>
+          </div>
+        </form>
+      )}
     </section>
   )
 }
