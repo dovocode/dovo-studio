@@ -8,6 +8,10 @@ Use the background server when work should stay available after closing the desk
 survives those applications closing, but this command does **not** install a boot service, prevent
 computer sleep, or automatically restart a crashed process.
 
+The desktop app includes copyable Linux installation and pairing commands under **Settings → Devices
+& runtime → Set up Linux server**. Choose Stable or Nightly, run the commands on the new host, then
+select **Server ready — connect computer** to pair it.
+
 For a server-only macOS or Linux host, use a user-level service instead:
 
 On Linux x64/arm64, the quickest path needs Bash, curl, jq, tar, sha256sum, and a running systemd

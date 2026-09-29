@@ -1,3 +1,4 @@
+import { LinuxSetupGuide } from './linux-setup-guide'
 import { PAIRING_PROTOCOL_VERSION } from '@dovo/studio-core'
 import { ComputerUpdates } from './computer-updates'
 import { Effect } from 'effect'
@@ -144,6 +145,13 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
       setBusy(false)
     }
   }
+  const openNewConnection = () => {
+    setError('')
+    setReplaceId(undefined)
+    setAddress('')
+    setCode('')
+    setOpen(true)
+  }
   return (
     <article className="space-y-4 rounded-md border bg-card/40 p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -153,20 +161,13 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
             All saved computers contribute to your unified workspace.
           </p>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            setError('')
-            setReplaceId(undefined)
-            setAddress('')
-            setCode('')
-            setOpen(true)
-          }}
-        >
-          <Plus size={14} className="mr-1.5" />
-          Connect computer
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <LinuxSetupGuide onConnect={openNewConnection} />
+          <Button size="sm" variant="outline" onClick={openNewConnection}>
+            <Plus size={14} className="mr-1.5" />
+            Connect computer
+          </Button>
+        </div>
       </div>
       {!!runtimeRegistry.pendingPairings?.length && (
         <p role="status" className="text-xs text-muted-foreground">
