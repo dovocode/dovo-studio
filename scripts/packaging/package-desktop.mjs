@@ -140,6 +140,8 @@ try {
       type: 'module',
       main: 'dist-electron/main.js',
       dependencies: {
+        ws: JSON.parse(await readFile(join(root, 'apps/desktop/package.json'), 'utf8')).dependencies
+          .ws,
         'electron-updater': JSON.parse(
           await readFile(join(root, 'apps/desktop/package.json'), 'utf8'),
         ).dependencies['electron-updater'],

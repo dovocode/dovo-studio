@@ -38,8 +38,10 @@ const mocks = vi.hoisted(() => {
         (name: string, handler: (event: unknown, input: unknown) => Promise<unknown>) => void
       >(),
     create: vi.fn<(...args: unknown[]) => void>(),
+    cdpCreate: vi.fn<typeof import('./browser-cdp').createBrowserCdp>(),
   }
 })
+vi.mock('./browser-cdp.js', () => ({ createBrowserCdp: mocks.cdpCreate }))
 vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: () => mocks.window },
   WebContentsView: class {
@@ -94,7 +96,7 @@ it('isolates the view, clamps its bounds, ignores stale hides and closes replace
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      partition: 'dovo-preview',
+      partition: 'persist:dovo-preview:default',
     },
   })
   expect(mocks.view.setBounds).toHaveBeenCalledWith({ x: 800, y: 650, width: 100, height: 50 })
@@ -120,4 +122,68 @@ it('rejects privileged URL schemes before loading native content', async () => {
     }),
   ).rejects.toThrow('HTTP or HTTPS')
   expect(mocks.contents.loadURL).not.toHaveBeenCalled()
+})
+
+it('replaces the native view when its profile changes, keeping separate persistent partitions', async () => {
+  const call = handler()
+  const command = {
+    action: 'show',
+    key: 'task',
+    url: 'https://example.com',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+    profileId: 'work',
+  }
+  await call(event, command)
+  await call(event, { ...command, profileId: 'personal' })
+  expect(mocks.contents.close).toHaveBeenCalledOnce()
+  expect(mocks.create.mock.calls.map(([options]) => options)).toEqual([
+    {
+      webPreferences: {
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        partition: 'persist:dovo-preview:work',
+      },
+    },
+    {
+      webPreferences: {
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        partition: 'persist:dovo-preview:personal',
+      },
+    },
+  ])
+})
+
+it('does not re-enable agent access when a pending bridge startup finishes after disabling it', async () => {
+  const bridge = {
+    register: vi.fn<() => string>(() => 'ws://unused'),
+    remove: vi.fn<(id: string) => void>(),
+    close: vi.fn<() => Promise<void>>(async () => {}),
+  }
+  let ready: ((value: typeof bridge) => void) | undefined
+  mocks.cdpCreate.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        ready = resolve
+      }),
+  )
+  registerBrowser('/app/index.html', '/tmp/browser-bridge-race')
+  const call = mocks.handle.mock.calls.at(-1)?.[1]
+  if (!call) throw new Error('Missing handler')
+  const command = {
+    action: 'show',
+    key: 'task',
+    taskId: 'task',
+    url: 'https://example.com',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+    agentAccess: true,
+  }
+  const enabling = call(event, command)
+  await call(event, { ...command, agentAccess: false })
+  if (!ready) throw new Error('Missing bridge startup')
+  ready(bridge)
+  await enabling
+  expect(bridge.register).not.toHaveBeenCalled()
 })

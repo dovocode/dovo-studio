@@ -104,6 +104,9 @@ export const browserCommandSchema = Schema.Union(
     }),
     mutableStruct({
       action: Schema.Literal('show'),
+      profileId: Schema.optional(Schema.String.pipe(Schema.pattern(/^[a-zA-Z0-9_-]{1,100}$/))),
+      taskId: Schema.optional(Schema.String),
+      agentAccess: Schema.optional(Schema.Boolean),
       key: maxValue(minValue(Schema.String, 1), 500),
       url: urlSchema(),
       viewport: Schema.optional(
@@ -186,8 +189,23 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
   | {
       url: string
       title?: string
+      cdp?: string
       back: boolean
       forward: boolean
     }
   | undefined
 >
+
+/** Private desktop discovery for task-scoped, page-only CDP endpoints. */
+export const desktopBrowserHostSchema = mutableStruct({
+  pid: Schema.Number.pipe(Schema.int(), Schema.positive()),
+  targets: mutableArray(
+    mutableStruct({
+      taskId: Schema.String,
+      profileId: Schema.String,
+      endpoint: Schema.String.pipe(
+        Schema.pattern(/^ws:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{64}\/devtools\/page\/\d+$/),
+      ),
+    }),
+  ),
+})

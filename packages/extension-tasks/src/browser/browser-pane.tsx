@@ -12,7 +12,13 @@ import {
   PanelRightClose,
   SlidersHorizontal,
 } from 'lucide-react'
-import { useWorkspace, useStudioHost, startPolling } from '@dovo/studio-core'
+import {
+  useWorkspace,
+  useStudioHost,
+  startPolling,
+  useAppPreferences,
+  updateAppPreferences,
+} from '@dovo/studio-core'
 import {
   previewUrl,
   previewPresets,
@@ -20,7 +26,16 @@ import {
   previewResultSchema,
   type PreviewDevice,
 } from '@dovo/studio-core'
-import { Button, IconButton, Input, ProjectIcon } from '@dovo/studio-ui'
+import {
+  Button,
+  IconButton,
+  Input,
+  ProjectIcon,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from '@dovo/studio-ui'
 import { RemoteBrowser } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
@@ -59,11 +74,24 @@ function BrowserContent({
 }) {
   const { connection, request, connected, snapshot } = useWorkspace(),
     { browser } = useStudioHost()
+  const preferences = useAppPreferences()
+  const profiles = preferences.browserProfiles.length
+    ? preferences.browserProfiles
+    : [{ id: 'default', name: 'Default' }]
+  const profileId = profiles.some(
+    (profile) => profile.id === preferences.browserProfileByThread[scope],
+  )
+    ? preferences.browserProfileByThread[scope]
+    : 'default'
+  const agentAccess = preferences.browserAgentAccess[scope] ?? false
+  const [managingProfiles, setManagingProfiles] = useApplicationState(false)
+  const [profileName, setProfileName] = useApplicationState('')
   const [input, setInput] = useApplicationState(addresses.get(scope) ?? 'http://localhost:3000')
   const [url, setUrl] = useApplicationState(addresses.get(scope) ?? '')
   const [history, setHistory] = useApplicationState({
     url: '',
     title: '',
+    cdp: undefined as string | undefined,
     back: false,
     forward: false,
   })
@@ -172,7 +200,7 @@ function BrowserContent({
       Effect.tap((state) =>
         Effect.sync(() => {
           if (!alive || !state || !state.url.startsWith('http')) return
-          setHistory({ ...state, title: state.title ?? '' })
+          setHistory({ ...state, title: state.title ?? '', cdp: state.cdp })
           if (!editing.current) setInput(state.url)
           addresses.set(scope, state.url)
         }),
@@ -203,6 +231,9 @@ function BrowserContent({
         rect && rect.width > 0 && rect.height > 0 && !obscured
           ? {
               action: 'show' as const,
+              profileId,
+              taskId,
+              agentAccess,
               key: scope,
               url,
               viewport:
@@ -250,7 +281,7 @@ function BrowserContent({
         key: scope,
       }).catch(() => {})
     }
-  }, [browser, url, mode, scope, preset, landscape, size])
+  }, [browser, url, mode, scope, preset, landscape, size, profileId, taskId, agentAccess])
   const deviceAction = (
     device: PreviewDevice,
     action: 'boot' | 'shutdown' | 'open' | 'screenshot' | 'devicehub',
@@ -316,6 +347,134 @@ function BrowserContent({
       className="flex h-full min-h-0 flex-col"
       aria-label={initialMode === 'devices' ? 'Device previews' : 'Browser previews'}
     >
+      {browser && mode === 'web' && (
+        <div className="flex flex-wrap items-center gap-2 border-b px-2 py-1.5 text-xs">
+          <select
+            aria-label="Browser profile"
+            className="min-w-0 flex-1 rounded border bg-background p-1"
+            value={profileId}
+            onChange={(event) =>
+              updateAppPreferences({
+                browserProfileByThread: {
+                  ...preferences.browserProfileByThread,
+                  [scope]: event.target.value,
+                },
+              })
+            }
+          >
+            {profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => setManagingProfiles(true)}
+          >
+            Profiles
+          </Button>
+          <Button
+            variant={agentAccess ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 px-2 text-xs"
+            aria-pressed={agentAccess}
+            onClick={() =>
+              updateAppPreferences({
+                browserAgentAccess: { ...preferences.browserAgentAccess, [scope]: !agentAccess },
+              })
+            }
+          >
+            Agent CDP
+          </Button>
+          {agentAccess && history.cdp && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() =>
+                void navigator.clipboard
+                  .writeText(history.cdp ?? '')
+                  .catch((cause) => setError(String(cause)))
+              }
+            >
+              Copy CDP
+            </Button>
+          )}
+        </div>
+      )}
+      {managingProfiles && (
+        <Dialog open onOpenChange={setManagingProfiles}>
+          <DialogContent>
+            <DialogTitle>Browser profiles</DialogTitle>
+            <DialogDescription>
+              Each profile keeps separate cookies and site storage on this desktop. Agent CDP allows
+              local agents to control the selected page.
+            </DialogDescription>
+            {profiles.map((profile) => (
+              <div key={profile.id} className="flex items-center gap-2">
+                <Input
+                  aria-label={`Name for ${profile.name}`}
+                  value={profile.name}
+                  maxLength={100}
+                  onChange={(event) =>
+                    event.target.value.trim() &&
+                    updateAppPreferences({
+                      browserProfiles: profiles.map((item) =>
+                        item.id === profile.id ? { ...item, name: event.target.value } : item,
+                      ),
+                    })
+                  }
+                />
+                {profile.id !== 'default' && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          'Remove this profile from the picker? Its saved website data will remain on this desktop.',
+                        )
+                      )
+                        updateAppPreferences({
+                          browserProfiles: profiles.filter((item) => item.id !== profile.id),
+                        })
+                    }}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            ))}
+            <form
+              className="flex gap-2"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (!profileName.trim()) return
+                const id = crypto.randomUUID()
+                updateAppPreferences({
+                  browserProfiles: [...profiles, { id, name: profileName.trim() }],
+                  browserProfileByThread: { ...preferences.browserProfileByThread, [scope]: id },
+                })
+                setProfileName('')
+                setManagingProfiles(false)
+              }}
+            >
+              <Input
+                aria-label="New profile name"
+                placeholder="Work, Personal…"
+                value={profileName}
+                maxLength={100}
+                onChange={(event) => setProfileName(event.target.value)}
+              />
+              <Button type="submit" disabled={!profileName.trim()}>
+                Add profile
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
       <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2 text-xs">
         <Button
           size="sm"

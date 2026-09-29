@@ -1,3 +1,4 @@
+import { browserCdpInstructions } from './browser-cdp.js'
 import { runWithHooks } from './agent-hooks.js'
 import { Cause, Effect } from 'effect'
 import { OwnedProcessShutdownError } from './stop-owned-child.js'
@@ -420,6 +421,7 @@ ${
                   ...agent,
                   instructions: [
                     agent.instructions,
+                    browserCdpInstructions(id),
                     `Project working directory: ${JSON.stringify(cwd)}. Run project commands, including git and gh, from this checkout. Configured Git executable: ${JSON.stringify(commands.git)}; GitHub CLI executable: ${JSON.stringify(commands.gh)}. Use gh for GitHub operations in the repository linked to this checkout; do not target another repository unless the user explicitly requests it.`,
                     this.taskTools
                       ? 'The dovo_task tools let you operate this task’s visible terminal and simulators. Use your normal command tool for quick, noninteractive commands. Use the Dovo terminal when a command needs an interactive or persistent session, or when the user should follow it in the task panel. Use simulator tools when the task needs device interaction.'

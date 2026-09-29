@@ -23,6 +23,7 @@ vi.mock('electron', () => ({
     setName: vi.fn<(...args: unknown[]) => void>(),
     setPath: vi.fn<(...args: unknown[]) => void>(),
     on: vi.fn<(...args: unknown[]) => void>(),
+    once: vi.fn<(...args: unknown[]) => void>(),
     whenReady: () => Promise.resolve(),
     requestSingleInstanceLock: () => true,
     quit: fixture.quit,
@@ -47,7 +48,11 @@ vi.mock('electron', () => ({
 }))
 vi.mock('./remote-updates.js', () => ({ registerRemoteUpdates: async () => undefined }))
 vi.mock('./updates.js', () => ({ registerUpdates: fixture.updates }))
-vi.mock('./browser.js', () => ({ registerBrowser: vi.fn<(...args: unknown[]) => void>() }))
+vi.mock('./browser.js', () => ({
+  registerBrowser: vi.fn<(...args: unknown[]) => { dispose: () => Promise<void> }>(() => ({
+    dispose: async () => {},
+  })),
+}))
 vi.mock('./links.js', () => ({ offerLink: vi.fn<(...args: unknown[]) => Promise<void>>() }))
 vi.mock('./connection-storage.js', () => ({
   registerConnectionStorage: vi.fn<(...args: unknown[]) => void>(),

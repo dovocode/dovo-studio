@@ -55,3 +55,28 @@ it('persists updates and notifies subscribers', async () => {
     textSize: 'large',
   })
 })
+
+it('persists browser profiles, per-thread selections and opt-in agent access', async () => {
+  const local = storage()
+  vi.stubGlobal('localStorage', local)
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().browserProfiles).toEqual([{ id: 'default', name: 'Default' }])
+  updateAppPreferences({
+    browserProfiles: [
+      { id: 'default', name: 'Default' },
+      { id: 'work', name: 'Work' },
+    ],
+    browserProfileByThread: { thread: 'work' },
+    browserAgentAccess: { thread: true },
+  })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences()).toMatchObject({
+    browserProfiles: [
+      { id: 'default', name: 'Default' },
+      { id: 'work', name: 'Work' },
+    ],
+    browserProfileByThread: { thread: 'work' },
+    browserAgentAccess: { thread: true },
+  })
+})

@@ -1,6 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
-import { decodeResult, mutableStruct } from '@dovo/protocol'
+import { decodeResult, mutableStruct, mutableArray } from '@dovo/protocol'
 
 /** Preferences for this app window only (like Codex and T3 Code "General" and "Appearance").
  * They never sync to computers; each device keeps its own. */
@@ -31,6 +31,14 @@ const schema = mutableStruct({
   chatWidth: Schema.Literal('standard', 'wide', 'full'),
   mergeMethod: Schema.Literal('auto', 'merge', 'squash', 'rebase'),
   pullDraft: Schema.Boolean,
+  browserProfiles: mutableArray(
+    mutableStruct({
+      id: Schema.String.pipe(Schema.pattern(/^[a-zA-Z0-9_-]{1,100}$/)),
+      name: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(100)),
+    }),
+  ),
+  browserProfileByThread: Schema.Record({ key: Schema.String, value: Schema.String }),
+  browserAgentAccess: Schema.Record({ key: Schema.String, value: Schema.Boolean }),
   browserViewport: Schema.Literal('fill', 'phone', 'tablet', 'desktop'),
 })
 export type AppPreferences = Schema.Schema.Type<typeof schema>
@@ -61,6 +69,9 @@ export const defaultAppPreferences: AppPreferences = {
   chatWidth: 'standard',
   mergeMethod: 'auto',
   pullDraft: false,
+  browserProfiles: [{ id: 'default', name: 'Default' }],
+  browserProfileByThread: {},
+  browserAgentAccess: {},
   browserViewport: 'fill',
 }
 const key = 'dovo.app-preferences.v1'

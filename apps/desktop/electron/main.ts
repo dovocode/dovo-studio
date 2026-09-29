@@ -119,7 +119,13 @@ if (!app.commandLine.hasSwitch('user-data-dir')) {
 app.setName('dovo-studio')
 app.setPath('userData', dataDirectory)
 registerConnectionStorage(join(__dirname, '../dist/index.html'))
-registerBrowser(join(__dirname, '../dist/index.html'))
+const browserBridge = registerBrowser(
+  join(__dirname, '../dist/index.html'),
+  app.getPath('userData'),
+)
+app.once('will-quit', () => {
+  void browserBridge.dispose()
+})
 
 function createWindow(): void {
   const window = new BrowserWindow({

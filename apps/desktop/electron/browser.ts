@@ -1,13 +1,20 @@
+import { createBrowserCdp } from './browser-cdp.js'
 import { decode } from '@dovo/protocol'
 import { BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
 import { pathToFileURL } from 'node:url'
 import { browserCommandSchema, previewUrl } from '@dovo/protocol'
-export function registerBrowser(indexPath: string) {
+export function registerBrowser(indexPath: string, directory?: string) {
+  let cdp: Awaited<ReturnType<typeof createBrowserCdp>> | undefined
+  let cdpPending: Promise<Awaited<ReturnType<typeof createBrowserCdp>>> | undefined
   const registered = new WeakSet<BrowserWindow>()
   const views = new Map<
     number,
     {
       key: string
+      profileId: string
+      agentAccess: boolean
+      taskId?: string
+      cdp?: string
       view: WebContentsView
       url: string
     }
@@ -35,7 +42,9 @@ export function registerBrowser(indexPath: string) {
     }
     if (command.action === 'show') {
       const url = previewUrl(command.url)
-      if (entry && entry.key !== command.key) {
+      const profileId = command.profileId ?? 'default'
+      if (entry && (entry.key !== command.key || entry.profileId !== profileId)) {
+        cdp?.remove(String(window.id))
         window.contentView.removeChildView(entry.view)
         entry.view.webContents.close()
         views.delete(window.id)
@@ -47,7 +56,7 @@ export function registerBrowser(indexPath: string) {
             sandbox: true,
             contextIsolation: true,
             nodeIntegration: false,
-            partition: 'dovo-preview',
+            partition: `persist:dovo-preview:${profileId}`,
           },
         })
         view.webContents.setWindowOpenHandler(() => ({
@@ -66,6 +75,8 @@ export function registerBrowser(indexPath: string) {
         window.contentView.addChildView(view)
         entry = {
           key: command.key,
+          profileId,
+          agentAccess: false,
           view,
           url: '',
         }
@@ -75,9 +86,35 @@ export function registerBrowser(indexPath: string) {
           window.once('closed', () => {
             const current = views.get(window.id)
             if (current && !current.view.webContents.isDestroyed()) current.view.webContents.close()
+            cdp?.remove(String(window.id))
             views.delete(window.id)
           })
         }
+      }
+      entry.agentAccess = !!(command.agentAccess && command.taskId && directory)
+      entry.taskId = command.taskId
+      if (command.agentAccess && command.taskId && directory) {
+        cdpPending ??= createBrowserCdp(directory).catch((error) => {
+          cdpPending = undefined
+          throw error
+        })
+        cdp = await cdpPending
+        if (
+          views.get(window.id) !== entry ||
+          !entry.agentAccess ||
+          entry.taskId !== command.taskId ||
+          entry.view.webContents.isDestroyed()
+        )
+          return
+        entry.cdp = cdp.register(
+          String(window.id),
+          command.taskId,
+          profileId,
+          entry.view.webContents,
+        )
+      } else if (entry.cdp) {
+        cdp?.remove(String(window.id))
+        entry.cdp = undefined
       }
       const [width, height] = window.getContentSize()
       const { x, y } = command.bounds
@@ -124,6 +161,7 @@ export function registerBrowser(indexPath: string) {
       return {
         url: entry.view.webContents.getURL(),
         title: entry.view.webContents.getTitle(),
+        cdp: entry.cdp,
         back: navigation.canGoBack(),
         forward: navigation.canGoForward(),
       }
@@ -133,4 +171,10 @@ export function registerBrowser(indexPath: string) {
     if (command.action === 'hard-reload') entry.view.webContents.reloadIgnoringCache()
     if (command.action === 'devtools') entry.view.webContents.openDevTools({ mode: 'detach' })
   })
+  return {
+    dispose: async () => {
+      const bridge = cdp ?? (await cdpPending)
+      await bridge?.close()
+    },
+  }
 }
