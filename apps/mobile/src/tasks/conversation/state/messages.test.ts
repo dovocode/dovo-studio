@@ -74,6 +74,56 @@ describe('Dovo conversation adapter', () => {
         : result.content.flatMap((part) => (part.type === 'tool-call' ? [part.toolCallId] : []))
     expect(toolIds).toEqual(['t2:older', 't2:newest'])
   })
+  it('places assistant text around tools at their recorded offsets', () => {
+    const result = conversationMessages(
+      {
+        ...task,
+        messages: [{ id: 'a2', role: 'assistant', text: 'Hello world!' }],
+      },
+      [
+        {
+          ...event('later', 't2', 'completed'),
+          payload: JSON.stringify({
+            turnId: 't2',
+            toolId: 'later',
+            status: 'completed',
+            textOffset: 12,
+          }),
+        },
+        {
+          ...event('earlier', 't2', 'completed'),
+          payload: JSON.stringify({
+            turnId: 't2',
+            toolId: 'earlier',
+            status: 'completed',
+            textOffset: 6,
+          }),
+        },
+      ],
+    )[0]
+    expect(result.content).toEqual([
+      { type: 'text', text: 'Hello ' },
+      expect.objectContaining({ type: 'tool-call', toolCallId: 't2:earlier' }),
+      { type: 'text', text: 'world!' },
+      expect.objectContaining({ type: 'tool-call', toolCallId: 't2:later' }),
+    ])
+  })
+  it('hides an in-progress snapshot until the turn has changes to inspect', () => {
+    const result = conversationMessages(
+      {
+        ...task,
+        messages: [{ id: 'a2', role: 'assistant', text: '' }],
+        turns: [
+          {
+            ...turn('t2', 'a2', 'running'),
+            checkpoint: { before: 'before', files: [], omitted: [] },
+          },
+        ],
+      },
+      [],
+    )[0]
+    expect(result.content).toEqual([{ type: 'text', text: 'Working…' }])
+  })
   it('deduplicates tool updates without changing the invocation identity', () => {
     const before = conversationMessages(task, [event('start', 't2', 'running')])[2]
     const after = conversationMessages(task, [
@@ -116,12 +166,12 @@ describe('Dovo conversation adapter', () => {
       {
         type: 'data',
         name: 'dovo.checkpoint',
-        data: { turnId: 't1', files: 0, pending: false, omitted: 1, error: undefined },
+        data: { turnId: 't1', files: 1, omitted: 1, error: undefined },
       },
       {
         type: 'data',
         name: 'dovo.turn-summary',
-        data: '1 file changed · 0 test commands · 0 commands used',
+        data: '0 test commands · 0 commands used',
       },
     ])
   })

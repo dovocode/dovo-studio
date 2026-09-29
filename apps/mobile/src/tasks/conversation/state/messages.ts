@@ -28,57 +28,70 @@ export function conversationMessages(task: Task, events: ToolEvents): ThreadMess
         name: 'dovo.attachments',
         data: message.attachments,
       })
-    if (message.text)
-      content.push({
-        type: 'text',
-        text: message.text,
-      })
     if (turn) {
       const turnEvents = [...(toolsByTurn.get(turn.id) ?? [])].reverse()
-      const reasoning = turnEvents.filter(
-        (tool) =>
-          tool.kind === 'reasoning' ||
-          toolPresentation(tool.payload, tool.summary, tool.inputPayload).kind === 'reasoning',
-      )
-      if (reasoning.length)
-        content.push({
-          type: 'data',
-          name: 'dovo.reasoning',
-          data: reasoning,
-        })
-      for (const tool of turnEvents.filter((tool) => !reasoning.includes(tool))) {
-        const running = pendingActivity(tool.status)
-        const status = tool.status
-        content.push({
-          type: 'tool-call',
-          toolCallId: `${turn.id}:${toolIdentity(tool.payload) || tool.id}`,
-          toolName: tool.summary,
-          args: {},
-          argsText: '',
-          artifact: {
-            ...tool,
-            status,
-          },
-          ...(!running
-            ? {
-                result: tool.payload,
-                isError: ['failed', 'error', 'cancelled', 'interrupted'].includes(status),
-              }
-            : {}),
-        })
+      const at = new Map<number, typeof turnEvents>()
+      for (const tool of turnEvents) {
+        // Older activity events have no offset; keep them after the reply text.
+        const offset = Math.min(
+          message.text.length,
+          Math.max(0, tool.textOffset ?? message.text.length),
+        )
+        const group = at.get(offset) ?? []
+        group.push(tool)
+        at.set(offset, group)
       }
+      let cursor = 0
+      for (const offset of [...at.keys()].sort((a, b) => a - b)) {
+        if (offset > cursor)
+          content.push({ type: 'text', text: message.text.slice(cursor, offset) })
+        const reasoning: typeof turnEvents = []
+        const flushReasoning = () => {
+          if (reasoning.length)
+            content.push({ type: 'data', name: 'dovo.reasoning', data: reasoning.splice(0) })
+        }
+        for (const tool of at.get(offset) ?? []) {
+          if (
+            tool.kind === 'reasoning' ||
+            toolPresentation(tool.payload, tool.summary, tool.inputPayload).kind === 'reasoning'
+          ) {
+            reasoning.push(tool)
+            continue
+          }
+          flushReasoning()
+          const status = tool.status
+          content.push({
+            type: 'tool-call',
+            toolCallId: `${turn.id}:${toolIdentity(tool.payload) || tool.id}`,
+            toolName: tool.summary,
+            args: {},
+            argsText: '',
+            artifact: { ...tool, status },
+            ...(!pendingActivity(status)
+              ? {
+                  result: tool.payload,
+                  isError: ['failed', 'error', 'cancelled', 'interrupted'].includes(status),
+                }
+              : {}),
+          })
+        }
+        flushReasoning()
+        cursor = offset
+      }
+      if (cursor < message.text.length)
+        content.push({ type: 'text', text: message.text.slice(cursor) })
       if (
         turn.checkpoint &&
-        (turn.checkpoint.files.length || turn.checkpoint.error || turn.checkpoint.omitted.length)
+        (turn.checkpoint.files.length || turn.checkpoint.error || turn.checkpoint.omitted.length) &&
+        (turn.checkpoint.after || turn.checkpoint.error)
       )
         content.push({
           type: 'data',
           name: 'dovo.checkpoint',
           data: {
             turnId: turn.id,
-            files: turn.checkpoint.files.length,
+            files: turn.checkpoint.files.length + turn.checkpoint.omitted.length,
             omitted: turn.checkpoint.omitted.length,
-            pending: !turn.checkpoint.after && turn.status === 'running',
             error: turn.checkpoint.error,
           },
         })
@@ -86,9 +99,9 @@ export function conversationMessages(task: Task, events: ToolEvents): ThreadMess
         content.push({
           type: 'data',
           name: 'dovo.turn-summary',
-          data: turnSummary(turn, turnEvents),
+          data: turnSummary(turn, turnEvents, false),
         })
-    }
+    } else if (message.text) content.push({ type: 'text', text: message.text })
     if (!content.length)
       content.push({
         type: 'text',

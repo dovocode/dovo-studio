@@ -41,7 +41,6 @@ const checkpointSchema = mutableStruct({
   turnId: Schema.String,
   files: Schema.Number.pipe(Schema.finite()),
   omitted: Schema.Number.pipe(Schema.finite()),
-  pending: Schema.Boolean,
   error: Schema.optional(Schema.String),
 })
 function AttachmentPart({ data }: DataMessagePartProps<unknown>) {
@@ -117,36 +116,32 @@ function CheckpointRow({
         gap: 4,
       }}
     >
-      {checkpoint.pending ? (
-        <Text style={styles.muted}>Snapshot saved</Text>
-      ) : (
-        <Pressable
-          testID={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
-          accessibilityRole="button"
-          accessibilityLabel={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
-          onPress={() => openCheckpoint(checkpoint.turnId)}
-          style={({ pressed }) => ({
-            minHeight: 44,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 8,
-            opacity: pressed ? 0.55 : 1,
-          })}
+      <Pressable
+        testID={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
+        accessibilityRole="button"
+        accessibilityLabel={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
+        onPress={() => openCheckpoint(checkpoint.turnId)}
+        style={({ pressed }) => ({
+          minHeight: 44,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          opacity: pressed ? 0.55 : 1,
+        })}
+      >
+        <Icon name="changes" size={15} color={colors.muted} />
+        <Text
+          style={[
+            styles.muted,
+            {
+              flexShrink: 1,
+            },
+          ]}
         >
-          <Icon name="changes" size={15} color={colors.muted} />
-          <Text
-            style={[
-              styles.muted,
-              {
-                flexShrink: 1,
-              },
-            ]}
-          >
-            {checkpoint.files} {checkpoint.files === 1 ? 'file' : 'files'} changed
-          </Text>
-          <Icon name="next" size={12} color={colors.muted} />
-        </Pressable>
-      )}
+          {checkpoint.files} {checkpoint.files === 1 ? 'file' : 'files'} changed
+        </Text>
+        <Icon name="next" size={12} color={colors.muted} />
+      </Pressable>
       {!!checkpoint.omitted && (
         <Text style={styles.muted}>{checkpoint.omitted} files omitted from snapshot</Text>
       )}
