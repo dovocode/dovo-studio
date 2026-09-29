@@ -21,3 +21,12 @@ it('rejects expired, credential-bearing and local-only invitations', () => {
   ])
     expect(() => pairingInvitationUrl({ ...invitation, address })).toThrow(/address|HTTP/)
 })
+it('rejects unrelated QR codes and missing or malformed pairing fields', () => {
+  for (const url of [
+    'https://example.com',
+    'dovo://other',
+    'dovo://pair?address=http://100.90.80.70:8787',
+    'not a URL',
+  ])
+    expect(() => parsePairingInvitation(url)).toThrow(/pairing|HTTP|Invalid URL|digit/)
+})

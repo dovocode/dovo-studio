@@ -1,6 +1,7 @@
 import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { snapshotSchema } from '@dovo/protocol'
+import { snapshotSchema, parsePairingInvitation } from '@dovo/protocol'
+const outputOptions = vi.hoisted(() => ({ json: true }))
 vi.mock('node:util', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:util')>()),
   parseArgs: () => ({
@@ -8,7 +9,7 @@ vi.mock('node:util', async (importOriginal) => ({
       connection: '/test/runtime-connection.json',
       'public-address': 'https://workstation.example.test',
       network: 'local',
-      json: true,
+      json: outputOptions.json,
     },
     positionals: ['code'],
   }),
@@ -34,6 +35,7 @@ vi.mock('./network.js', async (importOriginal) => ({
     ]),
 }))
 afterEach(() => {
+  outputOptions.json = true
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -92,4 +94,55 @@ it('honors an explicit HTTPS public address when network discovery cannot determ
       redirect: 'error',
     }),
   )
+})
+
+it('prints a scannable pairing invitation in human-readable server output', async () => {
+  outputOptions.json = false
+  vi.resetModules()
+  const expiresAt = new Date(Date.now() + 120000).toISOString()
+  const snapshot = decode(snapshotSchema, {
+    owner: true,
+    revision: 0,
+    workspace: {
+      version: 1,
+      agents: [],
+      repositories: [],
+      tasks: [],
+      automations: [],
+      runtimeAddress: '',
+    },
+    approvals: [],
+    terminals: [],
+    runs: [],
+    devices: [],
+    pendingDevices: [],
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<(address: string) => Promise<Response>>((address) =>
+      Promise.resolve(
+        Response.json(
+          address.endsWith('/api/snapshot') ? snapshot : { code: '00112233', expiresAt },
+        ),
+      ),
+    ),
+  )
+  const output = vi.spyOn(console, 'log').mockImplementation(() => {})
+  await import('./cli')
+  await vi.waitFor(() =>
+    expect(
+      output.mock.calls.some(
+        ([text]) => typeof text === 'string' && text.includes('Pairing link:'),
+      ),
+    ).toBe(true),
+  )
+  const text = output.mock.calls.map(([value]) => String(value)).join('\n')
+  const link = text.split('Pairing link: ')[1].split('\n')[0]
+  expect(parsePairingInvitation(link)).toEqual({
+    address: 'https://workstation.example.test',
+    code: '00112233',
+    expiresAt,
+  })
+  expect(text).toContain('▄')
+  expect(text).not.toContain('test-owner-token-at-least-thirty-two-characters')
 })

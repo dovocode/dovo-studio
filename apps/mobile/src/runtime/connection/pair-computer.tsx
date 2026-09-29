@@ -1,3 +1,4 @@
+import { PairingScanner } from './pairing-scanner'
 import type { PairingInvitation } from '@dovo/protocol'
 import { PAIRING_PROTOCOL_VERSION } from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../state/native-effect'
@@ -5,7 +6,7 @@ import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import { useApplicationState } from '../state/application-state'
 import { useEffect, useRef, type ReactNode } from 'react'
-import { ActivityIndicator, AppState, Keyboard, Platform, Pressable, View } from 'react-native'
+import { ActivityIndicator, AppState, Keyboard, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import {
   normalizeRuntimeAddress,
@@ -52,6 +53,7 @@ export function PairComputer({
   useEffect(() => {
     onBusyChange?.(busy || !!pending || finishing)
   }, [busy, pending, finishing, onBusyChange])
+  const [scanning, setScanning] = useApplicationState(false)
   const pairingPhase = useRef<'waiting' | 'cancelled' | 'saving'>('waiting')
   const connectRef = useRef(connect)
   connectRef.current = connect
@@ -178,10 +180,31 @@ export function PairComputer({
             Settings → Devices & runtime.
           </Step>
           <Step number={2}>
-            Scan the QR code with the {Platform.OS === 'ios' ? 'iPhone' : 'phone'} Camera, or type
-            the address and code it shows.
+            Scan the QR code in this app, or type the address and code it shows.
           </Step>
         </View>
+      )}
+      {!pending && (
+        <Action
+          secondary
+          label="Scan pairing QR code"
+          disabled={busy || finishing}
+          onPress={() => {
+            Keyboard.dismiss()
+            setScanning(true)
+          }}
+        />
+      )}
+      {scanning && (
+        <PairingScanner
+          onClose={() => setScanning(false)}
+          onScanned={(invitation) => {
+            setAddress(invitation.address)
+            setCode(invitation.code)
+            setPairError('')
+            setScanning(false)
+          }}
+        />
       )}
       <View style={{ gap: 14 }}>
         <Field

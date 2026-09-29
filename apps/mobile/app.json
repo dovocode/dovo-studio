@@ -32,11 +32,19 @@
     "plugins": [
       "expo-secure-store",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan a Dovo pairing QR code to connect this phone to your server.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Choose photos to attach to Dovo messages.",
-          "cameraPermission": false,
-          "microphonePermission": false
+          "cameraPermission": "Scan a Dovo pairing QR code to connect this phone to your server.",
+          "microphonePermission": "Use the microphone to dictate a message in Dovo Studio."
         }
       ],
       [

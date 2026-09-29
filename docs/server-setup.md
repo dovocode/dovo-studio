@@ -257,9 +257,11 @@ trust. Pairing credentials authorize project files, agents, and shell access.
 
 1. Run `pnpm server pair` for the correct data directory.
 2. On mobile, open **Settings → Devices & runtime → Add computer** (or the initial pairing form).
-3. Enter the full runtime address, a device name, and the eight-digit code.
+3. Choose **Scan pairing QR code** and scan the QR printed by the server. Confirm the filled address
+   and code, then tap **Connect**. You can also enter the full address and eight-digit code
+   manually.
 4. Keep both devices reachable while pairing completes. The CLI's default code automatically
-   approves devices using it until it expires, so no second approval step is required.
+   approves one device; `--manual` requires approval on the host.
 
 Codes expire after **two minutes**. Generate a new one instead of retrying an expired code. Share
 the short-lived code and reachable address with the intended device; do not share `owner-token` or

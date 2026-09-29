@@ -1,3 +1,4 @@
+import { pairingQr } from './pairing-qr.js'
 import { Schema } from 'effect'
 import { decode } from '@dovo/protocol'
 import { discoverNetworks, networkUrls } from './network.js'
@@ -124,8 +125,20 @@ Device listings show paired devices, not live network presence.`)
     if (values.json) console.log(JSON.stringify(result))
     else {
       console.log(
-        `Runtime: ${result.address}\nPairing code: ${result.code}\nExpires: ${result.expiresAt}\n${addresses.map((entry) => `${entry.name}: ${entry.address}`).join('\n')}\n\nEnter these in the phone's Devices & runtime settings.\n${values.manual ? 'Then run pnpm pair devices and pnpm pair approve <request-id>.' : 'This single-use code automatically approves one device.'}`,
+        `Runtime: ${result.address}\nPairing code: ${result.code}\nExpires: ${result.expiresAt}\n${addresses.map((entry) => `${entry.name}: ${entry.address}`).join('\n')}\n\nIn the mobile app, choose Scan pairing QR code or enter the address and code.\n${values.manual ? 'Then run pnpm pair devices and pnpm pair approve <request-id>.' : 'This single-use code automatically approves one device.'}`,
       )
+      if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(result.address).hostname)) {
+        try {
+          const qr = await pairingQr(result)
+          console.log(
+            `\nScan this code in Dovo on your phone:\n${qr.terminal}\nPairing link: ${qr.url}`,
+          )
+        } catch (error) {
+          console.log(
+            `QR unavailable: ${error instanceof Error ? error.message : String(error)}. Enter the address and code above instead.`,
+          )
+        }
+      }
       if (['localhost', '127.0.0.1', '[::1]'].includes(new URL(result.address).hostname))
         console.log(
           'This is a loopback address. For your phone, bind the runtime to a reachable interface with DOVO_HOST and use --public-address for its private hostname.',
