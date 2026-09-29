@@ -1,6 +1,7 @@
 import { Cause, Effect } from 'effect'
 import { OwnedProcessShutdownError } from './stop-owned-child.js'
 import { contextUsage, turnTokenCounter } from '../tasks/context-usage.js'
+import { estimatedTurnCost } from '../tasks/estimated-cost.js'
 import { completedCompaction } from '../tasks/compaction.js'
 import { updateSubagents } from './subagents.js'
 import { ReasoningEvents, safeReasoningEvent } from './reasoning-event.js'
@@ -308,7 +309,13 @@ ${
         const tokens = turnTokenCounter(agent.provider, () => this.store.task(id).sessionId)
         const tokenField = () => {
           const total = tokens.total()
-          return total === undefined ? {} : { tokens: total }
+          const estimatedCostUsd = tokens.mixedModels()
+            ? undefined
+            : estimatedTurnCost(agent.provider, tokens.model() ?? agent.model, tokens.usage())
+          return {
+            ...(total === undefined ? {} : { tokens: total }),
+            ...(estimatedCostUsd === undefined ? {} : { estimatedCostUsd }),
+          }
         }
         // Context meter: store only meaningful changes (a 1% step or a new limit).
         const recordUsage = (name: string, payload: unknown) => {

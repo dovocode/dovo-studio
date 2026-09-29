@@ -1,5 +1,10 @@
 import { expect, it } from 'vitest'
-import { formatUsageDuration, formatUsageTokens, usageSummary } from './usage-summary.js'
+import {
+  formatUsageCost,
+  formatUsageDuration,
+  formatUsageTokens,
+  usageSummary,
+} from './usage-summary.js'
 import type { Task } from '../../workspace.js'
 
 const turn = (
@@ -60,4 +65,16 @@ it('sums recent turns per model and per task', () => {
   ])
   expect(formatUsageDuration(125 * 60_000)).toBe('2h 05m')
   expect(formatUsageTokens(12_345)).toBe('12k')
+  expect(formatUsageCost(0.0025)).toBe('$0.0025')
+})
+
+it('sums only locally priced turns and reports partial coverage', () => {
+  const priced = { ...turn('2026-09-21T00:00:00Z', 1, 'gpt-6-sol', 100), estimatedCostUsd: 0.001 }
+  const unpriced = turn('2026-09-22T00:00:00Z', 1, 'gpt-6-sol', 100)
+  const summary = usageSummary(
+    [{ computer: 'Mac', tasks: [task('work', [priced, unpriced])] }],
+    Date.parse('2026-09-20T00:00:00Z'),
+  )
+  expect(summary.total).toMatchObject({ estimatedCostUsd: 0.001, pricedTurns: 1, turns: 2 })
+  expect(summary.models[0]).toMatchObject({ estimatedCostUsd: 0.001, pricedTurns: 1 })
 })

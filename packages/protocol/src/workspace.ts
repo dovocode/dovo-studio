@@ -203,6 +203,8 @@ export const turnSchema = mutableStruct({
   error: Schema.optional(Schema.String),
   /** Tokens this turn used, when the provider reports them. */
   tokens: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.nonNegative())),
+  /** Local standard API price estimate, not an amount billed by a subscription. */
+  estimatedCostUsd: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.nonNegative())),
 })
 export const taskModelSchema = mutableStruct({
   acpInstallationId: Schema.optional(Schema.NullOr(agentSchema.fields.acpInstallationId.from)),

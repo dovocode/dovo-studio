@@ -107,3 +107,48 @@ it('counts the tokens of one turn for each provider', () => {
   expect(opencodeV2.total()).toBe(100)
   expect(turnTokenCounter('acp', () => undefined).total()).toBeUndefined()
 })
+
+it('keeps the billable token categories for a Codex turn and a Claude result', () => {
+  const codex = turnTokenCounter('codex', () => 'main')
+  const event = (
+    input: number,
+    output: number,
+    cached: number,
+    lastInput: number,
+    lastOutput: number,
+    lastCached: number,
+  ) => ({
+    threadId: 'main',
+    tokenUsage: {
+      total: {
+        inputTokens: input,
+        outputTokens: output,
+        cachedInputTokens: cached,
+        totalTokens: input + output,
+      },
+      last: {
+        inputTokens: lastInput,
+        outputTokens: lastOutput,
+        cachedInputTokens: lastCached,
+        totalTokens: lastInput + lastOutput,
+      },
+    },
+  })
+  codex.accept('thread/tokenUsage/updated', event(1000, 100, 500, 200, 20, 100))
+  codex.accept('thread/tokenUsage/updated', event(1300, 150, 700, 300, 50, 200))
+  expect(codex.usage()).toEqual({ input: 200, output: 70, cacheRead: 300, cacheWrite: 0 })
+
+  const claude = turnTokenCounter('claude', () => undefined)
+  claude.accept('result', {
+    type: 'result',
+    usage: {
+      input_tokens: 10,
+      output_tokens: 20,
+      cache_read_input_tokens: 300,
+      cache_creation_input_tokens: 50,
+    },
+    modelUsage: { 'claude-sonnet-4-6': { inputTokens: 360 } },
+  })
+  expect(claude.usage()).toEqual({ input: 10, output: 20, cacheRead: 300, cacheWrite: 50 })
+  expect(claude.model()).toBe('claude-sonnet-4-6')
+})

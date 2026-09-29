@@ -10,6 +10,8 @@ export type UsageRow = {
   /** Tokens from turns that reported them; `tokenTurns` says how many did. */
   tokens: number
   tokenTurns: number
+  estimatedCostUsd: number
+  pricedTurns: number
 }
 export type UsageSummary = { total: UsageRow; models: UsageRow[]; tasks: UsageRow[] }
 
@@ -22,6 +24,8 @@ const empty = (key: string, label: string, detail?: string): UsageRow => ({
   durationMs: 0,
   tokens: 0,
   tokenTurns: 0,
+  estimatedCostUsd: 0,
+  pricedTurns: 0,
 })
 
 /** Time, turns and tokens of agent turns that started since `since`, across computers, per
@@ -61,6 +65,10 @@ export function usageSummary(
             row.tokens += turn.tokens
             row.tokenTurns++
           }
+          if (turn.estimatedCostUsd !== undefined) {
+            row.estimatedCostUsd += turn.estimatedCostUsd
+            row.pricedTurns++
+          }
         }
       }
     }
@@ -84,4 +92,7 @@ export function formatUsageTokens(tokens: number) {
     : tokens >= 1000
       ? `${Math.round(tokens / 1000)}k`
       : String(tokens)
+}
+export function formatUsageCost(usd: number) {
+  return usd < 0.01 && usd > 0 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`
 }

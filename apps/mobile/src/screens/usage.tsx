@@ -1,6 +1,12 @@
 import { useMemo, useState } from 'react'
 import { ScrollView, View } from 'react-native'
-import { formatUsageDuration, formatUsageTokens, usageSummary, type UsageRow } from '@dovo/protocol'
+import {
+  formatUsageCost,
+  formatUsageDuration,
+  formatUsageTokens,
+  usageSummary,
+  type UsageRow,
+} from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { Choice } from '../ui/controls/choice'
 import { ScreenHeader } from '../ui/layout/screen-header'
@@ -32,6 +38,9 @@ function Row({ row, first }: { row: UsageRow; first: boolean }) {
         {row.turns} {row.turns === 1 ? 'turn' : 'turns'}
         {row.failed ? ` (${row.failed} failed)` : ''} · {formatUsageDuration(row.durationMs)}
         {tokens}
+        {row.pricedTurns
+          ? ` · ${formatUsageCost(row.estimatedCostUsd)} est.${row.pricedTurns < row.turns ? '*' : ''}`
+          : ''}
       </Text>
     </View>
   )
@@ -77,6 +86,15 @@ export default function UsageScreen() {
           {!!total.tokenTurns && (
             <Text style={styles.muted}>{formatUsageTokens(total.tokens)} tokens reported</Text>
           )}
+          {!!total.pricedTurns && (
+            <Text style={styles.muted}>
+              {formatUsageCost(total.estimatedCostUsd)} API-equivalent estimate
+            </Text>
+          )}
+          <Text style={styles.muted}>
+            Estimated cost uses local token counts and standard API rates. It is not your
+            subscription bill; * marks incomplete totals.
+          </Text>
           <Choice
             label="Period"
             value={period}

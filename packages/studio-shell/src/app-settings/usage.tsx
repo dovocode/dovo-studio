@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   formatUsageDuration,
+  formatUsageCost,
   formatUsageTokens,
   usageSummary,
   useWorkspace,
@@ -20,6 +21,7 @@ function Rows({ rows }: { rows: UsageRow[] }) {
           <th className="py-1.5 text-right font-normal">Turns</th>
           <th className="py-1.5 text-right font-normal">Agent time</th>
           <th className="py-1.5 text-right font-normal">Tokens</th>
+          <th className="py-1.5 text-right font-normal">Est. cost</th>
         </tr>
       </thead>
       <tbody>
@@ -52,6 +54,17 @@ function Rows({ rows }: { rows: UsageRow[] }) {
             >
               {row.tokenTurns ? formatUsageTokens(row.tokens) : '—'}
               {row.tokenTurns && row.tokenTurns < row.turns ? '*' : ''}
+            </td>
+            <td
+              className="py-1.5 text-right tabular-nums"
+              title={
+                row.pricedTurns < row.turns
+                  ? `${row.turns - row.pricedTurns} turns could not be priced`
+                  : undefined
+              }
+            >
+              {row.pricedTurns ? formatUsageCost(row.estimatedCostUsd) : '—'}
+              {row.pricedTurns && row.pricedTurns < row.turns ? '*' : ''}
             </td>
           </tr>
         ))}
@@ -92,7 +105,7 @@ export default function UsageSettings() {
   return (
     <SettingsPage
       title="Usage & limits"
-      description="Agent turns on your computers. Tokens appear for agents that report them; * marks totals that miss some turns."
+      description="Agent turns on your computers. Cost is a local API-equivalent estimate, not your subscription bill. * marks incomplete totals."
     >
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm">
@@ -106,6 +119,16 @@ export default function UsageSettings() {
                 {formatUsageTokens(total.tokens)}
               </span>{' '}
               tokens
+            </>
+          ) : null}
+          {total.pricedTurns ? (
+            <>
+              {' '}
+              ·{' '}
+              <span className="font-medium tabular-nums">
+                {formatUsageCost(total.estimatedCostUsd)}
+              </span>{' '}
+              estimated
             </>
           ) : null}
         </p>

@@ -1,6 +1,12 @@
 import type { Agent } from '@dovo/protocol'
 
 export type ContextUsage = { used?: number; limit?: number }
+export type TurnTokenUsage = {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -84,6 +90,11 @@ export function turnTokenCounter(
   let codexStart: number | undefined
   let codexLatest: number | undefined
   let claude: number | undefined
+  let codexStartUsage: TurnTokenUsage | undefined
+  let codexLatestUsage: TurnTokenUsage | undefined
+  let claudeUsage: TurnTokenUsage | undefined
+  let claudeModel: string | undefined
+  let claudeMixedModels = false
   const opencode = new Map<string, number>()
   let opencodeV2: number | undefined
   return {
@@ -99,15 +110,55 @@ export function turnTokenCounter(
         // The thread total is cumulative; before this turn it was total minus this request.
         codexStart ??= Math.max(0, total - (count(record(usage.last).totalTokens) ?? 0))
         codexLatest = total
+        const totalParts = record(usage.total)
+        const lastParts = record(usage.last)
+        const parts = (value: Record<string, unknown>): TurnTokenUsage | undefined => {
+          const input = count(value.inputTokens)
+          const output = count(value.outputTokens)
+          const cacheRead = count(value.cachedInputTokens)
+          if (input === undefined || output === undefined || cacheRead === undefined)
+            return undefined
+          return {
+            input: Math.max(0, input - cacheRead - (count(value.cacheWriteInputTokens) ?? 0)),
+            output,
+            cacheRead,
+            cacheWrite: count(value.cacheWriteInputTokens) ?? 0,
+          }
+        }
+        const current = parts(totalParts)
+        const last = parts(lastParts)
+        if (current && last) {
+          codexStartUsage ??= {
+            input: Math.max(0, current.input - last.input),
+            output: Math.max(0, current.output - last.output),
+            cacheRead: Math.max(0, current.cacheRead - last.cacheRead),
+            cacheWrite: Math.max(0, current.cacheWrite - last.cacheWrite),
+          }
+          codexLatestUsage = current
+        }
       }
       if (provider === 'claude' && event.type === 'result') {
         const usage = record(event.usage)
+        const models = Object.entries(record(event.modelUsage)).sort(
+          (a, b) => (count(record(b[1]).inputTokens) ?? 0) - (count(record(a[1]).inputTokens) ?? 0),
+        )
+        claudeMixedModels = models.length > 1
+        claudeModel = models.length === 1 ? models[0]?.[0] : undefined
         claude = sum(
           usage.input_tokens,
           usage.output_tokens,
           usage.cache_read_input_tokens,
           usage.cache_creation_input_tokens,
         )
+        const input = count(usage.input_tokens)
+        const output = count(usage.output_tokens)
+        if (input !== undefined && output !== undefined)
+          claudeUsage = {
+            input,
+            output,
+            cacheRead: count(usage.cache_read_input_tokens) ?? 0,
+            cacheWrite: count(usage.cache_creation_input_tokens) ?? 0,
+          }
       }
       if (provider === 'opencode' && name === 'message.updated') {
         const info = record(record(event.properties).info)
@@ -133,6 +184,23 @@ export function turnTokenCounter(
         return [...opencode.values()].reduce((total, value) => total + value, 0)
       if (provider === 'opencode') return opencodeV2
       return undefined
+    },
+    usage(): TurnTokenUsage | undefined {
+      if (provider === 'claude') return claudeUsage
+      if (provider !== 'codex' || !codexStartUsage || !codexLatestUsage) return undefined
+      const delta = {
+        input: codexLatestUsage.input - codexStartUsage.input,
+        output: codexLatestUsage.output - codexStartUsage.output,
+        cacheRead: codexLatestUsage.cacheRead - codexStartUsage.cacheRead,
+        cacheWrite: codexLatestUsage.cacheWrite - codexStartUsage.cacheWrite,
+      }
+      return Object.values(delta).every((value) => value >= 0) ? delta : undefined
+    },
+    model() {
+      return claudeModel
+    },
+    mixedModels() {
+      return claudeMixedModels
     },
   }
 }
