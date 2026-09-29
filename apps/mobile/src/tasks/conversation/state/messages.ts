@@ -66,8 +66,9 @@ export function conversationMessages(task: Task, events: ToolEvents): ThreadMess
             content.push({ type: 'data', name: 'dovo.reasoning', data: reasoning.splice(0) })
         }
         const entries = at.get(offset)!.sort((left, right) => {
-          const a = left.kind === 'tool' ? left.tool.time : left.event.at
-          const b = right.kind === 'tool' ? right.tool.time : right.event.at
+          const a = left.kind === 'tool' ? (left.tool.startedAt ?? left.tool.time) : left.event.at
+          const b =
+            right.kind === 'tool' ? (right.tool.startedAt ?? right.tool.time) : right.event.at
           return a.localeCompare(b)
         })
         for (const entry of entries) {

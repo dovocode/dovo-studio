@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { Pressable, View } from 'react-native'
 import { activitySummary, toolPresentation, type Task } from '@dovo/protocol'
@@ -7,7 +9,6 @@ import { colors, styles } from '../../../ui/theme'
 import {
   activityIdentity,
   activityOutcome,
-  pendingActivity,
   taskToolEvents,
   type ToolEvents,
 } from '../state/tool-events'
@@ -21,7 +22,11 @@ export function TaskActivity({
   events: ToolEvents
   error: string
 }) {
-  const [open, setOpen] = useApplicationState(false)
+  const { toolActivity } = useMobilePreferences()
+  const [open, setOpen] = useApplicationState(toolActivity === 'expanded')
+  useEffect(() => {
+    setOpen(toolActivity === 'expanded')
+  }, [toolActivity])
   const activity = taskToolEvents(task, events).reverse()
   const reasoning = activity.filter(
     (event) =>
@@ -29,7 +34,6 @@ export function TaskActivity({
       toolPresentation(event.payload, event.summary, event.inputPayload).kind === 'reasoning',
   )
   const tools = activity.filter((event) => !reasoning.includes(event))
-  const active = [...tools].reverse().find((event) => pendingActivity(event.status))
   if (!activity.length && !error) return null
   return (
     <View
@@ -39,7 +43,7 @@ export function TaskActivity({
       }}
     >
       <ReasoningActivity events={reasoning} />
-      {tools.length > 0 && !(tools.length === 1 && active) && (
+      {tools.length > 0 && (
         <Pressable
           accessibilityRole="button"
           accessibilityState={{
@@ -75,7 +79,6 @@ export function TaskActivity({
           {error}
         </Text>
       )}
-      {!open && active && <ToolActivityRow key={activityIdentity(active)} event={active} compact />}
       {open &&
         tools.map((event) => <ToolActivityRow key={activityIdentity(event)} event={event} />)}
     </View>

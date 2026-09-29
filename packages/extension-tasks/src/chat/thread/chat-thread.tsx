@@ -175,7 +175,7 @@ export function ChatThread({
                       {timeline.map((block, index) =>
                         block.kind === 'activity' ? (
                           <TaskActivity
-                            key={`activity-${block.offset}`}
+                            key={block.key}
                             turn={index === 0 ? turn : undefined}
                             status={turn.status}
                             tools={block.tools}

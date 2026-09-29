@@ -74,3 +74,65 @@ it('does not split a streamed sentence in the middle of a word', () => {
     ' I will inspect it.',
   ])
 })
+
+it('keeps tool groups distinct when compaction splits tools at the same text offset', () => {
+  const before = tool('before', 0)
+  const after = {
+    ...tool('after', 0),
+    time: '2026-09-29T10:00:02Z',
+    startedAt: '2026-09-29T10:00:02Z',
+  }
+  const blocks = threadTimeline(
+    '',
+    [before, after],
+    [
+      {
+        at: '2026-09-29T10:00:01Z',
+        turnId: 'turn',
+        sessionId: 'session',
+        provider: 'codex',
+        trigger: 'auto',
+        textOffset: 0,
+      },
+    ],
+  )
+  const keys = blocks.flatMap((block) => (block.kind === 'activity' ? [block.key] : []))
+  expect(keys).toHaveLength(2)
+  expect(new Set(keys).size).toBe(keys.length)
+})
+it('preserves group identity when a streamed word boundary moves', () => {
+  const before = threadTimeline('Checking the check', [tool('first', 15)])
+  const after = threadTimeline('Checking the checkout now.', [tool('first', 15)])
+  const firstKey = (blocks: ReturnType<typeof threadTimeline>) =>
+    blocks.flatMap((block) =>
+      block.kind === 'activity' && block.tools.length ? [block.key] : [],
+    )[0]
+  expect(firstKey(before)).toBeDefined()
+  expect(firstKey(before)).toBe(firstKey(after))
+})
+
+it('keeps a tool in its original group when it finishes after compaction', () => {
+  const start = {
+    ...tool('first', 0),
+    time: '2026-09-29T10:00:00Z',
+    startedAt: '2026-09-29T10:00:00Z',
+  }
+  const compaction = {
+    at: '2026-09-29T10:00:01Z',
+    turnId: 'turn',
+    sessionId: 'session',
+    provider: 'codex' as const,
+    trigger: 'auto' as const,
+    textOffset: 0,
+  }
+  const before = threadTimeline('', [start], [compaction])
+  const after = threadTimeline(
+    '',
+    [{ ...start, time: '2026-09-29T10:00:02Z', status: 'completed' }],
+    [compaction],
+  )
+  expect(after.map((block) => block.kind)).toEqual(before.map((block) => block.kind))
+  expect(after.flatMap((block) => (block.kind === 'activity' ? [block.key] : []))).toEqual(
+    before.flatMap((block) => (block.kind === 'activity' ? [block.key] : [])),
+  )
+})

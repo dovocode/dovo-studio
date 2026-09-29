@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Effect, Schema } from 'effect'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useId, useMemo } from 'react'
 import {
   activitySchema,
   startPolling,
@@ -123,6 +123,7 @@ export function TaskActivity({
   status?: TaskTurn['status']
 }) {
   // Settings → General → Conversation → Tool activity; Ctrl+O switches it from the task.
+  const detailsId = useId()
   const { toolActivity } = useAppPreferences()
   const [expanded, setExpanded] = useApplicationState(
     () => readAppPreferences().toolActivity === 'expanded',
@@ -138,7 +139,9 @@ export function TaskActivity({
           presentation: toolPresentation(tool.payload, tool.summary, tool.inputPayload),
           state: taskActivityState(tool.status, turn?.status ?? status),
         }))
-        .sort((a, b) => a.tool.time.localeCompare(b.tool.time)),
+        .sort((a, b) =>
+          (a.tool.startedAt ?? a.tool.time).localeCompare(b.tool.startedAt ?? b.tool.time),
+        ),
     [tools, turn?.status, status],
   )
   const running = entries.filter((entry) => entry.state === 'running')
@@ -162,12 +165,14 @@ export function TaskActivity({
   return (
     <section className="min-w-0 text-xs" aria-label="Task tool activity">
       {tools.length ? (
-        <details
-          className="group/activity min-w-0"
-          open={expanded}
-          onToggle={(event) => setExpanded(event.currentTarget.open)}
-        >
-          <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 rounded py-1.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
+        <div className="min-w-0">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={expanded ? detailsId : undefined}
+            onClick={() => setExpanded((value) => !value)}
+            className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+          >
             <Icon
               aria-hidden
               className={`size-3.5 shrink-0 ${current ? 'animate-pulse motion-reduce:animate-none' : ''}`}
@@ -182,11 +187,11 @@ export function TaskActivity({
             )}
             <ChevronRight
               aria-hidden
-              className="size-3.5 shrink-0 transition-transform group-open/activity:rotate-90 motion-reduce:transition-none"
+              className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${expanded ? 'rotate-90' : ''}`}
             />
-          </summary>
+          </button>
           {expanded && (
-            <div className="space-y-0.5 pb-2 pl-1">
+            <div id={detailsId} className="space-y-0.5 pb-2 pl-1">
               {entries.map(({ tool, presentation, state }) => (
                 <ActivityEntry
                   key={tool.id}
@@ -215,7 +220,7 @@ export function TaskActivity({
               )}
             </div>
           )}
-        </details>
+        </div>
       ) : (
         turn &&
         turn.status !== 'running' && (

@@ -3,7 +3,7 @@ import type { recentTools, Task } from '@dovo/studio-core'
 type Tool = ReturnType<typeof recentTools>[number]
 type Compaction = NonNullable<Task['compactions']>[number]
 export type ThreadBlock =
-  | { kind: 'activity'; offset: number; tools: Tool[] }
+  | { kind: 'activity'; key: string; offset: number; tools: Tool[] }
   | { kind: 'compaction'; offset: number; event: Compaction }
   | { kind: 'text'; offset: number; text: string }
 
@@ -50,16 +50,22 @@ export function threadTimeline(
     if (offset > cursor)
       blocks.push({ kind: 'text', offset: cursor, text: text.slice(cursor, offset) })
     const entries = at.get(offset)!.sort((left, right) => {
-      const a = left.kind === 'tool' ? left.tool.time : left.event.at
-      const b = right.kind === 'tool' ? right.tool.time : right.event.at
+      const a = left.kind === 'tool' ? (left.tool.startedAt ?? left.tool.time) : left.event.at
+      const b = right.kind === 'tool' ? (right.tool.startedAt ?? right.tool.time) : right.event.at
       return a.localeCompare(b)
     })
     if (offset === 0 && entries[0]?.kind === 'compaction')
-      blocks.push({ kind: 'activity', offset, tools: [] })
+      blocks.push({ kind: 'activity', key: 'activity:0:start', offset, tools: [] })
     let current: Tool[] = []
+    let segment = 'start'
     const flush = () => {
       if (current.length || (!entries.length && offset === 0)) {
-        blocks.push({ kind: 'activity', offset, tools: current })
+        blocks.push({
+          kind: 'activity',
+          key: `activity:${current.length ? Math.min(...current.map((tool) => tool.textOffset ?? 0)) : offset}:${segment}`,
+          offset,
+          tools: current,
+        })
         current = []
       }
     }
@@ -68,6 +74,7 @@ export function threadTimeline(
       else {
         flush()
         blocks.push({ kind: 'compaction', offset, event: entry.event })
+        segment = entry.event.at
       }
     }
     flush()

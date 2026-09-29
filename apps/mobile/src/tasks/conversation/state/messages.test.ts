@@ -296,3 +296,25 @@ it('does not keep the assistant message streaming after the task stops before it
   expect(message.status).toEqual({ type: 'incomplete', reason: 'error' })
   expect(message.content[1]).toMatchObject({ artifact: { status: 'interrupted' } })
 })
+
+it('preserves the first tool group identity when concurrent tools finish out of order', () => {
+  const tool = (id: string, call: string, status: string, seconds: number): ToolEvents[number] => ({
+    ...event(id, 't2', status),
+    time: `2026-09-13T10:00:0${seconds}Z`,
+    payload: JSON.stringify({ turnId: 't2', toolId: call, status, textOffset: 0 }),
+  })
+  const starts = [tool('b-start', 'second', 'running', 1), tool('a-start', 'first', 'running', 0)]
+  const ids = (events: ToolEvents) => {
+    const content = conversationMessages(task, events).find(
+      (message) => message.id === 'a2',
+    )?.content
+    return typeof content === 'string'
+      ? []
+      : content?.flatMap((part) => (part.type === 'tool-call' ? [part.toolCallId] : []))
+  }
+  expect(ids(starts)).toEqual(['t2:first', 't2:second'])
+  expect(ids([tool('a-end', 'first', 'completed', 2), ...starts])).toEqual([
+    't2:first',
+    't2:second',
+  ])
+})

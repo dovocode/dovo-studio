@@ -1,6 +1,6 @@
-import { readMobilePreferences } from '../../../runtime/preferences/app-preferences'
+import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { useApplicationState } from '../../../runtime/state/application-state'
-import { type PropsWithChildren } from 'react'
+import { useEffect, type PropsWithChildren } from 'react'
 import { Pressable, View } from 'react-native'
 import { activitySchema, activitySummary, decodeResult, mutableStruct } from '@dovo/protocol'
 import { Schema } from 'effect'
@@ -9,8 +9,7 @@ import { useTaskConversation } from '../state/provider'
 import { Text } from '../../../ui/content/text'
 import { colors, styles } from '../../../ui/theme'
 import { Icon } from '../../../ui/controls/icon'
-import { ToolActivityRow } from './tool-activity-row'
-import { activityIdentity, activityOutcome, pendingActivity } from '../state/tool-events'
+import { activityOutcome } from '../state/tool-events'
 
 const toolSchema = mutableStruct({
   ...activitySchema.fields.events.value.fields,
@@ -35,7 +34,6 @@ export function ConversationWorkGroup({
     const parsed = decodeResult(toolSchema, part.artifact)
     return parsed.success ? [parsed.data] : []
   })
-  const active = [...groupEvents].reverse().find((event) => pendingActivity(event.status))
   const summary = [activitySummary(groupEvents), activityOutcome(groupEvents)]
     .filter(Boolean)
     .join(' · ')
@@ -43,9 +41,11 @@ export function ConversationWorkGroup({
   const workStatus =
     turn?.status === 'running' && message.status?.type !== 'running' ? 'interrupted' : turn?.status
   // Settings → General → Tool activity.
-  const [open, setOpen] = useApplicationState(
-    () => readMobilePreferences().toolActivity === 'expanded',
-  )
+  const { toolActivity } = useMobilePreferences()
+  const [open, setOpen] = useApplicationState(toolActivity === 'expanded')
+  useEffect(() => {
+    setOpen(toolActivity === 'expanded')
+  }, [toolActivity])
   const now = Date.now()
   const seconds = turn
     ? Math.max(
@@ -62,8 +62,6 @@ export function ConversationWorkGroup({
       : `${seconds}s`
     : undefined
   const count = endIndex - startIndex + 1
-  if (groupEvents.length === 1 && active)
-    return <ToolActivityRow key={activityIdentity(active)} event={active} compact />
   return (
     <View>
       <Pressable
@@ -72,7 +70,7 @@ export function ConversationWorkGroup({
         accessibilityHint={`${count} ${count === 1 ? 'tool call' : 'tool calls'}`}
         accessibilityState={{ expanded: open }}
         onPress={() => {
-          setOpen(!open)
+          setOpen((value) => !value)
         }}
         style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}
       >
@@ -93,7 +91,6 @@ export function ConversationWorkGroup({
                   : 'Completed'}
         </Text>
       )}
-      {!open && active && <ToolActivityRow key={activityIdentity(active)} event={active} compact />}
       {open && <View style={{ paddingBottom: 6 }}>{children}</View>}
     </View>
   )

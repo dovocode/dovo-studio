@@ -52,6 +52,7 @@ export function retainActivityEvents(previous: Event[], next: Event[]): Event[] 
 }
 
 type Tool = Event & {
+  startedAt?: string
   status: string
   turnId?: string
   inputPayload?: string
@@ -123,7 +124,7 @@ export function recentTools(events: Event[]): Tool[] {
   const tools = new Map<string, Tool>()
   for (const { key, ...event } of parsed) {
     const previous = tools.get(key)
-    if (!previous) tools.set(key, event)
+    if (!previous) tools.set(key, { ...event, startedAt: event.time })
     else {
       const summary =
         ['Tool result', 'Tool update'].includes(previous.summary) &&
@@ -132,6 +133,10 @@ export function recentTools(events: Event[]): Tool[] {
           : previous.summary
       tools.set(key, {
         ...previous,
+        startedAt:
+          event.time < (previous.startedAt ?? previous.time)
+            ? event.time
+            : (previous.startedAt ?? previous.time),
         summary,
         inputPayload: pending(event.status) ? event.payload : previous.inputPayload,
         textOffset: pending(event.status)
