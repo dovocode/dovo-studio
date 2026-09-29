@@ -369,6 +369,48 @@ export class Tasks {
     this.activity?.add('task', fork.id, 'Forked from another task', { taskId: id, turnId })
     return { id: fork.id }
   }
+  /** Empty conversation in this checkout, or an independent snapshot of its current files. */
+  async newWorktreeThread(id: string, mode: 'reuse' | 'fork') {
+    const source = this.store.task(id)
+    if (source.execution !== 'worktree' || (!source.checkoutBranch && !source.existingWorktreePath))
+      throw new HttpError(409, 'Prepare a worktree before starting another thread in it.')
+    if (source.status === 'running')
+      throw new HttpError(409, 'Wait for the running thread to finish.')
+    const cwd = await this.checkouts.directory(id)
+    return this.withCheckoutMutation(cwd, async () => {
+      const forkId = randomUUID()
+      const head =
+        mode === 'fork' ? (await this.git.command(cwd, ['rev-parse', 'HEAD'])).trim() : undefined
+      if (head) await this.git.command(cwd, ['update-ref', `refs/dovo/forks/${forkId}/head`, head])
+      const snapshot =
+        mode === 'fork'
+          ? await this.git.snapshot(cwd, `refs/dovo/forks/${forkId}/source`)
+          : undefined
+      const task: Task = {
+        id: forkId,
+        title: mode === 'fork' ? `Fork: ${source.title}`.slice(0, 200) : 'New thread',
+        repositoryId: source.repositoryId,
+        agentId: source.agentId,
+        harness: source.harness,
+        agentOverrides: source.agentOverrides,
+        execution: 'worktree',
+        ...(mode === 'reuse'
+          ? { existingWorktreePath: cwd }
+          : {
+              forkedFrom: { taskId: id, title: source.title, head, snapshot },
+              setupCommand: source.setupCommand,
+            }),
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        messages: [],
+        files: [],
+        draft: '',
+        example: false,
+      }
+      this.store.update((workspace) => ({ ...workspace, tasks: [...workspace.tasks, task] }))
+      return { id: task.id }
+    })
+  }
   /** Removes a review comment the agent has not received yet. Sent comments are history. */
   removeFeedback(id: string, messageId: string) {
     const task = this.store.task(id)

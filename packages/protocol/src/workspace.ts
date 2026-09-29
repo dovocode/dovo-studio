@@ -257,7 +257,8 @@ export const taskSchema = mutableStruct({
   forkedFrom: Schema.optional(
     mutableStruct({
       taskId: Schema.String,
-      turnId: Schema.String,
+      turnId: Schema.optional(Schema.String),
+      head: Schema.optional(Schema.String),
       title: maxValue(Schema.String, 400),
       snapshot: Schema.optional(Schema.String),
     }),

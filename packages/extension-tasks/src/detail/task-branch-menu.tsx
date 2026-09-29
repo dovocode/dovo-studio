@@ -1,8 +1,10 @@
+import { Schema } from 'effect'
+import { mutableStruct } from '@dovo/protocol'
 import { useEffect } from 'react'
 import { ArrowRightLeft, Check, Copy, FolderOpen, GitBranch } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { canChangeTaskCheckout } from '@dovo/protocol'
-import { responses, useWorkspace, type Task } from '@dovo/studio-core'
+import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
 import {
   Button,
   Dialog,
@@ -19,6 +21,19 @@ const item =
  * checkout in Finder, VS Code or Cursor on the computer that runs it. */
 export function TaskBranchMenu({ task, label }: { task: Task; label: string }) {
   const { request, connected } = useWorkspace()
+  const host = useStudioHost()
+  const [creating, setCreating] = useApplicationState(false)
+  const newThread = (mode: 'reuse' | 'fork') => {
+    setCreating(true)
+    void request(
+      '/api/tasks/worktree-thread',
+      { id: task.id, mode },
+      mutableStruct({ id: Schema.String }),
+    )
+      .then((result) => host.navigate({ viewId: 'tasks', entityId: result.id }))
+      .catch((cause: unknown) => setNotice(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setCreating(false))
+  }
   const [notice, setNotice] = useApplicationState('')
   const [moving, setMoving] = useApplicationState(false)
   const [moveBusy, setMoveBusy] = useApplicationState(false)
@@ -72,7 +87,7 @@ export function TaskBranchMenu({ task, label }: { task: Task; label: string }) {
         <button
           type="button"
           title={branch ? `${branch} · Copy or open` : label}
-          className="hidden max-w-56 items-center gap-1 truncate rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:inline-flex"
+          className="inline-flex max-w-56 items-center gap-1 truncate rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:inline-flex"
         >
           {notice === 'Copied' ? (
             <Check size={10} className="shrink-0 text-emerald-400" />
@@ -88,6 +103,25 @@ export function TaskBranchMenu({ task, label }: { task: Task; label: string }) {
           align="start"
           className="z-50 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
         >
+          {inWorktree && (task.checkoutBranch || task.existingWorktreePath) && (
+            <>
+              <DropdownMenu.Item
+                className={item}
+                disabled={!connected || creating || task.status === 'running'}
+                onSelect={() => newThread('reuse')}
+              >
+                <GitBranch className="size-3.5" /> New thread in this worktree
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                className={item}
+                disabled={!connected || creating || task.status === 'running'}
+                onSelect={() => newThread('fork')}
+              >
+                <Copy className="size-3.5" /> Fork worktree
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator className="my-1 h-px bg-border" />
+            </>
+          )}
           <DropdownMenu.Item
             className={item}
             disabled={!branch}

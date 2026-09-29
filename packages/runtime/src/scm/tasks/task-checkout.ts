@@ -165,11 +165,15 @@ export class TaskCheckout {
     const base = refs?.branches.find(
       (branch) => branch.ref === selection || branch.name === selection,
     )?.ref
-    if (!task.pullRequest && (!base || !refs?.branches.some((branch) => branch.ref === base)))
+    if (
+      !task.pullRequest &&
+      !task.forkedFrom?.head &&
+      (!base || !refs?.branches.some((branch) => branch.ref === base))
+    )
       throw new HttpError(400, 'Choose an existing base branch for the worktree')
     const head = task.pullRequest
       ? await fetchPullHead(this.git, root, task.pullRequest, key)
-      : (base ?? 'HEAD')
+      : (task.forkedFrom?.head ?? base ?? 'HEAD')
     this.progress(id, steps, 'worktree', branch)
     await this.git.command(root, ['worktree', 'add', '-b', branch, directory, head])
     // A fork starts from the files of the turn it was forked at, not the branch tip.

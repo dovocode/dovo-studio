@@ -337,3 +337,49 @@ it('reverts one file, forks from a turn with its files, retries, and marks revie
   await vi.waitFor(() => expect(prompts).toHaveLength(3), { timeout: 10000 })
   expect(prompts.at(-1)).toContain('Review mode:')
 })
+
+it('starts empty threads in an existing worktree or forks its current files independently', async () => {
+  const { s, call } = await setup()
+  const source = s.tasks.create({
+    title: 'Source',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Prepare',
+  })
+  const cwd = await s.checkouts.directory(source.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  const branch = (await exec('git', ['branch', '--show-current'], { cwd })).stdout.trim()
+  s.store.updateTask(source.id, (task) => ({ ...task, checkoutBranch: branch }))
+  await writeFile(join(cwd, 'hello.txt'), 'unsent edits\n')
+  await writeFile(join(cwd, 'untracked.txt'), 'new file\n')
+  const head = (await exec('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim()
+  const reused = await call('/api/tasks/worktree-thread', { id: source.id, mode: 'reuse' })
+  expect(reused.status).toBe(200)
+  const next = s.store.task(String(reused.body.id))
+  expect(next).toMatchObject({ messages: [], status: 'draft', existingWorktreePath: cwd })
+  expect(await s.checkouts.directory(next.id)).toBe(cwd)
+  const forked = await call('/api/tasks/worktree-thread', { id: source.id, mode: 'fork' })
+  expect(forked.status).toBe(200)
+  const fork = s.store.task(String(forked.body.id))
+  expect(fork).toMatchObject({
+    messages: [],
+    status: 'draft',
+    forkedFrom: { head, taskId: source.id },
+  })
+  await writeFile(join(cwd, 'hello.txt'), 'later source edit\n')
+  s.store.updateTask(fork.id, (task) => ({
+    ...task,
+    messages: [{ id: 'first-fork-prompt', role: 'user', text: 'Continue' }],
+  }))
+  const forkCwd = await s.checkouts.directory(fork.id)
+  cleanups.push(() => rm(forkCwd, { recursive: true, force: true }))
+  expect(forkCwd).not.toBe(cwd)
+  expect(await readFile(join(forkCwd, 'hello.txt'), 'utf8')).toBe('unsent edits\n')
+  expect(await readFile(join(forkCwd, 'untracked.txt'), 'utf8')).toBe('new file\n')
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('later source edit\n')
+  s.store.updateTask(source.id, (task) => ({ ...task, status: 'running' }))
+  expect((await call('/api/tasks/worktree-thread', { id: source.id, mode: 'fork' })).status).toBe(
+    409,
+  )
+})

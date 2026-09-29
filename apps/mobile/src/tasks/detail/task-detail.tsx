@@ -6,7 +6,8 @@ import {
   taskTranscript,
   taskBudgetUsage,
 } from '@dovo/protocol'
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
+import { mutableStruct } from '@dovo/protocol'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
 import { useAction } from '../../ui/controls/use-action'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -51,10 +52,31 @@ import { ProjectInstructions } from './project-instructions'
 import { ReviewFindings } from '../conversation/components/review-findings'
 import { randomUUID } from 'expo-crypto'
 export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void }) {
-  const { focused } = useNavigation()
+  const { focused, navigate } = useNavigation()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const { snapshot, connected, profiles, callEffect } = useRuntime()
+  const worktreeThread = useAction()
+  const worktreeActions: HeaderAction[] =
+    task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
+      ? (['reuse', 'fork'] as const).map((mode) => ({
+          label: mode === 'reuse' ? 'New thread in this worktree' : 'Fork worktree',
+          icon: mode === 'reuse' ? 'chat' : 'changes',
+          overflow: true,
+          disabled: !connected || worktreeThread.busy || task.status === 'running',
+          onPress: () =>
+            worktreeThread.act(() =>
+              callEffect(
+                '/api/tasks/worktree-thread',
+                { id: task.id, mode },
+                mutableStruct({ id: Schema.String }),
+              ).pipe(Effect.tap((result) => Effect.sync(() => navigate('tasks', result.id)))),
+            ),
+        }))
+      : []
+  useEffect(() => {
+    if (worktreeThread.error) Alert.alert('Could not create thread', worktreeThread.error)
+  }, [worktreeThread.error])
   const resume = useAction()
   const preparation = taskPreparation(task)
   const budget = taskBudgetUsage(task)
@@ -358,6 +380,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
             conversationActions,
             compactActions,
             branchActions,
+            worktreeActions,
             moveActions,
             openActions,
             [

@@ -581,6 +581,13 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
         return yield* serviceResult(s.tasks.fork(input.id, input.turnId))
       }
+      if (method === 'POST' && path === '/api/tasks/worktree-thread') {
+        const input = decode(
+          mutableStruct({ id: idSchema, mode: Schema.Literal('reuse', 'fork') }),
+          yield* serviceResult(body(request)),
+        )
+        return yield* serviceResult(s.tasks.newWorktreeThread(input.id, input.mode))
+      }
       if (method === 'POST' && path === '/api/tasks/handoff') {
         const input = decode(
           mutableStruct({ id: idSchema, target: Schema.Literal('worktree', 'main') }),
