@@ -102,3 +102,6 @@ export {
 } from './conversation/workflow/pending-message.js'
 export * from './scm/work/worktrees.js'
 export * from './desktop-update.js'
+
+export * from './runtime/connection/runtime-releases.js'
+export * from './runtime/connection/runtime-upgrades.js'

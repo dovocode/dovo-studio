@@ -45,6 +45,7 @@ vi.mock('electron', () => ({
   ipcMain: { handle: fixture.ipc },
   dialog: {},
 }))
+vi.mock('./remote-updates.js', () => ({ registerRemoteUpdates: async () => undefined }))
 vi.mock('./updates.js', () => ({ registerUpdates: fixture.updates }))
 vi.mock('./browser.js', () => ({ registerBrowser: vi.fn<(...args: unknown[]) => void>() }))
 vi.mock('./links.js', () => ({ offerLink: vi.fn<(...args: unknown[]) => Promise<void>>() }))

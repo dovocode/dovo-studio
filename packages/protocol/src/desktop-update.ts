@@ -1,6 +1,7 @@
 export type DesktopUpdateState = {
   status: 'idle' | 'available' | 'downloading' | 'downloaded' | 'restarting' | 'error'
   version?: string
+  error?: string
   notes?: string
   progress?: number
   transferred?: number

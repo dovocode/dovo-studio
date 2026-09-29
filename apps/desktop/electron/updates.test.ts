@@ -236,3 +236,51 @@ it('keeps nightly updates on the prerelease channel and links nightly packages',
   expect(updater.allowPrerelease).toBe(true)
   expect(f.open).toHaveBeenCalledWith('https://github.com/dovocode/dovo-studio/releases?q=nightly')
 })
+
+it('downloads remotely without a host dialog and restarts only after an explicit command', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+  )
+  const { registerUpdates } = await import('./updates')
+  const prepare = vi.fn<() => Promise<() => Promise<void>>>(async () => async () => {})
+  const updates = registerUpdates('/unused', prepare)
+  await updates.remote('download', 'next')
+  expect(updates.state().status).toBe('downloaded')
+  expect(f.message).not.toHaveBeenCalled()
+  expect(f.install).not.toHaveBeenCalled()
+  expect(prepare).not.toHaveBeenCalled()
+  await updates.remote('restart', 'next')
+  expect(prepare).toHaveBeenCalledOnce()
+  expect(f.install).toHaveBeenCalledOnce()
+})
+it('refuses a remote restart without the requested download and reports active work', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () =>
+      Response.json({
+        ...snapshot,
+        runs: [
+          {
+            id: 'run',
+            automationId: 'automation',
+            title: 'Running',
+            status: 'running',
+            agentId: 'agent',
+            createdAt: '',
+            messages: [],
+            completedNodes: [],
+            taskIds: [],
+          },
+        ],
+      }),
+    ),
+  )
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => async () => {})
+  await expect(updates.remote('restart', 'next')).rejects.toThrow('Download')
+  await updates.remote('download', 'next')
+  await expect(updates.remote('restart', 'next')).rejects.toThrow('Finish running')
+  expect(f.install).not.toHaveBeenCalled()
+  expect(f.message).not.toHaveBeenCalled()
+})

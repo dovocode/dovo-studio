@@ -1,5 +1,6 @@
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { registerUpdates } from './updates.js'
+import { registerRemoteUpdates } from './remote-updates.js'
 import { registerBrowser } from './browser.js'
 import { offerLink } from './links.js'
 import {
@@ -241,6 +242,14 @@ const startup = Effect.gen(function* () {
         await restore()
       }
     })
+    void registerRemoteUpdates(app.getPath('userData'), updates)
+      .then((close) => {
+        if (close)
+          app.once('will-quit', () => {
+            void close().catch(console.error)
+          })
+      })
+      .catch((error: unknown) => console.error('Could not enable remote desktop updates:', error))
     ipcMain.handle('updates:state', (event) => {
       requireTrustedRenderer(event, rendererPath)
       return updates.state()

@@ -231,3 +231,22 @@ uploading the six required secrets directly to `dovocode/dovo-studio`. Password 
 secret values go to `gh secret set` over stdin, never command arguments or logs. It does not
 validate the Apple account credentials: the release job verifies notarization with Apple. It
 requires `gh` to already be signed in with permission to manage this repository's Actions secrets.
+
+### Remote and batch upgrades
+
+Desktop **Settings → Devices & runtime** and mobile **Computers** show a Computer updates panel.
+Check releases, review each host's release notes, then update one computer or select several and use
+**Update selected**. Each host reports its own download progress and failure; one failure does not
+stop the remaining requests. Offline computers and hosts with running work cannot be updated.
+
+Dovo-managed Linux archive servers prepare the update, verify it, then restart. Package-manager and
+externally launched servers still require their host's upgrade flow. Supported signed desktop apps
+(macOS, Windows, and Linux AppImage) must be open on the host to accept remote updates. They
+download first and wait for **Restart and install** or **Restart selected desktops**. A desktop
+upgrade also upgrades its bundled runtime; it is one installation, not two separate upgrades. If the
+initiating desktop is selected for restart, its command is sent last.
+
+Remote desktop control goes through the existing authenticated runtime connection, including HTTP
+LAN/VPN connections. The native updater exposes only a private loopback bridge with an owner-only
+credential file. It does not expose that credential to paired clients. After installing this release
+once on a desktop host, the remote controls become available to its paired devices.

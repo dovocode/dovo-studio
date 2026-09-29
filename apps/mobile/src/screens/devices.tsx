@@ -1,3 +1,4 @@
+import { ComputerUpdates } from './computer-updates'
 import { TaskDefaultSettings } from '../runtime/preferences/task-default-settings'
 import { RuntimePreferences } from '../runtime/connection/runtime-preferences'
 import { useEffect, useRef } from 'react'
@@ -155,6 +156,7 @@ export default function DevicesScreen() {
             onPress={() => setAdding(true)}
           />
         )}
+        {!!profiles.length && <ComputerUpdates />}
         <SettingsGroup title="Tools">
           <SettingsRow
             title="iOS Shortcuts"

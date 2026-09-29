@@ -100,8 +100,16 @@ export function registerUpdates(
       console.error('Could not restore runtime after failed update:', cause),
     )
   })
-  const check = async (direct = false) => {
-    if (busy) return
+  const check = async (
+    direct = false,
+    remote?: { action: 'download' | 'restart'; version: string },
+  ) => {
+    if (busy) {
+      if (remote) throw new Error('A desktop update is already running')
+      return
+    }
+    if (remote && (!app.isPackaged || (process.platform === 'linux' && !process.env.APPIMAGE)))
+      throw new Error('Update this desktop installation on its host')
     if (!app.isPackaged) {
       await dialog.showMessageBox({
         type: 'info',
@@ -132,7 +140,14 @@ export function registerUpdates(
     }
     busy = true
     try {
+      if (
+        remote?.action === 'restart' &&
+        (state.status !== 'downloaded' || state.version !== remote.version)
+      )
+        throw new Error('Download this desktop update before restarting')
+      if (remote?.action === 'download' && state.status !== 'downloaded') await refresh()
       if (state.status !== 'available' && state.status !== 'downloaded' && !(await refresh())) {
+        if (remote) throw new Error('No desktop update is available. Check updates again.')
         await dialog.showMessageBox({
           type: 'info',
           message: `${appName} is up to date.`,
@@ -140,6 +155,9 @@ export function registerUpdates(
         })
         return
       }
+      if (remote && state.version !== remote.version)
+        throw new Error('The available desktop release changed. Check updates again.')
+      if (remote?.action === 'download' && state.status === 'downloaded') return
       if (!direct) {
         const answer = await dialog.showMessageBox({
           type: 'info',
@@ -153,6 +171,7 @@ export function registerUpdates(
         if (answer.response !== 0) return
       }
       if (state.status !== 'downloaded') {
+        publish({ ...state, status: 'downloading', progress: 0, error: undefined })
         for (const window of BrowserWindow.getAllWindows()) window.setProgressBar(0)
         let lastProgress = 0
         const progress = (info: {
@@ -182,6 +201,7 @@ export function registerUpdates(
           autoUpdater.removeListener('download-progress', progress)
           for (const window of BrowserWindow.getAllWindows()) window.setProgressBar(-1)
         }
+        if (remote) return
         const answer = await dialog.showMessageBox({
           type: 'info',
           message: `${appName} ${state.version ?? ''} is ready`,
@@ -209,6 +229,8 @@ export function registerUpdates(
         snapshot.workspace.tasks.some((task) => task.status === 'running') ||
         snapshot.runs.some((run) => run.status === 'running')
       ) {
+        if (remote)
+          throw new Error('Finish running tasks and automations before restarting this desktop')
         await dialog.showMessageBox({
           type: 'info',
           message: 'Finish running work first',
@@ -227,6 +249,12 @@ export function registerUpdates(
       } catch (cause) {
         message += ` Runtime recovery failed: ${cause instanceof Error ? cause.message : String(cause)}`
       }
+      publish({
+        ...state,
+        status: remote?.action === 'restart' && state.progress === 100 ? 'downloaded' : 'error',
+        error: message,
+      })
+      if (remote) throw new Error(message)
       await dialog.showMessageBox({
         type: 'error',
         message: `Could not update ${appName}`,
@@ -297,5 +325,7 @@ export function registerUpdates(
     state: () => state,
     refresh,
     install: () => check(true),
+    remote: (action: 'download' | 'restart', version: string) => check(true, { action, version }),
+    supported: app.isPackaged && (process.platform !== 'linux' || !!process.env.APPIMAGE),
   }
 }

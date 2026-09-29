@@ -11,6 +11,7 @@ import {
 } from '@dovo/protocol'
 import { hostname } from 'node:os'
 import { trackRequest } from './support/request-activity.js'
+import { canUpdateDesktop, desktopUpdate } from './desktop-updates.js'
 import { canUpdateServer, serverUpdateStatus, startServerUpdate } from './server-updates.js'
 import { defaultShell } from '../terminal/shell.js'
 import { discoverProjectIcon } from '../scm/repositories/project-icon.js'
@@ -333,7 +334,10 @@ export function route(
               : process.env.DOVO_SERVER_DISTRIBUTION === 'archive'
                 ? 'archive'
                 : 'source',
-          releaseCanUpdate: canUpdateServer(),
+          releaseCanUpdate:
+            process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop'
+              ? canUpdateDesktop()
+              : canUpdateServer(),
           defaults: s.defaults.get(),
           acpInstallations: s.acpInstallations.list(),
           revision: s.store.version(),
@@ -410,20 +414,33 @@ export function route(
         }
       }
       if (method === 'GET' && path === '/api/runtime/update/status')
-        return yield* serviceResult(serverUpdateStatus())
-      if (method === 'POST' && path === '/api/runtime/update/start') {
+        return yield* serviceResult(
+          process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop'
+            ? desktopUpdate('status')
+            : serverUpdateStatus(),
+        )
+      if (
+        method === 'POST' &&
+        ['/api/runtime/update/start', '/api/runtime/update/restart'].includes(path)
+      ) {
         if (
           s.store.publicWorkspace().tasks.some((task) => task.status === 'running') ||
           s.jobs.list().some((run) => run.status === 'running')
         )
           throw new HttpError(
             409,
-            'Finish running tasks and automations before updating this server.',
+            'Finish running tasks and automations before updating this computer.',
           )
         const input = decode(
           mutableStruct({ version: maxValue(minValue(Schema.String, 1), 80) }),
           yield* serviceResult(body(request)),
         )
+        if (process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop')
+          return yield* serviceResult(
+            desktopUpdate(path.endsWith('/restart') ? 'restart' : 'download', input.version),
+          )
+        if (path.endsWith('/restart'))
+          throw new HttpError(409, 'Server updates restart automatically after installation')
         return yield* serviceResult(startServerUpdate(input.version))
       }
       if (method === 'POST' && path === '/api/runtime/cancel-restart') {
