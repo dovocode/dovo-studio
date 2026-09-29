@@ -44,6 +44,7 @@ export function backgroundRuntimeDefinition(options: BackgroundRuntimeOptions) {
     ...options.startupEnvironment,
     PATH: options.path,
     DOVO_DATABASE_PATH: join(options.directory, 'runtime.sqlite'),
+    DOVO_DESKTOP_DUAL_LISTENER: '1',
     DOVO_SETTINGS_PATH: join(options.home, '.dovo', 'settings.json'),
     DOVO_HOST: options.host,
     PORT: options.port,

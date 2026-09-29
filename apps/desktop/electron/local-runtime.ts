@@ -1,20 +1,11 @@
-import {
-  runtimeRequest,
-  runtimeRestartSchema,
-  responses,
-  RUNTIME_PROTOCOL_VERSION,
-} from '@dovo/protocol'
+import { runtimeRequest, RUNTIME_PROTOCOL_VERSION, mutableStruct } from '@dovo/protocol'
 import { homedir } from 'node:os'
-import {
-  ensureBackgroundRuntime,
-  stopBackgroundRuntimeForUpdate,
-  clearFailedBackgroundRuntime,
-} from './background-runtime.js'
+import { ensureBackgroundRuntime, stopBackgroundRuntimeForUpdate } from './background-runtime.js'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
-import { Effect, Exit, Scope } from 'effect'
+import { Effect, Exit, Scope, Schema } from 'effect'
 import { readConnection } from '../../api/src/connection.js'
 import { runtimeOwnerToken } from '../../api/src/owner-token.js'
 type Connection = {
@@ -23,7 +14,6 @@ type Connection = {
 }
 const lifecycle = Effect.runSync(Effect.makeSemaphore(1))
 let updateOwner: symbol | undefined
-let networkPort: string | undefined
 let owned:
   | {
       child: ChildProcess
@@ -247,15 +237,15 @@ const runtimeOptions = () =>
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         DOVO_RELEASE_DISTRIBUTION: 'desktop',
+        DOVO_DESKTOP_DUAL_LISTENER: '1',
         ...(app.isPackaged ? { DOVO_RELEASE_VERSION: app.getVersion() } : {}),
         DOVO_OWNER_TOKEN: token,
         DOVO_DATABASE_PATH: join(app.getPath('userData'), 'runtime.sqlite'),
         DOVO_SETTINGS_PATH: join(homedir(), '.dovo', 'settings.json'),
         PORT:
-          networkPort ??
-          (process.env.DOVO_PORT && process.env.DOVO_PORT !== '0'
+          process.env.DOVO_PORT && process.env.DOVO_PORT !== '0'
             ? process.env.DOVO_PORT
-            : (saved?.port ?? process.env.DOVO_PORT ?? '8787')),
+            : (saved?.port ?? process.env.DOVO_PORT ?? '8787'),
         DOVO_HOST: process.env.DOVO_HOST ?? saved?.host ?? '127.0.0.1',
       }
       delete env.ELECTRON_RUN_AS_NODE
@@ -364,17 +354,14 @@ function launch(directory: string) {
                 'address' in value && typeof value.address === 'string'
                   ? value.address
                   : `http://${host}:${port}`
-              writeFileSync(
-                listenPath + '.tmp',
-                JSON.stringify({
-                  address,
-                  bindHost: env.DOVO_HOST,
-                }),
-                {
-                  mode: 0o600,
-                },
-              )
-              renameSync(listenPath + '.tmp', listenPath)
+              if (env.DOVO_DESKTOP_DUAL_LISTENER !== '1') {
+                writeFileSync(
+                  listenPath + '.tmp',
+                  JSON.stringify({ address, bindHost: env.DOVO_HOST }),
+                  { mode: 0o600 },
+                )
+                renameSync(listenPath + '.tmp', listenPath)
+              }
               return {
                 address,
                 token,
@@ -549,14 +536,27 @@ export async function prepareLocalRuntimeUpdate(directory: string) {
 }
 
 /** Explicit desktop action; never silently widen a listener on ordinary startup. */
+const externalStatusSchema = mutableStruct({
+  enabled: Schema.Boolean,
+  host: Schema.String,
+  port: Schema.Number,
+  error: Schema.optional(Schema.String),
+})
 export async function localRuntimeNetwork(directory: string, address: string) {
   const local = await startLocalRuntime(directory)
   if (local.address !== address) return { local: false, host: '', port: 0, canChange: false }
-  const discovery = readConnection(join(app.getPath('userData'), 'runtime-connection.json'))
+  const status = await runtimeRequest(
+    local,
+    local.address,
+    '/api/runtime/network/read',
+    {},
+    externalStatusSchema,
+  )
   return {
     local: true,
-    host: discovery.bindHost ?? new URL(discovery.address).hostname,
-    port: Number(new URL(discovery.address).port),
+    host: status.enabled ? status.host : '127.0.0.1',
+    port: status.port,
+    error: status.error,
     canChange:
       !process.env.DOVO_HOST &&
       (!process.env.DOVO_PORT || process.env.DOVO_PORT === '0') &&
@@ -574,72 +574,47 @@ export async function setLocalRuntimeNetwork(
   const status = await localRuntimeNetwork(directory, address)
   if (!status.local || !status.canChange)
     throw new Error(
-      'This listener is managed outside the desktop app. Change DOVO_HOST and restart it through its supervisor.',
+      'This listener is managed outside the desktop app. Change DOVO_HOST and DOVO_PORT through its supervisor.',
     )
   const local = await startLocalRuntime(directory)
-  // The runtime checks for workers and closes task admission in one synchronous step.
-  const lease = await runtimeRequest(
+  const previous = await runtimeRequest(
     local,
     local.address,
-    '/api/runtime/prepare-restart',
+    '/api/runtime/network/read',
     {},
-    runtimeRestartSchema,
+    externalStatusSchema,
   )
-  const release = async () => {
+  const next = await runtimeRequest(
+    local,
+    local.address,
+    '/api/runtime/network/save',
+    { enabled, host: '0.0.0.0', port: port ?? previous.port },
+    externalStatusSchema,
+  )
+  const path = join(app.getPath('userData'), 'runtime-listen.json')
+  try {
+    writeFileSync(
+      path + '.tmp',
+      JSON.stringify({
+        address: `http://127.0.0.1:${next.port}`,
+        bindHost: enabled ? next.host : '127.0.0.1',
+      }),
+      { mode: 0o600 },
+    )
+    renameSync(path + '.tmp', path)
+  } catch (cause) {
     try {
       await runtimeRequest(
         local,
         local.address,
-        '/api/runtime/cancel-restart',
-        lease,
-        responses.ok,
-        'POST',
-        3000,
+        '/api/runtime/network/save',
+        { enabled: previous.enabled, host: previous.host, port: previous.port },
+        externalStatusSchema,
       )
-    } catch {
-      /* Shutdown may have removed the listener; any unreleased lease expires after 60 seconds. */
-    }
-  }
-  const path = join(app.getPath('userData'), 'runtime-listen.json')
-  const previous = { address: local.address, bindHost: status.host }
-  const previousPort = new URL(local.address).port || '80'
-  const save = (value: typeof previous) => {
-    writeFileSync(path + '.tmp', JSON.stringify(value), { mode: 0o600 })
-    renameSync(path + '.tmp', path)
-  }
-  let restart: () => Promise<void>
-  try {
-    restart = await prepareLocalRuntimeUpdate(directory)
-  } catch (error) {
-    await release()
-    throw error
-  }
-  networkPort = String(port ?? Number(previousPort))
-  let restartAttempted = false
-  try {
-    const nextAddress = new URL(local.address)
-    nextAddress.port = networkPort
-    save({ address: nextAddress.origin, bindHost: enabled ? '0.0.0.0' : '127.0.0.1' })
-    restartAttempted = true
-    await restart()
-  } catch (cause) {
-    try {
-      save(previous)
-      networkPort = previousPort
-      if (restartAttempted) {
-        const uid = process.getuid?.()
-        if (app.isPackaged && process.platform === 'darwin' && uid !== undefined)
-          await Effect.runPromise(clearFailedBackgroundRuntime(app.getPath('userData'), uid))
-        await startLocalRuntime(directory)
-      } else await restart()
     } catch (recovery) {
       throw new AggregateError([cause, recovery], 'Network change and runtime recovery failed')
     }
     throw cause
-  } finally {
-    networkPort = undefined
-    await release()
   }
-  const current = await startLocalRuntime(directory)
-  return localRuntimeNetwork(directory, current.address)
+  return localRuntimeNetwork(directory, address)
 }

@@ -107,8 +107,8 @@ export function DesktopNetwork({ onChanged }: { onChanged: (moved: boolean) => P
         {status.canChange ? (
           <>
             <p className="text-xs text-muted-foreground">
-              Changing this restarts the runtime and briefly disconnects clients. Finish or stop
-              running tasks first.
+              Changes to LAN / VPN access keep the local workspace connected. Remote clients may
+              reconnect when the address changes.
             </p>
             <div className="flex flex-wrap items-end gap-2">
               <label className="text-xs text-muted-foreground">
@@ -129,12 +129,12 @@ export function DesktopNetwork({ onChanged }: { onChanged: (moved: boolean) => P
                 disabled={busy || portInput === String(status.port)}
                 onClick={() => apply(enabled)}
               >
-                {busy ? 'Restarting runtime…' : 'Apply port'}
+                {busy ? 'Applying…' : 'Apply port'}
               </Button>
             </div>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => apply(!enabled)}>
               {busy
-                ? 'Restarting runtime…'
+                ? 'Applying…'
                 : enabled
                   ? 'Limit access to this Mac'
                   : 'Enable LAN / VPN access'}

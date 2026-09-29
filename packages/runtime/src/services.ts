@@ -1,4 +1,5 @@
 import { AcpInstallations } from './agents/configuration/acp-installations.js'
+import type { ExternalListener } from './http/external-listener.js'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -139,6 +140,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  network?: ExternalListener
   acpInstallations: AcpInstallations
   acpController: AbortController
   preferences: RuntimePreferences

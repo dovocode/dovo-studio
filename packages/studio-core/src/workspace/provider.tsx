@@ -99,6 +99,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [connection, setConnection, connectionRef] = useApplicationState<RuntimeConnection | null>(
     null,
   )
+  const localOwnerToken = useRef<string | null>(null)
   const [snapshot, setSnapshotState, snapshotRef] = useApplicationState<RuntimeSnapshot | null>(
       null,
     ),
@@ -1021,8 +1022,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           try: () => runtimeProfile(decode(connectionSchema, connection)),
           catch: connectionError,
         })
+        localOwnerToken.current = local.connection.token
         const firstConnection = !registry.profiles.length
-        registry = upsertRuntime(registry, local, firstConnection)
+        const previousLocal = registry.profiles.find(
+          (profile) => profile.connection.token === local.connection.token,
+        )
+        registry = upsertRuntime(
+          registry,
+          previousLocal ? { ...local, id: previousLocal.id, name: previousLocal.name } : local,
+          firstConnection || registry.activeId === previousLocal?.id,
+        )
         if (firstConnection) {
           const initial = yield* runtimeRequestEffect(
             local.connection,
@@ -1212,6 +1221,37 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             })
         } else {
           const error = response.left
+          if (connection.token === localOwnerToken.current) {
+            const recovered = yield* Effect.either(
+              Effect.tryPromise({
+                try: async () => {
+                  const bridge = decodeResult(
+                    mutableStruct({
+                      dovo: mutableStruct({
+                        runtimeConnection: Schema.Unknown.pipe(
+                          Schema.filter(
+                            (value): value is () => Promise<unknown> => typeof value === 'function',
+                          ),
+                        ),
+                      }),
+                    }),
+                    window,
+                  )
+                  if (!bridge.success) return false
+                  const latest = decode(
+                    connectionSchema,
+                    await bridge.data.dovo.runtimeConnection(),
+                  )
+                  if (latest.token !== connection.token || latest.address === connection.address)
+                    return false
+                  await connect(latest, undefined, id)
+                  return true
+                },
+                catch: connectionError,
+              }),
+            )
+            if (Either.isRight(recovered) && recovered.right) return
+          }
           if (
             !stopped &&
             synchronization.isCurrent(checkpoint) &&
@@ -1242,7 +1282,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const polling = startPolling(poll, {
       interval: 1000,
       // An unreachable host is not hammered every second; returning or reconnecting retries at once.
-      backoff: 10000,
+      backoff: connection.token === localOwnerToken.current ? 2000 : 10000,
       onError: () => {},
     })
     const wake = () => {
@@ -1256,7 +1296,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', wake)
       void polling.stop()
     }
-  }, [connection, installSnapshot, synchronization, updateOverview])
+  }, [connection, connect, installSnapshot, synchronization, updateOverview])
   useEffect(() => {
     if (!ready) return
     const polling = startPolling(

@@ -36,6 +36,7 @@ export function route(
   request: IncomingMessage,
   url: URL,
   addresses: () => { name: string; address: string }[] = () => [],
+  internal = false,
 ) {
   return routeProgram(
     Effect.gen(function* () {
@@ -386,6 +387,26 @@ export function route(
       if (method === 'POST' && path === '/api/runtime/prepare-restart') {
         owner()
         return yield* serviceResult(s.tasks.prepareRestart())
+      }
+      if (method === 'POST' && path.startsWith('/api/runtime/network/')) {
+        owner()
+        if (!s.network) throw new HttpError(404, 'This runtime has no separate external listener')
+        if (!internal)
+          throw new HttpError(403, 'Change the external listener from the local desktop app')
+        if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.localAddress ?? ''))
+          throw new HttpError(403, 'Change the external listener from the local desktop app')
+        if (path === '/api/runtime/network/read') return yield* serviceResult(s.network.status())
+        if (path === '/api/runtime/network/save') {
+          const input = decode(
+            mutableStruct({
+              enabled: Schema.Boolean,
+              host: Schema.String,
+              port: Schema.Number,
+            }),
+            yield* serviceResult(body(request)),
+          )
+          return yield* serviceResult(s.network.set(input.host, input.port, input.enabled))
+        }
       }
       if (method === 'GET' && path === '/api/runtime/update/status')
         return yield* serviceResult(serverUpdateStatus())

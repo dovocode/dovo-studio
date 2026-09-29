@@ -9,6 +9,7 @@ import { RunInTerminal } from '../actions/run-in-terminal'
 import { ForkTurn } from '../actions/fork-turn'
 import { RetryTurn } from '../actions/retry-turn'
 import { TaskActivity, useTaskActivity } from './task-activity'
+import { TurnLabel } from './turn-label'
 import { Star } from 'lucide-react'
 import {
   Conversation,
@@ -33,6 +34,7 @@ export function ChatThread({
   pending?: PendingMessage | null
 }) {
   const { request, connected } = useWorkspace()
+  const lastTurn = task.turns?.at(-1)
   const bookmarks = task.messages.filter(
     (message) => message.role === 'assistant' && message.bookmarked,
   )
@@ -85,7 +87,7 @@ export function ChatThread({
   )
   return (
     <Conversation key={task.id}>
-      <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-8 md:pr-5">
+      <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-[76px] md:pr-5">
         {!!bookmarks.length && (
           <nav
             aria-label="Bookmarked replies"
@@ -320,6 +322,12 @@ export function ChatThread({
           }
           error={activity.error}
         />
+        {lastTurn?.status === 'running' && (
+          <p role="status" className="flex items-center gap-2 py-1">
+            <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
+            <TurnLabel turn={lastTurn} />
+          </p>
+        )}
       </ConversationContent>
       <ConversationRail items={markers} />
       <ConversationScrollButton />

@@ -14,7 +14,7 @@ import { route } from './routes.js'
 import { json } from './support/body.js'
 import { HttpError, errorMessage } from '../errors.js'
 import { attachBrowserSocket } from './support/browser-socket.js'
-export function createRuntimeServer(services: Services) {
+export function createRuntimeServer(services: Services, internal = false) {
   let stopping = false
   let closing: Promise<void> | undefined
   const connections = new Set<Socket>()
@@ -61,9 +61,12 @@ export function createRuntimeServer(services: Services) {
           throw new HttpError(400, 'Invalid request URL')
         }
         return runClientEffect(
-          route(request, url, () => pairingAddresses(server.address())).pipe(
-            Effect.provideService(RuntimeServices, services),
-          ),
+          route(
+            request,
+            url,
+            () => pairingAddresses(services.network?.pairingAddress() ?? server.address()),
+            internal,
+          ).pipe(Effect.provideService(RuntimeServices, services)),
         )
       })
       .then((result) => {

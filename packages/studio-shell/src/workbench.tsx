@@ -12,6 +12,7 @@ import {
 import {
   type StudioViewProps,
   readAppPreferences,
+  updateAppPreferences,
   useAppPreferences,
   StudioHostProvider,
   WorkspaceProvider,
@@ -158,12 +159,21 @@ function WorkbenchContent({
   const [switchError, setSwitchError] = useApplicationState('')
   const [switching, setSwitching] = useApplicationState(false)
   // Settings → General → Open on launch.
-  const [target, navigate] = useApplicationState<StudioNavigation>(() => ({
-    viewId:
-      readAppPreferences().launchView === 'overview'
-        ? 'overview'
-        : (extensions[0]?.views[0]?.id ?? ''),
-  }))
+  const [target, navigate] = useApplicationState<StudioNavigation>(() => {
+    const preferences = readAppPreferences()
+    return preferences.lastThreadId
+      ? { viewId: 'tasks', entityId: preferences.lastThreadId }
+      : {
+          viewId:
+            preferences.launchView === 'overview'
+              ? 'overview'
+              : (extensions[0]?.views[0]?.id ?? ''),
+        }
+  })
+  useEffect(() => {
+    if (target.viewId === 'tasks' && target.entityId)
+      updateAppPreferences({ lastThreadId: target.entityId })
+  }, [target.viewId, target.entityId])
   const openNotification = useCallback(
     (destination: NotificationTarget) => {
       setSwitchError('')

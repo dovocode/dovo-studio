@@ -366,11 +366,20 @@ async function networkFixture() {
     bindHost: '127.0.0.1',
   }
   writeFileSync(path, JSON.stringify(connection))
-  const request = vi.fn<typeof fetch>(async (url) => {
-    if (requestAddress(url).endsWith('/api/runtime/prepare-restart'))
-      return Response.json({ id: 'c7c17c4d-813a-46c8-8b84-fd589bdf47fe' })
-    if (requestAddress(url).endsWith('/api/runtime/cancel-restart'))
-      return Response.json({ ok: true })
+  let external = { enabled: false, host: '127.0.0.1', port: 51464 }
+  let failNextBind = false
+  const request = vi.fn<typeof fetch>(async (url, options) => {
+    if (requestAddress(url).endsWith('/api/runtime/network/read')) return Response.json(external)
+    if (requestAddress(url).endsWith('/api/runtime/network/save')) {
+      if (failNextBind) {
+        failNextBind = false
+        return Response.json({ error: 'Port unavailable' }, { status: 500 })
+      }
+      if (typeof options?.body !== 'string') throw new Error('Expected a JSON request body')
+      const input = JSON.parse(options.body) as typeof external
+      external = input
+      return Response.json(external)
+    }
     return Response.json({ owner: true, protocolVersion: 2 })
   })
   vi.stubGlobal('fetch', request)
@@ -394,71 +403,59 @@ async function networkFixture() {
     request,
     ensureBackgroundRuntime,
     stopBackgroundRuntimeForUpdate,
+    failNextBind: () => {
+      failNextBind = true
+    },
   }
 }
 
-it('applies and reverses network access through the packaged supervisor without changing the port', async () => {
+it('changes external access without restarting the desktop listener', async () => {
   const f = await networkFixture()
   expect(await f.setLocalRuntimeNetwork('/unused', f.connection.address, true)).toMatchObject({
     local: true,
     host: '0.0.0.0',
     canChange: true,
   })
-  expect(f.ensureBackgroundRuntime).toHaveBeenLastCalledWith(
-    expect.objectContaining({ host: '0.0.0.0', port: '51464' }),
-  )
   expect(await f.setLocalRuntimeNetwork('/unused', f.connection.address, false)).toMatchObject({
     host: '127.0.0.1',
   })
-  expect(f.stopBackgroundRuntimeForUpdate).toHaveBeenCalledTimes(2)
+  expect(f.stopBackgroundRuntimeForUpdate).not.toHaveBeenCalled()
+  expect(f.ensureBackgroundRuntime).not.toHaveBeenCalled()
 })
 
-it('restores the prior listener after a failed network restart', async () => {
+it('keeps the prior external listener after a failed bind', async () => {
   const f = await networkFixture()
-  const { Effect } = await import('effect')
-  vi.mocked(f.ensureBackgroundRuntime).mockReturnValueOnce(
-    Effect.fail(new Error('Port unavailable')),
-  )
+  f.failNextBind()
   await expect(f.setLocalRuntimeNetwork('/unused', f.connection.address, true)).rejects.toThrow(
     'Port unavailable',
   )
   expect(await f.localRuntimeNetwork('/unused', f.connection.address)).toMatchObject({
     host: '127.0.0.1',
   })
-  expect(f.ensureBackgroundRuntime).toHaveBeenLastCalledWith(
-    expect.objectContaining({ host: '127.0.0.1', port: '51464' }),
-  )
+  expect(f.stopBackgroundRuntimeForUpdate).not.toHaveBeenCalled()
 })
 
-it('moves to a selected port and restores the old port if a later change fails', async () => {
+it('moves the external port while the internal address remains stable', async () => {
   const f = await networkFixture()
   expect(
     await f.setLocalRuntimeNetwork('/unused', f.connection.address, true, 51465),
   ).toMatchObject({ host: '0.0.0.0', port: 51465 })
-  expect(f.ensureBackgroundRuntime).toHaveBeenLastCalledWith(
-    expect.objectContaining({ port: '51465' }),
-  )
-  const { Effect } = await import('effect')
-  vi.mocked(f.ensureBackgroundRuntime).mockReturnValueOnce(
-    Effect.fail(new Error('Port unavailable')),
-  )
+  f.failNextBind()
   await expect(
-    f.setLocalRuntimeNetwork('/unused', 'http://127.0.0.1:51465', true, 51466),
+    f.setLocalRuntimeNetwork('/unused', f.connection.address, true, 51466),
   ).rejects.toThrow('Port unavailable')
-  expect(f.ensureBackgroundRuntime).toHaveBeenLastCalledWith(
-    expect.objectContaining({ port: '51465', host: '0.0.0.0' }),
-  )
+  expect(await f.localRuntimeNetwork('/unused', f.connection.address)).toMatchObject({
+    host: '0.0.0.0',
+    port: 51465,
+  })
 })
 
-it('does not stop the service when restart admission is denied', async () => {
+it('keeps the desktop connection available while external access changes', async () => {
   const f = await networkFixture()
-  f.request.mockImplementation(async (url) =>
-    requestAddress(url).endsWith('/api/runtime/prepare-restart')
-      ? Response.json({ error: 'Finish or stop running tasks' }, { status: 409 })
-      : Response.json({ owner: true, protocolVersion: 2 }),
-  )
-  await expect(f.setLocalRuntimeNetwork('/unused', f.connection.address, true)).rejects.toThrow(
-    'Finish or stop',
-  )
+  await f.setLocalRuntimeNetwork('/unused', f.connection.address, true)
+  await expect(f.startLocalRuntime('/unused')).resolves.toMatchObject({
+    address: f.connection.address,
+    token: f.connection.token,
+  })
   expect(f.stopBackgroundRuntimeForUpdate).not.toHaveBeenCalled()
 })

@@ -4,6 +4,7 @@ import { Context, Data, Effect, Layer, ManagedRuntime } from 'effect'
 import { openDatabase } from './storage/database.js'
 import { createServices, type Services } from './services.js'
 import { createRuntimeServer } from './http/server.js'
+import { ExternalListener } from './http/external-listener.js'
 export { backupRuntimeDatabase } from './storage/backup.js'
 export { checkAdapterUpdates, type AdapterDiagnostic } from './agents/execution/diagnostics.js'
 
@@ -12,6 +13,7 @@ export interface RuntimeOptions {
   ownerToken: string
   host?: string
   port?: number
+  external?: { host: string; port: number; enabled: boolean }
 }
 export class RuntimeStartupError extends Data.TaggedError('RuntimeStartupError')<{
   readonly operation: string
@@ -80,7 +82,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       for (const close of finalizers) yield* Effect.addFinalizer(() => release(close))
       const http = yield* Effect.acquireRelease(
         Effect.try({
-          try: () => createRuntimeServer(services),
+          try: () => createRuntimeServer(services, Boolean(options.external)),
           catch: (cause) => new RuntimeStartupError({ operation: 'HTTP initialization', cause }),
         }),
         (http) =>
@@ -130,6 +132,18 @@ export const runtimeLayer = (options: RuntimeOptions) =>
             cause: new Error('Runtime failed to listen'),
           }),
         )
+      const external = options.external
+      if (external) {
+        const network = new ExternalListener(services, external.host, external.port)
+        services.network = network
+        yield* Effect.addFinalizer(() => release(() => network.close()))
+        if (external.enabled)
+          yield* Effect.promise(() =>
+            network.set(external.host, external.port, true).catch((error) => {
+              console.error('External listener could not start:', error)
+            }),
+          )
+      }
       yield* Effect.sync(() => {
         services.tasks.setTaskTools(address.port, options.ownerToken, address.address)
         services.tasks.continueAfterRestart(

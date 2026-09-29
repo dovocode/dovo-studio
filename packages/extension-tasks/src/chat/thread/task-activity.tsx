@@ -175,7 +175,7 @@ export function TaskActivity({
             <span className="min-w-0 flex-1 truncate" title={headline}>
               {headline}
             </span>
-            {turn && (
+            {turn && turn.status !== 'running' && (
               <span className="hidden shrink-0 sm:inline">
                 <TurnLabel turn={turn} />
               </span>
@@ -217,7 +217,8 @@ export function TaskActivity({
           )}
         </details>
       ) : (
-        turn && (
+        turn &&
+        turn.status !== 'running' && (
           <div className="py-1.5">
             <TurnLabel turn={turn} />
           </div>

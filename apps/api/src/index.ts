@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { discoverNetworks, resolveBindHost } from './network.js'
 import { publishConnection } from './connection.js'
+import { writePrivateJson } from './server-config.js'
 import { RuntimeHost, runtimeLayer } from '@dovo/runtime'
 import { acquireProcessLock } from './process-lock.js'
 import { runtimeOwnerToken } from './owner-token.js'
@@ -112,9 +113,12 @@ const program = Effect.scoped(
     const bindHost = yield* attempt('resolve bind address', () =>
       resolveBindHost(requestedHost, networks),
     )
+    const desktopDualListener = process.env.DOVO_DESKTOP_DUAL_LISTENER === '1'
+    const externalPort = Number(process.env.PORT ?? 8787)
     yield* Effect.gen(function* () {
       const runtime = yield* RuntimeHost
-      const clientHost = ['0.0.0.0', '::'].includes(bindHost) ? '127.0.0.1' : bindHost
+      const clientHost =
+        desktopDualListener || ['0.0.0.0', '::'].includes(bindHost) ? '127.0.0.1' : bindHost
       const address = `http://${clientHost.includes(':') ? `[${clientHost}]` : clientHost}:${runtime.port}`
       yield* Effect.acquireRelease(
         attempt('publish connection', () =>
@@ -122,13 +126,18 @@ const program = Effect.scoped(
             address,
             token: ownerToken,
             pid: process.pid,
-            bindHost,
+            bindHost: desktopDualListener ? '127.0.0.1' : bindHost,
           }),
         ),
         (remove) => Effect.sync(remove),
       )
       yield* Effect.sync(() => {
-        console.log(`Dovo runtime listening on ${bindHost}:${runtime.port}`)
+        if (desktopDualListener)
+          writePrivateJson(join(directory, 'runtime-listen.json'), {
+            address: `http://127.0.0.1:${externalPort}`,
+            bindHost,
+          })
+        console.log(`Dovo runtime listening on ${clientHost}:${runtime.port}`)
         process.send?.({ type: 'ready', port: runtime.port, address })
       })
       yield* waitForShutdown
@@ -137,8 +146,17 @@ const program = Effect.scoped(
         runtimeLayer({
           databasePath,
           ownerToken,
-          host: bindHost,
-          port: Number(process.env.PORT ?? 8787),
+          host: desktopDualListener ? '127.0.0.1' : bindHost,
+          port: desktopDualListener ? 0 : externalPort,
+          ...(desktopDualListener
+            ? {
+                external: {
+                  host: bindHost,
+                  port: externalPort,
+                  enabled: !['127.0.0.1', 'localhost', '::1'].includes(bindHost),
+                },
+              }
+            : {}),
         }),
       ),
     )

@@ -86,7 +86,7 @@ export function ConversationRail({
     <TooltipProvider delayDuration={100} skipDelayDuration={500}>
       <nav
         aria-label="Conversation turns"
-        className="absolute bottom-12 left-0 top-6 hidden w-7 flex-col items-center justify-center overflow-y-auto py-1 md:flex"
+        className="absolute bottom-12 left-0 top-6 hidden w-[68px] flex-col items-start justify-center overflow-y-auto py-1 pl-5 md:flex"
       >
         {items.map((item, index) => (
           <Tooltip key={item.id}>
@@ -99,7 +99,7 @@ export function ConversationRail({
                 onBlur={() => setHovered(null)}
                 aria-label={`Jump to turn ${index + 1}: ${item.label}`}
                 aria-current={visible.has(item.id) ? 'location' : undefined}
-                className="group flex min-h-3 w-7 flex-1 items-center justify-center rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="group flex min-h-4 w-12 flex-1 items-center justify-start rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 style={{
                   maxHeight: 16,
                 }}
@@ -125,15 +125,15 @@ export function ConversationRail({
                     width:
                       hovered === null
                         ? visible.has(item.id)
-                          ? 10
-                          : 8
+                          ? 24
+                          : 16
                         : Math.abs(index - hovered) === 0
-                          ? 17
+                          ? 48
                           : Math.abs(index - hovered) === 1
-                            ? 13
+                            ? 32
                             : Math.abs(index - hovered) === 2
-                              ? 10
-                              : 8,
+                              ? 24
+                              : 16,
                   }}
                   className={cn(
                     'h-[2px] rounded-full transition-[width,background-color] duration-150 ease-out group-hover:bg-foreground/75 group-focus-visible:bg-foreground motion-reduce:transition-none',
@@ -146,7 +146,7 @@ export function ConversationRail({
               side="right"
               sideOffset={10}
               collisionPadding={12}
-              className="w-80 max-w-[calc(100vw-3rem)] rounded-xl bg-popover px-3 py-3 text-left text-xs leading-relaxed shadow-lg"
+              className="w-80 max-w-[calc(100vw-5rem)] rounded-xl bg-popover px-3 py-3 text-left text-sm leading-5 shadow-lg"
             >
               <p className="line-clamp-2 break-words font-medium">{item.label}</p>
               {item.preview && (
