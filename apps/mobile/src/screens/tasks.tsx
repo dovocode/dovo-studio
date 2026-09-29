@@ -413,35 +413,6 @@ export default function TasksScreen() {
                   ))}
                 </View>
               )}
-              {overviews.length > 0 && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Choose your models"
-                  accessibilityHint="Manage default models for tasks and titles"
-                  onPress={() => router.push('/settings/agents')}
-                  style={({ pressed }) => [
-                    styles.card,
-                    { borderWidth: 0, borderRadius: 14 },
-                    {
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 12,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <Icon name="agents" size={20} color={colors.accent} />
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={[styles.text, { fontWeight: '600', fontSize: 15 }]}>
-                      Choose your models
-                    </Text>
-                    <Text style={styles.muted}>
-                      Default models for new tasks, titles and dictation.
-                    </Text>
-                  </View>
-                  <Icon name="next" size={12} color={colors.muted} />
-                </Pressable>
-              )}
               {/* One computer's state is already in the connection banner. */}
               {overviews.length > 1 && (
                 <FleetOverview
