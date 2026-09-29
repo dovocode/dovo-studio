@@ -2,7 +2,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskTools } from './detail/task-tools'
 import { TaskAgents } from './detail/task-agents'
 import { BrowserPane } from './browser/browser-pane'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { templateTaskFields } from '@dovo/protocol'
 import {
@@ -26,6 +26,7 @@ import {
   DialogContent,
   DialogTitle,
   DialogDescription,
+  ProjectIcon,
   useCompactLayout,
   cn,
 } from '@dovo/studio-ui'
@@ -33,6 +34,8 @@ import { TaskList } from './list/task-list'
 import { TaskHeader, type TaskSurface } from './detail/task-header'
 import { TaskConversation } from './detail/task-conversation'
 import { ReviewPane } from './review/review-pane'
+import { TaskFiles } from './detail/task-files'
+import type { CodeReference } from './detail/code-reference'
 import { TerminalPane } from './terminal/terminal-pane'
 import {
   collectTasks,
@@ -73,6 +76,9 @@ export default function TasksView({ entityId }: StudioViewProps) {
         ? undefined
         : (localTasks.find((t) => !t.archived && !t.archivedAt) ??
           localTasks.find((t) => !t.archivedAt))))
+  useEffect(() => {
+    if (!entityId && task && !deselected) host.navigate({ viewId: 'tasks', entityId: task.id })
+  }, [entityId, task?.id, deselected])
   const compact = useCompactLayout()
   // Split view: a second task from the connected computer, next to the selected one.
   const [splitId, setSplitId] = useApplicationState('')
@@ -82,6 +88,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
       : undefined
   const [listOpen, setListOpen] = useApplicationState(false)
   const [sidebar, setSidebar] = useApplicationState(true)
+  const [codeReference, setCodeReference] = useState<CodeReference | null>(null)
   const threadKey = taskCollectionKey(activeRuntimeId, task?.id ?? selectedId)
   const [threadSurfaces, setThreadSurfaces] = useApplicationState<Record<string, TaskSurface>>({})
   const surface = threadSurfaces[threadKey] ?? 'chat'
@@ -97,6 +104,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const panes = useRef<Record<TaskSurface, HTMLDivElement | null>>({
     chat: null,
     changes: null,
+    files: null,
     terminal: null,
     browser: null,
     devices: null,
@@ -106,7 +114,15 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const focusNext = useRef<TaskSurface | null>(null)
   const selectSurface = useCallback(
     (next: TaskSurface, moveFocus = false) => {
-      for (const id of ['chat', 'changes', 'terminal', 'browser', 'devices', 'agents'] as const) {
+      for (const id of [
+        'chat',
+        'changes',
+        'files',
+        'terminal',
+        'browser',
+        'devices',
+        'agents',
+      ] as const) {
         const focused = document.activeElement
         if (focused instanceof HTMLElement && panes.current[id]?.contains(focused)) {
           lastFocus.current[id] = focused
@@ -120,6 +136,13 @@ export default function TasksView({ entityId }: StudioViewProps) {
       if (next === 'terminal') setTerminalVisited(true)
     },
     [compact, setSurface],
+  )
+  const addCodeReference = useCallback(
+    (taskId: string, text: string) => {
+      setCodeReference({ taskId, id: crypto.randomUUID(), text })
+      selectSurface('chat', true)
+    },
+    [selectSurface],
   )
   useLayoutEffect(() => {
     const next = focusNext.current
@@ -485,25 +508,28 @@ export default function TasksView({ entityId }: StudioViewProps) {
           {(sidebar || !task) && !compact && (
             <>
               <ResizablePanel id="task-list" order={1} defaultSize={22} minSize={15} maxSize={45}>
-                <TaskList
-                  projectId={projectId}
-                  onProjectChange={setProjectId}
-                  selectedId={selectedKey}
-                  sources={sources}
-                  activeRuntimeId={activeRuntimeId}
-                  busy={busy}
-                  error={error}
-                  onSelect={(entry) => void selectTask(entry)}
-                  onCreate={(project) => void startTask(project)}
-                  onDeselect={deselectTask}
-                  onOrderChange={reportOrder}
-                  onSplit={(entry) => {
-                    if (entry.source.runtimeId === activeRuntimeId) setSplitId(entry.task.id)
-                  }}
-                  onTemplate={(entry, templateId) =>
-                    void startTask(entry.projectKey, true, templateId)
-                  }
-                />
+                <div className="h-full min-w-0">
+                  <TaskList
+                    titleHeader
+                    projectId={projectId}
+                    onProjectChange={setProjectId}
+                    selectedId={selectedKey}
+                    sources={sources}
+                    activeRuntimeId={activeRuntimeId}
+                    busy={busy}
+                    error={error}
+                    onSelect={(entry) => void selectTask(entry)}
+                    onCreate={(project) => void startTask(project)}
+                    onDeselect={deselectTask}
+                    onOrderChange={reportOrder}
+                    onSplit={(entry) => {
+                      if (entry.source.runtimeId === activeRuntimeId) setSplitId(entry.task.id)
+                    }}
+                    onTemplate={(entry, templateId) =>
+                      void startTask(entry.projectKey, true, templateId)
+                    }
+                  />
+                </div>
               </ResizablePanel>
               <ResizableHandle />
             </>
@@ -519,6 +545,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   surface={surface}
                   onSurface={selectSurface}
                   compact={compact}
+                  sidebarVisible={sidebar}
                   onSidebar={() => (compact ? setListOpen(true) : setSidebar((value) => !value))}
                   onTerminal={showTerminal}
                 />
@@ -530,7 +557,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
                     tabIndex={-1}
                     className={cn(
                       'relative min-h-0 min-w-0 flex-1',
-                      surface !== 'chat' && compact && 'hidden',
+                      (surface === 'changes' ||
+                        surface === 'files' ||
+                        (surface !== 'chat' && compact)) &&
+                        'hidden',
                     )}
                   >
                     <p
@@ -551,6 +581,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                     <TaskConversation
                       key={taskCollectionKey(activeRuntimeId, task.id)}
                       task={task}
+                      codeReference={codeReference?.taskId === task.id ? codeReference : null}
                       visible={!listOpen && (!compact || surface === 'chat')}
                       onReview={() => selectSurface('changes')}
                       onTerminal={showTerminal}
@@ -562,22 +593,28 @@ export default function TasksView({ entityId }: StudioViewProps) {
                     className={cn(
                       'min-h-0 min-w-0 flex-col',
                       surface === 'chat' ? 'hidden' : 'flex',
-                      compact ? 'flex-1' : 'w-[380px] max-w-[48%] shrink-0 border-l',
+                      compact || surface === 'changes' || surface === 'files'
+                        ? 'flex-1'
+                        : 'w-[380px] max-w-[48%] shrink-0 border-l',
                     )}
                   >
-                    {!compact && surface !== 'browser' && surface !== 'devices' && (
-                      <div className="flex h-9 shrink-0 items-center justify-between border-b px-3 text-xs text-muted-foreground">
-                        <span>Thread tools</span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 px-2"
-                          onClick={() => selectSurface('chat', true)}
-                        >
-                          Close
-                        </Button>
-                      </div>
-                    )}
+                    {!compact &&
+                      surface !== 'browser' &&
+                      surface !== 'devices' &&
+                      surface !== 'changes' &&
+                      surface !== 'files' && (
+                        <div className="flex h-9 shrink-0 items-center justify-between border-b px-3 text-xs text-muted-foreground">
+                          <span>Thread tools</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-2"
+                            onClick={() => selectSurface('chat', true)}
+                          >
+                            Close
+                          </Button>
+                        </div>
+                      )}
                     {surface === 'agents' && (
                       <div
                         ref={(element) => {
@@ -612,7 +649,26 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       tabIndex={-1}
                       className={cn('min-h-0 min-w-0 flex-1', surface !== 'changes' && 'hidden')}
                     >
-                      <ReviewPane key={task.id} task={task} />
+                      <ReviewPane
+                        key={task.id}
+                        task={task}
+                        onReference={(text) => addCodeReference(task.id, text)}
+                      />
+                    </div>
+                    <div
+                      ref={(element) => {
+                        panes.current.files = element
+                      }}
+                      tabIndex={-1}
+                      className={cn('min-h-0 min-w-0 flex-1', surface !== 'files' && 'hidden')}
+                    >
+                      {surface === 'files' && (
+                        <TaskFiles
+                          key={task.id}
+                          task={task}
+                          onReference={(text) => addCodeReference(task.id, text)}
+                        />
+                      )}
                     </div>
                     <div
                       ref={(element) => {
@@ -640,22 +696,27 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 </div>
               </div>
             ) : (
-              <EmptyState
-                title="What would you like to work on?"
-                description="Pick up a task from the sidebar, or start with a question, a fix, or a new idea."
-                action={
-                  <div className="flex gap-2">
-                    {compact && (
-                      <Button variant="outline" onClick={() => setListOpen(true)}>
-                        Browse tasks
-                      </Button>
-                    )}
-                    <Button disabled={busy} onClick={() => void startTask()}>
-                      Create task
-                    </Button>
-                  </div>
-                }
-              />
+              <div className="flex h-full min-h-0 flex-col">
+                {!compact && <header className="studio-task-thread-header">Tasks</header>}
+                <div className="min-h-0 flex-1">
+                  <EmptyState
+                    title="What would you like to work on?"
+                    description="Pick up a task from the sidebar, or start with a question, a fix, or a new idea."
+                    action={
+                      <div className="flex gap-2">
+                        {compact && (
+                          <Button variant="outline" onClick={() => setListOpen(true)}>
+                            Browse tasks
+                          </Button>
+                        )}
+                        <Button disabled={busy} onClick={() => void startTask()}>
+                          Create task
+                        </Button>
+                      </div>
+                    }
+                  />
+                </div>
+              </div>
             )}
           </ResizablePanel>
           {splitTask && (
@@ -666,7 +727,13 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   aria-label={`Side by side: ${splitTask.title}`}
                   className="flex h-full min-h-0 flex-col border-l"
                 >
-                  <header className="flex h-9 shrink-0 items-center gap-1 border-b px-3 text-xs">
+                  <header className="studio-task-thread-header text-xs">
+                    <ProjectIcon
+                      repository={workspace.repositories.find(
+                        (repo) => repo.id === splitTask.repositoryId,
+                      )}
+                      className="size-4"
+                    />
                     <span className="min-w-0 flex-1 truncate font-medium" title={splitTask.title}>
                       {splitTask.title}
                     </span>

@@ -22,7 +22,10 @@ vi.mock('electron-updater', () => ({
         f.listeners.set(name, listener)
       },
       removeListener: () => {},
-      checkForUpdates: async () => ({ isUpdateAvailable: true, updateInfo: { version: 'next' } }),
+      checkForUpdates: async () => ({
+        isUpdateAvailable: true,
+        updateInfo: { version: 'next', releaseNotes: 'Faster setup and fixes' },
+      }),
       downloadUpdate: async () => {},
       quitAndInstall: f.install,
     },
@@ -56,6 +59,20 @@ const snapshot = {
     automations: [],
   },
 }
+it('publishes update notes and downloads directly from the sidebar action', async () => {
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => async () => {})
+  await updates.refresh()
+  expect(updates.state()).toMatchObject({
+    status: 'available',
+    version: 'next',
+    notes: 'Faster setup and fixes',
+  })
+  f.message.mockResolvedValueOnce({ response: 1 })
+  await updates.install()
+  expect(updates.state()).toMatchObject({ status: 'downloaded', progress: 100 })
+  expect(f.message).toHaveBeenCalledOnce()
+})
 it('waits for the runtime to stop before installation and restores it on synchronous failure', async () => {
   vi.stubGlobal(
     'fetch',

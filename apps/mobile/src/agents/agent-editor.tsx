@@ -4,7 +4,7 @@ import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import {
-  accessModes,
+  selectableAccessModes,
   supportsAccess,
   canChangeTaskProvider,
   lockedTaskProvider,
@@ -197,7 +197,7 @@ export function AgentEditor({
         label="Access"
         disabled={busy}
         value={draft.permission}
-        items={accessModes
+        items={selectableAccessModes(draft.permission)
           .filter((mode) => supportsAccess(draft.provider, mode.id))
           .map((mode) => ({
             id: mode.id,

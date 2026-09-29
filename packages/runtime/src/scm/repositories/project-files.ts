@@ -26,4 +26,7 @@ export class ProjectFiles {
   async search(cwd: string, query: string, limit = 8) {
     return rankPaths(await this.list(cwd), query, limit)
   }
+  async all(cwd: string) {
+    return this.list(cwd)
+  }
 }

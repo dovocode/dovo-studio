@@ -70,10 +70,12 @@ export const acpAdapter: AgentAdapter = {
           const allow =
             run.agent.permission !== 'read-only' &&
             run.tools !== 'none' &&
-            (await run.approve(
-              params.toolCall.title ?? 'ACP tool request',
-              JSON.stringify(params.toolCall, null, 2),
-            ))
+            (run.agent.permission === 'full-access' ||
+              (run.agent.permission === 'workspace-write' && params.toolCall.kind === 'edit') ||
+              (await run.approve(
+                params.toolCall.title ?? 'ACP tool request',
+                JSON.stringify(params.toolCall, null, 2),
+              )))
           if (cancelling || run.signal.aborted) return { outcome: { outcome: 'cancelled' } }
           const option = params.options.find(
             (option) => option.kind === (allow ? 'allow_once' : 'reject_once'),

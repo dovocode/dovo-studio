@@ -2,6 +2,7 @@ import { Image, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import {
   projectIcon,
+  projectIconColor,
   resolveTaskAgent,
   type RuntimeOverview,
   type RuntimeTask,
@@ -93,7 +94,7 @@ export function TaskListRow({
                   height: 22,
                   borderRadius: 5,
                   overflow: 'hidden',
-                  backgroundColor: colors.accent,
+                  backgroundColor: icon ? colors.accent : projectIconColor(repository),
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
@@ -101,7 +102,7 @@ export function TaskListRow({
                 {icon ? (
                   <Image source={{ uri: icon }} style={{ width: 22, height: 22 }} />
                 ) : (
-                  <Text style={{ color: colors.surface, fontSize: 10, fontWeight: '700' }}>
+                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
                     {(row.projectName || 'P').slice(0, 2).toUpperCase()}
                   </Text>
                 )}

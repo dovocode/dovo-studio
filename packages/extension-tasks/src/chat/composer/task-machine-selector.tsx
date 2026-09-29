@@ -35,7 +35,16 @@ export function TaskMachineSelector({
   const machineCount = new Set(targets.map(({ source }) => source.runtimeId)).size
   const current = sources.find((source) => source.runtimeId === store.activeRuntimeId)
   const editable = canChangeTaskCheckout(task) && !task.archivedAt
-  if (machineCount < 2 && !error) return null
+  if (machineCount < 2 && !error)
+    return (
+      <span
+        className="inline-flex h-6 min-w-0 max-w-40 items-center gap-1.5 px-2 text-[0.625rem]"
+        title={`Runs on ${current?.name ?? 'this machine'}`}
+      >
+        <Monitor className="size-3 shrink-0" />
+        <span className="truncate">{current?.name ?? 'This machine'}</span>
+      </span>
+    )
   return (
     <div className="relative">
       <DropdownMenu.Root>

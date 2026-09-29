@@ -56,7 +56,9 @@ export function ComposerModelPicker({
   const [storageError, setStorageError] = useApplicationState('')
   const activeProvider = lockedProvider ?? provider
   const selectedHarness =
-    activeProvider === value.provider ? value : defaultTaskHarness(activeProvider)
+    activeProvider === value.provider
+      ? value
+      : { ...defaultTaskHarness(activeProvider), permission: value.permission }
   const { catalog, loading, error } = useHarnessCatalog(selectedHarness, open && mode === 'models')
   const listId = useId()
   const items: PickerItem[] =
@@ -119,7 +121,9 @@ export function ComposerModelPicker({
       return
     }
     const saved = await onChange({
-      ...(item.provider === value.provider ? value : defaultTaskHarness(item.provider)),
+      ...(item.provider === value.provider
+        ? value
+        : { ...defaultTaskHarness(item.provider), permission: value.permission }),
       model: item.id,
       reasoning: item.id === value.model && item.provider === value.provider ? value.reasoning : '',
       cyberAccessProgram:

@@ -8,7 +8,7 @@ import {
   resolveTaskAgent,
   lockedTaskProvider,
 } from '@dovo/studio-core'
-import { accessModes, supportsAccess, accessLabel } from '@dovo/studio-core'
+import { selectableAccessModes, supportsAccess, accessLabel } from '@dovo/studio-core'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { agentSchema, branchesSchema } from '@dovo/studio-core'
 import { BranchPicker } from '@dovo/studio-ui'
@@ -197,7 +197,10 @@ export function TaskSettings({
                 if (selection.startsWith('harness:')) {
                   const provider = decode(providerSchema, selection.slice(8))
                   if (providerLock && provider !== providerLock) return
-                  setHarness(defaultTaskHarness(provider))
+                  setHarness({
+                    ...defaultTaskHarness(provider),
+                    permission: agent?.permission ?? 'full-access',
+                  })
                   setAgentId('')
                 } else {
                   const selectedAgent = workspace.agents.find((agent) => agent.id === selection)
@@ -283,7 +286,7 @@ export function TaskSettings({
                   <option value="inherit">
                     Use agent defaults ({accessLabel(base?.permission ?? 'ask')})
                   </option>
-                  {accessModes.map((mode) => (
+                  {selectableAccessModes(overrides?.permission).map((mode) => (
                     <option
                       key={mode.id}
                       value={mode.id}
@@ -296,8 +299,12 @@ export function TaskSettings({
                 </ChoicePicker>
               </FormField>
               <p className="text-xs text-muted-foreground">
-                {accessModes.find((mode) => mode.id === agent?.permission)?.description} Changes
-                apply to future turns.
+                {
+                  selectableAccessModes(agent?.permission).find(
+                    (mode) => mode.id === agent?.permission,
+                  )?.description
+                }{' '}
+                Changes apply to future turns.
               </p>
               <Button variant="ghost" size="sm" onClick={() => setOverrides(undefined)}>
                 Use agent defaults

@@ -207,10 +207,70 @@ textarea {
 .studio-titlebar-identity {
   display: flex;
   min-width: 0;
+  flex: 1;
   align-items: center;
   gap: 8px;
   color: var(--foreground);
   font-size: 12px;
+}
+.studio-titlebar-brand {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  color: var(--foreground);
+  font-size: 12px;
+}
+.studio-titlebar-brand > svg {
+  color: var(--muted-foreground);
+}
+.studio-task-sidebar-header,
+.studio-task-thread-header,
+.studio-task-rail-header {
+  height: 52px;
+  min-height: 52px;
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.studio-task-sidebar-header,
+.studio-task-thread-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.studio-task-sidebar-header {
+  padding: 0 16px;
+  font-size: 12px;
+  font-weight: 550;
+}
+.studio-task-sidebar-header svg {
+  flex: none;
+  color: var(--muted-foreground);
+}
+.studio[data-platform='darwin'] .studio-task-sidebar-header {
+  padding-left: 51px;
+}
+.studio[data-platform='darwin'] .studio-task-thread-header[data-sidebar='false'] {
+  padding-left: 60px;
+}
+.studio-task-thread-header {
+  min-width: 0;
+  padding: 0 12px 0 16px;
+  background: var(--background);
+}
+.studio-task-thread-header button {
+  -webkit-app-region: no-drag;
+}
+.studio:is([data-platform='win32'], [data-platform='linux']) .studio-task-thread-header {
+  padding-right: max(
+    12px,
+    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 144px)) + 12px)
+  );
+}
+.studio-task-rail-header {
+  width: calc(100% + 10px);
+  margin: -8px -5px 8px;
 }
 .studio-titlebar-identity > svg {
   flex: none;
@@ -220,6 +280,33 @@ textarea {
   flex: none;
   font-weight: 550;
   letter-spacing: -0.02em;
+}
+.studio-titlebar-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 550;
+}
+.studio-titlebar-project,
+.studio-titlebar-task {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-titlebar-project {
+  flex: none;
+  max-width: 140px;
+  color: var(--muted-foreground);
+}
+.studio-titlebar-divider {
+  flex: none;
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+.studio-titlebar-task {
+  min-width: 0;
 }
 .studio-titlebar-section {
   overflow: hidden;
@@ -335,6 +422,19 @@ textarea {
   background: #a5b4fc12;
   color: var(--primary);
   box-shadow: inset 2px 0 var(--primary);
+}
+.studio-navigation .studio-update-item {
+  position: relative;
+  color: var(--primary);
+}
+.studio-update-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
 }
 .studio-tooltip {
   transform-origin: var(--radix-tooltip-content-transform-origin);

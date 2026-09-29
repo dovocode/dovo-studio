@@ -3,7 +3,8 @@ import { View } from 'react-native'
 import { Schema } from 'effect'
 import {
   executionSchema,
-  accessModes,
+  accessLabel,
+  selectableAccessModes,
   agentSchema,
   decode,
   defaultTaskHarness,
@@ -11,7 +12,6 @@ import {
   providerSchema,
   runtimeSetupSchema,
   runtimeDefaultsSchema,
-  supportsAccess,
   taskHarnessSchema,
   type ProjectTaskDefaults,
   type Repository,
@@ -104,6 +104,35 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
           }
         />
       )}
+      <Choice
+        label={repository ? 'Default permissions' : 'Global default permissions'}
+        disabled={disabled}
+        value={draft.permission ?? (repository ? 'inherit' : 'full-access')}
+        items={[
+          ...(repository
+            ? [
+                {
+                  id: 'inherit',
+                  name: `Use runtime default (${accessLabel(setup?.defaults.permission ?? 'full-access')})`,
+                },
+              ]
+            : []),
+          ...selectableAccessModes(draft.permission).map((mode) => ({
+            id: mode.id,
+            name: mode.name,
+          })),
+        ]}
+        onChange={(value) =>
+          change({
+            ...draft,
+            permission:
+              value === 'inherit' ? undefined : decode(agentSchema.fields.permission, value),
+          })
+        }
+      />
+      <Text style={styles.muted}>
+        Applies to new tasks across all harnesses. Existing tasks keep their access setting.
+      </Text>
       {harness && (
         <>
           <Choice
@@ -120,20 +149,6 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
             agent={{ ...harness, id: 'defaults', name: 'Task defaults' }}
             onChange={(agent) =>
               change({ ...draft, harness: decode(taskHarnessSchema.omit('resources'), agent) })
-            }
-          />
-          <Choice
-            label="Access"
-            disabled={disabled}
-            value={harness.permission}
-            items={accessModes
-              .filter((mode) => supportsAccess(harness.provider, mode.id))
-              .map((mode) => ({ id: mode.id, name: mode.name }))}
-            onChange={(value) =>
-              change({
-                ...draft,
-                harness: { ...harness, permission: decode(agentSchema.fields.permission, value) },
-              })
             }
           />
           <Field

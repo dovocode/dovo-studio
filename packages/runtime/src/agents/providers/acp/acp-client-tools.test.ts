@@ -104,6 +104,46 @@ it('requires approval for writes and terminal commands', async () => {
   await allowed.tools.close()
 })
 
+it('accepts workspace edits but still asks before ACP terminal commands', async () => {
+  const { cwd, tools } = await setup('workspace-write', false)
+  await tools.client.writeTextFile?.({
+    sessionId: 'session',
+    path: join(cwd, 'edited.txt'),
+    content: 'edited',
+  })
+  expect(await readFile(join(cwd, 'edited.txt'), 'utf8')).toBe('edited')
+  await expect(
+    tools.client.createTerminal?.({ sessionId: 'session', command: process.execPath }),
+  ).rejects.toThrow('declined')
+  await tools.close()
+})
+
+it('allows full access outside the workspace without approval prompts', async () => {
+  const { tools } = await setup('full-access', false)
+  const outside = await mkdtemp(join(tmpdir(), 'dovo-acp-full-access-'))
+  dirs.push(outside)
+  const file = join(outside, 'created.txt')
+  await tools.client.writeTextFile?.({ sessionId: 'session', path: file, content: 'allowed' })
+  expect(await tools.client.readTextFile?.({ sessionId: 'session', path: file })).toEqual({
+    content: 'allowed',
+  })
+  const terminal = await tools.client.createTerminal?.({
+    sessionId: 'session',
+    command: process.execPath,
+    args: ['-e', 'process.stdout.write("ok")'],
+    cwd: outside,
+  })
+  expect(
+    (
+      await tools.client.waitForTerminalExit?.({
+        sessionId: 'session',
+        terminalId: terminal!.terminalId,
+      })
+    )?.exitCode,
+  ).toBe(0)
+  await tools.close()
+})
+
 it('refuses symlink and hard-link file writes', async () => {
   const { cwd, tools } = await setup()
   const outside = await mkdtemp(join(tmpdir(), 'dovo-acp-outside-'))

@@ -11,17 +11,21 @@ import {
 } from '@pierre/diffs/react'
 import { Button, LineCommentForm, MessageResponse } from '@dovo/studio-ui'
 import type { ChangedFile, Task } from '@dovo/studio-core'
+import { formatCodeReference } from '../detail/code-reference'
 const createEditor: EditorFactory<undefined, undefined> = (type, options, key) =>
   new Editor(type, options, key)
 export function PierreEditor({
   file,
   taskId,
+  readOnly = false,
   onSave,
   comments,
   onComment,
+  onReference,
 }: {
   file: ChangedFile
   taskId: string
+  readOnly?: boolean
   comments: Task['messages']
   onComment: (
     body: string,
@@ -32,6 +36,7 @@ export function PierreEditor({
     },
   ) => Promise<void>
   onSave: (contents: string) => void
+  onReference?: (text: string) => void
 }) {
   const [ready, setReady] = useApplicationState(false)
   const [loadError, setLoadError] = useApplicationState<Error | null>(null)
@@ -58,6 +63,7 @@ export function PierreEditor({
     side: 'additions' | 'deletions'
   } | null>(null)
   const [editing, setEditing] = useApplicationState(false)
+  const cancelEdit = useRef(false)
   const diffs = useDiffOptions()
   const [split, setSplit] = useApplicationState(diffs.defaultSplit)
   const [dirty, setDirty] = useApplicationState(false)
@@ -85,7 +91,7 @@ export function PierreEditor({
       enableLineSelection: !editing,
       enableGutterUtility: !editing,
       onLineSelectionEnd: (range) => {
-        if (range && range.start !== range.end && (!range.endSide || range.endSide === range.side))
+        if (range && (!range.endSide || range.endSide === range.side))
           setSelection({
             start: Math.min(range.start, range.end),
             end: Math.max(range.start, range.end),
@@ -133,6 +139,7 @@ export function PierreEditor({
   ]
   if (
     selection &&
+    !readOnly &&
     !anchors.some((a) => a.side === selection.side && a.lineNumber === selection.end)
   )
     anchors.push({
@@ -147,6 +154,28 @@ export function PierreEditor({
           {file.path}
           {dirty ? ' •' : ''}
         </span>
+        {selection && onReference && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-[0.625rem]"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              onReference(
+                formatCodeReference(
+                  file.path,
+                  selection.start,
+                  selection.end,
+                  selection.side === 'additions' ? file.after : file.before,
+                  selection.side === 'additions' ? 'new' : 'old',
+                ),
+              )
+              setSelection(null)
+            }}
+          >
+            Add reference to composer
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"
@@ -155,15 +184,31 @@ export function PierreEditor({
         >
           {split ? 'Split' : 'Unified'}
         </Button>
-        <Button
-          size="sm"
-          disabled={!!selection}
-          variant={editing ? 'default' : 'outline'}
-          className="h-6 px-2 text-[0.625rem]"
-          onClick={() => setEditing((v) => !v)}
-        >
-          {editing ? 'Save draft' : 'Edit'}
-        </Button>
+        {!readOnly && editing && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[0.625rem]"
+            onClick={() => {
+              cancelEdit.current = true
+              setEditing(false)
+              setDirty(false)
+            }}
+          >
+            Cancel
+          </Button>
+        )}
+        {!readOnly && (
+          <Button
+            size="sm"
+            disabled={!!selection}
+            variant={editing ? 'default' : 'outline'}
+            className="h-6 px-2 text-[0.625rem]"
+            onClick={() => setEditing((v) => !v)}
+          >
+            {editing ? 'Save draft' : 'Edit'}
+          </Button>
+        )}
       </div>
       <div className="studio-code min-h-0 flex-1 overflow-auto">
         <EditProvider createEditor={createEditor}>
@@ -186,6 +231,7 @@ export function PierreEditor({
                       </div>
                     ))}
                   {selection &&
+                    !readOnly &&
                     selection.side === annotation.side &&
                     selection.end === annotation.lineNumber && (
                       <LineCommentForm
@@ -210,10 +256,14 @@ export function PierreEditor({
                 </div>
               )}
               options={options}
-              edit={editing}
+              edit={editing && !readOnly}
               editStateKey={`${taskId}:${file.path}`}
               onEditChange={() => setDirty(true)}
               onEditComplete={(event) => {
+                if (cancelEdit.current) {
+                  cancelEdit.current = false
+                  return 'reject'
+                }
                 saveRef.current(event.newFile?.contents ?? '')
                 setDirty(false)
                 return 'accept'
@@ -236,9 +286,11 @@ export function PierreEditor({
           </p>
         ))}
       <div className="border-t px-3 py-1 text-[0.625rem] text-muted-foreground">
-        {editing
-          ? 'Editing draft · ⌘Z undo · ⌘F find · saved when leaving this file'
-          : 'Drag line numbers or Shift-click for a range · Click + for one line · Edit changes file contents'}
+        {readOnly
+          ? 'Historical diff · Select lines to reference in the composer'
+          : editing
+            ? 'Editing draft · ⌘Z undo · ⌘F find · saved when leaving this file'
+            : 'Drag line numbers or Shift-click for a range · Click + for one line · Edit changes file contents'}
       </div>
     </div>
   )

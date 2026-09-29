@@ -29,6 +29,7 @@ function inside(root: string, path: string) {
 
 export async function acpClientTools(run: AgentRun, session: () => string | undefined) {
   const root = await realpath(run.cwd)
+  const fullAccess = run.agent.permission === 'full-access'
   const terminals = new Map<string, Terminal>()
   const toolsAllowed = run.tools !== 'none'
   const canWrite = toolsAllowed && run.agent.permission !== 'read-only'
@@ -38,7 +39,8 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
     if (!isAbsolute(path)) throw new Error('ACP file path must be absolute')
     const target = resolve(path)
     const actual = await realpath(writing ? dirname(target) : target)
-    if (!inside(root, actual)) throw new Error('ACP file path resolves outside the workspace')
+    if (!fullAccess && !inside(root, actual))
+      throw new Error('ACP file path resolves outside the workspace')
     return writing ? join(actual, basename(target)) : actual
   }
 
@@ -96,7 +98,11 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
           const file = await checkedPath(params.path, true)
           if (Buffer.byteLength(params.content) > 4 * 1024 * 1024)
             throw new Error('ACP file exceeds the 4 MB write limit')
-          if (!(await run.approve('ACP write file', file)))
+          if (
+            !fullAccess &&
+            run.agent.permission !== 'workspace-write' &&
+            !(await run.approve('ACP write file', file))
+          )
             throw new Error('ACP file write declined')
           checkSession(params.sessionId)
           const safeFile = await checkedPath(params.path, true)
@@ -131,6 +137,7 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
           )
           if (params.cwd) await checkedPath(params.cwd)
           if (
+            !fullAccess &&
             !(await run.approve(
               'ACP run command',
               [params.command, ...(params.args ?? [])].join(' '),

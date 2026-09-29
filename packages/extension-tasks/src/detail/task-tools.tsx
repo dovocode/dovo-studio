@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { Bot, Files, Globe, Smartphone, Terminal } from 'lucide-react'
+import { Bot, Files, FileCode2, Globe, Smartphone, Terminal } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from '@dovo/studio-ui'
 import type { TaskSurface } from './task-header'
 
@@ -17,7 +17,8 @@ export function TaskTools({
       </span>
       {(
         [
-          ['changes', 'Diff & files', Files],
+          ['changes', 'Diff', FileCode2],
+          ['files', 'Files', Files],
           ['terminal', 'Terminal', Terminal],
           ['agents', 'Agents', Bot],
           ['browser', 'Browsers', Globe],

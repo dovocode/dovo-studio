@@ -6,7 +6,13 @@ const fixture = vi.hoisted(() => ({
     (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void
   >(),
   quit: vi.fn<() => void>(),
-  updates: vi.fn<(...args: unknown[]) => void>(),
+  updates: vi.fn<(...args: unknown[]) => unknown>(() =>
+    Object.assign(async () => {}, {
+      state: () => ({ status: 'idle' }),
+      refresh: async () => false,
+      install: async () => {},
+    }),
+  ),
 }))
 vi.mock('electron', () => ({
   app: {

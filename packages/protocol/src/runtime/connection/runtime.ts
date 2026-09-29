@@ -194,6 +194,13 @@ export const responses = {
   files: mutableStruct({
     files: taskSchema.fields.files,
   }),
+  branchDiff: mutableStruct({
+    files: taskSchema.fields.files,
+    omitted: mutableArray(Schema.String),
+    base: Schema.String,
+  }),
+  projectFileList: mutableStruct({ files: mutableArray(Schema.String) }),
+  projectFile: mutableStruct({ path: Schema.String, contents: Schema.String }),
   inspected: mutableStruct({
     path: Schema.String,
     branch: Schema.String,

@@ -39,15 +39,18 @@ import {
 } from '@dovo/studio-ui'
 import { ComposerHarnessControls } from './composer-harness-controls'
 import { ComposerWorkspace } from './composer-workspace'
+import type { CodeReference } from '../../detail/code-reference'
 export function Composer({
   task,
   onPending,
   onAside,
+  codeReference,
 }: {
   task: Task
   onPending: (pending: PendingMessage | null) => void
   /** Opens the side question dialog. */
   onAside?: () => void
+  codeReference?: CodeReference | null
 }) {
   const { workspace, setWorkspace, request, connected, connection, flush, snapshot } =
     useWorkspace()
@@ -62,6 +65,17 @@ export function Composer({
   // Routing every keystroke through setWorkspace would deep-diff and sync the whole
   // workspace, re-rendering every useWorkspace consumer on each character typed.
   const [draft, setDraft] = useState(task.draft)
+  const insertedReference = useRef<string | null>(null)
+  useEffect(() => {
+    if (
+      !codeReference ||
+      codeReference.taskId !== task.id ||
+      insertedReference.current === codeReference.id
+    )
+      return
+    insertedReference.current = codeReference.id
+    setDraft((current) => [current.trimEnd(), codeReference.text].filter(Boolean).join('\n\n'))
+  }, [codeReference, task.id])
   const lastWritten = useRef(task.draft)
   useEffect(() => {
     // Adopt external draft changes (e.g. moving the task to another machine) without
@@ -313,7 +327,7 @@ export function Composer({
   return (
     <div className="shrink-0 px-3 pb-2 pt-1">
       <PromptInput
-        className="studio-composer relative z-10 mx-auto max-w-[var(--chat-max)] rounded-xl border-border/70 bg-card shadow-none"
+        className="studio-composer relative z-10 mx-auto max-w-[var(--chat-max)] rounded-2xl border-border/70 bg-card shadow-none"
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes('Files')) event.preventDefault()
         }}
@@ -349,7 +363,7 @@ export function Composer({
           aria-label="Message task"
           aria-autocomplete="list"
           aria-expanded={mentions.open}
-          className={cn('min-h-12 px-3 pt-2 pb-1', pendingQuestion && 'hidden')}
+          className={cn('min-h-24 max-h-64 px-4 pt-4 pb-2', pendingQuestion && 'hidden')}
           value={draft}
           disabled={sending || task.archived || pendingQuestion}
           onKeyDown={mentions.onKeyDown}
@@ -449,7 +463,7 @@ export function Composer({
                 className={
                   task.status === 'running'
                     ? 'h-8 w-auto gap-1.5 rounded-md bg-muted px-2 text-[0.6875rem] text-foreground hover:bg-accent'
-                    : 'size-8 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-35'
+                    : 'size-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-35'
                 }
                 title={
                   steerFirst

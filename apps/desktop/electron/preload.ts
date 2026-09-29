@@ -7,6 +7,19 @@ contextBridge.exposeInMainWorld('dovo', {
     command: import('@dovo/protocol').BrowserCommand,
   ): ReturnType<import('@dovo/protocol').BrowserBridge> =>
     ipcRenderer.invoke('preview:browser', command),
+  updates: {
+    state: (): Promise<import('@dovo/protocol').DesktopUpdateState> =>
+      ipcRenderer.invoke('updates:state'),
+    install: (): Promise<void> => ipcRenderer.invoke('updates:install'),
+    subscribe: (listener: (state: import('@dovo/protocol').DesktopUpdateState) => void) => {
+      const onState = (
+        _event: Electron.IpcRendererEvent,
+        state: import('@dovo/protocol').DesktopUpdateState,
+      ) => listener(state)
+      ipcRenderer.on('updates:state', onState)
+      return () => ipcRenderer.removeListener('updates:state', onState)
+    },
+  },
   pickDirectory: (runtimeAddress: string): Promise<string | null> =>
     ipcRenderer.invoke('repositories:pick-directory', runtimeAddress),
   runtimeConnection: () => ipcRenderer.invoke('runtime:connection'),

@@ -2,12 +2,12 @@ import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
 import { Image, View } from 'react-native'
 import { Schema } from 'effect'
-import { projectIcon, type Repository } from '@dovo/protocol'
+import { projectIcon, projectIconColor, type Repository } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
-import { colors, styles } from '../../ui/theme'
+import { styles } from '../../ui/theme'
 
 export function ProjectIconSettings({ repository }: { repository: Repository }) {
   const { call, refresh, connected } = useRuntime()
@@ -45,8 +45,19 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
           <Image source={{ uri: icon }} style={{ width: 32, height: 32, borderRadius: 7 }} />
         ) : (
           <View
-            style={{ width: 32, height: 32, borderRadius: 7, backgroundColor: colors.elevated }}
-          />
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 7,
+              backgroundColor: projectIconColor(repository),
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>
+              {repository.name.slice(0, 2).toUpperCase()}
+            </Text>
+          </View>
         )}
         <Text style={[styles.text, { flex: 1 }]}>Project icon</Text>
       </View>

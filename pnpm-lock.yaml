@@ -784,6 +784,9 @@ importers:
       '@dovo/client-runtime':
         specifier: workspace:*
         version: link:../client-runtime
+      '@dovo/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@dovo/studio-core':
         specifier: workspace:*
         version: link:../studio-core

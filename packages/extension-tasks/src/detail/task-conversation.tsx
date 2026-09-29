@@ -13,6 +13,7 @@ import { RunControls } from '../chat/actions/run-controls'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import { ChatThread } from '../chat/thread/chat-thread'
 import { Composer } from '../chat/composer/composer'
+import type { CodeReference } from './code-reference'
 import { PreparationProgress } from '../chat/thread/preparation-progress'
 import { ReviewCommentsTray } from '../chat/thread/review-comments-tray'
 import { PlanApproval } from '../chat/thread/plan-approval'
@@ -25,6 +26,7 @@ export function TaskConversation({
   onTerminal,
   onAside,
   visible,
+  codeReference,
 }: {
   task: Task
   onReview: () => void
@@ -32,6 +34,7 @@ export function TaskConversation({
   /** Opens the side question dialog. */
   onAside?: () => void
   visible: boolean
+  codeReference?: CodeReference | null
 }) {
   const [pending, setPending] = useApplicationState<PendingMessage | null>(null)
   const { id, messages, queue, turns, files, status } = task
@@ -124,7 +127,13 @@ export function TaskConversation({
       <ReviewFindings task={task} className="px-5 pb-2" onOpen={onReview} />
       <ReviewCommentsTray task={task} className="px-5 pb-2" />
       <MessageQueue task={task} />
-      <Composer key={task.id} task={task} onPending={setPending} onAside={onAside} />
+      <Composer
+        key={task.id}
+        task={task}
+        onPending={setPending}
+        onAside={onAside}
+        codeReference={codeReference}
+      />
     </div>
   )
 }

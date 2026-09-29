@@ -11,8 +11,35 @@ import {
 it('decodes older snapshots with an unconfigured provider default', () => {
   expect(decode(runtimeDefaultsSchema, {})).toEqual({
     configured: false,
+    permission: 'full-access',
     harness: defaultTaskHarness('codex'),
   })
+})
+it('uses the global permission for new tasks of every harness', async () => {
+  const { resolveTaskDefaults } = await import('./runtime-setup')
+  for (const provider of ['codex', 'claude', 'opencode', 'acp'] as const) {
+    const runtime = decode(runtimeDefaultsSchema, { harness: defaultTaskHarness(provider) })
+    expect(resolveTaskDefaults(runtime, undefined).harness.permission).toBe('full-access')
+    expect(
+      resolveTaskDefaults({ ...runtime, permission: 'ask' }, undefined).harness.permission,
+    ).toBe('ask')
+  }
+  const runtime = decode(runtimeDefaultsSchema, { harness: defaultTaskHarness('codex') })
+  expect(
+    resolveTaskDefaults(runtime, {
+      id: 'repo',
+      name: 'Repo',
+      path: '/repo',
+      branch: 'main',
+      taskDefaults: { permission: 'workspace-write' },
+    }).harness.permission,
+  ).toBe('workspace-write')
+  expect(
+    resolveTaskDefaults(
+      { ...runtime, permission: 'auto', harness: defaultTaskHarness('acp') },
+      undefined,
+    ).harness.permission,
+  ).toBe('auto')
 })
 it('preserves managed ACP selection and independent title model through serialization', () => {
   const agent = {

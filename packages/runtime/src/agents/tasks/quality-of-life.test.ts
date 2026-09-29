@@ -97,6 +97,32 @@ it('runs a chat command in the task terminal, lists files for mentions, and remo
   })
   const files = await call('/api/tasks/files', { id: task.id, query: 'not' })
   expect(files.body.files).toEqual(['notes.md'])
+  const listed = await call('/api/tasks/files/list', { id: task.id })
+  expect(listed.status).toBe(200)
+  expect(listed.body.files).toContain('notes.md')
+  const preview = await call('/api/tasks/files/read', { id: task.id, path: 'notes.md' })
+  expect(preview.body).toEqual({ path: 'notes.md', contents: 'untracked\n' })
+  const written = await call('/api/tasks/files/write', {
+    id: task.id,
+    path: 'notes.md',
+    expectedContents: 'untracked\n',
+    contents: 'edited\n',
+  })
+  expect(written.body).toEqual({ path: 'notes.md', contents: 'edited\n' })
+  expect(await readFile(join(f.directory, 'notes.md'), 'utf8')).toBe('edited\n')
+  expect(
+    (
+      await call('/api/tasks/files/write', {
+        id: task.id,
+        path: 'notes.md',
+        expectedContents: 'untracked\n',
+        contents: 'stale edit\n',
+      })
+    ).status,
+  ).toBe(409)
+  expect((await call('/api/tasks/files/read', { id: task.id, path: '../outside' })).status).toBe(
+    400,
+  )
 
   const first = await call('/api/terminals/run', {
     taskId: task.id,

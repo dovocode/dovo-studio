@@ -1,62 +1,118 @@
-import { Check, ChevronDown, FileCode, Folder } from 'lucide-react'
+import { Check, ChevronDown, FileCode } from 'lucide-react'
 import type { ChangedFile } from '@dovo/studio-core'
 import { Button, cn } from '@dovo/studio-ui'
+
+type Folder = { name: string; folders: Map<string, Folder>; files: ChangedFile[] }
+type DiffStat = { path: string; additions: number; deletions: number }
+
+function fileTree(files: ChangedFile[]): Folder {
+  const root: Folder = { name: '', folders: new Map(), files: [] }
+  for (const file of files) {
+    const parts = file.path.split('/')
+    let folder = root
+    for (const name of parts.slice(0, -1)) {
+      let child = folder.folders.get(name)
+      if (!child) {
+        child = { name, folders: new Map(), files: [] }
+        folder.folders.set(name, child)
+      }
+      folder = child
+    }
+    folder.files.push(file)
+  }
+  return root
+}
+
+function FolderRows({
+  folder,
+  stats,
+  selected,
+  onSelect,
+}: {
+  folder: Folder
+  stats: Map<string, DiffStat>
+  selected: string
+  onSelect: (path: string) => void
+}) {
+  return (
+    <>
+      {[...folder.folders.values()]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((child) => (
+          <details key={child.name} open className="group/folder">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded px-2 py-1 text-[0.6875rem] text-muted-foreground hover:bg-accent/50">
+              <ChevronDown className="size-3 shrink-0 -rotate-90 transition-transform group-open/folder:rotate-0" />
+              <span className="truncate">{child.name}</span>
+            </summary>
+            <div className="ml-3 border-l border-border/60 pl-1">
+              <FolderRows folder={child} stats={stats} selected={selected} onSelect={onSelect} />
+            </div>
+          </details>
+        ))}
+      {[...folder.files]
+        .sort((a, b) => a.path.localeCompare(b.path))
+        .map((file) => (
+          <Button
+            key={file.path}
+            variant="ghost"
+            className={cn(
+              'h-7 w-full justify-start gap-2 rounded px-2 text-[0.6875rem] font-normal',
+              selected === file.path && 'bg-accent text-foreground',
+            )}
+            title={file.path}
+            onClick={() => onSelect(file.path)}
+          >
+            {file.viewed ? (
+              <Check className="size-3 shrink-0 text-emerald-400" />
+            ) : (
+              <FileCode className="size-3 shrink-0 text-muted-foreground" />
+            )}
+            <span className="min-w-0 flex-1 truncate text-left">{file.path.split('/').at(-1)}</span>
+            {!!stats.get(file.path)?.deletions && (
+              <span className="text-[0.625rem] tabular-nums text-rose-400">
+                −{stats.get(file.path)?.deletions}
+              </span>
+            )}
+            {!!stats.get(file.path)?.additions && (
+              <span className="text-[0.625rem] tabular-nums text-emerald-400">
+                +{stats.get(file.path)?.additions}
+              </span>
+            )}
+            <span className="text-[0.625rem] text-muted-foreground">{file.before ? 'M' : 'A'}</span>
+          </Button>
+        ))}
+    </>
+  )
+}
+
 export function FileTree({
   files,
+  stats,
   selected,
   onSelect,
 }: {
   files: ChangedFile[]
+  stats: DiffStat[]
   selected: string
   onSelect: (path: string) => void
 }) {
-  const folders = [
-    ...new Set(
-      files.map((file) =>
-        file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : '',
-      ),
-    ),
-  ]
   return (
-    <div
-      className="max-h-44 shrink-0 overflow-auto border-b bg-sidebar px-2 py-2"
+    <aside
+      className="flex w-64 max-w-[40%] shrink-0 flex-col border-l bg-sidebar"
       aria-label="Changed files"
     >
-      {folders.map((folder) => (
-        <details key={folder} open>
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1 text-[0.6875rem] text-muted-foreground">
-            <ChevronDown size={12} />
-            <Folder size={12} />
-            {folder || 'Repository'}
-          </summary>
-          {files
-            .filter(
-              (f) =>
-                (f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '') === folder,
-            )
-            .map((file) => (
-              <Button
-                key={file.path}
-                variant="ghost"
-                className={cn(
-                  'h-7 w-full justify-start gap-2 rounded px-6 text-[0.6875rem] font-normal',
-                  selected === file.path && 'bg-accent',
-                )}
-                onClick={() => onSelect(file.path)}
-              >
-                {file.viewed ? (
-                  <Check className="size-3 text-emerald-400" />
-                ) : (
-                  <FileCode className="size-3 text-muted-foreground" />
-                )}
-                <span className="truncate">{file.path.split('/').pop()}</span>
-                <span className="ml-auto text-[0.625rem] text-muted-foreground">
-                  {file.before ? 'M' : 'A'}
-                </span>
-              </Button>
-            ))}
-        </details>
-      ))}
-    </div>
+      <div className="flex h-10 shrink-0 items-center justify-between border-b px-3 text-xs font-medium">
+        <span>Files</span>
+        <span className="tabular-nums text-muted-foreground">{files.length}</span>
+      </div>
+      <div className="min-h-0 overflow-auto p-2">
+        <FolderRows
+          folder={fileTree(files)}
+          stats={new Map(stats.map((stat) => [stat.path, stat]))}
+          selected={selected}
+          onSelect={onSelect}
+        />
+      </div>
+    </aside>
   )
 }

@@ -8,6 +8,36 @@ Use the background server when work should stay available after closing the desk
 survives those applications closing, but this command does **not** install a boot service, prevent
 computer sleep, or automatically restart a crashed process.
 
+For a server-only macOS or Linux host, use a user-level service instead:
+
+```sh
+# From a source checkout:
+pnpm server service install --host 0.0.0.0
+pnpm server service status
+pnpm server pair
+
+# Or after installing the packaged dovo-server command:
+dovo-server service install --host 0.0.0.0
+dovo-server service status
+dovo-server pair
+```
+
+The install command creates or reuses the same data directory, builds source installs, captures only
+supported provider environment variables in a private file, registers launchd or systemd for the
+current user, and starts the runtime. Use `--data-dir` on every command when using a nondefault
+workspace. An existing runtime must be stopped before registering its service; the command never
+starts a second process on its database. Pairing still requires a code and device token, and HTTP
+LAN/VPN addresses remain supported.
+
+Use `server service restart` after changing settings or credentials, and `server service update` to
+stage and verify a source checkout update before restarting. On macOS, a Homebrew-installed server
+can use `dovo-server service update` to upgrade its formula and restart. For mise or manually
+extracted packages, install the new release with that tool and run
+`dovo-server service update --launcher /absolute/path/to/new/bin/dovo-server` from the current
+installation. `server service remove` unregisters and stops the service while preserving its
+database and pairings. macOS starts the LaunchAgent at login; Linux enables a systemd user unit.
+Linux boot startup without a login session requires your administrator to enable user lingering.
+
 ## Packaged Mac desktop
 
 The packaged Mac app provisions a per-profile launchd agent when no existing runtime is available.

@@ -70,6 +70,7 @@ while [ -L "$entry" ]; do
 done
 base=$(CDPATH= cd -- "$(dirname -- "$entry")/.." && pwd)
 export DOVO_SERVER_DISTRIBUTION=archive
+export DOVO_SERVER_LAUNCHER="$0"
 exec "$base/libexec/node" "$base/libexec/server/dist/server-cli.js" "$@"
 `,
       { mode: 0o755 },

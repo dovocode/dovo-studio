@@ -1,7 +1,7 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
-import { accessModes, lockedTaskProvider, supportsAccess } from '@dovo/studio-core'
+import { selectableAccessModes, lockedTaskProvider, supportsAccess } from '@dovo/studio-core'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { ModelSettings } from './model-settings'
 import { AcpRegistry } from './acp-registry'
@@ -246,7 +246,7 @@ export function AgentEditor({
                   })
                 }
               >
-                {accessModes.map((mode) => (
+                {selectableAccessModes(agent.permission).map((mode) => (
                   <option
                     key={mode.id}
                     value={mode.id}
@@ -259,7 +259,10 @@ export function AgentEditor({
               </ChoicePicker>
             </FormField>
             <p className="text-xs text-muted-foreground">
-              {accessModes.find((mode) => mode.id === agent.permission)?.description}
+              {
+                selectableAccessModes(agent.permission).find((mode) => mode.id === agent.permission)
+                  ?.description
+              }
             </p>
             {!supportsAccess(agent.provider, agent.permission) && (
               <p role="alert" className="text-xs text-destructive">

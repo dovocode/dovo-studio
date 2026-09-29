@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,7 +11,12 @@ afterEach(async () => {
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-async function fixture(holdPrompt = false, lifecycle = false, compactCommand = false) {
+async function fixture(
+  holdPrompt = false,
+  lifecycle = false,
+  compactCommand = false,
+  permissionKinds: string[] = [],
+) {
   const cwd = await mkdtemp(join(tmpdir(), 'dovo-acp-run-'))
   dirs.push(cwd)
   const script = join(cwd, 'agent.cjs')
@@ -34,6 +39,12 @@ const configOptions = [
   { id: 'toggle', name: 'Toggle', type: 'boolean', currentValue: false }
 ]
 let pendingPrompt
+const permissionKinds = ${JSON.stringify(permissionKinds)}
+let permissionIndex = 0
+const requestPermission = () => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 'permission-' + permissionIndex, method: 'session/request_permission', params: {
+  sessionId: 'session', toolCall: { toolCallId: 'tool-' + permissionIndex, kind: permissionKinds[permissionIndex], title: 'Tool request' },
+  options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }, { optionId: 'reject', name: 'Reject', kind: 'reject_once' }]
+} }) + '\\n')
 createInterface({ input: process.stdin }).on('line', (line) => {
   const input = JSON.parse(line)
   messages.push(input)
@@ -45,7 +56,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (input.method === 'session/close') respond(input.id, {})
   if (input.method === 'session/set_mode') respond(input.id, {})
   if (input.method === 'session/set_config_option') respond(input.id, { configOptions })
-  if (input.method === 'session/prompt') { update('new'); if (${holdPrompt}) pendingPrompt = input.id; else respond(input.id, { stopReason: 'end_turn' }) }
+  if (input.method === 'session/prompt') { update('new'); if (${holdPrompt} || permissionKinds.length) pendingPrompt = input.id; else respond(input.id, { stopReason: 'end_turn' }); if (permissionKinds.length) requestPermission() }
+  if (input.id === 'permission-' + permissionIndex && input.method === undefined) { permissionIndex++; if (permissionIndex < permissionKinds.length) requestPermission(); else respond(pendingPrompt, { stopReason: 'end_turn' }) }
   if (input.method === 'session/cancel' && pendingPrompt !== undefined) respond(pendingPrompt, { stopReason: 'cancelled' })
 })`,
   )
@@ -151,6 +163,25 @@ it('selects the restrictive mode for a tools-none turn', async () => {
   const input = run(cwd, launch, { tools: 'none' })
   await acpAdapter.run(input.run)
   expect(input.output).toEqual(['new'])
+})
+
+it('auto-accepts ACP edits while asking for commands in auto-accept edits mode', async () => {
+  const { cwd, record, launch } = await fixture(false, false, false, ['edit', 'execute'])
+  const approve = vi.fn<AgentRun['approve']>(async () => false)
+  const input = run(cwd, launch, { approve })
+  input.run.agent.permission = 'workspace-write'
+  await acpAdapter.run(input.run)
+  const messages = JSON.parse(await readFile(record, 'utf8')) as Array<{
+    id?: string
+    result?: { outcome?: { optionId?: string } }
+  }>
+  expect(messages.find((message) => message.id === 'permission-0')?.result?.outcome?.optionId).toBe(
+    'allow',
+  )
+  expect(messages.find((message) => message.id === 'permission-1')?.result?.outcome?.optionId).toBe(
+    'reject',
+  )
+  expect(approve).toHaveBeenCalledOnce()
 })
 
 it('sends session/cancel and accepts the cancelled stop reason', async () => {

@@ -37,9 +37,11 @@ export function TitleBar({
       data-platform={platform}
       data-window-focused={!platform || focused}
     >
-      <div className="studio-titlebar-identity">
+      <div className="studio-titlebar-brand">
         <Layers2 size={15} strokeWidth={1.6} aria-hidden="true" />
         <span className="studio-titlebar-name">Dovo Studio</span>
+      </div>
+      <div className="studio-titlebar-identity">
         {section && <span className="studio-titlebar-section">{section}</span>}
       </div>
       <div className="studio-titlebar-actions">

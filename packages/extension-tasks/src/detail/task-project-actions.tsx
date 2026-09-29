@@ -54,14 +54,14 @@ export function TaskProjectActions({
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="h-7 gap-1 px-2 text-[0.6875rem]"
+            className="h-8 gap-1.5 px-2.5 text-[0.6875rem]"
             title={error || 'Project actions'}
             aria-label="Project actions"
           >
-            <Play className="size-3.5" />
-            <span className="hidden lg:inline">Actions</span>
+            <Plus className="size-3.5" />
+            <span className="hidden lg:inline">Add action</span>
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>

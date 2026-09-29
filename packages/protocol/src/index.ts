@@ -99,3 +99,4 @@ export {
   type PendingMessage,
 } from './conversation/workflow/pending-message.js'
 export * from './scm/work/worktrees.js'
+export * from './desktop-update.js'

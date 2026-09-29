@@ -139,9 +139,12 @@ export async function stageServerSource(root: string, target: string) {
     ? manifest.version
     : 'unknown'
 }
-export async function updateServer(directory: string) {
+export async function updateServer(
+  directory: string,
+  service?: { stop: () => Promise<void>; start: () => Promise<void> },
+) {
   const initial = await serverStatus(directory)
-  if (initial.running && !initial.managed)
+  if (initial.running && !initial.managed && !service)
     throw new Error(
       'This runtime is owned by another launcher. Stop it there and start it with pnpm server start before updating.',
     )
@@ -182,7 +185,7 @@ export async function updateServer(directory: string) {
     version,
     createdAt: new Date().toISOString(),
   }
-  if (initial.running) await stopServer(directory)
+  if (initial.running) await (service ? service.stop() : stopServer(directory))
   const backupPath = join(directory, 'backups', `runtime-before-${id}.sqlite`)
   let backedUp = false
   try {
@@ -195,9 +198,19 @@ export async function updateServer(directory: string) {
       backedUp = true
     }
     writePrivateJson(join(directory, 'server-release.json'), metadata)
-    await startServer(directory, entrypoint)
+    if (service) await service.start()
+    else await startServer(directory, entrypoint)
   } catch (error) {
     writePrivateJson(join(directory, 'server-release.json'), previousMetadata)
+    if (service) {
+      try {
+        await service.stop()
+      } catch (stopError) {
+        throw new Error(
+          `The new service could not be stopped; the database was not restored. Backup: ${backupPath}. ${stopError instanceof Error ? stopError.message : String(stopError)}`,
+        )
+      }
+    }
     if (managedProcessIsAlive(directory))
       throw new Error(
         `The new runtime did not stop cleanly. The previous release is selected, but the database was not restored while a process is using it. Backup: ${backupPath}. ${error instanceof Error ? error.message : String(error)}`,
@@ -213,7 +226,8 @@ export async function updateServer(directory: string) {
     }
     if (initial.running) {
       try {
-        await startServer(directory, previousEntrypoint)
+        if (service) await service.start()
+        else await startServer(directory, previousEntrypoint)
       } catch (rollbackError) {
         throw new Error(
           `The new release failed and the previous runtime could not restart: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}. Original error: ${error instanceof Error ? error.message : String(error)}`,

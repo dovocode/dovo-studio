@@ -8,7 +8,7 @@ import {
 import { compareTasks, taskSortOptions, taskGroupOptions, isSnoozed } from '@dovo/studio-core'
 import { ProjectsMenu } from '@dovo/extension-scm/projects'
 import { ChoicePicker } from '@dovo/studio-ui'
-import { Plus, Search, ChevronDown, SlidersHorizontal, ListChecks } from 'lucide-react'
+import { Plus, Search, ChevronDown, SlidersHorizontal, ListChecks, Layers2 } from 'lucide-react'
 import { useEffect, useCallback, useMemo, useRef } from 'react'
 import { Button, Input } from '@dovo/studio-ui'
 import { responses, useWorkspace } from '@dovo/studio-core'
@@ -17,6 +17,7 @@ import { TaskContextMenu } from '../detail/task-context-menu'
 import { collectTasks, type TaskEntry, type TaskSource } from './task-collection'
 import { taskActionClient } from './task-row-actions'
 export function TaskList({
+  titleHeader = false,
   projectId,
   onProjectChange,
   selectedId,
@@ -31,6 +32,7 @@ export function TaskList({
   busy,
   error,
 }: {
+  titleHeader?: boolean
   projectId: string
   onProjectChange: (id: string) => void
   selectedId: string
@@ -277,6 +279,12 @@ export function TaskList({
       className="flex h-full w-full min-w-0 flex-col border-r bg-sidebar"
       aria-label="Task sidebar"
     >
+      {titleHeader && (
+        <header className="studio-task-sidebar-header">
+          <Layers2 size={15} strokeWidth={1.6} aria-hidden="true" />
+          <span>Dovo Studio</span>
+        </header>
+      )}
       <div className="shrink-0 space-y-1.5 px-2 pt-3 pb-1">
         {selecting && (
           <div className="flex flex-wrap items-center gap-1 text-xs">

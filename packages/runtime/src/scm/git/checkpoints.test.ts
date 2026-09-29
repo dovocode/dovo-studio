@@ -64,3 +64,20 @@ it('supports unborn repositories and records deletions and mode-only changes', a
     { path: 'hello.txt', before: 'original\n', after: '', viewed: false },
   ])
 })
+it('compares committed branch changes against the default branch without including working edits', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const git = new GitService()
+  await git.command(f.directory, ['branch', '-M', 'main'])
+  await git.command(f.directory, ['checkout', '-b', 'feature'])
+  await writeFile(join(f.directory, 'hello.txt'), 'committed change\n')
+  await git.command(f.directory, ['add', 'hello.txt'])
+  await git.command(f.directory, ['commit', '-m', 'Feature change'])
+  await writeFile(join(f.directory, 'hello.txt'), 'uncommitted change\n')
+  const result = await git.branchChangesFiles(f.directory)
+  expect(result.base).toBe('refs/heads/main')
+  expect(result.files).toEqual([
+    { path: 'hello.txt', before: 'original\n', after: 'committed change\n', viewed: false },
+  ])
+  expect(result.omitted).toEqual([])
+})

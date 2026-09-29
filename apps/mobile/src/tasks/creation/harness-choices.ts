@@ -42,6 +42,7 @@ export function selectedTaskHarness(task: Task, agents: Agent[], selection: stri
     ? agents.find((agent) => agent.id === selection.slice(6))
     : {
         ...defaultTaskHarness(choice.provider),
+        permission: resolveTaskAgent(task, agents)?.permission ?? 'full-access',
         id: 'task',
         name: harnessNames[choice.provider],
       }

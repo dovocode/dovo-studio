@@ -1,4 +1,4 @@
-import { projectIcon, type Repository } from '@dovo/protocol'
+import { projectIcon, projectIconColor, type Repository } from '@dovo/protocol'
 import { cn } from './lib/utils'
 
 export function ProjectIcon({
@@ -12,9 +12,10 @@ export function ProjectIcon({
   return (
     <span
       className={cn(
-        'inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded bg-primary/20 text-[9px] font-bold uppercase text-primary',
+        'inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded text-[9px] font-bold uppercase',
         className,
       )}
+      style={icon ? undefined : { backgroundColor: projectIconColor(repository), color: '#fff' }}
       aria-hidden="true"
     >
       {icon ? (

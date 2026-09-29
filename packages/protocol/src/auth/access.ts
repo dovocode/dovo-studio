@@ -3,37 +3,37 @@ export const accessModes = [
   {
     id: 'ask',
     name: 'Supervised',
-    description: 'Ask you to review actions that require permission.',
+    description: 'Ask before commands and file changes.',
   },
   {
     id: 'workspace-write',
     name: 'Auto-accept edits',
-    description:
-      'Allow workspace edits without asking. Actions outside that scope may still need approval.',
+    description: 'Auto-approve edits, ask before other actions.',
   },
   {
     id: 'auto',
     name: 'Auto',
-    description:
-      'Let the harness review and approve or deny actions. This is not unconditional approval.',
+    description: 'Supported providers approve routine actions; others still ask.',
   },
   {
     id: 'full-access',
     name: 'Full access',
-    description:
-      'Run with the harness’s unrestricted access mode. Host and organization policies still apply.',
-  },
-  {
-    id: 'read-only',
-    name: 'Read only',
-    description: 'Explore files without granting write access.',
+    description: 'Allow commands and edits without prompts.',
   },
 ] as const
-export function supportsAccess(provider: Agent['provider'], permission: Agent['permission']) {
-  if (permission === 'auto') return provider === 'codex' || provider === 'claude'
-  if (provider === 'acp') return permission === 'ask' || permission === 'read-only'
+const legacyReadOnly = {
+  id: 'read-only',
+  name: 'Read only',
+  description: 'Explore files without granting write access.',
+} as const
+export function selectableAccessModes(current?: Agent['permission']) {
+  return current === 'read-only' ? [...accessModes, legacyReadOnly] : accessModes
+}
+export function supportsAccess(_provider: Agent['provider'], _permission: Agent['permission']) {
   return true
 }
 export function accessLabel(permission: Agent['permission']) {
-  return accessModes.find((mode) => mode.id === permission)?.name ?? permission
+  return (
+    selectableAccessModes(permission).find((mode) => mode.id === permission)?.name ?? permission
+  )
 }

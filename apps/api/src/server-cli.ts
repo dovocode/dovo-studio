@@ -8,6 +8,14 @@ import { acquireProcessLock } from './process-lock.js'
 import { mkdirSync } from 'node:fs'
 import { selectedEntrypoint, sourceEntrypoint, updateServer } from './server-update.js'
 import { serverDoctor } from './server-doctor.js'
+import {
+  installService,
+  removeService,
+  restartService,
+  runService,
+  serviceStatus,
+  updateService,
+} from './server-service.js'
 
 async function forwardNode(args: string[]) {
   const child = spawn(process.execPath, args, { stdio: 'inherit' })
@@ -25,6 +33,7 @@ async function main() {
       port: { type: 'string' },
       database: { type: 'string' },
       'public-address': { type: 'string' },
+      launcher: { type: 'string' },
       network: { type: 'string' },
       manual: { type: 'boolean' },
       'check-updates': { type: 'boolean' },
@@ -40,18 +49,20 @@ async function main() {
       'This server is managed by Homebrew, mise or an archive install. Finish active work, stop the server, upgrade with your package manager, then run dovo-server start. Your data directory is preserved.',
     )
   if (values.help) {
-    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | doctor | update> [options]
+    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | doctor | update | service install|status|restart|update|remove> [options]
   --data-dir <directory>    Workspace data directory (default: ~/.dovo)
   --host <host>             Setup: 0.0.0.0, an IP, local, tailscale, or netbird
   --port <number>           Setup: fixed port (default: 51464)
   --database <path>         Setup: database in the selected data directory
   --public-address <url>    Setup/pair: reachable LAN/VPN or HTTPS proxy origin
+  --launcher <path>         Service update: new mise/archive bin/dovo-server path
   --json                   Print status/configuration as JSON, never owner tokens
   --check-updates           Doctor: compare installed adapters with npm registry versions
 
 Setup preserves the existing database and saved listening address. Start runs in the
 background, independently of the terminal or desktop app. Logs: <data-dir>/server.log.
-This does not install an OS service or restart after reboot. See docs/server-setup.md.
+Plain start does not install an OS service or restart after reboot. See docs/server-setup.md.
+Service install creates a user-level launchd (macOS) or systemd (Linux) service and starts it.
 Pair accepts code/devices/approve/deny and --network/--manual, like pnpm pair.
 ${
   packaged
@@ -63,23 +74,48 @@ Build first: pnpm --filter @dovo/api... -r build`
     return
   }
   if (
-    !['setup', 'start', 'status', 'stop', 'restart', 'pair', 'doctor', 'update'].includes(
-      command,
-    ) ||
-    (command !== 'pair' && args.length)
+    ![
+      'setup',
+      'start',
+      'status',
+      'stop',
+      'restart',
+      'pair',
+      'doctor',
+      'update',
+      'service',
+    ].includes(command) ||
+    (command !== 'pair' && command !== 'service' && args.length) ||
+    (command === 'service' &&
+      (args.length !== 1 ||
+        !['install', 'status', 'restart', 'update', 'remove', 'run'].includes(args[0])))
   )
     throw new Error(`Invalid command. Run ${cliName} --help.`)
-  if (command !== 'setup' && (values.host || values.port || values.database))
+  if (
+    command !== 'setup' &&
+    !(command === 'service' && args[0] === 'install') &&
+    (values.host || values.port || values.database)
+  )
     throw new Error(
       '--host, --port and --database are setup options. Run setup, then restart to apply changes.',
     )
   if (command !== 'doctor' && values['check-updates'])
     throw new Error('--check-updates is a doctor option.')
-  if (!['setup', 'pair'].includes(command) && values['public-address'])
+  if (
+    !['setup', 'pair'].includes(command) &&
+    !(command === 'service' && args[0] === 'install') &&
+    values['public-address']
+  )
     throw new Error('--public-address is a setup or pair option.')
   if (command !== 'pair' && (values.network || values.manual))
     throw new Error('--network and --manual are pair options.')
+  if (!(command === 'service' && args[0] === 'update') && values.launcher)
+    throw new Error('--launcher is a service update option.')
   const directory = serverDirectory(values['data-dir'])
+  if (command === 'service' && args[0] === 'run') {
+    await runService(directory)
+    return
+  }
   if (command === 'doctor') {
     const selected = selectedEntrypoint(directory)
     if (resolve(selected) !== resolve(sourceEntrypoint())) {
@@ -135,7 +171,19 @@ Build first: pnpm --filter @dovo/api... -r build`
       result = status
       if (!status.running) process.exitCode = 1
     } else if (command === 'update') result = await updateServer(directory)
-    else {
+    else if (command === 'service') {
+      if (args[0] === 'install')
+        result = await installService(directory, {
+          host: values.host,
+          port: values.port,
+          database: values.database,
+          publicAddress: values['public-address'],
+        })
+      else if (args[0] === 'status') result = await serviceStatus(directory)
+      else if (args[0] === 'restart') result = await restartService(directory)
+      else if (args[0] === 'update') result = await updateService(directory, values.launcher)
+      else result = await removeService(directory)
+    } else {
       if (command === 'restart') await stopServer(directory)
       result = await startServer(directory, selectedEntrypoint(directory))
     }
@@ -149,6 +197,8 @@ Build first: pnpm --filter @dovo/api... -r build`
     )
   else if (command === 'stop')
     console.log('Server stopped. Workspace and device pairings are preserved.')
+  else if (command === 'service' && args[0] === 'remove')
+    console.log('Server service removed. Workspace and device pairings are preserved.')
   else {
     const status = await serverStatus(directory)
     console.log(

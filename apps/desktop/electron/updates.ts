@@ -1,7 +1,7 @@
 import { decode } from '@dovo/protocol'
 import { app, dialog, Menu, BrowserWindow, shell, type MenuItemConstructorOptions } from 'electron'
 import updater from 'electron-updater'
-import { snapshotSchema } from '@dovo/protocol'
+import { snapshotSchema, type DesktopUpdateState } from '@dovo/protocol'
 import { startLocalRuntime } from './local-runtime.js'
 const { autoUpdater } = updater
 export function registerUpdates(
@@ -17,7 +17,54 @@ export function registerUpdates(
       ? 'Dovo Studio (Nightly)'
       : 'Dovo Studio'
   autoUpdater.allowPrerelease = nightly
+  autoUpdater.autoDownload = false
   let busy = false
+  let state: DesktopUpdateState = { status: 'idle' }
+  let checking: Promise<boolean> | undefined
+  const publish = (next: DesktopUpdateState) => {
+    state = next
+    for (const window of BrowserWindow.getAllWindows())
+      window.webContents.send('updates:state', state)
+  }
+  const notesText = (notes: unknown): string | undefined => {
+    const text =
+      typeof notes === 'string'
+        ? notes
+        : Array.isArray(notes)
+          ? notes.map((entry) => (typeof entry?.note === 'string' ? entry.note : '')).join('\n\n')
+          : ''
+    return text.trim() || undefined
+  }
+  const refresh = () => {
+    if (!app.isPackaged || (process.platform === 'linux' && !process.env.APPIMAGE))
+      return Promise.resolve(false)
+    if (state.status === 'downloading' || state.status === 'downloaded')
+      return Promise.resolve(true)
+    if (checking) return checking
+    checking = autoUpdater
+      .checkForUpdates()
+      .then((result) => {
+        if (result?.isUpdateAvailable) {
+          publish({
+            status: 'available',
+            version: result.updateInfo.version,
+            notes: notesText(result.updateInfo.releaseNotes),
+          })
+          return true
+        }
+        publish({ status: 'idle' })
+        return false
+      })
+      .catch((error: unknown) => {
+        if (state.status !== 'available' && state.status !== 'downloaded')
+          publish({ status: 'error' })
+        throw error
+      })
+      .finally(() => {
+        checking = undefined
+      })
+    return checking
+  }
   let restoreRuntime: (() => Promise<void>) | undefined
   const recover = async () => {
     const restore = restoreRuntime
@@ -26,11 +73,12 @@ export function registerUpdates(
   }
   autoUpdater.on('error', (error) => {
     console.error('Desktop update failed:', error.message)
+    publish({ ...state, status: 'error' })
     void recover().catch((cause) =>
       console.error('Could not restore runtime after failed update:', cause),
     )
   })
-  const check = async () => {
+  const check = async (direct = false) => {
     if (busy) return
     if (!app.isPackaged) {
       await dialog.showMessageBox({
@@ -62,8 +110,7 @@ export function registerUpdates(
     }
     busy = true
     try {
-      const result = await autoUpdater.checkForUpdates()
-      if (!result?.isUpdateAvailable) {
+      if (state.status !== 'available' && state.status !== 'downloaded' && !(await refresh())) {
         await dialog.showMessageBox({
           type: 'info',
           message: `${appName} is up to date.`,
@@ -71,27 +118,33 @@ export function registerUpdates(
         })
         return
       }
-      const answer = await dialog.showMessageBox({
-        type: 'info',
-        message: `${appName} ${result?.updateInfo.version ?? ''} is available`,
-        detail:
-          'Download the update now? Installation waits for your confirmation and keeps your projects, conversations and paired devices.',
-        buttons: ['Download update', 'Later'],
-        cancelId: 1,
-        defaultId: 0,
-      })
-      if (answer.response !== 0) return
-      for (const window of BrowserWindow.getAllWindows()) window.setProgressBar(0)
-      const progress = (info: { percent: number }) => {
-        for (const window of BrowserWindow.getAllWindows())
-          window.setProgressBar(info.percent / 100)
+      if (!direct) {
+        const answer = await dialog.showMessageBox({
+          type: 'info',
+          message: `${appName} ${state.version ?? ''} is available`,
+          detail:
+            'Download the update now? Installation waits for your confirmation and keeps your projects, conversations and paired devices.',
+          buttons: ['Download update', 'Later'],
+          cancelId: 1,
+          defaultId: 0,
+        })
+        if (answer.response !== 0) return
       }
-      autoUpdater.on('download-progress', progress)
-      try {
-        await autoUpdater.downloadUpdate()
-      } finally {
-        autoUpdater.removeListener('download-progress', progress)
-        for (const window of BrowserWindow.getAllWindows()) window.setProgressBar(-1)
+      if (state.status !== 'downloaded') {
+        for (const window of BrowserWindow.getAllWindows()) window.setProgressBar(0)
+        const progress = (info: { percent: number }) => {
+          publish({ ...state, status: 'downloading', progress: info.percent })
+          for (const window of BrowserWindow.getAllWindows())
+            window.setProgressBar(info.percent / 100)
+        }
+        autoUpdater.on('download-progress', progress)
+        try {
+          await autoUpdater.downloadUpdate()
+          publish({ ...state, status: 'downloaded', progress: 100 })
+        } finally {
+          autoUpdater.removeListener('download-progress', progress)
+          for (const window of BrowserWindow.getAllWindows()) window.setProgressBar(-1)
+        }
       }
       const install = await dialog.showMessageBox({
         type: 'info',
@@ -200,5 +253,9 @@ export function registerUpdates(
     },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
-  return check
+  return Object.assign(check, {
+    state: () => state,
+    refresh,
+    install: () => check(true),
+  })
 }

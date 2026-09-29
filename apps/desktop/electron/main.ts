@@ -151,7 +151,7 @@ const startup = Effect.gen(function* () {
   yield* Effect.sync(() => {
     if (!app.isPackaged && process.platform === 'darwin')
       app.dock?.setIcon(join(__dirname, '../build/icon.png'))
-    registerUpdates(__dirname, async () => {
+    const updates = registerUpdates(__dirname, async () => {
       const restore = await prepareLocalRuntimeUpdate(__dirname)
       quitting = true
       return async () => {
@@ -159,7 +159,21 @@ const startup = Effect.gen(function* () {
         await restore()
       }
     })
+    ipcMain.handle('updates:state', (event) => {
+      requireTrustedRenderer(event, rendererPath)
+      return updates.state()
+    })
+    ipcMain.handle('updates:install', async (event) => {
+      requireTrustedRenderer(event, rendererPath)
+      await updates.install()
+    })
     createWindow()
+    const checkUpdates = () =>
+      void updates
+        .refresh()
+        .catch((error: unknown) => console.error('Could not check for desktop updates:', error))
+    setTimeout(checkUpdates, 5000).unref()
+    setInterval(checkUpdates, 60 * 60 * 1000).unref()
   })
   yield* Effect.tryPromise({
     try: () => startLocalRuntime(__dirname),

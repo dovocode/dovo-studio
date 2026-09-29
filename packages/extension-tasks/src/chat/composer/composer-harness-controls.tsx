@@ -13,7 +13,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import {
-  accessModes,
+  selectableAccessModes,
   daybreakChoices,
   modelServiceTiers,
   serviceTierValue,
@@ -98,7 +98,7 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
     : undefined
   const locked = disabled || saving || task.status === 'running'
   const itemClass =
-    'relative flex cursor-default select-none items-center rounded-md py-2 pl-3 pr-8 text-sm outline-none transition-colors duration-150 focus:bg-accent/50 data-[state=checked]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40'
+    'relative flex cursor-default select-none items-center rounded-md py-1.5 pl-3 pr-8 text-sm outline-none transition-colors duration-150 focus:bg-accent/50 data-[state=checked]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40'
   return (
     <>
       <ComposerModelPicker
@@ -113,7 +113,12 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
         }
         onUseHarness={(provider) =>
           save((current, agents) =>
-            changeTaskHarness(current, agents, defaultTaskHarness(provider), true),
+            changeTaskHarness(
+              current,
+              agents,
+              { ...defaultTaskHarness(provider), permission: value.permission },
+              true,
+            ),
           )
         }
         onConfigure={() => setConnection(true)}
@@ -320,7 +325,8 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
             title="Agent access"
           >
             <AccessIcon className="size-3.5" />
-            {accessModes.find((mode) => mode.id === value.permission)?.name ?? value.permission}
+            {selectableAccessModes(value.permission).find((mode) => mode.id === value.permission)
+              ?.name ?? value.permission}
             <ChevronDown size={12} />
           </Button>
         </DropdownMenu.Trigger>
@@ -332,9 +338,6 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
             collisionPadding={12}
             className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] w-80 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
           >
-            <DropdownMenu.Label className="px-3 py-2 text-xs text-muted-foreground">
-              Access
-            </DropdownMenu.Label>
             <DropdownMenu.RadioGroup
               aria-label="Harness access"
               value={value.permission}
@@ -345,7 +348,7 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
                 })
               }
             >
-              {accessModes
+              {selectableAccessModes(value.permission)
                 .filter(
                   (mode) => supportsAccess(value.provider, mode.id) || mode.id === value.permission,
                 )
@@ -364,7 +367,7 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
                           <ModeIcon className="size-3.5 text-muted-foreground" />
                           {mode.name}
                         </span>
-                        <span className="mt-1 block text-xs text-muted-foreground">
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
                           {mode.description}
                         </span>
                       </span>
@@ -375,20 +378,6 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
                   )
                 })}
             </DropdownMenu.RadioGroup>
-            <DropdownMenu.Separator className="mx-2 my-2 border-t" />
-            <DropdownMenu.Item className={itemClass} onSelect={() => setConnection(true)}>
-              {customAgent ? 'Custom agent settings…' : 'Connection and instructions…'}
-            </DropdownMenu.Item>
-            {loading && (
-              <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
-                Loading provider models…
-              </p>
-            )}
-            {catalogError && (
-              <p role="alert" className="px-3 py-2 text-xs text-destructive">
-                {catalogError}
-              </p>
-            )}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>

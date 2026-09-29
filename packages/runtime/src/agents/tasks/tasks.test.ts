@@ -1383,7 +1383,7 @@ it.each(['custom', 'built-in'] as const)(
             id: `task:${task.id}`,
             provider: 'codex',
             model: '',
-            permission: 'ask',
+            permission: 'full-access',
             resources: {
               mcpServers: [],
               skills: [],

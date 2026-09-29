@@ -4,7 +4,7 @@ import {
   providers,
   providerSchema,
   defaultTaskHarness,
-  accessModes,
+  selectableAccessModes,
   supportsAccess,
   agentSchema,
   modelCatalogSchema,
@@ -36,7 +36,8 @@ export function HarnessFields({
           disabled={!!lockedProvider && value.provider === lockedProvider}
           onValueChange={(provider) => {
             const next = decode(providerSchema, provider)
-            if (!lockedProvider || next === lockedProvider) onChange(defaultTaskHarness(next))
+            if (!lockedProvider || next === lockedProvider)
+              onChange({ ...defaultTaskHarness(next), permission: value.permission })
           }}
         >
           {providerSchema.literals
@@ -97,7 +98,7 @@ export function HarnessFields({
             })
           }
         >
-          {accessModes.map((mode) => (
+          {selectableAccessModes(value.permission).map((mode) => (
             <option
               key={mode.id}
               value={mode.id}
@@ -109,7 +110,10 @@ export function HarnessFields({
         </ChoicePicker>
       </FormField>
       <p className="text-xs text-muted-foreground">
-        {accessModes.find((mode) => mode.id === value.permission)?.description}
+        {
+          selectableAccessModes(value.permission).find((mode) => mode.id === value.permission)
+            ?.description
+        }
       </p>
       <details className="text-xs">
         <summary className="cursor-pointer text-muted-foreground">

@@ -3,7 +3,6 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { decode } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
 import {
-  defaultTaskHarness,
   forgeIssueDetailSchema,
   forgePipelineDetailSchema,
   forgeWorkOptionsSchema,
@@ -219,7 +218,7 @@ export function createWorkTaskEffect(s: Services, value: unknown) {
         title: `${source.kind === 'issue' ? 'Issue' : 'Pipeline'} ${source.id}: ${source.title}`,
         repositoryId: input.repositoryId,
         agentId: '',
-        harness: defaultTaskHarness('codex'),
+        harness: s.store.taskDefaults(input.repositoryId).harness,
         execution: 'worktree',
         status: 'draft',
         createdAt: new Date().toISOString(),

@@ -17,6 +17,7 @@ createRoot(root).render(
       desktopPlatform={window.dovo?.platform}
       pickDirectory={window.dovo?.pickDirectory}
       browser={window.dovo?.browser}
+      updates={window.dovo?.updates}
     />
   </StrictMode>,
 )

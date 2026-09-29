@@ -130,10 +130,11 @@ it.each([
     permission === 'full-access' ? true : undefined,
   )
 })
-it('does not advertise harness review where the integration cannot enforce it', () => {
-  expect(supportsAccess('opencode', 'auto')).toBe(false)
-  expect(supportsAccess('acp', 'auto')).toBe(false)
-  expect(supportsAccess('acp', 'full-access')).toBe(false)
+it('offers Auto with supervised fallback where native review is unavailable', () => {
+  expect(supportsAccess('opencode', 'auto')).toBe(true)
+  expect(supportsAccess('acp', 'auto')).toBe(true)
+  expect(supportsAccess('acp', 'workspace-write')).toBe(true)
+  expect(supportsAccess('acp', 'full-access')).toBe(true)
   expect(supportsAccess('codex', 'auto')).toBe(true)
   expect(supportsAccess('claude', 'auto')).toBe(true)
 })

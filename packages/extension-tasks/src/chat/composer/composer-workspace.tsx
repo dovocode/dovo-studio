@@ -44,7 +44,9 @@ export function ComposerWorkspace({
     }
   }
   return (
-    <div className="relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[744px] flex-wrap items-center gap-x-2 gap-y-1 rounded-b-md border border-t-0 bg-muted/20 px-2 pb-1.5 pt-4 text-muted-foreground">
+    <div className="relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[744px] flex-wrap items-center gap-x-2 gap-y-1 rounded-b-xl border border-t-0 bg-muted/15 px-2 pb-1.5 pt-4 text-muted-foreground">
+      <TaskMachineSelector task={task} disabled={disabled} onMoving={onMachineMoving} />
+      <span className="h-4 border-l border-border/60" aria-hidden="true" />
       {editable ? (
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
@@ -143,7 +145,6 @@ export function ComposerWorkspace({
           {task.execution === 'worktree' ? 'Worktree' : 'Local checkout'}
         </span>
       )}
-      <TaskMachineSelector task={task} disabled={disabled} onMoving={onMachineMoving} />
       <Popover.Root
         open={open}
         onOpenChange={(value) => {

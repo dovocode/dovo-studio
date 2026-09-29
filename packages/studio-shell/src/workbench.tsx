@@ -20,7 +20,7 @@ import {
   type StudioHostApi,
   type StudioNavigation,
 } from '@dovo/studio-core'
-import { Button, ErrorBoundary, TooltipProvider } from '@dovo/studio-ui'
+import { Button, ErrorBoundary, TooltipProvider, useCompactLayout } from '@dovo/studio-ui'
 import { RuntimeOverview } from './runtime-overview'
 import { SettingsNav } from './settings-nav'
 import { appSettingsExtension } from './app-extension'
@@ -28,6 +28,7 @@ import { useAppearance } from './appearance'
 import { useTaskNotifications } from './task-notifications'
 import { createExtensionCatalog } from './extension-catalog'
 import { ActivityBar } from './activity-bar'
+import type { DesktopUpdateBridge, DesktopUpdateState } from '@dovo/protocol'
 import { CommandPalette } from './command-palette'
 import { Walkthrough, walkthroughSteps } from './walkthrough'
 import { TitleBar, type DesktopPlatform } from './title-bar'
@@ -36,6 +37,7 @@ type WorkbenchProps = {
   pickDirectory?: StudioHostApi['pickDirectory']
   browser?: StudioHostApi['browser']
   desktopPlatform?: DesktopPlatform
+  updates?: DesktopUpdateBridge
 }
 type ViewModule = { default: ComponentType<StudioViewProps> }
 /** React.lazy remembers a rejected import forever, so one failed chunk fetch or activation
@@ -113,9 +115,34 @@ export function Workbench(props: WorkbenchProps) {
     </ApplicationStateProvider>
   )
 }
-function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform }: WorkbenchProps) {
+function WorkbenchContent({
+  extensions,
+  pickDirectory,
+  browser,
+  desktopPlatform,
+  updates,
+}: WorkbenchProps) {
+  const compact = useCompactLayout()
   useAppearance()
   useTaskNotifications()
+  const [update, setUpdate] = useState<DesktopUpdateState>({ status: 'idle' })
+  useEffect(() => {
+    if (!updates) return
+    let active = true
+    void updates
+      .state()
+      .then((state) => {
+        if (active) setUpdate(state)
+      })
+      .catch(() => undefined)
+    const unsubscribe = updates.subscribe((state) => {
+      if (active) setUpdate(state)
+    })
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [updates])
   const {
     ready,
     snapshot,
@@ -225,6 +252,7 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
     : 'Local'
   const settingsViews = catalog.views.filter((view) => view.navigationGroup === 'settings')
   const inSettings = settingsViews.some((view) => view.id === target.viewId)
+  const taskChrome = target.viewId === 'tasks' && !compact
   const View = views.get(target.viewId)
   const navigationCommands = catalog.views
     .filter((view) => view.navigationGroup !== 'hidden')
@@ -244,25 +272,27 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
   }
   return (
     <StudioHostProvider api={api}>
-      <div className="studio dark">
-        <TitleBar
-          platform={desktopPlatform}
-          section={
-            inSettings
-              ? 'Settings'
-              : target.viewId === 'overview'
-                ? 'Overview'
-                : catalog.views.find((view) => view.id === target.viewId)?.title
-          }
-          online={runtimes.filter((runtime) => runtime.connected).length}
-          devices={runtimeRegistry.profiles.length}
-          onDevices={() =>
-            navigate({
-              viewId: 'runtime',
-            })
-          }
-          onSearch={() => setPalette(true)}
-        />
+      <div className="studio dark" data-platform={desktopPlatform}>
+        {!taskChrome && (
+          <TitleBar
+            platform={desktopPlatform}
+            section={
+              inSettings
+                ? 'Settings'
+                : target.viewId === 'overview'
+                  ? 'Overview'
+                  : catalog.views.find((view) => view.id === target.viewId)?.title
+            }
+            online={runtimes.filter((runtime) => runtime.connected).length}
+            devices={runtimeRegistry.profiles.length}
+            onDevices={() =>
+              navigate({
+                viewId: 'runtime',
+              })
+            }
+            onSearch={() => setPalette(true)}
+          />
+        )}
         {connected && snapshot?.defaults?.configured === false && target.viewId !== 'agents' && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-card px-4 py-2">
             <p className="text-xs text-muted-foreground">
@@ -317,6 +347,9 @@ function WorkbenchContent({ extensions, pickDirectory, browser, desktopPlatform 
         )}
         <div className="studio-body">
           <ActivityBar
+            taskHeader={taskChrome}
+            update={update}
+            onUpdate={updates ? () => void updates.install() : undefined}
             views={catalog.views}
             activeId={target.viewId}
             onSelect={(viewId) =>

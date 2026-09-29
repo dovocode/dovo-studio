@@ -4,7 +4,8 @@ import { useWorkspace } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   executionSchema,
-  accessModes,
+  accessLabel,
+  selectableAccessModes,
   agentSchema,
   decode,
   defaultTaskHarness,
@@ -13,7 +14,6 @@ import {
   providerSchema,
   runtimeSetupSchema,
   runtimeDefaultsSchema,
-  supportsAccess,
   taskHarnessSchema,
   type AgentDiscovery,
   type ProjectTaskDefaults,
@@ -107,6 +107,32 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
             </ChoicePicker>
           </FormField>
         )}
+        <FormField label={repository ? 'Default permissions' : 'Global default permissions'}>
+          <ChoicePicker
+            value={draft.permission ?? (repository ? 'inherit' : 'full-access')}
+            onValueChange={(value) =>
+              change({
+                ...draft,
+                permission:
+                  value === 'inherit' ? undefined : decode(agentSchema.fields.permission, value),
+              })
+            }
+          >
+            {repository && (
+              <option value="inherit">
+                Use runtime default ({accessLabel(setup?.defaults.permission ?? 'full-access')})
+              </option>
+            )}
+            {selectableAccessModes(draft.permission).map((mode) => (
+              <option key={mode.id} value={mode.id}>
+                {mode.name}
+              </option>
+            ))}
+          </ChoicePicker>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Applies to new tasks across all harnesses. Existing tasks keep their access setting.
+          </p>
+        </FormField>
         {harness && (
           <>
             <FormField label="Harness">
@@ -131,30 +157,6 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
                 change({ ...draft, harness: decode(taskHarnessSchema.omit('resources'), agent) })
               }
             />
-            <FormField label="Access">
-              <ChoicePicker
-                value={harness.permission}
-                onValueChange={(value) =>
-                  change({
-                    ...draft,
-                    harness: {
-                      ...harness,
-                      permission: decode(agentSchema.fields.permission, value),
-                    },
-                  })
-                }
-              >
-                {accessModes.map((mode) => (
-                  <option
-                    key={mode.id}
-                    value={mode.id}
-                    disabled={!supportsAccess(harness.provider, mode.id)}
-                  >
-                    {mode.name}
-                  </option>
-                ))}
-              </ChoicePicker>
-            </FormField>
             <FormField label="Instructions">
               <Textarea
                 value={harness.instructions}

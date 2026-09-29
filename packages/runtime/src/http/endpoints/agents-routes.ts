@@ -11,6 +11,8 @@ import { minValue, maxValue, decode } from '@dovo/protocol'
 import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
+import { readFile, stat, writeFile } from 'node:fs/promises'
+import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
 import { searchRegistry } from '../../agents/catalogs/registry.js'
 import { searchSkills, installCatalogSkill } from '../../agents/catalogs/skills.js'
 import { importSkill, testMcpServer } from '../../agents/configuration/resources.js'
@@ -564,6 +566,52 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           ? repo.path
           : yield* serviceResult(s.checkouts.directory(input.id))
         return { files: yield* serviceResult(s.projectFiles.search(cwd, input.query)) }
+      }
+      if (
+        method === 'POST' &&
+        (path === '/api/tasks/files/list' ||
+          path === '/api/tasks/files/read' ||
+          path === '/api/tasks/files/write')
+      ) {
+        const input = decode(
+          mutableStruct({
+            id: idSchema,
+            path: Schema.optional(maxValue(minValue(Schema.String, 1), 4000)),
+            contents: Schema.optional(maxValue(Schema.String, 1024 * 1024)),
+            expectedContents: Schema.optional(maxValue(Schema.String, 1024 * 1024)),
+          }),
+          yield* serviceResult(body(request)),
+        )
+        const task = s.store.task(input.id)
+        const repo = s.store.get().repositories.find((item) => item.id === task.repositoryId)
+        if (!repo) throw new HttpError(404, 'Repository not found')
+        const cwd = canChangeTaskCheckout(task)
+          ? repo.path
+          : yield* serviceResult(s.checkouts.directory(input.id))
+        if (path === '/api/tasks/files/list')
+          return { files: yield* serviceResult(s.projectFiles.all(cwd)) }
+        if (!input.path) throw new HttpError(400, 'File path is required')
+        const filename = yield* serviceResult(
+          safeFile(yield* serviceResult(repositoryPath(cwd)), input.path),
+        )
+        const details = yield* serviceResult(stat(filename))
+        if (!details.isFile() || details.size > 1024 * 1024)
+          throw new HttpError(413, 'Only text files up to 1 MB can be previewed')
+        const contents = yield* serviceResult(readFile(filename, 'utf8'))
+        if (contents.includes('\0')) throw new HttpError(415, 'Binary files cannot be previewed')
+        if (path === '/api/tasks/files/write') {
+          if (input.contents === undefined || input.expectedContents === undefined)
+            throw new HttpError(400, 'File contents and original contents are required')
+          if (input.contents.includes('\0'))
+            throw new HttpError(415, 'Binary files cannot be edited')
+          if (Buffer.byteLength(input.contents, 'utf8') > 1024 * 1024)
+            throw new HttpError(413, 'Only text files up to 1 MB can be edited')
+          if (contents !== input.expectedContents)
+            throw new HttpError(409, 'File changed on disk. Reload it before saving.')
+          yield* serviceResult(writeFile(filename, input.contents, 'utf8'))
+          return { path: input.path, contents: input.contents }
+        }
+        return { path: input.path, contents }
       }
       if (method === 'POST' && path === '/api/tasks/feedback/remove') {
         const input = decode(

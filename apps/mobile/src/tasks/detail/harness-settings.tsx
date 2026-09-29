@@ -7,7 +7,7 @@ import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { Schema } from 'effect'
 import {
-  accessModes,
+  selectableAccessModes,
   defaultTaskHarness,
   canChangeTaskProvider,
   lockedTaskProvider,
@@ -106,7 +106,7 @@ export function HarnessSettings({
         label="Access"
         value={agent.permission}
         disabled={controlsDisabled || !selectionAllowed}
-        items={accessModes
+        items={selectableAccessModes(agent.permission)
           .filter((mode) => supportsAccess(agent.provider, mode.id))
           .map((mode) => ({
             id: mode.id,
@@ -120,7 +120,10 @@ export function HarnessSettings({
         }
       />
       <Text style={styles.muted}>
-        {accessModes.find((mode) => mode.id === agent.permission)?.description}
+        {
+          selectableAccessModes(agent.permission).find((mode) => mode.id === agent.permission)
+            ?.description
+        }
       </Text>
       {!custom && (agent.provider === 'acp' || agent.provider === 'opencode') && (
         <Field

@@ -2,7 +2,7 @@ import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { decode } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
-import { defaultTaskHarness, pullTaskInputSchema, type Task } from '@dovo/protocol'
+import { pullTaskInputSchema, type Task } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { HttpError, errorMessage, runtimeOperation, runtimeProgram } from '../../errors.js'
 export function createPullTaskEffect(
@@ -42,7 +42,9 @@ export function createPullTaskEffect(
         title: `PR #${pull.number}: ${pull.title}`,
         repositoryId,
         agentId: input.agentId,
-        harness: input.agentId ? undefined : (input.harness ?? defaultTaskHarness('codex')),
+        harness: input.agentId
+          ? undefined
+          : (input.harness ?? s.store.taskDefaults(repositoryId).harness),
         execution: 'worktree',
         origin: pull.url,
         pullRequest: {

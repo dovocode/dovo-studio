@@ -175,7 +175,7 @@ it('creates a linked editable draft through the endpoint without starting an age
     harness: {
       provider: 'codex',
       model: '',
-      permission: 'ask',
+      permission: 'full-access',
     },
     origin: input.url,
     workItem: {

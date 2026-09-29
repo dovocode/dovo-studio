@@ -1,10 +1,10 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskLifecycleActions } from './task-lifecycle-actions'
-import { Ellipsis, Minimize2, Pin, Settings2 } from 'lucide-react'
+import { Ellipsis, GitPullRequest, Minimize2, Pin, Settings2 } from 'lucide-react'
 import { responses, updateTask, useWorkspace, type Task } from '@dovo/studio-core'
 import { IconButton, Popover } from '@dovo/studio-ui'
 import { TaskSettings } from './task-settings'
-export function TaskActions({ task }: { task: Task }) {
+export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () => void }) {
   const { setWorkspace, request, connected } = useWorkspace(),
     [settings, setSettings] = useApplicationState(false),
     [actionsOpen, setActionsOpen] = useApplicationState(false),
@@ -66,6 +66,18 @@ export function TaskActions({ task }: { task: Task }) {
                 </IconButton>
               )}
               <TaskLifecycleActions task={task} />
+              {onLinkPull && (
+                <IconButton
+                  label="Manage linked pull requests"
+                  className="size-7"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    onLinkPull()
+                  }}
+                >
+                  <GitPullRequest size={13} />
+                </IconButton>
+              )}
               <IconButton
                 label="Task settings"
                 className="size-7"

@@ -44,6 +44,7 @@ export const taskHarnessSchema = agentSchema.omit('id', 'name', 'icon')
 export type TaskHarness = Schema.Schema.Type<typeof taskHarnessSchema>
 export const projectTaskDefaultsSchema = mutableStruct({
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
+  permission: Schema.optional(agentSchema.fields.permission),
   harness: Schema.optional(taskHarnessSchema.omit('resources')),
   execution: Schema.optional(executionSchema),
   // A fixed default base branch was replaced by Start from origin; older saved values are dropped
@@ -424,6 +425,25 @@ export type Repository = Schema.Schema.Type<typeof repositorySchema>
 export function projectIcon(repository: Repository | undefined) {
   return repository?.iconOverride ?? repository?.discoveredIcon
 }
+const projectColors = [
+  '#6d28d9',
+  '#1d4ed8',
+  '#0f766e',
+  '#be123c',
+  '#7c3aed',
+  '#0369a1',
+  '#a21caf',
+  '#b45309',
+  '#047857',
+  '#9f1239',
+] as const
+/** Repository IDs are random at creation, so this gives each fallback icon one stable color. */
+export function projectIconColor(repository: Repository | undefined) {
+  if (!repository) return projectColors[0]
+  let hash = 2166136261
+  for (const char of repository.id) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619)
+  return projectColors[(hash >>> 0) % projectColors.length]
+}
 export type Task = Schema.Schema.Type<typeof taskSchema>
 export type ChangedFile = Schema.Schema.Type<typeof fileSchema>
 export type ChatMessage = Schema.Schema.Type<typeof messageSchema>
@@ -514,7 +534,7 @@ export function defaultTaskHarness(provider: TaskHarness['provider']): TaskHarne
     model: '',
     reasoning: '',
     instructions: '',
-    permission: 'ask',
+    permission: 'full-access',
     endpoint: '',
   }
 }

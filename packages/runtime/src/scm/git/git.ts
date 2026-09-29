@@ -580,6 +580,40 @@ export class GitService {
       omitted,
     }
   }
+  /** Committed changes on this branch since its merge base with the default branch. */
+  async branchChangesFiles(cwd: string) {
+    const head = (await this.command(cwd, ['rev-parse', '--verify', 'HEAD'])).trim()
+    const originHead = await this.command(cwd, [
+      'symbolic-ref',
+      '-q',
+      'refs/remotes/origin/HEAD',
+    ]).catch(() => '')
+    const candidates = [
+      originHead.trim(),
+      'refs/remotes/origin/main',
+      'refs/remotes/origin/master',
+      'refs/heads/main',
+      'refs/heads/master',
+    ].filter(Boolean)
+    let base: string | undefined
+    for (const candidate of candidates) {
+      if (
+        (
+          await this.command(cwd, ['rev-parse', '--verify', '--quiet', candidate]).catch(() => '')
+        ).trim()
+      ) {
+        base = candidate
+        break
+      }
+    }
+    if (!base)
+      throw new HttpError(
+        409,
+        'No default branch was found. Set origin/HEAD or create a main or master branch.',
+      )
+    const ancestor = (await this.command(cwd, ['merge-base', base, head])).trim()
+    return { ...(await this.checkpointChanges(cwd, ancestor, head)), base }
+  }
   async save(path: string, name: string, expected: string, contents: string) {
     const { path: root } = await this.inspect(path)
     const full = await safeFile(root, name)
