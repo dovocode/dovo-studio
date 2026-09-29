@@ -83,10 +83,10 @@ export function ConversationRail({
   // A single turn has nowhere to jump; its lone marker reads as a rendering glitch.
   if (items.length < 2) return null
   return (
-    <TooltipProvider delayDuration={250} skipDelayDuration={150}>
+    <TooltipProvider delayDuration={100} skipDelayDuration={500}>
       <nav
         aria-label="Conversation turns"
-        className="absolute bottom-12 left-0 top-6 hidden w-6 flex-col items-center justify-center overflow-y-auto py-1 md:flex"
+        className="absolute bottom-12 left-0 top-6 hidden w-7 flex-col items-center justify-center overflow-y-auto py-1 md:flex"
       >
         {items.map((item, index) => (
           <Tooltip key={item.id}>
@@ -99,9 +99,9 @@ export function ConversationRail({
                 onBlur={() => setHovered(null)}
                 aria-label={`Jump to turn ${index + 1}: ${item.label}`}
                 aria-current={visible.has(item.id) ? 'location' : undefined}
-                className="group flex min-h-[6px] w-5 flex-1 items-center justify-center rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="group flex min-h-3 w-7 flex-1 items-center justify-center rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 style={{
-                  maxHeight: 7,
+                  maxHeight: 16,
                 }}
                 onClick={() => {
                   const root = scrollRef.current

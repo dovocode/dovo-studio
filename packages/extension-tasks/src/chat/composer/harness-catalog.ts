@@ -6,8 +6,9 @@ import {
   type TaskHarness,
   type ModelCatalog,
 } from '@dovo/studio-core'
+const cachedCatalogs = new Map<string, { value: ModelCatalog; expires: number }>()
 export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, connection } = useWorkspace()
   const [catalog, setCatalog] = useApplicationState<{
     key: string
     value: ModelCatalog
@@ -18,6 +19,8 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
   const argsKey = JSON.stringify(args ?? [])
   const discoveryModel = provider === 'acp' ? model : ''
   const key = JSON.stringify([
+    connection?.address,
+    connection?.token,
     provider,
     endpoint,
     argsKey,
@@ -29,6 +32,13 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
   useEffect(() => {
     if (!active) return
     let stopped = false
+    const cached = cachedCatalogs.get(key)
+    if (cached && cached.expires > Date.now()) {
+      setCatalog({ key, value: cached.value })
+      setError('')
+      setLoading(false)
+      return
+    }
     setCatalog(null)
     setError('')
     setLoading(connected)
@@ -47,11 +57,18 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
       modelCatalogSchema,
     )
       .then((value) => {
-        if (!stopped)
+        if (!stopped) {
+          cachedCatalogs.delete(key)
+          cachedCatalogs.set(key, { value, expires: Date.now() + 5 * 60_000 })
+          if (cachedCatalogs.size > 64) {
+            const oldest = cachedCatalogs.keys().next().value
+            if (oldest !== undefined) cachedCatalogs.delete(oldest)
+          }
           setCatalog({
             key,
             value,
           })
+        }
       })
       .catch((error) => {
         if (!stopped) setError(String(error))

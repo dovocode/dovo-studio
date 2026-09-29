@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
 import { searchRegistry } from '../../agents/catalogs/registry.js'
+import { ModelCatalogCache } from '../../agents/catalogs/model-cache.js'
 import { searchSkills, installCatalogSkill } from '../../agents/catalogs/skills.js'
 import { importSkill, testMcpServer } from '../../agents/configuration/resources.js'
 import { attachmentIdsSchema } from '@dovo/protocol'
@@ -24,6 +25,7 @@ import { RuntimeServices } from '../../services.js'
 import { HttpError } from '../../errors.js'
 import { body } from '../support/body.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
+const modelCaches = new WeakMap<object, ModelCatalogCache>()
 export function agentsRoute(request: IncomingMessage, path: string) {
   return routeProgram(
     Effect.gen(function* () {
@@ -277,9 +279,17 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       if (method === 'POST' && path === '/api/agents/models') {
         const agent = decode(agentDiscoverySchema, yield* serviceResult(body(request)))
         const adapter = yield* serviceResult(s.agents.get(agent.provider))
-        if (!adapter.models) throw new HttpError(400, 'This integration does not advertise models')
+        const models = adapter.models
+        if (!models) throw new HttpError(400, 'This integration does not advertise models')
+        let cache = modelCaches.get(s.db)
+        if (!cache) {
+          cache = new ModelCatalogCache()
+          modelCaches.set(s.db, cache)
+        }
         return yield* serviceResult(
-          decode(modelCatalogSchema, yield* serviceResult(adapter.models(agent))),
+          cache.get(JSON.stringify(agent), async () =>
+            decode(modelCatalogSchema, await models(agent)),
+          ),
         )
       }
       if (method === 'POST' && path === '/api/approvals') {

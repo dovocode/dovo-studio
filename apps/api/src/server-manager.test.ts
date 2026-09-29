@@ -73,6 +73,24 @@ it('starts independently, reuses a healthy runtime, and preserves pairing throug
   expect(authenticated.status).toBe(200)
 }, 30000)
 
+it('restarts on a changed host and port without losing the owner credential', async () => {
+  const directory = await fixture()
+  const first = await startServer(directory, entrypoint)
+  const token = readConnection(join(directory, 'runtime-connection.json')).token
+  await stopServer(directory)
+  const socket = createServer()
+  await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve))
+  const address = socket.address()
+  if (!address || typeof address === 'string') throw new Error('No fixture port')
+  await new Promise<void>((resolve) => socket.close(() => resolve()))
+  setupServer(directory, { host: '0.0.0.0', port: String(address.port) })
+  const next = await startServer(directory, entrypoint)
+  expect(next.pid).not.toBe(first.pid)
+  expect(next.host).toBe('0.0.0.0')
+  expect(next.port).toBe(address.port)
+  expect(readConnection(join(directory, 'runtime-connection.json')).token).toBe(token)
+}, 30000)
+
 it('rejects stopping a runtime owned by another launcher', async () => {
   const directory = await fixture()
   const initial = await startServer(directory, entrypoint)

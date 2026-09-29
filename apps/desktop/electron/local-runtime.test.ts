@@ -398,6 +398,7 @@ it('applies and reverses network access through the packaged supervisor without 
   expect(await f.setLocalRuntimeNetwork('/unused', f.connection.address, true)).toMatchObject({
     local: true,
     host: '0.0.0.0',
+    canChange: true,
   })
   expect(f.ensureBackgroundRuntime).toHaveBeenLastCalledWith(
     expect.objectContaining({ host: '0.0.0.0', port: '51464' }),

@@ -64,8 +64,8 @@ export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean
       {snapshot?.owner && (
         <DesktopNetwork
           onChanged={async () => {
-            setCode(await request('/api/pair/code', {}, responses.pairCode))
             if (profile) await refreshRuntime(profile)
+            setCode(await request('/api/pair/code', {}, responses.pairCode))
           }}
         />
       )}

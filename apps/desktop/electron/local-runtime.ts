@@ -549,9 +549,7 @@ export async function localRuntimeNetwork(directory: string, address: string) {
     local: true,
     host: discovery.bindHost ?? new URL(discovery.address).hostname,
     canChange:
-      ['127.0.0.1', 'localhost'].includes(new URL(local.address).hostname) &&
-      !process.env.DOVO_HOST &&
-      (!!owned || (app.isPackaged && process.platform === 'darwin')),
+      !process.env.DOVO_HOST && (!!owned || (app.isPackaged && process.platform === 'darwin')),
   }
 }
 export async function setLocalRuntimeNetwork(directory: string, address: string, enabled: boolean) {
