@@ -62,3 +62,15 @@ it('places compaction between the text and tools surrounding it', () => {
   ])
   expect(blocks[3]).toMatchObject({ kind: 'compaction', offset: 6 })
 })
+
+it('does not split a streamed sentence in the middle of a word', () => {
+  const text = 'The two tasks must not write to the same checkout at once. I will inspect it.'
+  const offset = text.indexOf('checkout') + 2
+  const blocks = threadTimeline(text, [tool('first', offset)])
+  expect(blocks.map((block) => (block.kind === 'text' ? block.text : 'tool'))).toEqual([
+    'tool',
+    'The two tasks must not write to the same checkout at once.',
+    'tool',
+    ' I will inspect it.',
+  ])
+})

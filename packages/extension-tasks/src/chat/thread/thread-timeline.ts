@@ -7,6 +7,20 @@ export type ThreadBlock =
   | { kind: 'compaction'; offset: number; event: Compaction }
   | { kind: 'text'; offset: number; text: string }
 
+function displayOffset(text: string, raw: number) {
+  const offset = Math.min(text.length, Math.max(0, raw))
+  // A tool event can arrive between streamed text chunks while a word is still
+  // being emitted. Keep that word (and a nearby sentence ending) together.
+  if (!/[\p{L}\p{N}]/u.test(text[offset - 1] ?? '') || !/[\p{L}\p{N}]/u.test(text[offset] ?? ''))
+    return offset
+  const rest = text.slice(offset, offset + 160)
+  const sentence = rest.match(/^[^\n]*?[.!?](?=\s|$)/u)
+  if (sentence) return offset + sentence[0].length
+  const word = rest.match(/^[\p{L}\p{N}]*/u)
+  const end = offset + (word?.[0].length ?? 0)
+  return end < text.length ? end : offset
+}
+
 /** Tool start offsets are measured against the assistant's accumulated text. */
 export function threadTimeline(
   text: string,
@@ -18,13 +32,13 @@ export function threadTimeline(
     Array<{ kind: 'tool'; tool: Tool } | { kind: 'compaction'; event: Compaction }>
   >()
   for (const tool of tools) {
-    const offset = Math.min(text.length, Math.max(0, tool.textOffset ?? 0))
+    const offset = displayOffset(text, tool.textOffset ?? 0)
     const group = at.get(offset) ?? []
     group.push({ kind: 'tool', tool })
     at.set(offset, group)
   }
   for (const event of compactions) {
-    const offset = Math.min(text.length, Math.max(0, event.textOffset ?? text.length))
+    const offset = displayOffset(text, event.textOffset ?? text.length)
     const group = at.get(offset) ?? []
     group.push({ kind: 'compaction', event })
     at.set(offset, group)
