@@ -9,7 +9,7 @@ import { RunInTerminal } from '../actions/run-in-terminal'
 import { ForkTurn } from '../actions/fork-turn'
 import { RetryTurn } from '../actions/retry-turn'
 import { TaskActivity, useTaskActivity } from './task-activity'
-import { CheckCheck, FileDiff, Star } from 'lucide-react'
+import { Star } from 'lucide-react'
 import {
   Conversation,
   ConversationContent,
@@ -24,12 +24,10 @@ import type { Task } from '@dovo/studio-core'
 import { responses, useWorkspace } from '@dovo/studio-core'
 export function ChatThread({
   task,
-  onReview,
   onTerminal,
   pending,
 }: {
-  task: Pick<Task, 'id' | 'messages' | 'turns' | 'files' | 'status' | 'queue' | 'compactions'>
-  onReview: () => void
+  task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'>
   /** Shows the terminal after a chat command ran in it. */
   onTerminal?: (terminalId: string) => void
   pending?: PendingMessage | null
@@ -138,7 +136,7 @@ export function ChatThread({
                 !!message.text ||
                 !!message.file ||
                 !!message.attachments?.length ||
-                turn?.status !== 'running'
+                (turn?.status !== 'running' && !compactions.length)
               return (
                 <Message
                   id={`message-${task.id}-${message.id}`}
@@ -190,14 +188,10 @@ export function ChatThread({
                           </MessageContent>
                         ),
                       )}
-                      {!message.text && turn.status !== 'running' && (
+                      {!message.text && turn.status !== 'running' && !compactions.length && (
                         <MessageContent>
                           <span className="text-xs text-muted-foreground">
-                            {compactions.length
-                              ? 'Context compacted'
-                              : message.attachments?.length
-                                ? ''
-                                : 'No response text'}
+                            {message.attachments?.length ? '' : 'No response text'}
                           </span>
                         </MessageContent>
                       )}
@@ -225,11 +219,7 @@ export function ChatThread({
                           <MessageResponse>{message.text}</MessageResponse>
                         ) : (
                           <span className="text-xs text-muted-foreground">
-                            {compactions.length
-                              ? 'Context compacted'
-                              : message.attachments?.length
-                                ? ''
-                                : 'No response text'}
+                            {message.attachments?.length ? '' : 'No response text'}
                           </span>
                         )}
                       </MessageContent>
@@ -316,21 +306,6 @@ export function ChatThread({
             })}
           </section>
         ))}
-        {task.files.length > 0 && (
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card px-3 py-2 text-xs">
-            <CheckCheck size={15} className="text-emerald-400" />
-            <span>
-              {task.files.length} changed {task.files.length === 1 ? 'file' : 'files'}
-            </span>
-            <span className="text-muted-foreground">
-              {task.files.filter((f) => f.viewed).length} viewed
-            </span>
-            <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={onReview}>
-              <FileDiff size={13} />
-              Open diff
-            </Button>
-          </div>
-        )}
         <TaskActivity
           tools={activityGroups.unassigned}
           status={

@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { canUpdateServer, serverUpdateStatus } from './server-updates.js'
@@ -21,6 +21,14 @@ it('offers in-app updates only for a managed archive service', () => {
   writeFileSync(
     join(directory, 'server-service.json'),
     JSON.stringify({ launcher: '/opt/homebrew/bin/dovo-server' }),
+  )
+  expect(canUpdateServer()).toBe(false)
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+  writeFileSync(
+    join(directory, 'server-service.json'),
+    JSON.stringify({
+      launcher: join(homedir(), '.local/share/dovo/server/stable/v1/bin/dovo-server'),
+    }),
   )
   expect(canUpdateServer()).toBe(true)
   writeFileSync(

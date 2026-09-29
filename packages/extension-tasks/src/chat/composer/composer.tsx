@@ -120,7 +120,6 @@ export function Composer({
   const [commandBusy, setCommandBusy] = useState(false)
   const [commandError, setCommandError] = useState('')
   const [compactBusy, setCompactBusy] = useState(false)
-  const lastCompaction = task.compactions?.at(-1)
   const meter = contextMeter(task)
   const compact = () => {
     if (compactBusy) return
@@ -396,14 +395,6 @@ export function Composer({
             {meter && meter.level !== 'ok' && (
               <span role="status" className="text-[0.625rem] text-amber-400">
                 Compact suggested
-              </span>
-            )}
-            {lastCompaction && lastCompaction.sessionId === task.sessionId && (
-              <span
-                className="text-[0.625rem] text-muted-foreground"
-                title={new Date(lastCompaction.at).toLocaleString()}
-              >
-                Compacted {new Date(lastCompaction.at).toLocaleTimeString()}
               </span>
             )}
             {onAside && !firstMessage && (

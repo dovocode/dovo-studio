@@ -29,16 +29,10 @@ export function canUpdateServer() {
     )
       return false
     const launcher = resolve(record.launcher)
-    if (process.platform === 'linux')
-      return launcher.startsWith(join(homedir(), '.local', 'share', 'dovo', 'server') + '/')
-    if (process.platform === 'darwin')
-      return [
-        '/opt/homebrew/bin/dovo-server',
-        '/opt/homebrew/bin/dovo-server-nightly',
-        '/usr/local/bin/dovo-server',
-        '/usr/local/bin/dovo-server-nightly',
-      ].includes(launcher)
-    return false
+    return (
+      process.platform === 'linux' &&
+      launcher.startsWith(join(homedir(), '.local', 'share', 'dovo', 'server') + '/')
+    )
   } catch {
     return false
   }

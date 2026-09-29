@@ -117,8 +117,9 @@ export function TurnCheckpoint({
     ? checkpoint.files.find((entry) => entry.path === selected)
     : checkpoint.files[0]
   const count = checkpoint.files.length + checkpoint.omitted.length
-  // Successful turns without changes do not need a permanent checkpoint footer.
-  if (!count && checkpoint.after && !checkpoint.error) return null
+  // Show checkpoint controls only once the turn has a result to inspect.
+  if ((!checkpoint.after && !checkpoint.error) || (!count && checkpoint.after && !checkpoint.error))
+    return null
   const folders = new Map<string, string[]>()
   for (const path of [...checkpoint.files.map((entry) => entry.path), ...checkpoint.omitted]) {
     const directory = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : 'Project root'
@@ -135,11 +136,9 @@ export function TurnCheckpoint({
             ? 'Changes undone'
             : checkpoint.error
               ? 'Checkpoint incomplete'
-              : !checkpoint.after
-                ? 'Before-work snapshot saved'
-                : count
-                  ? `${count} changed ${count === 1 ? 'file' : 'files'}`
-                  : 'Checkpoint · No file changes'}
+              : count
+                ? `${count} changed ${count === 1 ? 'file' : 'files'}`
+                : 'Checkpoint · No file changes'}
         </span>
         <span className="ml-auto flex items-center gap-1">
           {canRestore && (!!count || undone) && (

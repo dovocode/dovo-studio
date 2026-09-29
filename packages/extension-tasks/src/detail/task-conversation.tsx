@@ -37,7 +37,7 @@ export function TaskConversation({
   codeReference?: CodeReference | null
 }) {
   const [pending, setPending] = useApplicationState<PendingMessage | null>(null)
-  const { id, messages, queue, turns, files, status } = task
+  const { id, messages, queue, turns, status, compactions } = task
   const visiblePending = useMemo(
     () => visiblePendingMessage({ id, messages, queue }, pending),
     [id, messages, queue, pending],
@@ -48,10 +48,10 @@ export function TaskConversation({
       messages: visiblePending ? [...messages, visiblePending.message] : messages,
       queue,
       turns,
-      files,
       status,
+      compactions,
     }),
-    [id, messages, queue, turns, files, status, visiblePending],
+    [id, messages, queue, turns, status, compactions, visiblePending],
   )
   const viewed = useTaskViewed(task, visible)
   const preparation = taskPreparation(task)
@@ -71,12 +71,7 @@ export function TaskConversation({
   }
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ChatThread
-        task={displayedTask}
-        onReview={onReview}
-        onTerminal={onTerminal}
-        pending={visiblePending}
-      />
+      <ChatThread task={displayedTask} onTerminal={onTerminal} pending={visiblePending} />
       {(budget.tokenExceeded || budget.timeExceeded) && (
         <p
           role="status"

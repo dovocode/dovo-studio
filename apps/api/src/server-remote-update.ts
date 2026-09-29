@@ -198,21 +198,7 @@ export async function runRemoteServerUpdate(directory: string, version: string) 
     const channel = version.includes('-nightly.') ? 'nightly' : 'stable'
     const name = channel === 'nightly' ? 'dovo-server-nightly' : 'dovo-server'
     if (basename(current) !== name) throw new Error('The update channel does not match this server')
-    if (process.platform === 'darwin') {
-      if (!['/opt/homebrew/bin', '/usr/local/bin'].includes(resolve(current, '..')))
-        throw new Error('Update this Mac server using its original package manager')
-      status(directory, { status: 'installing', version })
-      const release = await releaseAsset(version, channel)
-      if (!release) throw new Error('Release is unavailable')
-      const cancel = await prepareRestart(directory)
-      try {
-        await updateService(directory)
-        await verifyInstalled(directory, version)
-      } catch (error) {
-        await cancel()
-        throw error
-      }
-    } else if (process.platform === 'linux') {
+    if (process.platform === 'linux') {
       const root = join(homedir(), '.local', 'share', 'dovo', 'server', channel)
       if (!current.startsWith(root + '/'))
         throw new Error('Update this Linux server using its original installer')
