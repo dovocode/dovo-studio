@@ -1,3 +1,6 @@
+import { useAppPreferences, updateAppPreferences } from '@dovo/studio-core'
+import { agentPresetSchema } from '@dovo/protocol'
+import { parseAgentEnvironment, formatAgentEnvironment } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
@@ -26,17 +29,22 @@ export function AgentEditor({
   creating,
   computerName,
   onClose,
+  global = false,
 }: {
   initial: Agent
   creating: boolean
   computerName: string
   onClose: () => void
+  global?: boolean
 }) {
   const { workspace, request, connected } = useWorkspace()
+  const { globalAgentPresets } = useAppPreferences()
+  const [scope, setScope] = useApplicationState(global ? 'global' : 'server')
   const pending = useRef(false)
   const [busy, setBusy] = useApplicationState(false)
   const [agent, setAgent] = useApplicationState(initial)
   const [error, setError] = useApplicationState('')
+  const [environment, setEnvironment] = useApplicationState(formatAgentEnvironment(initial.env))
   const storedProvider = workspace.agents.find((saved) => saved.id === initial.id)?.provider
   const lockedProviders = creating
     ? []
@@ -66,14 +74,43 @@ export function AgentEditor({
           className="grid gap-4"
           onSubmit={(e) => {
             e.preventDefault()
+            let env: Record<string, string>
+            try {
+              env = parseAgentEnvironment(environment)
+            } catch (error) {
+              setError(error instanceof Error ? error.message : String(error))
+              return
+            }
             const result = decodeResult(agentSchema, {
               ...agent,
+              env,
               name: agent.name.trim(),
             })
             if (!result.success) {
               setError('Enter an agent name.')
               return
             }
+            if (scope === 'global') {
+              if (agent.acpInstallationId) {
+                setError('Installed ACP agents belong to their server. Use a server configuration.')
+                return
+              }
+              const preset = decode(agentPresetSchema, result.data)
+              if (
+                initial.globalPreset &&
+                !globalAgentPresets.some((item) => item.id === initial.id)
+              )
+                preset.id = crypto.randomUUID()
+              updateAppPreferences({
+                globalAgentPresets: [
+                  ...globalAgentPresets.filter((item) => item.id !== preset.id),
+                  preset,
+                ],
+              })
+              onClose()
+              return
+            }
+            if (initial.globalPreset) result.data.serverOverride = true
             if (!providerAllowed) {
               setError(
                 'This agent is used by an existing conversation. Keep its provider or create a new agent.',
@@ -121,7 +158,7 @@ export function AgentEditor({
                 collection: 'agents',
                 id: initial.id,
                 changes,
-                ...(creating
+                ...(creating || !workspace.agents.some((agent) => agent.id === initial.id)
                   ? {
                       create: result.data,
                     }
@@ -142,7 +179,22 @@ export function AgentEditor({
               })
           }}
         >
-          <fieldset disabled={busy || !connected} className="grid gap-4">
+          <fieldset disabled={busy || (scope === 'server' && !connected)} className="grid gap-4">
+            <FormField label="Configuration scope">
+              <ChoicePicker
+                value={scope}
+                onValueChange={setScope}
+                aria-label="Configuration scope"
+                className="h-9 rounded-md border bg-background px-2 text-xs"
+              >
+                <option value="server">This server · {computerName}</option>
+                <option value="global">Global · All servers connected to this app</option>
+              </ChoicePicker>
+              <p className="text-xs text-muted-foreground">
+                Global presets apply on reconnect. Server overrides keep their own settings.
+                Executables and config directories resolve on each server.
+              </p>
+            </FormField>
             <FormField label="Name">
               <Input
                 required
@@ -272,25 +324,38 @@ export function AgentEditor({
               </p>
             )}
             <ModelSettings key={agent.provider} agent={agent} onChange={setAgent} />
-            {(agent.provider !== 'acp' || !agent.acpInstallationId) && (
+            <FormField
+              label={agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'}
+            >
+              <Input
+                value={agent.acpInstallationId ? (agent.executablePath ?? '') : agent.endpoint}
+                onChange={(e) =>
+                  setAgent({
+                    ...agent,
+                    endpoint: e.target.value,
+                  })
+                }
+                placeholder={
+                  agent.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Managed by runtime'
+                }
+              />
+            </FormField>
+            {(agent.provider === 'codex' || agent.provider === 'claude') && (
               <FormField
-                label={agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'}
+                label={
+                  agent.provider === 'codex'
+                    ? 'CODEX_HOME directory'
+                    : 'CLAUDE_CONFIG_DIR directory'
+                }
               >
                 <Input
-                  value={agent.endpoint}
-                  onChange={(e) =>
-                    setAgent({
-                      ...agent,
-                      endpoint: e.target.value,
-                    })
-                  }
-                  placeholder={
-                    agent.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Managed by runtime'
-                  }
+                  value={agent.configDirectory ?? ''}
+                  onChange={(event) => setAgent({ ...agent, configDirectory: event.target.value })}
+                  placeholder="Provider default"
                 />
               </FormField>
             )}
-            {agent.provider === 'acp' && !agent.acpInstallationId && (
+            {agent.provider !== 'opencode' && (
               <FormField label="Executable arguments (one per line)">
                 <Textarea
                   value={(agent.args ?? []).join('\n')}
@@ -300,8 +365,19 @@ export function AgentEditor({
                       args: event.target.value.split('\n').filter(Boolean),
                     })
                   }
-                  placeholder="--acp"
+                  placeholder={agent.provider === 'claude' ? '--flag=value' : '--flag\nvalue'}
                 />
+              </FormField>
+            )}
+            {agent.provider !== 'opencode' && (
+              <FormField label="Environment variables (NAME=value, one per line)">
+                <Textarea
+                  value={environment}
+                  onChange={(event) => setEnvironment(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Saved as readable configuration. Keep secrets in the server's environment.
+                </p>
               </FormField>
             )}
             <FormField label="Instructions">
@@ -321,11 +397,33 @@ export function AgentEditor({
                 {error}
               </p>
             )}
+            {initial.globalPreset && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!connected || busy}
+                onClick={() => {
+                  setBusy(true)
+                  void request(
+                    '/api/agents/presets/reset',
+                    { id: initial.id },
+                    mutableStruct({ ok: Schema.Boolean }),
+                  )
+                    .then(onClose)
+                    .catch((error: unknown) =>
+                      setError(error instanceof Error ? error.message : String(error)),
+                    )
+                    .finally(() => setBusy(false))
+                }}
+              >
+                Use global preset on this server
+              </Button>
+            )}
             <Button
               type="submit"
               disabled={
                 busy ||
-                !connected ||
+                (scope === 'server' && !connected) ||
                 !providerAllowed ||
                 !supportsAccess(agent.provider, agent.permission)
               }

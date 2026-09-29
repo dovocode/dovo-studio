@@ -471,6 +471,8 @@ function AcpAuthentication({
           provider: 'acp',
           endpoint: agent.endpoint,
           args: agent.args,
+          env: agent.env,
+          executablePath: agent.executablePath,
           model: agent.model,
           acpInstallationId: installation.id,
           acpMode: agent.acpMode,

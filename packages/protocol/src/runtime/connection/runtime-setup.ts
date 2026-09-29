@@ -10,13 +10,15 @@ import {
 import { titleGenerationSettingsSchema } from '../../tasks/title-generation.js'
 import { supportsAccess } from '../../auth/access.js'
 
+export const modelPreferencesSchema = Schema.Record({
+  key: Schema.String,
+  value: mutableStruct({ favorite: Schema.Boolean, disabled: Schema.Boolean }),
+})
 export const runtimeDefaultsSchema = mutableStruct({
-  modelPreferences: Schema.optional(
-    Schema.Record({
-      key: Schema.String,
-      value: mutableStruct({ favorite: Schema.Boolean, disabled: Schema.Boolean }),
-    }),
-  ),
+  globalModelPreferencesUpdatedAt: Schema.optional(Schema.Number),
+  globalModelPreferences: Schema.optional(modelPreferencesSchema),
+  modelPreferenceOverrides: Schema.optional(modelPreferencesSchema),
+  modelPreferences: Schema.optional(modelPreferencesSchema),
   setupCommand: projectTaskDefaultsSchema.fields.setupCommand,
   execution: projectTaskDefaultsSchema.fields.execution,
   worktreeFromOrigin: projectTaskDefaultsSchema.fields.worktreeFromOrigin,

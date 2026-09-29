@@ -39,7 +39,7 @@ const pageSchema = mutableStruct({
 export async function codexModels(agent: AgentDiscovery): Promise<ModelCatalog> {
   return withCatalogRpc(
     agent.endpoint || 'codex',
-    ['app-server', '--listen', 'stdio://'],
+    ['app-server', '--listen', 'stdio://', ...(agent.args ?? [])],
     async (rpc) => {
       const initialized = await rpc.sendRequest('initialize', {
         clientInfo: {
@@ -156,5 +156,6 @@ export async function codexModels(agent: AgentDiscovery): Promise<ModelCatalog> 
         },
       }
     },
+    agent.env,
   )
 }

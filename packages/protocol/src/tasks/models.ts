@@ -4,7 +4,10 @@ import { agentSchema } from '../workspace.js'
 export const agentDiscoverySchema = agentSchema.pick(
   'provider',
   'endpoint',
+  'executablePath',
+  'configDirectory',
   'args',
+  'env',
   'model',
   'acpInstallationId',
   'acpMode',

@@ -36,6 +36,7 @@ type CodexConnection = {
   rpc: ReturnType<typeof createMessageConnection>
   sessionId: string
   endpoint: string
+  launchConfig: string
   cwd: string
   initialized: unknown
   stderr: string
@@ -56,12 +57,14 @@ export function createCodexAdapter(): AgentAdapter {
     async run(run) {
       run.signal.throwIfAborted()
       const endpoint = run.agent.endpoint || 'codex'
+      const launchConfig = JSON.stringify([run.agent.args, run.agent.env])
       const previous = run.taskId ? idle.get(run.taskId) : undefined
       if (run.taskId) idle.delete(run.taskId)
       const reusable =
         previous &&
         previous.sessionId === run.sessionId &&
         previous.endpoint === endpoint &&
+        previous.launchConfig === launchConfig &&
         previous.cwd === run.cwd &&
         previous.child.exitCode === null &&
         !run.signal.aborted
@@ -70,10 +73,10 @@ export function createCodexAdapter(): AgentAdapter {
       if (previous && !reusable) await close(previous)
       const child =
         reusable?.child ??
-        spawn(endpoint, ['app-server', '--listen', 'stdio://'], {
+        spawn(endpoint, ['app-server', '--listen', 'stdio://', ...(run.agent.args ?? [])], {
           cwd: run.cwd,
           detached: process.platform !== 'win32',
-          env: processEnvironment(),
+          env: processEnvironment(run.agent.env),
           stdio: ['pipe', 'pipe', 'pipe'],
         })
       if (!child.stdout || !child.stdin || !child.stderr)
@@ -87,6 +90,7 @@ export function createCodexAdapter(): AgentAdapter {
         rpc,
         sessionId: '',
         endpoint,
+        launchConfig,
         cwd: run.cwd,
         initialized: undefined,
         stderr: '',

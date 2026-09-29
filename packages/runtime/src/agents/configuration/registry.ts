@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { Effect } from 'effect'
 import { runtimeOperation, runtimeFailure } from '../../errors.js'
 import { decode } from '@dovo/protocol'
@@ -5,6 +7,9 @@ import { ExtensionHost, runClientEffect } from '@dovo/client-runtime'
 import { commandsSchema, type CommandSettings, type AgentDiscovery } from '@dovo/protocol'
 import type { Agent } from '@dovo/protocol'
 import type { AcpLaunch, AgentAdapter } from '../execution/types.js'
+const expandHome = (path: string) =>
+  path === '~' ? homedir() : path.startsWith('~/') ? join(homedir(), path.slice(2)) : path
+
 export class AgentRegistry {
   private adapters = new Map<Agent['provider'], AgentAdapter>()
   readonly host = new ExtensionHost()
@@ -46,14 +51,32 @@ export class AgentRegistry {
   configure<T extends AgentDiscovery>(agent: T): T {
     return {
       ...agent,
-      endpoint:
-        agent.endpoint || (agent.provider === 'opencode' ? '' : this.settings()[agent.provider]),
+      ...(agent.configDirectory && (agent.provider === 'codex' || agent.provider === 'claude')
+        ? {
+            env: {
+              ...agent.env,
+              [agent.provider === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR']: expandHome(
+                agent.configDirectory,
+              ),
+            },
+          }
+        : {}),
+      endpoint: expandHome(
+        (agent.provider !== 'opencode' ? agent.executablePath : undefined) ||
+          agent.endpoint ||
+          (agent.provider === 'opencode' ? '' : this.settings()[agent.provider]),
+      ),
     }
   }
   launch(agent: AgentDiscovery): AcpLaunch | undefined {
     if (agent.provider !== 'acp' || !agent.acpInstallationId) return undefined
     if (!this.acpLaunch) throw new Error('Managed ACP installations are unavailable')
-    return this.acpLaunch(agent.acpInstallationId)
+    const launch = this.acpLaunch(agent.acpInstallationId)
+    return {
+      command: expandHome(agent.executablePath || launch.command),
+      args: [...launch.args, ...(agent.args ?? [])],
+      env: { ...launch.env, ...agent.env },
+    }
   }
   getEffect(provider: Agent['provider']) {
     return Effect.gen(this, function* () {

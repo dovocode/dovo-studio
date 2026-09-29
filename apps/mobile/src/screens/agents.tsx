@@ -1,3 +1,7 @@
+import {
+  useMobilePreferences,
+  updateMobilePreferences,
+} from '../runtime/preferences/app-preferences'
 import { Setup } from '../agents/setup'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -19,10 +23,66 @@ import { styles } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 export default function AgentsScreen() {
   const { overviews } = useRuntime()
+  const { globalAgentPresets, retiredGlobalAgentPresets } = useMobilePreferences()
+  const [globalEditing, setGlobalEditing] = useApplicationState<Agent | null>(null)
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <ScreenHeader title="Agents" />
       <Text style={styles.muted}>Agents and model settings across your computers.</Text>
+      <SettingsGroup title="Global agent presets">
+        <Text style={styles.muted}>
+          Defaults for servers connected to this app. Each server can override them.
+        </Text>
+        <Action
+          label="New global preset"
+          onPress={() =>
+            setGlobalEditing({ ...defaultTaskHarness('codex'), id: randomUUID(), name: '' })
+          }
+        />
+        {globalAgentPresets.map((agent) => (
+          <Action
+            key={agent.id}
+            secondary
+            label={agent.name}
+            onPress={() => setGlobalEditing(agent)}
+          />
+        ))}
+        {globalAgentPresets.map((agent) => (
+          <Action
+            key={`remove-${agent.id}`}
+            secondary
+            label={`Remove preset · ${agent.name}`}
+            onPress={() =>
+              Alert.alert(
+                'Remove global preset?',
+                'Existing server configurations stay available.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Remove',
+                    style: 'destructive',
+                    onPress: () =>
+                      updateMobilePreferences({
+                        globalAgentPresets: globalAgentPresets.filter(
+                          (item) => item.id !== agent.id,
+                        ),
+                        retiredGlobalAgentPresets: [...retiredGlobalAgentPresets, agent.id],
+                      }),
+                  },
+                ],
+              )
+            }
+          />
+        ))}
+      </SettingsGroup>
+      {globalEditing && (
+        <AgentEditor
+          original={globalEditing}
+          global
+          creating={!globalAgentPresets.some((agent) => agent.id === globalEditing.id)}
+          onClose={() => setGlobalEditing(null)}
+        />
+      )}
       {!overviews.length && (
         <Text style={styles.muted}>Connect a computer to configure agents.</Text>
       )}
@@ -143,6 +203,13 @@ function ComputerAgents({ name }: { name: string }) {
           <View key={agent.id} style={styles.card}>
             <Text style={styles.text}>{agent.name}</Text>
             <Text style={styles.muted}>
+              {agent.globalPreset
+                ? agent.serverOverride
+                  ? 'Server override'
+                  : 'Global preset'
+                : 'This server'}
+            </Text>
+            <Text style={styles.muted}>
               {agent.provider} · {agent.model || 'Provider default'}
               {agent.reasoning ? ` · ${agent.reasoning}` : ''} · {accessLabel(agent.permission)}
             </Text>
@@ -178,14 +245,20 @@ function ComputerAgents({ name }: { name: string }) {
                 onPress={() =>
                   setEditing({
                     creating: true,
-                    agent: { ...agent, id: randomUUID(), name: `${agent.name} copy` },
+                    agent: {
+                      ...agent,
+                      globalPreset: undefined,
+                      serverOverride: undefined,
+                      id: randomUUID(),
+                      name: `${agent.name} copy`,
+                    },
                   })
                 }
               />
               <Action
                 secondary
-                label="Delete"
-                disabled={!connected || busy}
+                label={agent.globalPreset ? 'Global preset' : 'Delete'}
+                disabled={!connected || busy || !!agent.globalPreset}
                 onPress={() =>
                   Alert.alert(
                     'Delete configuration?',

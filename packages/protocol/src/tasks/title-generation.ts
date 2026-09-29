@@ -3,7 +3,17 @@ import { maxValue, minValue } from '../shared/schema.js'
 import { Schema } from 'effect'
 import { agentSchema, defaultTaskHarness, type Agent, type TaskHarness } from '../workspace.js'
 export const titleGenerationSettingsSchema = mutableStruct({
-  harness: Schema.optional(agentSchema.pick('provider', 'endpoint', 'args', 'acpInstallationId')),
+  harness: Schema.optional(
+    agentSchema.pick(
+      'provider',
+      'endpoint',
+      'args',
+      'env',
+      'executablePath',
+      'configDirectory',
+      'acpInstallationId',
+    ),
+  ),
   agentId: Schema.optionalWith(maxValue(Schema.String, 200), {
     default: () => '',
   }),
@@ -55,6 +65,9 @@ export function resolveTitleHarness(
         ...defaultTaskHarness(taskDefault.provider),
         endpoint: taskDefault.endpoint,
         args: taskDefault.args,
+        env: taskDefault.env,
+        executablePath: taskDefault.executablePath,
+        configDirectory: taskDefault.configDirectory,
         acpInstallationId: taskDefault.acpInstallationId,
         id: 'title-harness',
         name: taskDefault.provider,
@@ -69,6 +82,9 @@ export function titleSettingsForHarness(agent: Agent): TitleGenerationSettings {
       provider: agent.provider,
       endpoint: agent.endpoint,
       args: agent.args,
+      env: agent.env,
+      executablePath: agent.executablePath,
+      configDirectory: agent.configDirectory,
       acpInstallationId: agent.acpInstallationId,
     },
     model: agent.model,

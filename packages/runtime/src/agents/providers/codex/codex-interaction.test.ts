@@ -25,6 +25,7 @@ async function fixture(
     executable,
     `#!${process.execPath}
 const fs = require('node:fs');
+fs.writeFileSync(${JSON.stringify(log + '.launch')}, JSON.stringify({ args: process.argv.slice(2), value: process.env.TEST_AGENT_ENV }));
 const send = value => process.stdout.write(JSON.stringify(value)+'\\n');
 const complete = () => send({method:'turn/completed',params:{turn:{id:'turn-1',status:'completed'}}});
 require('node:readline').createInterface({input:process.stdin}).on('line', line => {
@@ -100,6 +101,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
   return {
     run,
     messages,
+    launch: () => readFile(log + '.launch', 'utf8').then(JSON.parse),
     controller,
   }
 }
@@ -273,4 +275,20 @@ process.exit(1);`,
   } finally {
     process.off('unhandledRejection', unhandled)
   }
+})
+
+it('passes configured launch arguments and environment to Codex', async () => {
+  const { run, launch } = await fixture('child-events')
+  await codexAdapter.run({
+    ...run,
+    agent: {
+      ...run.agent,
+      args: ['--config', 'value with spaces'],
+      env: { TEST_AGENT_ENV: 'configured' },
+    },
+  })
+  expect(await launch()).toEqual({
+    args: ['app-server', '--listen', 'stdio://', '--config', 'value with spaces'],
+    value: 'configured',
+  })
 })

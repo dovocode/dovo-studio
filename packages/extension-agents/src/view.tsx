@@ -1,3 +1,4 @@
+import { useAppPreferences, updateAppPreferences } from '@dovo/studio-core'
 import { Setup } from './setup'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TitleSettings } from './title-settings'
@@ -17,6 +18,8 @@ import { AgentEditor } from './agent-editor'
 import { AcpRegistrySettings } from './acp-registry'
 export default function AgentsView() {
   const sources = useRuntimeSources()
+  const { globalAgentPresets, retiredGlobalAgentPresets } = useAppPreferences()
+  const [globalEditing, setGlobalEditing] = useApplicationState<Agent | null>(null)
   return (
     <section className="min-h-0 flex-1 overflow-y-auto">
       <header className="studio-page-header border-b">
@@ -26,6 +29,64 @@ export default function AgentsView() {
         </p>
       </header>
       <div className="mx-auto max-w-4xl space-y-5 p-4">
+        <section className="rounded-lg border p-4">
+          <header className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Global agent presets</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Defaults for servers connected to this app. Each server can override them.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() =>
+                setGlobalEditing({
+                  ...defaultTaskHarness('codex'),
+                  id: crypto.randomUUID(),
+                  name: '',
+                })
+              }
+            >
+              <Plus size={14} />
+              New preset
+            </Button>
+          </header>
+          {globalAgentPresets.map((agent) => (
+            <div key={agent.id} className="mt-3 flex items-center justify-between gap-3">
+              <span className="text-sm">{agent.name}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      'Remove this global preset? Existing server configurations stay available.',
+                    )
+                  )
+                    return
+                  updateAppPreferences({
+                    globalAgentPresets: globalAgentPresets.filter((item) => item.id !== agent.id),
+                    retiredGlobalAgentPresets: [...retiredGlobalAgentPresets, agent.id],
+                  })
+                }}
+              >
+                Remove preset
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setGlobalEditing(agent)}>
+                Configure
+              </Button>
+            </div>
+          ))}
+        </section>
+        {globalEditing && (
+          <AgentEditor
+            initial={globalEditing}
+            creating={!globalAgentPresets.some((agent) => agent.id === globalEditing.id)}
+            global
+            computerName="Global"
+            onClose={() => setGlobalEditing(null)}
+          />
+        )}
         {!sources.length && (
           <p className="text-sm text-muted-foreground">
             Connect a computer in Devices & runtime to configure agents.
@@ -163,7 +224,12 @@ function ComputerAgents({ name }: { name: string }) {
                     <div className="min-w-0 flex-1">
                       <h2 className="break-words text-sm font-medium">{agent.name}</h2>
                       <p className="mt-1 break-words text-xs text-muted-foreground">
-                        {providers[agent.provider].name}
+                        {providers[agent.provider].name} ·{' '}
+                        {agent.globalPreset
+                          ? agent.serverOverride
+                            ? 'Server override'
+                            : 'Global preset'
+                          : 'This server'}
                       </p>
                     </div>
                     <Button
@@ -209,7 +275,13 @@ function ComputerAgents({ name }: { name: string }) {
                       onClick={() =>
                         setEditing({
                           creating: true,
-                          agent: { ...agent, id: crypto.randomUUID(), name: `${agent.name} copy` },
+                          agent: {
+                            ...agent,
+                            globalPreset: undefined,
+                            serverOverride: undefined,
+                            id: crypto.randomUUID(),
+                            name: `${agent.name} copy`,
+                          },
                         })
                       }
                     >
@@ -219,8 +291,13 @@ function ComputerAgents({ name }: { name: string }) {
                       size="sm"
                       variant="ghost"
                       className="text-destructive"
-                      disabled={!connected || !!deleting}
+                      disabled={!connected || !!deleting || !!agent.globalPreset}
                       aria-label={`Delete ${agent.name}`}
+                      title={
+                        agent.globalPreset
+                          ? 'Remove this preset from Global settings first; existing server configurations remain available.'
+                          : undefined
+                      }
                       onClick={() => {
                         if (
                           !window.confirm(

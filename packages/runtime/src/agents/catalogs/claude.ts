@@ -1,3 +1,4 @@
+import { claudeLaunchFlags } from '../configuration/launch-flags.js'
 import { claudeCommand } from '../configuration/claude-command.js'
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
@@ -20,7 +21,8 @@ export async function claudeModels(agent: AgentDiscovery): Promise<ModelCatalog>
   const stream = query({
     prompt: input,
     options: {
-      env: processEnvironment(),
+      env: processEnvironment(agent.env),
+      extraArgs: claudeLaunchFlags(agent.args),
       abortController: controller,
       settingSources: [],
       pathToClaudeCodeExecutable: command,

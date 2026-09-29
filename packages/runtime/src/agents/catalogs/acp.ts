@@ -21,7 +21,10 @@ function options(config: SessionConfigOption[] | null | undefined, category: str
 export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Promise<ModelCatalog> {
   if (!launch?.command && !agent.endpoint)
     throw new Error('Set an ACP executable to discover its models')
-  const command = launch ?? legacyAcpLaunch(agent.endpoint, agent.args ?? [])
+  const command = launch ?? {
+    ...legacyAcpLaunch(agent.endpoint, agent.args ?? []),
+    env: agent.env ?? {},
+  }
   let commands: Array<{ name: string; description: string; inputHint?: string }> = []
   let updatedConfig: SessionConfigOption[] | undefined
   const connection = openAcpConnection(command, {

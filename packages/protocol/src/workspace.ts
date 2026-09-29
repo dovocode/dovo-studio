@@ -22,7 +22,7 @@ export const agentIconSchema = Schema.Literal(
   'brain',
   'flask',
 )
-export const agentSchema = mutableStruct({
+export const agentPresetSchema = mutableStruct({
   icon: Schema.optional(agentIconSchema),
   resources: Schema.optional(resourceSettingsSchema),
   id: Schema.String,
@@ -35,12 +35,31 @@ export const agentSchema = mutableStruct({
   instructions: Schema.String,
   permission: Schema.Literal('ask', 'read-only', 'workspace-write', 'auto', 'full-access'),
   endpoint: Schema.String,
+  executablePath: Schema.optional(Schema.String),
+  configDirectory: Schema.optional(Schema.String),
   args: Schema.optional(mutableArray(Schema.String)),
+  env: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.String }).pipe(
+      Schema.filter((env) =>
+        Object.keys(env).every(
+          (name) =>
+            /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) &&
+            name !== 'DOVO_OWNER_TOKEN' &&
+            name !== 'ELECTRON_RUN_AS_NODE',
+        ),
+      ),
+    ),
+  ),
   acpInstallationId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   acpMode: Schema.optional(maxValue(Schema.String, 200)),
   acpConfig: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
 })
-export const taskHarnessSchema = agentSchema.omit('id', 'name', 'icon')
+export const agentSchema = mutableStruct({
+  ...agentPresetSchema.fields,
+  globalPreset: Schema.optional(agentPresetSchema),
+  serverOverride: Schema.optional(Schema.Boolean),
+})
+export const taskHarnessSchema = agentPresetSchema.omit('id', 'name', 'icon')
 export type TaskHarness = Schema.Schema.Type<typeof taskHarnessSchema>
 export const projectTaskDefaultsSchema = mutableStruct({
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),

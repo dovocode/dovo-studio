@@ -1,3 +1,4 @@
+import { modelPreferencesSchema, agentPresetSchema, mutableArray } from '@dovo/protocol'
 import { canChangeTaskCheckout, taskSchema } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
 import { runtimeDefaultsSchema } from '@dovo/protocol'
@@ -31,6 +32,65 @@ export function agentsRoute(request: IncomingMessage, path: string) {
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/agents/presets/apply') {
+        const { presets, retired, modelPreferences, modelPreferencesUpdatedAt } = decode(
+          mutableStruct({
+            presets: mutableArray(agentPresetSchema),
+            retired: Schema.optional(mutableArray(idSchema)),
+            modelPreferences: Schema.optional(modelPreferencesSchema),
+            modelPreferencesUpdatedAt: Schema.optional(Schema.Number),
+          }),
+          yield* serviceResult(body(request)),
+        )
+        s.store.update((workspace) => {
+          const agents = workspace.agents.map((agent) =>
+            retired?.includes(agent.id)
+              ? { ...agent, globalPreset: undefined, serverOverride: undefined }
+              : agent,
+          )
+          for (const preset of presets) {
+            const index = agents.findIndex((agent) => agent.id === preset.id)
+            const current = agents[index]
+            const next = current?.serverOverride
+              ? { ...current, globalPreset: preset }
+              : { ...preset, globalPreset: preset, serverOverride: false }
+            if (index === -1) agents.push(next)
+            else agents[index] = next
+          }
+          return { ...workspace, agents }
+        })
+        if (
+          modelPreferences &&
+          modelPreferencesUpdatedAt !== undefined &&
+          modelPreferencesUpdatedAt > (s.defaults.get().globalModelPreferencesUpdatedAt ?? 0)
+        ) {
+          const current = s.defaults.get()
+          const overrides = current.modelPreferenceOverrides ?? current.modelPreferences ?? {}
+          s.defaults.save(
+            {
+              ...current,
+              globalModelPreferencesUpdatedAt: modelPreferencesUpdatedAt,
+              globalModelPreferences: modelPreferences,
+              modelPreferenceOverrides: overrides,
+              modelPreferences: { ...modelPreferences, ...overrides },
+            },
+            false,
+          )
+        }
+        return yield* serviceResult({ ok: true })
+      }
+      if (method === 'POST' && path === '/api/agents/presets/reset') {
+        const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        s.store.update((workspace) => ({
+          ...workspace,
+          agents: workspace.agents.map((agent) =>
+            agent.id === id && agent.globalPreset
+              ? { ...agent.globalPreset, globalPreset: agent.globalPreset, serverOverride: false }
+              : agent,
+          ),
+        }))
+        return yield* serviceResult({ ok: true })
+      }
       if (method === 'POST' && path === '/api/agents/remove') {
         const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
         if (s.titles.read().agentId === id)
@@ -41,28 +101,44 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         s.store.removeAgent(id)
         return yield* serviceResult({ ok: true })
       }
+      if (method === 'POST' && path === '/api/agents/models/reset') {
+        const current = s.defaults.get()
+        return yield* serviceResult(
+          s.defaults.save(
+            {
+              ...current,
+              modelPreferenceOverrides: {},
+              modelPreferences: current.globalModelPreferences ?? {},
+            },
+            false,
+          ),
+        )
+      }
       if (method === 'POST' && path === '/api/agents/models/preference') {
         const input = decode(
           mutableStruct({
             key: maxValue(minValue(Schema.String, 1), 1000),
             favorite: Schema.optional(Schema.Boolean),
             disabled: Schema.optional(Schema.Boolean),
+            inherit: Schema.optional(Schema.Boolean),
           }),
           yield* serviceResult(body(request)),
         )
         const current = s.defaults.get()
         const preferences = current.modelPreferences ?? {}
+        const overrides = { ...(current.modelPreferenceOverrides ?? preferences) }
+        if (input.inherit) delete overrides[input.key]
+        else
+          overrides[input.key] = {
+            favorite: input.favorite ?? preferences[input.key]?.favorite ?? false,
+            disabled: input.disabled ?? preferences[input.key]?.disabled ?? false,
+          }
         return yield* serviceResult(
           s.defaults.save(
             {
               ...current,
-              modelPreferences: {
-                ...preferences,
-                [input.key]: {
-                  favorite: input.favorite ?? preferences[input.key]?.favorite ?? false,
-                  disabled: input.disabled ?? preferences[input.key]?.disabled ?? false,
-                },
-              },
+              modelPreferenceOverrides: overrides,
+              modelPreferences: { ...current.globalModelPreferences, ...overrides },
             },
             false,
           ),

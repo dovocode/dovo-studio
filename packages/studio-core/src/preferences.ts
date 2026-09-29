@@ -1,10 +1,20 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
-import { decodeResult, mutableStruct, mutableArray } from '@dovo/protocol'
+import {
+  modelPreferencesSchema,
+  agentPresetSchema,
+  decodeResult,
+  mutableStruct,
+  mutableArray,
+} from '@dovo/protocol'
 
 /** Preferences for this app window only (like Codex and T3 Code "General" and "Appearance").
  * They never sync to computers; each device keeps its own. */
 const schema = mutableStruct({
+  globalModelPreferencesUpdatedAt: Schema.Number,
+  globalModelPreferences: Schema.NullOr(modelPreferencesSchema),
+  globalAgentPresets: mutableArray(agentPresetSchema),
+  retiredGlobalAgentPresets: mutableArray(Schema.String),
   theme: Schema.Literal('dark', 'light', 'system'),
   textSize: Schema.Literal('small', 'default', 'large'),
   sendWith: Schema.Literal('enter', 'mod-enter'),
@@ -43,6 +53,10 @@ const schema = mutableStruct({
 })
 export type AppPreferences = Schema.Schema.Type<typeof schema>
 export const defaultAppPreferences: AppPreferences = {
+  globalModelPreferencesUpdatedAt: 0,
+  globalModelPreferences: null,
+  globalAgentPresets: [],
+  retiredGlobalAgentPresets: [],
   theme: 'dark',
   textSize: 'default',
   sendWith: 'enter',

@@ -34,6 +34,8 @@ it('runs the Claude compact command and reports its boundary', async () => {
       model: '',
       instructions: '',
       permission: 'ask',
+      args: ['--verbose', '--settings=/config with spaces'],
+      env: { TEST_AGENT_ENV: 'configured' },
     },
     cwd: '/tmp',
     prompt: '/compact',
@@ -49,6 +51,14 @@ it('runs the Claude compact command and reports its boundary', async () => {
   }
   await claudeAdapter.run(run)
   expect(mocks.query).toHaveBeenCalledWith(expect.objectContaining({ prompt: '/compact' }))
+  expect(mocks.query).toHaveBeenCalledWith(
+    expect.objectContaining({
+      options: expect.objectContaining({
+        extraArgs: { verbose: null, settings: '/config with spaces' },
+        env: expect.objectContaining({ TEST_AGENT_ENV: 'configured' }),
+      }),
+    }),
+  )
   expect(events).toContain('system')
   mocks.query.mockClear()
   await claudeAdapter.run({ ...run, compact: undefined, sessionId: undefined, ephemeral: true })

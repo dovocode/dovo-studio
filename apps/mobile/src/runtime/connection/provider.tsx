@@ -1,3 +1,5 @@
+import { useMobilePreferences } from '../preferences/app-preferences'
+import { pendingAgentPresets } from '@dovo/protocol'
 import {
   optimisticTaskEffect,
   previewTasks,
@@ -878,6 +880,74 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       ),
     [registry.profiles, entries, previews],
   )
+  const [presetSyncError, setPresetSyncError] = useApplicationState('')
+  const {
+    globalAgentPresets,
+    retiredGlobalAgentPresets,
+    globalModelPreferences,
+    globalModelPreferencesUpdatedAt,
+  } = useMobilePreferences()
+  const presetRequests = useRef(new Set<string>())
+  const failedPresetRequests = useRef(new Map<string, string>())
+  useEffect(() => {
+    for (const entry of overviews) {
+      if (!entry.connected || !entry.snapshot) {
+        failedPresetRequests.current.delete(entry.profile.id)
+        continue
+      }
+      const presets = pendingAgentPresets(globalAgentPresets, entry.snapshot.workspace.agents)
+      const retired = retiredGlobalAgentPresets.filter((id) =>
+        entry.snapshot?.workspace.agents.some((agent) => agent.id === id && agent.globalPreset),
+      )
+      const modelPreferences =
+        globalModelPreferences !== null &&
+        globalModelPreferencesUpdatedAt >
+          (entry.snapshot.defaults?.globalModelPreferencesUpdatedAt ?? 0)
+          ? globalModelPreferences
+          : undefined
+      const fingerprint = JSON.stringify([
+        presets,
+        retired,
+        modelPreferences,
+        globalModelPreferencesUpdatedAt,
+      ])
+      if (
+        (!presets.length && !retired.length && !modelPreferences) ||
+        presetRequests.current.has(entry.profile.id) ||
+        failedPresetRequests.current.get(entry.profile.id) === fingerprint
+      )
+        continue
+      presetRequests.current.add(entry.profile.id)
+      void readRuntime(
+        entry.profile,
+        '/api/agents/presets/apply',
+        {
+          presets,
+          retired,
+          modelPreferences,
+          modelPreferencesUpdatedAt: globalModelPreferencesUpdatedAt,
+        },
+        responses.ok,
+      )
+        .then(() => {
+          setPresetSyncError('')
+          return refreshProfile(entry.profile)
+        })
+        .catch((error: unknown) => {
+          failedPresetRequests.current.set(entry.profile.id, fingerprint)
+          setPresetSyncError(error instanceof Error ? error.message : String(error))
+        })
+        .finally(() => presetRequests.current.delete(entry.profile.id))
+    }
+  }, [
+    globalAgentPresets,
+    retiredGlobalAgentPresets,
+    globalModelPreferences,
+    globalModelPreferencesUpdatedAt,
+    overviews,
+    readRuntime,
+    refreshProfile,
+  ])
   return (
     <Context.Provider
       value={{
@@ -892,6 +962,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         ready,
         error:
           storageError ||
+          presetSyncError ||
           active?.error ||
           (registry.pendingPairings?.length
             ? 'A connection is waiting to finish pairing. Keep the computer online; recovery retries when you return to the app.'

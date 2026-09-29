@@ -1,3 +1,11 @@
+import { randomUUID } from 'expo-crypto'
+import {
+  useMobilePreferences,
+  updateMobilePreferences,
+} from '../runtime/preferences/app-preferences'
+import { agentPresetSchema } from '@dovo/protocol'
+import { Effect } from 'effect'
+import { parseAgentEnvironment, formatAgentEnvironment } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -26,14 +34,19 @@ export function AgentEditor({
   original,
   creating,
   onClose,
+  global = false,
 }: {
   original: Agent
   creating: boolean
   onClose: () => void
+  global?: boolean
 }) {
   const { connected, profile, snapshot, callEffect } = useRuntime(),
     { busy, error, act } = useAction(),
     [draft, setDraft] = useApplicationState(original)
+  const [environment, setEnvironment] = useApplicationState(formatAgentEnvironment(original.env))
+  const { globalAgentPresets } = useMobilePreferences()
+  const [scope, setScope] = useApplicationState(global ? 'global' : 'server')
   const lockedTasks = creating
     ? []
     : (snapshot?.workspace.tasks ?? []).filter(
@@ -55,6 +68,7 @@ export function AgentEditor({
         if (!providerAllowed) return
         const valid = decode(agentSchema, {
             ...draft,
+            env: parseAgentEnvironment(environment),
             name: draft.name.trim(),
           }),
           changes: Record<
@@ -82,6 +96,24 @@ export function AgentEditor({
             ),
             valid,
           )
+        if (scope === 'global') {
+          if (valid.acpInstallationId)
+            return yield* Effect.fail(
+              new Error('Installed ACP agents belong to their server. Use a server configuration.'),
+            )
+          const preset = decode(agentPresetSchema, valid)
+          if (original.globalPreset && !globalAgentPresets.some((item) => item.id === original.id))
+            preset.id = randomUUID()
+          updateMobilePreferences({
+            globalAgentPresets: [
+              ...globalAgentPresets.filter((agent) => agent.id !== preset.id),
+              preset,
+            ],
+          })
+          onClose()
+          return
+        }
+        if (original.globalPreset) after.serverOverride = true
         for (const key of new Set([...Object.keys(before), ...Object.keys(after)]))
           if (key !== 'id' && JSON.stringify(before[key]) !== JSON.stringify(after[key]))
             changes[key] = {
@@ -94,7 +126,7 @@ export function AgentEditor({
             collection: 'agents',
             id: valid.id,
             changes,
-            ...(creating
+            ...(creating || !snapshot?.workspace.agents.some((agent) => agent.id === valid.id)
               ? {
                   create: valid,
                 }
@@ -115,6 +147,18 @@ export function AgentEditor({
       busy={busy}
       onClose={onClose}
     >
+      <Choice
+        label="Configuration scope"
+        value={scope}
+        onChange={setScope}
+        items={[
+          { id: 'server', name: `This server · ${profile?.name ?? 'Computer'}` },
+          { id: 'global', name: 'Global · Servers connected to this app' },
+        ]}
+      />
+      <Text style={styles.muted}>
+        Global presets apply on reconnect. Server overrides keep their own settings.
+      </Text>
       <Field
         label="Name"
         editable={!busy}
@@ -166,22 +210,30 @@ export function AgentEditor({
         onChange={setDraft}
         disabled={busy || !providerAllowed}
       />
-      {(draft.provider !== 'acp' || !draft.acpInstallationId) && (
+      <Field
+        label={
+          draft.provider === 'opencode' ? 'Server URL' : 'Executable path · blank uses default'
+        }
+        value={draft.acpInstallationId ? (draft.executablePath ?? '') : draft.endpoint}
+        editable={!busy}
+        onChangeText={(endpoint) =>
+          setDraft({
+            ...draft,
+            endpoint,
+          })
+        }
+      />
+      {(draft.provider === 'codex' || draft.provider === 'claude') && (
         <Field
           label={
-            draft.provider === 'opencode' ? 'Server URL' : 'Executable path · blank uses default'
+            draft.provider === 'codex' ? 'CODEX_HOME directory' : 'CLAUDE_CONFIG_DIR directory'
           }
-          value={draft.endpoint}
+          value={draft.configDirectory ?? ''}
+          onChangeText={(configDirectory) => setDraft({ ...draft, configDirectory })}
           editable={!busy}
-          onChangeText={(endpoint) =>
-            setDraft({
-              ...draft,
-              endpoint,
-            })
-          }
         />
       )}
-      {draft.provider === 'acp' && !draft.acpInstallationId && (
+      {draft.provider !== 'opencode' && (
         <Field
           label="Arguments · one per line"
           editable={!busy}
@@ -194,6 +246,21 @@ export function AgentEditor({
           }
           multiline
         />
+      )}
+      {draft.provider !== 'opencode' && (
+        <>
+          <Field
+            label="Environment variables · NAME=value per line"
+            value={environment}
+            onChangeText={setEnvironment}
+            editable={!busy}
+            multiline
+          />
+          <Text style={styles.muted}>
+            Saved as readable configuration. Keep secrets in the server's environment. Claude flags
+            use --name or --name=value.
+          </Text>
+        </>
       )}
       <Choice
         label="Access"
@@ -231,11 +298,29 @@ export function AgentEditor({
           },
         ]}
       />
+      {original.globalPreset && (
+        <Action
+          secondary
+          label="Use global preset on this server"
+          disabled={!connected || busy}
+          onPress={() =>
+            act(() =>
+              runClientEffect(
+                callEffect(
+                  '/api/agents/presets/reset',
+                  { id: original.id },
+                  mutableStruct({ ok: Schema.Boolean }),
+                ).pipe(Effect.tap(() => Effect.sync(onClose))),
+              ),
+            )
+          }
+        />
+      )}
       <View style={styles.row}>
         <Action
           label="Save agent"
           disabled={
-            !connected ||
+            (scope === 'server' && !connected) ||
             busy ||
             !draft.name.trim() ||
             !providerAllowed ||

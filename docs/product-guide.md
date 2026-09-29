@@ -502,6 +502,26 @@ creation/editing, comments, reviews, reviewer requests/removal, supported thread
 and close/reopen actions. Provider/version capabilities control which actions appear. See
 [Source control connections](source-control.md) for setup and limits.
 
+In **Settings → Agents**, save a reusable configuration for **This server** or create a **Global
+agent preset**. Global presets belong to the app that created them and apply to its connected
+servers, including servers paired later. Offline servers receive changes on reconnect. Editing an
+inherited configuration creates a complete server override; **Use global preset on this server**
+restores the latest baseline. Removing a global preset leaves existing server configurations
+available as independent configurations. Installed ACP agents are server-specific because their
+installation IDs belong to that host.
+
+Agent configurations support executable paths, launch arguments (one argument per line), and literal
+environment variables (`NAME=value`, one per line). These values are readable configuration; keep
+credentials in the host environment. Claude flags use `--name` or `--name=value`. OpenCode's
+external server is configured on its host; Dovo stores its server URL. Codex and Claude also accept
+separate **CODEX_HOME** and **CLAUDE_CONFIG_DIR** directories; `~` resolves on the runtime host.
+Changing launch settings replaces a warm provider transport on the next turn.
+
+Model favorites and visibility have their own **Global / This server** selector. Existing local
+choices remain server overrides. Use **Use global model preferences on this server** to clear those
+overrides. Versioned global model updates prevent older clients from replacing newer settings.
+Global presets and preferences require an updated server; unsupported servers report a sync error.
+
 Tasks, PRs, Issues, Pipelines, Automations and Settings combine all saved computers by default. Rows
 show their host; opening one selects that computer automatically. Project filters do not switch the
 runtime. Agents, accounts and resources stay grouped by host; editing them does not switch the open

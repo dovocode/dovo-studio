@@ -1,3 +1,7 @@
+import {
+  useMobilePreferences,
+  updateMobilePreferences,
+} from '../runtime/preferences/app-preferences'
 import { nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -44,6 +48,9 @@ export function ModelSettings({
     provider: agent.provider,
     endpoint: agent.endpoint,
     args: agent.args,
+    env: agent.env,
+    executablePath: agent.executablePath,
+    configDirectory: agent.configDirectory,
     model: agent.provider === 'acp' ? agent.model : '',
     acpInstallationId: agent.provider === 'acp' ? agent.acpInstallationId : undefined,
     acpMode: agent.provider === 'acp' ? agent.acpMode : undefined,
@@ -94,7 +101,14 @@ export function ModelSettings({
   }, [key, canDiscover, callEffect, refresh])
   const [manage, setManage] = useApplicationState(false)
   const [saving, setSaving] = useApplicationState(false)
-  const preferences = snapshot?.defaults?.modelPreferences ?? {}
+  const [scope, setScope] = useApplicationState('server')
+  const { globalModelPreferences, globalModelPreferencesUpdatedAt } = useMobilePreferences()
+  const globalPreferences =
+    (snapshot?.defaults?.globalModelPreferencesUpdatedAt ?? 0) > globalModelPreferencesUpdatedAt
+      ? (snapshot?.defaults?.globalModelPreferences ?? {})
+      : (globalModelPreferences ?? snapshot?.defaults?.globalModelPreferences ?? {})
+  const preferences =
+    scope === 'global' ? globalPreferences : (snapshot?.defaults?.modelPreferences ?? {})
   const preferenceKey = (model: string) =>
     modelPreferenceKey(agent.provider, model, agent.acpInstallationId)
   const allModels = catalog?.models ?? []
@@ -133,11 +147,39 @@ export function ModelSettings({
         disabled={disabled}
         onPress={() => setManage(!manage)}
       />
+      {manage && (
+        <Choice
+          label="Model preference scope"
+          value={scope}
+          onChange={setScope}
+          items={[
+            { id: 'server', name: 'This server' },
+            { id: 'global', name: 'Global · Connected servers' },
+          ]}
+        />
+      )}
       {manage &&
         allModels.map((model) => {
           const key = preferenceKey(model.id)
           const preference = preferences[key]
           const save = (change: { favorite?: boolean; disabled?: boolean }) => {
+            if (scope === 'global') {
+              updateMobilePreferences({
+                globalModelPreferences: {
+                  ...globalPreferences,
+                  [key]: {
+                    favorite: change.favorite ?? globalPreferences[key]?.favorite ?? false,
+                    disabled: change.disabled ?? globalPreferences[key]?.disabled ?? false,
+                  },
+                },
+                globalModelPreferencesUpdatedAt: Math.max(
+                  Date.now(),
+                  globalModelPreferencesUpdatedAt + 1,
+                  (snapshot?.defaults?.globalModelPreferencesUpdatedAt ?? 0) + 1,
+                ),
+              })
+              return
+            }
             setSaving(true)
             void runClientEffect(
               callEffect(
@@ -170,6 +212,22 @@ export function ModelSettings({
             </View>
           )
         })}
+      {manage && scope === 'server' && snapshot?.defaults?.globalModelPreferences && (
+        <Action
+          secondary
+          label="Use global model preferences on this server"
+          disabled={!connected || saving}
+          onPress={() => {
+            setSaving(true)
+            void runClientEffect(callEffect('/api/agents/models/reset', {}, runtimeDefaultsSchema))
+              .then(refreshRuntime)
+              .catch((error: unknown) =>
+                setError(error instanceof Error ? error.message : String(error)),
+              )
+              .finally(() => setSaving(false))
+          }}
+        />
+      )}
       {!!models.some((model) => preferences[preferenceKey(model.id)]?.favorite) && (
         <Choice
           row

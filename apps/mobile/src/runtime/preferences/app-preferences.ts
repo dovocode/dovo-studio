@@ -1,10 +1,20 @@
 import { useSyncExternalStore } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Schema } from 'effect'
-import { decodeResult, mutableStruct } from '@dovo/protocol'
+import {
+  modelPreferencesSchema,
+  agentPresetSchema,
+  mutableArray,
+  decodeResult,
+  mutableStruct,
+} from '@dovo/protocol'
 
 /** Settings → General on this phone only. Never synced to computers. */
 const schema = mutableStruct({
+  globalModelPreferencesUpdatedAt: Schema.Number,
+  globalModelPreferences: Schema.NullOr(modelPreferencesSchema),
+  globalAgentPresets: mutableArray(agentPresetSchema),
+  retiredGlobalAgentPresets: mutableArray(Schema.String),
   taskSort: Schema.Literal('priority', 'activity', 'newest', 'oldest', 'title', 'project'),
   taskGrouping: Schema.Literal('none', 'status', 'project'),
   confirmArchive: Schema.Boolean,
@@ -24,6 +34,10 @@ const schema = mutableStruct({
 })
 export type MobilePreferences = Schema.Schema.Type<typeof schema>
 const defaults: MobilePreferences = {
+  globalModelPreferencesUpdatedAt: 0,
+  globalModelPreferences: null,
+  globalAgentPresets: [],
+  retiredGlobalAgentPresets: [],
   taskSort: 'priority',
   taskGrouping: 'none',
   confirmArchive: false,

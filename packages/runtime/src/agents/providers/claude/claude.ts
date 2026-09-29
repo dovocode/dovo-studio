@@ -1,3 +1,4 @@
+import { claudeLaunchFlags } from '../../configuration/launch-flags.js'
 import { claudeCommand } from '../../configuration/claude-command.js'
 import { decode } from '@dovo/protocol'
 import { claudeMcpServers } from '../../configuration/mcp-settings.js'
@@ -21,7 +22,8 @@ function claudeStream(
     prompt,
     options: {
       cwd: run.cwd,
-      env: processEnvironment(),
+      env: processEnvironment(run.agent.env),
+      extraArgs: claudeLaunchFlags(run.agent.args),
       abortController: controller,
       ...(run.sessionId
         ? {

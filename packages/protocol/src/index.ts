@@ -105,3 +105,7 @@ export * from './desktop-update.js'
 
 export * from './runtime/connection/runtime-releases.js'
 export * from './runtime/connection/runtime-upgrades.js'
+
+export * from './tasks/launch-options.js'
+
+export * from './tasks/agent-presets.js'

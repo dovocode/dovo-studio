@@ -58,3 +58,45 @@ it('resolves each managed ACP independently while preserving custom executables'
     await registry.dispose()
   }
 })
+it('merges installed ACP defaults with explicit launch overrides', () => {
+  const registry = new AgentRegistry(
+    () => decode(commandsSchema, {}),
+    () => ({
+      command: '/installed/agent',
+      args: ['--acp'],
+      env: { DEFAULT: 'kept', OVERRIDE: 'old' },
+    }),
+  )
+  expect(
+    registry.launch({
+      provider: 'acp',
+      endpoint: '/legacy',
+      executablePath: '/custom/agent',
+      model: '',
+      acpInstallationId: 'agent',
+      args: ['--verbose'],
+      env: { OVERRIDE: 'new' },
+    }),
+  ).toEqual({
+    command: '/custom/agent',
+    args: ['--acp', '--verbose'],
+    env: { DEFAULT: 'kept', OVERRIDE: 'new' },
+  })
+})
+it('expands provider config directories without changing HOME or caller environment', () => {
+  const registry = new AgentRegistry()
+  const agent = {
+    provider: 'claude' as const,
+    endpoint: 'claude',
+    configDirectory: '~/claude-work',
+    model: '',
+    env: { EXTRA: 'kept' },
+  }
+  const configured = registry.configure(agent)
+  expect(configured.env).toMatchObject({
+    EXTRA: 'kept',
+    CLAUDE_CONFIG_DIR: expect.stringMatching(/\/claude-work$/),
+  })
+  expect(configured.env).not.toHaveProperty('HOME')
+  expect(agent.env).toEqual({ EXTRA: 'kept' })
+})

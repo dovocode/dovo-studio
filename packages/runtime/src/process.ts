@@ -83,8 +83,8 @@ export function exec(
   return runClientEffect(execEffect(command, args, { ...options, encoding }))
 }
 
-export function processEnvironment() {
-  const env = { ...process.env }
+export function processEnvironment(overrides: Record<string, string> = {}) {
+  const env = { ...process.env, ...overrides }
   delete env.DOVO_OWNER_TOKEN
   delete env.ELECTRON_RUN_AS_NODE
   for (const key of [

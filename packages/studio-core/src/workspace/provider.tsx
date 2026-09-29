@@ -1,3 +1,5 @@
+import { useAppPreferences } from '../preferences'
+import { pendingAgentPresets } from '@dovo/protocol'
 import {
   WorkspaceContext,
   type WorkspaceRequest,
@@ -99,6 +101,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [connection, setConnection, connectionRef] = useApplicationState<RuntimeConnection | null>(
     null,
   )
+  const presetRequests = useRef(new Set<string>())
+  const failedPresetRequests = useRef(new Map<string, string>())
+  const [presetSyncError, setPresetSyncError] = useApplicationState<string | null>(null)
   const localOwnerToken = useRef<string | null>(null)
   const [snapshot, setSnapshotState, snapshotRef] = useApplicationState<RuntimeSnapshot | null>(
       null,
@@ -770,10 +775,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     (path, input, schema, method) => runClientEffect(requestEffect(path, input, schema, method)),
     [requestEffect],
   )
-  const retrySync = useCallback(async () => {
-    if (connection !== connectionRef.current) throw new Error('Runtime connection changed')
-    await synchronization.retry()
-  }, [connection, synchronization])
   const discardAndReload = useCallback(async () => {
     const target = connection
     if (synchronization.isSending())
@@ -941,6 +942,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     () => runClientEffect(refreshRuntimesEffect()),
     [refreshRuntimesEffect],
   )
+  const retrySync = useCallback(async () => {
+    if (connection !== connectionRef.current) throw new Error('Runtime connection changed')
+    failedPresetRequests.current.clear()
+    setPresetSyncError(null)
+    await synchronization.retry()
+    await refreshRuntimes()
+  }, [connection, synchronization, refreshRuntimes])
   useEffect(() => {
     if (bootstrapped.current) return
     bootstrapped.current = true
@@ -1339,6 +1347,73 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }),
     [runtimeRegistry.profiles, overviews, previews],
   )
+  const {
+    globalAgentPresets,
+    retiredGlobalAgentPresets,
+    globalModelPreferences,
+    globalModelPreferencesUpdatedAt,
+  } = useAppPreferences()
+  useEffect(() => {
+    for (const entry of visibleRuntimes) {
+      if (!entry.connected || !entry.snapshot) {
+        failedPresetRequests.current.delete(entry.profile.id)
+        continue
+      }
+      const presets = pendingAgentPresets(globalAgentPresets, entry.snapshot.workspace.agents)
+      const retired = retiredGlobalAgentPresets.filter((id) =>
+        entry.snapshot?.workspace.agents.some((agent) => agent.id === id && agent.globalPreset),
+      )
+      const modelPreferences =
+        globalModelPreferences !== null &&
+        globalModelPreferencesUpdatedAt >
+          (entry.snapshot.defaults?.globalModelPreferencesUpdatedAt ?? 0)
+          ? globalModelPreferences
+          : undefined
+      const fingerprint = JSON.stringify([
+        presets,
+        retired,
+        modelPreferences,
+        globalModelPreferencesUpdatedAt,
+      ])
+      if (
+        (!presets.length && !retired.length && !modelPreferences) ||
+        presetRequests.current.has(entry.profile.id) ||
+        failedPresetRequests.current.get(entry.profile.id) === fingerprint
+      )
+        continue
+      presetRequests.current.add(entry.profile.id)
+      void readRuntime(
+        entry.profile,
+        '/api/agents/presets/apply',
+        {
+          presets,
+          retired,
+          modelPreferences,
+          modelPreferencesUpdatedAt: globalModelPreferencesUpdatedAt,
+        },
+        responses.ok,
+      )
+        .then(() => {
+          if (!failedPresetRequests.current.size) setPresetSyncError(null)
+          return refreshRuntime(entry.profile)
+        })
+        .catch((error: unknown) => {
+          failedPresetRequests.current.set(entry.profile.id, fingerprint)
+          setPresetSyncError(
+            `${entry.profile.name}: ${error instanceof Error ? error.message : String(error)}`,
+          )
+        })
+        .finally(() => presetRequests.current.delete(entry.profile.id))
+    }
+  }, [
+    globalAgentPresets,
+    retiredGlobalAgentPresets,
+    globalModelPreferences,
+    globalModelPreferencesUpdatedAt,
+    visibleRuntimes,
+    readRuntime,
+    refreshRuntime,
+  ])
   const readCache = useMemo(
     () =>
       connection
@@ -1362,7 +1437,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       connection,
       snapshot,
       connected,
-      syncError,
+      syncError: presetSyncError || syncError,
       connect,
       cancelPairing,
       disconnect,
@@ -1394,6 +1469,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       snapshot,
       connected,
       syncError,
+      presetSyncError,
       connect,
       cancelPairing,
       disconnect,

@@ -7,10 +7,11 @@ export async function withCatalogRpc<T>(
   executable: string,
   args: string[],
   load: (rpc: MessageConnection) => Promise<T>,
+  env?: Record<string, string>,
 ): Promise<T> {
   // Detached like the other owned launchers, so helper processes stop with their group.
   const child = spawn(executable, args, {
-    env: processEnvironment(),
+    env: processEnvironment(env),
     detached: process.platform !== 'win32',
     stdio: ['pipe', 'pipe', 'pipe'],
   })
