@@ -31,6 +31,7 @@ export function useConversationActions(task: Task) {
   const [pendingMessage, setPendingMessage] = useApplicationState<PendingMessage | null>(null)
   const { busy } = action
   const failedSend = useRef<SendAttempt | null>(null)
+  const restoredScope = useRef('')
   const run = (work: () => Promise<unknown> | Effect.Effect<unknown, unknown>) => {
     failedSend.current = null
     return action.run(work)
@@ -73,6 +74,13 @@ export function useConversationActions(task: Task) {
   const attaching = attachmentPreviewBusy || attachmentPicker.busy
   useEffect(() => {
     if (!storedDraft.ready) return
+    const scopeKey = JSON.stringify(scope)
+    if (restoredScope.current !== scopeKey) {
+      restoredScope.current = scopeKey
+      if (storedDraft.submission)
+        sendAttempts.restore(scope, storedDraft.submission.attempt, storedDraft.submission.accepted)
+    }
+    const attempt = sendAttempts.peek(scope)
     const ids = [...task.messages, ...(task.queue ?? [])].map((message) => message.id)
     const acknowledged = sendAttempts.reconcile(
       scope,
@@ -82,7 +90,7 @@ export function useConversationActions(task: Task) {
       },
       ids,
     )
-    if (acknowledged) storedDraft.update('')
+    if (acknowledged && attempt) void runClientEffect(storedDraft.confirmEffect(attempt, true))
     // Once the host lists the message, the local copy is done; keeping it would show a ghost
     // "Sending…" bubble whenever that message later leaves the queue.
     setPendingMessage((pending) =>
@@ -90,7 +98,15 @@ export function useConversationActions(task: Task) {
         ? null
         : pending,
     )
-  }, [activeId, task.id, task.messages, task.queue, task.draftAttachments, storedDraft.ready])
+  }, [
+    activeId,
+    task.id,
+    task.messages,
+    task.queue,
+    task.draftAttachments,
+    storedDraft.ready,
+    storedDraft.submission,
+  ])
   const agent = resolveTaskAgent(task, snapshot?.workspace.agents ?? [])
   const firstMessage = !task.messages.length && !task.queue?.length && !task.turns?.length
   const checkoutEditable = canChangeTaskCheckout(task)
@@ -144,6 +160,7 @@ export function useConversationActions(task: Task) {
         mode,
       })
       submittedId = attempt.id
+      yield* storedDraft.stageEffect(attempt)
       setPendingMessage({
         taskId: task.id,
         state: 'sending',
@@ -170,6 +187,7 @@ export function useConversationActions(task: Task) {
             ),
           ))
         sendAttempts.setTitle(scope, attempt.id, title)
+        yield* storedDraft.stageEffect(attempt)
         yield* patchEffect(
           {
             title: {
@@ -195,7 +213,7 @@ export function useConversationActions(task: Task) {
             responses.ok,
           ),
         )
-        if (clearDraft) draft.update('')
+        yield* storedDraft.confirmEffect(attempt, clearDraft)
       }).pipe(
         Effect.catchAll((error) =>
           mobileWorkflow(function* () {

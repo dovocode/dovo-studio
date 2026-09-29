@@ -52,6 +52,7 @@ export class TaskQueue {
       (t) => ({
         ...t,
         checkoutLocked: true,
+        draft: t.draft.trim() === text.trim() ? '' : t.draft,
         ...(resumePaused ? { queuePaused: false, restartRecovery: undefined } : {}),
         draftAttachments: t.draftAttachments?.filter(
           (f) => !attachments.some((a) => a.id === f.id),

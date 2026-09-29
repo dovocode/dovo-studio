@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import { createDraftStorage } from './storage'
 
 function gate() {
@@ -65,12 +65,10 @@ describe('persistent draft ordering', () => {
     const partial = drafts.write('runtime-a.task', 'partial')
     const final = drafts.write('runtime-a.task', 'final transcript')
     const reopened = drafts.read('runtime-a.task')
-    await Promise.resolve()
-    expect(writes).toEqual(['partial'])
+    await vi.waitFor(() => expect(writes).toEqual(['partial']))
     first.resolve()
     await partial
-    await Promise.resolve()
-    expect(writes).toEqual(['partial', 'final transcript'])
+    await vi.waitFor(() => expect(writes).toEqual(['partial', 'final transcript']))
     last.resolve()
     await final
     expect(await reopened).toBe('final transcript')
@@ -158,4 +156,106 @@ it('keeps a native write serialized after its owning fiber is interrupted', asyn
   await second
   expect(writes).toEqual(['first', 'second'])
   expect(await drafts.read('task')).toBe('second')
+})
+
+const submission = {
+  id: 'sent-message',
+  text: 'Send this message',
+  attachmentIds: ['attachment'],
+  mode: 'queue' as const,
+}
+
+it('persists delivery identity with the draft before sending and restores it after a process restart', async () => {
+  const { Effect } = await import('effect')
+  const { createSendAttempts } = await import('../composer/send-attempts')
+  const values = new Map<string, string>()
+  const storage = memoryStorage(values)
+  const first = createDraftStorage(storage)
+  await first.write('runtime.task', submission.text)
+  await Effect.runPromise(first.stageEffect('runtime.task', submission, submission.text))
+  const restarted = createDraftStorage(storage)
+  const recovered = await Effect.runPromise(restarted.readRecordEffect('runtime.task'))
+  expect(recovered).toEqual({
+    text: submission.text,
+    submission: { attempt: submission, accepted: false },
+  })
+  const attempts = createSendAttempts(() => 'new-id')
+  const scope = { runtimeId: 'runtime', taskId: 'task' }
+  if (!recovered?.submission) throw new Error('Submission was not saved')
+  attempts.restore(scope, recovered.submission.attempt)
+  expect(attempts.begin(scope, submission).id).toBe(submission.id)
+  expect(
+    attempts.reconcile(scope, { text: submission.text, attachmentIds: [] }, [submission.id]),
+  ).toBe(true)
+  await Effect.runPromise(restarted.confirmEffect('runtime.task', submission, true))
+  expect(await createDraftStorage(storage).read('runtime.task')).toBe('')
+})
+
+it('keeps accepted message metadata and clearing together, even without a cached server snapshot', async () => {
+  const { Effect } = await import('effect')
+  const { createSendAttempts } = await import('../composer/send-attempts')
+  const storage = memoryStorage()
+  const drafts = createDraftStorage(storage)
+  await drafts.write('runtime.task', submission.text)
+  await Effect.runPromise(drafts.stageEffect('runtime.task', submission, submission.text))
+  await Effect.runPromise(drafts.confirmEffect('runtime.task', submission, true))
+  const saved = await Effect.runPromise(
+    createDraftStorage(storage).readRecordEffect('runtime.task'),
+  )
+  expect(saved?.text).toBe('')
+  expect(saved?.submission?.accepted).toBe(true)
+  const attempts = createSendAttempts(() => 'new-id')
+  const scope = { runtimeId: 'runtime', taskId: 'task' }
+  attempts.restore(scope, submission, true)
+  expect(attempts.reconcile(scope, { text: submission.text, attachmentIds: [] }, [])).toBe(true)
+  // Deliberately composing the same message again is still a new submission.
+  expect(attempts.begin(scope, submission).id).toBe('new-id')
+})
+
+it('preserves newer composer text and a newer send when an older acknowledgement arrives', async () => {
+  const { Effect } = await import('effect')
+  const storage = memoryStorage()
+  const drafts = createDraftStorage(storage)
+  await drafts.write('runtime.task', submission.text)
+  await Effect.runPromise(drafts.stageEffect('runtime.task', submission, submission.text))
+  await drafts.write('runtime.task', 'My next message')
+  await Effect.runPromise(drafts.confirmEffect('runtime.task', submission, true))
+  expect(await createDraftStorage(storage).read('runtime.task')).toBe('My next message')
+  const next = { ...submission, id: 'next', text: 'My next message' }
+  await Effect.runPromise(drafts.stageEffect('runtime.task', next, next.text))
+  await Effect.runPromise(drafts.confirmEffect('runtime.task', submission, true))
+  const saved = await Effect.runPromise(
+    createDraftStorage(storage).readRecordEffect('runtime.task'),
+  )
+  expect(saved?.submission).toEqual({ attempt: next, accepted: false })
+})
+
+it('retains an accepted clear in memory after a disk failure and flushes it on the next lifecycle save', async () => {
+  const { Effect } = await import('effect')
+  const values = new Map<string, string>()
+  const base = memoryStorage(values)
+  let fail = false
+  const storage = {
+    ...base,
+    setItem: async (key: string, value: string) => {
+      if (fail) throw new Error('Disk unavailable')
+      await base.setItem(key, value)
+    },
+  }
+  const drafts = createDraftStorage(storage)
+  await drafts.write('runtime.task', submission.text)
+  await Effect.runPromise(drafts.stageEffect('runtime.task', submission, submission.text))
+  fail = true
+  await expect(
+    Effect.runPromise(drafts.confirmEffect('runtime.task', submission, true)),
+  ).rejects.toThrow('Disk unavailable')
+  expect(await drafts.read('runtime.task')).toBe('')
+  // The durable pre-send record lets the next process reconcile a lost acknowledgement.
+  expect(
+    (await Effect.runPromise(createDraftStorage(storage).readRecordEffect('runtime.task')))
+      ?.submission?.attempt.id,
+  ).toBe(submission.id)
+  fail = false
+  await Effect.runPromise(drafts.flushEffect())
+  expect(await createDraftStorage(storage).read('runtime.task')).toBe('')
 })

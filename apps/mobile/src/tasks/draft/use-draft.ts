@@ -4,7 +4,9 @@ import { useApplicationState } from '../../runtime/state/application-state'
 import { useEffect, useRef } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useRuntime } from '../../runtime/connection/provider'
-import { createDraftStorage } from './storage'
+import { AppState } from 'react-native'
+import type { SendAttempt } from '../composer/send-attempts'
+import { createDraftStorage, type DraftRecord } from './storage'
 import { hydrateDraft } from './hydration'
 const drafts = createDraftStorage(AsyncStorage)
 export function saveRuntimeDraft(runtimeId: string, taskId: string, text: string) {
@@ -15,29 +17,39 @@ export function useDraft(taskId: string, initial = '') {
   const key = `dovo.draft.${encodeURIComponent(activeId ?? '')}.${taskId}`
   const migrateLegacy = !!activeId && activeId === legacyDraftRuntimeId
   const [text, setText] = useApplicationState(''),
-    [ready, setReady] = useApplicationState(false),
+    [loadedKey, setLoadedKey] = useApplicationState<string | null>(null),
+    [submission, setSubmission] = useApplicationState<DraftRecord['submission']>(undefined),
     [error, setError] = useApplicationState('')
   const initialText = useRef(initial)
+  initialText.current = initial
   const activeKey = useRef<string | null>(null)
   useEffect(() => {
     const commands = clientTaskScope()
     let edited = false
     activeKey.current = key
-    setReady(false)
+    setLoadedKey(null)
+    setSubmission(undefined)
+    setText(initialText.current)
     setError('')
     const unsubscribe = drafts.subscribe(key, (value) => {
       edited = true
       setText(value)
     })
     void commands.run(
-      hydrateDraft(drafts.readEffect(key, migrateLegacy ? `dovo.draft.${taskId}` : undefined), {
-        initial: () => initialText.current,
-        edited: () => edited,
-      }).pipe(
+      hydrateDraft(
+        drafts.readRecordEffect(key, migrateLegacy ? `dovo.draft.${taskId}` : undefined).pipe(
+          Effect.tap((record) => Effect.sync(() => setSubmission(record?.submission))),
+          Effect.map((record) => record?.text ?? null),
+        ),
+        {
+          initial: () => initialText.current,
+          edited: () => edited,
+        },
+      ).pipe(
         Effect.tap((hydration) =>
           Effect.sync(() => {
             if (hydration.text !== undefined) setText(hydration.text)
-            setReady(true)
+            setLoadedKey(key)
             setError(hydration.error)
           }),
         ),
@@ -49,6 +61,18 @@ export function useDraft(taskId: string, initial = '') {
       unsubscribe()
     }
   }, [taskId, key, migrateLegacy])
+  const report = (error: unknown) => {
+    if (activeKey.current === key) setError(`Could not save the draft. ${String(error)}`)
+  }
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') return
+      void runClientEffect(
+        drafts.flushEffect().pipe(Effect.catchAll((error) => Effect.sync(() => report(error)))),
+      )
+    })
+    return () => subscription.remove()
+  }, [key])
   const update = (value: string) => {
     if (activeKey.current === key) setText(value)
     void runClientEffect(
@@ -62,9 +86,18 @@ export function useDraft(taskId: string, initial = '') {
     )
   }
   return {
-    text,
+    text: activeKey.current === key ? text : initial,
     update,
-    ready,
+    ready: loadedKey === key,
+    submission: loadedKey === key ? submission : undefined,
+    stageEffect: (attempt: SendAttempt) =>
+      drafts
+        .stageEffect(key, attempt, text)
+        .pipe(Effect.tapError((error) => Effect.sync(() => report(error)))),
+    confirmEffect: (attempt: SendAttempt, clear: boolean) =>
+      drafts
+        .confirmEffect(key, attempt, clear)
+        .pipe(Effect.catchAll((error) => Effect.sync(() => report(error)))),
     error,
   }
 }

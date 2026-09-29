@@ -29,6 +29,16 @@ export function createSendAttempts(createId: () => string) {
       Effect.map(() => acknowledge(scope, attempt.id)),
     )
   return {
+    peek(scope: SendScope) {
+      return attempts.get(key(scope))
+    },
+    restore(scope: SendScope, saved: SendAttempt, accepted = false) {
+      const existing = attempts.get(key(scope))
+      if (existing && existing.id !== saved.id) return
+      const attempt = existing ?? { ...saved, attachmentIds: [...saved.attachmentIds] }
+      attempts.set(key(scope), attempt)
+      if (accepted) confirmed.add(attempt)
+    },
     begin(scope: SendScope, input: SendInput) {
       const previous = attempts.get(key(scope))
       if (previous && previous.mode === input.mode && sameDraft(previous, input)) return previous
@@ -57,7 +67,7 @@ export function createSendAttempts(createId: () => string) {
     reconcile(scope: SendScope, draft: DraftContent, deliveredIds: readonly string[]) {
       const attempt = attempts.get(key(scope))
       if (!attempt) return false
-      if (deliveredIds.includes(attempt.id)) {
+      if (deliveredIds.includes(attempt.id) || confirmed.has(attempt)) {
         acknowledge(scope, attempt.id)
         // Acceptance consumes draft attachments. Those missing files are not a user edit.
         return (

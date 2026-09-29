@@ -277,36 +277,39 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     },
     [],
   )
+  const persistEntryEffect = useCallback(
+    (id: string) =>
+      mobileWorkflow(function* () {
+        const entry = entryRef.current[id]
+        if (!entry?.snapshot || !current.current.profiles.some((item) => item.id === id)) return
+        const cache = cacheFor(entry.profile)
+        yield* cache.writeEffect('snapshot', {
+          snapshot: entry.snapshot,
+          lastSeen: entry.lastSeen,
+          pulls: entry.pulls,
+        })
+        if (caches.current.get(id)?.cache === cache)
+          cacheMarks.current.set(id, {
+            token: entry.profile.connection.token,
+            tag: getRuntimeSnapshotTag(entry.snapshot),
+            pulls: JSON.stringify(entry.pulls),
+            writtenAt: Date.now(),
+          })
+
+        const latest = entryRef.current[id]
+        if (latest?.snapshot === entry.snapshot && latest.pulls === entry.pulls)
+          cacheDirty.current.delete(id)
+      }).pipe(Effect.uninterruptible),
+    [cacheFor],
+  )
   useEffect(() => {
     const persist = mobileWorkflow(function* () {
       if (!cacheDirty.current.size) return
       const ids = [...cacheDirty.current]
-      cacheDirty.current.clear()
-      yield* Effect.forEach(
-        ids,
-        (id) =>
-          mobileWorkflow(function* () {
-            const entry = entryRef.current[id]
-            if (!entry?.snapshot || !current.current.profiles.some((item) => item.id === id)) return
-            const cache = cacheFor(entry.profile)
-            yield* cache.writeEffect('snapshot', {
-              snapshot: entry.snapshot,
-              lastSeen: entry.lastSeen,
-              pulls: entry.pulls,
-            })
-            if (caches.current.get(id)?.cache === cache)
-              cacheMarks.current.set(id, {
-                token: entry.profile.connection.token,
-                tag: getRuntimeSnapshotTag(entry.snapshot),
-                pulls: JSON.stringify(entry.pulls),
-                writtenAt: Date.now(),
-              })
-          }),
-        {
-          concurrency: 3,
-          discard: true,
-        },
-      ).pipe(
+      yield* Effect.forEach(ids, (id) => persistEntryEffect(id), {
+        concurrency: 3,
+        discard: true,
+      }).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {
             for (const id of ids) cacheDirty.current.add(id)
@@ -327,7 +330,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       subscription.remove()
       void runClientEffect(nativeEffect(() => polling.stop()).pipe(Effect.flatMap(() => persist)))
     }
-  }, [cacheFor])
+  }, [persistEntryEffect])
   const persistRegistryEffect = useCallback(
     (next: RuntimeRegistry) =>
       Effect.tryPromise({
@@ -683,8 +686,19 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             ? refreshProfileEffect(profile).pipe(Effect.catchAll(() => Effect.void))
             : Effect.void,
         ),
+        Effect.tap(() =>
+          profile
+            ? persistEntryEffect(profile.id).pipe(
+                Effect.catchAll((error) =>
+                  Effect.sync(() =>
+                    setStorageError(`Could not save the offline cache. ${error.message}`),
+                  ),
+                ),
+              )
+            : Effect.void,
+        ),
       ),
-    [readEffect, profile, refreshProfileEffect],
+    [readEffect, profile, refreshProfileEffect, persistEntryEffect],
   )
   const call = useCallback<Call>((...args) => runClientEffect(callEffect(...args)), [callEffect])
   useEffect(() => {

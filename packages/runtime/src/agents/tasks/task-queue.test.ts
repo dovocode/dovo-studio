@@ -245,3 +245,40 @@ it('keeps the stored workspace unchanged when activity persistence fails', () =>
     db.close()
   }
 })
+
+it('clears an accepted server draft atomically without erasing a newer draft', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'task',
+          title: 'Draft',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: ' Send this ',
+          example: false,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    queue.add('task', 'first', 'Send this')
+    expect(new WorkspaceStore(db).task('task').draft).toBe('')
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: workspace.tasks.map((task) => ({ ...task, draft: 'A newer draft' })),
+    }))
+    queue.add('task', 'second', 'Another message')
+    expect(new WorkspaceStore(db).task('task').draft).toBe('A newer draft')
+    queue.add('task', 'first', 'Send this')
+    expect(store.task('task').draft).toBe('A newer draft')
+  } finally {
+    db.close()
+  }
+})
