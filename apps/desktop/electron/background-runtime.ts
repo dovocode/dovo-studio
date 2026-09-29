@@ -103,9 +103,12 @@ export function ensureBackgroundRuntime(
       const savedEnvironment = readRuntimeEnvironment(environmentPath)
       // Node consumes trust-store settings before executing the runtime entrypoint.
       const startupEnvironment = Object.fromEntries(
-        ['NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE'].flatMap((key) =>
-          savedEnvironment[key] ? [[key, savedEnvironment[key]]] : [],
-        ),
+        [
+          'NODE_EXTRA_CA_CERTS',
+          'SSL_CERT_FILE',
+          'DOVO_RELEASE_DISTRIBUTION',
+          'DOVO_RELEASE_VERSION',
+        ].flatMap((key) => (savedEnvironment[key] ? [[key, savedEnvironment[key]]] : [])),
       )
       const { plist } = backgroundRuntimeDefinition({ ...options, startupEnvironment })
       const handle = await open(log, 'a', 0o600)

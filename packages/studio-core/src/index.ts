@@ -151,6 +151,7 @@ export type { PreviewDevice } from '@dovo/protocol'
 
 export * from './workspace/repository-sources'
 export * from './workspace/runtime-sources'
+export * from './workspace/runtime-updates'
 
 export { remoteBrowserTicketSchema } from '@dovo/protocol'
 export { remoteBrowserHtml } from '@dovo/protocol/browser-viewer'

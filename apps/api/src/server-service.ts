@@ -282,7 +282,7 @@ export async function updateService(directory: string, nextLauncher?: string) {
       },
     })
   }
-  const formula = basename(process.env.DOVO_SERVER_LAUNCHER ?? '').includes('nightly')
+  const formula = basename(record.launcher).includes('nightly')
     ? 'dovo-server-nightly'
     : 'dovo-server'
   if (record.platform !== 'darwin')
@@ -296,9 +296,10 @@ export async function updateService(directory: string, nextLauncher?: string) {
     )
   await run('brew', ['list', '--formula', formula])
   const status = await serverStatus(directory)
+  // Download and switch the formula while the old process is still serving clients.
+  await run('brew', ['upgrade', formula])
   if (status.running) await stopServiceRuntime(directory, record)
   try {
-    await run('brew', ['upgrade', formula])
     await control(record, 'start')
     return waitForRuntime(directory, status.pid)
   } catch (error) {

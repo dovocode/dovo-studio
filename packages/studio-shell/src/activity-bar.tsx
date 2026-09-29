@@ -15,7 +15,9 @@ import {
 } from 'lucide-react'
 import type { DesktopUpdateState } from '@dovo/protocol'
 import type { StudioIcon, StudioView } from '@dovo/studio-core'
-import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from '@dovo/studio-ui'
+import { Button, Popover, Tooltip, TooltipContent, TooltipTrigger, cn } from '@dovo/studio-ui'
+
+const size = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 
 const icons: Record<StudioIcon, typeof Bot> = {
   tasks: MessagesSquare,
@@ -94,39 +96,72 @@ export function ActivityBar({
         {onCheckUpdates &&
           item('check-updates', 'Check for Updates', RefreshCw, false, onCheckUpdates)}
         {!!onUpdate && !!update && update.status !== 'idle' && update.status !== 'error' && (
-          <Tooltip>
-            <TooltipTrigger asChild>
+          <Popover.Root>
+            <Popover.Trigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label={`Update ${update.version ?? ''} ${update.status === 'downloading' ? 'downloading' : 'available'}`}
+                aria-label={`Update ${update.version ?? ''}: ${update.status === 'downloading' ? `downloading ${Math.round(update.progress ?? 0)}%` : update.status === 'downloaded' ? 'ready to install' : update.status === 'restarting' ? 'restarting' : 'available'}`}
                 className="studio-navigation-item studio-update-item"
-                disabled={update.status === 'downloading'}
-                onClick={onUpdate}
               >
                 <Download size={18} strokeWidth={1.7} aria-hidden="true" />
                 <span className="studio-update-dot" />
+                {update.status === 'downloading' && (
+                  <span
+                    className="studio-update-progress"
+                    style={{ width: `${Math.min(100, Math.max(0, update.progress ?? 0))}%` }}
+                  />
+                )}
               </Button>
-            </TooltipTrigger>
-            <TooltipContent
-              side="right"
-              sideOffset={10}
-              className="max-h-80 max-w-96 overflow-y-auto whitespace-pre-wrap"
-            >
-              <strong>
-                Update {update.version ?? ''}{' '}
-                {update.status === 'downloaded' ? 'ready to install' : 'available'}
-              </strong>
-              <p className="mt-2">{update.notes ?? 'Release notes are unavailable.'}</p>
-              <p className="mt-2 opacity-70">
-                {update.status === 'downloading'
-                  ? `Downloading ${Math.round(update.progress ?? 0)}%`
-                  : update.status === 'downloaded'
-                    ? 'Click to install'
-                    : 'Click to download and install'}
-              </p>
-            </TooltipContent>
-          </Tooltip>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                side="right"
+                sideOffset={10}
+                className="z-50 w-80 max-w-[calc(100vw-4rem)] rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg"
+                aria-label="Desktop update"
+              >
+                <h2 className="text-sm font-semibold">Dovo Studio {update.version}</h2>
+                <p className="mt-1 text-xs text-muted-foreground">What’s new in this update</p>
+                <div className="mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap text-xs leading-5">
+                  {update.notes ?? 'Release notes are unavailable.'}
+                </div>
+                {update.status === 'downloading' && (
+                  <div className="mt-4" role="status" aria-live="polite">
+                    <div className="flex justify-between text-xs">
+                      <span>Downloading {Math.round(update.progress ?? 0)}%</span>
+                      {update.total && (
+                        <span>
+                          {size(update.transferred ?? 0)} / {size(update.total)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full bg-primary"
+                        style={{ width: `${Math.min(100, Math.max(0, update.progress ?? 0))}%` }}
+                      />
+                    </div>
+                    {!!update.bytesPerSecond && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {size(update.bytesPerSecond)}/s
+                      </p>
+                    )}
+                  </div>
+                )}
+                {update.status === 'restarting' && (
+                  <p className="mt-4 text-xs">Preparing to restart…</p>
+                )}
+                {(update.status === 'available' || update.status === 'downloaded') && (
+                  <Button className="mt-4 w-full" size="sm" onClick={onUpdate}>
+                    {update.status === 'downloaded'
+                      ? 'Restart and install'
+                      : 'Download and restart'}
+                  </Button>
+                )}
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
         )}
         {!!settings.length &&
           item('settings', 'Settings', Settings, settingsActive, () => onSelect(settings[0].id))}

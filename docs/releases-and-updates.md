@@ -8,14 +8,15 @@ and Apple signing team between iPhone builds.
 
 Installed builds use **Dovo Studio → Check for Updates…** (also in Help). Stable checks stable
 GitHub Releases; **Dovo Studio (Nightly)** checks the Nightly prerelease channel. Source launches
-show **Dovo Studio (Dev)** in the window and menu. The flow asks before downloading, shows download
-progress in the Dock/taskbar, then asks before restarting. Installation checks the local runtime and
-waits if tasks or automations are running. Choosing Later does not install unexpectedly on quit.
-Remote runtimes are not restarted. Source builds explain how to update the checkout instead of
-attempting an installer update. Stable and Nightly have separate app identities and installers but
-use the same workspace and pairing data. Run one version's local runtime at a time; opening the
-other version connects to the existing compatible runtime without restarting it. Incompatible
-runtime protocol versions require a runtime update before the other app can connect.
+show **Dovo Studio (Dev)** in the window and menu. The update icon opens release notes and live
+download progress, including transferred bytes and speed. One action downloads and restarts when
+active work has finished. Installation checks the local runtime and waits if tasks or automations
+are running. Choosing Later does not install unexpectedly on quit. Remote runtimes are not
+restarted. Source builds explain how to update the checkout instead of attempting an installer
+update. Stable and Nightly have separate app identities and installers but use the same workspace
+and pairing data. Run one version's local runtime at a time; opening the other version connects to
+the existing compatible runtime without restarting it. Incompatible runtime protocol versions
+require a runtime update before the other app can connect.
 
 The feed is the public `dovocode/dovo-studio` GitHub repository. A source push alone is not a binary
 release. The Release workflow produces:
@@ -141,7 +142,14 @@ It can update/end an existing activity while iOS suspends the app; push-to-start
 For a managed server, pull source then use `pnpm server update --data-dir /path/to/runtime`. This
 stages/builds the new runtime, validates it, backs up SQLite, switches the managed process and rolls
 back on startup failure. See [server setup](server-setup.md) for ownership and recovery details.
-`pnpm server doctor --check-updates` checks adapter versions independently of app releases.
+`pnpm server doctor --check-updates` checks adapter versions independently of app releases. Settings
+→ Devices & runtime checks the published release for each saved server and shows its changelog and
+installed version. A thread shows an update indicator for its execution host. Servers installed by
+the Linux one-command installer or a managed Homebrew service can update from Settings; their
+downloads are staged and verified while the current runtime stays online, then the service restarts
+after active work finishes. Source, mise and externally managed servers show the release and use
+their existing host upgrade procedure. Servers built before this feature need one host-side update
+before they can report their installed release and accept in-app updates.
 
 References: [Expo Widgets](https://docs.expo.dev/versions/latest/sdk/widgets/),
 [electron-builder updates](https://www.electron.build/docs/features/auto-update/).

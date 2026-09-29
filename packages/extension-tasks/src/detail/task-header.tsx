@@ -7,6 +7,8 @@ import { TaskActions } from './task-actions'
 import {
   useWorkspace,
   useStudioHost,
+  useRuntimeReleaseCheck,
+  runtimeUpdate,
   encodeWorkTarget,
   issueLabel,
   responses,
@@ -24,6 +26,7 @@ import {
   Terminal,
   FolderOpen,
   ChevronDown,
+  Download,
 } from 'lucide-react'
 import type { Task } from '@dovo/studio-core'
 import {
@@ -68,6 +71,8 @@ export function TaskHeader({
   onTerminal?: (terminalId: string) => void
 }) {
   const { workspace, snapshot, connected, request } = useWorkspace()
+  const updates = useRuntimeReleaseCheck()
+  const serverUpdate = runtimeUpdate(snapshot, updates.releases)
   const host = useStudioHost()
   const [gitOpen, setGitOpen] = useApplicationState(false)
   const [linking, setLinking] = useApplicationState(false)
@@ -90,6 +95,17 @@ export function TaskHeader({
     0
   const actions = (
     <div className="flex shrink-0 items-center gap-2">
+      {snapshot?.releaseDistribution !== 'desktop' && serverUpdate.available && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 gap-1.5 px-2.5 text-[0.6875rem]"
+          title={`Server ${serverUpdate.latest?.version} available. Open Devices & runtime for release notes.`}
+          onClick={() => host.navigate({ viewId: 'runtime' })}
+        >
+          <Download className="size-3.5" /> Server update
+        </Button>
+      )}
       {onTerminal && <TaskProjectActions task={task} onTerminal={onTerminal} />}
       {!compact && repo && (
         <DropdownMenu.Root>

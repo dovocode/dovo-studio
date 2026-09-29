@@ -72,6 +72,9 @@ export const providerStatusSchema = mutableStruct({
 export const snapshotSchema = mutableStruct({
   protocolVersion: Schema.optional(Schema.Number.pipe(Schema.int())),
   runtimeHost: Schema.optional(Schema.String),
+  releaseVersion: Schema.optional(Schema.String),
+  releaseDistribution: Schema.optional(Schema.Literal('desktop', 'archive', 'source')),
+  releaseCanUpdate: Schema.optional(Schema.Boolean),
   defaults: Schema.optional(runtimeDefaultsSchema),
   revision: Schema.Number.pipe(Schema.finite()),
   workspace: workspaceSchema,

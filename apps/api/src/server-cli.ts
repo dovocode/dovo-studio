@@ -8,6 +8,7 @@ import { acquireProcessLock } from './process-lock.js'
 import { mkdirSync } from 'node:fs'
 import { selectedEntrypoint, sourceEntrypoint, updateServer } from './server-update.js'
 import { serverDoctor } from './server-doctor.js'
+import { runRemoteServerUpdate } from './server-remote-update.js'
 import {
   installService,
   removeService,
@@ -34,6 +35,7 @@ async function main() {
       database: { type: 'string' },
       'public-address': { type: 'string' },
       launcher: { type: 'string' },
+      version: { type: 'string' },
       network: { type: 'string' },
       manual: { type: 'boolean' },
       'check-updates': { type: 'boolean' },
@@ -84,6 +86,7 @@ Build first: pnpm --filter @dovo/api... -r build`
       'doctor',
       'update',
       'service',
+      'remote-update',
     ].includes(command) ||
     (command !== 'pair' && command !== 'service' && args.length) ||
     (command === 'service' &&
@@ -111,6 +114,8 @@ Build first: pnpm --filter @dovo/api... -r build`
     throw new Error('--network and --manual are pair options.')
   if (!(command === 'service' && args[0] === 'update') && values.launcher)
     throw new Error('--launcher is a service update option.')
+  if (command !== 'remote-update' && values.version)
+    throw new Error('--version is a remote update option.')
   const directory = serverDirectory(values['data-dir'])
   if (command === 'service' && args[0] === 'run') {
     await runService(directory)
@@ -165,6 +170,8 @@ Build first: pnpm --filter @dovo/api... -r build`
         database: values.database,
         publicAddress: values['public-address'],
       })
+    else if (command === 'remote-update')
+      result = await runRemoteServerUpdate(directory, values.version ?? '')
     else if (command === 'stop') result = await stopServer(directory)
     else if (command === 'status') {
       const status = await serverStatus(directory)

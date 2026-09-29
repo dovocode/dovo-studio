@@ -1,8 +1,11 @@
 export type DesktopUpdateState = {
-  status: 'idle' | 'available' | 'downloading' | 'downloaded' | 'error'
+  status: 'idle' | 'available' | 'downloading' | 'downloaded' | 'restarting' | 'error'
   version?: string
   notes?: string
   progress?: number
+  transferred?: number
+  total?: number
+  bytesPerSecond?: number
 }
 
 export type DesktopUpdateBridge = {

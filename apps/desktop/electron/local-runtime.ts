@@ -242,6 +242,8 @@ const runtimeOptions = () =>
       }
       const env: NodeJS.ProcessEnv = {
         ...process.env,
+        DOVO_RELEASE_DISTRIBUTION: 'desktop',
+        ...(app.isPackaged ? { DOVO_RELEASE_VERSION: app.getVersion() } : {}),
         DOVO_OWNER_TOKEN: token,
         DOVO_DATABASE_PATH: join(app.getPath('userData'), 'runtime.sqlite'),
         PORT: networkPort ?? process.env.DOVO_PORT ?? saved?.port ?? '8787',

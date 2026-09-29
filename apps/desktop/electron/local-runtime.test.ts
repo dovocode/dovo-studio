@@ -7,6 +7,7 @@ const fixture = vi.hoisted(() => ({ directory: '', packaged: false }))
 vi.mock('electron', () => ({
   app: {
     getPath: () => fixture.directory,
+    getVersion: () => '0.0.7',
     get isPackaged() {
       return fixture.packaged
     },

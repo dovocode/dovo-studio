@@ -35,6 +35,26 @@ export function registerUpdates(
           : ''
     return text.trim() || undefined
   }
+  const fetchReleaseNotes = async (version: string) => {
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/dovocode/dovo-studio/releases/tags/v${encodeURIComponent(version)}`,
+        {
+          headers: { Accept: 'application/vnd.github+json' },
+          signal: AbortSignal.timeout(10000),
+        },
+      )
+      if (!response.ok) return
+      const release: unknown = await response.json()
+      const notes =
+        release && typeof release === 'object' && 'body' in release
+          ? notesText(release.body)
+          : undefined
+      if (notes && state.version === version && !state.notes) publish({ ...state, notes })
+    } catch {
+      // The update remains available when GitHub's release notes cannot be fetched.
+    }
+  }
   const refresh = () => {
     if (!app.isPackaged || (process.platform === 'linux' && !process.env.APPIMAGE))
       return Promise.resolve(false)
@@ -45,11 +65,13 @@ export function registerUpdates(
       .checkForUpdates()
       .then((result) => {
         if (result?.isUpdateAvailable) {
+          const notes = notesText(result.updateInfo.releaseNotes)
           publish({
             status: 'available',
             version: result.updateInfo.version,
-            notes: notesText(result.updateInfo.releaseNotes),
+            notes,
           })
+          if (!notes) void fetchReleaseNotes(result.updateInfo.version)
           return true
         }
         publish({ status: 'idle' })
@@ -123,8 +145,11 @@ export function registerUpdates(
           type: 'info',
           message: `${appName} ${state.version ?? ''} is available`,
           detail:
-            'Download the update now? Installation waits for your confirmation and keeps your projects, conversations and paired devices.',
-          buttons: ['Download update', 'Later'],
+            'Download and restart to install when active work has finished. Your projects, conversations and paired devices are kept.',
+          buttons: [
+            state.status === 'downloaded' ? 'Restart and install' : 'Download and restart',
+            'Later',
+          ],
           cancelId: 1,
           defaultId: 0,
         })
@@ -132,8 +157,23 @@ export function registerUpdates(
       }
       if (state.status !== 'downloaded') {
         for (const window of BrowserWindow.getAllWindows()) window.setProgressBar(0)
-        const progress = (info: { percent: number }) => {
-          publish({ ...state, status: 'downloading', progress: info.percent })
+        let lastProgress = 0
+        const progress = (info: {
+          percent: number
+          transferred: number
+          total: number
+          bytesPerSecond: number
+        }) => {
+          if (info.percent < 100 && Date.now() - lastProgress < 200) return
+          lastProgress = Date.now()
+          publish({
+            ...state,
+            status: 'downloading',
+            progress: info.percent,
+            transferred: info.transferred,
+            total: info.total,
+            bytesPerSecond: info.bytesPerSecond,
+          })
           for (const window of BrowserWindow.getAllWindows())
             window.setProgressBar(info.percent / 100)
         }
@@ -146,15 +186,6 @@ export function registerUpdates(
           for (const window of BrowserWindow.getAllWindows()) window.setProgressBar(-1)
         }
       }
-      const install = await dialog.showMessageBox({
-        type: 'info',
-        message: 'Update ready',
-        detail: `Restart ${appName} to install. Active tasks and automations must finish first.`,
-        buttons: ['Restart and install', 'Later'],
-        cancelId: 1,
-        defaultId: 1,
-      })
-      if (install.response !== 0) return
       const connection = await startLocalRuntime(directory, { allowIncompatible: true })
       const response = await fetch(`${connection.address}/api/snapshot`, {
         headers: {
@@ -179,6 +210,7 @@ export function registerUpdates(
         })
         return
       }
+      publish({ ...state, status: 'restarting' })
       restoreRuntime = await prepareQuit()
       autoUpdater.quitAndInstall(false, true)
     } catch (error) {

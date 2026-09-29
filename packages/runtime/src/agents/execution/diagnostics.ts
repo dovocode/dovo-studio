@@ -228,12 +228,13 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
         const infoResponse = await fetch(new URL('api/info', base), options)
         if (infoResponse.ok) {
           const info = decode(mutableStruct({ version: Schema.String }), await infoResponse.json())
-          return {
-            version: valid(info.version),
-            detail: `Server responds at ${url.origin}. Model credentials were not tested.`,
-          }
+          if (info.version.startsWith('2.'))
+            return {
+              version: valid(info.version),
+              detail: `Server responds at ${url.origin}. Model credentials were not tested.`,
+            }
         }
-        if (infoResponse.status !== 404)
+        if (!infoResponse.ok && infoResponse.status !== 404)
           throw new Error(`OpenCode server info returned HTTP ${infoResponse.status}.`)
         const response = await fetch(new URL('global/health', base), options)
         if (!response.ok) throw new Error(`OpenCode health check returned HTTP ${response.status}.`)

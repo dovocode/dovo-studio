@@ -1,13 +1,22 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 const f = vi.hoisted(() => ({
   open: vi.fn<(url: string) => Promise<void>>(async (_url) => {}),
-  listeners: new Map<string, (error: Error) => void>(),
+  listeners: new Map<
+    string,
+    (
+      event:
+        | Error
+        | { percent: number; transferred: number; total: number; bytesPerSecond: number },
+    ) => void
+  >(),
   install: vi.fn<() => void>(),
   message: vi.fn<(options: unknown) => Promise<{ response: number }>>(async () => ({
     response: 0,
   })),
   version: 'fixture',
+  notes: 'Faster setup and fixes' as string | undefined,
   menu: undefined as unknown,
+  states: [] as unknown[],
 }))
 vi.mock('electron', () => ({
   app: { isPackaged: true, getVersion: () => f.version },
@@ -19,20 +28,41 @@ vi.mock('electron', () => ({
       f.menu = value
     },
   },
-  BrowserWindow: { getAllWindows: () => [] },
+  BrowserWindow: {
+    getAllWindows: () => [
+      {
+        webContents: { send: (_channel: string, state: unknown) => f.states.push(state) },
+        setProgressBar: () => {},
+      },
+    ],
+  },
 }))
 vi.mock('electron-updater', () => ({
   default: {
     autoUpdater: {
-      on: (name: string, listener: (error: Error) => void) => {
+      on: (
+        name: string,
+        listener: (
+          event:
+            | Error
+            | { percent: number; transferred: number; total: number; bytesPerSecond: number },
+        ) => void,
+      ) => {
         f.listeners.set(name, listener)
       },
       removeListener: () => {},
       checkForUpdates: async () => ({
         isUpdateAvailable: true,
-        updateInfo: { version: 'next', releaseNotes: 'Faster setup and fixes' },
+        updateInfo: { version: 'next', releaseNotes: f.notes },
       }),
-      downloadUpdate: async () => {},
+      downloadUpdate: async () => {
+        f.listeners.get('download-progress')?.({
+          percent: 50,
+          transferred: 5_000_000,
+          total: 10_000_000,
+          bytesPerSecond: 1_000_000,
+        })
+      },
       quitAndInstall: f.install,
     },
   },
@@ -47,7 +77,9 @@ afterEach(() => {
   vi.clearAllMocks()
   f.listeners.clear()
   f.version = 'fixture'
+  f.notes = 'Faster setup and fixes'
   f.menu = undefined
+  f.states = []
 })
 const snapshot = {
   revision: 0,
@@ -67,6 +99,10 @@ const snapshot = {
   },
 }
 it('publishes update notes and downloads directly from the sidebar action', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+  )
   const { registerUpdates } = await import('./updates')
   const updates = registerUpdates('/unused', async () => async () => {})
   await updates.refresh()
@@ -75,10 +111,39 @@ it('publishes update notes and downloads directly from the sidebar action', asyn
     version: 'next',
     notes: 'Faster setup and fixes',
   })
-  f.message.mockResolvedValueOnce({ response: 1 })
   await updates.install()
-  expect(updates.state()).toMatchObject({ status: 'downloaded', progress: 100 })
+  expect(updates.state()).toMatchObject({ status: 'restarting', progress: 100 })
+  expect(f.states).toContainEqual(
+    expect.objectContaining({
+      status: 'downloading',
+      progress: 50,
+      transferred: 5_000_000,
+      total: 10_000_000,
+    }),
+  )
+  expect(f.message).not.toHaveBeenCalled()
+  expect(f.install).toHaveBeenCalledOnce()
+})
+it('loads release notes from the release when updater metadata omits them', async () => {
+  f.notes = undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () => Response.json({ body: 'New release changes' })),
+  )
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => async () => {})
+  await updates.refresh()
+  await vi.waitFor(() => expect(updates.state().notes).toBe('New release changes'))
+})
+it('uses one confirmation to download and restart', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+  )
+  const { registerUpdates } = await import('./updates')
+  await registerUpdates('/unused', async () => async () => {}).check()
   expect(f.message).toHaveBeenCalledOnce()
+  expect(f.install).toHaveBeenCalledOnce()
 })
 it('uses the same check action from the application menu and sidebar bridge', async () => {
   const { registerUpdates } = await import('./updates')

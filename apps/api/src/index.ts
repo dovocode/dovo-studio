@@ -1,6 +1,6 @@
 import { readRuntimeEnvironment } from './runtime-environment.js'
 import { Cause, Data, Effect, Exit } from 'effect'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { discoverNetworks, resolveBindHost } from './network.js'
@@ -9,6 +9,30 @@ import { RuntimeHost, runtimeLayer } from '@dovo/runtime'
 import { acquireProcessLock } from './process-lock.js'
 import { runtimeOwnerToken } from './owner-token.js'
 import { knownToolDirectories, loginShellPath, mergePath } from './login-path.js'
+
+if (!process.env.DOVO_RELEASE_VERSION) {
+  try {
+    process.env.DOVO_RELEASE_VERSION = readFileSync(
+      new URL('../../../VERSION', import.meta.url),
+      'utf8',
+    ).trim()
+  } catch {
+    try {
+      const manifest: unknown = JSON.parse(
+        readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
+      )
+      if (
+        manifest &&
+        typeof manifest === 'object' &&
+        'version' in manifest &&
+        typeof manifest.version === 'string'
+      )
+        process.env.DOVO_RELEASE_VERSION = manifest.version
+    } catch {
+      // A custom launcher may not bundle release metadata.
+    }
+  }
+}
 
 class RuntimeProcessError extends Data.TaggedError('RuntimeProcessError')<{
   readonly operation: string
@@ -58,6 +82,7 @@ const program = Effect.scoped(
     }
     const databasePath =
       process.env.DOVO_DATABASE_PATH ?? join(homedir(), '.dovo', 'runtime.sqlite')
+    process.env.DOVO_DATABASE_PATH = databasePath
     const directory = dirname(databasePath)
     yield* attempt('create data directory', () =>
       mkdirSync(directory, { recursive: true, mode: 0o700 }),

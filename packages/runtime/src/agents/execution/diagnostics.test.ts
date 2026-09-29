@@ -50,6 +50,7 @@ it('checks the installed adapters without contacting an update registry or runni
     ]),
   )
   expect(request.mock.calls.map(([url]) => urlString(url))).toEqual([
+    'http://127.0.0.1:4096/api/info',
     'http://127.0.0.1:4096/global/health',
   ])
   expect(diagnostics.find((item) => item.id === 'claude-sdk')).toMatchObject({
@@ -62,8 +63,15 @@ it('checks the installed adapters without contacting an update registry or runni
   )
   expect(diagnostics.every((item) => item.updateStatus === 'not-checked')).toBe(true)
 })
+it('reads an OpenCode 2 server through its version endpoint', async () => {
+  request.mockResolvedValue(Response.json({ version: '2.0.19' }))
+  const diagnostics = await checkAdapterUpdates(settings)
+  expect(diagnostics.find((item) => item.kind === 'server')?.installedVersion).toBe('2.0.19')
+  expect(request).toHaveBeenCalledOnce()
+})
 it('compares stable, prerelease, and newer installed versions correctly', async () => {
   request.mockImplementation(async (url) => {
+    if (urlString(url).includes('/api/info')) return new Response(null, { status: 404 })
     if (urlString(url).includes('/global/health'))
       return Response.json({
         healthy: true,
@@ -95,6 +103,7 @@ it('compares stable, prerelease, and newer installed versions correctly', async 
 it('retains useful results if an executable, server, or update registry is unavailable', async () => {
   run.mockRejectedValue(new Error('secret-token: child stderr must not be reported'))
   request.mockImplementation(async (url) => {
+    if (urlString(url).includes('/api/info')) return new Response(null, { status: 404 })
     if (urlString(url).includes('/global/health'))
       return new Response(null, {
         status: 401,
@@ -192,9 +201,12 @@ it('checks the actual configured OpenCode host and reuses its configured server 
         },
       ],
     })
-    expect(request).toHaveBeenCalledTimes(1)
-    expect(urlString(request.mock.calls[0][0])).toBe('https://code.example.test/api/global/health')
-    expect(request.mock.calls[0][1]?.headers).toEqual({
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(request.mock.calls.map(([url]) => urlString(url))).toEqual([
+      'https://code.example.test/api/api/info',
+      'https://code.example.test/api/global/health',
+    ])
+    expect(request.mock.calls[1][1]?.headers).toEqual({
       Authorization: 'Basic dGVzdGVyOnRlc3Qtc2VydmVyLXBhc3N3b3Jk',
     })
     expect(JSON.stringify(diagnostics)).not.toContain('test-server-password')
@@ -204,15 +216,17 @@ it('checks the actual configured OpenCode host and reuses its configured server 
 })
 it('rejects mismatched registry packages without claiming an update is available', async () => {
   request.mockImplementation(async (url) =>
-    urlString(url).includes('/global/health')
-      ? Response.json({
-          healthy: true,
-          version: '1.18.31',
-        })
-      : Response.json({
-          name: 'different-package',
-          version: '999.0.0',
-        }),
+    urlString(url).includes('/api/info')
+      ? new Response(null, { status: 404 })
+      : urlString(url).includes('/global/health')
+        ? Response.json({
+            healthy: true,
+            version: '1.18.31',
+          })
+        : Response.json({
+            name: 'different-package',
+            version: '999.0.0',
+          }),
   )
   const diagnostics = await checkAdapterUpdates(settings, {
     checkUpdates: true,

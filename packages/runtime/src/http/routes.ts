@@ -11,6 +11,7 @@ import {
 } from '@dovo/protocol'
 import { hostname } from 'node:os'
 import { trackRequest } from './support/request-activity.js'
+import { canUpdateServer, serverUpdateStatus, startServerUpdate } from './server-updates.js'
 import { defaultShell } from '../terminal/shell.js'
 import { discoverProjectIcon } from '../scm/repositories/project-icon.js'
 import { agentsRoute } from './endpoints/agents-routes.js'
@@ -324,6 +325,14 @@ export function route(
         return yield* serviceResult({
           protocolVersion: RUNTIME_PROTOCOL_VERSION,
           runtimeHost: hostname(),
+          releaseVersion: process.env.DOVO_RELEASE_VERSION || undefined,
+          releaseDistribution:
+            process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop'
+              ? 'desktop'
+              : process.env.DOVO_SERVER_DISTRIBUTION === 'archive'
+                ? 'archive'
+                : 'source',
+          releaseCanUpdate: canUpdateServer(),
           defaults: s.defaults.get(),
           revision: s.store.version(),
           workspace: {
@@ -377,6 +386,23 @@ export function route(
       if (method === 'POST' && path === '/api/runtime/prepare-restart') {
         owner()
         return yield* serviceResult(s.tasks.prepareRestart())
+      }
+      if (method === 'GET' && path === '/api/runtime/update/status')
+        return yield* serviceResult(serverUpdateStatus())
+      if (method === 'POST' && path === '/api/runtime/update/start') {
+        if (
+          s.store.publicWorkspace().tasks.some((task) => task.status === 'running') ||
+          s.jobs.list().some((run) => run.status === 'running')
+        )
+          throw new HttpError(
+            409,
+            'Finish running tasks and automations before updating this server.',
+          )
+        const input = decode(
+          mutableStruct({ version: maxValue(minValue(Schema.String, 1), 80) }),
+          yield* serviceResult(body(request)),
+        )
+        return yield* serviceResult(startServerUpdate(input.version))
       }
       if (method === 'POST' && path === '/api/runtime/cancel-restart') {
         owner()

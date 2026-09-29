@@ -1,4 +1,5 @@
-import { PAIRING_PROTOCOL_VERSION } from '@dovo/studio-core'
+import { PAIRING_PROTOCOL_VERSION, runtimeUpdate, useRuntimeReleaseCheck } from '@dovo/studio-core'
+import { ServerUpdateControl } from './server-update-control'
 import { Effect } from 'effect'
 import { runtimeRequestEffect } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -17,6 +18,7 @@ import {
   cn,
 } from '@dovo/studio-ui'
 export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile) => void }) {
+  const updates = useRuntimeReleaseCheck()
   const {
     connect,
     cancelPairing,
@@ -195,74 +197,125 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
           </div>
         </div>
       )}
+      <div className="flex items-center justify-between gap-2 py-2">
+        <h2 className="text-sm font-medium">Saved computers</h2>
+        <Button size="sm" variant="outline" disabled={updates.checking} onClick={updates.check}>
+          {updates.checking ? 'Checking…' : 'Check server updates'}
+        </Button>
+      </div>
+      {updates.error && (
+        <p role="alert" className="text-xs text-destructive">
+          {updates.error}
+        </p>
+      )}
       <div className="divide-y">
-        {runtimes.map((entry) => (
-          <div key={entry.profile.id} className="flex flex-wrap items-center gap-3 py-3">
-            <Monitor size={17} className="shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <p className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="min-w-0 break-words">{entry.profile.name}</span>
-                <span
-                  className={cn(
-                    'inline-flex items-center gap-1 text-[0.6875rem]',
-                    entry.connected ? 'text-emerald-400' : 'text-muted-foreground',
-                  )}
+        {runtimes.map((entry) => {
+          const update = runtimeUpdate(entry.snapshot, updates.releases)
+          const server = entry.snapshot?.releaseDistribution !== 'desktop'
+          return (
+            <div key={entry.profile.id} className="flex flex-wrap items-center gap-3 py-3">
+              <Monitor size={17} className="shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="min-w-0 break-words">{entry.profile.name}</span>
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 text-[0.6875rem]',
+                      entry.connected ? 'text-emerald-400' : 'text-muted-foreground',
+                    )}
+                  >
+                    <Circle size={6} fill="currentColor" />
+                    {entry.connected ? 'Online' : 'Offline'}
+                  </span>
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {entry.profile.connection.address}
+                </p>
+                {server && (
+                  <p className="text-xs text-muted-foreground">
+                    Server {update.installed ?? 'version unknown'}
+                    {update.available ? ` · ${update.latest?.version} available` : ''}
+                  </p>
+                )}
+                {server && update.available && (
+                  <details className="mt-1 text-xs">
+                    <summary className="cursor-pointer text-primary">What’s new</summary>
+                    <p className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap">
+                      {update.latest?.notes || 'Release notes are unavailable.'}
+                    </p>
+                    {entry.connected && entry.snapshot?.releaseCanUpdate && update.latest ? (
+                      <ServerUpdateControl
+                        profile={entry.profile}
+                        version={update.latest.version}
+                        onComplete={() => refreshRuntime(entry.profile)}
+                      />
+                    ) : (
+                      <p className="mt-2 text-muted-foreground">
+                        Update this server with its installer or package manager on the host, then
+                        reconnect.
+                      </p>
+                    )}
+                    {update.latest && (
+                      <a
+                        className="mt-1 inline-block text-primary underline"
+                        href={update.latest.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        View release
+                      </a>
+                    )}
+                  </details>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {!entry.snapshot?.owner && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => {
+                      setReplaceId(entry.profile.id)
+                      setAddress('')
+                      setCode('')
+                      setError('')
+                      setOpen(true)
+                    }}
+                  >
+                    Update address
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  aria-label={`Manage ${entry.profile.name}`}
+                  disabled={busy}
+                  onClick={() => onManage(entry.profile)}
                 >
-                  <Circle size={6} fill="currentColor" />
-                  {entry.connected ? 'Online' : 'Offline'}
-                </span>
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                {entry.profile.connection.address}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {!entry.snapshot?.owner && (
+                  Manage
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
+                  aria-label={`Reconnect ${entry.profile.name}`}
                   disabled={busy}
-                  onClick={() => {
-                    setReplaceId(entry.profile.id)
-                    setAddress('')
-                    setCode('')
-                    setError('')
-                    setOpen(true)
-                  }}
+                  onClick={() => void act(() => refreshRuntime(entry.profile))}
                 >
-                  Update address
+                  Reconnect
                 </Button>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                aria-label={`Manage ${entry.profile.name}`}
-                disabled={busy}
-                onClick={() => onManage(entry.profile)}
-              >
-                Manage
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label={`Reconnect ${entry.profile.name}`}
-                disabled={busy}
-                onClick={() => void act(() => refreshRuntime(entry.profile))}
-              >
-                Reconnect
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                title="Remove this saved connection from this device"
-                disabled={busy}
-                onClick={() => void act(() => forgetRuntime(entry.profile.id))}
-              >
-                Forget
-              </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title="Remove this saved connection from this device"
+                  disabled={busy}
+                  onClick={() => void act(() => forgetRuntime(entry.profile.id))}
+                >
+                  Forget
+                </Button>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
       {!runtimes.length && (
         <p className="text-xs leading-5 text-muted-foreground">
