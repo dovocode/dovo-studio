@@ -3,7 +3,7 @@ import { defaultWorktreeBase, canChangeTaskCheckout } from '@dovo/protocol'
 import { listBranches } from '../git/branches.js'
 import { fetchPullHead } from '../pulls/pull-head.js'
 import { createHash } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import { basename, dirname, join, sep } from 'node:path'
 import { homedir } from 'node:os'
 import type { WorkspaceStore } from '../../storage/workspace.js'
@@ -30,6 +30,10 @@ export function isTaskWorktree(path: string, keys: ReturnType<typeof taskWorktre
 }
 export class TaskCheckout {
   private pending = new Map<string, Promise<string>>()
+  private prepared = new Map<
+    string,
+    { path: string; repositoryId: string; execution?: string; existingWorktreePath?: string }
+  >()
   constructor(
     private store: WorkspaceStore,
     private git: GitService,
@@ -39,9 +43,35 @@ export class TaskCheckout {
   directory(id: string): Promise<string> {
     const pending = this.pending.get(id)
     if (pending) return pending
-    const result = this.resolve(id).finally(() => this.pending.delete(id))
+    const result = this.preparedDirectory(id).finally(() => this.pending.delete(id))
     this.pending.set(id, result)
     return result
+  }
+  private async preparedDirectory(id: string) {
+    const task = this.store.task(id)
+    const cached = this.prepared.get(id)
+    if (
+      cached?.repositoryId === task.repositoryId &&
+      cached.execution === task.execution &&
+      cached.existingWorktreePath === task.existingWorktreePath &&
+      (!task.setupCommand?.trim() || task.worktreeSetupComplete) &&
+      (await stat(cached.path)
+        .then((entry) => entry.isDirectory())
+        .catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false
+          throw error
+        }))
+    )
+      return cached.path
+    this.prepared.delete(id)
+    const path = await this.resolve(id)
+    this.prepared.set(id, {
+      path,
+      repositoryId: task.repositoryId,
+      execution: task.execution,
+      existingWorktreePath: task.existingWorktreePath,
+    })
+    return path
   }
   private async resolve(id: string) {
     const task = this.store.task(id)

@@ -565,7 +565,7 @@ export class Tasks {
             queuePaused: pauseQueue,
             error: undefined,
             preparation: undefined,
-            activity: 'Preparing checkout',
+            activity: 'Starting agent',
           }))
           this.running.set(id, run)
           const work = Effect.gen(this, function* () {

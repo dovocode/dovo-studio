@@ -72,6 +72,13 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
   // Readable location: <org or user>/<repo>-<branch>; this fixture repo has no remote.
   expect(cwd).toMatch(/\.dovo\/worktrees\/local\/[\w.-]+-isolated-[a-f0-9]{8}$/)
   expect(cwd).toBe(same)
+  const inspect = vi.spyOn(s.git, 'inspect')
+  const command = vi.spyOn(s.git, 'command')
+  expect(await s.checkouts.directory(isolated.id)).toBe(cwd)
+  expect(inspect).not.toHaveBeenCalled()
+  expect(command).not.toHaveBeenCalled()
+  inspect.mockRestore()
+  command.mockRestore()
   expect(cwd).not.toBe(f.directory)
   expect(await s.checkouts.directory(main.id)).toBe(await realpath(f.directory))
   const runs: AgentRun[] = []

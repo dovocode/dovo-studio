@@ -450,10 +450,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
               }}
             >
               <ActivityIndicator size="small" color={colors.muted} />
-              <Text style={[styles.muted, { flex: 1 }]}>
-                {task.execution === 'worktree' ? 'Preparing worktree' : 'Preparing checkout'}
-                {task.setupCommand ? ' and running setup' : ''}…
-              </Text>
+              <Text style={[styles.muted, { flex: 1 }]}>Starting agent…</Text>
             </View>
           ) : null}
           <TaskQuestions taskId={task.id} />

@@ -113,10 +113,7 @@ export function TaskConversation({
           ) : (
             <Folder className="size-4" />
           )}
-          <span className="flex-1">
-            {task.execution === 'worktree' ? 'Preparing worktree' : 'Preparing checkout'}
-            {task.setupCommand ? ' and running setup' : ''}…
-          </span>
+          <span className="flex-1">Starting agent…</span>
           <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
         </div>
       ) : null}

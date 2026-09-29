@@ -167,6 +167,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [storageError, setStorageError] = useApplicationState(''),
     [legacyDraftRuntimeId, setLegacyDraftRuntimeId] = useApplicationState<string | null>(null)
   const [previews, setPreviews] = useApplicationState<OptimisticTask[]>([])
+  const [appActive, setAppActive] = useApplicationState(AppState.currentState === 'active')
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) =>
+      setAppActive(state === 'active'),
+    )
+    return () => subscription.remove()
+  }, [])
   const previewTaskEffect = useCallback(
     <A, E>(
       owner: RuntimeProfile,
@@ -467,12 +474,18 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [updateEntry],
   )
   const refreshAllEffect = useCallback(
-    () =>
+    (includeActive = true) =>
       Effect.suspend(() =>
-        Effect.forEach(current.current.profiles, refreshOverviewEffect, {
-          concurrency: 3,
-          discard: true,
-        }),
+        Effect.forEach(
+          current.current.profiles.filter(
+            (item) => includeActive || item.id !== current.current.activeId,
+          ),
+          refreshOverviewEffect,
+          {
+            concurrency: 3,
+            discard: true,
+          },
+        ),
       ),
     [refreshOverviewEffect],
   )
@@ -768,14 +781,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [ready, storageLock, persistRegistryEffect])
   useEffect(() => {
-    if (!ready || !profile) return
+    if (!ready || !profile || !appActive) return
     const polling = startPolling(
       Effect.suspend(() =>
-        // A revoked pairing cannot recover by polling; the fleet refresh and an explicit
-        // Reconnect still check it, and pairing again replaces the token.
-        AppState.currentState === 'active' && !entryRef.current[profile.id]?.unauthorized
-          ? refreshProfileEffect(profile)
-          : Effect.void,
+        // A revoked pairing cannot recover by polling; explicit Reconnect still checks it.
+        !entryRef.current[profile.id]?.unauthorized ? refreshProfileEffect(profile) : Effect.void,
       ),
       {
         interval: 1000,
@@ -789,18 +799,16 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           })),
       },
     )
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') polling.refresh()
-    })
     return () => {
       void polling.stop()
-      subscription.remove()
     }
-  }, [ready, profile, refreshProfileEffect, updateEntry])
+  }, [ready, profile, appActive, refreshProfileEffect, updateEntry])
   useEffect(() => {
     if (!ready) return
     const polling = startPolling(
-      Effect.suspend(() => (AppState.currentState === 'active' ? refreshAllEffect() : Effect.void)),
+      Effect.suspend(() =>
+        AppState.currentState === 'active' ? refreshAllEffect(false) : Effect.void,
+      ),
       {
         interval: 30000,
         onError: (error) => setStorageError(String(error)),
