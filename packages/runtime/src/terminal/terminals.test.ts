@@ -1,6 +1,25 @@
 import { expect, it, vi } from 'vitest'
 import { Terminals } from './terminals'
 import { fixture } from '../testing/fixture'
+it('reuses a live shell across simultaneous terminal openings', async () => {
+  const f = await fixture()
+  const terminals = new Terminals()
+  try {
+    const directory = vi.fn<() => Promise<string>>(async () => f.directory)
+    const [first, second] = await Promise.all([
+      terminals.ensure('task', directory),
+      terminals.ensure('task', directory),
+    ])
+    expect(first.id).toBe(second.id)
+    expect(directory).toHaveBeenCalledTimes(1)
+    expect((await terminals.ensure('task', directory)).id).toBe(first.id)
+    terminals.close(first.id)
+    expect((await terminals.ensure('task', directory)).id).not.toBe(first.id)
+  } finally {
+    terminals.dispose()
+    await f.cleanup()
+  }
+})
 it('runs a real PTY and retains output when clients detach', async () => {
   const f = await fixture(),
     terminals = new Terminals()

@@ -38,7 +38,9 @@ export function TaskProjectActions({
   if (!repository) return null
   const actions = repository.actions ?? []
   // A worktree task gets its checkout with the first message; before that there is nowhere to run.
-  const ready = connected && !(task.execution === 'worktree' && canChangeTaskCheckout(task))
+  const ready =
+    connected &&
+    !(task.execution === 'worktree' && !task.existingWorktreePath && canChangeTaskCheckout(task))
   const run = (action: ProjectAction) => {
     setError('')
     void request(

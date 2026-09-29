@@ -12,7 +12,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
-      if (method === 'POST' && path === '/api/terminals') {
+      if (method === 'POST' && (path === '/api/terminals' || path === '/api/terminals/ensure')) {
         const { taskId } = decode(
           mutableStruct({
             taskId: idSchema,
@@ -24,6 +24,10 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
           s.store.get().repositories.find((r) => r.id === task.repositoryId),
         )
         if (!repo || task.example) throw new HttpError(400, 'Select a real task with a repository')
+        if (path === '/api/terminals/ensure')
+          return yield* runtimeOperation(() =>
+            s.terminals.ensure(taskId, () => s.checkouts.directory(taskId)),
+          )
         const cwd = yield* runtimeOperation(() => s.checkouts.directory(taskId))
         return yield* runtimeOperation(() => s.terminals.create(taskId, cwd))
       }

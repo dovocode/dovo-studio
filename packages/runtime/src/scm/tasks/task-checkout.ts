@@ -49,8 +49,6 @@ export class TaskCheckout {
     if (!repo) throw new HttpError(404, 'Repository not found')
     const { path: root } = await this.git.inspect(repo.path)
     if (task.execution !== 'worktree') return root
-    if (canChangeTaskCheckout(task))
-      throw new HttpError(409, 'Send the first prompt before creating the worktree')
     if (task.existingWorktreePath) {
       const records = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
         .split('\0\0')
@@ -68,6 +66,8 @@ export class TaskCheckout {
         )
       return (await this.git.inspect(task.existingWorktreePath)).path
     }
+    if (canChangeTaskCheckout(task))
+      throw new HttpError(409, 'Send the first prompt before creating the worktree')
     const common = (
       await this.git.command(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
     ).trim()

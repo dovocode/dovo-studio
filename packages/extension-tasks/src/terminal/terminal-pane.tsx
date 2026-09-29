@@ -1,31 +1,38 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import { ChevronDown, Plus, Trash2 } from 'lucide-react'
-import { responses, useWorkspace } from '@dovo/studio-core'
+import { canChangeTaskCheckout, responses, useWorkspace } from '@dovo/studio-core'
 import { Button, IconButton, cn } from '@dovo/studio-ui'
 import { TerminalSession } from './terminal-session'
 export function TerminalPane({
   taskId,
   onClose,
   focusId = '',
+  visible = true,
 }: {
   taskId: string
   onClose: () => void
   /** Select this session, for example after a chat command ran in it. */
   focusId?: string
+  visible?: boolean
 }) {
-  const { snapshot, connected, request } = useWorkspace(),
+  const { snapshot, workspace, connected, request } = useWorkspace(),
     [selected, setSelected] = useApplicationState(focusId),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
+  const autoTried = useRef(false)
   useEffect(() => {
     if (focusId) setSelected(focusId)
   }, [focusId])
   const sessions = snapshot?.terminals.filter((session) => session.taskId === taskId) ?? [],
     active = sessions.find((session) => session.id === selected) ?? sessions[0]
+  const task = workspace.tasks.find((item) => item.id === taskId)
+  const shellReady =
+    !!task &&
+    (task.execution !== 'worktree' || !!task.existingWorktreePath || !canChangeTaskCheckout(task))
   const act = (operation: () => Promise<unknown>) => {
-    if (!connected || pending.current) return
+    if (!connected || !shellReady || pending.current) return
     pending.current = true
     setBusy(true)
     setError('')
@@ -46,6 +53,19 @@ export function TerminalPane({
         responses.terminal,
       ).then((session) => setSelected(session.id)),
     )
+  useEffect(() => {
+    if (!visible) {
+      autoTried.current = false
+      return
+    }
+    if (autoTried.current || !connected || !shellReady || !!focusId) return
+    autoTried.current = true
+    act(() =>
+      request('/api/terminals/ensure', { taskId }, responses.terminal).then((session) =>
+        setSelected(session.id),
+      ),
+    )
+  }, [connected, shellReady, taskId, sessions, focusId, visible])
   return (
     <section className="flex h-full min-h-0 flex-col bg-[#0d0e10]" aria-label="Terminal">
       <header className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
@@ -64,7 +84,7 @@ export function TerminalPane({
         <IconButton
           label="New terminal session"
           className="size-6"
-          disabled={!connected || busy}
+          disabled={!connected || !shellReady || busy}
           onClick={create}
         >
           <Plus size={12} />
@@ -100,10 +120,17 @@ export function TerminalPane({
         <div className="p-4 text-xs text-muted-foreground">
           <p>
             {connected
-              ? 'Open a shell in this task’s repository.'
+              ? shellReady
+                ? 'Opening a shell in this task’s checkout…'
+                : 'Send the first message to create this worktree before opening a shell.'
               : 'Connect a runtime to use terminals.'}
           </p>
-          <Button size="sm" className="mt-3" disabled={!connected || busy} onClick={create}>
+          <Button
+            size="sm"
+            className="mt-3"
+            disabled={!connected || !shellReady || busy}
+            onClick={create}
+          >
             Open terminal
           </Button>
         </div>

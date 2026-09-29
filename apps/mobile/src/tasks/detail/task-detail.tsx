@@ -270,6 +270,15 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
   const [pane, setPane] = useApplicationState<'chat' | 'diff' | 'terminal' | 'browser' | 'agents'>(
     'chat',
   )
+  const hasDiff =
+    task.files.length > 0 ||
+    (task.turns ?? []).some(
+      (turn) =>
+        !!turn.checkpoint && turn.checkpoint.files.length + turn.checkpoint.omitted.length > 0,
+    )
+  useEffect(() => {
+    if (pane === 'diff' && !hasDiff) setPane('chat')
+  }, [pane, hasDiff])
   const [expandedPreview, setExpandedPreview] = useApplicationState(false)
   const [settings, setSettings] = useApplicationState(false)
   const [settingsBusy, setSettingsBusy] = useApplicationState(false)
@@ -319,7 +328,9 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
         gestureEnabled={pane !== 'browser'}
         onBack={pane === 'browser' ? onBack : undefined}
         leading={<Action secondary label="Back" onPress={onBack} />}
-        buttons={(['chat', 'diff', 'terminal', 'browser', 'agents'] as const)
+        buttons={(
+          ['chat', ...(hasDiff ? ['diff' as const] : []), 'terminal', 'browser', 'agents'] as const
+        )
           .map((tab): HeaderAction => ({
             label:
               tab === 'chat'
@@ -338,6 +349,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
             onPress: () => {
               Keyboard.dismiss()
               setCheckpoint('')
+              if (tab === 'terminal') setTerminalId('')
               setPane(tab)
             },
           }))

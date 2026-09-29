@@ -33,6 +33,7 @@ type Session = {
   listeners: Set<(data: string) => void>
 }
 export class Terminals {
+  private pendingEnsure = new Map<string, Promise<TerminalInfo>>()
   constructor(
     private settings: () => CommandSettings = () => decode(commandsSchema, {}),
     private activity?: Pick<Activity, 'add'>,
@@ -40,6 +41,22 @@ export class Terminals {
   private sessions = new Map<string, Session>()
   list() {
     return [...this.sessions.values()].map((s) => s.info)
+  }
+  /** Reuse a live shell, even when two clients open the terminal at the same time. */
+  ensure(taskId: string, directory: () => Promise<string>): Promise<TerminalInfo> {
+    const open = this.list().find((session) => session.taskId === taskId && !session.exited)
+    if (open) return Promise.resolve(open)
+    const pending = this.pendingEnsure.get(taskId)
+    if (pending) return pending
+    const result = directory()
+      .then(
+        (cwd) =>
+          this.list().find((session) => session.taskId === taskId && !session.exited) ??
+          this.create(taskId, cwd),
+      )
+      .finally(() => this.pendingEnsure.delete(taskId))
+    this.pendingEnsure.set(taskId, result)
+    return result
   }
   create(taskId: string, cwd: string) {
     const settings = this.settings()

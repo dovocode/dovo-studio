@@ -60,6 +60,7 @@ export function TaskHeader({
   compact,
   sidebarVisible,
   onTerminal,
+  hasDiff,
 }: {
   task: Task
   onSidebar: () => void
@@ -69,6 +70,7 @@ export function TaskHeader({
   sidebarVisible: boolean
   /** Shows the terminal after a project action ran in it. */
   onTerminal?: (terminalId: string) => void
+  hasDiff: boolean
 }) {
   const { workspace, snapshot, connected, request } = useWorkspace()
   const updates = useRuntimeReleaseCheck()
@@ -305,8 +307,8 @@ export function TaskHeader({
               {(
                 [
                   ['chat', 'Chat', MessageSquare, 0],
-                  ['changes', 'Diff', FileCode2, task.files.length],
                   ['files', 'Files', Files, 0],
+                  ...(hasDiff ? [['changes', 'Diff', FileCode2, task.files.length] as const] : []),
                   ['agents', 'Agents', Bot, task.subagents?.length ?? 0],
                   ['terminal', 'Terminal', Terminal, terminals],
                   ['browser', 'Preview', Globe, 0],

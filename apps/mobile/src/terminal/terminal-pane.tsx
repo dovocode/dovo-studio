@@ -1,8 +1,9 @@
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
+import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/content/text'
-import { responses, type Task } from '@dovo/protocol'
+import { canChangeTaskCheckout, responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { Action } from '../ui/controls/action'
 import { Choice } from '../ui/controls/choice'
@@ -21,8 +22,37 @@ export function TerminalPane({
   const { snapshot, connected, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
   const [generation, setGeneration] = useApplicationState(0)
+  const autoTried = useRef(false)
   const terminals = snapshot?.terminals.filter((t) => t.taskId === task.id) ?? [],
     active = terminals.find((t) => t.id === selected) ?? terminals[0]
+  const shellReady =
+    !task.example &&
+    (task.execution !== 'worktree' || !!task.existingWorktreePath || !canChangeTaskCheckout(task))
+  const openShell = () =>
+    act(() =>
+      mobileWorkflow(function* () {
+        const terminal = yield* callEffect(
+          '/api/terminals',
+          { taskId: task.id },
+          responses.terminal,
+        )
+        onSelect(terminal.id)
+      }),
+    )
+  useEffect(() => {
+    if (autoTried.current || !connected || !shellReady || !!selected) return
+    autoTried.current = true
+    act(() =>
+      mobileWorkflow(function* () {
+        const terminal = yield* callEffect(
+          '/api/terminals/ensure',
+          { taskId: task.id },
+          responses.terminal,
+        )
+        onSelect(terminal.id)
+      }),
+    )
+  }, [connected, shellReady, task.id, terminals, selected])
   return (
     <View style={styles.screen}>
       <View
@@ -37,21 +67,8 @@ export function TerminalPane({
         <View style={styles.row}>
           <Action
             label="New terminal"
-            disabled={!connected || busy || task.example}
-            onPress={() =>
-              act(() =>
-                mobileWorkflow(function* () {
-                  const terminal = yield* callEffect(
-                    '/api/terminals',
-                    {
-                      taskId: task.id,
-                    },
-                    responses.terminal,
-                  )
-                  onSelect(terminal.id)
-                }),
-              )
-            }
+            disabled={!connected || busy || !shellReady}
+            onPress={openShell}
           />
           {active && (
             <>
@@ -98,8 +115,9 @@ export function TerminalPane({
         <TerminalSession key={`${active.id}:${generation}`} id={active.id} />
       ) : (
         <Text style={[styles.muted, styles.content]}>
-          Open a shell in this task’s repository. Switching back to chat leaves the shell running on
-          your desktop.
+          {shellReady
+            ? 'Opening a shell in this task’s checkout…'
+            : 'Send the first message to create this worktree before opening a shell.'}
         </Text>
       )}
     </View>

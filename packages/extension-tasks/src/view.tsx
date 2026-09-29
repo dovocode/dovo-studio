@@ -76,6 +76,13 @@ export default function TasksView({ entityId }: StudioViewProps) {
         ? undefined
         : (localTasks.find((t) => !t.archived && !t.archivedAt) ??
           localTasks.find((t) => !t.archivedAt))))
+  const hasDiff =
+    !!task &&
+    (task.files.length > 0 ||
+      (task.turns ?? []).some(
+        (turn) =>
+          !!turn.checkpoint && turn.checkpoint.files.length + turn.checkpoint.omitted.length > 0,
+      ))
   useEffect(() => {
     if (!entityId && task && !deselected) host.navigate({ viewId: 'tasks', entityId: task.id })
   }, [entityId, task?.id, deselected])
@@ -104,6 +111,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
     [threadKey],
   )
   const [terminalVisited, setTerminalVisited] = useApplicationState(false)
+  const [bottomTerminalTaskId, setBottomTerminalTaskId] = useApplicationState('')
+  const bottomTerminalOpen = !compact && bottomTerminalTaskId === task?.id
   // The terminal a chat command just ran in, so the pane shows it.
   const [terminalFocus, setTerminalFocus] = useApplicationState('')
   const panes = useRef<Record<TaskSurface, HTMLDivElement | null>>({
@@ -138,7 +147,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
       }
       if (moveFocus) focusNext.current = next
       setSurface(next)
-      if (next === 'terminal') setTerminalVisited(true)
+      if (next === 'terminal') {
+        setTerminalVisited(true)
+        setBottomTerminalTaskId('')
+      }
     },
     [compact, setSurface],
   )
@@ -176,8 +188,20 @@ export default function TasksView({ entityId }: StudioViewProps) {
     [selectSurface],
   )
   const toggleTerminal = useCallback(() => {
+    if (surface !== 'terminal') setTerminalFocus('')
     selectSurface(surface === 'terminal' ? 'chat' : 'terminal', true)
   }, [selectSurface, surface])
+  const toggleBottomTerminal = useCallback(() => {
+    if (!task) return
+    if (bottomTerminalOpen) setBottomTerminalTaskId('')
+    else {
+      setBottomTerminalTaskId(task.id)
+      selectSurface('chat', true)
+    }
+  }, [task?.id, bottomTerminalOpen, selectSurface])
+  useEffect(() => {
+    if (surface === 'changes' && !hasDiff) selectSurface('files')
+  }, [surface, hasDiff, selectSurface])
   const [projectId, setProjectId] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
@@ -548,11 +572,15 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 <TaskHeader
                   task={task}
                   surface={surface}
-                  onSurface={selectSurface}
+                  onSurface={(next) => {
+                    if (next === 'terminal') setTerminalFocus('')
+                    selectSurface(next)
+                  }}
                   compact={compact}
                   sidebarVisible={sidebar}
                   onSidebar={() => (compact ? setListOpen(true) : setSidebar((value) => !value))}
                   onTerminal={showTerminal}
+                  hasDiff={hasDiff}
                 />
                 <div className="flex min-h-0 min-w-0 flex-1">
                   <div
@@ -561,7 +589,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                     }}
                     tabIndex={-1}
                     className={cn(
-                      'relative min-h-0 min-w-0 flex-1',
+                      'relative flex min-h-0 min-w-0 flex-1 flex-col',
                       (surface === 'changes' ||
                         surface === 'files' ||
                         (surface !== 'chat' && compact)) &&
@@ -583,17 +611,45 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         Could not stop the agent. {stopError}
                       </p>
                     )}
-                    <TaskConversation
-                      key={taskCollectionKey(activeRuntimeId, task.id)}
-                      task={task}
-                      codeReference={codeReference?.taskId === task.id ? codeReference : null}
-                      visible={!listOpen && (!compact || surface === 'chat')}
-                      onReview={() => selectSurface('changes')}
-                      onTerminal={showTerminal}
-                      onAside={() => setAsking(true)}
-                      composerInsert={composerInsert?.taskId === task.id ? composerInsert : null}
-                      onComposerInsertApplied={() => setComposerInsert(null)}
-                    />
+                    <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
+                      <ResizablePanel
+                        id="thread"
+                        order={1}
+                        defaultSize={bottomTerminalOpen ? 65 : 100}
+                        minSize={30}
+                      >
+                        <TaskConversation
+                          key={taskCollectionKey(activeRuntimeId, task.id)}
+                          task={task}
+                          codeReference={codeReference?.taskId === task.id ? codeReference : null}
+                          visible={!listOpen && (!compact || surface === 'chat')}
+                          onReview={() => selectSurface(hasDiff ? 'changes' : 'files')}
+                          onTerminal={showTerminal}
+                          onAside={() => setAsking(true)}
+                          composerInsert={
+                            composerInsert?.taskId === task.id ? composerInsert : null
+                          }
+                          onComposerInsertApplied={() => setComposerInsert(null)}
+                        />
+                      </ResizablePanel>
+                      {bottomTerminalOpen && surface === 'chat' && (
+                        <>
+                          <ResizableHandle />
+                          <ResizablePanel
+                            id="bottom-terminal"
+                            order={2}
+                            defaultSize={35}
+                            minSize={15}
+                          >
+                            <TerminalPane
+                              key={`bottom:${task.id}`}
+                              taskId={task.id}
+                              onClose={() => setBottomTerminalTaskId('')}
+                            />
+                          </ResizablePanel>
+                        </>
+                      )}
+                    </ResizablePanelGroup>
                   </div>
                   <aside
                     aria-label="Workspace tools"
@@ -684,11 +740,12 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       tabIndex={-1}
                       className={cn('min-h-0 min-w-0 flex-1', surface !== 'terminal' && 'hidden')}
                     >
-                      {terminalVisited && (
+                      {terminalVisited && !bottomTerminalOpen && (
                         <TerminalPane
                           key={task.id}
                           taskId={task.id}
                           focusId={terminalFocus}
+                          visible={surface === 'terminal'}
                           onClose={() => selectSurface('chat', true)}
                         />
                       )}
@@ -697,7 +754,13 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   {!compact && (
                     <TaskTools
                       surface={surface}
-                      onSelect={(next) => selectSurface(next === surface ? 'chat' : next)}
+                      onSelect={(next) => {
+                        if (next === 'terminal') setTerminalFocus('')
+                        selectSurface(next === surface ? 'chat' : next)
+                      }}
+                      hasDiff={hasDiff}
+                      bottomTerminalOpen={bottomTerminalOpen}
+                      onBottomTerminal={toggleBottomTerminal}
                     />
                   )}
                 </div>
