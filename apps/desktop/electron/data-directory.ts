@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 interface DesktopProfile {
   directory: string
@@ -43,4 +43,31 @@ export function selectDesktopDataDirectory(options: {
   return packaged && !explicitDirectory && !current.configured && legacy.configured
     ? legacy.directory
     : current.directory
+}
+
+/** Move the whole Electron profile only after its supervised runtime has stopped. */
+export function migrateDesktopDataDirectory(
+  source: string,
+  target: string,
+  stopRuntime: (source: string) => void,
+) {
+  if (source === target) return target
+  if (desktopProfile(target).configured) {
+    if (desktopProfile(source).configured)
+      throw new Error('Both desktop data directories contain a workspace')
+    return target
+  }
+  if (!desktopProfile(source).configured) {
+    mkdirSync(target, { recursive: true, mode: 0o700 })
+    return target
+  }
+  if (existsSync(target)) {
+    if (readdirSync(target).length)
+      throw new Error('The new desktop data directory already has files')
+    rmdirSync(target)
+  }
+  stopRuntime(source)
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
+  renameSync(source, target)
+  return target
 }

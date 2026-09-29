@@ -1,9 +1,10 @@
 import { readFile, writeFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
-import { app, ipcMain, safeStorage, type IpcMainInvokeEvent } from 'electron'
+import { app, ipcMain, safeStorage, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { pathToFileURL } from 'node:url'
+import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 export function registerConnectionStorage(rendererPath: string) {
-  const trusted = (event: IpcMainInvokeEvent) => {
+  const trustedFrame = (event: IpcMainEvent | IpcMainInvokeEvent) => {
     if (event.senderFrame !== event.sender.mainFrame)
       throw new Error('Untrusted connection storage request')
     const source = new URL(event.senderFrame.url)
@@ -13,6 +14,9 @@ export function registerConnectionStorage(rendererPath: string) {
         : source.href !== pathToFileURL(rendererPath).href
     )
       throw new Error('Untrusted connection storage request')
+  }
+  const trusted = (event: IpcMainInvokeEvent) => {
+    trustedFrame(event)
     if (
       !safeStorage.isEncryptionAvailable() ||
       (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')
@@ -20,6 +24,28 @@ export function registerConnectionStorage(rendererPath: string) {
       throw new Error('Unlock your system keychain to save runtime connections securely')
   }
   const path = () => join(app.getPath('userData'), 'runtime-connections.enc')
+  ipcMain.on('app:settings-read', (event) => {
+    try {
+      trustedFrame(event)
+      event.returnValue = { value: readLocalSettingsSection('app') ?? null }
+    } catch (error) {
+      event.returnValue = { error: String(error) }
+    }
+  })
+  ipcMain.on('app:settings-write', (event, encoded: unknown) => {
+    try {
+      trustedFrame(event)
+      if (typeof encoded !== 'string' || encoded.length > 1024 * 1024)
+        throw new Error('Invalid app settings')
+      const value: unknown = JSON.parse(encoded)
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        throw new Error('Invalid app settings')
+      writeLocalSettingsSection('app', () => value)
+      event.returnValue = { ok: true }
+    } catch (error) {
+      event.returnValue = { error: String(error) }
+    }
+  })
   ipcMain.handle('runtime:registry-read', async (event) => {
     trusted(event)
     try {

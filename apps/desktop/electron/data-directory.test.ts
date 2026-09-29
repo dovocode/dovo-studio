@@ -2,7 +2,11 @@ import { afterEach, expect, it } from 'vite-plus/test'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { desktopProfile, selectDesktopDataDirectory } from './data-directory'
+import {
+  desktopProfile,
+  migrateDesktopDataDirectory,
+  selectDesktopDataDirectory,
+} from './data-directory'
 
 const directories: string[] = []
 afterEach(() => {
@@ -36,6 +40,42 @@ it('attaches a fresh packaged profile to the established development workspace',
   // Chromium may create its own files before there is any Dovo workspace.
   writeFileSync(join(current, 'Preferences'), '{}')
   expect(select()).toBe(legacy)
+})
+
+it('moves an existing profile under ~/.dovo after stopping its runtime', () => {
+  const { legacy } = profiles()
+  const target = join(legacy, '..', '..', '.dovo', 'desktop')
+  let stopped = false
+  expect(
+    migrateDesktopDataDirectory(legacy, target, () => {
+      stopped = true
+    }),
+  ).toBe(target)
+  expect(stopped).toBe(true)
+  expect(desktopProfile(target).configured).toBe(true)
+  expect(desktopProfile(legacy).configured).toBe(false)
+})
+
+it('preserves the old profile when the runtime cannot be stopped', () => {
+  const { legacy } = profiles()
+  const target = join(legacy, '..', '..', '.dovo', 'desktop')
+  expect(() =>
+    migrateDesktopDataDirectory(legacy, target, () => {
+      throw new Error('Busy')
+    }),
+  ).toThrow('Busy')
+  expect(desktopProfile(legacy).configured).toBe(true)
+  expect(desktopProfile(target).configured).toBe(false)
+})
+
+it('does not choose between two populated profiles', () => {
+  const { legacy } = profiles()
+  const target = join(legacy, '..', '..', '.dovo', 'desktop')
+  mkdirSync(target, { recursive: true })
+  writeFileSync(join(target, 'runtime.sqlite'), '')
+  expect(() => migrateDesktopDataDirectory(legacy, target, () => {})).toThrow(
+    'Both desktop data directories contain a workspace',
+  )
 })
 
 it.each([

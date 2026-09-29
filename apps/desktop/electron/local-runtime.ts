@@ -246,6 +246,7 @@ const runtimeOptions = () =>
         ...(app.isPackaged ? { DOVO_RELEASE_VERSION: app.getVersion() } : {}),
         DOVO_OWNER_TOKEN: token,
         DOVO_DATABASE_PATH: join(app.getPath('userData'), 'runtime.sqlite'),
+        DOVO_SETTINGS_PATH: join(homedir(), '.dovo', 'settings.json'),
         PORT: networkPort ?? process.env.DOVO_PORT ?? saved?.port ?? '8787',
         DOVO_HOST: process.env.DOVO_HOST ?? saved?.host ?? '127.0.0.1',
       }

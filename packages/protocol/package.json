@@ -18,6 +18,12 @@
       "development": "./src/generated/browser-viewer.ts",
       "import": "./dist/generated/browser-viewer.js",
       "default": "./dist/generated/browser-viewer.js"
+    },
+    "./local-settings": {
+      "types": "./src/node/local-settings.ts",
+      "development": "./src/node/local-settings.ts",
+      "import": "./dist/node/local-settings.js",
+      "default": "./dist/node/local-settings.js"
     }
   },
   "scripts": {
@@ -26,9 +32,11 @@
   },
   "dependencies": {
     "cron-parser": "^5.10.0",
-    "effect": "^3.22.1"
+    "effect": "^3.22.1",
+    "proper-lockfile": "4.1.2"
   },
   "devDependencies": {
+    "@types/proper-lockfile": "^4.1.4",
     "vitest": "4.1.11"
   }
 }

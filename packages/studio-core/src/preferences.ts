@@ -62,16 +62,41 @@ export const defaultAppPreferences: AppPreferences = {
   browserViewport: 'fill',
 }
 const key = 'dovo.app-preferences.v1'
+const desktopSettingsBridge = mutableStruct({
+  dovo: mutableStruct({
+    readAppSettings: Schema.Unknown.pipe(
+      Schema.filter((value): value is () => unknown => typeof value === 'function'),
+    ),
+    writeAppSettings: Schema.Unknown.pipe(
+      Schema.filter((value): value is (value: string) => void => typeof value === 'function'),
+    ),
+  }),
+})
 const listeners = new Set<() => void>()
 let cached: AppPreferences | undefined
 
 export function readAppPreferences(): AppPreferences {
   if (cached) return cached
   let stored: unknown
+  let migrateLegacy = false
+  const bridge = decodeResult(desktopSettingsBridge, globalThis)
   try {
-    stored = JSON.parse(globalThis.localStorage?.getItem(key) ?? 'null')
+    stored = bridge.success
+      ? bridge.data.dovo.readAppSettings()
+      : JSON.parse(globalThis.localStorage?.getItem(key) ?? 'null')
   } catch {
     stored = null
+  }
+  if (bridge.success && stored === null) {
+    try {
+      const legacy = globalThis.localStorage?.getItem(key)
+      if (legacy) {
+        stored = JSON.parse(legacy)
+        migrateLegacy = true
+      }
+    } catch {
+      // Keep the legacy value available for a later migration attempt.
+    }
   }
   // Validate field by field: one bad or renamed value falls back alone instead of resetting
   // every preference, and fields added in later versions start at their defaults.
@@ -84,12 +109,22 @@ export function readAppPreferences(): AppPreferences {
   }
   const result = decodeResult(schema, merged)
   cached = result.success ? result.data : defaultAppPreferences
+  if (migrateLegacy && bridge.success) {
+    try {
+      bridge.data.dovo.writeAppSettings(JSON.stringify(cached))
+      globalThis.localStorage?.removeItem(key)
+    } catch {
+      // Keep the old value available for the next launch.
+    }
+  }
   return cached
 }
 export function updateAppPreferences(changes: Partial<AppPreferences>) {
   cached = { ...readAppPreferences(), ...changes }
+  const bridge = decodeResult(desktopSettingsBridge, globalThis)
   try {
-    globalThis.localStorage?.setItem(key, JSON.stringify(cached))
+    if (bridge.success) bridge.data.dovo.writeAppSettings(JSON.stringify(cached))
+    else globalThis.localStorage?.setItem(key, JSON.stringify(cached))
   } catch {
     // Private or full storage: keep the choice for this session.
   }

@@ -120,16 +120,24 @@ and Node installation. Run the install on that host; do not copy `node_modules` 
 Do this before creating a fresh server if you already have tasks on desktop. Both clients must use
 the **same data directory**. A second directory is a separate workspace with separate pairings.
 
-Development desktop data on macOS is normally:
+Desktop stores its profile, including its runtime database, under `~/.dovo/desktop`. On first launch
+after upgrading, it moves an existing Electron profile there after stopping its managed runtime. An
+explicit `--user-data-dir` keeps its selected location. Desktop and runtime preferences live in the
+`app` and `runtime` sections of `~/.dovo/settings.json`; task history, attachments, and caches
+remain separate files. Saved remote connections remain in the encrypted
+`~/.dovo/desktop/runtime-connections.enc` file. Phone-local data stays on the phone.
+
+Older development desktop data on macOS is normally:
 
 ```text
 ~/Library/Application Support/@dovo/desktop
 ```
 
-Packaged desktop commonly uses `~/Library/Application Support/Dovo Studio`. If that profile has no
-runtime data or saved connections, desktop reuses an existing `@dovo/desktop` workspace
-automatically. An already configured packaged profile or an explicit `--user-data-dir` launch
-argument takes precedence. No credentials or databases are copied. On Linux, check
+Older packaged desktop commonly uses `~/Library/Application Support/Dovo Studio`. If that profile
+has no runtime data or saved connections, desktop reuses an existing `@dovo/desktop` workspace
+automatically before migration. An already configured packaged profile takes precedence over the
+development profile. If both the old and new locations contain workspace data, desktop retains the
+old profile and reports the conflict rather than overwriting either. On Linux, check
 `$XDG_CONFIG_HOME` or `~/.config`; on Windows, check `%APPDATA%`. Select the directory that contains
 your existing `runtime.sqlite`. Do not move or copy a running SQLite database by itself.
 
@@ -396,6 +404,7 @@ durable outbox immediately before transmission.
 
 | Data-directory entry                           | Purpose                                                                           |
 | ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| `settings.json` (at `~/.dovo/`)                | Desktop and runtime preferences.                                                  |
 | `runtime.sqlite` (or configured filename)      | Workspace, history, device trust, job state, and server-side caches.              |
 | `owner-token`                                  | Persistent desktop/server owner credential; owner-only permissions.               |
 | `runtime-connection.json`                      | Live local CLI discovery, including owner credentials; removed on clean shutdown. |

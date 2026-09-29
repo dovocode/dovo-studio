@@ -9,7 +9,16 @@ import {
   setLocalRuntimeNetwork,
 } from './local-runtime.js'
 import { registerConnectionStorage } from './connection-storage.js'
-import { desktopProfile, selectDesktopDataDirectory } from './data-directory.js'
+import {
+  desktopProfile,
+  migrateDesktopDataDirectory,
+  selectDesktopDataDirectory,
+} from './data-directory.js'
+import { backgroundRuntimeLabel } from './background-runtime.js'
+import { readConnection } from '../../api/src/connection.js'
+import { execFileSync } from 'node:child_process'
+import { existsSync, rmSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -33,13 +42,76 @@ const appName = !app.isPackaged
     ? 'Dovo Studio (Nightly)'
     : 'Dovo Studio'
 const currentDirectory = app.getPath('userData')
-const dataDirectory = selectDesktopDataDirectory({
+const selectedDirectory = selectDesktopDataDirectory({
   packaged: app.isPackaged,
   explicitDirectory: app.commandLine.hasSwitch('user-data-dir'),
   current: desktopProfile(currentDirectory),
   legacy: desktopProfile(join(app.getPath('appData'), '@dovo', 'desktop')),
   ...(nightly ? { shared: desktopProfile(join(app.getPath('appData'), 'Dovo Studio')) } : {}),
 })
+const stopRuntimeForMigration = (directory: string) => {
+  const discovery = join(directory, 'runtime-connection.json')
+  if (!existsSync(discovery)) return
+  const { pid } = readConnection(discovery)
+  let alive = true
+  try {
+    process.kill(pid, 0)
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') alive = false
+    else throw error
+  }
+  const uid = process.getuid?.()
+  if (process.platform !== 'darwin' || uid === undefined) {
+    if (alive) throw new Error('Stop the existing runtime before moving desktop data')
+    return
+  }
+  const label = backgroundRuntimeLabel(directory)
+  const target = `gui/${uid}/${label}`
+  let description: string | null = null
+  try {
+    description = execFileSync('launchctl', ['print', target], { encoding: 'utf8' })
+  } catch {
+    if (alive) throw new Error('The running runtime is not managed by this desktop profile')
+  }
+  if (description) {
+    const servicePid = Number(description.match(/(?:^|\n)\s*pid = (\d+)/)?.[1])
+    if (Number.isFinite(servicePid) && servicePid > 0 && servicePid !== pid)
+      throw new Error('The running service does not match this desktop profile')
+    execFileSync('launchctl', ['bootout', target])
+    if (alive) {
+      let stopped = false
+      for (let attempt = 0; attempt < 140; attempt++) {
+        try {
+          process.kill(pid, 0)
+        } catch (error) {
+          if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+            stopped = true
+            break
+          }
+          throw error
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250)
+      }
+      if (!stopped) throw new Error('The old runtime did not stop before migration')
+    }
+  }
+  rmSync(join(homedir(), 'Library', 'LaunchAgents', `${label}.plist`), { force: true })
+}
+let dataDirectory = selectedDirectory
+if (!app.commandLine.hasSwitch('user-data-dir')) {
+  try {
+    dataDirectory = migrateDesktopDataDirectory(
+      selectedDirectory,
+      join(homedir(), '.dovo', 'desktop'),
+      stopRuntimeForMigration,
+    )
+  } catch (error) {
+    console.error(
+      'Could not move desktop data to ~/.dovo/desktop; using the existing profile.',
+      error,
+    )
+  }
+}
 // Development and packaged builds share saved connections, so they must also
 // use the same Keychain identity. Preserve the selected profile before renaming.
 app.setName('dovo-studio')
