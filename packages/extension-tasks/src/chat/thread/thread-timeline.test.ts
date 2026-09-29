@@ -1,6 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import { recentTools } from '@dovo/studio-core'
-import { threadTimeline } from './thread-timeline'
+import { threadTimeline, finalReplyIndex } from './thread-timeline'
 
 const tool = (id: string, textOffset?: number) =>
   recentTools([
@@ -135,4 +135,13 @@ it('keeps a tool in its original group when it finishes after compaction', () =>
   expect(after.flatMap((block) => (block.kind === 'activity' ? [block.key] : []))).toEqual(
     before.flatMap((block) => (block.kind === 'activity' ? [block.key] : [])),
   )
+})
+
+it('folds intermediate work without hiding the completed answer', () => {
+  const blocks = threadTimeline('Before. Answer.', [tool('check', 8)])
+  const index = finalReplyIndex(blocks, false)
+  expect(blocks[index]).toMatchObject({ kind: 'text', text: 'Answer.' })
+  expect(finalReplyIndex(blocks, true)).toBe(-1)
+  expect(finalReplyIndex(threadTimeline('Legacy answer', [tool('legacy')]), false)).toBe(1)
+  expect(finalReplyIndex(threadTimeline('', [tool('only')]), false)).toBe(-1)
 })

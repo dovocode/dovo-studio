@@ -37,6 +37,7 @@ import { Pill } from '../../ui/controls/pill'
 import { ConnectionPill } from '../../runtime/connection/connection-status'
 import { useRuntime } from '../../runtime/connection/provider'
 import { createConversationScroll } from './state/scroll'
+import { turnPartBoundaries } from './state/turn-parts'
 import { ConversationWorkGroup } from './components/work-group'
 const checkpointSchema = mutableStruct({
   turnId: Schema.String,
@@ -251,6 +252,62 @@ const userParts = {
   ...parts,
   Text: UserText,
 }
+function AssistantParts() {
+  const message = useAuiState((state) => state.message)
+  const { task, collapsedTurns, toggleTurn } = useTaskConversation()
+  const turn = task.turns?.find((item) => item.assistantId === message.id)
+  const open = !collapsedTurns[turn?.id ?? message.id]
+  const car = useCarMode()
+  if (!turn || car) return <MessagePrimitive.Parts components={parts} />
+  const { finalIndex, end } = turnPartBoundaries(message.content, turn.status === 'running')
+  const renderRange = (start: number, end: number) => {
+    const elements = []
+    for (let index = start; index < end; index++) {
+      const part = message.content[index]
+      if (part.type === 'tool-call') {
+        const first = index
+        while (index + 1 < end && message.content[index + 1].type === 'tool-call') index++
+        elements.push(
+          <WorkGroup key={part.toolCallId} startIndex={first} endIndex={index}>
+            {Array.from({ length: index - first + 1 }, (_, offset) => (
+              <MessagePrimitive.PartByIndex
+                key={first + offset}
+                index={first + offset}
+                components={parts}
+              />
+            ))}
+          </WorkGroup>,
+        )
+      } else
+        elements.push(<MessagePrimitive.PartByIndex key={index} index={index} components={parts} />)
+    }
+    return elements
+  }
+  const label =
+    turn.status === 'running'
+      ? 'Turn in progress'
+      : turn.status === 'completed'
+        ? 'Turn completed'
+        : turn.status === 'failed'
+          ? 'Turn failed'
+          : 'Turn stopped'
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ expanded: open }}
+        onPress={() => toggleTurn(turn.id)}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 }}
+      >
+        <Icon name={open ? 'down' : 'next'} size={14} color={colors.muted} />
+        <Text style={[styles.muted, { fontSize: 13 }]}>{label}</Text>
+      </Pressable>
+      {open ? renderRange(0, end) : finalIndex >= 0 && renderRange(finalIndex, finalIndex + 1)}
+      {renderRange(end, message.content.length)}
+    </>
+  )
+}
 function Message() {
   const pendingMessage = usePendingConversationMessage()
   const id = useAuiState((state) => state.message.id)
@@ -286,7 +343,7 @@ function Message() {
               }
         }
       >
-        <MessagePrimitive.Parts components={user ? userParts : parts} />
+        {user ? <MessagePrimitive.Parts components={userParts} /> : <AssistantParts />}
       </View>
       {pendingMessage?.message.id === id && (
         <Text

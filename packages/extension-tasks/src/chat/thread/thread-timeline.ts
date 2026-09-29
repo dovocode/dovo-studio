@@ -83,3 +83,10 @@ export function threadTimeline(
   if (cursor < text.length) blocks.push({ kind: 'text', offset: cursor, text: text.slice(cursor) })
   return blocks
 }
+
+/** Completed turns keep their last reply visible when work is folded. */
+export function finalReplyIndex(blocks: ThreadBlock[], running: boolean) {
+  return running
+    ? -1
+    : blocks.reduce((last, block, index) => (block.kind === 'text' ? index : last), -1)
+}

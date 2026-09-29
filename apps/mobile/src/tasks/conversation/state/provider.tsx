@@ -22,6 +22,8 @@ type Conversation = {
   openTerminal: (terminalId: string) => void
   legacyEvents: ToolEvents
   activityError: string
+  collapsedTurns: Record<string, boolean>
+  toggleTurn: (turnId: string) => void
   followRequest: number
 }
 const Context = createContext<Conversation | null>(null)
@@ -106,6 +108,7 @@ export function ConversationProvider({
     speechRate,
   ])
   const actions = useConversationActions(task)
+  const [collapsedTurns, setCollapsedTurns] = useApplicationState<Record<string, boolean>>({})
   const [followRequest, setFollowRequest] = useApplicationState(0)
   const { active: dictating, stop: finishDictation } = actions.dictation
   const answeringQuestion = actions.snapshot?.questions.some(
@@ -164,6 +167,9 @@ export function ConversationProvider({
         openTerminal,
         legacyEvents,
         activityError: activity.error,
+        collapsedTurns,
+        toggleTurn: (turnId) =>
+          setCollapsedTurns((previous) => ({ ...previous, [turnId]: !previous[turnId] })),
         followRequest,
         send: (mode = 'queue') => {
           if (actions.canSend) {

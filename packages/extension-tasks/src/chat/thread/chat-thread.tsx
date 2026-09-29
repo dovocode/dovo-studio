@@ -1,6 +1,7 @@
 import { turnSummary, type PendingMessage } from '@dovo/protocol'
 import { conversationTurns, conversationTurnLabel } from './conversation-turns'
-import { threadTimeline } from './thread-timeline'
+import { TurnWork } from './turn-work'
+import { threadTimeline, finalReplyIndex } from './thread-timeline'
 import { useMemo } from 'react'
 import { TurnCheckpoint } from './turn-checkpoint'
 import { MessageAttachments } from '../composer/message-attachments'
@@ -172,35 +173,40 @@ export function ChatThread({
                           )}
                         </MessageContent>
                       )}
-                      {timeline.map((block, index) =>
-                        block.kind === 'activity' ? (
-                          <TaskActivity
-                            key={block.key}
-                            turn={index === 0 ? turn : undefined}
-                            status={turn.status}
-                            tools={block.tools}
-                          />
-                        ) : block.kind === 'compaction' ? (
-                          <p
-                            key={`compaction-${block.event.at}`}
-                            role="status"
-                            className="text-[0.6875rem] text-muted-foreground"
-                          >
-                            Context compacted {new Date(block.event.at).toLocaleString()} ·{' '}
-                            {block.event.trigger === 'auto' ? 'Automatic' : 'Manual'}
-                          </p>
-                        ) : (
-                          <MessageContent key={`text-${block.offset}`}>
-                            <MessageResponse
-                              isStreaming={
-                                turn.status === 'running' && index === timeline.length - 1
-                              }
+                      <TurnWork
+                        turn={turn}
+                        finalIndex={finalReplyIndex(timeline, turn.status === 'running')}
+                      >
+                        {timeline.map((block, index) =>
+                          block.kind === 'activity' ? (
+                            <TaskActivity
+                              key={block.key}
+                              turn={index === 0 ? turn : undefined}
+                              status={turn.status}
+                              tools={block.tools}
+                            />
+                          ) : block.kind === 'compaction' ? (
+                            <p
+                              key={`compaction-${block.event.at}`}
+                              role="status"
+                              className="text-[0.6875rem] text-muted-foreground"
                             >
-                              {block.text}
-                            </MessageResponse>
-                          </MessageContent>
-                        ),
-                      )}
+                              Context compacted {new Date(block.event.at).toLocaleString()} ·{' '}
+                              {block.event.trigger === 'auto' ? 'Automatic' : 'Manual'}
+                            </p>
+                          ) : (
+                            <MessageContent key={`text-${block.offset}`}>
+                              <MessageResponse
+                                isStreaming={
+                                  turn.status === 'running' && index === timeline.length - 1
+                                }
+                              >
+                                {block.text}
+                              </MessageResponse>
+                            </MessageContent>
+                          ),
+                        )}
+                      </TurnWork>
                       {!message.text && turn.status !== 'running' && !compactions.length && (
                         <MessageContent>
                           <span className="text-xs text-muted-foreground">
