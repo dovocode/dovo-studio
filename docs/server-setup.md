@@ -55,6 +55,13 @@ installation. `server service remove` unregisters and stops the service while pr
 database and pairings. macOS starts the LaunchAgent at login; Linux enables a systemd user unit.
 Linux boot startup without a login session requires your administrator to enable user lingering.
 
+On Linux, service restart/update reloads systemd units and repairs the quoted `WorkingDirectory`
+written by older versions. If an older installation reports
+`WorkingDirectory= path is not absolute`, remove the surrounding quotes from that directive in its
+`~/.config/systemd/user/dovo-server-*.service` file, run `systemctl --user daemon-reload`, then
+restart that service. Reloading alone does not fix an invalid path. Updating or removing the service
+preserves its database and pairings.
+
 ## Packaged Mac desktop
 
 The packaged Mac app provisions a per-profile launchd agent when no existing runtime is available.

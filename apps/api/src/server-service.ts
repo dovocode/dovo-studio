@@ -51,7 +51,13 @@ export function serviceDefinition(
     const items = args.map((part) => `<string>${xml(part)}</string>`).join('')
     return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>com.dovo.${name}</string><key>ProgramArguments</key><array>${items}</array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>EnvironmentVariables</key><dict><key>DOVO_RUNTIME_ENV_FILE</key><string>${xml(envPath)}</string></dict><key>StandardOutPath</key><string>${xml(join(directory, 'service.log'))}</string><key>StandardErrorPath</key><string>${xml(join(directory, 'service.log'))}</string></dict></plist>\n`
   }
-  return `[Unit]\nDescription=Dovo server (${name})\nAfter=network-online.target\n[Service]\nType=simple\nWorkingDirectory=${systemd(directory)}\nExecStart=${args.map(systemd).join(' ')}\nEnvironment=DOVO_RUNTIME_ENV_FILE=${systemd(envPath)}\nRestart=on-failure\nRestartSec=3\n[Install]\nWantedBy=default.target\n`
+  return `[Unit]\nDescription=Dovo server (${name})\nAfter=network-online.target\n[Service]\nType=simple\nWorkingDirectory=${directory.replaceAll('%', '%%')}\nExecStart=${args.map(systemd).join(' ')}\nEnvironment=DOVO_RUNTIME_ENV_FILE=${systemd(envPath)}\nRestart=on-failure\nRestartSec=3\n[Install]\nWantedBy=default.target\n`
+}
+export function repairServiceDefinition(definition: string, directory: string) {
+  return definition.replace(
+    `WorkingDirectory=${systemd(directory)}\n`,
+    `WorkingDirectory=${directory.replaceAll('%', '%%')}\n`,
+  )
 }
 function readService(directory: string): ServiceRecord {
   const path = recordPath(directory)
@@ -103,7 +109,11 @@ async function launchdLoaded(target: string) {
     child.once('exit', (code) => resolve(code === 0))
   })
 }
-async function control(record: ServiceRecord, action: 'start' | 'stop' | 'restart' | 'remove') {
+async function control(
+  record: ServiceRecord,
+  action: 'start' | 'stop' | 'restart' | 'remove',
+  directory: string,
+) {
   if (record.platform === 'darwin') {
     const target = `gui/${process.getuid?.() ?? 0}/com.dovo.${record.name}`
     const loaded = await launchdLoaded(target)
@@ -115,6 +125,12 @@ async function control(record: ServiceRecord, action: 'start' | 'stop' | 'restar
       await run('launchctl', ['kickstart', '-k', target])
     }
   } else {
+    if (action === 'start' || action === 'restart') {
+      const definition = readFileSync(record.path, 'utf8')
+      const repaired = repairServiceDefinition(definition, directory)
+      if (repaired !== definition) writeFileSync(record.path, repaired, { mode: 0o600 })
+      await run('systemctl', ['--user', 'daemon-reload'])
+    }
     if (action === 'remove') await run('systemctl', ['--user', 'disable', '--now', record.name])
     else if (action === 'start') await run('systemctl', ['--user', 'enable', '--now', record.name])
     else await run('systemctl', ['--user', action, record.name])
@@ -137,7 +153,7 @@ async function waitForRuntime(directory: string, previousPid?: number) {
 }
 async function stopServiceRuntime(directory: string, record: ServiceRecord) {
   const previous = await serverStatus(directory)
-  await control(record, 'stop')
+  await control(record, 'stop', directory)
   if (!previous.pid) return
   const deadline = Date.now() + 30000
   while (Date.now() < deadline) {
@@ -216,7 +232,7 @@ export async function installService(
   if (platform === 'linux') await run('systemctl', ['--user', 'daemon-reload'])
   writePrivateJson(recordPath(directory), record)
   try {
-    await control(record, 'start')
+    await control(record, 'start', directory)
     return await waitForRuntime(directory)
   } catch (error) {
     throw new Error(
@@ -231,13 +247,13 @@ export async function serviceStatus(directory: string) {
 export async function restartService(directory: string) {
   const record = readService(directory)
   const previous = await serverStatus(directory)
-  await control(record, 'restart')
+  await control(record, 'restart', directory)
   return waitForRuntime(directory, previous.pid)
 }
 export async function removeService(directory: string) {
   const record = readService(directory)
   await stopServiceRuntime(directory, record)
-  if (record.platform === 'linux') await control(record, 'remove')
+  if (record.platform === 'linux') await control(record, 'remove', directory)
   rmSync(record.path, { force: true })
   rmSync(recordPath(directory), { force: true })
   rmSync(join(directory, 'service-launcher'), { force: true })
@@ -261,14 +277,14 @@ export async function updateService(directory: string, nextLauncher?: string) {
     renameSync(temporary, link)
     writePrivateJson(recordPath(directory), { ...record, launcher: replacement })
     try {
-      await control(record, 'start')
+      await control(record, 'start', directory)
       return await waitForRuntime(directory, status.pid)
     } catch (error) {
       await stopServiceRuntime(directory, record)
       symlinkSync(record.launcher, temporary)
       renameSync(temporary, link)
       writePrivateJson(recordPath(directory), record)
-      if (status.running) await control(record, 'start').catch(() => undefined)
+      if (status.running) await control(record, 'start', directory).catch(() => undefined)
       throw error
     }
   }
@@ -277,7 +293,7 @@ export async function updateService(directory: string, nextLauncher?: string) {
     return updateServer(directory, {
       stop: () => stopServiceRuntime(directory, record),
       start: async () => {
-        await control(record, 'start')
+        await control(record, 'start', directory)
         await waitForRuntime(directory, previous.pid)
       },
     })
@@ -300,10 +316,10 @@ export async function updateService(directory: string, nextLauncher?: string) {
   await run('brew', ['upgrade', formula])
   if (status.running) await stopServiceRuntime(directory, record)
   try {
-    await control(record, 'start')
+    await control(record, 'start', directory)
     return waitForRuntime(directory, status.pid)
   } catch (error) {
-    if (status.running) await control(record, 'start').catch(() => undefined)
+    if (status.running) await control(record, 'start', directory).catch(() => undefined)
     throw error
   }
 }
