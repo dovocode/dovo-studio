@@ -390,8 +390,12 @@ function WorkbenchContent({
                       <RuntimeOverview />
                     ) : ready && View ? (
                       <View entityId={target.entityId} />
-                    ) : (
+                    ) : !ready ? (
                       <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
+                    ) : (
+                      <div className="p-6 text-xs text-muted-foreground">
+                        This view is unavailable. Select another view from the sidebar.
+                      </div>
                     )}
                   </Suspense>
                 </ErrorBoundary>

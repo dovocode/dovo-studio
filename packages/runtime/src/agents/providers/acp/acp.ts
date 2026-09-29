@@ -422,7 +422,13 @@ export function createAcpAdapter(): AgentAdapter {
             )
           }
         }
-        if (run.ephemeral && !run.sessionId && sessionId && canDeleteSession && !rpc.signal.aborted) {
+        if (
+          run.ephemeral &&
+          !run.sessionId &&
+          sessionId &&
+          canDeleteSession &&
+          !rpc.signal.aborted
+        ) {
           try {
             await acpControl(connection, rpc.deleteSession({ sessionId }), 'session deletion')
           } catch (error) {

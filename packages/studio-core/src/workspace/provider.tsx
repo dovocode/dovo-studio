@@ -1004,6 +1004,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           }),
         ),
       )
+      let firstLocalConnection: RuntimeConnection | null = null
       const desktop = decodeResult(
         mutableStruct({
           dovo: mutableStruct({
@@ -1032,29 +1033,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           previousLocal ? { ...local, id: previousLocal.id, name: previousLocal.name } : local,
           firstConnection || registry.activeId === previousLocal?.id,
         )
-        if (firstConnection) {
-          const initial = yield* runtimeRequestEffect(
-            local.connection,
-            local.connection.address,
-            '/api/snapshot',
-            undefined,
-            snapshotSchema,
-            'GET',
-          )
-          if (
-            initial.owner &&
-            !initial.workspace.agents.length &&
-            !initial.workspace.repositories.length &&
-            !initial.workspace.tasks.length
-          )
-            yield* runtimeRequestEffect(
-              local.connection,
-              local.connection.address,
-              '/api/workspace/import',
-              current.current,
-              responses.ok,
-            ).pipe(Effect.uninterruptible)
-        }
+        if (firstConnection) firstLocalConnection = local.connection
       }
       yield* native(() => saveRegistry(() => registry))
       let migrated = true
@@ -1115,7 +1094,34 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             )
         }
         adopt(active, cached[active.id] ?? null, false, outbox)
+        const initialWorkspace = current.current
         setReady(true)
+        if (firstLocalConnection) {
+          const localConnection = firstLocalConnection
+          yield* Effect.gen(function* () {
+            const initial = yield* runtimeRequestEffect(
+              localConnection,
+              localConnection.address,
+              '/api/snapshot',
+              undefined,
+              snapshotSchema,
+              'GET',
+            )
+            if (
+              initial.owner &&
+              !initial.workspace.agents.length &&
+              !initial.workspace.repositories.length &&
+              !initial.workspace.tasks.length
+            )
+              yield* runtimeRequestEffect(
+                localConnection,
+                localConnection.address,
+                '/api/workspace/import',
+                initialWorkspace,
+                responses.ok,
+              ).pipe(Effect.uninterruptible)
+          }).pipe(Effect.catchAll((error) => Effect.sync(() => setSyncError(error.message))))
+        }
         if (!outbox)
           yield* openProfileEffect(active).pipe(
             Effect.catchAll((error) => Effect.sync(() => setSyncError(error.message))),
