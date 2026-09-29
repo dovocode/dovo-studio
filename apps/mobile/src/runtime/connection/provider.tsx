@@ -427,9 +427,14 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         sequence.current.set(profile.id, version)
         const shared = Effect.runSync(
           Effect.cached(
-            loadRuntimeOverviewEffect(profile, entryRef.current[profile.id], (next) => {
-              if (sequence.current.get(profile.id) === version) updateEntry(profile, () => next)
-            }).pipe(
+            loadRuntimeOverviewEffect(
+              profile,
+              entryRef.current[profile.id],
+              (next) => {
+                if (sequence.current.get(profile.id) === version) updateEntry(profile, () => next)
+              },
+              current.current.activeId !== profile.id,
+            ).pipe(
               Effect.tap((next) =>
                 Effect.sync(() =>
                   updateEntry(profile, (previous) =>

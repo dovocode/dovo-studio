@@ -23,6 +23,7 @@ import { patchSchema, workspaceSchema } from '@dovo/protocol'
 import { RuntimeServices } from '../services.js'
 import { HttpError } from '../errors.js'
 import { body } from './support/body.js'
+import { overviewWorkspace } from './support/snapshot-overview.js'
 import { hashSecret, equalSecret } from '../auth/devices.js'
 import { validateAutomation } from '../jobs/validation.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
@@ -317,16 +318,18 @@ export function route(
       const owner = () => {
         if (!device.owner) throw new HttpError(403, 'Only the runtime host can manage device trust')
       }
-      if (method === 'GET' && path === '/api/snapshot')
+      if (method === 'GET' && path === '/api/snapshot') {
+        const workspace = s.store.publicWorkspace()
+        const overview = url.searchParams.get('scope') === 'overview'
         return yield* serviceResult({
           protocolVersion: RUNTIME_PROTOCOL_VERSION,
           runtimeHost: hostname(),
           defaults: s.defaults.get(),
           revision: s.store.version(),
           workspace: {
-            ...s.store.publicWorkspace(),
+            ...(overview ? overviewWorkspace(workspace) : workspace),
             repositories: yield* Effect.forEach(
-              s.store.publicWorkspace().repositories,
+              workspace.repositories,
               (repo) =>
                 Effect.gen(function* () {
                   const discoveredIcon = yield* serviceResult(discoverProjectIcon(repo.path))
@@ -370,6 +373,7 @@ export function route(
           pendingDevices: device.owner ? s.pairing.pending() : [],
           owner: device.owner,
         })
+      }
       if (method === 'POST' && path === '/api/runtime/prepare-restart') {
         owner()
         return yield* serviceResult(s.tasks.prepareRestart())

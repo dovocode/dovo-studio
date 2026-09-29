@@ -1,12 +1,25 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { clearRuntimeRequestCache, snapshotResponseCache } from './snapshot-memory-cache'
 
-afterEach(() => clearRuntimeRequestCache())
+afterEach(() => {
+  clearRuntimeRequestCache()
+  vi.unstubAllGlobals()
+})
 
 it('does not retain a snapshot larger than its total memory budget', () => {
   snapshotResponseCache('http://host', 'credential').save(
     'W/"large"',
     'x'.repeat(16 * 1024 * 1024 + 1),
+  )
+  expect(snapshotResponseCache('http://host', 'credential').tag).toBeUndefined()
+})
+
+it('falls back safely when a mobile JavaScript engine has no WeakRef', () => {
+  vi.stubGlobal('WeakRef', undefined)
+  snapshotResponseCache('http://host', 'credential').save(
+    'W/"large"',
+    'x'.repeat(16 * 1024 * 1024 + 1),
+    { revision: 1 },
   )
   expect(snapshotResponseCache('http://host', 'credential').tag).toBeUndefined()
 })

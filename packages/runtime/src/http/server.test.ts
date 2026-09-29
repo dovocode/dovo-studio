@@ -244,6 +244,63 @@ describe('authenticated runtime', () => {
     expect(denied.status).toBe(401)
     expect(denied.headers.get('content-encoding')).toBeNull()
   })
+  it('keeps fleet overviews small while retaining task status and a separate validator', async () => {
+    const token = randomBytes(32).toString('base64url')
+    const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+    cleanups.push(() => runtime.close())
+    const project = await fixture()
+    cleanups.push(project.cleanup)
+    runtime.services.store.update(() => ({
+      ...project.workspace,
+      tasks: [
+        {
+          id: 'task',
+          title: 'Long task',
+          repositoryId: 'repo',
+          execution: 'main',
+          agentId: 'agent',
+          status: 'review',
+          createdAt: new Date().toISOString(),
+          messages: [{ id: 'message', role: 'assistant', text: 'long conversation '.repeat(5000) }],
+          files: [
+            {
+              path: 'hello.txt',
+              before: 'before '.repeat(5000),
+              after: 'after '.repeat(5000),
+              viewed: false,
+            },
+          ],
+          draft: '',
+          example: false,
+        },
+      ],
+    }))
+    const base = `http://127.0.0.1:${runtime.port}/api/snapshot`
+    const headers = { Authorization: `Bearer ${token}`, 'Accept-Encoding': 'identity' }
+    const full = await fetch(base, { headers })
+    const overview = await fetch(`${base}?scope=overview`, { headers })
+    const fullSnapshot = decode(snapshotSchema, await full.json())
+    const summary = decode(snapshotSchema, await overview.json())
+    expect(fullSnapshot.workspace.tasks[0].messages).toHaveLength(1)
+    expect(summary.workspace.tasks[0]).toMatchObject({
+      id: 'task',
+      status: 'review',
+      title: 'Long task',
+      messages: [],
+      files: [{ path: 'hello.txt', viewed: false, before: '', after: '' }],
+    })
+    expect(Number(overview.headers.get('content-length'))).toBeLessThan(
+      Number(full.headers.get('content-length')) / 10,
+    )
+    expect(overview.headers.get('etag')).not.toBe(full.headers.get('etag'))
+    expect(
+      (
+        await fetch(`${base}?scope=overview`, {
+          headers: { ...headers, 'If-None-Match': overview.headers.get('etag') ?? '' },
+        })
+      ).status,
+    ).toBe(304)
+  })
   it('requires host approval, consumes codes once and revokes device access', async () => {
     const token = randomBytes(32).toString('base64url'),
       runtime = await startRuntime({

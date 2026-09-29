@@ -140,6 +140,7 @@ export function loadRuntimeOverviewEffect(
   profile: RuntimeProfile,
   previous?: RuntimeOverview,
   onSnapshot?: (overview: RuntimeOverview) => void,
+  compact = false,
 ): Effect.Effect<RuntimeOverview> {
   return Effect.gen(function* () {
     const cached =
@@ -151,7 +152,7 @@ export function loadRuntimeOverviewEffect(
       runtimeRequestEffect(
         profile.connection,
         profile.connection.address,
-        '/api/snapshot',
+        compact ? '/api/snapshot?scope=overview' : '/api/snapshot',
         undefined,
         snapshotSchema,
         'GET',

@@ -10,6 +10,23 @@ computer sleep, or automatically restart a crashed process.
 
 For a server-only macOS or Linux host, use a user-level service instead:
 
+On Linux x64/arm64, the quickest path needs Bash, curl, jq, tar, sha256sum, and a running systemd
+user manager:
+
+```sh
+bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/dovocode/dovo-studio/main/scripts/install-linux-server.sh | bash'
+~/.local/bin/dovo-server pair
+```
+
+Run the same installer again to upgrade. It downloads only the matching server archive, verifies
+GitHub's SHA-256 digest before extraction, installs a user service, and switches the service to the
+new release only after the new launcher passes its checks. The previous release remains available
+for rollback. Use `bash scripts/install-linux-server.sh --data-dir /path/to/workspace` from a
+checkout if you need a custom data directory. For Nightly, use `bash -s -- --channel nightly` after
+the pipe in the quoted command. Run as your normal user, without `sudo`. To keep the service running
+after logout or boot, an administrator can enable user lingering with
+`sudo loginctl enable-linger "$USER"`. A failed update keeps the existing data and pairings.
+
 ```sh
 # From a source checkout:
 pnpm server service install --host 0.0.0.0

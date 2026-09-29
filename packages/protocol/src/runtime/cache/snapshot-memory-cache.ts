@@ -4,7 +4,8 @@ type Entry = {
   origin: string
   token: string
   tag: string
-  body: string
+  body?: string
+  value?: WeakRef<object>
   expires: number
 }
 const entries = new Map<string, Entry>()
@@ -12,7 +13,8 @@ const lifetime = 5 * 60 * 1000
 const maximumBytes = 32 * 1024 * 1024
 let expiryTimer: ReturnType<typeof setTimeout> | undefined
 let generation = 0
-const keyFor = (origin: string, token: string) => JSON.stringify([origin, token])
+const keyFor = (origin: string, token: string, path: string) =>
+  JSON.stringify([origin, token, path])
 
 function expire() {
   const now = Date.now()
@@ -45,9 +47,9 @@ export function clearRuntimeRequestCache(connection?: RuntimeConnection) {
   scheduleExpiry()
 }
 
-export function snapshotResponseCache(origin: string, token: string) {
+export function snapshotResponseCache(origin: string, token: string, path = '/api/snapshot') {
   expire()
-  const key = keyFor(origin, token)
+  const key = keyFor(origin, token, path)
   const currentGeneration = generation
   const cached = entries.get(key)
   if (cached) {
@@ -63,22 +65,48 @@ export function snapshotResponseCache(origin: string, token: string) {
         ? cached.body
         : undefined
     },
+    value() {
+      return cached && currentGeneration === generation && entries.get(key) === cached
+        ? cached.value?.deref()
+        : undefined
+    },
+    refresh(value: object) {
+      if (
+        cached &&
+        typeof WeakRef === 'function' &&
+        currentGeneration === generation &&
+        entries.get(key) === cached
+      )
+        cached.value = new WeakRef(value)
+    },
     remove() {
       if (currentGeneration !== generation) return
       entries.delete(key)
       scheduleExpiry()
     },
-    save(tag: string | null, body: string) {
+    save(tag: string | null, body: string, value?: object) {
       if (currentGeneration !== generation) return
       entries.delete(key)
-      // Count UTF-16 string storage, not the compressed Content-Length on the wire.
-      if (tag && tag.length <= 200 && body.length * 2 <= maximumBytes) {
-        entries.set(key, { origin, token, tag, body, expires: Date.now() + lifetime })
-        let bytes = [...entries.values()].reduce((size, entry) => size + entry.body.length * 2, 0)
+      // A large response is already held by the app. Keep a weak reference and its validator
+      // without duplicating megabytes of JSON. If collected, a 304 retries without the tag.
+      const weak = value && typeof WeakRef === 'function' ? new WeakRef(value) : undefined
+      if (tag && tag.length <= 200 && (body.length * 2 <= maximumBytes || weak)) {
+        entries.set(key, {
+          origin,
+          token,
+          tag,
+          ...(body.length * 2 <= maximumBytes ? { body } : {}),
+          ...(weak ? { value: weak } : {}),
+          expires: Date.now() + lifetime,
+        })
+        let bytes = [...entries.values()].reduce(
+          (size, entry) => size + (entry.body?.length ?? 0) * 2,
+          0,
+        )
         for (const [oldKey, entry] of entries) {
           if (entries.size <= 8 && bytes <= maximumBytes) break
           entries.delete(oldKey)
-          bytes -= entry.body.length * 2
+          bytes -= (entry.body?.length ?? 0) * 2
         }
       }
       scheduleExpiry()

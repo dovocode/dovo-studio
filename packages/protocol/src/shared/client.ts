@@ -98,8 +98,8 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
         }),
     })
     const conditional =
-      connection && method === 'GET' && path === '/api/snapshot' && input === undefined
-        ? snapshotResponseCache(target.origin, connection.token)
+      connection && method === 'GET' && target.pathname === '/api/snapshot' && input === undefined
+        ? snapshotResponseCache(target.origin, connection.token, target.pathname + target.search)
         : undefined
     const decodeResponse = (value: unknown) =>
       Effect.suspend(() => {
@@ -156,9 +156,12 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
                 message: 'Runtime returned an unexpected unchanged response.',
               }),
             )
-          const cached = conditional.body()
+          const cached = conditional.value() ?? conditional.body()
           if (cached !== undefined) {
-            const parsed = yield* decodeResponse(yield* parseJson(cached))
+            const parsed = yield* decodeResponse(
+              typeof cached === 'string' ? yield* parseJson(cached) : cached,
+            )
+            conditional.refresh(parsed)
             rememberSnapshotTag(parsed, conditional.tag)
             return parsed
           }
@@ -214,7 +217,7 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
         }
         const parsed = yield* decodeResponse(yield* parseJson(text))
         if (conditional) {
-          conditional.save(response.headers.get('etag'), text)
+          conditional.save(response.headers.get('etag'), text, parsed)
           rememberSnapshotTag(parsed, response.headers.get('etag'))
         }
         return parsed

@@ -170,6 +170,42 @@ it('isolates snapshot validators by runtime origin and credentials', async () =>
   await readSnapshot()
   expect(request.mock.calls[4][1]?.headers).not.toHaveProperty('If-None-Match')
 })
+it('does not reuse a full snapshot validator for a compact overview', async () => {
+  const request = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async () =>
+      Response.json({ revision: 1 }, { headers: { ETag: 'W/"snapshot-one"' } }),
+    )
+  vi.stubGlobal('fetch', request)
+  await readSnapshot()
+  await runtimeRequest(
+    connection,
+    connection.address,
+    '/api/snapshot?scope=overview',
+    undefined,
+    dataSchema,
+    'GET',
+  )
+  await readSnapshot()
+  expect(request.mock.calls[1][1]?.headers).not.toHaveProperty('If-None-Match')
+  expect(request.mock.calls[2][1]?.headers).toHaveProperty('If-None-Match', 'W/"snapshot-one"')
+})
+it('reuses an unchanged large snapshot without storing a second JSON copy', async () => {
+  const request = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json(
+        { revision: 1, history: 'x'.repeat(16 * 1024 * 1024 + 1) },
+        { headers: { ETag: 'W/"large-snapshot"' } },
+      ),
+    )
+    .mockResolvedValueOnce(new Response(null, { status: 304 }))
+  vi.stubGlobal('fetch', request)
+  const first = await readSnapshot()
+  expect(await readSnapshot()).toEqual(first)
+  expect(request).toHaveBeenCalledTimes(2)
+  expect(request.mock.calls[1][1]?.headers).toHaveProperty('If-None-Match', 'W/"large-snapshot"')
+})
 it('recovers with one unconditional snapshot read if a 304 has no cached body', async () => {
   const request = vi
     .fn<typeof fetch>()
