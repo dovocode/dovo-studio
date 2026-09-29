@@ -30,12 +30,28 @@ import { TerminalSession } from '../terminal/terminal-session'
 const installationsResponseSchema = mutableStruct({
   installations: mutableArray(acpInstallationSchema),
 })
+const registryAgent: Agent = {
+  id: 'registry',
+  name: 'ACP registry',
+  provider: 'acp',
+  endpoint: '',
+  model: '',
+  instructions: '',
+  permission: 'ask',
+}
+export function AcpRegistrySettings() {
+  return <AcpRegistry agent={registryAgent} onChange={() => {}} management />
+}
 export function AcpRegistry({
   agent,
   onChange,
+  management = false,
+  showRegistry = true,
 }: {
   agent: Agent
   onChange: (agent: Agent) => void
+  management?: boolean
+  showRegistry?: boolean
 }) {
   const { callEffect, connected } = useRuntime()
   const [catalog, setCatalog] = useApplicationState<AcpRegistryResponse | null>(null)
@@ -44,6 +60,7 @@ export function AcpRegistry({
   const [loading, setLoading] = useApplicationState(false)
   const [loadError, setLoadError] = useApplicationState('')
   const [search, setSearch] = useApplicationState('')
+  const [managedId, setManagedId] = useApplicationState('')
   const [browseOpen, setBrowseOpen] = useApplicationState(
     () => !agent.acpInstallationId && !agent.endpoint.trim(),
   )
@@ -94,6 +111,10 @@ export function AcpRegistry({
   }, [callEffect, connected, refresh])
 
   const selectInstallation = (id: string) => {
+    if (management) {
+      setManagedId(id)
+      return
+    }
     const acpInstallationId = id === '__custom__' ? undefined : id || undefined
     if (acpInstallationId === agent.acpInstallationId) return
     onChange({
@@ -106,12 +127,16 @@ export function AcpRegistry({
     })
     setBrowseOpen(false)
   }
-  const selected = installations.find((item) => item.id === agent.acpInstallationId)
+  const selected = installations.find(
+    (item) => item.id === (management ? managedId : agent.acpInstallationId),
+  )
   return (
     <View style={[styles.card, { gap: 10 }]}>
       <Text style={styles.text}>ACP agents</Text>
       <Text style={styles.muted}>
-        Browse installs available on this connected runtime, or keep using your own ACP command.
+        {management
+          ? 'Install and manage agents on this runtime. Installing does not create a custom agent.'
+          : 'Choose an installed agent or use your own ACP command.'}
       </Text>
       <Action
         secondary
@@ -119,134 +144,161 @@ export function AcpRegistry({
         disabled={!connected || busy || loading}
         onPress={() => setRefresh((value) => value + 1)}
       />
-      <Choice
-        label="ACP agent installation"
-        value={agent.acpInstallationId ?? '__custom__'}
-        disabled={!connected || busy}
-        items={[
-          { id: '__custom__', name: 'Custom ACP command' },
-          ...(agent.acpInstallationId && !selected
-            ? [{ id: agent.acpInstallationId, name: 'Saved installation (not listed)' }]
-            : []),
-          ...installations.map((item) => ({
-            id: item.id,
-            name: `${item.name} · ${item.version}`,
-          })),
-        ]}
-        onChange={selectInstallation}
-      />
-      {selected && <AcpAuthentication key={selected.id} installation={selected} agent={agent} />}
-      <View style={{ gap: 8 }}>
-        <Action
-          secondary
-          label={
-            browseOpen
-              ? 'Hide registry'
-              : `Browse registry${catalog ? ` · ${catalog.agents.length}` : ''}`
-          }
-          disabled={!connected}
-          onPress={() => setBrowseOpen((value) => !value)}
+      {!management && (
+        <Choice
+          label="ACP agent installation"
+          value={agent.acpInstallationId ?? '__custom__'}
+          disabled={!connected || busy}
+          items={[
+            { id: '__custom__', name: 'Custom ACP command' },
+            ...(agent.acpInstallationId && !selected
+              ? [{ id: agent.acpInstallationId, name: 'Saved installation (not listed)' }]
+              : []),
+            ...installations.map((item) => ({
+              id: item.id,
+              name: `${item.name} · ${item.version}`,
+            })),
+          ]}
+          onChange={selectInstallation}
         />
-        {browseOpen && (
-          <>
-            <SearchField
-              label="Search ACP registry"
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search agents…"
-            />
-            {loading && <Text style={styles.muted}>Loading registered agents…</Text>}
-            {!!loadError && <Text style={styles.error}>{loadError}</Text>}
-            {!loading && catalog?.agents.length === 0 && (
-              <Text style={styles.muted}>No agents are available in this registry.</Text>
-            )}
-            {catalog?.agents.map((entry) => {
-              if (
-                !entry.name.toLowerCase().includes(search.toLowerCase()) &&
-                !entry.description.toLowerCase().includes(search.toLowerCase())
-              )
-                return null
-              const installed = installations.find((item) => item.registryId === entry.id)
-              return (
-                <View key={entry.id} style={[styles.card, { gap: 6 }]}>
-                  <Text style={styles.text}>{entry.name}</Text>
-                  <Text style={styles.muted}>
-                    {entry.version} · {entry.distribution}
-                  </Text>
-                  <Text style={styles.muted}>{entry.description}</Text>
-                  {installed ? (
-                    <View style={styles.row}>
+      )}
+      {management && installations.length > 0 && (
+        <Choice
+          label="Manage installed ACP agent"
+          value={managedId}
+          items={[
+            { id: '', name: 'Choose an installed agent to manage' },
+            ...installations.map((item) => ({
+              id: item.id,
+              name: `${item.name} · ${item.version}`,
+            })),
+          ]}
+          onChange={setManagedId}
+        />
+      )}
+      {selected && <AcpAuthentication key={selected.id} installation={selected} agent={agent} />}
+      {showRegistry && (
+        <View style={{ gap: 8 }}>
+          <Action
+            secondary
+            label={
+              browseOpen
+                ? 'Hide registry'
+                : `Browse registry${catalog ? ` · ${catalog.agents.length}` : ''}`
+            }
+            disabled={!connected}
+            onPress={() => setBrowseOpen((value) => !value)}
+          />
+          {browseOpen && (
+            <>
+              <SearchField
+                label="Search ACP registry"
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search agents…"
+              />
+              {loading && <Text style={styles.muted}>Loading registered agents…</Text>}
+              {!!loadError && <Text style={styles.error}>{loadError}</Text>}
+              {!loading && catalog?.agents.length === 0 && (
+                <Text style={styles.muted}>No agents are available in this registry.</Text>
+              )}
+              {catalog?.agents.map((entry) => {
+                if (
+                  !entry.name.toLowerCase().includes(search.toLowerCase()) &&
+                  !entry.description.toLowerCase().includes(search.toLowerCase())
+                )
+                  return null
+                const installed = installations.find((item) => item.registryId === entry.id)
+                return (
+                  <View key={entry.id} style={[styles.card, { gap: 6 }]}>
+                    <Text style={styles.text}>{entry.name}</Text>
+                    <Text style={styles.muted}>
+                      {entry.version} · {entry.distribution}
+                    </Text>
+                    <Text style={styles.muted}>{entry.description}</Text>
+                    {installed ? (
+                      <View style={styles.row}>
+                        <Action
+                          secondary
+                          label={
+                            management
+                              ? 'Manage'
+                              : agent.acpInstallationId === installed.id
+                                ? 'Selected'
+                                : 'Use'
+                          }
+                          disabled={busy || !connected}
+                          onPress={() => selectInstallation(installed.id)}
+                        />
+                        <Action
+                          secondary
+                          label="Remove"
+                          disabled={busy || !connected}
+                          onPress={() =>
+                            Alert.alert(
+                              'Remove ACP agent?',
+                              `Remove ${entry.name} from the connected runtime?`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Remove',
+                                  style: 'destructive',
+                                  onPress: () =>
+                                    act(() =>
+                                      mobileWorkflow(function* () {
+                                        yield* callEffect(
+                                          '/api/agents/acp/remove',
+                                          { id: installed.id },
+                                          responses.ok,
+                                          'POST',
+                                        )
+                                        yield* nativeEffect(() => {
+                                          if (
+                                            (management ? managedId : agent.acpInstallationId) ===
+                                            installed.id
+                                          )
+                                            selectInstallation('__custom__')
+                                          setRefresh((value) => value + 1)
+                                        })
+                                      }),
+                                    ),
+                                },
+                              ],
+                            )
+                          }
+                        />
+                      </View>
+                    ) : (
                       <Action
                         secondary
-                        label={agent.acpInstallationId === installed.id ? 'Selected' : 'Use'}
-                        disabled={busy || !connected}
-                        onPress={() => selectInstallation(installed.id)}
-                      />
-                      <Action
-                        secondary
-                        label="Remove"
-                        disabled={busy || !connected}
+                        label={!entry.available ? 'Unavailable' : busy ? 'Working…' : 'Install'}
+                        disabled={busy || !connected || !entry.available}
                         onPress={() =>
-                          Alert.alert(
-                            'Remove ACP agent?',
-                            `Remove ${entry.name} from the connected runtime?`,
-                            [
-                              { text: 'Cancel', style: 'cancel' },
-                              {
-                                text: 'Remove',
-                                style: 'destructive',
-                                onPress: () =>
-                                  act(() =>
-                                    mobileWorkflow(function* () {
-                                      yield* callEffect(
-                                        '/api/agents/acp/remove',
-                                        { id: installed.id },
-                                        responses.ok,
-                                        'POST',
-                                      )
-                                      yield* nativeEffect(() => {
-                                        if (agent.acpInstallationId === installed.id)
-                                          selectInstallation('__custom__')
-                                        setRefresh((value) => value + 1)
-                                      })
-                                    }),
-                                  ),
-                              },
-                            ],
+                          act(() =>
+                            mobileWorkflow(function* () {
+                              const installed = yield* callEffect(
+                                '/api/agents/acp/install',
+                                { registryId: entry.id },
+                                acpInstallationSchema,
+                                'POST',
+                              )
+                              yield* nativeEffect(() => {
+                                setRefresh((value) => value + 1)
+                                selectInstallation(installed.id)
+                              })
+                            }),
                           )
                         }
                       />
-                    </View>
-                  ) : (
-                    <Action
-                      secondary
-                      label={!entry.available ? 'Unavailable' : busy ? 'Working…' : 'Install'}
-                      disabled={busy || !connected || !entry.available}
-                      onPress={() =>
-                        act(() =>
-                          mobileWorkflow(function* () {
-                            const installed = yield* callEffect(
-                              '/api/agents/acp/install',
-                              { registryId: entry.id },
-                              acpInstallationSchema,
-                              'POST',
-                            )
-                            yield* nativeEffect(() => {
-                              setRefresh((value) => value + 1)
-                              selectInstallation(installed.id)
-                            })
-                          }),
-                        )
-                      }
-                    />
-                  )}
-                </View>
-              )
-            })}
-          </>
-        )}
-        {!!error && <Text style={styles.error}>{error}</Text>}
-      </View>
+                    )}
+                  </View>
+                )
+              })}
+            </>
+          )}
+          {!!error && <Text style={styles.error}>{error}</Text>}
+        </View>
+      )}
     </View>
   )
 }

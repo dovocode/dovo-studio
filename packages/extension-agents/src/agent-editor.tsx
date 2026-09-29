@@ -233,7 +233,9 @@ export function AgentEditor({
                 use another. Models and settings can still change.
               </p>
             )}
-            {agent.provider === 'acp' && <AcpRegistry agent={agent} onChange={setAgent} />}
+            {agent.provider === 'acp' && (
+              <AcpRegistry agent={agent} onChange={setAgent} showRegistry={false} />
+            )}
             <FormField label="Access">
               <ChoicePicker
                 aria-label="Permissions"

@@ -24,12 +24,30 @@ const installationsResponseSchema = mutableStruct({
   installations: mutableArray(acpInstallationSchema),
 })
 
+const registryAgent: Agent = {
+  id: 'registry',
+  name: 'ACP registry',
+  provider: 'acp',
+  endpoint: '',
+  model: '',
+  instructions: '',
+  permission: 'ask',
+}
+
+export function AcpRegistrySettings() {
+  return <AcpRegistry agent={registryAgent} onChange={() => {}} management />
+}
+
 export function AcpRegistry({
   agent,
   onChange,
+  management = false,
+  showRegistry = true,
 }: {
   agent: Agent
   onChange: (agent: Agent) => void
+  management?: boolean
+  showRegistry?: boolean
 }) {
   const { request, connected } = useWorkspace()
   const [catalog, setCatalog] = useApplicationState<AcpRegistryResponse | null>(null)
@@ -39,6 +57,7 @@ export function AcpRegistry({
   const [busyId, setBusyId] = useApplicationState('')
   const [error, setError] = useApplicationState('')
   const [search, setSearch] = useApplicationState('')
+  const [managedId, setManagedId] = useApplicationState('')
   const [browseOpen, setBrowseOpen] = useApplicationState(
     () => !agent.acpInstallationId && !agent.endpoint.trim(),
   )
@@ -66,6 +85,10 @@ export function AcpRegistry({
   }, [connected, request, refresh])
 
   const selectInstallation = (id: string) => {
+    if (management) {
+      setManagedId(id)
+      return
+    }
     const acpInstallationId = id === '__custom__' ? undefined : id || undefined
     if (acpInstallationId === agent.acpInstallationId) return
     onChange({
@@ -95,7 +118,9 @@ export function AcpRegistry({
       setBusyId('')
     }
   }
-  const selected = installations.find((item) => item.id === agent.acpInstallationId)
+  const selected = installations.find(
+    (item) => item.id === (management ? managedId : agent.acpInstallationId),
+  )
   const filtered = catalog?.agents.filter((entry) =>
     `${entry.id} ${entry.name} ${entry.description}`.toLowerCase().includes(search.toLowerCase()),
   )
@@ -106,7 +131,9 @@ export function AcpRegistry({
         <div>
           <h3 className="text-sm font-medium">ACP agents</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            Install registered agents on the connected runtime or use a custom command.
+            {management
+              ? 'Install and manage agents on this runtime. Installing does not create a custom agent.'
+              : 'Choose an installed agent or use a custom command.'}
           </p>
         </div>
         <Button
@@ -120,23 +147,39 @@ export function AcpRegistry({
           <RefreshCw size={14} />
         </Button>
       </div>
-      <ChoicePicker
-        aria-label="ACP agent installation"
-        className="h-9 rounded-md border bg-background px-2 text-xs"
-        value={agent.acpInstallationId ?? '__custom__'}
-        disabled={!connected || !!busyId}
-        onValueChange={selectInstallation}
-      >
-        <option value="__custom__">Custom ACP command</option>
-        {agent.acpInstallationId && !selected && (
-          <option value={agent.acpInstallationId}>Saved installation (not listed)</option>
-        )}
-        {installations.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.name} · {item.version}
-          </option>
-        ))}
-      </ChoicePicker>
+      {!management && (
+        <ChoicePicker
+          aria-label="ACP agent installation"
+          className="h-9 rounded-md border bg-background px-2 text-xs"
+          value={agent.acpInstallationId ?? '__custom__'}
+          disabled={!connected || !!busyId}
+          onValueChange={selectInstallation}
+        >
+          <option value="__custom__">Custom ACP command</option>
+          {agent.acpInstallationId && !selected && (
+            <option value={agent.acpInstallationId}>Saved installation (not listed)</option>
+          )}
+          {installations.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name} · {item.version}
+            </option>
+          ))}
+        </ChoicePicker>
+      )}
+      {management && installations.length > 0 && (
+        <ChoicePicker
+          aria-label="Manage installed ACP agent"
+          value={managedId}
+          onValueChange={setManagedId}
+        >
+          <option value="">Choose an installed agent to manage</option>
+          {installations.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name} · {item.version}
+            </option>
+          ))}
+        </ChoicePicker>
+      )}
       {selected && (
         <AcpAuthentication
           key={selected.id}
@@ -147,124 +190,144 @@ export function AcpRegistry({
           request={request}
         />
       )}
-      <div className="grid gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <h4 className="text-xs font-medium text-muted-foreground">Runtime registry</h4>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={!connected}
-            onClick={() => setBrowseOpen((value) => !value)}
-          >
-            {browseOpen
-              ? 'Hide registry'
-              : `Browse registry${catalog ? ` · ${catalog.agents.length}` : ''}`}
-          </Button>
-        </div>
-        {browseOpen && (
-          <>
-            <Input
-              aria-label="Search ACP registry"
-              placeholder="Search agents…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            {loading && <p className="text-xs text-muted-foreground">Loading registered agents…</p>}
-            {!loading && filtered?.length === 0 && !error && (
-              <p className="text-xs text-muted-foreground">
-                {search
-                  ? 'No agents match this search.'
-                  : 'No agents are available in this registry.'}
-              </p>
-            )}
-            {filtered?.map((entry) => {
-              const installed = installations.find((item) => item.registryId === entry.id)
-              const isBusy = busyId === entry.id || busyId === installed?.id
-              return (
-                <article key={entry.id} className="grid gap-2 rounded border bg-background/50 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h5 className="text-sm font-medium">{entry.name}</h5>
-                      <p className="text-xs text-muted-foreground">
-                        {entry.version} · {entry.distribution}
-                      </p>
-                    </div>
-                    {installed ? (
-                      <div className="flex shrink-0 items-center gap-1">
+      {showRegistry && (
+        <div className="grid gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-xs font-medium text-muted-foreground">Runtime registry</h4>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!connected}
+              onClick={() => setBrowseOpen((value) => !value)}
+            >
+              {browseOpen
+                ? 'Hide registry'
+                : `Browse registry${catalog ? ` · ${catalog.agents.length}` : ''}`}
+            </Button>
+          </div>
+          {browseOpen && (
+            <>
+              <Input
+                aria-label="Search ACP registry"
+                placeholder="Search agents…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              {loading && (
+                <p className="text-xs text-muted-foreground">Loading registered agents…</p>
+              )}
+              {!loading && filtered?.length === 0 && !error && (
+                <p className="text-xs text-muted-foreground">
+                  {search
+                    ? 'No agents match this search.'
+                    : 'No agents are available in this registry.'}
+                </p>
+              )}
+              {filtered?.map((entry) => {
+                const installed = installations.find((item) => item.registryId === entry.id)
+                const isBusy = busyId === entry.id || busyId === installed?.id
+                return (
+                  <article
+                    key={entry.id}
+                    className="grid gap-2 rounded border bg-background/50 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h5 className="text-sm font-medium">{entry.name}</h5>
+                        <p className="text-xs text-muted-foreground">
+                          {entry.version} · {entry.distribution}
+                        </p>
+                      </div>
+                      {installed ? (
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Button
+                            type="button"
+                            variant={
+                              (management ? managedId : agent.acpInstallationId) === installed.id
+                                ? 'secondary'
+                                : 'outline'
+                            }
+                            size="sm"
+                            disabled={isBusy || !connected}
+                            onClick={() => selectInstallation(installed.id)}
+                          >
+                            {(management ? managedId : agent.acpInstallationId) === installed.id ? (
+                              <Check size={13} />
+                            ) : null}
+                            {management
+                              ? 'Manage'
+                              : agent.acpInstallationId === installed.id
+                                ? 'Selected'
+                                : 'Use'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Remove ${entry.name}`}
+                            disabled={isBusy || !connected}
+                            onClick={() => {
+                              if (!window.confirm(`Remove ${entry.name} from this runtime?`)) return
+                              void mutate(
+                                installed.id,
+                                () =>
+                                  request(
+                                    '/api/agents/acp/remove',
+                                    { id: installed.id },
+                                    responses.ok,
+                                    'POST',
+                                  ),
+                                () => {
+                                  if (
+                                    (management ? managedId : agent.acpInstallationId) ===
+                                    installed.id
+                                  )
+                                    selectInstallation('__custom__')
+                                },
+                              )
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                      ) : (
                         <Button
                           type="button"
-                          variant={
-                            agent.acpInstallationId === installed.id ? 'secondary' : 'outline'
-                          }
+                          variant="outline"
                           size="sm"
-                          disabled={isBusy || !connected}
-                          onClick={() => selectInstallation(installed.id)}
-                        >
-                          {agent.acpInstallationId === installed.id ? <Check size={13} /> : null}
-                          {agent.acpInstallationId === installed.id ? 'Selected' : 'Use'}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`Remove ${entry.name}`}
-                          disabled={isBusy || !connected}
-                          onClick={() => {
-                            if (!window.confirm(`Remove ${entry.name} from this runtime?`)) return
+                          disabled={isBusy || !connected || !entry.available || !!busyId}
+                          onClick={() =>
                             void mutate(
-                              installed.id,
+                              entry.id,
                               () =>
                                 request(
-                                  '/api/agents/acp/remove',
-                                  { id: installed.id },
-                                  responses.ok,
+                                  '/api/agents/acp/install',
+                                  { registryId: entry.id },
+                                  acpInstallationSchema,
                                   'POST',
                                 ),
-                              () => {
-                                if (agent.acpInstallationId === installed.id)
-                                  selectInstallation('__custom__')
-                              },
+                              (value) => selectInstallation(value.id),
                             )
-                          }}
+                          }
                         >
-                          <Trash2 size={14} />
+                          {isBusy ? 'Installing…' : entry.available ? 'Install' : 'Unavailable'}
                         </Button>
-                      </div>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={isBusy || !connected || !entry.available || !!busyId}
-                        onClick={() =>
-                          void mutate(
-                            entry.id,
-                            () =>
-                              request(
-                                '/api/agents/acp/install',
-                                { registryId: entry.id },
-                                acpInstallationSchema,
-                                'POST',
-                              ),
-                            (value) => selectInstallation(value.id),
-                          )
-                        }
-                      >
-                        {isBusy ? 'Installing…' : entry.available ? 'Install' : 'Unavailable'}
-                      </Button>
+                      )}
+                    </div>
+                    <p className="text-xs leading-5 text-muted-foreground">{entry.description}</p>
+                    {!entry.available && !installed && (
+                      <p className="text-xs text-muted-foreground">
+                        Not available on this runtime.
+                      </p>
                     )}
-                  </div>
-                  <p className="text-xs leading-5 text-muted-foreground">{entry.description}</p>
-                  {!entry.available && !installed && (
-                    <p className="text-xs text-muted-foreground">Not available on this runtime.</p>
-                  )}
-                </article>
-              )
-            })}
-          </>
-        )}
-      </div>
+                  </article>
+                )
+              })}
+            </>
+          )}
+        </div>
+      )}
       {!!error && (
         <p role="alert" className="text-xs text-destructive">
           {error}

@@ -157,7 +157,9 @@ export function AgentEditor({
           still change.
         </Text>
       )}
-      {draft.provider === 'acp' && <AcpRegistry agent={draft} onChange={setDraft} />}
+      {draft.provider === 'acp' && (
+        <AcpRegistry agent={draft} onChange={setDraft} showRegistry={false} />
+      )}
       <ModelSettings
         key={draft.provider}
         agent={draft}

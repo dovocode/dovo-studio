@@ -5,6 +5,7 @@ import { ScreenHeader } from '../ui/layout/screen-header'
 import { TitleSettings } from '../agents/title-settings'
 import { accessLabel } from '@dovo/protocol'
 import { AgentEditor } from '../agents/agent-editor'
+import { AcpRegistrySettings } from '../agents/acp-registry'
 import { ScrollView, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import { randomUUID } from 'expo-crypto'
@@ -42,6 +43,7 @@ function ComputerAgents({ name }: { name: string }) {
     } | null>(null),
     [availability, setAvailability] = useApplicationState('')
   const [titles, setTitles] = useApplicationState(false)
+  const [registry, setRegistry] = useApplicationState(false)
   return (
     <View
       style={{
@@ -130,6 +132,13 @@ function ComputerAgents({ name }: { name: string }) {
       ))}
       <SettingsGroup>
         <SettingsRow
+          title="ACP registry"
+          subtitle="Install and manage ACP agents"
+          icon="agents"
+          disabled={!connected}
+          onPress={() => setRegistry(true)}
+        />
+        <SettingsRow
           title="Titles & dictation"
           subtitle={name}
           icon="chat"
@@ -138,6 +147,11 @@ function ComputerAgents({ name }: { name: string }) {
           onPress={() => setTitles(true)}
         />
       </SettingsGroup>
+      {registry && (
+        <Sheet title={`ACP registry · ${name}`} onClose={() => setRegistry(false)}>
+          <AcpRegistrySettings />
+        </Sheet>
+      )}
       {titles && (
         <Sheet title={`Titles & dictation · ${name}`} onClose={() => setTitles(false)}>
           <TitleSettings />

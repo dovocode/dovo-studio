@@ -13,6 +13,7 @@ import {
 } from '@dovo/studio-core'
 import { AgentAvatar, Button } from '@dovo/studio-ui'
 import { AgentEditor } from './agent-editor'
+import { AcpRegistrySettings } from './acp-registry'
 export default function AgentsView() {
   const sources = useRuntimeSources()
   return (
@@ -129,6 +130,9 @@ function ComputerAgents({ name }: { name: string }) {
                 </details>
               </article>
             ))}
+          </div>
+          <div className="mt-6">
+            <AcpRegistrySettings />
           </div>
           <div className="mt-6">
             <TitleSettings />
