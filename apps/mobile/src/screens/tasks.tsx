@@ -413,13 +413,11 @@ export default function TasksScreen() {
                   ))}
                 </View>
               )}
-              {overviews.some(
-                (entry) => entry.connected && entry.snapshot?.defaults?.configured === false,
-              ) && (
+              {overviews.length > 0 && (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Set up defaults"
-                  accessibilityHint="Choose default models for tasks and titles"
+                  accessibilityLabel="Choose your models"
+                  accessibilityHint="Manage default models for tasks and titles"
                   onPress={() => router.push('/settings/agents')}
                   style={({ pressed }) => [
                     styles.card,
@@ -435,10 +433,10 @@ export default function TasksScreen() {
                   <Icon name="agents" size={20} color={colors.accent} />
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={[styles.text, { fontWeight: '600', fontSize: 15 }]}>
-                      Choose your default models
+                      Choose your models
                     </Text>
                     <Text style={styles.muted}>
-                      Used for new tasks and titles on your computer.
+                      Default models for new tasks, titles and dictation.
                     </Text>
                   </View>
                   <Icon name="next" size={12} color={colors.muted} />
