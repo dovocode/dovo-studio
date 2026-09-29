@@ -343,12 +343,24 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         const input = decode(
           mutableStruct({
             id: idSchema,
-            action: Schema.Literal('remove', 'up', 'down', 'pause', 'resume'),
+            action: Schema.Literal('remove', 'restore', 'steer', 'up', 'down', 'pause', 'resume'),
             messageId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
         )
-        if (input.action === 'resume') {
+        if (input.action === 'steer') {
+          const queued = s.store
+            .task(input.id)
+            .queue?.find((message) => message.id === input.messageId)
+          if (!queued) throw new HttpError(409, 'This message already started or was removed')
+          yield* s.tasks.steerEffect(
+            input.id,
+            randomUUID(),
+            queued.text,
+            queued.attachments?.map((file) => file.id) ?? [],
+          )
+          s.tasks.queue.change(input.id, 'remove', queued.id)
+        } else if (input.action === 'resume') {
           if (!s.store.task(input.id).queue?.length)
             return yield* serviceResult({
               ok: true,

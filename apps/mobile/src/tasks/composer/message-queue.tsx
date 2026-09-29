@@ -10,6 +10,7 @@ import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
 import { colors, styles } from '../../ui/theme'
 import { useTaskConversation } from '../conversation/state/provider'
+import { mobileWorkflow } from '../../runtime/state/native-effect'
 export function MessageQueue({ task }: { task: Task }) {
   const { connected, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
@@ -27,6 +28,18 @@ export function MessageQueue({ task }: { task: Task }) {
         },
         responses.ok,
       ),
+    )
+  const restore = (message: (typeof queue)[number]) =>
+    act(() =>
+      mobileWorkflow(function* () {
+        yield* callEffect(
+          '/api/tasks/queue',
+          { id: task.id, action: 'restore', messageId: message.id },
+          responses.ok,
+        )
+        actions.draft.update([actions.draft.text, message.text].filter(Boolean).join('\n\n'))
+        setOpen(false)
+      }),
     )
   if (!queue.length && !open) return null
   return (
@@ -104,6 +117,12 @@ export function MessageQueue({ task }: { task: Task }) {
                 )}
               </View>
               <IconButton
+                icon="next"
+                label={`Steer with message ${index + 1}`}
+                disabled={!connected || busy || task.status !== 'running'}
+                onPress={() => change('steer', message.id)}
+              />
+              <IconButton
                 icon="moveUp"
                 label={`Up ${index + 1}`}
                 disabled={!connected || busy || index === 0}
@@ -111,9 +130,9 @@ export function MessageQueue({ task }: { task: Task }) {
               />
               <IconButton
                 icon="trash"
-                label={`Remove ${index + 1}`}
+                label={`Cancel ${index + 1} and return to composer`}
                 disabled={!connected || busy}
-                onPress={() => change('remove', message.id)}
+                onPress={() => restore(message)}
               />
             </View>
           ))}

@@ -62,6 +62,45 @@ it('keeps the checkout locked when the first queued message is removed before ru
   }
 })
 
+it('returns canceled queued text and attachments to the draft', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'draft',
+          title: 'Task',
+          repositoryId: 'repo',
+          agentId: 'agent',
+          status: 'draft',
+          execution: 'main',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: 'Current draft',
+          example: false,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    const file = {
+      id: '00000000-0000-0000-0000-000000000000',
+      name: 'a.txt',
+      mime: 'text/plain',
+      size: 1,
+    }
+    queue.add('draft', 'queued', 'Queued text', [file])
+    queue.change('draft', 'restore', 'queued')
+    expect(store.task('draft').queue).toEqual([])
+    expect(store.task('draft').draft).toBe('Current draft\n\nQueued text')
+    expect(store.task('draft').draftAttachments).toEqual([file])
+  } finally {
+    db.close()
+  }
+})
+
 it('commits the receipt and queued input together and clears receipts only when the task is deleted', () => {
   const db = openDatabase(':memory:')
   try {

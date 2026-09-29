@@ -89,7 +89,7 @@ export class TaskQueue {
       }
     })
   }
-  change(id: string, action: 'remove' | 'up' | 'down' | 'pause', messageId?: string) {
+  change(id: string, action: 'remove' | 'restore' | 'up' | 'down' | 'pause', messageId?: string) {
     const task = this.store.task(id)
     if (action === 'pause') {
       this.store.updateTask(id, (t) => ({
@@ -102,8 +102,8 @@ export class TaskQueue {
     const queue = [...(task.queue ?? [])],
       index = queue.findIndex((m) => m.id === messageId)
     if (index < 0) throw new HttpError(409, 'This message already started or was removed')
-    const removed = action === 'remove' ? queue[index] : undefined
-    if (action === 'remove') queue.splice(index, 1)
+    const removed = action === 'remove' || action === 'restore' ? queue[index] : undefined
+    if (removed) queue.splice(index, 1)
     else {
       const target = index + (action === 'up' ? -1 : 1)
       if (target >= 0 && target < queue.length)
@@ -114,6 +114,17 @@ export class TaskQueue {
       (t) => ({
         ...t,
         queue,
+        ...(action === 'restore' && removed
+          ? {
+              draft: [t.draft, removed.text].filter(Boolean).join('\n\n'),
+              draftAttachments: [
+                ...(t.draftAttachments ?? []),
+                ...(removed.attachments ?? []).filter(
+                  (file) => !t.draftAttachments?.some((draft) => draft.id === file.id),
+                ),
+              ],
+            }
+          : {}),
         checkoutLocked: true,
         restartRecovery:
           !queue.length && t.restartRecovery?.kind === 'queue' ? undefined : t.restartRecovery,

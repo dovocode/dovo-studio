@@ -1,5 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { ArrowUp, ArrowDown, X } from 'lucide-react'
+import { ArrowUp, ArrowDown, CornerUpRight, X } from 'lucide-react'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import {
   Button,
@@ -56,6 +56,14 @@ export function MessageQueue({ task }: { task: Task }) {
                   : ''}
               </QueueItemContent>
               <IconButton
+                label={`Steer with queued message ${index + 1}`}
+                className="size-6"
+                disabled={!connected || busy || task.status !== 'running'}
+                onClick={() => void act('steer', message.id)}
+              >
+                <CornerUpRight size={12} />
+              </IconButton>
+              <IconButton
                 label={`Move queued message ${index + 1} up`}
                 className="size-6"
                 disabled={!connected || busy || index === 0}
@@ -72,10 +80,10 @@ export function MessageQueue({ task }: { task: Task }) {
                 <ArrowDown size={12} />
               </IconButton>
               <IconButton
-                label={`Remove queued message ${index + 1}`}
+                label={`Cancel queued message ${index + 1} and return it to the composer`}
                 className="size-6"
                 disabled={!connected || busy}
-                onClick={() => void act('remove', message.id)}
+                onClick={() => void act('restore', message.id)}
               >
                 <X size={12} />
               </IconButton>
