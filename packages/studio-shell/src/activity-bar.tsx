@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Settings,
   Bot,
@@ -13,7 +14,7 @@ import {
   RefreshCw,
   PanelsTopLeft,
 } from 'lucide-react'
-import type { DesktopUpdateState } from '@dovo/protocol'
+import type { DesktopUpdateState, DesktopUpdateChannel } from '@dovo/protocol'
 import type { StudioIcon, StudioView } from '@dovo/studio-core'
 import { Button, Popover, Tooltip, TooltipContent, TooltipTrigger, cn } from '@dovo/studio-ui'
 
@@ -39,6 +40,7 @@ export function ActivityBar({
   update,
   onUpdate,
   onCheckUpdates,
+  onUpdateChannel,
 }: {
   taskHeader?: boolean
   views: readonly StudioView[]
@@ -47,7 +49,10 @@ export function ActivityBar({
   update?: DesktopUpdateState
   onUpdate?: () => void
   onCheckUpdates?: () => void
+  onUpdateChannel?: (channel: DesktopUpdateChannel) => Promise<void>
 }) {
+  const [changingChannel, setChangingChannel] = useState(false)
+  const [channelError, setChannelError] = useState('')
   const settings = views.filter((view) => view.navigationGroup === 'settings')
   const settingsActive = settings.some((view) => view.id === activeId)
   const item = (
@@ -93,8 +98,74 @@ export function ActivityBar({
           ),
         )}
       <div className="studio-navigation-settings">
-        {onCheckUpdates &&
-          item('check-updates', 'Check for Updates', RefreshCw, false, onCheckUpdates)}
+        {onCheckUpdates && (
+          <Popover.Root>
+            <Popover.Trigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Check for Updates"
+                className="studio-navigation-item"
+              >
+                <RefreshCw size={18} strokeWidth={1.7} aria-hidden="true" />
+                <span className="studio-navigation-label">Check for Updates</span>
+              </Button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                side="right"
+                sideOffset={10}
+                className="z-50 w-64 rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg"
+                aria-label="Update settings"
+              >
+                <h2 className="text-sm font-semibold">Check for Updates</h2>
+                {!!onUpdateChannel && (
+                  <label className="mt-3 block text-xs">
+                    Release channel
+                    <select
+                      className="mt-1 w-full rounded-md border bg-background p-2 text-sm"
+                      value={update?.channel ?? 'stable'}
+                      disabled={
+                        changingChannel ||
+                        ['downloading', 'downloaded', 'restarting'].includes(update?.status ?? '')
+                      }
+                      onChange={(event) => {
+                        const channel = event.target.value
+                        if (channel !== 'stable' && channel !== 'nightly') return
+                        setChangingChannel(true)
+                        setChannelError('')
+                        void onUpdateChannel(channel)
+                          .catch((error: unknown) => {
+                            setChannelError(error instanceof Error ? error.message : String(error))
+                          })
+                          .finally(() => setChangingChannel(false))
+                      }}
+                    >
+                      <option value="stable">Stable</option>
+                      <option value="nightly">Nightly</option>
+                    </select>
+                  </label>
+                )}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Nightly includes the newest changes and may be less stable.
+                </p>
+                {!!channelError && (
+                  <p role="alert" className="mt-2 text-xs text-destructive">
+                    {channelError}
+                  </p>
+                )}
+                <Button
+                  className="mt-3 w-full"
+                  size="sm"
+                  disabled={changingChannel}
+                  onClick={onCheckUpdates}
+                >
+                  {changingChannel ? 'Checking…' : 'Check updates'}
+                </Button>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
+        )}
         {!!onUpdate && !!update && update.status !== 'idle' && update.status !== 'error' && (
           <Popover.Root>
             <Popover.Trigger asChild>

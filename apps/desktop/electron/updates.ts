@@ -1,7 +1,8 @@
-import { decode } from '@dovo/protocol'
+import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
+import { decode, fetchRuntimeReleases } from '@dovo/protocol'
 import { app, dialog, Menu, BrowserWindow, shell, type MenuItemConstructorOptions } from 'electron'
 import updater from 'electron-updater'
-import { snapshotSchema, type DesktopUpdateState } from '@dovo/protocol'
+import { snapshotSchema, type DesktopUpdateChannel, type DesktopUpdateState } from '@dovo/protocol'
 import { startLocalRuntime } from './local-runtime.js'
 const { autoUpdater } = updater
 export function registerUpdates(
@@ -16,13 +17,27 @@ export function registerUpdates(
     : nightly
       ? 'Dovo Studio (Nightly)'
       : 'Dovo Studio'
-  autoUpdater.allowPrerelease = nightly
+  const savedChannel = readLocalSettingsSection('updates')
+  let channel: DesktopUpdateChannel =
+    savedChannel === 'stable' || savedChannel === 'nightly'
+      ? savedChannel
+      : nightly
+        ? 'nightly'
+        : 'stable'
+  const configureChannel = () => {
+    const feed = channel === 'nightly' ? 'nightly' : 'latest'
+    autoUpdater.channel =
+      process.platform === 'win32' && process.arch === 'arm64' ? `${feed}-arm64` : feed
+    autoUpdater.allowPrerelease = channel === 'nightly'
+    autoUpdater.allowDowngrade = channel === 'stable' && nightly
+  }
+  configureChannel()
   autoUpdater.autoDownload = false
   let busy = false
-  let state: DesktopUpdateState = { status: 'idle' }
+  let state: DesktopUpdateState = { status: 'idle', channel }
   let checking: Promise<boolean> | undefined
   const publish = (next: DesktopUpdateState) => {
-    state = next
+    state = { ...next, channel }
     for (const window of BrowserWindow.getAllWindows())
       window.webContents.send('updates:state', state)
   }
@@ -61,8 +76,18 @@ export function registerUpdates(
     if (state.status === 'downloading' || state.status === 'downloaded')
       return Promise.resolve(true)
     if (checking) return checking
-    checking = autoUpdater
-      .checkForUpdates()
+    checking = (async () => {
+      // GitHub's prerelease selector matches tag channels, not architecture-suffixed feeds.
+      if (process.platform === 'win32' && process.arch === 'arm64') {
+        const release = (await fetchRuntimeReleases())[channel]
+        if (!release) throw new Error(`No ${channel} desktop release is published`)
+        autoUpdater.setFeedURL({
+          provider: 'generic',
+          url: `https://github.com/dovocode/dovo-studio/releases/download/v${release.version}/`,
+        })
+      }
+      return autoUpdater.checkForUpdates()
+    })()
       .then((result) => {
         if (result?.isUpdateAvailable) {
           const notes = notesText(result.updateInfo.releaseNotes)
@@ -132,7 +157,7 @@ export function registerUpdates(
       })
       if (answer.response === 0)
         await shell.openExternal(
-          nightly
+          channel === 'nightly'
             ? 'https://github.com/dovocode/dovo-studio/releases?q=nightly'
             : 'https://github.com/dovocode/dovo-studio/releases/latest',
         )
@@ -322,6 +347,17 @@ export function registerUpdates(
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
   return {
     check,
+    setChannel: async (next: unknown) => {
+      if (next !== 'stable' && next !== 'nightly') throw new Error('Invalid update channel')
+      if (next === channel) return
+      if (busy || checking || ['downloading', 'downloaded', 'restarting'].includes(state.status))
+        throw new Error('Finish the current update before switching channels')
+      writeLocalSettingsSection('updates', () => next)
+      channel = next
+      configureChannel()
+      publish({ status: 'idle' })
+      await refresh()
+    },
     state: () => state,
     refresh,
     install: () => check(true),

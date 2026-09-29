@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('dovo', {
     state: (): Promise<import('@dovo/protocol').DesktopUpdateState> =>
       ipcRenderer.invoke('updates:state'),
     check: (): Promise<void> => ipcRenderer.invoke('updates:check'),
+    setChannel: (channel: import('@dovo/protocol').DesktopUpdateChannel): Promise<void> =>
+      ipcRenderer.invoke('updates:channel', channel),
     install: (): Promise<void> => ipcRenderer.invoke('updates:install'),
     subscribe: (listener: (state: import('@dovo/protocol').DesktopUpdateState) => void) => {
       const onState = (

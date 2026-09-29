@@ -1,3 +1,4 @@
+import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 const f = vi.hoisted(() => ({
   open: vi.fn<(url: string) => Promise<void>>(async (_url) => {}),
@@ -10,6 +11,7 @@ const f = vi.hoisted(() => ({
     ) => void
   >(),
   install: vi.fn<() => void>(),
+  feed: vi.fn<(options: unknown) => void>(),
   message: vi.fn<(options: unknown) => Promise<{ response: number }>>(async () => ({
     response: 0,
   })),
@@ -17,6 +19,10 @@ const f = vi.hoisted(() => ({
   notes: 'Faster setup and fixes' as string | undefined,
   menu: undefined as unknown,
   states: [] as unknown[],
+}))
+vi.mock('@dovo/protocol/local-settings', () => ({
+  readLocalSettingsSection: vi.fn<typeof readLocalSettingsSection>(() => undefined),
+  writeLocalSettingsSection: vi.fn<typeof writeLocalSettingsSection>(),
 }))
 vi.mock('electron', () => ({
   app: { isPackaged: true, getVersion: () => f.version },
@@ -63,6 +69,7 @@ vi.mock('electron-updater', () => ({
           bytesPerSecond: 1_000_000,
         })
       },
+      setFeedURL: f.feed,
       quitAndInstall: f.install,
     },
   },
@@ -75,6 +82,7 @@ afterEach(() => {
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
   vi.clearAllMocks()
+  vi.mocked(readLocalSettingsSection).mockReturnValue(undefined)
   f.listeners.clear()
   f.version = 'fixture'
   f.notes = 'Faster setup and fixes'
@@ -283,4 +291,69 @@ it('refuses a remote restart without the requested download and reports active w
   await expect(updates.remote('restart', 'next')).rejects.toThrow('Finish running')
   expect(f.install).not.toHaveBeenCalled()
   expect(f.message).not.toHaveBeenCalled()
+})
+
+it('persists a selected channel and clears release metadata from the previous channel', async () => {
+  const { registerUpdates } = await import('./updates')
+  const updater = (await import('electron-updater')).default.autoUpdater
+  const updates = registerUpdates('/unused', async () => async () => {})
+  await updates.refresh()
+  await updates.setChannel('nightly')
+  expect(updater.channel).toBe(
+    process.platform === 'win32' && process.arch === 'arm64' ? 'nightly-arm64' : 'nightly',
+  )
+  expect(updater.allowPrerelease).toBe(true)
+  expect(updates.state().channel).toBe('nightly')
+  expect(writeLocalSettingsSection).toHaveBeenCalledWith('updates', expect.any(Function))
+  expect(f.states).toContainEqual({ status: 'idle', channel: 'nightly' })
+  await expect(updates.setChannel('invalid')).rejects.toThrow('Invalid update channel')
+})
+
+it('restores the saved channel instead of following the installed build', async () => {
+  vi.mocked(readLocalSettingsSection).mockReturnValue('stable')
+  f.version = '0.0.7-nightly.42'
+  const { registerUpdates } = await import('./updates')
+  const updater = (await import('electron-updater')).default.autoUpdater
+  const updates = registerUpdates('/unused', async () => async () => {})
+  expect(updates.state().channel).toBe('stable')
+  expect(updater.allowPrerelease).toBe(false)
+  expect(updater.allowDowngrade).toBe(true)
+})
+
+it('keeps a downloaded update on its selected channel until installation', async () => {
+  f.message.mockResolvedValueOnce({ response: 1 })
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => async () => {})
+  await updates.install()
+  await expect(updates.setChannel('nightly')).rejects.toThrow('Finish the current update')
+  expect(updates.state().channel).toBe('stable')
+  expect(writeLocalSettingsSection).not.toHaveBeenCalled()
+})
+
+it('uses the architecture-specific feed when checking Windows ARM nightly releases', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+  vi.spyOn(process, 'arch', 'get').mockReturnValue('arm64')
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (input) =>
+      (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).endsWith(
+        '/latest',
+      )
+        ? new Response(null, { status: 404 })
+        : Response.json([
+            {
+              tag_name: 'v0.0.7-nightly.43',
+              html_url: 'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.7-nightly.43',
+            },
+          ]),
+    ),
+  )
+  const { registerUpdates } = await import('./updates')
+  const updater = (await import('electron-updater')).default.autoUpdater
+  await registerUpdates('/unused', async () => async () => {}).setChannel('nightly')
+  expect(updater.channel).toBe('nightly-arm64')
+  expect(f.feed).toHaveBeenCalledWith({
+    provider: 'generic',
+    url: 'https://github.com/dovocode/dovo-studio/releases/download/v0.0.7-nightly.43/',
+  })
 })

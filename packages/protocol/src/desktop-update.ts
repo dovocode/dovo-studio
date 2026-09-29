@@ -1,4 +1,7 @@
+export type DesktopUpdateChannel = 'stable' | 'nightly'
+
 export type DesktopUpdateState = {
+  channel?: DesktopUpdateChannel
   status: 'idle' | 'available' | 'downloading' | 'downloaded' | 'restarting' | 'error'
   version?: string
   error?: string
@@ -12,6 +15,7 @@ export type DesktopUpdateState = {
 export type DesktopUpdateBridge = {
   state: () => Promise<DesktopUpdateState>
   check: () => Promise<void>
+  setChannel: (channel: DesktopUpdateChannel) => Promise<void>
   install: () => Promise<void>
   subscribe: (listener: (state: DesktopUpdateState) => void) => () => void
 }

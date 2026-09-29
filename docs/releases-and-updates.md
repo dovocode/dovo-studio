@@ -6,17 +6,19 @@ and Apple signing team between iPhone builds.
 
 ## Desktop
 
-Installed builds use **Dovo Studio → Check for Updates…** (also in Help). Stable checks stable
-GitHub Releases; **Dovo Studio (Nightly)** checks the Nightly prerelease channel. Source launches
-show **Dovo Studio (Dev)** in the window and menu. The update icon opens release notes and live
-download progress, including transferred bytes and speed. One action downloads and restarts when
-active work has finished. Installation checks the local runtime and waits if tasks or automations
-are running. Choosing Later does not install unexpectedly on quit. Remote runtimes are not
-restarted. Source builds explain how to update the checkout instead of attempting an installer
-update. Stable and Nightly have separate app identities and installers but use the same workspace
-and pairing data. Run one version's local runtime at a time; opening the other version connects to
-the existing compatible runtime without restarting it. Incompatible runtime protocol versions
-require a runtime update before the other app can connect.
+Installed builds use **Dovo Studio → Check for Updates…** (also in Help). The sidebar's **Check for
+Updates** panel has a **Release channel** dropdown for Stable or Nightly. The choice is saved in
+`~/.dovo/settings.json` and applies to sidebar, menu and automatic checks. It defaults to the
+installed build's channel. Finish installing a downloaded update before switching channels. Source
+launches show **Dovo Studio (Dev)** in the window and menu. The update icon opens release notes and
+live download progress, including transferred bytes and speed. After download, choose **Restart and
+install** or **Later**. Installation checks the local runtime and waits if tasks or automations are
+running. Choosing Later does not install unexpectedly on quit. Remote runtimes are not restarted.
+Source builds explain how to update the checkout instead of attempting an installer update. Stable
+and Nightly have separate app identities and installers but use the same workspace and pairing data.
+Run one version's local runtime at a time; opening the other version connects to the existing
+compatible runtime without restarting it. Incompatible runtime protocol versions require a runtime
+update before the other app can connect.
 
 The feed is the public `dovocode/dovo-studio` GitHub repository. A source push alone is not a binary
 release. The Release workflow produces:
