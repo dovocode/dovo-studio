@@ -8,17 +8,22 @@ import { questionPromptSchema } from '@dovo/protocol'
 import { createOpencodeClient, type PermissionRuleset } from '@opencode-ai/sdk/v2'
 import type { AgentAdapter } from '../../execution/types.js'
 import { opencodeV2Adapter, isOpencodeV2 } from './opencode-v2.js'
+const clients = new Map<string, ReturnType<typeof createOpencodeClient>>()
 function client(address: string, cwd?: string) {
-  return createOpencodeClient({
+  const authorization = process.env.OPENCODE_SERVER_PASSWORD
+    ? `Basic ${Buffer.from(`${process.env.OPENCODE_SERVER_USERNAME || 'opencode'}:${process.env.OPENCODE_SERVER_PASSWORD}`).toString('base64')}`
+    : undefined
+  const key = JSON.stringify([address, cwd, authorization])
+  const existing = clients.get(key)
+  if (existing) return existing
+  const created = createOpencodeClient({
     baseUrl: address || 'http://127.0.0.1:4096',
     directory: cwd,
     throwOnError: true,
-    headers: process.env.OPENCODE_SERVER_PASSWORD
-      ? {
-          Authorization: `Basic ${Buffer.from(`${process.env.OPENCODE_SERVER_USERNAME || 'opencode'}:${process.env.OPENCODE_SERVER_PASSWORD}`).toString('base64')}`,
-        }
-      : {},
+    headers: authorization ? { Authorization: authorization } : {},
   })
+  clients.set(key, created)
+  return created
 }
 /** Resolves false once the event stream is torn down, so a pending approval card cannot keep
  * the adapter's cleanup waiting after the turn itself already failed. */

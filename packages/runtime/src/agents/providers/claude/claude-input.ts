@@ -3,8 +3,8 @@ import { Schema } from 'effect'
 import { isImageAttachment } from '@dovo/protocol'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentRun } from '../../execution/types.js'
-export async function* claudeInput(run: AgentRun): AsyncGenerator<SDKUserMessage> {
-  yield {
+export function claudeMessage(run: AgentRun): SDKUserMessage {
+  return {
     type: 'user',
     parent_tool_use_id: null,
     ...(run.sessionId
@@ -33,4 +33,7 @@ export async function* claudeInput(run: AgentRun): AsyncGenerator<SDKUserMessage
       ],
     },
   }
+}
+export async function* claudeInput(run: AgentRun): AsyncGenerator<SDKUserMessage> {
+  yield claudeMessage(run)
 }

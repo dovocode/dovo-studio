@@ -440,7 +440,7 @@ it('cancels during checkout preparation and retries the same unfinished task', a
     run: execute,
   })
   const id = s.jobs.start('flow')
-  await waitForJob(() => expect(s.store.get().tasks[0]?.activity).toBe('Preparing checkout'))
+  await waitForJob(() => expect(s.store.get().tasks[0]?.runPhase).toBe('preparing'))
   const taskId = s.jobs.list()[0].taskIds[0]
   s.jobs.cancel(id)
   expect(() => s.jobs.retry(id)).toThrow('Wait for the current step to stop')

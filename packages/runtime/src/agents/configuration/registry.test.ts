@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import type { AcpLaunch } from '../execution/types.js'
 import { AgentRegistry } from './registry.js'
-import { acpAdapter } from '../providers/acp/acp.js'
+import * as acpModule from '../providers/acp/acp.js'
+import type { AgentAdapter } from '../execution/types.js'
 import { decode, commandsSchema } from '@dovo/protocol'
 
 afterEach(() => vi.restoreAllMocks())
@@ -11,7 +12,13 @@ it('resolves each managed ACP independently while preserving custom executables'
     return { command: `/managed/${id}`, args: ['--acp'], env: { AGENT: id } }
   })
   const registry = new AgentRegistry(() => decode(commandsSchema, {}), resolve)
-  const models = vi.spyOn(acpAdapter, 'models').mockResolvedValue({ models: [], reasoning: [] })
+  const models = vi
+    .fn<NonNullable<AgentAdapter['models']>>()
+    .mockResolvedValue({ models: [], reasoning: [] })
+  vi.spyOn(acpModule, 'createAcpAdapter').mockImplementation(() => ({
+    ...acpModule.acpAdapter,
+    models,
+  }))
   try {
     const adapter = await registry.get('acp')
     for (const id of ['first', 'second']) {

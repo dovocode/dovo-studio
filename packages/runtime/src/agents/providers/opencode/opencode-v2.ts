@@ -11,8 +11,17 @@ const headers = (): Record<string, string> =>
         Authorization: `Basic ${Buffer.from(`${process.env.OPENCODE_SERVER_USERNAME || 'opencode'}:${process.env.OPENCODE_SERVER_PASSWORD}`).toString('base64')}`,
       }
     : {}
-const client = (address: string) =>
-  OpenCode.make({ baseUrl: addressOf(address), headers: headers() })
+const clients = new Map<string, ReturnType<typeof OpenCode.make>>()
+const client = (address: string) => {
+  const baseUrl = addressOf(address)
+  const authorization = headers()
+  const key = JSON.stringify([baseUrl, authorization])
+  const existing = clients.get(key)
+  if (existing) return existing
+  const created = OpenCode.make({ baseUrl, headers: authorization })
+  clients.set(key, created)
+  return created
+}
 
 /** A V1 server has no /api/info route. Authentication errors must not silently select V1. */
 export async function isOpencodeV2(address: string): Promise<boolean> {

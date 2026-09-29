@@ -36,7 +36,7 @@ if (${slowShutdown}) {
 const send = x => process.stdout.write(JSON.stringify(x)+'\\n');
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);if(m.id===undefined)return;
- fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(m)+'\\n');
+ fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({...m,pid:process.pid})+'\\n');
  let result={};
  if(m.method==='initialize')result={userAgent:'codex/${version}'};
  if(m.method==='thread/start'||m.method==='thread/resume')result={thread:{id:'thread',daybreakEnabled:${savedDaybreak}},approvalsReviewer:'user'};
@@ -77,6 +77,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
         decode(
           mutableStruct({
             method: Schema.String,
+            pid: Schema.Number,
             params: Schema.mutable(
               Schema.Record({
                 key: Schema.String,
@@ -92,6 +93,21 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
     requests,
   }
 }
+it('reuses the Codex app-server for follow-up turns and closes it with the adapter', async () => {
+  const { run, requests } = await fixture()
+  run.taskId = 'warm-task'
+  try {
+    await codexAdapter.run(run)
+    run.sessionId = 'thread'
+    await codexAdapter.run(run)
+    const rows = await requests()
+    expect(new Set(rows.map((row) => row.pid)).size).toBe(1)
+    expect(rows.filter((row) => row.method === 'initialize')).toHaveLength(1)
+    expect(rows.filter((row) => row.method === 'turn/start')).toHaveLength(2)
+  } finally {
+    await codexAdapter.dispose?.()
+  }
+})
 it('compacts an existing thread without starting a model turn', async () => {
   const { run, requests } = await fixture()
   run.sessionId = 'thread'

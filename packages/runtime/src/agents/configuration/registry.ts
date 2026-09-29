@@ -13,13 +13,16 @@ export class AgentRegistry {
     private acpLaunch?: (id: string) => AcpLaunch,
   ) {
     const providers = [
-      ['codex', () => import('../providers/codex/codex.js').then((m) => m.codexAdapter)],
+      ['codex', () => import('../providers/codex/codex.js').then((m) => m.createCodexAdapter())],
       [
         'opencode',
         () => import('../providers/opencode/opencode.js').then((m) => m.opencodeAdapter),
       ],
-      ['claude', () => import('../providers/claude/claude.js').then((m) => m.claudeAdapter)],
-      ['acp', () => import('../providers/acp/acp.js').then((m) => m.acpAdapter)],
+      [
+        'claude',
+        () => import('../providers/claude/claude.js').then((m) => m.createClaudeAdapter()),
+      ],
+      ['acp', () => import('../providers/acp/acp.js').then((m) => m.createAcpAdapter())],
     ] as const
     for (const [id, load] of providers)
       this.host.register({
@@ -78,7 +81,13 @@ export class AgentRegistry {
   get(provider: Agent['provider']) {
     return runClientEffect(this.getEffect(provider))
   }
-  dispose() {
-    return this.host.dispose()
+  async dispose() {
+    const adapters = [...this.adapters.values()]
+    const results = await Promise.allSettled(adapters.map(async (adapter) => adapter.dispose?.()))
+    const host = await Promise.allSettled([this.host.dispose()])
+    const failures = [...results, ...host].flatMap((result) =>
+      result.status === 'rejected' ? [result.reason] : [],
+    )
+    if (failures.length) throw new AggregateError(failures, 'Could not close all agent providers')
   }
 }

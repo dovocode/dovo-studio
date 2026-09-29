@@ -412,6 +412,7 @@ ${
           controller.signal.throwIfAborted()
           yield* runtimeOperation(() =>
             adapter.run({
+              taskId: id,
               agent: {
                 ...agent,
                 instructions: [

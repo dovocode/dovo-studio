@@ -12,6 +12,8 @@ export interface AcpLaunch {
   env: Record<string, string>
 }
 export interface AgentRun {
+  /** Stable task identity for a warm provider transport. Utility runs omit it. */
+  taskId?: string
   /** Non-blocking message forms: answers arrive as a new user message, possibly after this turn. */
   onQuestions?: (prompt: QuestionPrompt) => void
   /** Available only while the harness accepts input into its active turn. */
@@ -44,4 +46,5 @@ export interface AgentAdapter {
   models?: (agent: AgentDiscovery, launch?: AcpLaunch) => Promise<ModelCatalog>
   run: (run: AgentRun) => Promise<void>
   probe: (agent: Agent, launch?: AcpLaunch) => Promise<ProviderStatus>
+  dispose?: () => Promise<void>
 }

@@ -157,6 +157,24 @@ it('prefers replay-free resume and closes the active session when supported', as
   expect(messages.some((item: { method: string }) => item.method === 'session/load')).toBe(false)
   expect(messages.some((item: { method: string }) => item.method === 'session/close')).toBe(true)
 })
+it('keeps the ACP connection and session for a follow-up turn', async () => {
+  const { cwd, record, launch } = await fixture(false, true)
+  const first = run(cwd, launch, { taskId: 'warm-acp-task' })
+  const second = run(cwd, launch, { taskId: 'warm-acp-task', sessionId: 'session' })
+  try {
+    await acpAdapter.run(first.run)
+    await acpAdapter.run(second.run)
+    const messages = JSON.parse(await readFile(record, 'utf8')) as Array<{ method: string }>
+    expect(messages.filter((item) => item.method === 'initialize')).toHaveLength(1)
+    expect(messages.filter((item) => item.method === 'session/new')).toHaveLength(1)
+    expect(messages.filter((item) => item.method === 'session/prompt')).toHaveLength(2)
+    expect(messages.some((item) => item.method === 'session/close')).toBe(false)
+    expect(first.output).toEqual(['new'])
+    expect(second.output).toEqual(['new'])
+  } finally {
+    await acpAdapter.dispose?.()
+  }
+})
 
 it('selects the restrictive mode for a tools-none turn', async () => {
   const { cwd, launch } = await fixture()
