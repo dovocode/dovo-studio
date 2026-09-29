@@ -68,7 +68,7 @@ export default function UsageScreen() {
     )
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="Usage" />
+      <ScreenHeader title="Usage & limits" />
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: 8, gap: 24 }]}>
         <View style={{ gap: 8 }}>
           <Text style={styles.title}>
@@ -87,36 +87,56 @@ export default function UsageScreen() {
             onChange={(value) => setPeriod(value as keyof typeof periods)}
           />
         </View>
-        {!!limits.length && (
-          <SettingsGroup title="Plan limits">
-            {limits.map((limit) => (
-              <View
-                key={`${limit.computer}:${limit.provider}:${limit.window}`}
-                style={{ padding: 12, gap: 4 }}
-              >
-                <Text style={styles.text}>
-                  {limit.computer} · {limit.provider === 'codex' ? 'Codex' : 'Claude'} ·{' '}
-                  {limit.window}: {Math.round(100 - limit.usedPercent)}% left
+        <SettingsGroup
+          title="Account limits"
+          footer="Limits are reported by Codex and Claude agents on connected computers. API-key usage may not have subscription windows."
+        >
+          {(['codex', 'claude'] as const).map((provider) => {
+            const windows = limits.filter((limit) => limit.provider === provider)
+            return (
+              <View key={provider} style={{ padding: 12, gap: 12 }}>
+                <Text style={[styles.text, { fontWeight: '600' }]}>
+                  {provider === 'codex' ? 'Codex' : 'Claude'}
                 </Text>
-                <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.border }}>
-                  <View
-                    style={{
-                      height: 6,
-                      borderRadius: 3,
-                      width: `${limit.usedPercent}%`,
-                      backgroundColor: colors.accent,
-                    }}
-                  />
-                </View>
-                {!!limit.resetsAt && (
+                {windows.length ? (
+                  windows.map((limit) => {
+                    const remaining = Math.max(0, Math.min(100, 100 - limit.usedPercent))
+                    return (
+                      <View key={`${limit.computer}:${limit.window}`} style={{ gap: 5 }}>
+                        <Text style={styles.text}>
+                          {limit.window} · {Math.round(remaining)}% left
+                        </Text>
+                        <View
+                          style={{ height: 7, borderRadius: 4, backgroundColor: colors.border }}
+                        >
+                          <View
+                            style={{
+                              height: 7,
+                              borderRadius: 4,
+                              width: `${remaining}%`,
+                              backgroundColor: colors.accent,
+                            }}
+                          />
+                        </View>
+                        <Text style={styles.muted}>
+                          {limit.computer} · Updated {new Date(limit.updatedAt).toLocaleString()}
+                          {limit.resetsAt
+                            ? ` · Resets ${new Date(limit.resetsAt * 1000).toLocaleString()}`
+                            : ''}
+                        </Text>
+                      </View>
+                    )
+                  })
+                ) : (
                   <Text style={styles.muted}>
-                    Resets {new Date(limit.resetsAt * 1000).toLocaleString()}
+                    No recent limits reported. Run a {provider === 'codex' ? 'Codex' : 'Claude'}{' '}
+                    turn to receive them.
                   </Text>
                 )}
               </View>
-            ))}
-          </SettingsGroup>
-        )}
+            )
+          })}
+        </SettingsGroup>
         <SettingsGroup
           title="By model"
           footer="Tokens appear for agents that report them; * marks totals that miss some turns."

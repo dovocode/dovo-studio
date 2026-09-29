@@ -44,6 +44,14 @@ export default function SettingsScreen() {
             tint="#5ac8bd"
             disabled={!profiles.length}
             onPress={() => router.push('/settings/resources')}
+          />
+          <SettingsRow
+            title="Usage & limits"
+            subtitle="Codex and Claude quotas, agent time and tokens"
+            icon="jobs"
+            tint="#f3bb75"
+            disabled={!profiles.length}
+            onPress={() => router.push('/settings/usage')}
             last
           />
         </SettingsGroup>
@@ -102,13 +110,6 @@ export default function SettingsScreen() {
             subtitle="Launch tab, sorting, time, conversation and merging"
             icon="settings"
             onPress={() => router.push('/settings/general')}
-          />
-          <SettingsRow
-            title="Usage"
-            subtitle="Agent time, turns and tokens"
-            icon="jobs"
-            disabled={!profiles.length}
-            onPress={() => router.push('/settings/usage')}
           />
           <SettingsRow
             title="App & updates"

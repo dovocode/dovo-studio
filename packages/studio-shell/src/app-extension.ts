@@ -60,11 +60,12 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'usage',
       navigationGroup: 'settings',
-      title: 'Usage',
+      title: 'Usage & limits',
       icon: 'runtime',
-      order: 0.35,
+      order: 0.12,
       settingsSection: 'app',
-      keywords: 'usage tokens time turns models cost statistics activity week month',
+      keywords:
+        'usage limits quota allowance reset codex claude tokens time turns models statistics week month',
       load: () => import('./app-settings/usage'),
     },
     {

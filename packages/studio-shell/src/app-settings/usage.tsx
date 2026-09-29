@@ -91,7 +91,7 @@ export default function UsageSettings() {
     )
   return (
     <SettingsPage
-      title="Usage"
+      title="Usage & limits"
       description="Agent turns on your computers. Tokens appear for agents that report them; * marks totals that miss some turns."
     >
       <div className="flex items-center justify-between gap-3">
@@ -119,34 +119,78 @@ export default function UsageSettings() {
           onChange={setPeriod}
         />
       </div>
-      {!!limits.length && (
-        <SettingsGroup title="Plan limits">
-          <div className="space-y-3 py-2">
-            {limits.map((limit) => (
-              <div key={`${limit.computer}:${limit.provider}:${limit.window}`} className="text-xs">
-                <div className="flex justify-between gap-3">
-                  <span>
-                    {limit.computer} · {limit.provider === 'codex' ? 'Codex' : 'Claude'} ·{' '}
-                    {limit.window}
+      <section className="space-y-2">
+        <div>
+          <h2 className="text-sm font-medium">Account limits</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Codex and Claude subscription windows reported by connected agents.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {(['codex', 'claude'] as const).map((provider) => {
+            const windows = limits.filter((limit) => limit.provider === provider)
+            return (
+              <div key={provider} className="rounded-xl border bg-card/60 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold">
+                    {provider === 'codex' ? 'Codex' : 'Claude'}
+                  </h3>
+                  <span className="text-[0.6875rem] text-muted-foreground">
+                    {windows.length
+                      ? `${windows.length} ${windows.length === 1 ? 'window' : 'windows'}`
+                      : 'No reading'}
                   </span>
-                  <span className="tabular-nums">{Math.round(100 - limit.usedPercent)}% left</span>
                 </div>
-                <div className="mt-1 h-1.5 rounded bg-muted">
-                  <div
-                    className="h-full rounded bg-primary"
-                    style={{ width: `${limit.usedPercent}%` }}
-                  />
-                </div>
-                {limit.resetsAt && (
-                  <div className="mt-1 text-muted-foreground">
-                    Resets {new Date(limit.resetsAt * 1000).toLocaleString()}
+                {windows.length ? (
+                  <div className="mt-4 space-y-4">
+                    {windows.map((limit) => {
+                      const remaining = Math.max(0, Math.min(100, 100 - limit.usedPercent))
+                      return (
+                        <div key={`${limit.computer}:${limit.window}`} className="text-xs">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="font-medium">{limit.window}</span>
+                            <span className="font-semibold tabular-nums">
+                              {Math.round(remaining)}% left
+                            </span>
+                          </div>
+                          <div
+                            role="progressbar"
+                            aria-label={`${provider} ${limit.window} remaining on ${limit.computer}`}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={Math.round(remaining)}
+                            className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+                          >
+                            <div
+                              className="h-full rounded-full bg-primary"
+                              style={{ width: `${remaining}%` }}
+                            />
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap justify-between gap-x-2 text-[0.6875rem] text-muted-foreground">
+                            <span>
+                              {limit.computer} · Updated{' '}
+                              {new Date(limit.updatedAt).toLocaleString()}
+                            </span>
+                            {limit.resetsAt && (
+                              <span>Resets {new Date(limit.resetsAt * 1000).toLocaleString()}</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
+                ) : (
+                  <p className="mt-4 text-xs leading-5 text-muted-foreground">
+                    No recent limits reported. Run a {provider === 'codex' ? 'Codex' : 'Claude'}{' '}
+                    turn on a connected computer to receive its account limits. API-key usage may
+                    not have subscription windows.
+                  </p>
                 )}
               </div>
-            ))}
-          </div>
-        </SettingsGroup>
-      )}
+            )
+          })}
+        </div>
+      </section>
       <SettingsGroup title="By model">
         <Rows rows={summary.models} />
       </SettingsGroup>

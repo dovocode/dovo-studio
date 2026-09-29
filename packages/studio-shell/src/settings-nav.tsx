@@ -1,7 +1,45 @@
 import type { SettingsSection, StudioView } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Input } from '@dovo/studio-ui'
-import { Search } from 'lucide-react'
+import {
+  Archive,
+  Bell,
+  Bot,
+  ChartNoAxesCombined,
+  ChevronRight,
+  Command,
+  GitBranch,
+  GitPullRequest,
+  HardDrive,
+  Keyboard,
+  ListTodo,
+  MonitorSmartphone,
+  Palette,
+  Search,
+  Settings2,
+  Terminal,
+  Wrench,
+} from 'lucide-react'
+
+const icons: Record<string, typeof Search> = {
+  general: Settings2,
+  notifications: Bell,
+  appearance: Palette,
+  diffs: GitBranch,
+  shortcuts: Keyboard,
+  usage: ChartNoAxesCombined,
+  agents: Bot,
+  resources: Wrench,
+  'source-control': GitBranch,
+  'pull-request-settings': GitPullRequest,
+  'task-defaults': ListTodo,
+  commands: Terminal,
+  worktrees: HardDrive,
+  runtime: MonitorSmartphone,
+  'running-tasks': ListTodo,
+  activity: Command,
+  'archived-tasks': Archive,
+}
 
 const headings: readonly [SettingsSection | 'more', string][] = [
   ['app', 'App'],
@@ -35,10 +73,10 @@ export function SettingsNav({
   return (
     <nav
       aria-label="Settings sections"
-      className="flex w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r bg-sidebar px-3 py-4"
+      className="flex w-52 shrink-0 flex-col gap-5 overflow-y-auto border-r bg-sidebar/70 px-3 py-4 lg:w-60"
     >
       <div className="px-1">
-        <h1 className="mb-3 text-sm font-semibold">Settings</h1>
+        <h1 className="mb-3 px-1 text-base font-semibold tracking-tight">Settings</h1>
         {/* Buttons and inputs inherit their font size (see studio-ui styles). */}
         <div className="relative text-[0.8125rem]">
           <Search
@@ -54,7 +92,7 @@ export function SettingsNav({
               if (event.key === 'Enter' && matches[0]) onSelect(matches[0].id)
               if (event.key === 'Escape') setQuery('')
             }}
-            className="h-8 pl-7"
+            className="h-9 rounded-lg border-border/70 bg-background/70 pl-8"
           />
         </div>
       </div>
@@ -64,25 +102,36 @@ export function SettingsNav({
           .sort((a, b) => a.order - b.order)
         if (!items.length) return null
         return (
-          <div key={section} className="space-y-0.5 text-sm">
-            <h2 className="px-2 pb-1 text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground">
+          <div key={section} className="space-y-1 text-sm">
+            <h2 className="px-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
               {label}
             </h2>
-            {items.map((view) => (
-              <button
-                key={view.id}
-                type="button"
-                aria-current={activeId === view.id ? 'page' : undefined}
-                onClick={() => onSelect(view.id)}
-                className={`block w-full truncate rounded-md px-2 py-1.5 text-left transition-colors ${
-                  activeId === view.id
-                    ? 'bg-muted font-medium text-foreground'
-                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-                }`}
-              >
-                {view.title}
-              </button>
-            ))}
+            {items.map((view) => {
+              const Icon = icons[view.id] ?? Settings2
+              const active = activeId === view.id
+              return (
+                <button
+                  key={view.id}
+                  type="button"
+                  aria-current={active ? 'page' : undefined}
+                  onClick={() => onSelect(view.id)}
+                  className={`group flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[0.8125rem] transition-colors ${
+                    active
+                      ? 'bg-primary/10 font-medium text-foreground ring-1 ring-primary/20'
+                      : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                  }`}
+                >
+                  <Icon
+                    size={16}
+                    strokeWidth={1.7}
+                    aria-hidden="true"
+                    className={active ? 'text-primary' : 'text-muted-foreground/70'}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{view.title}</span>
+                  {active && <ChevronRight size={13} aria-hidden="true" className="text-primary" />}
+                </button>
+              )
+            })}
           </div>
         )
       })}
