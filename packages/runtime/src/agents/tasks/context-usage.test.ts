@@ -66,6 +66,11 @@ it('reads context usage from each provider and ignores unrelated events', () => 
       },
     }),
   ).toEqual({ used: 100 })
+  expect(
+    contextUsage('opencode', 'session.usage.updated', {
+      data: { tokens: { input: 5, cache: { read: 95, write: 0 } } },
+    }),
+  ).toEqual({ used: 100 })
   expect(contextUsage('codex', 'item/started', {})).toBeUndefined()
 })
 
@@ -95,5 +100,10 @@ it('counts the tokens of one turn for each provider', () => {
   opencode.accept('message.updated', message('a', 9))
   opencode.accept('message.updated', message('b', 4))
   expect(opencode.total()).toBe(15)
+  const opencodeV2 = turnTokenCounter('opencode', () => undefined)
+  opencodeV2.accept('session.usage.updated', {
+    data: { tokens: { input: 5, output: 3, reasoning: 2, cache: { read: 90, write: 0 } } },
+  })
+  expect(opencodeV2.total()).toBe(100)
   expect(turnTokenCounter('acp', () => undefined).total()).toBeUndefined()
 })

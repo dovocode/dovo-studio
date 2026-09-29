@@ -66,6 +66,12 @@ export function contextUsage(
     const used = sum(tokens.input, cache.read, cache.write)
     return used ? { used } : undefined
   }
+  if (provider === 'opencode' && name === 'session.usage.updated') {
+    const tokens = record(record(event.data).tokens)
+    const cache = record(tokens.cache)
+    const used = sum(tokens.input, cache.read, cache.write)
+    return used === undefined ? undefined : { used }
+  }
   return undefined
 }
 
@@ -79,6 +85,7 @@ export function turnTokenCounter(
   let codexLatest: number | undefined
   let claude: number | undefined
   const opencode = new Map<string, number>()
+  let opencodeV2: number | undefined
   return {
     accept(name: string, payload: unknown) {
       const event = record(payload)
@@ -110,6 +117,11 @@ export function turnTokenCounter(
         const used = sum(tokens.input, tokens.output, tokens.reasoning, cache.read, cache.write)
         if (used !== undefined) opencode.set(info.id, used)
       }
+      if (provider === 'opencode' && name === 'session.usage.updated') {
+        const tokens = record(record(event.data).tokens)
+        const cache = record(tokens.cache)
+        opencodeV2 = sum(tokens.input, tokens.output, tokens.reasoning, cache.read, cache.write)
+      }
     },
     total() {
       if (provider === 'codex')
@@ -119,6 +131,7 @@ export function turnTokenCounter(
       if (provider === 'claude') return claude
       if (provider === 'opencode' && opencode.size)
         return [...opencode.values()].reduce((total, value) => total + value, 0)
+      if (provider === 'opencode') return opencodeV2
       return undefined
     },
   }

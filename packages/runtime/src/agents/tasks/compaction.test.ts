@@ -16,6 +16,9 @@ it('records only provider-confirmed compactions', () => {
   ).toBe('manual')
   expect(completedCompaction('opencode', 'session.compacted', {})).toBe('auto')
   expect(
+    completedCompaction('opencode', 'session.compaction.ended', { data: { reason: 'manual' } }),
+  ).toBe('manual')
+  expect(
     completedCompaction('acp', 'agent_message_chunk', { content: { text: 'Compacted' } }),
   ).toBeUndefined()
   expect(completedCompaction('acp', 'dovo/compaction/completed', {})).toBe('manual')

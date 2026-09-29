@@ -120,6 +120,16 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
       documentationUrl: 'https://opencode.ai/docs/sdk/',
     },
     {
+      id: 'opencode-v2-client',
+      name: 'OpenCode 2 Client',
+      provider: 'opencode',
+      kind: 'sdk',
+      packageName: '@opencode/client',
+      inspect: sdk('@opencode/client'),
+      guidance: 'Update Dovo to receive its tested, pinned OpenCode 2 client.',
+      documentationUrl: 'https://opencode.ai/v2/docs/api',
+    },
+    {
       id: 'acp-sdk',
       name: 'Agent Client Protocol SDK',
       provider: 'acp',
@@ -206,14 +216,26 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
         const url = new URL(address)
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
           throw new Error('Use an HTTP(S) OpenCode URL without embedded credentials.')
-        const response = await fetch(new URL('global/health', `${url.href.replace(/\/$/, '')}/`), {
+        const base = `${url.href.replace(/\/$/, '')}/`
+        const options: RequestInit = {
           signal: AbortSignal.timeout(5000),
           headers: process.env.OPENCODE_SERVER_PASSWORD
             ? {
                 Authorization: `Basic ${Buffer.from(`${process.env.OPENCODE_SERVER_USERNAME || 'opencode'}:${process.env.OPENCODE_SERVER_PASSWORD}`).toString('base64')}`,
               }
             : {},
-        })
+        }
+        const infoResponse = await fetch(new URL('api/info', base), options)
+        if (infoResponse.ok) {
+          const info = decode(mutableStruct({ version: Schema.String }), await infoResponse.json())
+          return {
+            version: valid(info.version),
+            detail: `Server responds at ${url.origin}. Model credentials were not tested.`,
+          }
+        }
+        if (infoResponse.status !== 404)
+          throw new Error(`OpenCode server info returned HTTP ${infoResponse.status}.`)
+        const response = await fetch(new URL('global/health', base), options)
         if (!response.ok) throw new Error(`OpenCode health check returned HTTP ${response.status}.`)
         const health = decode(
           mutableStruct({

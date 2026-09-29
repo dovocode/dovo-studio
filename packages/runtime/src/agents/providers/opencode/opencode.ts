@@ -7,6 +7,7 @@ import { Schema } from 'effect'
 import { questionPromptSchema } from '@dovo/protocol'
 import { createOpencodeClient, type PermissionRuleset } from '@opencode-ai/sdk/v2'
 import type { AgentAdapter } from '../../execution/types.js'
+import { opencodeV2Adapter, isOpencodeV2 } from './opencode-v2.js'
 function client(address: string, cwd?: string) {
   return createOpencodeClient({
     baseUrl: address || 'http://127.0.0.1:4096',
@@ -33,6 +34,7 @@ function untilAborted(approval: Promise<boolean>, signal: AbortSignal) {
 }
 export const opencodeAdapter: AgentAdapter = {
   models: async (agent) => {
+    if (await isOpencodeV2(agent.endpoint)) return opencodeV2Adapter.models!(agent)
     const { data } = await client(agent.endpoint).provider.list(
       {},
       {
@@ -58,6 +60,7 @@ export const opencodeAdapter: AgentAdapter = {
   },
   probe: async (agent) => {
     try {
+      if (await isOpencodeV2(agent.endpoint)) return opencodeV2Adapter.probe(agent)
       await client(agent.endpoint).global.health({
         signal: AbortSignal.timeout(5000),
       })
@@ -76,6 +79,7 @@ export const opencodeAdapter: AgentAdapter = {
   },
   async run(run) {
     run.signal.throwIfAborted()
+    if (await isOpencodeV2(run.agent.endpoint)) return opencodeV2Adapter.run(run)
     const api = client(run.agent.endpoint, run.cwd)
     const registered: string[] = []
     try {

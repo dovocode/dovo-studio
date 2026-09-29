@@ -349,7 +349,8 @@ should pass the repository's adapter tests before deployment.
 
 Configure executable paths in **Settings → Coding → CLI commands & shell**. Provider authentication
 stays on the host. Authenticate `gh` on that host for PRs; authenticate the chosen agent separately.
-OpenCode requires its server to be running; installing its CLI alone is not enough.
+OpenCode requires its server to be running; installing its CLI alone is not enough. Dovo detects
+OpenCode 1 and 2 from the configured Serve URL and uses the matching client protocol.
 
 ## Caching and offline behavior
 
