@@ -1,6 +1,6 @@
 import { taskPullLinks } from '../detail/task-pull-links'
 import { AgentAvatar, ProjectIcon } from '@dovo/studio-ui'
-import { resolveTaskAgent, formatDateTime } from '@dovo/studio-core'
+import { acpHarnessName, resolveTaskAgent, formatDateTime } from '@dovo/studio-core'
 import { TaskLifecycleActions } from '../detail/task-lifecycle-actions'
 import { isSnoozed } from './task-priority'
 import { taskPresentation } from './task-presentation'
@@ -64,7 +64,10 @@ function TaskRowView({
   ]
     .filter(Boolean)
     .join(' · ')
-  const agentName = agent?.name ?? (provider ? providers[provider].short : 'Unassigned agent')
+  const agentName =
+    (task.harness && agent ? acpHarnessName(agent, snapshot?.acpInstallations ?? []) : undefined) ??
+    agent?.name ??
+    (provider ? providers[provider].short : 'Unassigned agent')
   const agentDetail = `${agentName}${provider ? ` · ${providers[provider].name}` : ''}`
   const terminals = snapshot?.terminals.filter((t) => t.taskId === task.id && !t.exited).length ?? 0
   return (

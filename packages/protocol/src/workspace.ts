@@ -512,6 +512,12 @@ export function lockedTaskProvider(
     (canChangeTaskProvider(task) ? undefined : resolveTaskAgent(task, agents)?.provider)
   )
 }
+/** ACP sessions belong to one installation, even though all use the ACP adapter. */
+export function lockedAcpInstallationId(task: Task, agents: readonly Agent[]): string | undefined {
+  return lockedTaskProvider(task, agents) === 'acp'
+    ? (resolveTaskAgent(task, agents)?.acpInstallationId ?? '')
+    : undefined
+}
 export function resolveTaskAgent(
   task: Pick<Task, 'id' | 'agentId' | 'agentOverrides' | 'harness'>,
   agents: readonly Agent[],

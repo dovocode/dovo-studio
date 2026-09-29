@@ -19,6 +19,7 @@ import {
   serviceTierValue,
   defaultTaskHarness,
   lockedTaskProvider,
+  lockedAcpInstallationId,
   resolveTaskAgent,
   supportsAccess,
   taskHarnessSchema,
@@ -54,6 +55,7 @@ const accessIcon = {
 export function ComposerHarnessControls({ task, disabled }: { task: Task; disabled: boolean }) {
   const { workspace, setWorkspace, flush } = useWorkspace()
   const providerLock = lockedTaskProvider(task, workspace.agents)
+  const installationLock = lockedAcpInstallationId(task, workspace.agents)
   const resolved = resolveTaskAgent(task, workspace.agents)
   const value = resolved
     ? decode(taskHarnessSchema, resolved)
@@ -106,19 +108,15 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
         selectedAgent={customAgent}
         value={value}
         lockedProvider={providerLock}
+        lockedInstallationId={installationLock}
         disabled={locked}
         onChange={apply}
         onSelectAgent={(agentId) =>
           save((current, agents) => chooseTaskAgent(current, agents, agentId))
         }
-        onUseHarness={(provider) =>
+        onUseHarness={(harness) =>
           save((current, agents) =>
-            changeTaskHarness(
-              current,
-              agents,
-              { ...defaultTaskHarness(provider), permission: value.permission },
-              true,
-            ),
+            changeTaskHarness(current, agents, { ...harness, permission: value.permission }, true),
           )
         }
         onConfigure={() => setConnection(true)}

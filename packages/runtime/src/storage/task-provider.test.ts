@@ -72,6 +72,30 @@ it('allows draft providers, locks the first submitted provider and permits its m
     }),
   ).toThrow('Cannot edit providerLock')
 })
+it('keeps an ACP thread on its original installed agent', () => {
+  const { store } = setup({
+    ...draft,
+    harness: { ...defaultTaskHarness('acp'), acpInstallationId: 'first' },
+  })
+  store.patch({
+    collection: 'tasks',
+    id: 'task',
+    changes: { messages: { before: [], after: [{ id: 'first', role: 'user', text: 'Go' }] } },
+  })
+  expect(() =>
+    store.patch({
+      collection: 'tasks',
+      id: 'task',
+      changes: {
+        harness: {
+          before: store.task('task').harness,
+          after: { ...defaultTaskHarness('acp'), acpInstallationId: 'second' },
+        },
+      },
+    }),
+  ).toThrow('different ACP installation')
+  expect(store.task('task').harness?.acpInstallationId).toBe('first')
+})
 it('retains the provider lock when the first queued message is removed before execution', () => {
   const { store } = setup()
   const queue = new TaskQueue(store)

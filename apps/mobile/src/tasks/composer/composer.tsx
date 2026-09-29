@@ -362,7 +362,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                     accessibilityRole="button"
                     accessibilityLabel="Agent & model"
                     accessibilityValue={{
-                      text: taskHarnessLabel(task, agent),
+                      text: taskHarnessLabel(task, agent, snapshot?.acpInstallations),
                     }}
                     accessibilityState={{
                       disabled: busy || task.status === 'running' || !!task.archived,
@@ -394,7 +394,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                         },
                       ]}
                     >
-                      {taskHarnessLabel(task, agent)}
+                      {taskHarnessLabel(task, agent, snapshot?.acpInstallations)}
                     </Text>
                     <Icon name="down" size={10} color={colors.muted} />
                   </Pressable>

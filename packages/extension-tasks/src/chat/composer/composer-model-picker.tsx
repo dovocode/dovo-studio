@@ -5,6 +5,9 @@ import {
   defaultTaskHarness,
   providers,
   providerSchema,
+  acpInstallationHarness,
+  acpHarnessName,
+  useWorkspace,
   type Agent,
   type TaskHarness,
 } from '@dovo/studio-core'
@@ -18,6 +21,7 @@ type PickerItem = {
   provider: TaskHarness['provider']
   hidden?: boolean
   agent?: Agent
+  installationId?: string
 }
 export function ComposerModelPicker({
   value,
@@ -29,19 +33,24 @@ export function ComposerModelPicker({
   onSelectAgent,
   onUseHarness,
   lockedProvider,
+  lockedInstallationId,
 }: {
   agents: readonly Agent[]
   selectedAgent?: Agent
   onSelectAgent: (agentId: string) => Promise<boolean>
-  onUseHarness: (provider: TaskHarness['provider']) => Promise<boolean>
+  onUseHarness: (harness: TaskHarness) => Promise<boolean>
   lockedProvider?: TaskHarness['provider']
+  lockedInstallationId?: string
   value: TaskHarness
   disabled: boolean
   onChange: (next: TaskHarness) => Promise<boolean>
   onConfigure: () => void
 }) {
+  const { snapshot } = useWorkspace()
+  const installations = snapshot?.acpInstallations ?? []
   const [open, setOpen] = useApplicationState(false)
   const [provider, setProvider] = useApplicationState(value.provider)
+  const [installationId, setInstallationId] = useApplicationState(value.acpInstallationId)
   const [mode, setMode] = useApplicationState<'models' | 'favorites' | 'agents'>('models')
   const [query, setQuery] = useApplicationState('')
   const [active, setActive] = useApplicationState(0)
@@ -56,9 +65,16 @@ export function ComposerModelPicker({
   const [storageError, setStorageError] = useApplicationState('')
   const activeProvider = lockedProvider ?? provider
   const selectedHarness =
-    activeProvider === value.provider
+    activeProvider === value.provider &&
+    (activeProvider !== 'acp' || installationId === value.acpInstallationId)
       ? value
-      : { ...defaultTaskHarness(activeProvider), permission: value.permission }
+      : activeProvider === 'acp' && installationId
+        ? {
+            ...defaultTaskHarness('acp'),
+            acpInstallationId: installationId,
+            permission: value.permission,
+          }
+        : { ...defaultTaskHarness(activeProvider), permission: value.permission }
   const { catalog, loading, error } = useHarnessCatalog(selectedHarness, open && mode === 'models')
   const listId = useId()
   const items: PickerItem[] =
@@ -73,12 +89,22 @@ export function ComposerModelPicker({
       : mode === 'favorites'
         ? favorites.flatMap((key) => {
             const provider = providerSchema.literals.find((p) => key.startsWith(`${p}:`))
+            const installation =
+              provider === 'acp'
+                ? installations.find((entry) => key.startsWith(`acp:${entry.id}:`))
+                : undefined
             return provider
               ? [
                   {
-                    id: key.slice(provider.length + 1),
-                    name: key.slice(provider.length + 1) || 'Provider default',
+                    id: key.slice(
+                      installation ? `acp:${installation.id}:`.length : provider.length + 1,
+                    ),
+                    name:
+                      key.slice(
+                        installation ? `acp:${installation.id}:`.length : provider.length + 1,
+                      ) || 'Provider default',
                     provider,
+                    installationId: installation?.id,
                     hidden: false,
                   },
                 ]
@@ -89,11 +115,13 @@ export function ComposerModelPicker({
               id: '',
               name: 'Provider default',
               provider: activeProvider,
+              installationId: selectedHarness.acpInstallationId,
               hidden: false,
             },
             ...(catalog?.models ?? []).map((model) => ({
               ...model,
               provider: activeProvider,
+              installationId: selectedHarness.acpInstallationId,
             })),
             ...(query.trim() && !catalog?.models.some((m) => m.id === query.trim())
               ? [
@@ -101,6 +129,7 @@ export function ComposerModelPicker({
                     id: query.trim(),
                     name: `Use custom model “${query.trim()}”`,
                     provider: activeProvider,
+                    installationId: selectedHarness.acpInstallationId,
                     hidden: false,
                   },
                 ]
@@ -109,29 +138,43 @@ export function ComposerModelPicker({
   const filtered = items.filter(
     (item) =>
       (!lockedProvider || item.provider === lockedProvider) &&
+      (lockedInstallationId === undefined ||
+        (item.installationId ?? item.agent?.acpInstallationId ?? '') === lockedInstallationId) &&
       (legacy || !item.hidden || query.trim()) &&
       `${item.name} ${item.id} ${item.agent?.model ?? ''} ${providers[item.provider].short}`
         .toLowerCase()
         .includes(query.toLowerCase().trim()),
   )
   const choose = async (item: (typeof items)[number]) => {
-    if (disabled || (lockedProvider && item.provider !== lockedProvider)) return
+    if (
+      disabled ||
+      (lockedProvider && item.provider !== lockedProvider) ||
+      (lockedInstallationId !== undefined &&
+        (item.installationId ?? item.agent?.acpInstallationId ?? '') !== lockedInstallationId)
+    )
+      return
     if (item.agent) {
       if (await onSelectAgent(item.agent.id)) setOpen(false)
       return
     }
+    const sameHarness =
+      item.provider === value.provider &&
+      (item.provider !== 'acp' || item.installationId === value.acpInstallationId)
+    const installation = installations.find((entry) => entry.id === item.installationId)
+    const base = sameHarness
+      ? value
+      : installation
+        ? acpInstallationHarness(installation, value.permission)
+        : item.provider === activeProvider
+          ? selectedHarness
+          : { ...defaultTaskHarness(item.provider), permission: value.permission }
     const saved = await onChange({
-      ...(item.provider === value.provider
-        ? value
-        : { ...defaultTaskHarness(item.provider), permission: value.permission }),
+      ...base,
       model: item.id,
-      reasoning: item.id === value.model && item.provider === value.provider ? value.reasoning : '',
+      reasoning: item.id === value.model && sameHarness ? value.reasoning : '',
       cyberAccessProgram:
-        item.id === value.model && item.provider === value.provider
-          ? value.cyberAccessProgram
-          : undefined,
-      serviceTier:
-        item.id === value.model && item.provider === value.provider ? value.serviceTier : undefined,
+        item.id === value.model && sameHarness ? value.cyberAccessProgram : undefined,
+      serviceTier: item.id === value.model && sameHarness ? value.serviceTier : undefined,
     })
     if (saved) setOpen(false)
   }
@@ -141,6 +184,7 @@ export function ComposerModelPicker({
       onOpenChange={(next) => {
         setOpen(next)
         setProvider(value.provider)
+        setInstallationId(value.acpInstallationId)
         setMode(selectedAgent ? 'agents' : 'models')
         setQuery('')
         setActive(0)
@@ -164,6 +208,7 @@ export function ComposerModelPicker({
               ? catalog?.models.find((model) => model.id === value.model)?.name
               : undefined) ||
               value.model ||
+              acpHarnessName(value, installations) ||
               providers[value.provider].short}
           </span>
           <ChevronDown className="size-3 text-muted-foreground" />
@@ -179,7 +224,7 @@ export function ComposerModelPicker({
           aria-label="Choose agent and model"
         >
           <div
-            className="flex w-12 shrink-0 flex-col items-center gap-1 border-r p-1.5"
+            className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r p-1.5"
             aria-label="Harnesses"
           >
             <Button
@@ -215,7 +260,13 @@ export function ComposerModelPicker({
             </Button>
             <div className="my-1 w-full border-t" />
             {providerSchema.literals
-              .filter((p) => !lockedProvider || p === lockedProvider)
+              .filter(
+                (p) =>
+                  (!lockedProvider || p === lockedProvider) &&
+                  (p !== 'acp' ||
+                    lockedInstallationId === undefined ||
+                    lockedInstallationId === ''),
+              )
               .map((p) => (
                 <Button
                   key={p}
@@ -223,22 +274,66 @@ export function ComposerModelPicker({
                   size="icon"
                   variant="ghost"
                   aria-label={`${providers[p].short} models`}
-                  aria-pressed={mode === 'models' && p === activeProvider}
+                  aria-pressed={mode === 'models' && p === activeProvider && !installationId}
                   title={providers[p].short}
                   className={cn(
                     'size-9',
                     mode === 'models' &&
                       p === activeProvider &&
+                      !installationId &&
                       'bg-accent text-primary ring-1 ring-inset ring-primary/50',
                   )}
                   onClick={() => {
                     setProvider(p)
+                    setInstallationId(undefined)
                     setMode('models')
                     setActive(0)
                     setQuery('')
                   }}
                 >
                   <HarnessIcon provider={p} className="size-4" />
+                </Button>
+              ))}
+            {installations.length > 0 && (!lockedProvider || lockedProvider === 'acp') && (
+              <div className="my-1 w-full border-t" />
+            )}
+            {installations
+              .filter(
+                (installation) =>
+                  (!lockedProvider || lockedProvider === 'acp') &&
+                  (lockedInstallationId === undefined || lockedInstallationId === installation.id),
+              )
+              .map((installation) => (
+                <Button
+                  key={installation.id}
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={`${installation.name} models`}
+                  aria-pressed={
+                    mode === 'models' &&
+                    activeProvider === 'acp' &&
+                    installationId === installation.id
+                  }
+                  title={installation.name}
+                  className={cn(
+                    'size-9',
+                    mode === 'models' &&
+                      activeProvider === 'acp' &&
+                      installationId === installation.id &&
+                      'bg-accent text-primary ring-1 ring-inset ring-primary/50',
+                  )}
+                  onClick={() => {
+                    setProvider('acp')
+                    setInstallationId(installation.id)
+                    setMode('models')
+                    setActive(0)
+                    setQuery('')
+                  }}
+                >
+                  <span className="text-[10px] font-semibold uppercase">
+                    {installation.name.slice(0, 2)}
+                  </span>
                 </Button>
               ))}
             <Button
@@ -304,10 +399,13 @@ export function ComposerModelPicker({
                   className="h-7 shrink-0 px-2 text-xs"
                   disabled={disabled}
                   onClick={async () => {
-                    if (await onUseHarness(activeProvider)) setOpen(false)
+                    if (await onUseHarness(selectedHarness)) setOpen(false)
                   }}
                 >
-                  Use {providers[activeProvider].short} directly
+                  Use{' '}
+                  {acpHarnessName(selectedHarness, installations) ??
+                    providers[activeProvider].short}{' '}
+                  directly
                 </Button>
               </div>
             )}
@@ -318,11 +416,13 @@ export function ComposerModelPicker({
               className="min-h-0 flex-1 overflow-y-auto"
             >
               {filtered.map((item, index) => {
-                const key = `${item.agent ? 'agent' : item.provider}:${item.id}`
+                const key = `${item.agent ? 'agent' : item.provider}:${item.installationId ? `${item.installationId}:` : ''}${item.id}`
                 const favorite = favorites.includes(key)
                 const selected = item.agent
                   ? item.agent.id === selectedAgent?.id
-                  : item.provider === value.provider && item.id === value.model
+                  : item.provider === value.provider &&
+                    item.id === value.model &&
+                    (item.provider !== 'acp' || item.installationId === value.acpInstallationId)
                 return (
                   <div
                     key={key}

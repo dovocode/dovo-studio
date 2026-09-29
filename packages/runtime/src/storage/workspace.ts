@@ -225,6 +225,10 @@ export class WorkspaceStore {
           const previous = previousTasks.get(task.id)
           const locked = previous ? lockedTaskProvider(previous, this.workspace.agents) : undefined
           const provider = resolveTaskAgent(task, parsed.agents)?.provider
+          const previousInstallation = previous
+            ? (resolveTaskAgent(previous, this.workspace.agents)?.acpInstallationId ?? '')
+            : ''
+          const nextInstallation = resolveTaskAgent(task, parsed.agents)?.acpInstallationId ?? ''
           const configChanged =
             previous &&
             (previous.agentId !== task.agentId ||
@@ -234,6 +238,11 @@ export class WorkspaceStore {
             throw new HttpError(
               409,
               `This task uses ${locked}. After the first message, choose models and settings within the same provider. Create a new task to use another provider.`,
+            )
+          if (locked === 'acp' && previousInstallation !== nextInstallation)
+            throw new HttpError(
+              409,
+              'This thread uses a different ACP installation. Start a new task to use another agent.',
             )
           const providerLock = locked ?? lockedTaskProvider(task, parsed.agents)
           const updated =

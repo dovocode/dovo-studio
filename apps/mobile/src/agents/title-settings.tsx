@@ -8,6 +8,8 @@ import { View } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
   agentSchema,
+  acpHarnessChoiceId,
+  acpInstallationHarness,
   defaultTaskHarness,
   resolveTitleHarness,
   titleSettingsForHarness,
@@ -63,6 +65,7 @@ export function TitleSettings() {
     snapshot?.workspace.agents ?? [],
     snapshot?.defaults?.configured ? snapshot.defaults.harness : undefined,
   )
+  const installations = snapshot?.acpInstallations ?? []
   const agent = {
     ...(harness ?? defaultTaskHarness('codex')),
     id: 'title',
@@ -81,7 +84,9 @@ export function TitleSettings() {
         label="Title harness"
         value={
           settings.harness
-            ? `harness:${settings.harness.provider}`
+            ? settings.harness.provider === 'acp' && settings.harness.acpInstallationId
+              ? acpHarnessChoiceId(settings.harness.acpInstallationId)
+              : `harness:${settings.harness.provider}`
             : settings.agentId
               ? `agent:${settings.agentId}`
               : 'default'
@@ -93,25 +98,32 @@ export function TitleSettings() {
             id: `harness:${provider}`,
             name: provider,
           })),
+          ...installations.map((installation) => ({
+            id: acpHarnessChoiceId(installation.id),
+            name: `${installation.name} · ACP`,
+          })),
           ...(snapshot?.workspace.agents ?? []).map((agent) => ({
             id: `agent:${agent.id}`,
             name: agent.name,
           })),
         ]}
-        onChange={(value) =>
+        onChange={(value) => {
+          const installation = installations.find((item) => acpHarnessChoiceId(item.id) === value)
           setSettings({
             ...settings,
             agentId: value.startsWith('agent:') ? value.slice(6) : '',
-            harness: value.startsWith('harness:')
-              ? {
-                  provider: decode(agentSchema.fields.provider, value.slice(8)),
-                  endpoint: '',
-                }
-              : undefined,
+            harness: installation
+              ? acpInstallationHarness(installation)
+              : value.startsWith('harness:')
+                ? {
+                    provider: decode(agentSchema.fields.provider, value.slice(8)),
+                    endpoint: '',
+                  }
+                : undefined,
             model: '',
             reasoning: '',
           })
-        }
+        }}
       />
       {agent.provider === 'acp' && (
         <AcpRegistry

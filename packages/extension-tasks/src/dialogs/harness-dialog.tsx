@@ -3,6 +3,7 @@ import { decode } from '@dovo/protocol'
 import {
   defaultTaskHarness,
   lockedTaskProvider,
+  lockedAcpInstallationId,
   providers,
   resolveTaskAgent,
   taskHarnessSchema,
@@ -23,6 +24,7 @@ import { HarnessFields } from '../harness-fields'
 export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => void }) {
   const { workspace, setWorkspace, flush } = useWorkspace()
   const providerLock = lockedTaskProvider(task, workspace.agents)
+  const installationLock = lockedAcpInstallationId(task, workspace.agents)
   const [value, setValue] = useApplicationState(() => {
     const agent = resolveTaskAgent(task, workspace.agents)
     return agent ? decode(taskHarnessSchema, agent) : defaultTaskHarness(providerLock ?? 'codex')
@@ -43,6 +45,12 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
             throw new Error(
               `This conversation uses ${providers[provider].short}. Start a new task to use another provider.`,
             )
+          const currentInstallation = lockedAcpInstallationId(current, workspace.agents)
+          if (
+            currentInstallation !== undefined &&
+            (value.acpInstallationId ?? '') !== currentInstallation
+          )
+            throw new Error('Start a new task to use another ACP installation.')
           return {
             ...current,
             harness: value,
@@ -74,11 +82,18 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
           </DialogDescription>
         </DialogHeader>
         <fieldset className="grid gap-3" disabled={busy || task.status === 'running'}>
-          <HarnessFields value={value} onChange={setValue} lockedProvider={providerLock} />
+          <HarnessFields
+            value={value}
+            onChange={setValue}
+            lockedProvider={providerLock}
+            lockedInstallationId={installationLock}
+          />
           <Button
             disabled={
               !supportsAccess(value.provider, value.permission) ||
-              (!!providerLock && value.provider !== providerLock)
+              (!!providerLock && value.provider !== providerLock) ||
+              (installationLock !== undefined &&
+                (value.acpInstallationId ?? '') !== installationLock)
             }
             onClick={() => void save()}
           >

@@ -335,6 +335,7 @@ export function route(
                 : 'source',
           releaseCanUpdate: canUpdateServer(),
           defaults: s.defaults.get(),
+          acpInstallations: s.acpInstallations.list(),
           revision: s.store.version(),
           workspace: {
             ...(overview ? overviewWorkspace(workspace) : workspace),

@@ -61,7 +61,8 @@ export function HarnessSettings({
   )
   const custom = selection.startsWith('agent:')
   const agents = snapshot?.workspace.agents ?? []
-  const choices = taskHarnessChoices(task, agents)
+  const installations = snapshot?.acpInstallations ?? []
+  const choices = taskHarnessChoices(task, agents, installations)
   const lockedProvider = lockedTaskProvider(task, agents)
   const providerLocked = !canChangeTaskProvider(task)
   const selectionAllowed = choices.some(
@@ -78,7 +79,7 @@ export function HarnessSettings({
         items={choices}
         onChange={(value) => {
           if (controlsDisabled || value === selection) return
-          const next = selectedTaskHarness(task, agents, value)
+          const next = selectedTaskHarness(task, agents, value, installations)
           if (!next) return
           setSelection(value)
           setAgent(next)
@@ -87,7 +88,7 @@ export function HarnessSettings({
       <Text style={styles.muted}>
         {custom
           ? `${agent.name} uses its saved instructions, skills and MCP servers. Model and access changes apply only to this task.`
-          : 'Choose a built-in agent or one of your saved custom agents.'}
+          : 'Choose a built-in provider, installed ACP agent or saved custom agent.'}
       </Text>
       {providerLocked && (
         <Text style={styles.muted}>
@@ -125,20 +126,22 @@ export function HarnessSettings({
             ?.description
         }
       </Text>
-      {!custom && (agent.provider === 'acp' || agent.provider === 'opencode') && (
-        <Field
-          label={agent.provider === 'acp' ? 'ACP executable' : 'OpenCode server URL'}
-          value={agent.endpoint}
-          editable={!controlsDisabled && selectionAllowed}
-          onChangeText={(endpoint) =>
-            setAgent({
-              ...agent,
-              endpoint,
-            })
-          }
-        />
-      )}
-      {!custom && agent.provider === 'acp' && (
+      {!custom &&
+        (agent.provider === 'opencode' ||
+          (agent.provider === 'acp' && !agent.acpInstallationId)) && (
+          <Field
+            label={agent.provider === 'acp' ? 'ACP executable' : 'OpenCode server URL'}
+            value={agent.endpoint}
+            editable={!controlsDisabled && selectionAllowed}
+            onChangeText={(endpoint) =>
+              setAgent({
+                ...agent,
+                endpoint,
+              })
+            }
+          />
+        )}
+      {!custom && agent.provider === 'acp' && !agent.acpInstallationId && (
         <Field
           label="ACP arguments (one per line)"
           value={agent.args?.join('\n') ?? ''}

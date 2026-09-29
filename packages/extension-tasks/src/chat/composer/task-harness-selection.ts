@@ -1,12 +1,18 @@
 import {
   lockedTaskProvider,
+  lockedAcpInstallationId,
   providers,
   type Agent,
   type Task,
   type TaskHarness,
 } from '@dovo/studio-core'
 
-function checkSelection(task: Task, agents: readonly Agent[], provider: Agent['provider']) {
+function checkSelection(
+  task: Task,
+  agents: readonly Agent[],
+  provider: Agent['provider'],
+  acpInstallationId?: string,
+) {
   if (task.status === 'running') throw new Error('Stop the current turn before changing its model.')
   if (task.archived) throw new Error('Reopen this task before changing its agent.')
   const locked = lockedTaskProvider(task, agents)
@@ -14,12 +20,17 @@ function checkSelection(task: Task, agents: readonly Agent[], provider: Agent['p
     throw new Error(
       `This conversation uses ${providers[locked].short}. Start a new task to use another provider.`,
     )
+  const installationLock = lockedAcpInstallationId(task, agents)
+  if (installationLock !== undefined && (acpInstallationId ?? '') !== installationLock)
+    throw new Error(
+      'This conversation uses another ACP installation. Start a new task to change agents.',
+    )
 }
 
 export function chooseTaskAgent(task: Task, agents: readonly Agent[], agentId: string): Task {
   const agent = agents.find((entry) => entry.id === agentId)
   if (!agent) throw new Error('This custom agent is no longer available. Choose another agent.')
-  checkSelection(task, agents, agent.provider)
+  checkSelection(task, agents, agent.provider, agent.acpInstallationId)
   if (!task.harness && task.agentId === agent.id) return task
   return { ...task, agentId: agent.id, harness: null, agentOverrides: undefined }
 }
@@ -30,7 +41,7 @@ export function changeTaskHarness(
   harness: TaskHarness,
   standalone = false,
 ): Task {
-  checkSelection(task, agents, harness.provider)
+  checkSelection(task, agents, harness.provider, harness.acpInstallationId)
   const agent = !task.harness && agents.find((entry) => entry.id === task.agentId)
   if (!standalone && agent && agent.provider === harness.provider)
     return {

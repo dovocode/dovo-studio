@@ -4,6 +4,8 @@ import {
   providers,
   providerSchema,
   defaultTaskHarness,
+  acpInstallationHarness,
+  acpHarnessChoiceId,
   selectableAccessModes,
   supportsAccess,
   agentSchema,
@@ -17,12 +19,15 @@ export function HarnessFields({
   value,
   onChange,
   lockedProvider,
+  lockedInstallationId,
 }: {
   value: TaskHarness
   lockedProvider?: TaskHarness['provider']
+  lockedInstallationId?: string
   onChange: (value: TaskHarness) => void
 }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, snapshot } = useWorkspace()
+  const installations = snapshot?.acpInstallations ?? []
   const load = useCallback(
     (input: AgentDiscovery) => request('/api/agents/models', input, modelCatalogSchema),
     [request],
@@ -32,18 +37,38 @@ export function HarnessFields({
       <FormField label="Harness">
         <ChoicePicker
           aria-label="Harness"
-          value={value.provider}
-          disabled={!!lockedProvider && value.provider === lockedProvider}
+          value={
+            value.provider === 'acp' && value.acpInstallationId
+              ? acpHarnessChoiceId(value.acpInstallationId)
+              : value.provider
+          }
           onValueChange={(provider) => {
+            const installation = installations.find(
+              (item) => acpHarnessChoiceId(item.id) === provider,
+            )
+            if (installation) {
+              if (
+                (!lockedProvider || lockedProvider === 'acp') &&
+                (lockedInstallationId === undefined || lockedInstallationId === installation.id)
+              )
+                onChange(acpInstallationHarness(installation, value.permission))
+              return
+            }
             const next = decode(providerSchema, provider)
-            if (!lockedProvider || next === lockedProvider)
+            if (
+              (!lockedProvider || next === lockedProvider) &&
+              (next !== 'acp' || lockedInstallationId === undefined || lockedInstallationId === '')
+            )
               onChange({ ...defaultTaskHarness(next), permission: value.permission })
           }}
         >
           {providerSchema.literals
             .filter(
               (provider) =>
-                !lockedProvider || provider === lockedProvider || provider === value.provider,
+                (!lockedProvider || provider === lockedProvider || provider === value.provider) &&
+                (provider !== 'acp' ||
+                  lockedInstallationId === undefined ||
+                  lockedInstallationId === ''),
             )
             .map((provider) => (
               <option
@@ -52,6 +77,17 @@ export function HarnessFields({
                 disabled={!!lockedProvider && provider !== lockedProvider}
               >
                 {providers[provider].short}
+              </option>
+            ))}
+          {installations
+            .filter(
+              (installation) =>
+                (!lockedProvider || lockedProvider === 'acp') &&
+                (lockedInstallationId === undefined || lockedInstallationId === installation.id),
+            )
+            .map((installation) => (
+              <option key={installation.id} value={acpHarnessChoiceId(installation.id)}>
+                {installation.name} · ACP
               </option>
             ))}
         </ChoicePicker>

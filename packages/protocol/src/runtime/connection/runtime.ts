@@ -6,6 +6,7 @@ import { Schema } from 'effect'
 import { workspaceSchema, providerSchema, taskSchema } from '../../workspace.js'
 import { runtimeDefaultsSchema } from './runtime-setup.js'
 import { pendingQuestionSchema } from '../../conversation/workflow/questions.js'
+import { acpInstallationSchema } from '../../auth/acp-registry.js'
 export const deviceSchema = mutableStruct({
   id: Schema.String,
   name: Schema.String,
@@ -76,6 +77,7 @@ export const snapshotSchema = mutableStruct({
   releaseDistribution: Schema.optional(Schema.Literal('desktop', 'archive', 'source')),
   releaseCanUpdate: Schema.optional(Schema.Boolean),
   defaults: Schema.optional(runtimeDefaultsSchema),
+  acpInstallations: Schema.optionalWith(mutableArray(acpInstallationSchema), { default: () => [] }),
   revision: Schema.Number.pipe(Schema.finite()),
   workspace: workspaceSchema,
   approvals: mutableArray(approvalSchema),

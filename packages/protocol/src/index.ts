@@ -13,6 +13,7 @@ export {
 } from './shared/client.js'
 
 export * from './tasks/models.js'
+export * from './tasks/acp-harness.js'
 
 export * from './shared/commands.js'
 

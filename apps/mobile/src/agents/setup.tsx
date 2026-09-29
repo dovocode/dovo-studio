@@ -5,6 +5,9 @@ import { runClientEffect } from '@dovo/client-runtime'
 import {
   decode,
   defaultTaskHarness,
+  acpInstallationHarness,
+  acpHarnessChoiceId,
+  acpHarnessName,
   providerSchema,
   resolveTitleHarness,
   runtimeSetupSchema,
@@ -37,7 +40,7 @@ export function Setup() {
       </Text>
       <Text style={styles.muted}>
         {defaults?.configured
-          ? `${harnessNames[defaults.harness.provider]} · ${defaults.harness.model || 'Provider default model'}`
+          ? `${acpHarnessName(defaults.harness, snapshot?.acpInstallations ?? []) ?? harnessNames[defaults.harness.provider]} · ${defaults.harness.model || 'Provider default model'}`
           : 'Choose your everyday model and a separate model for titles and dictation.'}
       </Text>
       <Text style={styles.muted}>
@@ -58,6 +61,7 @@ export function Setup() {
 }
 function SetupForm({ onClose }: { onClose: () => void }) {
   const { snapshot, connected, callEffect } = useRuntime()
+  const installations = snapshot?.acpInstallations ?? []
   const { act, busy, error } = useAction()
   const [settings, setSettings] = useApplicationState<RuntimeSetup | null>(null)
   const [baseline, setBaseline] = useApplicationState<RuntimeSetup | null>(null)
@@ -131,19 +135,34 @@ function SetupForm({ onClose }: { onClose: () => void }) {
       </Text>
       <Choice
         label="Provider"
-        value={agent.provider}
+        value={
+          agent.provider === 'acp' && agent.acpInstallationId
+            ? acpHarnessChoiceId(agent.acpInstallationId)
+            : agent.provider
+        }
         disabled={busy || !connected}
-        items={providerSchema.literals.map((provider) => ({
-          id: provider,
-          name: harnessNames[provider],
-        }))}
-        onChange={(provider) =>
+        items={[
+          ...providerSchema.literals.map((provider) => ({
+            id: provider,
+            name: harnessNames[provider],
+          })),
+          ...installations.map((installation) => ({
+            id: acpHarnessChoiceId(installation.id),
+            name: `${installation.name} · ACP`,
+          })),
+        ]}
+        onChange={(provider) => {
+          const installation = installations.find(
+            (item) => acpHarnessChoiceId(item.id) === provider,
+          )
           change({
-            ...defaultTaskHarness(decode(providerSchema, provider)),
+            ...(installation
+              ? acpInstallationHarness(installation)
+              : defaultTaskHarness(decode(providerSchema, provider))),
             id: agent.id,
             name: agent.name,
           })
-        }
+        }}
       />
       {agent.provider === 'acp' && (
         <AcpRegistry key={`${step}:${agent.provider}`} agent={agent} onChange={change} />

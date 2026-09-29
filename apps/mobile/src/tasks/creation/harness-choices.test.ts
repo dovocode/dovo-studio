@@ -53,6 +53,40 @@ it('offers all providers and custom agents before the first input', () => {
     'agent:reviewer',
   ])
 })
+it('offers installed ACP agents directly and saves the selected installation in the task harness', () => {
+  const installations = [
+    {
+      id: 'gemini',
+      registryId: 'gemini',
+      name: 'Gemini CLI',
+      version: '1.0.0',
+      distribution: 'npx' as const,
+      installedAt: '2026-09-29T10:00:00Z',
+    },
+  ]
+  expect(taskHarnessChoices(draft, agents, installations).map((choice) => choice.id)).toContain(
+    'acp:gemini',
+  )
+  const selected = selectedTaskHarness(draft, agents, 'acp:gemini', installations)!
+  const changes = taskHarnessChanges(draft, 'acp:gemini', selected)
+  expect(changes.harness.after).toMatchObject({ provider: 'acp', acpInstallationId: 'gemini' })
+  const task = { ...draft, harness: changes.harness.after }
+  expect(taskHarnessSelection(task)).toBe('acp:gemini')
+  expect(taskHarnessLabel(task, selected, installations)).toBe('Gemini CLI')
+  const sentTask = { ...task, messages: sent.messages }
+  expect(
+    taskHarnessChoices(sentTask, agents, [
+      ...installations,
+      { ...installations[0], id: 'other', registryId: 'other', name: 'Other ACP' },
+    ]).map((choice) => choice.id),
+  ).toContain('acp:gemini')
+  expect(
+    taskHarnessChoices(sentTask, agents, [
+      ...installations,
+      { ...installations[0], id: 'other', registryId: 'other', name: 'Other ACP' },
+    ]).map((choice) => choice.id),
+  ).not.toContain('acp:other')
+})
 it('keeps same-provider custom agents available after the first message', () => {
   expect(taskHarnessChoices(sent, agents).map((choice) => choice.id)).toEqual([
     'harness:codex',

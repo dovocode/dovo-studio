@@ -4,6 +4,8 @@ import { useWorkspace, providers } from '@dovo/studio-core'
 import {
   decode,
   defaultTaskHarness,
+  acpInstallationHarness,
+  acpHarnessChoiceId,
   modelCatalogSchema,
   providerSchema,
   resolveTitleHarness,
@@ -64,7 +66,8 @@ export function Setup() {
   )
 }
 function SetupForm({ onClose }: { onClose: () => void }) {
-  const { workspace, connected, request } = useWorkspace()
+  const { workspace, connected, request, snapshot } = useWorkspace()
+  const installations = snapshot?.acpInstallations ?? []
   const [settings, setSettings] = useApplicationState<RuntimeSetup | null>(null)
   const [baseline, setBaseline] = useApplicationState<RuntimeSetup | null>(null)
   const [step, setStep] = useApplicationState(0)
@@ -175,18 +178,32 @@ function SetupForm({ onClose }: { onClose: () => void }) {
         <FormField label="Provider">
           <ChoicePicker
             aria-label="Setup provider"
-            value={agent.provider}
-            onValueChange={(provider) =>
+            value={
+              agent.provider === 'acp' && agent.acpInstallationId
+                ? acpHarnessChoiceId(agent.acpInstallationId)
+                : agent.provider
+            }
+            onValueChange={(provider) => {
+              const installation = installations.find(
+                (item) => acpHarnessChoiceId(item.id) === provider,
+              )
               change({
-                ...defaultTaskHarness(decode(providerSchema, provider)),
+                ...(installation
+                  ? acpInstallationHarness(installation)
+                  : defaultTaskHarness(decode(providerSchema, provider))),
                 id: agent.id,
                 name: agent.name,
               })
-            }
+            }}
           >
             {providerSchema.literals.map((provider) => (
               <option key={provider} value={provider}>
                 {providers[provider].short}
+              </option>
+            ))}
+            {installations.map((installation) => (
+              <option key={installation.id} value={acpHarnessChoiceId(installation.id)}>
+                {installation.name} · ACP
               </option>
             ))}
           </ChoicePicker>

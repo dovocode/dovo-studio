@@ -142,6 +142,22 @@ it('persists ACP installation, mode and config overrides without inheriting stal
     acpConfig: {},
   })
 })
+it('keeps an existing ACP conversation on its installed agent', () => {
+  const task = {
+    ...draft,
+    harness: { ...defaultTaskHarness('acp'), acpInstallationId: 'first' },
+    messages: [{ id: 'message', role: 'user' as const, text: 'Start' }],
+  }
+  expect(() =>
+    changeTaskHarness(task, [], { ...defaultTaskHarness('acp'), acpInstallationId: 'second' }),
+  ).toThrow('another ACP installation')
+  expect(
+    changeTaskHarness(task, [], { ...task.harness, model: 'new-model' }).harness,
+  ).toMatchObject({
+    acpInstallationId: 'first',
+    model: 'new-model',
+  })
+})
 it('drops custom template configuration when explicitly choosing the built-in provider', () => {
   const selected = chooseTaskAgent(draft, agents, custom.id)
   const changed = changeTaskHarness(selected, agents, defaultTaskHarness('codex'), true)

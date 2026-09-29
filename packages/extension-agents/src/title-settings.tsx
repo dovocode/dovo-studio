@@ -1,5 +1,11 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { decode, resolveTitleHarness, titleSettingsForHarness } from '@dovo/protocol'
+import {
+  acpHarnessChoiceId,
+  acpInstallationHarness,
+  decode,
+  resolveTitleHarness,
+  titleSettingsForHarness,
+} from '@dovo/protocol'
 import { AcpRegistry } from './acp-registry'
 import { useCallback, useEffect } from 'react'
 import {
@@ -14,6 +20,7 @@ import {
 import { Button, ChoicePicker, FormField, ModelSettings, Input, Textarea } from '@dovo/studio-ui'
 export function TitleSettings() {
   const { workspace, request, connected, snapshot } = useWorkspace()
+  const installations = snapshot?.acpInstallations ?? []
   const [open, setOpen] = useApplicationState(false)
   const [settings, setSettings] = useApplicationState<Settings | null>(null)
   const [baseline, setBaseline] = useApplicationState<Settings | null>(null)
@@ -93,18 +100,27 @@ export function TitleSettings() {
                   <ChoicePicker
                     aria-label="Title harness"
                     value={
-                      settings.harness ? `harness:${settings.harness.provider}` : settings.agentId
+                      settings.harness
+                        ? settings.harness.provider === 'acp' && settings.harness.acpInstallationId
+                          ? acpHarnessChoiceId(settings.harness.acpInstallationId)
+                          : `harness:${settings.harness.provider}`
+                        : settings.agentId
                     }
                     onValueChange={(agentId) => {
+                      const installation = installations.find(
+                        (item) => acpHarnessChoiceId(item.id) === agentId,
+                      )
                       setSettings({
                         ...settings,
-                        agentId: agentId.startsWith('harness:') ? '' : agentId,
-                        harness: agentId.startsWith('harness:')
-                          ? {
-                              provider: decode(providerSchema, agentId.slice(8)),
-                              endpoint: '',
-                            }
-                          : undefined,
+                        agentId: installation || agentId.startsWith('harness:') ? '' : agentId,
+                        harness: installation
+                          ? acpInstallationHarness(installation)
+                          : agentId.startsWith('harness:')
+                            ? {
+                                provider: decode(providerSchema, agentId.slice(8)),
+                                endpoint: '',
+                              }
+                            : undefined,
                         model: '',
                         reasoning: '',
                       })
@@ -115,6 +131,11 @@ export function TitleSettings() {
                     {providerSchema.literals.map((provider) => (
                       <option key={provider} value={`harness:${provider}`}>
                         {providers[provider].short}
+                      </option>
+                    ))}
+                    {installations.map((installation) => (
+                      <option key={installation.id} value={acpHarnessChoiceId(installation.id)}>
+                        {installation.name} · ACP
                       </option>
                     ))}
                     {workspace.agents.map((a) => (

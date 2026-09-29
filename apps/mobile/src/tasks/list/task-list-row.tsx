@@ -3,6 +3,7 @@ import { Text } from '../../ui/content/text'
 import {
   projectIcon,
   projectIconColor,
+  acpHarnessName,
   resolveTaskAgent,
   type RuntimeOverview,
   type RuntimeTask,
@@ -41,6 +42,11 @@ export function TaskListRow({
     agent = resolveTaskAgent(task, runtime?.snapshot?.workspace.agents ?? []),
     turn = task.turns?.at(-1)
   const executionDevice = turn ? (turn.runtimeHost ?? 'Unknown device') : row.runtimeName
+  const providerName = agent
+    ? ((task.harness
+        ? acpHarnessName(agent, runtime?.snapshot?.acpInstallations ?? [])
+        : undefined) ?? agent.provider)
+    : ''
   const actions = useTaskLifecycle(task, row.runtimeId)
   const car = useCarMode()
   const status = taskRowStatus(task, row.needsInput, row.online, now)
@@ -71,7 +77,7 @@ export function TaskListRow({
         <Pressable
           testID={testID}
           accessibilityRole="button"
-          accessibilityLabel={`${task.pinned ? 'Pinned, ' : ''}${row.projectName}, ${task.title}, ${status}, ${worktree ? 'Worktree' : 'Local checkout'}, ${executionDevice}${row.online ? '' : ', Offline'}${agent ? `, ${agent.provider}${agent.model ? ` · ${agent.model}` : ''}` : ''}`}
+          accessibilityLabel={`${task.pinned ? 'Pinned, ' : ''}${row.projectName}, ${task.title}, ${status}, ${worktree ? 'Worktree' : 'Local checkout'}, ${executionDevice}${row.online ? '' : ', Offline'}${agent ? `, ${providerName}${agent.model ? ` · ${agent.model}` : ''}` : ''}`}
           accessibilityHint="Open conversation. Touch and hold for task actions."
           disabled={disabled}
           onPress={onOpen}
@@ -141,7 +147,7 @@ export function TaskListRow({
               {row.reachability === 'offline' && (
                 <Text style={[styles.muted, { fontSize: 13 }]}>Offline</Text>
               )}
-              {!!agent && <Text style={[styles.muted, { fontSize: 12 }]}>{agent.provider}</Text>}
+              {!!agent && <Text style={[styles.muted, { fontSize: 12 }]}>{providerName}</Text>}
             </View>
           </View>
         </Pressable>

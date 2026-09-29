@@ -3,10 +3,13 @@ import { decode } from '@dovo/protocol'
 import { HarnessFields } from '../harness-fields'
 import {
   defaultTaskHarness,
+  acpInstallationHarness,
+  acpHarnessChoiceId,
   providerSchema,
   providers,
   resolveTaskAgent,
   lockedTaskProvider,
+  lockedAcpInstallationId,
 } from '@dovo/studio-core'
 import { selectableAccessModes, supportsAccess, accessLabel } from '@dovo/studio-core'
 import { ChoicePicker } from '@dovo/studio-ui'
@@ -45,8 +48,10 @@ export function TaskSettings({
     changes: Pick<Task, 'title' | 'agentId' | 'agentOverrides' | 'harness'>,
   ) => Promise<void>
 }) {
-  const { workspace, setWorkspace, request, connected, flush } = useWorkspace()
+  const { workspace, setWorkspace, request, connected, flush, snapshot } = useWorkspace()
+  const installations = snapshot?.acpInstallations ?? []
   const providerLock = lockedTaskProvider(task, workspace.agents)
+  const installationLock = lockedAcpInstallationId(task, workspace.agents)
   const [laterText, setLaterText] = useState('')
   const [laterAt, setLaterAt] = useState('')
   const [timingError, setTimingError] = useState('')
@@ -191,12 +196,36 @@ export function TaskSettings({
             <ChoicePicker
               aria-label="Task agent"
               className="h-9 rounded-md border bg-background px-2 text-xs"
-              value={harness ? `harness:${harness.provider}` : agentId}
+              value={
+                harness
+                  ? harness.provider === 'acp' && harness.acpInstallationId
+                    ? acpHarnessChoiceId(harness.acpInstallationId)
+                    : `harness:${harness.provider}`
+                  : agentId
+              }
               onValueChange={(selection) => {
-                if (selection === (harness ? `harness:${harness.provider}` : agentId)) return
-                if (selection.startsWith('harness:')) {
+                const installation = installations.find(
+                  (item) => acpHarnessChoiceId(item.id) === selection,
+                )
+                if (installation) {
+                  if (
+                    (providerLock && providerLock !== 'acp') ||
+                    (installationLock !== undefined && installationLock !== installation.id)
+                  )
+                    return
+                  setHarness(
+                    acpInstallationHarness(installation, agent?.permission ?? 'full-access'),
+                  )
+                  setAgentId('')
+                } else if (selection.startsWith('harness:')) {
                   const provider = decode(providerSchema, selection.slice(8))
                   if (providerLock && provider !== providerLock) return
+                  if (
+                    provider === 'acp' &&
+                    installationLock !== undefined &&
+                    installationLock !== ''
+                  )
+                    return
                   setHarness({
                     ...defaultTaskHarness(provider),
                     permission: agent?.permission ?? 'full-access',
@@ -205,6 +234,11 @@ export function TaskSettings({
                 } else {
                   const selectedAgent = workspace.agents.find((agent) => agent.id === selection)
                   if (providerLock && selectedAgent?.provider !== providerLock) return
+                  if (
+                    installationLock !== undefined &&
+                    (selectedAgent?.acpInstallationId ?? '') !== installationLock
+                  )
+                    return
                   setAgentId(selection)
                   setHarness(null)
                 }
@@ -212,14 +246,36 @@ export function TaskSettings({
               }}
             >
               {providerSchema.literals
-                .filter((provider) => !providerLock || provider === providerLock)
+                .filter(
+                  (provider) =>
+                    (!providerLock || provider === providerLock) &&
+                    (provider !== 'acp' ||
+                      installationLock === undefined ||
+                      installationLock === ''),
+                )
                 .map((provider) => (
                   <option key={provider} value={`harness:${provider}`}>
                     {providers[provider].short}
                   </option>
                 ))}
+              {installations
+                .filter(
+                  (installation) =>
+                    (!providerLock || providerLock === 'acp') &&
+                    (installationLock === undefined || installationLock === installation.id),
+                )
+                .map((installation) => (
+                  <option key={installation.id} value={acpHarnessChoiceId(installation.id)}>
+                    {installation.name} · ACP
+                  </option>
+                ))}
               {workspace.agents
-                .filter((a) => !providerLock || a.provider === providerLock)
+                .filter(
+                  (a) =>
+                    (!providerLock || a.provider === providerLock) &&
+                    (installationLock === undefined ||
+                      (a.acpInstallationId ?? '') === installationLock),
+                )
                 .map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name}
@@ -231,6 +287,7 @@ export function TaskSettings({
             <HarnessFields
               value={harness}
               lockedProvider={providerLock}
+              lockedInstallationId={installationLock}
               onChange={(value) => {
                 setHarness(value)
                 setOverrides(undefined)

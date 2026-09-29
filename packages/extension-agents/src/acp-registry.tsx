@@ -49,7 +49,7 @@ export function AcpRegistry({
   management?: boolean
   showRegistry?: boolean
 }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, refreshRuntimes } = useWorkspace()
   const [catalog, setCatalog] = useApplicationState<AcpRegistryResponse | null>(null)
   const [installations, setInstallations] = useApplicationState<AcpInstallation[]>([])
   const [loading, setLoading] = useApplicationState(false)
@@ -112,6 +112,7 @@ export function AcpRegistry({
       const value = await operation()
       onSuccess?.(value)
       setRefresh((current) => current + 1)
+      void refreshRuntimes().catch((cause: unknown) => setError(message(cause)))
     } catch (cause) {
       setError(message(cause))
     } finally {
