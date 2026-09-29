@@ -14,6 +14,27 @@ export function RunControls({ task }: { task: Task }) {
       .catch((error) => setError(String(error)))
       .finally(() => setBusy(false))
   }
+  const continueStopped = () => {
+    if (!connected || busy) return
+    setError('')
+    setBusy(true)
+    void (async () => {
+      if (!task.queue?.length)
+        await request(
+          '/api/tasks/message',
+          {
+            id: task.id,
+            messageId: crypto.randomUUID(),
+            text: 'Continue from where you stopped.',
+            attachmentIds: [],
+          },
+          responses.ok,
+        )
+      await request('/api/tasks/queue', { id: task.id, action: 'resume' }, responses.ok)
+    })()
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setBusy(false))
+  }
   const approvals = snapshot?.approvals.filter((approval) => approval.taskId === task.id) ?? []
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -45,7 +66,15 @@ export function RunControls({ task }: { task: Task }) {
   }, [approvals, connected, busy])
   const executionHost =
     task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost ?? 'the selected computer'
-  if (connected && !approvals.length && !error && !task.error && !task.restartRecovery) return null
+  if (
+    connected &&
+    !approvals.length &&
+    !error &&
+    !task.error &&
+    !task.restartRecovery &&
+    task.status !== 'cancelled'
+  )
+    return null
   return (
     <div className="shrink-0 space-y-2 px-5 pb-2">
       {!connected && (
@@ -67,6 +96,19 @@ export function RunControls({ task }: { task: Task }) {
             </Button>
           </div>
         )}
+      {task.status === 'cancelled' && !task.archived && !task.restartRecovery && (
+        <div className="mx-auto flex max-w-[var(--chat-max)] items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/60 px-3 py-2">
+          <p className="text-xs text-muted-foreground">
+            Stopped ·{' '}
+            {task.queue?.length
+              ? `${task.queue.length} queued ${task.queue.length === 1 ? 'message' : 'messages'} ready`
+              : 'continue with a follow-up'}
+          </p>
+          <Button size="sm" disabled={busy || !connected} onClick={continueStopped}>
+            Continue
+          </Button>
+        </div>
+      )}
       {approvals.map((approval) => (
         <div
           key={approval.id}
@@ -119,7 +161,7 @@ export function RunControls({ task }: { task: Task }) {
           </div>
         </div>
       ))}
-      {(error || task.error) && (
+      {(error || (task.status !== 'cancelled' && task.error)) && (
         <p role="alert" className="mx-auto max-w-[var(--chat-max)] text-xs text-destructive">
           {error || task.error}
         </p>

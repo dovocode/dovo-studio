@@ -473,6 +473,47 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
                 )}
               </View>
             )}
+          {task.status === 'cancelled' && !task.archived && !task.restartRecovery && (
+            <View style={{ paddingHorizontal: 16, gap: 8 }}>
+              <Text style={styles.muted}>
+                Stopped ·{' '}
+                {task.queue?.length
+                  ? `${task.queue.length} queued messages ready`
+                  : 'continue with a follow-up'}
+              </Text>
+              <Action
+                label="Continue"
+                disabled={!connected || resume.busy}
+                onPress={() =>
+                  resume.act(() =>
+                    Effect.gen(function* () {
+                      if (!task.queue?.length)
+                        yield* callEffect(
+                          '/api/tasks/message',
+                          {
+                            id: task.id,
+                            messageId: randomUUID(),
+                            text: 'Continue from where you stopped.',
+                            attachmentIds: [],
+                          },
+                          responses.ok,
+                        )
+                      yield* callEffect(
+                        '/api/tasks/queue',
+                        { id: task.id, action: 'resume' },
+                        responses.ok,
+                      )
+                    }),
+                  )
+                }
+              />
+              {!!resume.error && (
+                <Text accessibilityRole="alert" style={styles.error}>
+                  {resume.error}
+                </Text>
+              )}
+            </View>
+          )}
           <PlanApproval task={task} />
           <ReviewFindings task={task} onOpen={() => setPane('diff')} />
           <ReviewComments task={task} />

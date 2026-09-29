@@ -195,6 +195,8 @@ export function useConversationActions(task: Task) {
             responses.ok,
           ),
         )
+        if (task.status === 'cancelled' && mode === 'queue')
+          yield* callEffect('/api/tasks/queue', { id: task.id, action: 'resume' }, responses.ok)
         if (clearDraft) draft.update('')
       }).pipe(
         Effect.catchAll((error) =>

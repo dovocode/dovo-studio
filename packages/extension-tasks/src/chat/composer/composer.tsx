@@ -306,6 +306,8 @@ export function Composer({
             messages: [...t.messages, pending.message],
           })),
         )
+      if (connection && task.status === 'cancelled' && mode === 'queue')
+        await request('/api/tasks/queue', { id: task.id, action: 'resume' }, responses.ok)
       lastWritten.current = ''
       setDraft((current) => (current.trim() === text ? '' : current))
       setWorkspace((w) =>
@@ -459,14 +461,14 @@ export function Composer({
                 title={
                   steerFirst
                     ? 'Steer agent (Enter)'
-                    : task.status === 'running' || task.queuePaused
+                    : task.status === 'running' || (task.queuePaused && task.status !== 'cancelled')
                       ? 'Queue follow-up (Enter)'
                       : 'Send message (Enter)'
                 }
                 aria-label={
                   steerFirst
                     ? 'Steer agent'
-                    : task.status === 'running' || task.queuePaused
+                    : task.status === 'running' || (task.queuePaused && task.status !== 'cancelled')
                       ? 'Queue follow-up'
                       : connected
                         ? 'Send to agent'
@@ -486,7 +488,8 @@ export function Composer({
                   <LoaderCircle className="size-4 animate-spin" />
                 ) : steerFirst ? (
                   <CornerUpRight className="size-4" />
-                ) : task.status === 'running' || task.queuePaused ? (
+                ) : task.status === 'running' ||
+                  (task.queuePaused && task.status !== 'cancelled') ? (
                   <ListPlus className="size-4" />
                 ) : (
                   <ArrowUp className="size-4" />
@@ -568,8 +571,10 @@ export function Composer({
           onMachineMoving={setMachineMoving}
         />
         <p className="mx-auto mt-1 hidden max-w-[var(--chat-max)] text-right text-[0.625rem] text-muted-foreground/70">
-          {task.status === 'running' || task.queuePaused ? 'Enter to queue' : 'Enter to send'} ·
-          Shift + Enter for a new line
+          {task.status === 'running' || (task.queuePaused && task.status !== 'cancelled')
+            ? 'Enter to queue'
+            : 'Enter to send'}{' '}
+          · Shift + Enter for a new line
         </p>
       </div>
     </div>
