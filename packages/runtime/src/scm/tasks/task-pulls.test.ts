@@ -47,7 +47,7 @@ it('follows a task’s pull request by branch and archives it on merge only when
   }))
   const updatedAt = s.store.task(task.id).updatedAt
   const list = vi.spyOn(s.pullCache, 'list')
-  const detail = vi.spyOn(s.pullCache, 'detail')
+  const detail = vi.spyOn(s.pullCache, 'status')
   const watcher = new TaskPullWatcher(s)
 
   list.mockResolvedValue({ pulls: [pull('open', 'PENDING')], hasMore: false, page: 1 })
@@ -154,7 +154,7 @@ async function smartFixture(state: 'closed' | 'merged' = 'closed') {
   const list = vi
     .spyOn(s.pullCache, 'list')
     .mockResolvedValue({ pulls: [pull('open', null)], hasMore: false, page: 1 })
-  const detail = vi.spyOn(s.pullCache, 'detail').mockResolvedValue(
+  const detail = vi.spyOn(s.pullCache, 'status').mockResolvedValue(
     decode(pullDetailSchema, {
       pull: {
         ...pull(state, null),

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { GithubBudget } from './github-budget.js'
 import { gitRemoteIdentity } from '@dovo/protocol'
 import { defaultShell, shellArguments } from '../../terminal/shell.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
@@ -13,6 +15,48 @@ import { exec, processEnvironment } from '../../process.js'
 import { HttpError, errorMessage } from '../../errors.js'
 import { repositoryPath, safeFile } from '../repositories/paths.js'
 export class GitService {
+  private githubBudget = new GithubBudget()
+  private githubRequest(
+    cwd: string,
+    args: string[],
+    timeout: number,
+    maxBuffer: number,
+    env: NodeJS.ProcessEnv,
+  ) {
+    const hostIndex = args.indexOf('--hostname')
+    const repoIndex = args.indexOf('--repo')
+    const repositoryHost =
+      repoIndex >= 0 && args[repoIndex + 1]?.split('/').length === 3
+        ? args[repoIndex + 1]?.split('/')[0]
+        : undefined
+    const host =
+      (hostIndex >= 0 ? args[hostIndex + 1] : repositoryHost) ?? env.GH_HOST ?? 'github.com'
+    const key = createHash('sha256')
+      .update(
+        JSON.stringify([
+          host,
+          env.GH_CONFIG_DIR,
+          env.GH_TOKEN,
+          env.GITHUB_TOKEN,
+          env.GH_ENTERPRISE_TOKEN,
+          env.GITHUB_ENTERPRISE_TOKEN,
+        ]),
+      )
+      .digest('hex')
+    return this.githubBudget.run(
+      key,
+      () => this.run(cwd, this.settings().gh, args, timeout, maxBuffer, env),
+      () =>
+        this.run(
+          cwd,
+          this.settings().gh,
+          ['api', '--hostname', host, 'rate_limit'],
+          20000,
+          1024 * 1024,
+          env,
+        ),
+    )
+  }
   constructor(
     private settings: () => CommandSettings = () => decode(commandsSchema, {}),
     private audit?: (
@@ -715,7 +759,7 @@ export class GitService {
   }
   async github(path: string, args: string[]) {
     const { path: cwd } = await this.inspect(path)
-    return this.run(cwd, this.settings().gh, args, 60000, 32 * 1024 * 1024)
+    return this.githubRequest(cwd, args, 60000, 32 * 1024 * 1024, processEnvironment())
   }
   githubAccount(
     args: string[],
@@ -730,9 +774,8 @@ export class GitService {
     },
   ) {
     // Account discovery must work before any local checkout has been registered.
-    return this.run(
+    return this.githubRequest(
       cwd ?? homedir(),
-      this.settings().gh,
       args,
       limits?.timeout ?? 20000,
       limits?.maxBuffer ?? 4 * 1024 * 1024,

@@ -30,6 +30,31 @@ import {
   summary,
 } from './pull-schemas.js'
 export class PullRequests {
+  private locations = new Map<
+    string,
+    {
+      expires: number
+      value: Promise<{
+        nameWithOwner: string
+        url: string
+        host: string
+        repository: string
+        path: string
+      }>
+    }
+  >()
+  private location(cwd: string) {
+    const cached = this.locations.get(cwd)
+    if (cached && cached.expires > Date.now()) return cached.value
+    const value = this.resolveLocation(cwd)
+    const entry = { expires: Date.now() + 300_000, value }
+    if (this.locations.size >= 100) this.locations.clear()
+    this.locations.set(cwd, entry)
+    void value.catch(() => {
+      if (this.locations.get(cwd) === entry) this.locations.delete(cwd)
+    })
+    return value
+  }
   private accounts = new Map<
     string,
     {
@@ -46,7 +71,7 @@ export class PullRequests {
       token?: (cwd: string) => Promise<string | undefined>
     },
   ) {}
-  private async location(cwd: string) {
+  private async resolveLocation(cwd: string) {
     const repo = decode(
       mutableStruct({
         nameWithOwner: refine(
@@ -97,6 +122,7 @@ export class PullRequests {
     return JSON.parse(await this.run(cwd, args))
   }
   async identity(cwd: string, refresh = false) {
+    if (refresh) this.locations.delete(cwd)
     const repo = await this.location(cwd)
     const environment = createHash('sha256')
       .update(
@@ -252,7 +278,10 @@ export class PullRequests {
       url: result.html_url,
     })
   }
-  async detail(cwd: string, number: number) {
+  async status(cwd: string, number: number) {
+    return this.detail(cwd, number, true)
+  }
+  async detail(cwd: string, number: number, monitor = false) {
     const repo = await this.location(cwd)
     const api = (path: string, paginate = false) =>
       this.json(cwd, [
@@ -263,6 +292,44 @@ export class PullRequests {
         ...(paginate ? ['--paginate', '--slurp'] : []),
       ])
     const pull = decode(restDetail, await api(`pulls/${number}`))
+    if (monitor) {
+      const checks =
+        decode(
+          checkRollup,
+          await this.json(cwd, [
+            'pr',
+            'view',
+            String(number),
+            '--repo',
+            repo.repository,
+            '--json',
+            'statusCheckRollup',
+          ]),
+        ).statusCheckRollup ?? []
+      return decode(pullDetailSchema, {
+        pull: {
+          ...summary(pull),
+          provider: 'github',
+          repositoryUrl: repo.url,
+          headSha: pull.head.sha,
+          baseSha: pull.base.sha,
+          body: pull.body ?? '',
+          additions: pull.additions,
+          deletions: pull.deletions,
+          changedFiles: pull.changed_files,
+          mergeable: pull.mergeable,
+          reviewers: pull.requested_reviewers.map((user) => user.login),
+          assignees: pull.assignees.map((user) => user.login),
+        },
+        comments: [],
+        files: [],
+        warnings: [],
+        checks: checks.map((check) => ({
+          name: check.name ?? check.context ?? 'Check',
+          status: check.conclusion || check.state || check.status || 'Unknown',
+        })),
+      })
+    }
     const results = await Promise.allSettled([
       api(`issues/${number}/comments?per_page=100`, true).then((v) =>
         decode(mutableArray(mutableArray(restComment)), v).flat(),

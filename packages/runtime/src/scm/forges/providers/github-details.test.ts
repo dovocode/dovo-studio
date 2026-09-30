@@ -440,3 +440,61 @@ it('verifies a named GitHub profile without switching the globally active accoun
   run.mockResolvedValue(JSON.stringify({ login: 'unexpected-user' }))
   await expect(pulls.identity('/checkout', true)).rejects.toThrow('selected GitHub profile changed')
 })
+
+it('caches repository discovery across repeated PR reads and refreshes it on explicit refresh', async () => {
+  const git = new GitService()
+  const run = vi.spyOn(git, 'github').mockImplementation(async (argsCwd, args) => {
+    if (args[0] === 'repo')
+      return JSON.stringify({ nameWithOwner: repo.nameWithOwner, url: repo.url })
+    if (args[0] === 'auth')
+      return JSON.stringify({
+        hosts: { [repo.host]: [{ login: 'dominic', active: true, state: 'success' }] },
+      })
+    throw new Error(`Unexpected request from ${argsCwd}`)
+  })
+  const pulls = new PullRequests(git)
+  await Promise.all([pulls.identity('/repo'), pulls.identity('/repo')])
+  await pulls.identity('/repo')
+  expect(run.mock.calls.filter(([, args]) => args[0] === 'repo')).toHaveLength(1)
+  expect(run.mock.calls.filter(([, args]) => args[0] === 'auth')).toHaveLength(1)
+  await pulls.identity('/repo', true)
+  expect(run.mock.calls.filter(([, args]) => args[0] === 'repo')).toHaveLength(2)
+})
+
+it('uses only PR metadata and check summaries for background monitoring, without discussions or annotation fanout', async () => {
+  const git = new GitService()
+  const run = vi.spyOn(git, 'githubAccount').mockImplementation(async (args) => {
+    if (args[0] === 'pr')
+      return JSON.stringify({ statusCheckRollup: [{ name: 'lint', conclusion: 'FAILURE' }] })
+    if (args[3] !== `${repo.path}/pulls/7`)
+      throw new Error('Background monitoring requested full detail')
+    return JSON.stringify({
+      number: 7,
+      title: 'Fix',
+      html_url: `${repo.url}/pull/7`,
+      state: 'closed',
+      merged_at: null,
+      user: { login: 'dominic' },
+      updated_at: '2026-09-30T10:00:00Z',
+      head: { label: 'fix', sha: 'a'.repeat(40) },
+      base: { label: 'main', sha: 'b'.repeat(40) },
+      labels: [],
+      body: '',
+      additions: 0,
+      deletions: 0,
+      changed_files: 0,
+      mergeable: false,
+      requested_reviewers: [],
+      assignees: [],
+    })
+  })
+  const detail = await new PullRequests(git, {
+    host: repo.host,
+    repository: repo.nameWithOwner,
+  }).status('/repo', 7)
+  expect(run).toHaveBeenCalledTimes(2)
+  expect(detail.pull.state).toBe('closed')
+  expect(detail.checks).toEqual([{ name: 'lint', status: 'FAILURE' }])
+  expect(detail.comments).toEqual([])
+  expect(detail.files).toEqual([])
+})

@@ -184,6 +184,21 @@ export class ForgePullRequests {
   async list(cwd: string, state: 'open' | 'closed' | 'all', page: number) {
     return (await this.target(cwd))?.list(state, page) ?? this.github.list(cwd, state, page)
   }
+  async status(cwd: string, number: number) {
+    const binding = await this.binding(cwd)
+    if (!binding) return this.github.status(cwd, number)
+    const connection = this.connections.get(binding.connectionId)
+    if (connection.provider !== 'github') return this.detail(cwd, number)
+    const detail = await this.githubTarget(
+      connection.id,
+      connection.revision,
+      new URL(connection.baseUrl).hostname,
+      binding.repository,
+      connection.cliProfile,
+    ).status(cwd, number)
+    detail.pull.connectionId = binding.connectionId
+    return detail
+  }
   async detail(cwd: string, number: number) {
     const binding = await this.binding(cwd)
     const detail = binding

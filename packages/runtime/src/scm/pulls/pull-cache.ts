@@ -25,15 +25,23 @@ export class PullCache {
   private errors = new Map<string, string>()
   private scheduler?: ReturnType<typeof startPolling>
   private stopped = false
+  private scopes = new Map<string, string>()
   constructor(
     private db: Database.Database,
-    private pulls: Pick<PullRequests, 'list' | 'detail'>,
+    private pulls: Pick<PullRequests, 'list' | 'detail'> & Partial<Pick<PullRequests, 'status'>>,
     private store: WorkspaceStore,
     private identity?: (cwd: string, refresh: boolean) => Promise<string>,
   ) {
     db.exec(
-      'CREATE TABLE IF NOT EXISTS pull_cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated INTEGER NOT NULL)',
+      'CREATE TABLE IF NOT EXISTS pull_cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS pull_cache_scopes (cwd TEXT PRIMARY KEY, scope TEXT NOT NULL)',
     )
+  }
+  private rememberScope(cwd: string, scope: string) {
+    if (this.scopes.get(cwd) === scope) return
+    this.scopes.set(cwd, scope)
+    this.db
+      .prepare('INSERT OR REPLACE INTO pull_cache_scopes(cwd,scope) VALUES(?,?)')
+      .run(cwd, scope)
   }
   private readEffect<T extends { cachedAt?: string; stale?: boolean; refreshError?: string }, I>(
     key: string,
@@ -41,6 +49,7 @@ export class PullCache {
     fetch: () => Promise<T>,
     force: boolean,
     reconcile?: (fresh: T, cached?: T) => T,
+    ttl = 120_000,
   ): Effect.Effect<T, RuntimeFailure> {
     return Effect.gen(this, function* () {
       if (this.stopped && force)
@@ -118,7 +127,7 @@ export class PullCache {
         this.pending.set(key, fiber)
         return Fiber.join(fiber)
       })
-      const stale = !!cached?.stale || (!!row && Date.now() - row.updated >= 60000)
+      const stale = !!cached?.stale || (!!row && Date.now() - row.updated >= ttl)
       if (cached && row && !force) {
         if (!this.stopped && stale && Date.now() - (this.failedAt.get(key) ?? 0) >= 60000)
           this.executor.runFork(refresh.pipe(Effect.ignore)) // Failure is retained for the next cached response.
@@ -151,9 +160,10 @@ export class PullCache {
   listEffect(cwd: string, state: 'open' | 'closed' | 'all', page: number, force = false) {
     return Effect.gen(this, function* () {
       const identify = this.identity
-      const identity = identify ? [yield* runtimeOperation(() => identify(cwd, force))] : []
+      const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+      this.rememberScope(cwd, scope)
       return yield* this.readEffect(
-        JSON.stringify(['list', cwd, state, page, ...identity]),
+        JSON.stringify(['list', scope, state, page]),
         pullPageSchema,
         () => this.pulls.list(cwd, state, page),
         force,
@@ -166,20 +176,44 @@ export class PullCache {
   detailEffect(cwd: string, number: number, force = false) {
     return Effect.gen(this, function* () {
       const identify = this.identity
-      const identity = identify ? [yield* runtimeOperation(() => identify(cwd, force))] : []
+      const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+      this.rememberScope(cwd, scope)
       return yield* this.readEffect(
-        JSON.stringify(['detail', cwd, number, ...identity]),
+        JSON.stringify(['detail', scope, number]),
         pullDetailSchema,
         () => this.pulls.detail(cwd, number),
         force,
         retainUnavailableSections,
+        300_000,
       )
     })
   }
   detail(cwd: string, number: number, force = false) {
     return runClientEffect(this.detailEffect(cwd, number, force))
   }
+  status(cwd: string, number: number, force = false) {
+    return runClientEffect(
+      Effect.gen(this, function* () {
+        const identify = this.identity
+        const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+        this.rememberScope(cwd, scope)
+        return yield* this.readEffect(
+          JSON.stringify(['status', scope, number]),
+          pullDetailSchema,
+          () =>
+            this.pulls.status ? this.pulls.status(cwd, number) : this.pulls.detail(cwd, number),
+          force,
+        )
+      }),
+    )
+  }
   invalidate(cwd: string, number?: number) {
+    // Worktree aliases survive a runtime restart, even before this checkout is read again.
+    const saved = decode(
+      Schema.UndefinedOr(mutableStruct({ scope: Schema.String })),
+      this.db.prepare('SELECT scope FROM pull_cache_scopes WHERE cwd=?').get(cwd),
+    )
+    const scope = this.scopes.get(cwd) ?? saved?.scope
     const matches = (key: string) => {
       try {
         const parsed = decodeResult(
@@ -188,9 +222,10 @@ export class PullCache {
         )
         return (
           parsed.success &&
-          parsed.data[1] === cwd &&
+          (parsed.data[1] === cwd || parsed.data[1] === scope) &&
           (parsed.data[0] === 'list' ||
-            (parsed.data[0] === 'detail' && (number === undefined || parsed.data[2] === number)))
+            ((parsed.data[0] === 'detail' || parsed.data[0] === 'status') &&
+              (number === undefined || parsed.data[2] === number)))
         )
       } catch {
         return false // Ignore corrupt cache keys; they are not workspace records.
@@ -242,7 +277,7 @@ export class PullCache {
             // Include stale-cache refreshes before admitting another repository.
             const pending = [...this.pending].filter(([key]) => {
               try {
-                return JSON.parse(key)[1] === repository.path
+                return JSON.parse(key)[1] === (this.scopes.get(repository.path) ?? repository.path)
               } catch {
                 return false
               }
@@ -253,7 +288,7 @@ export class PullCache {
       )
     })
     this.scheduler = startPolling(tick, {
-      interval: 60000,
+      interval: 300_000,
       immediate: false,
       onError: (error) => console.error('Pull cache refresh failed', error),
     })

@@ -19,3 +19,18 @@ thread.
 The existing auto-archive option remains separate. If enabled too, it archives the thread instead of
 just settling it. Settling alone does not set the archive timestamp or trigger archived-worktree
 cleanup. Either action can be undone through the existing thread lifecycle controls.
+
+GitHub background monitoring reads PR metadata and check summaries rather than the full review, diff
+and check annotations. List/status reads share a two-minute cache; full review details share a
+five-minute cache. Worktrees using the same repository and account reuse these entries. Manual
+refresh and PR actions still request or invalidate current data. Already-linked message URLs are not
+repeatedly loaded, and settled closed threads stop polling unless the archive-on-close option still
+needs to archive them. Closing a PR is verified online before an eligible thread is settled or
+archived.
+
+GitHub CLI requests are limited to four concurrent requests per credential/host. If GitHub reports
+exhausted quota, requests pause until its reported reset; secondary limits use a cooldown with
+increasing backoff. Refresh cannot bypass this pause. A primary-limit failure makes one quota lookup
+to learn the reset time, with a conservative fallback if unavailable. Other applications and Dovo
+servers using the same GitHub account share GitHub's quota; the local limiter does not coordinate
+different machines.

@@ -82,7 +82,7 @@ export class TaskPullWatcher {
     }))
   }
   private async linkMentions(task: Task, path: string) {
-    const matches: Array<Awaited<ReturnType<Services['pullCache']['detail']>>['pull']> = []
+    const matches: Array<Awaited<ReturnType<Services['pullCache']['status']>>['pull']> = []
     if (!this.s.preferences.get().autoLinkPullRequests) return matches
     const references = new Map(
       task.messages
@@ -90,10 +90,16 @@ export class TaskPullWatcher {
         .map((reference) => [reference.url, reference]),
     )
     for (const reference of [...references.values()].slice(-20)) {
-      if (task.ignoredPullRequestUrls?.includes(reference.url)) continue
+      if (
+        task.ignoredPullRequestUrls?.includes(reference.url) ||
+        (task.linkedPullRequests?.some((pull) => pull.url === reference.url) &&
+          (task.pullStatus?.number !== undefined || !task.checkoutBranch)) ||
+        task.pullRequest?.url === reference.url
+      )
+        continue
       try {
         // Lookup uses this repository's configured forge, never a URL supplied in agent text.
-        const { pull } = await this.s.pullCache.detail(path, reference.number)
+        const { pull } = await this.s.pullCache.status(path, reference.number)
         verifyPullUrl(reference.url, pull.url)
         matches.push(pull)
         this.attach(task, pull)
@@ -122,8 +128,16 @@ export class TaskPullWatcher {
   async refresh() {
     const workspace = this.s.store.get()
     const openPulls = new Map<string, Awaited<ReturnType<Services['pullCache']['list']>>>()
+    const confirmations = new Map<string, Awaited<ReturnType<Services['pullCache']['status']>>>()
     for (const task of workspace.tasks) {
-      if (task.example || task.archivedAt) continue
+      if (
+        task.example ||
+        task.archivedAt ||
+        (task.archived &&
+          task.pullStatus?.state !== 'open' &&
+          !this.s.preferences.get().archiveOnPullMerge)
+      )
+        continue
       if (
         !task.pullRequest &&
         !task.checkoutBranch &&
@@ -175,13 +189,24 @@ export class TaskPullWatcher {
         else {
           // Failing checks need their names; a pull request that left the open list was
           // merged or closed. Both come from the (cached) detail.
-          let detail = await this.s.pullCache.detail(repo.path, number)
+          let detail = await this.s.pullCache.status(repo.path, number)
           const preferences = this.s.preferences.get()
           if (
             detail.pull.state !== 'open' &&
+            !task.pinned &&
+            !task.queue?.length &&
+            !task.draft.trim() &&
+            !task.draftAttachments?.length &&
+            !task.scheduledMessages?.length &&
+            !taskIsBusy(this.s, task.id) &&
             (preferences.archiveOnPullMerge || (preferences.settleOnPullClose && !task.archived))
-          )
-            detail = await this.s.pullCache.detail(repo.path, number, true)
+          ) {
+            const key = JSON.stringify([repo.path, number])
+            const confirmed =
+              confirmations.get(key) ?? (await this.s.pullCache.status(repo.path, number, true))
+            confirmations.set(key, confirmed)
+            detail = confirmed
+          }
           freshClosure =
             !detail.stale &&
             !detail.refreshError &&

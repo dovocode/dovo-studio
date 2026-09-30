@@ -32,7 +32,7 @@ it('persists pages, coalesces requests, serves stale data immediately and retain
   const reopened = new PullCache(db, pulls, store)
   expect((await reopened.list('/repo', 'open', 1)).cachedAt).toBeDefined()
   expect(load).toHaveBeenCalledTimes(1)
-  db.prepare('UPDATE pull_cache SET updated=?').run(Date.now() - 61000)
+  db.prepare('UPDATE pull_cache SET updated=?').run(Date.now() - 301000)
   load.mockRejectedValue(new Error('Offline'))
   expect((await cache.list('/repo', 'open', 1)).stale).toBe(true)
   await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
@@ -49,7 +49,7 @@ it('watches registered repos without a PR screen and stops when disposed', async
   }))
   const load = vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })
   cache.start()
-  await vi.advanceTimersByTimeAsync(60000)
+  await vi.advanceTimersByTimeAsync(300000)
   expect(load).toHaveBeenCalledWith('/repo', 'open', 1)
   await cache.dispose()
   await vi.advanceTimersByTimeAsync(120000)
@@ -125,7 +125,7 @@ it('returns cached discussion immediately while a new thread refresh is still pe
         finish = resolve
       }),
   )
-  db.prepare('UPDATE pull_cache SET updated=?').run(Date.now() - 61000)
+  db.prepare('UPDATE pull_cache SET updated=?').run(Date.now() - 301000)
   expect((await cache.detail('/repo', 7)).pull.body).toBe('Description')
   await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
   finish({
@@ -259,4 +259,24 @@ it('finishes disposing the cache when the disposing caller is interrupted', asyn
   expect(disposed).toBe(true)
   expect(db.prepare('SELECT COUNT(*) AS count FROM pull_cache').get()).toEqual({ count: 1 })
   await expect(cache.list('/repo', 'open', 1, true)).rejects.toThrow('Pull cache is closed')
+})
+
+it('shares upstream requests across worktrees for the same repository and account, including invalidation', async () => {
+  const { db, pulls, store } = setup()
+  const identity = vi.fn<(cwd: string) => Promise<string>>(async (cwd: string) =>
+    cwd === '/other-account' ? 'repo:other' : 'repo:owner',
+  )
+  const cache = new PullCache(db, pulls, store, identity)
+  cleanup.push(() => cache.dispose())
+  const load = vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+  await Promise.all([cache.list('/repo', 'open', 1), cache.list('/worktree', 'open', 1)])
+  expect(load).toHaveBeenCalledTimes(1)
+  await cache.list('/other-account', 'open', 1)
+  expect(load).toHaveBeenCalledTimes(2)
+  const reopened = new PullCache(db, pulls, store, identity)
+  cleanup.push(() => reopened.dispose())
+  reopened.invalidate('/worktree')
+  expect((await cache.list('/repo', 'open', 1)).stale).toBe(true)
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(3))
+  expect((await cache.list('/other-account', 'open', 1)).stale).toBe(false)
 })
