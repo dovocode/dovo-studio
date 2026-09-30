@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { closeSync, existsSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -79,14 +80,32 @@ export function startServerUpdate(version: string) {
   const log = openSync(join(directory(), 'server-update.log'), 'a', 0o600)
   let child
   try {
+    // A detached process still belongs to the runtime's systemd cgroup and is killed on stop.
+    // Give the updater its own user service so it can restart Dovo and verify the new runtime.
+    const logPath = join(directory(), 'server-update.log')
     child = spawn(
-      process.execPath,
-      [cli, 'remote-update', '--data-dir', directory(), '--version', version],
-      {
-        detached: true,
-        stdio: ['ignore', log, log],
-        env: process.env,
-      },
+      'systemd-run',
+      [
+        '--user',
+        '--collect',
+        '--quiet',
+        `--unit=dovo-server-update-${randomUUID()}`,
+        '--property=Type=exec',
+        `--property=StandardOutput=append:${logPath}`,
+        `--property=StandardError=append:${logPath}`,
+        '--setenv=DOVO_SERVER_DISTRIBUTION=archive',
+        ...(process.env.DOVO_RELEASE_VERSION
+          ? [`--setenv=DOVO_RELEASE_VERSION=${process.env.DOVO_RELEASE_VERSION}`]
+          : []),
+        process.execPath,
+        cli,
+        'remote-update',
+        '--data-dir',
+        directory(),
+        '--version',
+        version,
+      ],
+      { stdio: ['ignore', log, log] },
     )
   } catch (error) {
     writeStatus({
@@ -99,6 +118,14 @@ export function startServerUpdate(version: string) {
     closeSync(log)
   }
   child.once('error', (error) => writeStatus({ status: 'error', version, error: error.message }))
+  child.once('exit', (code) => {
+    if (code !== 0)
+      writeStatus({
+        status: 'error',
+        version,
+        error: `Could not start update service (exit ${code}). Check server-update.log.`,
+      })
+  })
   child.unref()
   return { status: 'queued', version }
 }

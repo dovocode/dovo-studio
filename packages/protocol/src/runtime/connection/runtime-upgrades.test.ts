@@ -151,3 +151,52 @@ it('blocks hosts with running automation work', () => {
     ]
   expect(runtimeUpgradeBlocked(busy)).toContain('Finish running')
 })
+
+it('keeps polling an offline updating server and completes after its new version answers', async () => {
+  const server = entry('server')
+  const f = fixture([server])
+  await f.manager.check()
+  await f.manager.start(['server'])
+  f.states.set('server', { status: 'installing', version: '1.0.1' })
+  await f.manager.poll()
+  server.connected = false
+  if (server.snapshot) server.snapshot.releaseVersion = '1.0.1'
+  await f.manager.poll()
+  expect(f.manager.getSnapshot().statuses.server).toMatchObject({
+    status: 'complete',
+    version: '1.0.1',
+  })
+  expect(f.refreshed).toHaveBeenCalledOnce()
+})
+
+it('expires restart progress even if the fleet stays offline', async () => {
+  vi.useFakeTimers()
+  try {
+    const server = entry('server')
+    const f = fixture([server])
+    await f.manager.check()
+    await f.manager.start(['server'])
+    server.connected = false
+    vi.advanceTimersByTime(16 * 60 * 1000)
+    await f.manager.poll()
+    expect(f.manager.getSnapshot().statuses.server.status).toBe('error')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('recognizes a newer installed version when a host was updated again during recovery', async () => {
+  const server = entry('server')
+  const f = fixture([server])
+  await f.manager.check()
+  await f.manager.start(['server'])
+  f.states.set('server', { status: 'installing', version: '1.0.1' })
+  await f.manager.poll()
+  server.connected = false
+  if (server.snapshot) server.snapshot.releaseVersion = '1.0.2'
+  await f.manager.poll()
+  expect(f.manager.getSnapshot().statuses.server).toMatchObject({
+    status: 'complete',
+    version: '1.0.2',
+  })
+})

@@ -241,9 +241,12 @@ Check releases, review each host's release notes, then update one computer or se
 **Update selected**. Each host reports its own download progress and failure; one failure does not
 stop the remaining requests. Offline computers and hosts with running work cannot be updated.
 
-Dovo-managed Linux archive servers prepare the update, verify it, then restart. Package-manager and
-externally launched servers still require their host's upgrade flow. Supported signed desktop apps
-(macOS, Windows, and Linux AppImage) must be open on the host to accept remote updates. They
+Dovo-managed Linux archive servers prepare the update, verify it, then restart. Their update helper
+runs in a separate systemd user service so stopping Dovo does not stop the updater. Clients keep
+probing the saved connection during the interruption and verify the installed version before marking
+an upgrade complete, including when a newer release was installed during recovery. Package-manager
+and externally launched servers still require their host's upgrade flow. Supported signed desktop
+apps (macOS, Windows, and Linux AppImage) must be open on the host to accept remote updates. They
 download first and wait for **Restart and install** or **Restart selected desktops**. A desktop
 upgrade also upgrades its bundled runtime; it is one installation, not two separate upgrades. If the
 initiating desktop is selected for restart, its command is sent last.

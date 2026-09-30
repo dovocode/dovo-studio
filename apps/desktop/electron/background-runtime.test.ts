@@ -148,3 +148,29 @@ it('restores Node startup certificate settings before the service process launch
   expect(plist).toContain('/private/company &amp; root.pem')
   expect(plist).toContain('<key>SSL_CERT_FILE</key>')
 })
+
+it('keeps desktop release metadata in launchd without putting it in the credential store', async () => {
+  const options = await fixture()
+  const command = vi.fn<(args: string[]) => Promise<void>>(async (args) => {
+    if (args[0] === 'print') throw new Error('No service')
+  })
+  await Effect.runPromise(
+    ensureBackgroundRuntime(
+      {
+        ...options,
+        environment: {
+          DOVO_RELEASE_DISTRIBUTION: 'desktop',
+          DOVO_RELEASE_VERSION: '0.0.7-nightly.76',
+        },
+      },
+      command,
+    ),
+  )
+  const { label } = backgroundRuntimeDefinition(options)
+  const plist = await readFile(join(home, 'Library', 'LaunchAgents', `${label}.plist`), 'utf8')
+  expect(plist).toContain('<key>DOVO_RELEASE_DISTRIBUTION</key><string>desktop</string>')
+  expect(plist).toContain('<key>DOVO_RELEASE_VERSION</key><string>0.0.7-nightly.76</string>')
+  expect(
+    JSON.parse(await readFile(join(options.directory, 'runtime-environment.json'), 'utf8')),
+  ).toEqual({})
+})

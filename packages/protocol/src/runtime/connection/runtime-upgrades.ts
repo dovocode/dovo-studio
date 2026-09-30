@@ -1,7 +1,12 @@
 import { runtimeRequest } from '../../shared/client.js'
 import { snapshotSchema, type RuntimeSnapshot } from './runtime.js'
 import type { RuntimeProfile } from './runtime-fleet.js'
-import { fetchRuntimeReleases, runtimeUpdate, type RuntimeReleases } from './runtime-releases.js'
+import {
+  fetchRuntimeReleases,
+  runtimeUpdate,
+  newerRuntimeVersion,
+  type RuntimeReleases,
+} from './runtime-releases.js'
 import { serverUpdateStatusSchema, type ServerUpdateStatus } from './server-update.js'
 
 export type RuntimeUpgradeEntry = {
@@ -94,19 +99,16 @@ export function createRuntimeUpgradeManager(options: {
           .entries()
           .filter(
             (entry) =>
-              entry.connected &&
-              (entry.snapshot?.releaseCanUpdate || inProgress(state.statuses[entry.profile.id])),
+              inProgress(state.statuses[entry.profile.id]) ||
+              (entry.connected && entry.snapshot?.releaseCanUpdate),
           )
           .map(async (entry) => {
             if (state.busy.includes(entry.profile.id)) return
             const generation = generations.get(entry.profile.id)
             const previous = state.statuses[entry.profile.id]
             try {
-              // A restarted desktop starts with idle updater state. Verify its installed version.
-              if (
-                previous?.status === 'installing' &&
-                entry.snapshot?.releaseDistribution === 'desktop'
-              ) {
+              // Keep probing the saved connection during restart, even when fleet polling marks it offline.
+              if (previous?.status === 'installing') {
                 const snapshot = await runtimeRequest(
                   entry.profile.connection,
                   entry.profile.connection.address,
@@ -117,8 +119,13 @@ export function createRuntimeUpgradeManager(options: {
                   5000,
                 )
                 if (generations.get(entry.profile.id) !== generation) return
-                if (snapshot.releaseVersion === previous.version) {
-                  status(entry.profile.id, { status: 'complete', version: previous.version })
+                if (
+                  snapshot.releaseVersion &&
+                  previous.version &&
+                  (snapshot.releaseVersion === previous.version ||
+                    newerRuntimeVersion(snapshot.releaseVersion, previous.version))
+                ) {
+                  status(entry.profile.id, { status: 'complete', version: snapshot.releaseVersion })
                   await options.refreshed(entry)
                   return
                 }
@@ -126,15 +133,12 @@ export function createRuntimeUpgradeManager(options: {
               const next = await request(entry, 'status')
               if (generations.get(entry.profile.id) !== generation) return
               // Preserve restart progress until the new app reports the requested version.
-              if (
-                previous?.status === 'installing' &&
-                entry.snapshot?.releaseDistribution === 'desktop' &&
-                next.status === 'idle'
-              ) {
+              if (previous?.status === 'installing' && next.status === 'idle') {
                 stalled(entry.profile.id, previous)
                 return
               }
               status(entry.profile.id, next)
+              stalled(entry.profile.id, state.statuses[entry.profile.id])
               if (next.status === 'complete' && previous?.status !== 'complete')
                 await options.refreshed(entry)
             } catch {
