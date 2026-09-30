@@ -14,6 +14,7 @@ createRoot(root).render(
   <StrictMode>
     <Workbench
       extensions={extensions}
+      appInfo={window.dovo?.appInfo}
       desktopPlatform={window.dovo?.platform}
       pickDirectory={window.dovo?.pickDirectory}
       browser={window.dovo?.browser}

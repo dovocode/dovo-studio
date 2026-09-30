@@ -2,6 +2,7 @@
 
 interface Window {
   dovo: {
+    appInfo: NonNullable<import('@dovo/studio-core').StudioHostApi['appInfo']>
     platform: 'darwin' | 'win32' | 'linux'
     browser: import('@dovo/protocol').BrowserBridge
     updates: import('@dovo/protocol').DesktopUpdateBridge

@@ -1,3 +1,4 @@
+import { useStudioHost } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   readAppPreferences,
@@ -50,6 +51,7 @@ export function TaskList({
   busy: boolean
   error: string
 }) {
+  const { appInfo } = useStudioHost()
   const store = useWorkspace()
   const [selecting, setSelecting] = useApplicationState(false)
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
@@ -283,6 +285,11 @@ export function TaskList({
         <header className="studio-task-sidebar-header">
           <Layers2 size={15} strokeWidth={1.6} aria-hidden="true" />
           <span>Dovo Studio</span>
+          {appInfo && appInfo.channel !== 'stable' && (
+            <span className="rounded border px-1.5 text-[10px] text-muted-foreground">
+              {appInfo.channel === 'nightly' ? 'Nightly' : 'Dev'}
+            </span>
+          )}
         </header>
       )}
       <div className="shrink-0 space-y-1.5 px-2 pt-3 pb-1">

@@ -43,7 +43,7 @@ vi.mock('electron', () => ({
       return []
     }
   },
-  ipcMain: { handle: fixture.ipc },
+  ipcMain: { handle: fixture.ipc, on: fixture.ipc },
   dialog: {},
 }))
 vi.mock('./remote-updates.js', () => ({ registerRemoteUpdates: async () => undefined }))
@@ -68,6 +68,7 @@ it('opens the recovery UI and registers updates when the installed runtime is in
   try {
     await import('./main')
     await vi.waitFor(() => expect(fixture.windows).toBe(1))
+    expect(fixture.ipc).toHaveBeenCalledWith('app:info', expect.any(Function))
     expect(fixture.updates).toHaveBeenCalledOnce()
     expect(fixture.quit).not.toHaveBeenCalled()
     expect(log).toHaveBeenCalledWith(

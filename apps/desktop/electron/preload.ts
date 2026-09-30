@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('dovo', {
+  appInfo: ipcRenderer.sendSync('app:info'),
   platform:
     process.platform === 'darwin' || process.platform === 'win32' ? process.platform : 'linux',
   browser: (

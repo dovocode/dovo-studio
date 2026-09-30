@@ -240,6 +240,13 @@ const startup = Effect.gen(function* () {
   yield* Effect.sync(() => {
     if (!app.isPackaged && process.platform === 'darwin')
       app.dock?.setIcon(join(__dirname, '../build/icon.png'))
+    ipcMain.on('app:info', (event) => {
+      requireTrustedRenderer(event, rendererPath)
+      event.returnValue = {
+        version: app.getVersion(),
+        channel: !app.isPackaged ? 'dev' : nightly ? 'nightly' : 'stable',
+      }
+    })
     const updates = registerUpdates(__dirname, async () => {
       const restore = await prepareLocalRuntimeUpdate(__dirname)
       quitting = true

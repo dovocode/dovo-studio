@@ -1,3 +1,4 @@
+import { useStudioHost } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import { Layers2, Monitor, Search } from 'lucide-react'
@@ -18,6 +19,7 @@ export function TitleBar({
   onDevices: () => void
   onSearch: () => void
 }) {
+  const { appInfo } = useStudioHost()
   const [focused, setFocused] = useApplicationState(
     () => typeof document === 'undefined' || document.hasFocus(),
   )
@@ -40,6 +42,11 @@ export function TitleBar({
       <div className="studio-titlebar-brand">
         <Layers2 size={15} strokeWidth={1.6} aria-hidden="true" />
         <span className="studio-titlebar-name">Dovo Studio</span>
+        {appInfo && appInfo.channel !== 'stable' && (
+          <span className="rounded border px-1.5 text-[10px] text-muted-foreground">
+            {appInfo.channel === 'nightly' ? 'Nightly' : 'Dev'}
+          </span>
+        )}
       </div>
       <div className="studio-titlebar-identity">
         {section && <span className="studio-titlebar-section">{section}</span>}

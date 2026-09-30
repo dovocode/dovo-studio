@@ -1,3 +1,4 @@
+import { appChannel } from '../../runtime/preferences/app-build'
 import { createContext, useContext, type ReactNode } from 'react'
 import { Stack } from 'expo-router'
 import { Platform, Pressable, View } from 'react-native'
@@ -25,7 +26,7 @@ export type HeaderAction = {
 
 /** UIKit owns navigation sizing, button grouping and back gestures on iOS. */
 export function ScreenHeader({
-  title,
+  title: screenTitle,
   titleContent,
   subtitle,
   leading,
@@ -47,6 +48,7 @@ export function ScreenHeader({
   gestureEnabled?: boolean
   hidden?: boolean
 }) {
+  const title = appChannel ? `${screenTitle} · ${appChannel}` : screenTitle
   const navigation = useContext(NavigationContext)
   const inSheet = useInsideSheet()
   const [menu, setMenu] = useApplicationState(false)

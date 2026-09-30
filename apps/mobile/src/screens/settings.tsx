@@ -1,3 +1,5 @@
+import { appVersion, appBuild, appChannel } from '../runtime/preferences/app-build'
+import { Text } from '../ui/content/text'
 import { router } from 'expo-router'
 import { View, ScrollView } from 'react-native'
 import { SettingsGroup, SettingsRow } from './settings-group'
@@ -119,6 +121,11 @@ export default function SettingsScreen() {
             last
           />
         </SettingsGroup>
+        <Text style={[styles.muted, { textAlign: 'center', fontSize: 12 }]}>
+          Dovo Studio {appVersion}
+          {appBuild ? ` (${appBuild})` : ''}
+          {appChannel ? ` · ${appChannel}` : ''}
+        </Text>
       </ScrollView>
     </View>
   )

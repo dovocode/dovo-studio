@@ -1,3 +1,4 @@
+import { useStudioHost } from '@dovo/studio-core'
 import {
   formatDateTime,
   taskSortOptions,
@@ -11,12 +12,25 @@ const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator
 const mod = mac ? '⌘' : 'Ctrl'
 
 export default function GeneralSettings() {
+  const { appInfo } = useStudioHost()
   const preferences = useAppPreferences()
   return (
     <SettingsPage
       title="General"
       description="How Dovo starts, lists tasks and behaves in conversations on this device."
     >
+      {appInfo && (
+        <SettingsGroup title="About">
+          <SettingRow label="Dovo Studio" description="Installed app version">
+            <span className="text-xs text-muted-foreground">
+              {appInfo.version}
+              {appInfo.channel !== 'stable'
+                ? ` · ${appInfo.channel === 'nightly' ? 'Nightly' : 'Dev'}`
+                : ''}
+            </span>
+          </SettingRow>
+        </SettingsGroup>
+      )}
       <SettingsGroup title="Startup">
         <SettingRow label="Open on launch" description="The view Dovo shows when it starts.">
           <Segmented

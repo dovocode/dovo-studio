@@ -34,6 +34,7 @@ import type { DesktopUpdateBridge, DesktopUpdateState } from '@dovo/protocol'
 import { CommandPalette } from './command-palette'
 import { TitleBar, type DesktopPlatform } from './title-bar'
 type WorkbenchProps = {
+  appInfo?: StudioHostApi['appInfo']
   extensions: readonly StudioExtension[]
   pickDirectory?: StudioHostApi['pickDirectory']
   browser?: StudioHostApi['browser']
@@ -120,6 +121,7 @@ function WorkbenchContent({
   extensions,
   pickDirectory,
   browser,
+  appInfo,
   desktopPlatform,
   updates,
 }: WorkbenchProps) {
@@ -206,8 +208,9 @@ function WorkbenchContent({
       registerCommand,
       pickDirectory,
       browser,
+      appInfo,
     }),
-    [registerCommand, pickDirectory, browser],
+    [registerCommand, pickDirectory, browser, appInfo],
   )
   const catalog = useMemo(
     () => createExtensionCatalog([appSettingsExtension, ...extensions], api),
