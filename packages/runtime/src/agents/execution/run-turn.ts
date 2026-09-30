@@ -1,3 +1,4 @@
+import { reportedUsageAccount } from '../tasks/usage-account.js'
 import { browserCdpInstructions } from './browser-cdp.js'
 import { runWithHooks } from './agent-hooks.js'
 import { Cause, Effect } from 'effect'
@@ -412,6 +413,26 @@ ${
             .join('\n\n')
           const adapter = yield* runtimeOperation(() => this.registry.get(agent.provider))
           controller.signal.throwIfAborted()
+          let usageAccount: ReturnType<typeof reportedUsageAccount>
+          let turnLimits: ReturnType<typeof reportedPlanLimits> = []
+          const saveLimits = (limits: ReturnType<typeof reportedPlanLimits>) => {
+            this.store.update((workspace) => ({
+              ...workspace,
+              planLimits: [
+                ...(workspace.planLimits ?? []).filter(
+                  (previous) =>
+                    !limits.some(
+                      (limit) =>
+                        limit.provider === previous.provider &&
+                        limit.window === previous.window &&
+                        (limit.account?.id === previous.account?.id ||
+                          (!!limit.account && !previous.account)),
+                    ),
+                ),
+                ...limits,
+              ],
+            }))
+          }
           yield* runtimeOperation(() =>
             runWithHooks(
               adapter,
@@ -543,6 +564,19 @@ ${
                 },
                 onEvent: (name, payload) => {
                   if (!acceptsProviderEvents()) return
+                  const account = reportedUsageAccount(agent.provider, name, payload)
+                  if (account) {
+                    usageAccount = account
+                    if (turnLimits.length)
+                      saveLimits(turnLimits.map((limit) => ({ ...limit, account })))
+                    this.store.updateTask(id, (task) => ({
+                      ...task,
+                      turns: task.turns?.map((turn) =>
+                        turn.id === turnId ? { ...turn, usageAccount: account } : turn,
+                      ),
+                    }))
+                  }
+
                   const compaction = completedCompaction(agent.provider, name, payload)
                   const currentSession = this.store.task(id).sessionId ?? sessionId
                   if (compaction && currentSession) {
@@ -564,22 +598,22 @@ ${
                     }))
                   }
                   if (agent.provider === 'codex' || agent.provider === 'claude') {
-                    const limits = reportedPlanLimits(agent.provider, name, payload)
-                    if (limits.length)
-                      this.store.update((workspace) => ({
-                        ...workspace,
-                        planLimits: [
-                          ...(workspace.planLimits ?? []).filter(
-                            (previous) =>
-                              !limits.some(
-                                (limit) =>
-                                  limit.provider === previous.provider &&
-                                  limit.window === previous.window,
-                              ),
-                          ),
-                          ...limits,
-                        ],
-                      }))
+                    const limits = reportedPlanLimits(agent.provider, name, payload).map(
+                      (limit) => ({
+                        ...limit,
+                        sourceTaskId: id,
+                        ...(usageAccount ? { account: usageAccount } : {}),
+                      }),
+                    )
+                    if (limits.length) {
+                      turnLimits = [
+                        ...turnLimits.filter(
+                          (previous) => !limits.some((limit) => limit.window === previous.window),
+                        ),
+                        ...limits,
+                      ]
+                      saveLimits(limits)
+                    }
                   }
                   recordUsage(name, payload)
                   tokens.accept(name, payload)

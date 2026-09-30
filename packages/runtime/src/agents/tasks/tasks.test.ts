@@ -1661,3 +1661,39 @@ it('flushes streamed text at provider boundaries and retains them on the assista
   const reply = s.store.task(task.id).messages.find((message) => message.role === 'assistant')
   expect(reply).toMatchObject({ text: 'Progress.Final answer.', textBreaks: [9, 22] })
 })
+
+it('retains separate subscription quotas and identifies a reading that arrives before account metadata', async () => {
+  const s = await setup()
+  let number = 0
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      number++
+      run.onEvent?.('account/rateLimits/read', {
+        rateLimits: { primary: { usedPercent: number * 10, windowDurationMins: 300 } },
+      })
+      run.onEvent?.('account/read', {
+        account: { type: 'chatgpt', email: `account${number}@example.com`, planType: 'pro' },
+      })
+      run.onText('Done')
+    },
+  })
+  for (let index = 0; index < 2; index++) {
+    const task = s.tasks.create({
+      title: 'Usage',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Check',
+    })
+    await (
+      await s.tasks.start(task.id)
+    ).done
+    expect(s.store.task(task.id).turns?.at(-1)?.usageAccount?.label).toBe(
+      `account${index + 1}@example.com`,
+    )
+  }
+  expect(s.store.get().planLimits).toMatchObject([
+    { account: { label: 'account1@example.com' }, usedPercent: 10 },
+    { account: { label: 'account2@example.com' }, usedPercent: 20 },
+  ])
+})

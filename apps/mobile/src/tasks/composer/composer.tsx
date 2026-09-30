@@ -273,6 +273,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                 value={draft.text}
                 onChangeText={draft.update}
                 multiline
+                autoCapitalize="sentences"
                 editable={draft.ready && !busy && !dictation.active && !task.archived}
                 style={[
                   styles.input,

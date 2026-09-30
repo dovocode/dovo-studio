@@ -13,7 +13,12 @@ export type UsageRow = {
   estimatedCostUsd: number
   pricedTurns: number
 }
-export type UsageSummary = { total: UsageRow; models: UsageRow[]; tasks: UsageRow[] }
+export type UsageSummary = {
+  total: UsageRow
+  models: UsageRow[]
+  accounts: UsageRow[]
+  tasks: UsageRow[]
+}
 
 const empty = (key: string, label: string, detail?: string): UsageRow => ({
   key,
@@ -37,6 +42,7 @@ export function usageSummary(
 ): UsageSummary {
   const total = empty('total', 'All agents')
   const models = new Map<string, UsageRow>()
+  const accounts = new Map<string, UsageRow>()
   const tasks = new Map<string, UsageRow>()
   for (const source of sources)
     for (const task of source.tasks) {
@@ -48,7 +54,22 @@ export function usageSummary(
         const duration = Number.isFinite(finished) ? Math.max(0, finished - started) : 0
         const modelKey = `${turn.provider}\u0000${turn.model}`
         const taskKey = `${source.computer}\u0000${task.id}`
+        const accountKey = JSON.stringify([
+          turn.provider,
+          turn.usageAccount?.id ?? `unknown:${source.computer}:${turn.agentId}`,
+        ])
         const rows = [
+          accounts.get(accountKey) ??
+            accounts
+              .set(
+                accountKey,
+                empty(
+                  accountKey,
+                  turn.usageAccount?.label ?? 'Unidentified account',
+                  `${turn.provider}${turn.usageAccount?.subscription ? ` · ${turn.usageAccount.subscription}` : ''}${turn.usageAccount ? '' : ` · ${source.computer}`}`,
+                ),
+              )
+              .get(accountKey)!,
           total,
           models.get(modelKey) ??
             models
@@ -75,6 +96,7 @@ export function usageSummary(
   const busiest = (a: UsageRow, b: UsageRow) => b.durationMs - a.durationMs || b.turns - a.turns
   return {
     total,
+    accounts: [...accounts.values()].sort(busiest),
     models: [...models.values()].sort(busiest),
     tasks: [...tasks.values()].sort(busiest).slice(0, 10),
   }

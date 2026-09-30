@@ -388,12 +388,25 @@ export function Conversation() {
   const list = useRef<FlatList<ThreadMessage>>(null)
   const [scroll] = useApplicationState(createConversationScroll)
   const [following, setFollowing] = useApplicationState(true)
+  const frame = useRef<number | null>(null)
+  const pendingOffset = useRef<number | undefined>(undefined)
+  const cancelMove = useCallback(() => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current)
+    frame.current = null
+    pendingOffset.current = undefined
+  }, [])
+  useEffect(() => cancelMove, [cancelMove])
   const move = useCallback((offset: number | undefined) => {
-    if (offset !== undefined)
-      list.current?.scrollToOffset({
-        offset,
-        animated: false,
-      })
+    if (offset === undefined) return
+    pendingOffset.current = offset
+    // Streaming and Markdown measurements can arrive together. Apply only the latest extent per frame.
+    if (frame.current !== null) return
+    frame.current = requestAnimationFrame(() => {
+      frame.current = null
+      if (pendingOffset.current !== undefined)
+        list.current?.scrollToOffset({ offset: pendingOffset.current, animated: false })
+      pendingOffset.current = undefined
+    })
   }, [])
   const latest = useCallback(() => {
     move(scroll.latest())
@@ -421,9 +434,12 @@ export function Conversation() {
               key={message.id}
               accessibilityRole="button"
               accessibilityLabel={`Jump to bookmarked reply ${position + 1}`}
-              onPress={() =>
+              onPress={() => {
+                cancelMove()
+                scroll.pause()
+                setFollowing(false)
                 list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 })
-              }
+              }}
               style={{
                 paddingHorizontal: 8,
                 paddingVertical: 5,
@@ -454,7 +470,10 @@ export function Conversation() {
         scrollToBottomOnThreadSwitch={false}
         onContentSizeChange={(_width, height) => move(scroll.content(height))}
         onLayout={({ nativeEvent }) => move(scroll.viewport(nativeEvent.layout.height))}
-        onScrollBeginDrag={() => scroll.beginInteraction()}
+        onScrollBeginDrag={() => {
+          cancelMove()
+          scroll.beginInteraction()
+        }}
         onMomentumScrollBegin={() => scroll.beginMomentum()}
         onScroll={recordScroll}
         onScrollEndDrag={({ nativeEvent }) => {

@@ -305,7 +305,25 @@ export function createClaudeAdapter(): AgentAdapter {
     try {
       run.signal.throwIfAborted()
       session.input.push(claudeMessage(run))
-      await completion
+      const accountInfo =
+        typeof session.stream.accountInfo === 'function'
+          ? session.stream.accountInfo().catch((error) => {
+              console.warn(
+                'Claude account metadata unavailable:',
+                error instanceof Error ? error.message : String(error),
+              )
+              return undefined
+            })
+          : Promise.resolve(undefined)
+      // Observe both promises immediately, so a failed turn cannot become an unhandled rejection while metadata is loading.
+      await Promise.all([
+        completion,
+        accountInfo.then((account) => {
+          const env = processEnvironment(run.agent.env)
+          if (account && !env.ANTHROPIC_AUTH_TOKEN && !env.ANTHROPIC_API_KEY)
+            run.onEvent?.('account/info', account)
+        }),
+      ])
       if (session.sessionId && !session.closed && !session.controller.signal.aborted) {
         idle.set(run.taskId, session)
         if (releaseIdleProvider()) {

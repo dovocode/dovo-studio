@@ -289,6 +289,11 @@ export function createCodexAdapter(): AgentAdapter {
           })
         if (!reusable) await rpc.sendNotification('initialized', {})
         try {
+          run.onEvent?.('account/read', await request('account/read', { refreshToken: false }))
+        } catch {
+          // Account metadata is optional on older app servers.
+        }
+        try {
           run.onEvent?.('account/rateLimits/read', await request('account/rateLimits/read', {}))
         } catch {
           // Older app servers may not expose account limits.

@@ -1,5 +1,9 @@
+import { Schema } from 'effect'
+import { mutableStruct, mutableArray } from '../../shared/schema.js'
 export interface PlanLimit {
   provider: 'codex' | 'claude'
+  sourceTaskId?: string
+  account?: { id: string; label: string; subscription?: string }
   window: string
   usedPercent: number
   resetsAt?: number
@@ -75,3 +79,100 @@ export function reportedPlanLimits(
     ]
   })
 }
+
+/** Quota observations are snapshots, never additive across computers. Unknown accounts stay separate. */
+export function accountPlanLimits(
+  sources: readonly { computer: string; sourceId?: string; limits: readonly PlanLimit[] }[],
+  now = Date.now(),
+) {
+  const windows = new Map<
+    string,
+    PlanLimit & {
+      key: string
+      computers: string[]
+      accountLabel: string
+      accountKey: string
+      sourceId?: string
+    }
+  >()
+  for (const source of sources)
+    for (const limit of source.limits) {
+      if (
+        !Number.isFinite(Date.parse(limit.updatedAt)) ||
+        now - Date.parse(limit.updatedAt) > 30 * 86400000
+      )
+        continue
+      const accountKey = limit.account?.id ?? `unknown:${source.sourceId ?? source.computer}`
+      const key = JSON.stringify([limit.provider, accountKey, limit.window])
+      const previous = windows.get(key)
+      const computers = [...new Set([...(previous?.computers ?? []), source.computer])]
+      const reading =
+        previous && Date.parse(previous.updatedAt) > Date.parse(limit.updatedAt) ? previous : limit
+      windows.set(key, {
+        ...reading,
+        key,
+        accountKey,
+        sourceId: reading === previous ? previous?.sourceId : source.sourceId,
+        computers,
+        accountLabel: limit.account
+          ? `${limit.account.label}${limit.account.subscription ? ` · ${limit.account.subscription}` : ''}`
+          : `Unidentified account · ${source.computer}`,
+      })
+    }
+  return [...windows.values()].sort(
+    (a, b) =>
+      a.provider.localeCompare(b.provider) ||
+      a.accountLabel.localeCompare(b.accountLabel) ||
+      a.window.localeCompare(b.window),
+  )
+}
+export function formatQuotaReset(resetsAt: number | undefined, now = Date.now()) {
+  if (!resetsAt) return 'Reset time not reported'
+  const ms = resetsAt * 1000 - now
+  if (ms <= 0) return 'Reset time passed · awaiting a fresh reading'
+  const minutes = Math.ceil(ms / 60000)
+  const remaining =
+    minutes < 60
+      ? `${minutes}m`
+      : minutes < 1440
+        ? `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+        : `${Math.floor(minutes / 1440)}d ${Math.floor((minutes % 1440) / 60)}h`
+  return `Resets in ${remaining} · ${new Date(resetsAt * 1000).toLocaleString()}`
+}
+
+export function accountLimitGroups(windows: ReturnType<typeof accountPlanLimits>) {
+  const groups = new Map<
+    string,
+    { key: string; label: string; provider: PlanLimit['provider']; windows: typeof windows }
+  >()
+  for (const window of windows) {
+    const key = JSON.stringify([window.provider, window.accountKey])
+    const group = groups.get(key) ?? {
+      key,
+      label: window.accountLabel,
+      provider: window.provider,
+      windows: [],
+    }
+    group.windows.push(window)
+    groups.set(key, group)
+  }
+  for (const provider of ['codex', 'claude'] as const)
+    if (![...groups.values()].some((group) => group.provider === provider))
+      groups.set(provider, { key: provider, label: 'No account reading', provider, windows: [] })
+  return [...groups.values()]
+}
+
+export const resetCreditsSchema = mutableStruct({
+  supported: Schema.Boolean,
+  pendingAttemptId: Schema.optional(Schema.String),
+  availableCount: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+  reason: Schema.optional(Schema.String),
+  credits: mutableArray(
+    mutableStruct({
+      id: Schema.String,
+      title: Schema.String,
+      expiresAt: Schema.optional(Schema.String),
+    }),
+  ),
+})
+export const resetCreditResultSchema = mutableStruct({ outcome: Schema.String })

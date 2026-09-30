@@ -94,3 +94,17 @@ describe('conversation following', () => {
     expect(scroll.content(1080)).toBe(480)
   })
 })
+
+it('allows a small near-bottom tolerance but leaves a bookmarked reader position alone', () => {
+  const scroll = createConversationScroll()
+  scroll.content(1000)
+  scroll.viewport(600)
+  scroll.beginInteraction()
+  scroll.endInteraction(340)
+  expect(scroll.content(1080)).toBe(480)
+  scroll.pause()
+  scroll.scroll(0)
+  expect(scroll.content(1160)).toBeUndefined()
+  expect(scroll.viewport(300)).toBeUndefined()
+  expect(scroll.latest()).toBe(860)
+})

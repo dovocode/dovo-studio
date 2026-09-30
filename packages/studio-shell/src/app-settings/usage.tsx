@@ -1,5 +1,9 @@
-import { useMemo, useState } from 'react'
+import { ResetCredits } from './reset-credits'
+import { useMemo, useState, useEffect } from 'react'
 import {
+  accountPlanLimits,
+  accountLimitGroups,
+  formatQuotaReset,
   formatUsageDuration,
   formatUsageCost,
   formatUsageTokens,
@@ -89,19 +93,20 @@ export default function UsageSettings() {
       ),
     [runtimes, period],
   )
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000)
+    return () => clearInterval(timer)
+  }, [])
   const total = summary.total
-  const limits = runtimes
-    .flatMap((entry) =>
-      (entry.snapshot?.workspace.planLimits ?? []).map((limit) => ({
-        ...limit,
-        computer: entry.profile.name,
-      })),
-    )
-    .filter(
-      (limit) =>
-        Date.now() - Date.parse(limit.updatedAt) < 24 * 60 * 60 * 1000 &&
-        (!limit.resetsAt || limit.resetsAt * 1000 > Date.now()),
-    )
+  const limits = accountPlanLimits(
+    runtimes.map((entry) => ({
+      computer: entry.profile.name,
+      sourceId: entry.profile.id,
+      limits: entry.snapshot?.workspace.planLimits ?? [],
+    })),
+    now,
+  )
   return (
     <SettingsPage
       title="Usage & limits"
@@ -150,13 +155,13 @@ export default function UsageSettings() {
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          {(['codex', 'claude'] as const).map((provider) => {
-            const windows = limits.filter((limit) => limit.provider === provider)
+          {accountLimitGroups(limits).map((group) => {
+            const { provider, windows } = group
             return (
-              <div key={provider} className="rounded-xl border bg-card/60 p-4">
+              <div key={group.key} className="rounded-xl border bg-card/60 p-4">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold">
-                    {provider === 'codex' ? 'Codex' : 'Claude'}
+                    {provider === 'codex' ? 'Codex' : 'Claude'} · {group.label}
                   </h3>
                   <span className="text-[0.6875rem] text-muted-foreground">
                     {windows.length
@@ -164,21 +169,24 @@ export default function UsageSettings() {
                       : 'No reading'}
                   </span>
                 </div>
+                {group.windows[0] && <ResetCredits window={group.windows[0]} />}
                 {windows.length ? (
                   <div className="mt-4 space-y-4">
                     {windows.map((limit) => {
                       const remaining = Math.max(0, Math.min(100, 100 - limit.usedPercent))
                       return (
-                        <div key={`${limit.computer}:${limit.window}`} className="text-xs">
+                        <div key={limit.key} className="text-xs">
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="font-medium">{limit.window}</span>
                             <span className="font-semibold tabular-nums">
-                              {Math.round(remaining)}% left
+                              {limit.resetsAt && limit.resetsAt * 1000 <= now
+                                ? 'Awaiting reading'
+                                : `${Math.round(remaining)}% left`}
                             </span>
                           </div>
                           <div
                             role="progressbar"
-                            aria-label={`${provider} ${limit.window} remaining on ${limit.computer}`}
+                            aria-label={`${provider} ${limit.window} remaining for ${limit.accountLabel}`}
                             aria-valuemin={0}
                             aria-valuemax={100}
                             aria-valuenow={Math.round(remaining)}
@@ -191,12 +199,10 @@ export default function UsageSettings() {
                           </div>
                           <div className="mt-1.5 flex flex-wrap justify-between gap-x-2 text-[0.6875rem] text-muted-foreground">
                             <span>
-                              {limit.computer} · Updated{' '}
+                              Reported by {limit.computers.join(', ')} · Updated{' '}
                               {new Date(limit.updatedAt).toLocaleString()}
                             </span>
-                            {limit.resetsAt && (
-                              <span>Resets {new Date(limit.resetsAt * 1000).toLocaleString()}</span>
-                            )}
+                            <span>{formatQuotaReset(limit.resetsAt, now)}</span>
                           </div>
                         </div>
                       )
@@ -214,6 +220,9 @@ export default function UsageSettings() {
           })}
         </div>
       </section>
+      <SettingsGroup title="By account / subscription">
+        <Rows rows={summary.accounts} />
+      </SettingsGroup>
       <SettingsGroup title="By model">
         <Rows rows={summary.models} />
       </SettingsGroup>

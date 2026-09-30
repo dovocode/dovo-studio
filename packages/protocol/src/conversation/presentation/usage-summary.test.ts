@@ -24,8 +24,12 @@ const turn = (
   status: status as 'completed' | 'failed',
   ...(tokens !== undefined ? { tokens } : {}),
 })
-const task = (id: string, turns: ReturnType<typeof turn>[]) =>
-  ({ id, title: id, example: false, turns }) as unknown as Task
+const task = (
+  id: string,
+  turns: (ReturnType<typeof turn> & {
+    usageAccount?: { id: string; label: string; subscription?: string }
+  })[],
+) => ({ id, title: id, example: false, turns }) as unknown as Task
 
 it('sums recent turns per model and per task', () => {
   const since = Date.parse('2026-09-20T00:00:00Z')
@@ -77,4 +81,21 @@ it('sums only locally priced turns and reports partial coverage', () => {
   )
   expect(summary.total).toMatchObject({ estimatedCostUsd: 0.001, pricedTurns: 1, turns: 2 })
   expect(summary.models[0]).toMatchObject({ estimatedCostUsd: 0.001, pricedTurns: 1 })
+})
+
+it('sums local turn usage by subscription across machines and keeps unknown turns separate', () => {
+  const account = { id: 'same-subscription', label: 'account@example.com', subscription: 'pro' }
+  const recent = turn('2026-09-29T00:00:00Z', 1, 'gpt-5', 100)
+  const summary = usageSummary(
+    [
+      { computer: 'Mac', tasks: [task('a', [{ ...recent, usageAccount: account }, recent])] },
+      { computer: 'Linux', tasks: [task('b', [{ ...recent, usageAccount: account }, recent])] },
+    ],
+    Date.parse('2026-09-28T00:00:00Z'),
+  )
+  expect(summary.accounts).toHaveLength(3)
+  expect(summary.accounts.find((row) => row.label === account.label)).toMatchObject({
+    turns: 2,
+    tokens: 200,
+  })
 })

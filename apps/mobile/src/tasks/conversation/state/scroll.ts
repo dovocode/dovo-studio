@@ -5,6 +5,7 @@ export function createConversationScroll() {
   let following = true
   let interacting = false
   let mayDecelerate = false
+  const nearBottom = 80
   const bottom = () => Math.max(0, contentHeight - viewportHeight)
   const target = () => (following && !interacting && viewportHeight > 0 ? bottom() : undefined)
   return {
@@ -29,19 +30,24 @@ export function createConversationScroll() {
     scroll(offset: number) {
       // Keyboard/content layout corrections can move upwards too. Only a user's
       // drag or momentum changes their intention to follow the conversation.
-      if (interacting) following = bottom() - offset <= 24
+      if (interacting) following = bottom() - offset <= nearBottom
     },
     endInteraction(offset: number) {
-      if (interacting) following = bottom() - offset <= 24
+      if (interacting) following = bottom() - offset <= nearBottom
       interacting = false
       mayDecelerate = false
     },
     endDrag(offset: number, velocity = 0, targetOffset = offset) {
       if (!interacting) return
-      following = bottom() - offset <= 24
+      following = bottom() - offset <= nearBottom
       // iOS announces the destination before momentum begins. Keep ownership
       // through that gap so a stream update cannot interrupt an upward flick.
       interacting = Math.abs(velocity) > 0.01 || Math.abs(targetOffset - offset) > 1
+    },
+    pause() {
+      following = false
+      interacting = false
+      mayDecelerate = false
     },
     latest() {
       following = true

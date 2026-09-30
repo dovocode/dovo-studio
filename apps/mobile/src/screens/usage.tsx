@@ -1,7 +1,11 @@
-import { useMemo, useState } from 'react'
+import { ResetCredits } from './reset-credits'
+import { useMemo, useState, useEffect } from 'react'
 import { ScrollView, View } from 'react-native'
 import {
   formatUsageCost,
+  accountPlanLimits,
+  accountLimitGroups,
+  formatQuotaReset,
   formatUsageDuration,
   formatUsageTokens,
   usageSummary,
@@ -62,19 +66,20 @@ export default function UsageScreen() {
       ),
     [overviews, period],
   )
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000)
+    return () => clearInterval(timer)
+  }, [])
   const total = summary.total
-  const limits = overviews
-    .flatMap((entry) =>
-      (entry.snapshot?.workspace.planLimits ?? []).map((limit) => ({
-        ...limit,
-        computer: entry.profile.name,
-      })),
-    )
-    .filter(
-      (limit) =>
-        Date.now() - Date.parse(limit.updatedAt) < 24 * 60 * 60 * 1000 &&
-        (!limit.resetsAt || limit.resetsAt * 1000 > Date.now()),
-    )
+  const limits = accountPlanLimits(
+    overviews.map((entry) => ({
+      computer: entry.profile.name,
+      sourceId: entry.profile.id,
+      limits: entry.snapshot?.workspace.planLimits ?? [],
+    })),
+    now,
+  )
   return (
     <View style={styles.screen}>
       <ScreenHeader title="Usage & limits" />
@@ -109,20 +114,24 @@ export default function UsageScreen() {
           title="Account limits"
           footer="Limits are reported by Codex and Claude agents on connected computers. API-key usage may not have subscription windows."
         >
-          {(['codex', 'claude'] as const).map((provider) => {
-            const windows = limits.filter((limit) => limit.provider === provider)
+          {accountLimitGroups(limits).map((group) => {
+            const { provider, windows } = group
             return (
-              <View key={provider} style={{ padding: 12, gap: 12 }}>
+              <View key={group.key} style={{ padding: 12, gap: 12 }}>
                 <Text style={[styles.text, { fontWeight: '600' }]}>
-                  {provider === 'codex' ? 'Codex' : 'Claude'}
+                  {provider === 'codex' ? 'Codex' : 'Claude'} · {group.label}
                 </Text>
+                {group.windows[0] && <ResetCredits window={group.windows[0]} />}
                 {windows.length ? (
                   windows.map((limit) => {
                     const remaining = Math.max(0, Math.min(100, 100 - limit.usedPercent))
                     return (
-                      <View key={`${limit.computer}:${limit.window}`} style={{ gap: 5 }}>
+                      <View key={limit.key} style={{ gap: 5 }}>
                         <Text style={styles.text}>
-                          {limit.window} · {Math.round(remaining)}% left
+                          {limit.window} ·{' '}
+                          {limit.resetsAt && limit.resetsAt * 1000 <= now
+                            ? 'Awaiting reading'
+                            : `${Math.round(remaining)}% left`}
                         </Text>
                         <View
                           style={{ height: 7, borderRadius: 4, backgroundColor: colors.border }}
@@ -137,10 +146,9 @@ export default function UsageScreen() {
                           />
                         </View>
                         <Text style={styles.muted}>
-                          {limit.computer} · Updated {new Date(limit.updatedAt).toLocaleString()}
-                          {limit.resetsAt
-                            ? ` · Resets ${new Date(limit.resetsAt * 1000).toLocaleString()}`
-                            : ''}
+                          Reported by {limit.computers.join(', ')} · Updated{' '}
+                          {new Date(limit.updatedAt).toLocaleString()} ·{' '}
+                          {formatQuotaReset(limit.resetsAt, now)}
                         </Text>
                       </View>
                     )
@@ -154,6 +162,14 @@ export default function UsageScreen() {
               </View>
             )
           })}
+        </SettingsGroup>
+        <SettingsGroup title="By account / subscription">
+          {summary.accounts.map((row, index) => (
+            <Row key={row.key} row={row} first={index === 0} />
+          ))}
+          {!summary.accounts.length && (
+            <Text style={[styles.muted, { padding: 12 }]}>No agent turns yet.</Text>
+          )}
         </SettingsGroup>
         <SettingsGroup
           title="By model"

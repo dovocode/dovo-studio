@@ -80,6 +80,7 @@ export function SideQuestion({ task, onClose }: { task: Task; onClose: () => voi
             value={question}
             onChangeText={(value) => setDrafts((current) => ({ ...current, [chat.id]: value }))}
             multiline
+            autoCapitalize="sentences"
             maxLength={4000}
             editable={!disabled && !asking}
           />

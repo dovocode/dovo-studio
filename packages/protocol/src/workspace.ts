@@ -208,7 +208,13 @@ export const turnCheckpointSchema = mutableStruct({
   // undoing, so redo can bring back exactly what was there (including later edits).
   undone: Schema.optional(mutableStruct({ at: Schema.String, backup: Schema.String })),
 })
+export const usageAccountSchema = mutableStruct({
+  id: Schema.String,
+  label: Schema.String,
+  subscription: Schema.optional(Schema.String),
+})
 export const turnSchema = mutableStruct({
+  usageAccount: Schema.optional(usageAccountSchema),
   runtimeHost: Schema.optional(Schema.String),
   branch: Schema.optional(Schema.String),
   id: Schema.String,
@@ -459,6 +465,8 @@ export const workspaceSchema = mutableStruct({
     mutableArray(
       mutableStruct({
         provider: Schema.Literal('codex', 'claude'),
+        account: Schema.optional(usageAccountSchema),
+        sourceTaskId: Schema.optional(Schema.String),
         window: Schema.String,
         usedPercent: Schema.Number.pipe(Schema.finite()),
         resetsAt: Schema.optional(Schema.Number.pipe(Schema.finite())),

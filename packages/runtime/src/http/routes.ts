@@ -1,3 +1,4 @@
+import { usageResets } from './endpoints/usage-resets.js'
 import { RUNTIME_PROTOCOL_VERSION, PAIRING_PROTOCOL_VERSION } from '@dovo/protocol'
 import { routeProgram, serviceResult } from './support/effect.js'
 import { uuidSchema } from '@dovo/protocol'
@@ -556,6 +557,11 @@ export function route(
           ok: true,
         })
       }
+      if (
+        method === 'POST' &&
+        (path === '/api/usage/resets/read' || path === '/api/usage/resets/consume')
+      )
+        return yield* usageResets(request, path)
       if (
         path === '/api/approvals' ||
         path.startsWith('/api/agents/') ||
