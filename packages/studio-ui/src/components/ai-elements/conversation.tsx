@@ -53,6 +53,8 @@ export function ConversationRail({
   }>
 }) {
   const { scrollRef, stopScroll } = useStickToBottomContext()
+  const [hovered, setHovered] = useApplicationState<string | null>(null)
+  const hoverIndex = items.findIndex((item) => item.id === hovered)
   const [visible, setVisible] = useApplicationState<Set<string>>(new Set())
   useEffect(() => {
     const root = scrollRef.current
@@ -85,17 +87,28 @@ export function ConversationRail({
     <TooltipProvider delayDuration={100} skipDelayDuration={500}>
       <nav
         aria-label="Conversation turns"
-        className="absolute bottom-6 left-0 top-6 hidden w-8 flex-col items-center justify-center overflow-hidden py-1 md:flex"
+        onPointerLeave={() => setHovered(null)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') setHovered(null)
+        }}
+        className="absolute bottom-6 left-0 top-6 hidden w-12 flex-col items-start justify-center overflow-visible py-1 md:flex"
       >
         {items.map((item, index) => (
-          <Tooltip key={item.id}>
+          <Tooltip key={item.id} open={hovered === item.id} disableHoverableContent>
             <TooltipTrigger asChild>
               <button
                 type="button"
+                onPointerEnter={() => setHovered(item.id)}
+                onPointerLeave={() =>
+                  setHovered((current) => (current === item.id ? null : current))
+                }
+                onFocus={() => setHovered(item.id)}
+                onBlur={() => setHovered((current) => (current === item.id ? null : current))}
                 aria-label={`Jump to turn ${index + 1}: ${item.label}`}
                 aria-current={visible.has(item.id) ? 'location' : undefined}
-                className="group flex min-h-0 max-h-2 w-8 flex-1 items-center justify-center rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="group flex min-h-0 max-h-2 w-12 flex-1 items-center justify-start pl-3 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => {
+                  setHovered(null)
                   const root = scrollRef.current
                   const target = document.getElementById(item.id)
                   if (!root || !target || !root.contains(target)) return
@@ -113,8 +126,20 @@ export function ConversationRail({
                 }}
               >
                 <span
+                  style={{
+                    width:
+                      hoverIndex < 0
+                        ? 8
+                        : Math.abs(index - hoverIndex) === 0
+                          ? 24
+                          : Math.abs(index - hoverIndex) === 1
+                            ? 16
+                            : Math.abs(index - hoverIndex) === 2
+                              ? 12
+                              : 8,
+                  }}
                   className={cn(
-                    'h-[2px] w-2 rounded-full transition-colors duration-150 ease-out group-hover:bg-foreground group-focus-visible:bg-foreground motion-reduce:transition-none',
+                    'h-[2px] rounded-full transition-[width,background-color] duration-150 ease-out group-hover:bg-foreground group-focus-visible:bg-foreground motion-reduce:transition-none',
                     visible.has(item.id) ? 'bg-foreground/90' : 'bg-muted-foreground/30',
                   )}
                 />
@@ -124,7 +149,7 @@ export function ConversationRail({
               side="right"
               sideOffset={10}
               collisionPadding={12}
-              className="w-80 max-w-[calc(100vw-5rem)] rounded-xl bg-popover px-3 py-3 text-left text-sm leading-5 shadow-lg"
+              className="pointer-events-none w-80 max-w-[calc(100vw-5rem)] rounded-xl bg-popover px-3 py-3 text-left text-sm leading-5 shadow-lg"
             >
               <p className="line-clamp-2 break-words font-medium">{item.label}</p>
               {item.preview && (
