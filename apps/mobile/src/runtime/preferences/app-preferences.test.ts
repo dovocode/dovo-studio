@@ -78,3 +78,23 @@ it('persists the latest preferences when saves overlap', async () => {
   await vi.waitFor(() => expect(writes.length).toBe(2))
   expect(JSON.parse(writes.at(-1) ?? '{}').taskSort).toBe('oldest')
 })
+
+it('defaults changed files to collapsed and restores an expanded preference', async () => {
+  storage.getItem = async () => JSON.stringify({ taskSort: 'title' })
+  const first = await loadPreferences()
+  await first.preferencesReady
+  expect(first.readMobilePreferences().collapseChangedFiles).toBe(true)
+  let saved = ''
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  first.updateMobilePreferences({ collapseChangedFiles: false })
+  await vi.waitFor(() => expect(saved).not.toBe(''))
+  storage.getItem = async () => saved
+  const reopened = await loadPreferences()
+  await reopened.preferencesReady
+  expect(reopened.readMobilePreferences()).toMatchObject({
+    collapseChangedFiles: false,
+    taskSort: 'title',
+  })
+})

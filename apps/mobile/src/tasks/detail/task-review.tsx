@@ -18,16 +18,18 @@ import { DiffView } from '../preview/diff-view'
 export function TaskReview({
   task,
   initialCheckpoint = '',
+  initialPath = '',
 }: {
   task: Task
   initialCheckpoint?: string
+  initialPath?: string
 }) {
   const { call, connected, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
   const [checkpoint, setCheckpoint] = useApplicationState(initialCheckpoint)
   const history = task.turns?.find((turn) => turn.id === checkpoint)?.checkpoint
   const files = checkpoint ? (history?.files ?? []) : task.files
-  const [path, setPath] = useApplicationState(''),
+  const [path, setPath] = useApplicationState(initialPath),
     [edit, setEdit] = useApplicationState<{
       path: string
       contents: string

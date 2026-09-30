@@ -19,7 +19,7 @@ type Conversation = {
   actions: ReturnType<typeof useConversationActions>
   send: (mode?: 'queue' | 'steer') => void
   stop: () => void
-  openCheckpoint: (turnId: string) => void
+  openCheckpoint: (turnId: string, path?: string) => void
   openTerminal: (terminalId: string) => void
   legacyEvents: ToolEvents
   activityError: string
@@ -46,7 +46,7 @@ export function ConversationProvider({
 }: {
   task: Task
   visible: boolean
-  openCheckpoint: (turnId: string) => void
+  openCheckpoint: (turnId: string, path?: string) => void
   openTerminal: (terminalId: string) => void
   children: ReactNode
 }) {

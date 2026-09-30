@@ -287,6 +287,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
                   ? 'Stopped'
                   : 'Draft'
   const [checkpoint, setCheckpoint] = useApplicationState('')
+  const [checkpointPath, setCheckpointPath] = useApplicationState('')
   const [terminalId, setTerminalId] = useApplicationState('')
   const car = useCarMode()
   const [pane, setPane] = useApplicationState<'chat' | 'diff' | 'terminal' | 'browser' | 'agents'>(
@@ -437,7 +438,8 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
           setTerminalId(id)
           setPane('terminal')
         }}
-        openCheckpoint={(id) => {
+        openCheckpoint={(id, path) => {
+          setCheckpointPath(path ?? '')
           setCheckpoint(id)
           setPane('diff')
         }}
@@ -564,7 +566,9 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
         {pane === 'browser' && (
           <BrowserPane taskId={task.id} expanded={expandedPreview} onExpand={setExpandedPreview} />
         )}
-        {pane === 'diff' && <TaskReview task={task} initialCheckpoint={checkpoint} />}
+        {pane === 'diff' && (
+          <TaskReview task={task} initialCheckpoint={checkpoint} initialPath={checkpointPath} />
+        )}
         {pane === 'terminal' && (
           <TerminalPane task={task} selected={terminalId} onSelect={setTerminalId} />
         )}

@@ -1,5 +1,10 @@
 import { fileStats } from '../files/stats'
-import { formatTime, useCarMode } from '../../runtime/preferences/app-preferences'
+import { CheckpointFiles } from './components/checkpoint-files'
+import {
+  formatTime,
+  useCarMode,
+  useMobilePreferences,
+} from '../../runtime/preferences/app-preferences'
 import { MessageActions } from './components/message-actions'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
@@ -91,13 +96,16 @@ function CheckpointRow({
   turn,
 }: {
   checkpoint: Schema.Schema.Type<typeof checkpointSchema>
-  openCheckpoint: (turnId: string) => void
+  openCheckpoint: (turnId: string, path?: string) => void
   taskId: string
   taskRunning: boolean
   turn: TaskTurn | undefined
 }) {
   const { connected, callEffect } = useRuntime()
   const restore = useAction()
+  const { collapseChangedFiles } = useMobilePreferences()
+  const [expanded, setExpanded] = useApplicationState<boolean | null>(null)
+  const showFiles = expanded ?? !collapseChangedFiles
   const totals = useMemo(
     () =>
       (turn?.checkpoint?.files ?? []).map(fileStats).reduce(
@@ -142,38 +150,57 @@ function CheckpointRow({
         gap: 4,
       }}
     >
-      <Pressable
-        testID={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
-        accessibilityRole="button"
-        accessibilityLabel={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
-        onPress={() => openCheckpoint(checkpoint.turnId)}
-        style={({ pressed }) => ({
-          minHeight: 44,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 8,
-          opacity: pressed ? 0.55 : 1,
-        })}
-      >
-        <Icon name="changes" size={15} color={colors.muted} />
-        <Text
-          style={[
-            styles.muted,
-            {
-              flexShrink: 1,
-            },
-          ]}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Pressable
+          testID={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
+          accessibilityRole="button"
+          accessibilityLabel={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
+          accessibilityState={{ expanded: showFiles }}
+          onPress={() => setExpanded(!showFiles)}
+          style={({ pressed }) => ({
+            flex: 1,
+            minHeight: 44,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            opacity: pressed ? 0.55 : 1,
+          })}
         >
-          {checkpoint.files} {checkpoint.files === 1 ? 'file' : 'files'} changed
-        </Text>
-        {!!turn?.checkpoint?.files.length && (
-          <>
-            <Text style={{ color: '#34d399', fontSize: 12 }}>+{totals.additions}</Text>
-            <Text style={{ color: '#fb7185', fontSize: 12 }}>-{totals.deletions}</Text>
-          </>
-        )}
-        <Icon name="next" size={12} color={colors.muted} />
-      </Pressable>
+          <Icon name={showFiles ? 'down' : 'next'} size={15} color={colors.muted} />
+          <Text
+            style={[
+              styles.muted,
+              {
+                flexShrink: 1,
+              },
+            ]}
+          >
+            {checkpoint.files} {checkpoint.files === 1 ? 'file' : 'files'} changed
+          </Text>
+          {!!turn?.checkpoint?.files.length && (
+            <>
+              <Text style={{ color: '#34d399', fontSize: 12 }}>+{totals.additions}</Text>
+              <Text style={{ color: '#fb7185', fontSize: 12 }}>-{totals.deletions}</Text>
+            </>
+          )}
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open turn diff"
+          onPress={() => openCheckpoint(checkpoint.turnId)}
+          style={{ minHeight: 36, justifyContent: 'center' }}
+        >
+          <Text style={styles.muted}>Open diff</Text>
+        </Pressable>
+      </View>
+      {showFiles && (
+        <CheckpointFiles
+          files={turn?.checkpoint?.files ?? []}
+          omitted={turn?.checkpoint?.omitted ?? []}
+          onOpen={(path) => openCheckpoint(checkpoint.turnId, path)}
+        />
+      )}
+
       {!!checkpoint.omitted && (
         <Text style={styles.muted}>{checkpoint.omitted} files omitted from snapshot</Text>
       )}
@@ -270,14 +297,29 @@ const userParts = {
   ...parts,
   Text: UserText,
 }
-function AssistantParts() {
+function AssistantParts({ footer = false }: { footer?: boolean }) {
   const message = useAuiState((state) => state.message)
   const { task, collapsedTurns, toggleTurn } = useTaskConversation()
   const turn = task.turns?.find((item) => item.assistantId === message.id)
   const open = !(collapsedTurns[turn?.id ?? message.id] ?? turn?.status === 'completed')
   const car = useCarMode()
-  if (!turn || car) return <MessagePrimitive.Parts components={parts} />
-  const { finalIndex, end } = turnPartBoundaries(message.content, turn.status === 'running')
+  const { finalIndex, end } = turnPartBoundaries(message.content, turn?.status === 'running')
+  if (footer)
+    return (
+      <>
+        {message.content.slice(end).map((_, index) => (
+          <MessagePrimitive.PartByIndex key={end + index} index={end + index} components={parts} />
+        ))}
+      </>
+    )
+  if (!turn || car)
+    return (
+      <>
+        {message.content.slice(0, end).map((_, index) => (
+          <MessagePrimitive.PartByIndex key={index} index={index} components={parts} />
+        ))}
+      </>
+    )
   const renderRange = (start: number, end: number) => {
     const elements = []
     for (let index = start; index < end; index++) {
@@ -328,7 +370,6 @@ function AssistantParts() {
       </Pressable>
       {open && renderRange(0, finalIndex >= 0 ? finalIndex : end)}
       {finalIndex >= 0 && renderRange(finalIndex, end)}
-      {renderRange(end, message.content.length)}
     </>
   )
 }
@@ -397,6 +438,7 @@ function Message() {
           {!user && <Text style={[styles.muted, { fontSize: 13 }]}>{time}</Text>}
         </View>
       )}
+      {!user && <AssistantParts footer />}
     </MessagePrimitive.Root>
   )
 }

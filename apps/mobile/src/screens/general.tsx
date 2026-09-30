@@ -189,6 +189,14 @@ export default function GeneralScreen() {
           title="Conversation"
           footer="Whether commands, edits and searches in each turn start open or folded. The screen stays on only while you have a running task open."
         >
+          <SwitchRow
+            first
+            label="Collapse changed files by default"
+            value={preferences.collapseChangedFiles}
+            onValueChange={(collapseChangedFiles) =>
+              updateMobilePreferences({ collapseChangedFiles })
+            }
+          />
           <View style={{ padding: 12 }}>
             <Choice
               label="Tool activity"

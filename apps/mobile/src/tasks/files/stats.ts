@@ -9,3 +9,13 @@ export function fileStats(file: ChangedFile) {
     { additions: 0, deletions: 0 },
   )
 }
+
+/** Root files remain direct rows; other files share their actual directory. */
+export function checkpointFolders(paths: string[]) {
+  const folders = new Map<string, string[]>()
+  for (const path of [...new Set(paths)].sort()) {
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+    folders.set(folder, [...(folders.get(folder) ?? []), path])
+  }
+  return folders
+}
