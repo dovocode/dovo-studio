@@ -34,6 +34,8 @@ jobs:
       app_name: ${{ steps.prepare.outputs.app_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Create release draft
         id: prepare
         env:
@@ -63,19 +65,26 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
           echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+          EXISTS=false
           if gh release view "$TAG" --json isDraft --jq .isDraft >/tmp/dovo-release-draft 2>/dev/null; then
             if test "$(cat /tmp/dovo-release-draft)" != true; then
               echo 'Release is already published; skipping duplicate tag-triggered build.'
               echo 'build=false' >> "$GITHUB_OUTPUT"
               exit 0
             fi
+            EXISTS=true
+          fi
+          if test "$CHANNEL" = nightly; then
+            node scripts/packaging/nightly-notes.mjs "$GITHUB_SHA" > /tmp/dovo-nightly-notes.md
+            if test "$EXISTS" = true; then
+              gh release edit "$TAG" --target "$GITHUB_SHA" --notes-file /tmp/dovo-nightly-notes.md
+            else
+              gh release create "$TAG" --draft --prerelease --title "Dovo Studio (Nightly) ${TAG#v}" --target "$GITHUB_SHA" --notes-file /tmp/dovo-nightly-notes.md
+            fi
+          elif test "$EXISTS" = true; then
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
-            if test "$CHANNEL" = nightly; then
-              gh release create "$TAG" --draft --prerelease --title "Dovo Studio (Nightly) ${TAG#v}" --target "$GITHUB_SHA" --generate-notes
-            else
-              gh release create "$TAG" --draft --title "Dovo Studio ${TAG#v}" --target "$GITHUB_SHA" --generate-notes
-            fi
+            gh release create "$TAG" --draft --title "Dovo Studio ${TAG#v}" --target "$GITHUB_SHA" --generate-notes
           fi
           echo 'build=true' >> "$GITHUB_OUTPUT"
   mac:

@@ -52,11 +52,12 @@ matching server archive, registers the user service, and uses the same command f
 
 Merging into `main` builds and publishes `vX.Y.Z-nightly.N` automatically after all platform
 artifacts pass verification. Nightly releases are GitHub prereleases and do not replace the latest
-Stable release. They include separate signed **Dovo Studio (Nightly)** Mac bundles, Windows/Linux
-installers, server archives, update metadata, Homebrew definitions, and a pinned mise config. The
-Stable release remains an explicit review and publish step. When preparing the next Stable version,
-update the `version_prefix` for both Nightly tools in `distribution/mise.toml` to the new base
-version.
+Stable release. Their release notes list commit messages since the previous published nightly,
+including direct commits to main. Failed draft builds do not advance that baseline. They include
+separate signed **Dovo Studio (Nightly)** Mac bundles, Windows/Linux installers, server archives,
+update metadata, Homebrew definitions, and a pinned mise config. The Stable release remains an
+explicit review and publish step. When preparing the next Stable version, update the
+`version_prefix` for both Nightly tools in `distribution/mise.toml` to the new base version.
 
 Use Node 24, `pnpm build`, then `pnpm exec node scripts/packaging/package-desktop.mjs` on the target
 OS and architecture. Append `--dir` for an unpacked build. Linux packaging requires Ruby/FPM and RPM
