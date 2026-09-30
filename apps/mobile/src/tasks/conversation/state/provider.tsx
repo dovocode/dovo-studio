@@ -1,8 +1,9 @@
+import { visibleMobileSend } from '../../composer/pending-send'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
 import { AssistantRuntimeProvider } from '@assistant-ui/react-native'
 import { useExternalStoreRuntime } from '@assistant-ui/core/react'
-import { visiblePendingMessage, type PendingMessage, type Task } from '@dovo/protocol'
+import { type PendingMessage, type Task } from '@dovo/protocol'
 import { useConversationActions } from './use-actions'
 import { useToolActivity } from './use-tool-activity'
 import { conversationMessages } from './messages'
@@ -119,10 +120,10 @@ export function ConversationProvider({
     if ((!visible || answeringQuestion || task.archived) && dictating) finishDictation()
   }, [visible, answeringQuestion, task.archived, dictating, finishDictation])
   const activity = useToolActivity(task.id, visible, task.status === 'running')
-  const pendingMessage = useMemo(
-    () => visiblePendingMessage(task, actions.pendingMessage),
-    [task.id, task.messages, task.queue, actions.pendingMessage],
-  )
+  const pendingMessage = useMemo(() => {
+    const pending = visibleMobileSend(task, actions.pendingMessage)
+    return pending?.destination === 'thread' ? pending : null
+  }, [task.id, task.messages, task.queue, actions.pendingMessage])
   const messages = useMemo(() => {
     const displayed = pendingMessage
       ? { ...task, messages: [...task.messages, pendingMessage.message] }
@@ -176,20 +177,7 @@ export function ConversationProvider({
             // Only a local Send/Queue/Steer asks to leave a manually scrolled position.
             // Remote messages and queued turns arriving later must not move the reader.
             setFollowRequest((revision) => revision + 1)
-            runtime.thread.append({
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: actions.draft.text,
-                },
-              ],
-              runConfig: {
-                custom: {
-                  mode,
-                },
-              },
-            })
+            void actions.run(() => actions.submit(mode))
           }
         },
         stop: () => runtime.thread.cancelRun(),

@@ -1,3 +1,4 @@
+import { pendingQueue, visibleMobileSend } from './pending-send'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
@@ -16,7 +17,8 @@ export function MessageQueue({ task }: { task: Task }) {
     { act, busy, error } = useAction()
   const { actions } = useTaskConversation()
   const [open, setOpen] = useApplicationState(false)
-  const queue = task.queue ?? []
+  const pending = visibleMobileSend(task, actions.pendingMessage)
+  const queue = pendingQueue(task, actions.pendingMessage)
   const change = (action: string, messageId?: string) =>
     act(() =>
       callEffect(
@@ -74,7 +76,14 @@ export function MessageQueue({ task }: { task: Task }) {
               },
             ]}
           >
-            {queue.length} queued · {task.queuePaused ? 'Paused' : 'After this turn'}
+            {queue.length} queued ·{' '}
+            {pending?.destination === 'queue'
+              ? pending.state === 'sending'
+                ? 'Sending…'
+                : 'Send failed'
+              : task.queuePaused
+                ? 'Paused'
+                : 'After this turn'}
           </Text>
           <Icon name="next" size={12} color={colors.muted} />
         </Pressable>
@@ -85,7 +94,7 @@ export function MessageQueue({ task }: { task: Task }) {
             <Action
               secondary
               label={task.queuePaused ? 'Resume queue' : 'Pause queue'}
-              disabled={!connected || busy || task.archived}
+              disabled={!connected || busy || !task.queue?.length || task.archived}
               onPress={() => change(task.queuePaused ? 'resume' : 'pause')}
             />
           )}
@@ -108,7 +117,13 @@ export function MessageQueue({ task }: { task: Task }) {
                   gap: 4,
                 }}
               >
-                <Text style={styles.muted}>Message {index + 1}</Text>
+                <Text style={styles.muted}>
+                  {pending?.message.id === message.id
+                    ? pending.state === 'sending'
+                      ? 'Sending…'
+                      : 'Could not send · Retry from composer'
+                    : `Message ${index + 1}`}
+                </Text>
                 <Text style={styles.text}>
                   {message.text || message.attachments?.map((file) => file.name).join(', ')}
                 </Text>
@@ -119,19 +134,24 @@ export function MessageQueue({ task }: { task: Task }) {
               <IconButton
                 icon="next"
                 label={`Steer with message ${index + 1}`}
-                disabled={!connected || busy || task.status !== 'running'}
+                disabled={
+                  !connected ||
+                  busy ||
+                  pending?.message.id === message.id ||
+                  task.status !== 'running'
+                }
                 onPress={() => change('steer', message.id)}
               />
               <IconButton
                 icon="moveUp"
                 label={`Up ${index + 1}`}
-                disabled={!connected || busy || index === 0}
+                disabled={!connected || busy || pending?.message.id === message.id || index === 0}
                 onPress={() => change('up', message.id)}
               />
               <IconButton
                 icon="trash"
                 label={`Cancel ${index + 1} and return to composer`}
-                disabled={!connected || busy}
+                disabled={!connected || busy || pending?.message.id === message.id}
                 onPress={() => restore(message)}
               />
             </View>

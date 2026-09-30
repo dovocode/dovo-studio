@@ -1,4 +1,4 @@
-import type { PendingMessage } from '@dovo/protocol'
+import { sendingDraft, sendDestination, type MobilePendingSend } from '../../composer/pending-send'
 import { mobileWorkflow } from '../../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../../runtime/state/application-state'
@@ -28,7 +28,7 @@ export function useConversationActions(task: Task) {
     storedDraft = useDraft(task.id, task.draft),
     action = useAction(),
     cancellation = useAction()
-  const [pendingMessage, setPendingMessage] = useApplicationState<PendingMessage | null>(null)
+  const [pendingMessage, setPendingMessage] = useApplicationState<MobilePendingSend | null>(null)
   const { busy } = action
   const failedSend = useRef<SendAttempt | null>(null)
   const restoredScope = useRef('')
@@ -67,6 +67,10 @@ export function useConversationActions(task: Task) {
   })
   const draft = {
     ...storedDraft,
+    text: sendingDraft(
+      storedDraft.text,
+      pendingMessage?.taskId === task.id ? pendingMessage : null,
+    ),
     update: dictation.update,
   }
   const attachmentPicker = useAttachmentPicker(task.id)
@@ -90,14 +94,34 @@ export function useConversationActions(task: Task) {
       },
       ids,
     )
-    if (acknowledged && attempt) void runClientEffect(storedDraft.confirmEffect(attempt, true))
+    const pending =
+      pendingMessage?.taskId === task.id && ids.includes(pendingMessage.message.id)
+        ? pendingMessage
+        : null
+    if (pending) {
+      const submitted = attempt ?? {
+        id: pending.message.id,
+        text: pending.message.text,
+        attachmentIds: pending.message.attachments?.map((file) => file.id) ?? [],
+        mode: 'queue' as const,
+      }
+      void runClientEffect(
+        storedDraft
+          .confirmEffect(submitted, true)
+          .pipe(
+            Effect.tap(() =>
+              Effect.sync(() =>
+                setPendingMessage((current) =>
+                  current?.message.id === submitted.id ? null : current,
+                ),
+              ),
+            ),
+          ),
+      )
+    } else if (acknowledged && attempt)
+      void runClientEffect(storedDraft.confirmEffect(attempt, true))
     // Once the host lists the message, the local copy is done; keeping it would show a ghost
     // "Sending…" bubble whenever that message later leaves the queue.
-    setPendingMessage((pending) =>
-      pending?.taskId === task.id && pending.state !== 'failed' && ids.includes(pending.message.id)
-        ? null
-        : pending,
-    )
   }, [
     activeId,
     task.id,
@@ -106,6 +130,8 @@ export function useConversationActions(task: Task) {
     task.draftAttachments,
     storedDraft.ready,
     storedDraft.submission,
+    pendingMessage?.message.id,
+    pendingMessage?.state,
   ])
   const agent = resolveTaskAgent(task, snapshot?.workspace.agents ?? [])
   const firstMessage = !task.messages.length && !task.queue?.length && !task.turns?.length
@@ -160,10 +186,10 @@ export function useConversationActions(task: Task) {
         mode,
       })
       submittedId = attempt.id
-      yield* storedDraft.stageEffect(attempt)
       setPendingMessage({
         taskId: task.id,
         state: 'sending',
+        destination: sendDestination(task, mode),
         message: {
           id: attempt.id,
           role: 'user',
@@ -172,6 +198,7 @@ export function useConversationActions(task: Task) {
           attachments: task.draftAttachments,
         },
       })
+      yield* storedDraft.stageEffect(attempt)
       if (firstMessage) {
         const summary =
           text ||
@@ -237,6 +264,12 @@ export function useConversationActions(task: Task) {
   }
   return {
     pendingMessage,
+    draftAttachments:
+      pendingMessage?.taskId === task.id && pendingMessage.state === 'sending'
+        ? task.draftAttachments?.filter(
+            (file) => !pendingMessage.message.attachments?.some((sent) => sent.id === file.id),
+          )
+        : task.draftAttachments,
     call,
     stopping: cancellation.busy,
     stop: () => {

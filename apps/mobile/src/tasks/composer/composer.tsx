@@ -209,7 +209,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
       >
         <MessageAttachments
           taskId={task.id}
-          files={task.draftAttachments}
+          files={actions.draftAttachments}
           removable
           disabled={busy || attaching}
           onBusy={setAttaching}
