@@ -39,6 +39,7 @@ export interface StudioCommand {
 }
 export interface StudioHostApi {
   appInfo?: { version: string; channel: 'stable' | 'nightly' | 'dev' }
+  updates?: import('@dovo/protocol').DesktopUpdateBridge
   browser?: import('@dovo/protocol').BrowserBridge
   pickDirectory?: (runtimeAddress: string) => Promise<string | null>
   navigate: (target: StudioNavigation) => void

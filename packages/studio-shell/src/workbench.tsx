@@ -211,8 +211,9 @@ function WorkbenchContent({
       pickDirectory,
       browser,
       appInfo,
+      updates,
     }),
-    [registerCommand, pickDirectory, browser, appInfo],
+    [registerCommand, pickDirectory, browser, appInfo, updates],
   )
   const catalog = useMemo(
     () => createExtensionCatalog([appSettingsExtension, ...extensions], api),
@@ -363,7 +364,6 @@ function WorkbenchContent({
             taskHeader={taskChrome}
             update={update}
             onUpdate={updates ? () => void updates.install() : undefined}
-            onUpdateChannel={updates ? (channel) => updates.setChannel(channel) : undefined}
             onCheckUpdates={updates ? () => void updates.check() : undefined}
             views={catalog.views.filter((view) =>
               view.id === 'issues' ? showIssues : view.id === 'jira' ? showJira : true,

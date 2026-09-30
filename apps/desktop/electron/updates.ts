@@ -29,7 +29,7 @@ export function registerUpdates(
     autoUpdater.channel =
       process.platform === 'win32' && process.arch === 'arm64' ? `${feed}-arm64` : feed
     autoUpdater.allowPrerelease = channel === 'nightly'
-    autoUpdater.allowDowngrade = channel === 'stable' && nightly
+    autoUpdater.allowDowngrade = channel !== (nightly ? 'nightly' : 'stable')
   }
   configureChannel()
   autoUpdater.autoDownload = false

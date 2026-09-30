@@ -5,7 +5,7 @@ import {
   runtimeUpgradeBlocked,
   type RuntimeUpgradeEntry,
 } from '@dovo/protocol'
-import { Button } from '@dovo/studio-ui'
+import { Button, MessageResponse } from '@dovo/studio-ui'
 import { useWorkspace } from '@dovo/studio-core'
 
 export function ComputerUpdates() {
@@ -110,9 +110,11 @@ export function ComputerUpdates() {
                 {update.available && (
                   <details className="text-xs">
                     <summary className="cursor-pointer text-primary">What’s new</summary>
-                    <p className="my-2 max-h-40 overflow-y-auto whitespace-pre-wrap">
-                      {update.latest?.notes || 'Release notes are unavailable.'}
-                    </p>
+                    <div className="my-2 max-h-40 overflow-y-auto">
+                      <MessageResponse baseURL={update.latest?.url}>
+                        {update.latest?.notes || 'Release notes are unavailable.'}
+                      </MessageResponse>
+                    </div>
                   </details>
                 )}
                 {blocked && <p className="text-xs text-muted-foreground">{blocked}</p>}

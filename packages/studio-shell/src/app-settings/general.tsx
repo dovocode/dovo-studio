@@ -5,6 +5,7 @@ import {
   updateAppPreferences,
   useAppPreferences,
 } from '@dovo/studio-core'
+import { UpdateSettings } from './updates'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { SettingRow, SettingsGroup, SettingsPage, Segmented, Toggle } from './layout'
 
@@ -31,6 +32,7 @@ export default function GeneralSettings() {
           </SettingRow>
         </SettingsGroup>
       )}
+      <UpdateSettings />
       <SettingsGroup title="Startup">
         <SettingRow label="Open on launch" description="The view Dovo shows when it starts.">
           <Segmented

@@ -398,3 +398,26 @@ it('does not download a stale offer when the online recheck fails', async () => 
   expect(f.downloads).not.toHaveBeenCalled()
   expect(f.message).toHaveBeenLastCalledWith(expect.objectContaining({ detail: 'Offline' }))
 })
+
+it('keeps default stable and nightly channels without saving an implicit choice', async () => {
+  const { registerUpdates } = await import('./updates')
+  const updater = (await import('electron-updater')).default.autoUpdater
+  f.version = '0.0.7'
+  expect(registerUpdates('/unused', async () => async () => {}).state().channel).toBe('stable')
+  expect(updater.allowDowngrade).toBe(false)
+  f.version = '0.0.7-nightly.42'
+  expect(registerUpdates('/unused', async () => async () => {}).state().channel).toBe('nightly')
+  expect(updater.allowPrerelease).toBe(true)
+  expect(updater.allowDowngrade).toBe(false)
+  expect(writeLocalSettingsSection).not.toHaveBeenCalled()
+})
+it('allows an explicit stable-to-nightly change despite prerelease version ordering', async () => {
+  f.version = '0.0.7'
+  const { registerUpdates } = await import('./updates')
+  const updater = (await import('electron-updater')).default.autoUpdater
+  const updates = registerUpdates('/unused', async () => async () => {})
+  await updates.setChannel('nightly')
+  expect(updater.allowPrerelease).toBe(true)
+  expect(updater.allowDowngrade).toBe(true)
+  expect(writeLocalSettingsSection).toHaveBeenCalledOnce()
+})
