@@ -6,7 +6,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { pairingInvitation, type PairingInvitation } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
-import { Alert, ScrollView, View } from 'react-native'
+import { Alert, Platform, ScrollView, View } from 'react-native'
 import type { RuntimeProfile } from '@dovo/protocol'
 import { clientScopeKey } from '@dovo/client-runtime'
 import { ActivityLog } from '../runtime/state/activity'
@@ -159,7 +159,7 @@ export default function DevicesScreen() {
         {!!profiles.length && <ComputerUpdates />}
         <SettingsGroup title="Tools">
           <SettingsRow
-            title="iOS Shortcuts"
+            title={Platform.OS === 'ios' ? 'Shortcuts & quick launch' : 'Quick launch'}
             icon="jobs"
             tint="#bb9aff"
             onPress={() => setShortcuts(true)}
@@ -228,7 +228,29 @@ export default function DevicesScreen() {
         </RuntimeScope>
       )}
       {shortcuts && (
-        <Sheet title="iOS Shortcuts" onClose={() => setShortcuts(false)}>
+        <Sheet
+          title={Platform.OS === 'ios' ? 'Shortcuts & quick launch' : 'Quick launch'}
+          onClose={() => setShortcuts(false)}
+        >
+          <Text style={styles.text}>
+            Long-press Dovo’s app icon and choose Start a task to select a server, project and
+            favorite agent.
+          </Text>
+          <Action
+            label="Open task launcher"
+            onPress={() => {
+              setShortcuts(false)
+              router.push('/launch')
+            }}
+          />
+          <Text style={styles.muted}>
+            {Platform.OS === 'ios'
+              ? 'In Apple Shortcuts, add an Open URLs action with the link below. You can assign it to Siri, your Home Screen or Action button.'
+              : 'Supported Android launchers also let you drag the Start a task shortcut onto your Home Screen.'}
+          </Text>
+          <Text selectable style={styles.muted}>
+            dovo://launch
+          </Text>
           <Text style={styles.text}>
             In Shortcuts: Ask for Input → URL Encode → Text with the URL below → Open URLs. Review
             the draft, model and checkout before sending its first message.

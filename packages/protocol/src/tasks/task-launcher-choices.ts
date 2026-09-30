@@ -1,4 +1,5 @@
-import { providerSchema, type RuntimeSnapshot, type TaskHarness } from '@dovo/protocol'
+import { providerSchema, type TaskHarness } from '../workspace.js'
+import type { RuntimeSnapshot } from '../runtime/connection/runtime.js'
 export type LauncherAgent = {
   key: string
   name: string

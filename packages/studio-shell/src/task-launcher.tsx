@@ -1,18 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  createTask,
-  defaultTaskHarness,
-  resolveTaskDefaults,
-  useAppPreferences,
-  useWorkspace,
-  useStudioHost,
-} from '@dovo/studio-core'
-import {
-  snapshotSchema,
-  supportsAccess,
-  type RuntimeSnapshot,
-  type TaskLauncherBridge,
-} from '@dovo/protocol'
+import { useAppPreferences, useWorkspace, useStudioHost } from '@dovo/studio-core'
+import { snapshotSchema, type RuntimeSnapshot, type TaskLauncherBridge } from '@dovo/protocol'
 import {
   Dialog,
   DialogContent,
@@ -22,8 +10,12 @@ import {
   Button,
 } from '@dovo/studio-ui'
 import { ArrowUpRight, Star } from 'lucide-react'
-import { launcherAgents } from './task-launcher-choices'
-import { dispatchLauncherTask, type LauncherAttempt } from './task-launcher-dispatch'
+import {
+  launcherAgents,
+  createLauncherTask,
+  dispatchLauncherTask,
+  type LauncherAttempt,
+} from '@dovo/protocol'
 
 export function TaskLauncher({
   bridge,
@@ -124,30 +116,9 @@ export function TaskLauncher({
     setBusy(true)
     setError('')
     try {
-      if (!attempt.current && profile && repository && agent) {
-        const defaults = resolveTaskDefaults(snapshot?.defaults, repository)
-        const base =
-          defaults.harness.provider === agent.provider &&
-          (agent.provider !== 'acp' ||
-            defaults.harness.acpInstallationId === agent.acpInstallationId)
-            ? defaults.harness
-            : {
-                ...defaultTaskHarness(agent.provider),
-                permission: supportsAccess(agent.provider, defaults.harness.permission)
-                  ? defaults.harness.permission
-                  : 'ask',
-              }
+      if (!attempt.current && snapshot && profile && repository && agent) {
         attempt.current = {
-          task: createTask({
-            ...defaults,
-            title: text.trim().split('\n')[0].slice(0, 80),
-            objective: '',
-            repositoryId,
-            agentId: agent.agentId ?? '',
-            harness: agent.agentId
-              ? undefined
-              : { ...base, model: agent.model ?? '', acpInstallationId: agent.acpInstallationId },
-          }),
+          task: createLauncherTask(snapshot, repository, agent, text, crypto.randomUUID()),
           profile,
           messageId: crypto.randomUUID(),
           text: text.trim(),

@@ -83,7 +83,23 @@
           ]
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-quick-actions",
+        {
+          "iosActions": [
+            {
+              "id": "dovo.launch",
+              "title": "Start a task",
+              "subtitle": "Choose server, project and favorite agent",
+              "icon": "compose",
+              "params": {
+                "href": "/launch"
+              }
+            }
+          ]
+        }
+      ]
     ]
   }
 }

@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vite-plus/test'
 import { createTask, useWorkspace } from '@dovo/studio-core'
 import { decode, runtimeProfile } from '@dovo/protocol'
-import { dispatchLauncherTask, type LauncherAttempt } from './task-launcher-dispatch'
+import { dispatchLauncherTask, type LauncherAttempt } from '@dovo/protocol'
 function fixture(failingPath: string) {
   const attempt: LauncherAttempt = {
     task: createTask({ title: 'Task', objective: '', repositoryId: 'repo', agentId: '' }),

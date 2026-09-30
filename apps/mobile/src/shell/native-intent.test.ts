@@ -14,3 +14,15 @@ it('opens pairing in Computers without making an automatic trust decision', () =
   )
   expect(redirectSystemPath({ path: 'dovo://task?text=hello', initial: true })).toBe('/')
 })
+
+it('opens the launcher from cold and warm shortcuts and preserves an encoded prompt', () => {
+  for (const initial of [true, false]) {
+    for (const path of ['dovo://launch', '/launch']) {
+      expect(redirectSystemPath({ path, initial })).toBe('/launch')
+    }
+    const query = new URLSearchParams({ text: 'Fix login & keep favorites' }).toString()
+    expect(redirectSystemPath({ path: 'dovo://launch?' + query, initial })).toBe('/launch?' + query)
+    expect(redirectSystemPath({ path: '/launch?' + query, initial })).toBe('/launch?' + query)
+    expect(redirectSystemPath({ path: 'dovo://launcher', initial })).toBe('dovo://launcher')
+  }
+})

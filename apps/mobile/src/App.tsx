@@ -1,4 +1,5 @@
 import { PushNotificationProvider } from './notifications/provider'
+import { TaskQuickActions } from './shell/task-quick-actions'
 import { colors } from './ui/theme'
 import { RegistryProvider } from '@effect-atom/atom-react'
 import { LiveActivityProvider } from './live-activities/provider'
@@ -32,6 +33,7 @@ export default function App() {
               <LiveActivityProvider>
                 <TaskWidgetProvider>
                   <Workbench />
+                  <TaskQuickActions />
                   <LinkBrowser />
                 </TaskWidgetProvider>
               </LiveActivityProvider>

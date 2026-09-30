@@ -15,6 +15,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     if let context = options.urlContexts.first {
       launchOptions[.url] = context.url
       self.scene(scene, openURLContexts: [context])
+    } else if options.shortcutItem?.type == "dovo.launch", let url = URL(string: "dovo://launch") {
+      launchOptions[.url] = url
+      _ = appDelegate.application(UIApplication.shared, open: url, options: [:])
     } else if let activity = options.userActivities.first(where: { $0.activityType == NSUserActivityTypeBrowsingWeb }) {
       launchOptions[.userActivityDictionary] = [
         UIApplication.LaunchOptionsKey.userActivityType.rawValue: activity.activityType,
@@ -39,5 +42,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
     _ = (UIApplication.shared.delegate as? AppDelegate)?.application(
       UIApplication.shared, continue: userActivity, restorationHandler: { _ in })
+  }
+
+  func windowScene(_ windowScene: UIWindowScene, performActionFor shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
+    guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else {
+      completionHandler(false)
+      return
+    }
+    appDelegate.application(UIApplication.shared, performActionFor: shortcutItem, completionHandler: completionHandler)
   }
 }

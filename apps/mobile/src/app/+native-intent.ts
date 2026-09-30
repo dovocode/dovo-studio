@@ -2,6 +2,14 @@ import { parsePairingInvitation } from '@dovo/protocol'
 // The shortcut inbox consumes the original URL, including all task parameters.
 // Route it to the workbench instead of letting Router treat it as an unknown screen.
 export function redirectSystemPath({ path }: { path: string; initial: boolean }) {
+  if (path.startsWith('dovo://launch') || path === '/launch' || path.startsWith('/launch?')) {
+    try {
+      const url = new URL(path.startsWith('/') ? `dovo:/${path}` : path)
+      if (url.hostname === 'launch' || url.pathname === '/launch') return `/launch${url.search}`
+    } catch {
+      return '/launch'
+    }
+  }
   if (path.startsWith('dovo://task') || path.startsWith('/task?')) return '/'
   if (path.startsWith('dovo://pair') || path.startsWith('/pair?')) {
     try {

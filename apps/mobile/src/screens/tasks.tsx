@@ -313,6 +313,12 @@ export default function TasksScreen() {
               ]
             : []),
           {
+            label: 'Quick task',
+            icon: 'jobs',
+            overflow: true,
+            onPress: () => router.push('/launch'),
+          },
+          {
             label: 'New task',
             icon: 'add',
             disabled: !overviews.some((entry) => entry.connected) || busy,
