@@ -1,4 +1,5 @@
 import { registerInputPreview } from './input-preview.js'
+import { registerTaskLauncher } from './task-launcher.js'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { registerUpdates } from './updates.js'
 import { registerRemoteUpdates } from './remote-updates.js'
@@ -130,6 +131,13 @@ app.once('will-quit', () => {
   void browserBridge.dispose()
 })
 
+let mainWindow: BrowserWindow | undefined
+const taskLauncher = registerTaskLauncher(rendererPath, () => {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  if (!mainWindow) throw new Error('Could not open Dovo')
+  return mainWindow
+})
+app.once('will-quit', () => taskLauncher.dispose())
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1180,
@@ -152,6 +160,7 @@ function createWindow(): void {
     },
   })
 
+  mainWindow = window
   window.webContents.setWindowOpenHandler(({ url }) => {
     void offerLink(window, url)
     return { action: 'deny' }

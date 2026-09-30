@@ -46,14 +46,15 @@ export function registerInputPreview(rendererPath: string, preload: string) {
     if (!popup || popup.isDestroyed()) {
       const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
       popup = new BrowserWindow({
-        width: 440,
-        height: 480,
+        width: 480,
+        height: 560,
         minWidth: 360,
         minHeight: 300,
-        x: display.x + display.width - 460,
-        y: display.y + display.height - 500,
+        x: display.x + Math.max(0, display.width - 500),
+        y: display.y + Math.max(0, display.height - 580),
         title: 'Dovo · Needs your input',
         alwaysOnTop: true,
+        frame: false,
         show: false,
         autoHideMenuBar: true,
         backgroundColor: '#0a0a0a',

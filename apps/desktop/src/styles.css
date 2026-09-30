@@ -1,2 +1,9 @@
 @import '@dovo/studio-ui/styles.css';
 @import '@dovo/extension-tasks/styles.css';
+
+.input-preview-drag {
+  -webkit-app-region: drag;
+}
+.input-preview-drag button {
+  -webkit-app-region: no-drag;
+}

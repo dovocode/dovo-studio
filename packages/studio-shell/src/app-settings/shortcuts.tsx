@@ -17,13 +17,21 @@ function Keys({ keys }: { keys: string }) {
 }
 
 export default function KeyboardShortcuts() {
-  const { sendWith } = useAppPreferences()
+  const { sendWith, taskLauncherShortcut } = useAppPreferences()
   const groups: [string, [string, string][]][] = [
     [
       'Everywhere',
       [
         ['Open the command palette', `${mod}+K`],
         ['Show keyboard shortcuts', `${mod}+/`],
+        ...(taskLauncherShortcut
+          ? ([
+              [
+                'Start task from any app (desktop)',
+                taskLauncherShortcut.replace('CommandOrControl', mod),
+              ],
+            ] as [string, string][])
+          : []),
       ],
     ],
     [

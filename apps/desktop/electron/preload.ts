@@ -1,6 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('dovo', {
+  taskLauncher: {
+    configure: (shortcut: import('@dovo/protocol').TaskLauncherShortcut) =>
+      ipcRenderer.invoke('task-launcher:configure', shortcut),
+    subscribe: (listener: () => void) => {
+      const handler = () => listener()
+      ipcRenderer.on('task-launcher:open', handler)
+      void ipcRenderer
+        .invoke('task-launcher:ready')
+        .catch((error: unknown) => console.error('Could not initialize the task launcher:', error))
+      return () => ipcRenderer.removeListener('task-launcher:open', handler)
+    },
+  },
   inputPreview: {
     sync: (value: Parameters<import('@dovo/protocol').InputPreviewBridge['sync']>[0]) =>
       ipcRenderer.invoke('input-preview:sync', value),

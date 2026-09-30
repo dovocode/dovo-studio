@@ -2,6 +2,7 @@
 
 interface Window {
   dovo: {
+    taskLauncher: import('@dovo/protocol').TaskLauncherBridge
     inputPreview: import('@dovo/protocol').InputPreviewBridge
     appInfo: NonNullable<import('@dovo/studio-core').StudioHostApi['appInfo']>
     platform: 'darwin' | 'win32' | 'linux'

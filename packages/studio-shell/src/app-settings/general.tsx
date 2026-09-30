@@ -1,4 +1,6 @@
 import { useStudioHost } from '@dovo/studio-core'
+import { useEffect, useState } from 'react'
+import { taskLauncherShortcuts } from '@dovo/protocol'
 import {
   formatDateTime,
   taskSortOptions,
@@ -13,8 +15,24 @@ const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator
 const mod = mac ? '⌘' : 'Ctrl'
 
 export default function GeneralSettings() {
-  const { appInfo } = useStudioHost()
+  const { appInfo, taskLauncher } = useStudioHost()
   const preferences = useAppPreferences()
+  const [shortcutError, setShortcutError] = useState('')
+  useEffect(() => {
+    if (!taskLauncher) return
+    let current = true
+    void taskLauncher.configure(preferences.taskLauncherShortcut).then(
+      (result) => {
+        if (current) setShortcutError(result.error ?? '')
+      },
+      (cause: unknown) => {
+        if (current) setShortcutError(String(cause))
+      },
+    )
+    return () => {
+      current = false
+    }
+  }, [taskLauncher, preferences.taskLauncherShortcut])
   return (
     <SettingsPage
       title="General"
@@ -47,6 +65,28 @@ export default function GeneralSettings() {
         </SettingRow>
       </SettingsGroup>
       <SettingsGroup title="Navigation">
+        {taskLauncher && (
+          <SettingRow
+            label="Global new task shortcut"
+            description={
+              shortcutError ||
+              'Open the task launcher from any app. Select a server, project and favorite agent.'
+            }
+          >
+            <ChoicePicker
+              aria-label="Global new task shortcut"
+              value={preferences.taskLauncherShortcut}
+              onValueChange={(value) => {
+                const shortcut = taskLauncherShortcuts.find((shortcut) => shortcut === value)
+                if (shortcut !== undefined) updateAppPreferences({ taskLauncherShortcut: shortcut })
+              }}
+            >
+              <option value="CommandOrControl+Shift+Space">{mod} + Shift + Space</option>
+              <option value="CommandOrControl+Alt+N">{mod} + Alt + N</option>
+              <option value="">Disabled</option>
+            </ChoicePicker>
+          </SettingRow>
+        )}
         <SettingRow label="Issues" description="Show code-host issues in the sidebar.">
           <Toggle
             label="Show Issues"

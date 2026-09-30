@@ -32,6 +32,7 @@ import { createExtensionCatalog } from './extension-catalog'
 import { ActivityBar } from './activity-bar'
 import type { InputPreviewBridge, DesktopUpdateBridge, DesktopUpdateState } from '@dovo/protocol'
 import { CommandPalette } from './command-palette'
+import { TaskLauncher } from './task-launcher'
 import { TitleBar, type DesktopPlatform } from './title-bar'
 type WorkbenchProps = {
   appInfo?: StudioHostApi['appInfo']
@@ -40,6 +41,7 @@ type WorkbenchProps = {
   browser?: StudioHostApi['browser']
   desktopPlatform?: DesktopPlatform
   inputPreview?: InputPreviewBridge
+  taskLauncher?: StudioHostApi['taskLauncher']
   updates?: DesktopUpdateBridge
 }
 type ViewModule = { default: ComponentType<StudioViewProps> }
@@ -126,6 +128,7 @@ function WorkbenchContent({
   desktopPlatform,
   updates,
   inputPreview,
+  taskLauncher,
 }: WorkbenchProps) {
   const compact = useCompactLayout()
   const { showIssues, showJira } = useAppPreferences()
@@ -212,8 +215,9 @@ function WorkbenchContent({
       browser,
       appInfo,
       updates,
+      taskLauncher,
     }),
-    [registerCommand, pickDirectory, browser, appInfo, updates],
+    [registerCommand, pickDirectory, browser, appInfo, updates, taskLauncher],
   )
   const catalog = useMemo(
     () => createExtensionCatalog([appSettingsExtension, ...extensions], api),
@@ -409,6 +413,7 @@ function WorkbenchContent({
             </div>
           </main>
         </div>
+        {taskLauncher && <TaskLauncher bridge={taskLauncher} onDispatched={openNotification} />}
         <CommandPalette
           open={palette}
           onOpenChange={setPalette}

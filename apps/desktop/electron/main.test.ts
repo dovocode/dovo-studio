@@ -47,6 +47,7 @@ vi.mock('electron', () => ({
   dialog: {},
 }))
 vi.mock('./remote-updates.js', () => ({ registerRemoteUpdates: async () => undefined }))
+vi.mock('./task-launcher.js', () => ({ registerTaskLauncher: () => ({ dispose: () => {} }) }))
 vi.mock('./updates.js', () => ({ registerUpdates: fixture.updates }))
 vi.mock('./browser.js', () => ({
   registerBrowser: vi.fn<(...args: unknown[]) => { dispose: () => Promise<void> }>(() => ({
