@@ -479,9 +479,21 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
               />
             )}
             {showOptions && !dictation.active && task.status === 'running' && hasInput && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Action secondary label="Queue" disabled={!canSend} onPress={() => send()} />
-                <Action secondary label="Steer" disabled={!canSend} onPress={() => send('steer')} />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <IconButton
+                  variant="plain"
+                  icon="queue"
+                  label="Queue follow-up"
+                  disabled={!canSend}
+                  onPress={() => send()}
+                />
+                <IconButton
+                  variant="plain"
+                  icon="steer"
+                  label="Steer agent"
+                  disabled={!canSend}
+                  onPress={() => send('steer')}
+                />
               </View>
             )}
             <IconButton

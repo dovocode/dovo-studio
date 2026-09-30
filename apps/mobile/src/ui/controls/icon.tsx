@@ -25,6 +25,8 @@ export const symbols = {
   jobs: ['square.stack.3d.up', '▱', 'layers'],
   settings: ['gearshape', '⚙', 'settings'],
   send: ['arrow.up', '↑', 'arrow_upward'],
+  queue: ['text.badge.plus', '☰+', 'playlist_add'],
+  steer: ['arrow.turn.up.right', '↱', 'turn_right'],
   stop: ['stop.fill', '■', 'stop'],
   close: ['xmark', '×', 'close'],
   back: ['chevron.left', '‹', 'arrow_back'],
