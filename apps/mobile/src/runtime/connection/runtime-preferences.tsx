@@ -96,6 +96,35 @@ export function RuntimePreferences() {
         </View>
         <View style={{ gap: 6 }}>
           <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
+            <Text style={[styles.text, { flex: 1 }]}>Smart PR linking</Text>
+            <Switch
+              accessibilityLabel="Smart PR linking"
+              value={value?.autoLinkPullRequests ?? true}
+              disabled={disabled}
+              onValueChange={(autoLinkPullRequests) => save({ autoLinkPullRequests })}
+            />
+          </View>
+          <Text style={styles.muted}>
+            Links branch matches and verified PR URLs mentioned in messages.
+          </Text>
+        </View>
+        <View style={{ gap: 6 }}>
+          <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
+            <Text style={[styles.text, { flex: 1 }]}>Settle when the PR closes</Text>
+            <Switch
+              accessibilityLabel="Settle when the PR closes"
+              value={value?.settleOnPullClose ?? false}
+              disabled={disabled}
+              onValueChange={(settleOnPullClose) => save({ settleOnPullClose })}
+            />
+          </View>
+          <Text style={styles.muted}>
+            Moves the thread to Settled when its main PR is merged or closed. Pinned threads and
+            active or queued work stay put.
+          </Text>
+        </View>
+        <View style={{ gap: 6 }}>
+          <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
             <Text style={[styles.text, { flex: 1 }]}>Archive when the pull request merges</Text>
             <Switch
               accessibilityLabel="Archive tasks when their pull request merges"

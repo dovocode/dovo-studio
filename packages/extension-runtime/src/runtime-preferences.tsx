@@ -75,6 +75,30 @@ export function RunningTaskPreferences() {
           />
         </SettingRow>
       </SettingsGroup>
+      <SettingsGroup title="Pull requests">
+        <SettingRow
+          label="Smart PR linking"
+          description="Automatically links branch matches and verified PR URLs mentioned in messages. Your checkout stays the same."
+        >
+          <Toggle
+            label="Smart PR linking"
+            checked={value?.autoLinkPullRequests ?? true}
+            disabled={disabled}
+            onChange={(autoLinkPullRequests) => save({ autoLinkPullRequests })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Settle when the PR closes"
+          description="Moves the thread to Settled when its main PR is merged or closed. Keeps its history accessible; pinned threads and threads with active or queued work stay put."
+        >
+          <Toggle
+            label="Settle when the PR closes"
+            checked={value?.settleOnPullClose ?? false}
+            disabled={disabled}
+            onChange={(settleOnPullClose) => save({ settleOnPullClose })}
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Tidying up">
         <SettingRow
           label="Auto-archive inactive tasks"

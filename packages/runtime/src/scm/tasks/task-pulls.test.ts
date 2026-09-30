@@ -1,3 +1,4 @@
+import { decode, pullDetailSchema } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
@@ -8,7 +9,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
-const pull = (state: 'open' | 'merged', checksState: string | null) => ({
+const pull = (state: 'open' | 'merged' | 'closed', checksState: string | null) => ({
   number: 7,
   title: 'Fix',
   url: 'https://github.com/o/r/pull/7',
@@ -126,4 +127,190 @@ it('finds branch pull requests on later pages and reuses those pages for the rep
   expect(s.store.task(tasks[0].id).pullStatus).toMatchObject({ number: 7, state: 'open' })
   expect(s.store.task(tasks[1].id).pullStatus).toMatchObject({ number: 8, state: 'open' })
   expect(list.mock.calls.map(([, , page]) => page)).toEqual([1, 2])
+})
+
+async function smartFixture(state: 'closed' | 'merged' = 'closed') {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'smart-pulls-test-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const task = s.tasks.create({
+    title: 'Fix',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: '',
+  })
+  s.store.updateTask(task.id, (value) => ({
+    ...value,
+    checkoutBranch: 'dovo/fix-7',
+    status: 'review',
+  }))
+  const list = vi
+    .spyOn(s.pullCache, 'list')
+    .mockResolvedValue({ pulls: [pull('open', null)], hasMore: false, page: 1 })
+  const detail = vi.spyOn(s.pullCache, 'detail').mockResolvedValue(
+    decode(pullDetailSchema, {
+      pull: {
+        ...pull(state, null),
+        repositoryUrl: 'https://github.com/o/r',
+        headSha: 'a'.repeat(40),
+        baseSha: 'b'.repeat(40),
+        body: '',
+        additions: null,
+        deletions: null,
+        changedFiles: null,
+        mergeable: null,
+        reviewers: [],
+        assignees: [],
+      },
+      comments: [],
+      files: [],
+      checks: [],
+      warnings: [],
+    }),
+  )
+  return { s, task, list, detail, watcher: new TaskPullWatcher(s) }
+}
+it('smart-links branch PRs and verified message URLs, ignores foreign projects and keeps unlinked PRs dismissed', async () => {
+  const f = await smartFixture()
+  f.s.store.updateTask(f.task.id, (task) => ({
+    ...task,
+    messages: [
+      {
+        id: 'm',
+        role: 'assistant',
+        text: 'https://github.com/o/r/pull/7 and https://github.com/other/r/pull/7.',
+      },
+    ],
+  }))
+  const updatedAt = f.s.store.task(f.task.id).updatedAt
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id).linkedPullRequests).toEqual([
+    {
+      number: 7,
+      title: 'Fix',
+      url: 'https://github.com/o/r/pull/7',
+      repositoryUrl: 'https://github.com/o/r',
+    },
+  ])
+  expect(f.s.store.task(f.task.id).updatedAt).toBe(updatedAt)
+  expect(f.s.store.task(f.task.id).pullRequest).toBeUndefined()
+  f.s.store.patch({
+    collection: 'tasks',
+    id: f.task.id,
+    changes: {
+      linkedPullRequests: { before: f.s.store.task(f.task.id).linkedPullRequests, after: [] },
+      ignoredPullRequestUrls: { before: null, after: ['https://github.com/o/r/pull/7'] },
+    },
+  })
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id).linkedPullRequests).toEqual([])
+  f.s.preferences.save({ settleOnPullClose: true })
+  f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+})
+it.each(['closed', 'merged'] as const)(
+  'settles a %s main PR without archiving it and protects pending work',
+  async (state) => {
+    const f = await smartFixture(state)
+    await f.watcher.refresh()
+    f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+    f.s.preferences.save({ settleOnPullClose: true })
+    for (const changes of [
+      { pinned: true },
+      { status: 'running' as const },
+      { draft: 'unfinished' },
+      {
+        queue: [
+          { id: 'q', role: 'user' as const, text: 'next', createdAt: new Date().toISOString() },
+        ],
+      },
+    ]) {
+      f.s.store.updateTask(f.task.id, (task) => ({
+        ...task,
+        pinned: false,
+        status: 'review',
+        draft: '',
+        queue: [],
+        ...changes,
+      }))
+      await f.watcher.refresh()
+      expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+    }
+    f.s.store.updateTask(f.task.id, (task) => ({
+      ...task,
+      pinned: false,
+      status: 'review',
+      draft: '',
+      queue: [],
+    }))
+    const closed = await f.detail.mock.results[0]?.value
+    if (!closed) throw new Error('Missing closed detail')
+    f.detail.mockResolvedValue({ ...closed, stale: true, refreshError: 'Offline' })
+    await f.watcher.refresh()
+    expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+    f.detail.mockResolvedValue(closed)
+    await f.watcher.refresh()
+    expect(f.detail).toHaveBeenCalledWith(expect.any(String), 7, true)
+    expect(f.s.store.task(f.task.id)).toMatchObject({
+      archived: true,
+      pullStatus: { state },
+    })
+    expect(f.s.store.task(f.task.id).archivedAt).toBeUndefined()
+  },
+)
+it('can disable smart links and never settles a thread just because an auxiliary PR is closed', async () => {
+  const f = await smartFixture()
+  f.s.store.updateTask(f.task.id, (task) => ({
+    ...task,
+    checkoutBranch: undefined,
+    messages: [{ id: 'm', role: 'user', text: 'See https://github.com/o/r/pull/7' }],
+  }))
+  f.s.preferences.save({ settleOnPullClose: true, autoLinkPullRequests: false })
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id).linkedPullRequests).toBeUndefined()
+  f.s.preferences.save({ autoLinkPullRequests: true })
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id).linkedPullRequests).toHaveLength(1)
+  expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+})
+
+it('rechecks a cached closed PR online and does not settle it if it has reopened', async () => {
+  const f = await smartFixture()
+  await f.watcher.refresh()
+  f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+  f.s.preferences.save({ settleOnPullClose: true })
+  const repository = f.s.store.get().repositories.find((repo) => repo.id === f.task.repositoryId)
+  if (!repository) throw new Error('Missing repository')
+  const closed = await f.detail(repository.path, 7)
+  f.detail.mockImplementation(async (_path, _number, force) =>
+    force ? { ...closed, pull: { ...closed.pull, state: 'open' } } : closed,
+  )
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+  expect(f.s.store.task(f.task.id).pullStatus?.state).toBe('open')
+})
+
+it('discovers an already closed main PR from its verified message URL before branch polling has seen it', async () => {
+  const f = await smartFixture()
+  f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+  f.s.store.updateTask(f.task.id, (task) => ({
+    ...task,
+    messages: [{ id: 'm', role: 'assistant', text: 'Created https://github.com/o/r/pull/7' }],
+  }))
+  f.s.preferences.save({ settleOnPullClose: true })
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id)).toMatchObject({
+    archived: true,
+    pullStatus: { number: 7, state: 'closed' },
+  })
+  expect(f.s.store.task(f.task.id).archivedAt).toBeUndefined()
+  expect(f.s.store.task(f.task.id).pullRequest).toBeUndefined()
 })

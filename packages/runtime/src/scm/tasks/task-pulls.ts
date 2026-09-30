@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
-import { checkOutcome, type Task } from '@dovo/protocol'
+import { checkOutcome, pullReferencesInText, verifyPullUrl, type Task } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { archiveTask, taskIsBusy } from '../../agents/tasks/housekeeping.js'
 
@@ -35,6 +35,75 @@ const summaryChecks = (state: string | null | undefined) => {
  * show merge and check state, and can archive themselves once merged (Settings, optional). */
 export class TaskPullWatcher {
   private poller?: ReturnType<typeof startPolling>
+  private attach(
+    task: Task,
+    pull: Omit<NonNullable<Task['linkedPullRequests']>[number], 'repositoryUrl'> & {
+      repositoryUrl?: string
+    },
+  ) {
+    const current = this.s.store.get().tasks.find((item) => item.id === task.id)
+    if (
+      !current ||
+      current.archivedAt ||
+      current.repositoryId !== task.repositoryId ||
+      !this.s.preferences.get().autoLinkPullRequests ||
+      current.pullRequest?.url === pull.url ||
+      current.ignoredPullRequestUrls?.includes(pull.url) ||
+      current.linkedPullRequests?.some((item) => item.url === pull.url) ||
+      (current.linkedPullRequests?.length ?? 0) >= 20
+    )
+      return
+    this.s.store.update((value) => ({
+      ...value,
+      tasks: value.tasks.map((item) =>
+        item.id === task.id
+          ? {
+              ...item,
+              linkedPullRequests: [
+                ...(item.linkedPullRequests ?? []),
+                {
+                  number: pull.number,
+                  url: pull.url,
+                  title: pull.title,
+                  provider: pull.provider,
+                  repositoryUrl:
+                    pull.repositoryUrl ??
+                    pull.url
+                      .replace(
+                        /\/(?:pull|pulls|pull-requests|pullrequest|merge_requests)\/\d+\/?(?:[?#].*)?$/i,
+                        '',
+                      )
+                      .replace(/\/-$/, ''),
+                },
+              ],
+            }
+          : item,
+      ),
+    }))
+  }
+  private async linkMentions(task: Task, path: string) {
+    const matches: Array<Awaited<ReturnType<Services['pullCache']['detail']>>['pull']> = []
+    if (!this.s.preferences.get().autoLinkPullRequests) return matches
+    const references = new Map(
+      task.messages
+        .flatMap((message) => pullReferencesInText(message.text))
+        .map((reference) => [reference.url, reference]),
+    )
+    for (const reference of [...references.values()].slice(-20)) {
+      if (task.ignoredPullRequestUrls?.includes(reference.url)) continue
+      try {
+        // Lookup uses this repository's configured forge, never a URL supplied in agent text.
+        const { pull } = await this.s.pullCache.detail(path, reference.number)
+        verifyPullUrl(reference.url, pull.url)
+        matches.push(pull)
+        this.attach(task, pull)
+      } catch {
+        // A foreign-project URL, missing PR or unavailable forge cannot become a trusted link.
+        continue
+      }
+    }
+    return matches
+  }
   constructor(private s: WatcherServices) {}
   start() {
     this.poller = startPolling(
@@ -54,10 +123,20 @@ export class TaskPullWatcher {
     const workspace = this.s.store.get()
     const openPulls = new Map<string, Awaited<ReturnType<Services['pullCache']['list']>>>()
     for (const task of workspace.tasks) {
-      if (task.example || task.archivedAt || (!task.pullRequest && !task.checkoutBranch)) continue
+      if (task.example || task.archivedAt) continue
+      if (
+        !task.pullRequest &&
+        !task.checkoutBranch &&
+        !task.messages.some((message) =>
+          /\/(?:pull|pulls|pull-requests|pullrequest|merge_requests)\//i.test(message.text),
+        )
+      )
+        continue
       const repo = workspace.repositories.find((item) => item.id === task.repositoryId)
       if (!repo) continue
       try {
+        const mentioned = await this.linkMentions(task, repo.path)
+        if (!task.pullRequest && !task.checkoutBranch) continue
         let open = openPulls.get(repo.path)
         if (!open) {
           open = await this.s.pullCache.list(repo.path, 'open', 1)
@@ -72,14 +151,19 @@ export class TaskPullWatcher {
             openPulls.set(repo.path, open)
             if (!next.pulls.length) break
           }
-        const byBranch = task.checkoutBranch
-          ? open.pulls.find((pull) => pull.head === task.checkoutBranch)
-          : undefined
-        const number = task.pullRequest?.number ?? task.pullStatus?.number ?? byBranch?.number
+        const branchMatches = open.pulls.filter((pull) => pull.head === task.checkoutBranch)
+        const byBranch = branchMatches.length === 1 ? branchMatches[0] : undefined
+        const mentionedBranch = mentioned.filter((pull) => pull.head === task.checkoutBranch)
+        const number =
+          task.pullRequest?.number ??
+          byBranch?.number ??
+          (mentionedBranch.length === 1 ? mentionedBranch[0]?.number : undefined) ??
+          task.pullStatus?.number
         if (!number) continue
         const summary = open.pulls.find((pull) => pull.number === number)
         const checks = summary ? summaryChecks(summary.checksState) : undefined
         let status: PullStatus
+        let freshClosure = false
         if (summary && checks !== 'failed')
           status = {
             number,
@@ -91,7 +175,18 @@ export class TaskPullWatcher {
         else {
           // Failing checks need their names; a pull request that left the open list was
           // merged or closed. Both come from the (cached) detail.
-          const detail = await this.s.pullCache.detail(repo.path, number)
+          let detail = await this.s.pullCache.detail(repo.path, number)
+          const preferences = this.s.preferences.get()
+          if (
+            detail.pull.state !== 'open' &&
+            (preferences.archiveOnPullMerge || (preferences.settleOnPullClose && !task.archived))
+          )
+            detail = await this.s.pullCache.detail(repo.path, number, true)
+          freshClosure =
+            !detail.stale &&
+            !detail.refreshError &&
+            (!!task.pullRequest || detail.pull.head === task.checkoutBranch)
+          this.attach(task, detail.pull)
           const outcomes = detail.checks.map((check) => ({
             name: check.name,
             outcome: checkOutcome(check.status),
@@ -115,8 +210,16 @@ export class TaskPullWatcher {
             checkedAt: new Date().toISOString(),
           }
         }
+        if (summary) this.attach(task, summary)
         const current = this.s.store.get().tasks.find((item) => item.id === task.id)
-        if (!current || current.archivedAt) continue
+        if (
+          !current ||
+          current.archivedAt ||
+          current.repositoryId !== task.repositoryId ||
+          current.checkoutBranch !== task.checkoutBranch ||
+          current.pullRequest?.url !== task.pullRequest?.url
+        )
+          continue
         // Metadata only: keep updatedAt, so a status change neither reorders the task list
         // nor counts as activity for "auto-archive inactive tasks".
         if (!same(current.pullStatus, status))
@@ -127,16 +230,36 @@ export class TaskPullWatcher {
             ),
           }))
         if (
+          freshClosure &&
           (status.state === 'merged' || status.state === 'closed') &&
-          this.s.preferences.get().archiveOnPullMerge &&
+          !current.ignoredPullRequestUrls?.includes(status.url) &&
           !current.pinned &&
+          !current.queue?.length &&
+          !current.draft.trim() &&
+          !current.draftAttachments?.length &&
+          !current.scheduledMessages?.length &&
           !taskIsBusy(this.s, task.id)
-        )
-          await archiveTask(
-            this.s,
-            task.id,
-            `Archived because pull request #${number} was ${status.state}`,
-          )
+        ) {
+          const preferences = this.s.preferences.get()
+          if (preferences.archiveOnPullMerge)
+            await archiveTask(
+              this.s,
+              task.id,
+              `Archived because pull request #${number} was ${status.state}`,
+            )
+          else if (preferences.settleOnPullClose && !current.archived) {
+            this.s.store.updateTask(task.id, (item) => ({
+              ...item,
+              archived: true,
+              snoozedUntil: null,
+            }))
+            this.s.activity.add(
+              'task',
+              task.id,
+              `Settled because pull request #${number} was ${status.state}`,
+            )
+          }
+        }
       } catch {
         // An unreachable forge or a missing pull request leaves the last known status.
         continue

@@ -394,6 +394,9 @@ export const taskSchema = mutableStruct({
       20,
     ),
   ),
+  ignoredPullRequestUrls: Schema.optional(
+    maxValue(mutableArray(maxValue(Schema.String, 2000)), 100),
+  ),
   workItem: Schema.optional(taskWorkItemSchema),
   sessionId: Schema.optional(Schema.String),
   sessionAgentId: Schema.optional(Schema.String),

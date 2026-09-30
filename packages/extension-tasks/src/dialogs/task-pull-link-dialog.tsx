@@ -17,13 +17,8 @@ export function TaskPullLinkDialog({ task, onClose }: { task: Task; onClose: () 
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const links = taskPullLinks(task)
-  const save = async (links: NonNullable<Task['linkedPullRequests']>) => {
-    setWorkspace((w) =>
-      updateTask(w, task.id, (t) => ({
-        ...t,
-        linkedPullRequests: links,
-      })),
-    )
+  const save = async (change: (current: Task) => Task) => {
+    setWorkspace((w) => updateTask(w, task.id, change))
     await flush()
   }
   const link = async () => {
@@ -43,16 +38,22 @@ export function TaskPullLinkDialog({ task, onClose }: { task: Task; onClose: () 
       verifyPullUrl(input.url, pull.url)
       if (links.some((entry) => entry.url === pull.url))
         throw new Error('This PR is already linked.')
-      await save([
-        ...(task.linkedPullRequests ?? []),
-        {
-          number: pull.number,
-          url: pull.url,
-          title: pull.title,
-          provider: pull.provider,
-          repositoryUrl: pull.repositoryUrl,
-        },
-      ])
+      await save((current) => ({
+        ...current,
+        linkedPullRequests: [
+          ...(current.linkedPullRequests ?? []).filter((entry) => entry.url !== pull.url),
+          {
+            number: pull.number,
+            url: pull.url,
+            title: pull.title,
+            provider: pull.provider,
+            repositoryUrl: pull.repositoryUrl,
+          },
+        ],
+        ignoredPullRequestUrls: (current.ignoredPullRequestUrls ?? []).filter(
+          (url) => url !== pull.url,
+        ),
+      }))
       setReference('')
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))
@@ -64,7 +65,13 @@ export function TaskPullLinkDialog({ task, onClose }: { task: Task; onClose: () 
     setBusy(true)
     setError('')
     try {
-      await save((task.linkedPullRequests ?? []).filter((pull) => pull.url !== url))
+      await save((current) => ({
+        ...current,
+        linkedPullRequests: (current.linkedPullRequests ?? []).filter((pull) => pull.url !== url),
+        ignoredPullRequestUrls: [
+          ...new Set([...(current.ignoredPullRequestUrls ?? []), url]),
+        ].slice(-100),
+      }))
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))
     } finally {

@@ -500,6 +500,7 @@ export class WorkspaceStore {
             'archived',
             'snoozedUntil',
             'linkedPullRequests',
+            'ignoredPullRequestUrls',
             'agentOverrides',
             'harness',
             'execution',

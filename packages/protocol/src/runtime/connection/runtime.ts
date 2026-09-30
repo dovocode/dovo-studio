@@ -248,6 +248,10 @@ export const runtimePreferencesSchema = mutableStruct({
   preventSleepWhileRunning: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   /** Archive a task once its pull request is merged or closed (idle tasks only). */
   archiveOnPullMerge: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  /** Settle (without archiving) idle threads once their main PR is merged or closed. */
+  settleOnPullClose: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  /** Verify and attach PRs mentioned in messages or matching the task branch. */
+  autoLinkPullRequests: Schema.optionalWith(Schema.Boolean, { default: () => true }),
   /** Housekeeping removes clean worktrees of archived tasks; branches are always kept. */
   removeArchivedWorktrees: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   /** Delete activity history older than this many days; 0 keeps everything. Defaults to 90 so

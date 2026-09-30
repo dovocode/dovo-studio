@@ -7,6 +7,8 @@ it('defaults new preferences and accepts only Git-safe branch prefixes', () => {
   expect(defaults.success && defaults.data).toMatchObject({
     branchPrefix: 'dovo/',
     autoArchiveDays: 0,
+    settleOnPullClose: false,
+    autoLinkPullRequests: true,
     activityRetentionDays: 90,
   })
   const valid = (branchPrefix: string) =>
