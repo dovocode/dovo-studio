@@ -1,3 +1,4 @@
+import { fileStats, FileIcon, DiffAmounts } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
 import { getFiletypeFromFileName, preloadHighlighter } from '@pierre/diffs'
@@ -8,7 +9,7 @@ import {
   type EditorFactory,
   type FileOptions,
 } from '@pierre/diffs/react'
-import { ChevronDown, FileCode2, Folder, RefreshCw } from 'lucide-react'
+import { ChevronDown, Folder, RefreshCw } from 'lucide-react'
 import { responses, useDiffOptions, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button, IconButton, cn } from '@dovo/studio-ui'
 import { formatCodeReference } from './code-reference'
@@ -242,7 +243,9 @@ function DirectoryRows({
   node,
   selected,
   select,
+  stats,
 }: {
+  stats: Map<string, ReturnType<typeof fileStats>>
   node: Directory
   selected: string
   select: (path: string) => void
@@ -259,7 +262,7 @@ function DirectoryRows({
               <span className="truncate">{name}</span>
             </summary>
             <div className="ml-3 border-l border-border/60 pl-1">
-              <DirectoryRows node={child} selected={selected} select={select} />
+              <DirectoryRows node={child} selected={selected} select={select} stats={stats} />
             </div>
           </details>
         ))}
@@ -276,8 +279,9 @@ function DirectoryRows({
               selected === path && 'bg-accent text-foreground',
             )}
           >
-            <FileCode2 className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate">{path.split('/').at(-1)}</span>
+            <FileIcon path={path} />
+            <span className="min-w-0 flex-1 truncate text-left">{path.split('/').at(-1)}</span>
+            <DiffAmounts stats={stats.get(path)} />
           </Button>
         ))}
     </>
@@ -290,6 +294,10 @@ export function TaskFiles({
   task: Task
   onReference?: (text: string) => void
 }) {
+  const stats = useMemo(
+    () => new Map(task.files.map((file) => [file.path, fileStats(file)])),
+    [task.files],
+  )
   const { request, connected } = useWorkspace()
   const [paths, setPaths] = useApplicationState<string[]>([])
   const [selected, setSelected] = useApplicationState('')
@@ -399,7 +407,7 @@ export function TaskFiles({
         >
           <div className="border-b px-3 py-3 text-xs font-medium">Files</div>
           <div className="min-h-0 overflow-auto p-2">
-            <DirectoryRows node={root} selected={selected} select={setSelected} />
+            <DirectoryRows node={root} selected={selected} select={setSelected} stats={stats} />
           </div>
         </aside>
       </div>

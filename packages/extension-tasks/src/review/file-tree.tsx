@@ -1,4 +1,5 @@
-import { Check, ChevronDown, FileCode } from 'lucide-react'
+import { FileIcon, DiffAmounts } from '../files/presentation'
+import { Check, ChevronDown } from 'lucide-react'
 import type { ChangedFile } from '@dovo/studio-core'
 import { Button, cn } from '@dovo/studio-ui'
 
@@ -62,22 +63,10 @@ function FolderRows({
             title={file.path}
             onClick={() => onSelect(file.path)}
           >
-            {file.viewed ? (
-              <Check className="size-3 shrink-0 text-emerald-400" />
-            ) : (
-              <FileCode className="size-3 shrink-0 text-muted-foreground" />
-            )}
+            <FileIcon path={file.path} />
+            {file.viewed && <Check className="size-3 shrink-0 text-emerald-400" />}
             <span className="min-w-0 flex-1 truncate text-left">{file.path.split('/').at(-1)}</span>
-            {!!stats.get(file.path)?.deletions && (
-              <span className="text-[0.625rem] tabular-nums text-rose-400">
-                −{stats.get(file.path)?.deletions}
-              </span>
-            )}
-            {!!stats.get(file.path)?.additions && (
-              <span className="text-[0.625rem] tabular-nums text-emerald-400">
-                +{stats.get(file.path)?.additions}
-              </span>
-            )}
+            <DiffAmounts stats={stats.get(file.path)} />
             <span className="text-[0.625rem] text-muted-foreground">{file.before ? 'M' : 'A'}</span>
           </Button>
         ))}

@@ -1,3 +1,4 @@
+import { fileStats, FileIcon, DiffAmounts } from '../../files/presentation'
 import { responses, useDiffOptions, useWorkspace } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo } from 'react'
@@ -92,6 +93,14 @@ export function TurnCheckpoint({
   const [restoring, setRestoring] = useApplicationState(false)
   const [restoreError, setRestoreError] = useApplicationState('')
   const { request, connected } = useWorkspace()
+  const stats = useMemo(() => turn.checkpoint?.files.map(fileStats) ?? [], [turn.checkpoint?.files])
+  const totals = stats.reduce(
+    (sum, file) => ({
+      additions: sum.additions + file.additions,
+      deletions: sum.deletions + file.deletions,
+    }),
+    { additions: 0, deletions: 0 },
+  )
   const checkpoint = turn.checkpoint
   if (!checkpoint) return null
   const undone = !!checkpoint.undone
@@ -140,6 +149,7 @@ export function TurnCheckpoint({
                 ? `${count} changed ${count === 1 ? 'file' : 'files'}`
                 : 'Checkpoint · No file changes'}
         </span>
+        {!!stats.length && <DiffAmounts stats={totals} />}
         <span className="ml-auto flex items-center gap-1">
           {canRestore && (!!count || undone) && (
             <Button
@@ -209,14 +219,18 @@ export function TurnCheckpoint({
               <button
                 key={path}
                 type="button"
-                className="block w-full truncate rounded px-2 py-1.5 text-left font-mono hover:bg-muted hover:text-foreground"
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left font-mono hover:bg-muted hover:text-foreground"
                 title={path}
                 onClick={() => {
                   setSelected(path)
                   setOpen(true)
                 }}
               >
-                {path.slice(path.lastIndexOf('/') + 1)}
+                <FileIcon path={path} />
+                <span className="min-w-0 flex-1 truncate">
+                  {path.slice(path.lastIndexOf('/') + 1)}
+                </span>
+                <DiffAmounts stats={stats.find((file) => file.path === path)} />
               </button>
             ))}
           </div>

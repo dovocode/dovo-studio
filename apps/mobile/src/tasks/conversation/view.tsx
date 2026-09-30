@@ -1,9 +1,10 @@
+import { fileStats } from '../files/stats'
 import { formatTime, useCarMode } from '../../runtime/preferences/app-preferences'
 import { MessageActions } from './components/message-actions'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   ActivityIndicator,
   FlatList,
@@ -97,6 +98,17 @@ function CheckpointRow({
 }) {
   const { connected, callEffect } = useRuntime()
   const restore = useAction()
+  const totals = useMemo(
+    () =>
+      (turn?.checkpoint?.files ?? []).map(fileStats).reduce(
+        (sum, file) => ({
+          additions: sum.additions + file.additions,
+          deletions: sum.deletions + file.deletions,
+        }),
+        { additions: 0, deletions: 0 },
+      ),
+    [turn?.checkpoint?.files],
+  )
   const undone = !!turn?.checkpoint?.undone
   const canRestore =
     !!turn &&
@@ -154,6 +166,12 @@ function CheckpointRow({
         >
           {checkpoint.files} {checkpoint.files === 1 ? 'file' : 'files'} changed
         </Text>
+        {!!turn?.checkpoint?.files.length && (
+          <>
+            <Text style={{ color: '#34d399', fontSize: 12 }}>+{totals.additions}</Text>
+            <Text style={{ color: '#fb7185', fontSize: 12 }}>-{totals.deletions}</Text>
+          </>
+        )}
         <Icon name="next" size={12} color={colors.muted} />
       </Pressable>
       {!!checkpoint.omitted && (
@@ -256,7 +274,7 @@ function AssistantParts() {
   const message = useAuiState((state) => state.message)
   const { task, collapsedTurns, toggleTurn } = useTaskConversation()
   const turn = task.turns?.find((item) => item.assistantId === message.id)
-  const open = !collapsedTurns[turn?.id ?? message.id]
+  const open = !(collapsedTurns[turn?.id ?? message.id] ?? turn?.status === 'completed')
   const car = useCarMode()
   if (!turn || car) return <MessagePrimitive.Parts components={parts} />
   const { finalIndex, end } = turnPartBoundaries(message.content, turn.status === 'running')

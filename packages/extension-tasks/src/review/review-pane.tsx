@@ -1,6 +1,6 @@
+import { fileStats } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo } from 'react'
-import { parseDiffFromFile } from '@pierre/diffs'
 import { DiskActions } from './disk-actions'
 import {
   FileDiff,
@@ -110,21 +110,7 @@ export function ReviewPane({
     if (next.kind === 'branch') setBranchDiff(null)
     setSource(next)
   }
-  const stats = useMemo(
-    () =>
-      files.map((item) => {
-        const diff = parseDiffFromFile(
-          { name: item.path, contents: item.before },
-          { name: item.path, contents: item.after },
-        )
-        return {
-          path: item.path,
-          additions: diff.additionLines.length,
-          deletions: diff.deletionLines.length,
-        }
-      }),
-    [files],
-  )
+  const stats = useMemo(() => files.map(fileStats), [files])
   const additions = stats.reduce((total, item) => total + item.additions, 0)
   const deletions = stats.reduce((total, item) => total + item.deletions, 0)
   return (

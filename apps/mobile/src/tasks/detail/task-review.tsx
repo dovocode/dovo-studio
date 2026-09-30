@@ -1,3 +1,4 @@
+import { fileStats } from '../files/stats'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
@@ -200,11 +201,12 @@ export function TaskReview({
             value={file?.path ?? ''}
             disabled={!!edit}
             items={files.map((entry) => {
+              const stats = fileStats(entry)
               const parts = entry.path.split('/')
               const name = parts.pop() ?? entry.path
               return {
                 id: entry.path,
-                name: `${entry.viewed ? '✓ ' : ''}${name}${parts.length ? ` · ${parts.join('/')}` : ''}`,
+                name: `${entry.viewed ? '✓ ' : ''}${name} +${stats.additions} -${stats.deletions}${parts.length ? ` · ${parts.join('/')}` : ''}`,
               }
             })}
             onChange={setPath}

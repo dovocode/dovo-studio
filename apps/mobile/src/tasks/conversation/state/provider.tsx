@@ -170,7 +170,13 @@ export function ConversationProvider({
         activityError: activity.error,
         collapsedTurns,
         toggleTurn: (turnId) =>
-          setCollapsedTurns((previous) => ({ ...previous, [turnId]: !previous[turnId] })),
+          setCollapsedTurns((previous) => ({
+            ...previous,
+            [turnId]: !(
+              previous[turnId] ??
+              task.turns?.find((turn) => turn.id === turnId)?.status === 'completed'
+            ),
+          })),
         followRequest,
         send: (mode = 'queue') => {
           if (actions.canSend) {

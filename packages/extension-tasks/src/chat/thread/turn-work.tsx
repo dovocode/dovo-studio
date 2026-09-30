@@ -14,7 +14,8 @@ export function TurnWork({
   finalIndex: number
   children: ReactNode[]
 }) {
-  const [open, setOpen] = useState(true)
+  const [expanded, setExpanded] = useState<boolean | null>(null)
+  const open = expanded ?? turn.status !== 'completed'
   const label =
     turn.status === 'running' ? (
       'Turn in progress'
@@ -32,7 +33,7 @@ export function TurnWork({
         size="sm"
         className="h-7 w-fit px-1 text-xs text-muted-foreground"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setExpanded(!open)}
       >
         {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         {label}
