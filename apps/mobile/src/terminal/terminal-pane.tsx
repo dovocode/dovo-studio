@@ -1,3 +1,4 @@
+import { terminalGroups, splitTerminal, type TerminalGroup } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { useEffect, useRef } from 'react'
@@ -6,7 +7,6 @@ import { Text } from '../ui/content/text'
 import { canChangeTaskCheckout, responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { Action } from '../ui/controls/action'
-import { Choice } from '../ui/controls/choice'
 import { IconButton } from '../ui/controls/icon-button'
 import { styles } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
@@ -22,17 +22,30 @@ export function TerminalPane({
 }) {
   const { snapshot, connected, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
-  const [layout, setLayout] = useApplicationState('tabs')
+  const [savedGroups, setGroups] = useApplicationState<TerminalGroup[]>([])
   const closeShell = (id: string) =>
     act(() => callEffect('/api/terminals/close', { id }, responses.ok))
   const [generation, setGeneration] = useApplicationState(0)
   const autoTried = useRef(false)
   const terminals = snapshot?.terminals.filter((t) => t.taskId === task.id) ?? [],
-    active = terminals.find((t) => t.id === selected) ?? terminals[0]
+    active =
+      terminals.find((t) => t.id === selected) ??
+      terminals.find((terminal) =>
+        savedGroups
+          .find((group) => group.sessions.includes(selected))
+          ?.sessions.includes(terminal.id),
+      ) ??
+      terminals[0]
+  const groups = terminalGroups(
+    savedGroups,
+    terminals.map((terminal) => terminal.id),
+  )
+  const group = groups.find((group) => group.sessions.includes(active?.id ?? ''))
+  const layout = group?.layout ?? 'columns'
   const shellReady =
     !task.example &&
     (task.execution !== 'worktree' || !!task.existingWorktreePath || !canChangeTaskCheckout(task))
-  const openShell = () =>
+  const openShell = (split?: TerminalGroup['layout']) =>
     act(() =>
       mobileWorkflow(function* () {
         const terminal = yield* callEffect(
@@ -40,6 +53,7 @@ export function TerminalPane({
           { taskId: task.id },
           responses.terminal,
         )
+        if (split && active) setGroups(splitTerminal(groups, active.id, terminal.id, split))
         onSelect(terminal.id)
       }),
     )
@@ -72,7 +86,7 @@ export function TerminalPane({
           <Action
             label="New terminal"
             disabled={!connected || busy || !shellReady}
-            onPress={openShell}
+            onPress={() => openShell()}
           />
           {active && (
             <>
@@ -92,35 +106,52 @@ export function TerminalPane({
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ alignItems: 'center', gap: 4 }}
           >
-            {terminals.map((terminal) => (
-              <View key={terminal.id} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Action
-                  secondary
-                  label={`${terminal.title}${terminal.exited ? ' · exited' : ''}`}
-                  onPress={() => onSelect(terminal.id)}
-                />
-                <IconButton
-                  icon="close"
-                  label={`Close ${terminal.title}`}
-                  disabled={!connected || busy}
-                  onPress={() => closeShell(terminal.id)}
-                />
-              </View>
-            ))}
+            {groups.map((tab, index) => {
+              const terminal = terminals.find((terminal) => terminal.id === tab.sessions[0])!
+              return (
+                <View key={tab.id} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Action
+                    secondary
+                    label={
+                      tab.sessions.length > 1
+                        ? `Terminal ${index + 1} · ${tab.sessions.length} panes`
+                        : `${terminal.title}${terminal.exited ? ' · exited' : ''}`
+                    }
+                    onPress={() => onSelect(terminal.id)}
+                  />
+                  <IconButton
+                    icon="close"
+                    label={`Close terminal tab ${index + 1}`}
+                    disabled={!connected || busy}
+                    onPress={() =>
+                      act(() =>
+                        mobileWorkflow(function* () {
+                          for (const id of tab.sessions)
+                            yield* callEffect('/api/terminals/close', { id }, responses.ok)
+                        }),
+                      )
+                    }
+                  />
+                </View>
+              )
+            })}
           </ScrollView>
         )}
-        {terminals.length > 1 && (
-          <Choice
-            label="Terminal layout"
-            hideLabel
-            value={layout}
-            items={[
-              { id: 'tabs', name: 'Tabs' },
-              { id: 'columns', name: 'Side by side' },
-              { id: 'rows', name: 'Stacked' },
-            ]}
-            onChange={setLayout}
-          />
+        {active && (
+          <View style={styles.row}>
+            <Action
+              secondary
+              label="Split left/right"
+              disabled={!connected || busy || !shellReady}
+              onPress={() => openShell('columns')}
+            />
+            <Action
+              secondary
+              label="Split top/bottom"
+              disabled={!connected || busy || !shellReady}
+              onPress={() => openShell('rows')}
+            />
+          </View>
         )}
         {!!error && <Text style={styles.error}>{error}</Text>}
       </View>
@@ -128,40 +159,42 @@ export function TerminalPane({
         <View
           style={{ flex: 1, minHeight: 0, flexDirection: layout === 'columns' ? 'row' : 'column' }}
         >
-          {(layout === 'tabs' ? [active] : terminals).map((terminal) => (
-            <View
-              key={terminal.id}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                minHeight: 0,
-                borderWidth: layout === 'tabs' ? 0 : 1,
-                borderColor: '#ffffff20',
-              }}
-            >
-              {layout !== 'tabs' && (
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    paddingLeft: 8,
-                  }}
-                >
-                  <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 12 }]}>
-                    {terminal.title}
-                  </Text>
-                  <IconButton
-                    icon="close"
-                    label={`Close ${terminal.title}`}
-                    disabled={!connected || busy}
-                    onPress={() => closeShell(terminal.id)}
-                  />
-                </View>
-              )}
-              <TerminalSession key={`${terminal.id}:${generation}`} id={terminal.id} />
-            </View>
-          ))}
+          {terminals
+            .filter((terminal) => group?.sessions.includes(terminal.id))
+            .map((terminal) => (
+              <View
+                key={terminal.id}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 0,
+                  borderWidth: (group?.sessions.length ?? 0) > 1 ? 1 : 0,
+                  borderColor: '#ffffff20',
+                }}
+              >
+                {group && group.sessions.length > 1 && (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      paddingLeft: 8,
+                    }}
+                  >
+                    <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 12 }]}>
+                      {terminal.title}
+                    </Text>
+                    <IconButton
+                      icon="close"
+                      label={`Close ${terminal.title}`}
+                      disabled={!connected || busy}
+                      onPress={() => closeShell(terminal.id)}
+                    />
+                  </View>
+                )}
+                <TerminalSession key={`${terminal.id}:${generation}`} id={terminal.id} />
+              </View>
+            ))}
         </View>
       ) : (
         <Text style={[styles.muted, styles.content]}>

@@ -3,9 +3,12 @@ import { Schema } from 'effect'
 import type { Workspace, WorkspacePatch } from '@dovo/protocol'
 export function workspacePatches(before: Workspace, after: Workspace): WorkspacePatch[] {
   const patches: WorkspacePatch[] = []
-  for (const collection of ['agents', 'repositories', 'tasks', 'automations'] as const)
+  for (const collection of ['agents', 'repositories', 'tasks', 'automations'] as const) {
+    if (before[collection] === after[collection]) continue
+    const previousById = new Map(before[collection].map((entity) => [entity.id, entity]))
     for (const entity of after[collection]) {
-      const previous = before[collection].find((item) => item.id === entity.id)
+      const previous = previousById.get(entity.id)
+      if (previous === entity) continue
       if (!previous) {
         patches.push({
           collection,
@@ -35,7 +38,7 @@ export function workspacePatches(before: Workspace, after: Workspace): Workspace
         )
       const changes: WorkspacePatch['changes'] = {}
       for (const key of new Set([...Object.keys(record), ...Object.keys(old)]))
-        if (JSON.stringify(record[key]) !== JSON.stringify(old[key]))
+        if (record[key] !== old[key] && JSON.stringify(record[key]) !== JSON.stringify(old[key]))
           changes[key] = {
             before: old[key] ?? null,
             after: record[key] ?? null,
@@ -47,5 +50,6 @@ export function workspacePatches(before: Workspace, after: Workspace): Workspace
           changes,
         })
     }
+  }
   return patches
 }

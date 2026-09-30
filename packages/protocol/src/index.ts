@@ -111,3 +111,5 @@ export * from './runtime/connection/runtime-upgrades.js'
 export * from './tasks/launch-options.js'
 
 export * from './tasks/agent-presets.js'
+
+export * from './terminal-layout.js'

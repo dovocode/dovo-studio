@@ -9,7 +9,7 @@ import {
 import { AttachmentPicker } from './attachment-picker'
 import { MessageAttachments } from './message-attachments'
 import { useAttachments } from './use-attachments'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useFileMentions, type ComposerCommandId } from './file-mentions'
 import { SavedPromptsDialog } from '../../dialogs/saved-prompts-dialog'
 import { REVIEW_PROMPT, contextMeter, taskResources } from '@dovo/protocol'
@@ -187,12 +187,24 @@ export function Composer({
       )
       .finally(() => setCommandBusy(false))
   }
+  const resources = useMemo(
+    () => taskResources(task, workspace),
+    [
+      task.id,
+      task.agentId,
+      task.agentOverrides,
+      task.harness,
+      task.repositoryId,
+      workspace.agents,
+      workspace.repositories,
+    ],
+  )
   const mentions = useFileMentions({
     taskId: task.id,
     draft,
     setDraft,
     input,
-    resources: taskResources(task, workspace),
+    resources,
     // A draft has no agent session or turns yet, so commands start with the second message.
     onCommand:
       task.messages.length || task.queue?.length || task.turns?.length ? runCommand : undefined,
