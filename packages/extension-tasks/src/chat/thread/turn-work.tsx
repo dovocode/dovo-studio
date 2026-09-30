@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import type { TaskTurn } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { TurnLabel } from './turn-label'
 
 /** Keep the answer outside the work disclosure, including older unsplit replies. */
 export function TurnWork({
@@ -15,13 +16,15 @@ export function TurnWork({
 }) {
   const [open, setOpen] = useState(true)
   const label =
-    turn.status === 'running'
-      ? 'Turn in progress'
-      : turn.status === 'completed'
-        ? 'Turn completed'
-        : turn.status === 'failed'
-          ? 'Turn failed'
-          : 'Turn stopped'
+    turn.status === 'running' ? (
+      'Turn in progress'
+    ) : turn.status === 'completed' ? (
+      <TurnLabel turn={turn} />
+    ) : turn.status === 'failed' ? (
+      'Turn failed'
+    ) : (
+      'Turn stopped'
+    )
   return (
     <>
       <Button

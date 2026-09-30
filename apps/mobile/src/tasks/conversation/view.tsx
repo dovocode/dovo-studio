@@ -283,11 +283,16 @@ function AssistantParts() {
     }
     return elements
   }
+  const seconds = Math.max(
+    0,
+    Math.round((Date.parse(turn.finishedAt ?? turn.startedAt) - Date.parse(turn.startedAt)) / 1000),
+  )
+  const duration = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
   const label =
     turn.status === 'running'
       ? 'Turn in progress'
       : turn.status === 'completed'
-        ? 'Turn completed'
+        ? `Worked for ${duration}`
         : turn.status === 'failed'
           ? 'Turn failed'
           : 'Turn stopped'
