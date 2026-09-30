@@ -88,7 +88,7 @@ export function ChatThread({
   )
   return (
     <Conversation key={task.id}>
-      <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-[76px] md:pr-5">
+      <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-12 md:pr-5">
         {!!bookmarks.length && (
           <nav
             aria-label="Bookmarked replies"

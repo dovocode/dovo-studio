@@ -53,7 +53,6 @@ export function ConversationRail({
   }>
 }) {
   const { scrollRef, stopScroll } = useStickToBottomContext()
-  const [hovered, setHovered] = useApplicationState<number | null>(null)
   const [visible, setVisible] = useApplicationState<Set<string>>(new Set())
   useEffect(() => {
     const root = scrollRef.current
@@ -86,23 +85,16 @@ export function ConversationRail({
     <TooltipProvider delayDuration={100} skipDelayDuration={500}>
       <nav
         aria-label="Conversation turns"
-        className="absolute bottom-12 left-0 top-6 hidden w-[68px] flex-col items-start justify-center overflow-y-auto py-1 pl-5 md:flex"
+        className="absolute bottom-6 left-0 top-6 hidden w-8 flex-col items-center justify-center overflow-hidden py-1 md:flex"
       >
         {items.map((item, index) => (
           <Tooltip key={item.id}>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                onPointerEnter={() => setHovered(index)}
-                onPointerLeave={() => setHovered(null)}
-                onFocus={() => setHovered(index)}
-                onBlur={() => setHovered(null)}
                 aria-label={`Jump to turn ${index + 1}: ${item.label}`}
                 aria-current={visible.has(item.id) ? 'location' : undefined}
-                className="group flex min-h-[7px] w-12 shrink-0 items-center justify-start rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                style={{
-                  height: 7,
-                }}
+                className="group flex min-h-0 max-h-2 w-8 flex-1 items-center justify-center rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => {
                   const root = scrollRef.current
                   const target = document.getElementById(item.id)
@@ -121,23 +113,9 @@ export function ConversationRail({
                 }}
               >
                 <span
-                  style={{
-                    width:
-                      hovered === null
-                        ? visible.has(item.id)
-                          ? 24
-                          : 16
-                        : Math.abs(index - hovered) === 0
-                          ? 48
-                          : Math.abs(index - hovered) === 1
-                            ? 32
-                            : Math.abs(index - hovered) === 2
-                              ? 24
-                              : 16,
-                  }}
                   className={cn(
-                    'h-[2px] rounded-full transition-[width,background-color] duration-150 ease-out group-hover:bg-foreground/75 group-focus-visible:bg-foreground motion-reduce:transition-none',
-                    visible.has(item.id) ? 'bg-foreground/80' : 'bg-muted-foreground/30',
+                    'h-[2px] w-2 rounded-full transition-colors duration-150 ease-out group-hover:bg-foreground group-focus-visible:bg-foreground motion-reduce:transition-none',
+                    visible.has(item.id) ? 'bg-foreground/90' : 'bg-muted-foreground/30',
                   )}
                 />
               </button>
