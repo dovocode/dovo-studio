@@ -149,12 +149,76 @@ export function ChatThread({
                   key={message.id}
                   from={message.role}
                 >
-                  {timeline && turn ? (
-                    <>
-                      {(message.file ||
-                        message.attachments?.length ||
-                        message.review ||
-                        message.plan) && (
+                  <div className="group/message flex min-w-0 flex-col gap-2">
+                    {timeline && turn ? (
+                      <>
+                        {(message.file ||
+                          message.attachments?.length ||
+                          message.review ||
+                          message.plan) && (
+                          <MessageContent>
+                            <MessageAttachments taskId={task.id} files={message.attachments} />
+                            {message.review && (
+                              <span className="mb-1 w-fit rounded bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium text-muted-foreground">
+                                Review
+                              </span>
+                            )}
+                            {message.plan && (
+                              <span className="mb-1 w-fit rounded bg-primary/15 px-1.5 py-0.5 text-[0.625rem] font-medium text-primary">
+                                Plan mode
+                              </span>
+                            )}
+                            {message.file && (
+                              <span className="mb-1 font-mono text-[0.6875rem] text-muted-foreground">
+                                {message.file}
+                              </span>
+                            )}
+                          </MessageContent>
+                        )}
+                        <TurnWork
+                          turn={turn}
+                          finalIndex={finalReplyIndex(timeline, turn.status === 'running')}
+                        >
+                          {timeline.map((block, index) =>
+                            block.kind === 'activity' ? (
+                              <TaskActivity
+                                key={block.key}
+                                turn={index === 0 ? turn : undefined}
+                                status={turn.status}
+                                tools={block.tools}
+                              />
+                            ) : block.kind === 'compaction' ? (
+                              <p
+                                key={`compaction-${block.event.at}`}
+                                role="status"
+                                className="text-[0.6875rem] text-muted-foreground"
+                              >
+                                Context compacted {new Date(block.event.at).toLocaleString()} ·{' '}
+                                {block.event.trigger === 'auto' ? 'Automatic' : 'Manual'}
+                              </p>
+                            ) : (
+                              <MessageContent key={`text-${block.offset}`}>
+                                <MessageResponse
+                                  isStreaming={
+                                    turn.status === 'running' && index === timeline.length - 1
+                                  }
+                                >
+                                  {block.text}
+                                </MessageResponse>
+                              </MessageContent>
+                            ),
+                          )}
+                        </TurnWork>
+                        {!message.text && turn.status !== 'running' && !compactions.length && (
+                          <MessageContent>
+                            <span className="text-xs text-muted-foreground">
+                              {message.attachments?.length ? '' : 'No response text'}
+                            </span>
+                          </MessageContent>
+                        )}
+                      </>
+                    ) : (
+                      showContent && (
                         <MessageContent>
                           <MessageAttachments taskId={task.id} files={message.attachments} />
                           {message.review && (
@@ -172,139 +236,83 @@ export function ChatThread({
                               {message.file}
                             </span>
                           )}
-                        </MessageContent>
-                      )}
-                      <TurnWork
-                        turn={turn}
-                        finalIndex={finalReplyIndex(timeline, turn.status === 'running')}
-                      >
-                        {timeline.map((block, index) =>
-                          block.kind === 'activity' ? (
-                            <TaskActivity
-                              key={block.key}
-                              turn={index === 0 ? turn : undefined}
-                              status={turn.status}
-                              tools={block.tools}
-                            />
-                          ) : block.kind === 'compaction' ? (
-                            <p
-                              key={`compaction-${block.event.at}`}
-                              role="status"
-                              className="text-[0.6875rem] text-muted-foreground"
-                            >
-                              Context compacted {new Date(block.event.at).toLocaleString()} ·{' '}
-                              {block.event.trigger === 'auto' ? 'Automatic' : 'Manual'}
-                            </p>
+                          {message.text ? (
+                            <MessageResponse>{message.text}</MessageResponse>
                           ) : (
-                            <MessageContent key={`text-${block.offset}`}>
-                              <MessageResponse
-                                isStreaming={
-                                  turn.status === 'running' && index === timeline.length - 1
-                                }
-                              >
-                                {block.text}
-                              </MessageResponse>
-                            </MessageContent>
-                          ),
-                        )}
-                      </TurnWork>
-                      {!message.text && turn.status !== 'running' && !compactions.length && (
-                        <MessageContent>
-                          <span className="text-xs text-muted-foreground">
-                            {message.attachments?.length ? '' : 'No response text'}
-                          </span>
+                            <span className="text-xs text-muted-foreground">
+                              {message.attachments?.length ? '' : 'No response text'}
+                            </span>
+                          )}
                         </MessageContent>
-                      )}
-                    </>
-                  ) : (
-                    showContent && (
-                      <MessageContent>
-                        <MessageAttachments taskId={task.id} files={message.attachments} />
-                        {message.review && (
-                          <span className="mb-1 w-fit rounded bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium text-muted-foreground">
-                            Review
-                          </span>
+                      )
+                    )}
+                    {pending?.message.id === message.id && (
+                      <p role="status" className="text-[0.6875rem] text-muted-foreground">
+                        {pending.state === 'failed'
+                          ? 'Not confirmed · retry from the composer'
+                          : 'Sending…'}
+                      </p>
+                    )}
+                    {(!!message.text || !!message.createdAt) && (
+                      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100 group-[.is-user]:ml-auto">
+                        {message.createdAt && (
+                          <time
+                            dateTime={message.createdAt}
+                            className="text-[0.625rem] text-muted-foreground"
+                          >
+                            {formatDateTime(message.createdAt, {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </time>
                         )}
-                        {message.plan && (
-                          <span className="mb-1 w-fit rounded bg-primary/15 px-1.5 py-0.5 text-[0.625rem] font-medium text-primary">
-                            Plan mode
-                          </span>
+                        {!!message.text && <MessageCopy text={message.text} />}
+                        {message.role === 'assistant' && turn?.status !== 'running' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="size-7 p-0"
+                            aria-label={message.bookmarked ? 'Remove bookmark' : 'Bookmark reply'}
+                            aria-pressed={!!message.bookmarked}
+                            disabled={!connected}
+                            onClick={() =>
+                              void request(
+                                '/api/tasks/message/bookmark',
+                                {
+                                  id: task.id,
+                                  messageId: message.id,
+                                  bookmarked: !message.bookmarked,
+                                },
+                                responses.ok,
+                              )
+                            }
+                          >
+                            <Star
+                              className={`size-3.5 ${message.bookmarked ? 'fill-current' : ''}`}
+                            />
+                          </Button>
                         )}
-                        {message.file && (
-                          <span className="mb-1 font-mono text-[0.6875rem] text-muted-foreground">
-                            {message.file}
-                          </span>
+                        {message.role === 'assistant' &&
+                          turn?.status !== 'running' &&
+                          onTerminal && (
+                            <RunInTerminal
+                              taskId={task.id}
+                              text={message.text}
+                              onRan={onTerminal}
+                            />
+                          )}
+                        {turn && turn.status !== 'running' && (
+                          <ForkTurn taskId={task.id} turnId={turn.id} />
                         )}
-                        {message.text ? (
-                          <MessageResponse>{message.text}</MessageResponse>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            {message.attachments?.length ? '' : 'No response text'}
-                          </span>
-                        )}
-                      </MessageContent>
-                    )
-                  )}
-                  {pending?.message.id === message.id && (
-                    <p role="status" className="text-[0.6875rem] text-muted-foreground">
-                      {pending.state === 'failed'
-                        ? 'Not confirmed · retry from the composer'
-                        : 'Sending…'}
-                    </p>
-                  )}
-                  {(!!message.text || !!message.createdAt) && (
-                    <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 group-[.is-user]:ml-auto">
-                      {message.createdAt && (
-                        <time
-                          dateTime={message.createdAt}
-                          className="text-[0.625rem] text-muted-foreground"
-                        >
-                          {formatDateTime(message.createdAt, {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </time>
-                      )}
-                      {!!message.text && <MessageCopy text={message.text} />}
-                      {message.role === 'assistant' && turn?.status !== 'running' && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="size-7 p-0"
-                          aria-label={message.bookmarked ? 'Remove bookmark' : 'Bookmark reply'}
-                          aria-pressed={!!message.bookmarked}
-                          disabled={!connected}
-                          onClick={() =>
-                            void request(
-                              '/api/tasks/message/bookmark',
-                              {
-                                id: task.id,
-                                messageId: message.id,
-                                bookmarked: !message.bookmarked,
-                              },
-                              responses.ok,
-                            )
-                          }
-                        >
-                          <Star
-                            className={`size-3.5 ${message.bookmarked ? 'fill-current' : ''}`}
-                          />
-                        </Button>
-                      )}
-                      {message.role === 'assistant' && turn?.status !== 'running' && onTerminal && (
-                        <RunInTerminal taskId={task.id} text={message.text} onRan={onTerminal} />
-                      )}
-                      {turn && turn.status !== 'running' && (
-                        <ForkTurn taskId={task.id} turnId={turn.id} />
-                      )}
-                      {turn &&
-                        turn.status !== 'running' &&
-                        task.status !== 'running' &&
-                        task.turns?.at(-1)?.id === turn.id && (
-                          <RetryTurn taskId={task.id} turnId={turn.id} />
-                        )}
-                    </div>
-                  )}
+                        {turn &&
+                          turn.status !== 'running' &&
+                          task.status !== 'running' &&
+                          task.turns?.at(-1)?.id === turn.id && (
+                            <RetryTurn taskId={task.id} turnId={turn.id} />
+                          )}
+                      </div>
+                    )}
+                  </div>
                   {turn?.error && (
                     <p role="alert" className="text-xs text-destructive">
                       {turn.error}

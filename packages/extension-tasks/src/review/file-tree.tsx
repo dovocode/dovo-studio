@@ -27,10 +27,12 @@ function fileTree(files: ChangedFile[]): Folder {
 function FolderRows({
   folder,
   stats,
+  prefix = '',
   selected,
   onSelect,
 }: {
   folder: Folder
+  prefix?: string
   stats: Map<string, DiffStat>
   selected: string
   onSelect: (path: string) => void
@@ -43,10 +45,27 @@ function FolderRows({
           <details key={child.name} open className="group/folder">
             <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded px-2 py-1 text-[0.6875rem] text-muted-foreground hover:bg-accent/50">
               <ChevronDown className="size-3 shrink-0 -rotate-90 transition-transform group-open/folder:rotate-0" />
-              <span className="truncate">{child.name}</span>
+              <span className="min-w-0 flex-1 truncate">{child.name}</span>
+              <DiffAmounts
+                stats={[...stats.values()]
+                  .filter((stat) => stat.path.startsWith(`${prefix}${child.name}/`))
+                  .reduce(
+                    (total, stat) => ({
+                      additions: total.additions + stat.additions,
+                      deletions: total.deletions + stat.deletions,
+                    }),
+                    { additions: 0, deletions: 0 },
+                  )}
+              />
             </summary>
             <div className="ml-3 border-l border-border/60 pl-1">
-              <FolderRows folder={child} stats={stats} selected={selected} onSelect={onSelect} />
+              <FolderRows
+                folder={child}
+                stats={stats}
+                selected={selected}
+                onSelect={onSelect}
+                prefix={`${prefix}${child.name}/`}
+              />
             </div>
           </details>
         ))}

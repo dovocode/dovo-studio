@@ -244,7 +244,9 @@ function DirectoryRows({
   selected,
   select,
   stats,
+  prefix = '',
 }: {
+  prefix?: string
   stats: Map<string, ReturnType<typeof fileStats>>
   node: Directory
   selected: string
@@ -259,10 +261,27 @@ function DirectoryRows({
             <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent/50">
               <ChevronDown className="size-3 shrink-0 -rotate-90 transition-transform group-open/folder:rotate-0" />
               <Folder className="size-3.5 shrink-0" />
-              <span className="truncate">{name}</span>
+              <span className="min-w-0 flex-1 truncate">{name}</span>
+              <DiffAmounts
+                stats={[...stats.values()]
+                  .filter((stat) => stat.path.startsWith(`${prefix}${name}/`))
+                  .reduce(
+                    (total, stat) => ({
+                      additions: total.additions + stat.additions,
+                      deletions: total.deletions + stat.deletions,
+                    }),
+                    { additions: 0, deletions: 0 },
+                  )}
+              />
             </summary>
             <div className="ml-3 border-l border-border/60 pl-1">
-              <DirectoryRows node={child} selected={selected} select={select} stats={stats} />
+              <DirectoryRows
+                node={child}
+                selected={selected}
+                select={select}
+                stats={stats}
+                prefix={`${prefix}${name}/`}
+              />
             </div>
           </details>
         ))}

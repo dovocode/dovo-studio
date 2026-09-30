@@ -8,6 +8,18 @@ export default function DiffSettings() {
       title="Diffs"
       description="How changes look in task reviews, turn checkpoints and pull requests. Diffs follow your Appearance theme."
     >
+      <SettingsGroup title="Conversation">
+        <SettingRow
+          label="Collapse changed files by default"
+          description="Keep turn checkpoints compact. Each card can still be expanded."
+        >
+          <Toggle
+            label="Collapse changed files by default"
+            checked={preferences.collapseChangedFiles}
+            onChange={(collapseChangedFiles) => updateAppPreferences({ collapseChangedFiles })}
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Layout">
         <SettingRow
           label="Default layout"

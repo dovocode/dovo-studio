@@ -25,6 +25,7 @@ it('keeps valid saved choices, fills in new defaults and ignores invalid values'
     theme: 'light',
     sendWith: 'enter',
     textSize: 'default',
+    collapseChangedFiles: true,
   })
 })
 
@@ -79,4 +80,13 @@ it('persists browser profiles, per-thread selections and opt-in agent access', a
     browserProfileByThread: { thread: 'work' },
     browserAgentAccess: { thread: true },
   })
+})
+
+it('keeps the changed-files expansion preference across reopening', async () => {
+  vi.stubGlobal('localStorage', storage())
+  const { updateAppPreferences } = await import('./preferences')
+  updateAppPreferences({ collapseChangedFiles: false })
+  vi.resetModules()
+  const { readAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().collapseChangedFiles).toBe(false)
 })
