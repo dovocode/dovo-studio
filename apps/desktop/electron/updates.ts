@@ -370,6 +370,7 @@ export function registerUpdates(
     refresh,
     install: () => check(true),
     remote: (action: 'download' | 'restart', version: string) => check(true, { action, version }),
+    installedVersion: app.getVersion(),
     supported: app.isPackaged && (process.platform !== 'linux' || !!process.env.APPIMAGE),
   }
 }

@@ -1,8 +1,10 @@
+import { runtimeUpdate } from './runtime-releases.js'
 import { afterEach, expect, it, vi } from 'vitest'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from './runtime.js'
 import {
   createRuntimeUpgradeManager,
+  runtimeUpgradeTargets,
   runtimeUpgradeBlocked,
   type RuntimeUpgradeEntry,
 } from './runtime-upgrades.js'
@@ -61,7 +63,8 @@ function fixture(entries: RuntimeUpgradeEntry[]) {
               }
             : [],
         )
-      const id = url.hostname.split('.')[0]
+      const id =
+        url.hostname.split('.')[0] + (url.pathname.includes('/desktop-update/') ? ':desktop' : '')
       if (url.pathname.startsWith('/api/snapshot'))
         return Response.json(entries.find((value) => value.profile.id === id)?.snapshot)
       if (url.pathname.endsWith('/status'))
@@ -265,4 +268,53 @@ it('retains a rejected command error until retry or verified host recovery', asy
   }
   await f.manager.poll()
   expect(f.manager.getSnapshot().statuses.server.status).toBe('complete')
+})
+
+it('offers independent server and desktop targets and confirms the desktop version rather than the server version', async () => {
+  const server = entry('host')
+  if (!server.snapshot) throw new Error('Missing snapshot')
+  server.snapshot.runtimeHost = 'host'
+  server.snapshot.releaseVersion = '1.0.1'
+  server.snapshot.desktopApp = { version: '1.0.0', canUpdate: true }
+  const duplicate = { ...server, profile: { ...server.profile, id: 'duplicate' } }
+  expect(
+    runtimeUpgradeTargets([server, duplicate]).filter((entry) => entry.target === 'desktop'),
+  ).toHaveLength(1)
+  const firstId = runtimeUpgradeTargets([server, duplicate]).find(
+    (entry) => entry.target === 'desktop',
+  )?.profile.id
+  expect(
+    runtimeUpgradeTargets([{ ...server, connected: false }, duplicate]).find(
+      (entry) => entry.target === 'desktop',
+    )?.profile.id,
+  ).toBe(firstId)
+  const targets = runtimeUpgradeTargets([server])
+  const f = fixture(targets)
+  await f.manager.check()
+  await f.manager.start(['host:desktop'])
+  expect(f.commands).toEqual([{ id: 'host:desktop', path: '/api/runtime/desktop-update/start' }])
+  f.states.set('host:desktop', { status: 'downloaded', version: '1.0.1' })
+  await f.manager.poll()
+  await f.manager.restart(['host:desktop'])
+  await f.manager.poll()
+  expect(f.manager.getSnapshot().statuses['host:desktop']?.status).toBe('installing')
+  server.snapshot.desktopApp.version = '1.0.1'
+  await f.manager.poll()
+  expect(f.manager.getSnapshot().statuses['host:desktop']?.status).toBe('complete')
+  expect(f.refreshed).toHaveBeenCalledWith(
+    expect.objectContaining({ sourceProfile: server.profile }),
+  )
+})
+
+it('uses the desktop app release channel only when explicitly configured', () => {
+  const desktop = entry('desktop', true)
+  if (!desktop.snapshot) throw new Error('Missing snapshot')
+  const nightly = { version: '1.0.0-nightly.1', notes: '', url: '' }
+  const stable = { version: '1.0.1', notes: '', url: '' }
+  expect(runtimeUpdate(desktop.snapshot, { stable, nightly }).latest).toBe(stable)
+  desktop.snapshot.desktopApp = { version: '1.0.0', canUpdate: true, channel: 'nightly' }
+  expect(runtimeUpdate(desktop.snapshot, { stable, nightly })).toMatchObject({
+    latest: nightly,
+    available: true,
+  })
 })

@@ -270,3 +270,10 @@ Remote desktop control goes through the existing authenticated runtime connectio
 LAN/VPN connections. The native updater exposes only a private loopback bridge with an owner-only
 credential file. It does not expose that credential to paired clients. After installing this release
 once on a desktop host, the remote controls become available to its paired devices.
+
+A separately installed server can also update a desktop app running under the same OS user. The app
+publishes its private bridge in `~/.dovo/desktop-update-host.json`, including its installed version.
+Computer updates lists **Server** and **Desktop** independently; updating the desktop does not
+replace or restart the separately installed server. The desktop target stays visible during its
+restart, and completion checks the app's version rather than the server's version. Both the host app
+and server need this release once before standalone-server discovery is available.

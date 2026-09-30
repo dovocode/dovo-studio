@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   createRuntimeUpgradeManager,
+  runtimeUpgradeTargets,
   runtimeUpdate,
   runtimeUpgradeBlocked,
   type RuntimeUpgradeEntry,
@@ -10,12 +11,13 @@ import { useWorkspace } from '@dovo/studio-core'
 
 export function ComputerUpdates() {
   const { runtimes, refreshRuntime } = useWorkspace()
-  const current = useRef({ runtimes, refreshRuntime })
-  current.current = { runtimes, refreshRuntime }
+  const targets = runtimeUpgradeTargets(runtimes)
+  const current = useRef({ runtimes: targets, refreshRuntime })
+  current.current = { runtimes: targets, refreshRuntime }
   const [manager] = useState(() =>
     createRuntimeUpgradeManager({
       entries: () => current.current.runtimes,
-      refreshed: (entry) => current.current.refreshRuntime(entry.profile),
+      refreshed: (entry) => current.current.refreshRuntime(entry.sourceProfile ?? entry.profile),
     }),
   )
   const state = useSyncExternalStore(manager.subscribe, manager.getSnapshot)
@@ -34,10 +36,10 @@ export function ComputerUpdates() {
       !['queued', 'downloading', 'installing', 'downloaded'].includes(status ?? '')
     )
   }
-  const selected = runtimes
+  const selected = targets
     .filter((entry) => state.selected.includes(entry.profile.id) && eligible(entry))
     .map((entry) => entry.profile.id)
-  const ready = runtimes
+  const ready = targets
     .filter(
       (entry) =>
         state.selected.includes(entry.profile.id) &&
@@ -70,7 +72,7 @@ export function ComputerUpdates() {
         </p>
       )}
       <div className="divide-y">
-        {runtimes.map((entry) => {
+        {targets.map((entry) => {
           const id = entry.profile.id,
             update = runtimeUpdate(entry.snapshot, state.releases)
           const desktop = entry.snapshot?.releaseDistribution === 'desktop'

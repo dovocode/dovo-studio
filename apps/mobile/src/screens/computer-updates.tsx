@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AppState, View } from 'react-native'
 import {
   createRuntimeUpgradeManager,
+  runtimeUpgradeTargets,
   runtimeUpdate,
   runtimeUpgradeBlocked,
   type RuntimeUpgradeEntry,
@@ -15,12 +16,13 @@ import { SettingsGroup } from './settings-group'
 
 export function ComputerUpdates() {
   const { overviews, refreshRuntime } = useRuntime()
-  const current = useRef({ overviews, refreshRuntime })
-  current.current = { overviews, refreshRuntime }
+  const targets = runtimeUpgradeTargets(overviews)
+  const current = useRef({ overviews: targets, refreshRuntime })
+  current.current = { overviews: targets, refreshRuntime }
   const [manager] = useState(() =>
     createRuntimeUpgradeManager({
       entries: () => current.current.overviews,
-      refreshed: (entry) => current.current.refreshRuntime(entry.profile),
+      refreshed: (entry) => current.current.refreshRuntime(entry.sourceProfile ?? entry.profile),
     }),
   )
   const state = useSyncExternalStore(manager.subscribe, manager.getSnapshot)
@@ -43,10 +45,10 @@ export function ComputerUpdates() {
     !['queued', 'downloading', 'installing', 'downloaded'].includes(
       state.statuses[entry.profile.id]?.status ?? '',
     )
-  const selected = overviews
+  const selected = targets
     .filter((entry) => state.selected.includes(entry.profile.id) && eligible(entry))
     .map((entry) => entry.profile.id)
-  const ready = overviews
+  const ready = targets
     .filter(
       (entry) =>
         state.selected.includes(entry.profile.id) &&
@@ -71,7 +73,7 @@ export function ComputerUpdates() {
             {state.error}
           </Text>
         )}
-        {overviews.map((entry) => {
+        {targets.map((entry) => {
           const id = entry.profile.id,
             release = runtimeUpdate(entry.snapshot, state.releases)
           const desktop = entry.snapshot?.releaseDistribution === 'desktop',

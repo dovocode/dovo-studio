@@ -1,20 +1,27 @@
 import { createServer } from 'node:http'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, writeFileSync, renameSync, readFileSync, unlinkSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { DesktopUpdateState, ServerUpdateStatus } from '@dovo/protocol'
 
 type Updater = {
   state: () => DesktopUpdateState
   remote: (action: 'download' | 'restart', version: string) => Promise<void>
   supported: boolean
+  installedVersion?: string
 }
 
 /** Only the authenticated runtime proxies this private loopback endpoint to paired devices. */
-export async function registerRemoteUpdates(directory: string, updater: Updater) {
+export async function registerRemoteUpdates(
+  directory: string,
+  updater: Updater,
+  sharedDirectory?: string,
+) {
   if (!updater.supported) return
   const token = randomBytes(32).toString('hex')
-  const path = join(directory, 'desktop-update-host.json')
+  const paths = [...new Set([directory, ...(sharedDirectory ? [sharedDirectory] : [])])].map(
+    (directory) => join(directory, 'desktop-update-host.json'),
+  )
   let pending: { version: string; action: 'download' | 'restart' } | undefined
   let failure: { version: string; error: string } | undefined
   const status = (): ServerUpdateStatus => {
@@ -119,23 +126,49 @@ export async function registerRemoteUpdates(directory: string, updater: Updater)
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Could not bind desktop updater')
   try {
-    mkdirSync(directory, { recursive: true, mode: 0o700 })
-    const temporary = `${path}.${process.pid}.tmp`
-    writeFileSync(temporary, JSON.stringify({ pid: process.pid, port: address.port, token }), {
-      mode: 0o600,
-    })
-    renameSync(temporary, path)
+    for (const path of paths) {
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+      const temporary = `${path}.${process.pid}.tmp`
+      writeFileSync(
+        temporary,
+        JSON.stringify({
+          pid: process.pid,
+          port: address.port,
+          token,
+          version: updater.installedVersion,
+        }),
+        { mode: 0o600 },
+      )
+      renameSync(temporary, path)
+    }
   } catch (error) {
     server.close()
     throw error
   }
   return async () => {
     try {
-      const current: unknown = JSON.parse(readFileSync(path, 'utf8'))
-      if (current && typeof current === 'object' && 'token' in current && current.token === token)
-        unlinkSync(path)
-    } catch (error) {
-      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+      for (const path of paths) {
+        // Keep the shared installation record so the target remains visible during app restart.
+        // Its dead PID disables commands until the next app publishes a fresh bridge.
+        if (
+          sharedDirectory &&
+          path === join(sharedDirectory, 'desktop-update-host.json') &&
+          sharedDirectory !== directory
+        )
+          continue
+        try {
+          const current: unknown = JSON.parse(readFileSync(path, 'utf8'))
+          if (
+            current &&
+            typeof current === 'object' &&
+            'token' in current &&
+            current.token === token
+          )
+            unlinkSync(path)
+        } catch (error) {
+          if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+        }
+      }
     } finally {
       server.closeAllConnections()
       await new Promise<void>((resolve, reject) =>

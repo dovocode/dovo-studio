@@ -64,10 +64,20 @@ export function runtimeUpdate(
   releases: RuntimeReleases | undefined,
 ) {
   const installed = snapshot?.releaseVersion
-  const latest = installed?.includes('-nightly.') ? releases?.nightly : releases?.stable
+  const channel =
+    snapshot?.releaseDistribution === 'desktop' ? snapshot.desktopApp?.channel : undefined
+  const latest =
+    (channel ?? (installed?.includes('-nightly.') ? 'nightly' : 'stable')) === 'nightly'
+      ? releases?.nightly
+      : releases?.stable
   return {
     installed,
     latest,
-    available: !!installed && !!latest && newerRuntimeVersion(latest.version, installed),
+    available:
+      !!installed &&
+      !!latest &&
+      latest.version !== installed &&
+      (newerRuntimeVersion(latest.version, installed) ||
+        (!!channel && channel !== (installed.includes('-nightly.') ? 'nightly' : 'stable'))),
   }
 }

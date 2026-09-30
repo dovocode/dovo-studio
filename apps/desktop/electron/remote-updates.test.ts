@@ -83,3 +83,47 @@ it('does not advertise unsupported desktop installs', async () => {
   ).toBeUndefined()
   expect(existsSync(join(directory, 'desktop-update-host.json'))).toBe(false)
 })
+
+it('advertises its installed version to independent same-user servers and replaces stale records', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'dovo-desktop-shared-update-'))
+  directories.push(directory)
+  const shared = join(directory, 'shared')
+  const profile = join(directory, 'profile')
+  const close = await registerRemoteUpdates(
+    profile,
+    {
+      supported: true,
+      installedVersion: '1.2.3',
+      state: () => ({ status: 'idle' }),
+      remote: async () => {},
+    },
+    shared,
+  )
+  if (!close) throw new Error('Missing bridge')
+  const record = decode(
+    desktopUpdateHostSchema,
+    JSON.parse(readFileSync(join(shared, 'desktop-update-host.json'), 'utf8')),
+  )
+  expect(record.version).toBe('1.2.3')
+  await close()
+  expect(existsSync(join(profile, 'desktop-update-host.json'))).toBe(false)
+  expect(existsSync(join(shared, 'desktop-update-host.json'))).toBe(true)
+  const next = await registerRemoteUpdates(
+    profile,
+    {
+      supported: true,
+      installedVersion: '1.2.4',
+      state: () => ({ status: 'idle' }),
+      remote: async () => {},
+    },
+    shared,
+  )
+  if (!next) throw new Error('Missing replacement bridge')
+  closers.push(next)
+  const replacement = decode(
+    desktopUpdateHostSchema,
+    JSON.parse(readFileSync(join(shared, 'desktop-update-host.json'), 'utf8')),
+  )
+  expect(replacement.version).toBe('1.2.4')
+  expect(replacement.token).not.toBe(record.token)
+})

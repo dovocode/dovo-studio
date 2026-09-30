@@ -22,6 +22,7 @@ export type ServerUpdateStatus = Schema.Schema.Type<typeof serverUpdateStatusSch
 
 // Written by the desktop process in its private data directory; never returned to clients.
 export const desktopUpdateHostSchema = mutableStruct({
+  version: Schema.optional(Schema.String),
   pid: Schema.Number.pipe(Schema.int(), Schema.positive()),
   port: Schema.Number.pipe(Schema.int(), Schema.between(1, 65535)),
   token: Schema.String.pipe(Schema.minLength(32)),

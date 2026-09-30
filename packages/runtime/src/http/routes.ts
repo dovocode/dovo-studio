@@ -12,7 +12,7 @@ import {
 } from '@dovo/protocol'
 import { hostname } from 'node:os'
 import { trackRequest } from './support/request-activity.js'
-import { canUpdateDesktop, desktopUpdate } from './desktop-updates.js'
+import { canUpdateDesktop, desktopUpdate, desktopAppUpdateInfo } from './desktop-updates.js'
 import { canUpdateServer, serverUpdateStatus, startServerUpdate } from './server-updates.js'
 import { defaultShell } from '../terminal/shell.js'
 import { discoverProjectIcon } from '../scm/repositories/project-icon.js'
@@ -329,6 +329,7 @@ export function route(
           protocolVersion: RUNTIME_PROTOCOL_VERSION,
           runtimeHost: hostname(),
           releaseVersion: process.env.DOVO_RELEASE_VERSION || undefined,
+          desktopApp: desktopAppUpdateInfo(),
           releaseDistribution:
             process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop'
               ? 'desktop'
@@ -412,6 +413,20 @@ export function route(
             yield* serviceResult(body(request)),
           )
           return yield* serviceResult(s.network.set(input.host, input.port, input.enabled))
+        }
+      }
+      if (path.startsWith('/api/runtime/desktop-update/')) {
+        const action = path.slice('/api/runtime/desktop-update/'.length)
+        if (method === 'GET' && action === 'status')
+          return yield* serviceResult(desktopUpdate('status', undefined, true))
+        if (method === 'POST' && (action === 'start' || action === 'restart')) {
+          const input = decode(
+            mutableStruct({ version: maxValue(minValue(Schema.String, 1), 80) }),
+            yield* serviceResult(body(request)),
+          )
+          return yield* serviceResult(
+            desktopUpdate(action === 'start' ? 'download' : 'restart', input.version, true),
+          )
         }
       }
       if (method === 'GET' && path === '/api/runtime/update/status')

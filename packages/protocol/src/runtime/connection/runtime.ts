@@ -76,6 +76,13 @@ export const snapshotSchema = mutableStruct({
   releaseVersion: Schema.optional(Schema.String),
   releaseDistribution: Schema.optional(Schema.Literal('desktop', 'archive', 'source')),
   releaseCanUpdate: Schema.optional(Schema.Boolean),
+  desktopApp: Schema.optional(
+    mutableStruct({
+      version: Schema.String,
+      canUpdate: Schema.Boolean,
+      channel: Schema.optional(Schema.Literal('stable', 'nightly')),
+    }),
+  ),
   defaults: Schema.optional(runtimeDefaultsSchema),
   acpInstallations: Schema.optionalWith(mutableArray(acpInstallationSchema), { default: () => [] }),
   revision: Schema.Number.pipe(Schema.finite()),

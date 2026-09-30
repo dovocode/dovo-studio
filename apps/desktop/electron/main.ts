@@ -258,7 +258,7 @@ const startup = Effect.gen(function* () {
         await restore()
       }
     })
-    void registerRemoteUpdates(app.getPath('userData'), updates)
+    void registerRemoteUpdates(app.getPath('userData'), updates, join(homedir(), '.dovo'))
       .then((close) => {
         if (close)
           app.once('will-quit', () => {

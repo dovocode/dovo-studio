@@ -13,6 +13,50 @@ export type RuntimeUpgradeEntry = {
   profile: RuntimeProfile
   snapshot: RuntimeSnapshot | null | undefined
   connected: boolean
+  target?: 'desktop'
+  sourceProfile?: RuntimeProfile
+}
+function desktopSnapshot(snapshot: RuntimeSnapshot): RuntimeSnapshot {
+  return {
+    ...snapshot,
+    releaseVersion: snapshot.desktopApp?.version,
+    releaseDistribution: 'desktop',
+    releaseCanUpdate: snapshot.desktopApp?.canUpdate ?? false,
+    // The desktop updater checks its own workspace before restarting; the server is independent.
+    workspace: { ...snapshot.workspace, tasks: [] },
+    runs: [],
+  }
+}
+/** Expose a separate desktop target when connected through a standalone server on its host. */
+export function runtimeUpgradeTargets(
+  entries: readonly RuntimeUpgradeEntry[],
+): RuntimeUpgradeEntry[] {
+  const desktops = new Set(
+    entries
+      .filter((entry) => entry.snapshot?.releaseDistribution === 'desktop')
+      .map((entry) => entry.snapshot?.runtimeHost)
+      .filter(Boolean),
+  )
+  const result: RuntimeUpgradeEntry[] = []
+  for (const entry of [...entries].sort((a, b) => Number(b.connected) - Number(a.connected))) {
+    result.push(entry)
+    const host = entry.snapshot?.runtimeHost
+    if (
+      !entry.snapshot?.desktopApp ||
+      entry.snapshot.releaseDistribution === 'desktop' ||
+      (host && desktops.has(host))
+    )
+      continue
+    if (host) desktops.add(host)
+    result.push({
+      ...entry,
+      target: 'desktop',
+      sourceProfile: entry.profile,
+      profile: { ...entry.profile, id: `${host ?? entry.profile.id}:desktop` },
+      snapshot: desktopSnapshot(entry.snapshot),
+    })
+  }
+  return result
 }
 export type RuntimeUpgradeState = {
   checking: boolean
@@ -87,7 +131,7 @@ export function createRuntimeUpgradeManager(options: {
     runtimeRequest(
       entry.profile.connection,
       entry.profile.connection.address,
-      `/api/runtime/update/${path}`,
+      `/api/runtime/${entry.target === 'desktop' ? 'desktop-update' : 'update'}/${path}`,
       version ? { version } : undefined,
       serverUpdateStatusSchema,
       version ? 'POST' : 'GET',
@@ -118,7 +162,7 @@ export function createRuntimeUpgradeManager(options: {
                 previous?.status === 'installing' ||
                 (previous?.status === 'error' && previous.version)
               ) {
-                const snapshot = await runtimeRequest(
+                const received = await runtimeRequest(
                   entry.profile.connection,
                   entry.profile.connection.address,
                   '/api/snapshot?overview=1',
@@ -127,6 +171,7 @@ export function createRuntimeUpgradeManager(options: {
                   'GET',
                   5000,
                 )
+                const snapshot = entry.target === 'desktop' ? desktopSnapshot(received) : received
                 if (generations.get(entry.profile.id) !== generation) return
                 if (
                   snapshot.releaseVersion &&
