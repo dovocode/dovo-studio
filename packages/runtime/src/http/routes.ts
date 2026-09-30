@@ -141,11 +141,22 @@ export function route(
             '/api/agents/mcp/test',
             '/api/agents/acp/authenticate',
             '/api/live-activities/register',
+            '/api/notifications/register',
             '/api/attachments/upload',
             '/api/scm/connections/save',
             '/api/scm/work/pipelines/action',
           ].includes(path),
         )
+      }
+      if (method === 'GET' && path === '/api/notifications/status')
+        return yield* serviceResult(s.pushNotifications.status(device.id))
+      if (method === 'POST' && path === '/api/notifications/register')
+        return yield* serviceResult(
+          s.pushNotifications.register(device.id, yield* serviceResult(body(request))),
+        )
+      if (method === 'POST' && path === '/api/notifications/remove') {
+        s.pushNotifications.remove(device.id)
+        return yield* serviceResult({ ok: true })
       }
       if (method === 'GET' && path === '/api/live-activities/status')
         return yield* serviceResult(s.liveActivities.status())

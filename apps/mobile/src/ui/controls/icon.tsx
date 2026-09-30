@@ -7,6 +7,7 @@ export const symbols = {
   agents: ['person.2', '♙', 'group'],
   expand: ['arrow.up.left.and.arrow.down.right', '⤢', 'open_in_full'],
   collapse: ['arrow.down.right.and.arrow.up.left', '⤡', 'close_fullscreen'],
+  edit: ['pencil', '✎', 'edit'],
   add: ['plus', '+', 'add'],
   web: ['globe', '◎', 'language'],
   chat: ['bubble.left', '▤', 'chat_bubble'],

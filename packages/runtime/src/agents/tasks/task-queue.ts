@@ -80,6 +80,20 @@ export class TaskQueue {
     )
     return true
   }
+  edit(id: string, messageId: string, text: string, expectedText: string) {
+    const task = this.store.task(id)
+    const message = task.queue?.find((item) => item.id === messageId)
+    if (!message) throw new HttpError(409, 'This message already started or was removed')
+    if (message.text !== expectedText)
+      throw new HttpError(409, 'This queued message changed. Reopen it before editing.')
+    if (!text.trim() && !message.attachments?.length)
+      throw new HttpError(400, 'A message needs text or attachments')
+    this.store.updateTask(id, (current) => ({
+      ...current,
+      queue: current.queue?.map((item) => (item.id === messageId ? { ...item, text } : item)),
+    }))
+    this.activity?.add('queue', id, 'Queued message edited', { messageId })
+  }
   take(id: string) {
     this.store.updateTask(id, (t) => {
       const [message, ...queue] = t.queue ?? []

@@ -282,3 +282,49 @@ it('clears an accepted server draft atomically without erasing a newer draft', (
     db.close()
   }
 })
+
+it('edits a queued message in place, preserves attachments and order, and rejects stale or already-started edits', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'task',
+          title: 'Queue',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          execution: 'main',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    const file = {
+      id: '00000000-0000-0000-0000-000000000000',
+      name: 'photo.png',
+      mime: 'image/png',
+      size: 10,
+    }
+    queue.add('task', 'first', 'Original', [file])
+    queue.add('task', 'second', 'Next')
+    queue.edit('task', 'first', 'Updated', 'Original')
+    expect(store.task('task').queue?.map((message) => message.id)).toEqual(['first', 'second'])
+    expect(store.task('task').queue?.[0]).toMatchObject({ text: 'Updated', attachments: [file] })
+    expect(new WorkspaceStore(db).task('task').queue?.[0]?.text).toBe('Updated')
+    expect(() => queue.edit('task', 'first', 'Conflict', 'Original')).toThrow('changed')
+    expect(queue.accepted('task', 'first', 'Original', [file])).toBe(true)
+    queue.change('task', 'restore', 'first')
+    expect(store.task('task')).toMatchObject({ draft: 'Updated', draftAttachments: [file] })
+    expect(() => queue.edit('task', 'first', 'Too late', 'Updated')).toThrow('already started')
+    expect(() => queue.edit('task', 'second', ' ', 'Next')).toThrow('text or attachments')
+  } finally {
+    db.close()
+  }
+})

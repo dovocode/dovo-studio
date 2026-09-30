@@ -1,3 +1,4 @@
+import { usePushNotifications } from '../notifications/provider'
 import { openAppLink } from '../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -21,6 +22,7 @@ const releaseSchema = mutableStruct({
 })
 export default function AppUpdates() {
   const activity = useLiveActivities()
+  const notifications = usePushNotifications()
   const [release, setRelease] = useApplicationState<Schema.Schema.Type<
     typeof releaseSchema
   > | null>(null)
@@ -122,6 +124,28 @@ export default function AppUpdates() {
             --device YOUR_DEVICE_UDID
           </Text>
         </SettingsGroup>
+        <SettingsGroup
+          title="Push notifications"
+          footer="Get task completion, failed checks and input requests when Dovo is in the background. Each paired computer needs the separately deployed Dovo notification relay."
+        >
+          <View style={[styles.row, { padding: 14, justifyContent: 'space-between' }]}>
+            <Text style={styles.text}>Task notifications</Text>
+            <Switch
+              accessibilityLabel="Enable push notifications"
+              disabled={!notifications.supported || notifications.busy}
+              value={notifications.enabled}
+              onValueChange={notifications.setEnabled}
+            />
+          </View>
+        </SettingsGroup>
+        {!notifications.supported && (
+          <Text style={styles.muted}>Push notifications require a new native app build.</Text>
+        )}
+        {!!notifications.error && (
+          <Text accessibilityRole="alert" style={styles.error}>
+            {notifications.error}
+          </Text>
+        )}
         <SettingsGroup
           title="Live Activities"
           footer="Shows task titles, projects and devices on your Lock Screen and Dynamic Island. Background updates require APNs setup on each host computer."

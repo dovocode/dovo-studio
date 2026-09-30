@@ -21,7 +21,7 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ['apps/api/**', 'apps/desktop/electron/**'],
+        files: ['apps/api/**', 'apps/notification-relay/**', 'apps/desktop/electron/**'],
         env: { node: true },
       },
       {
@@ -55,6 +55,7 @@ export default defineConfig({
       'packages/**/*.test.ts',
       'apps/mobile/src/**/*.test.ts',
       'apps/api/src/**/*.test.ts',
+      'apps/notification-relay/src/**/*.test.ts',
       'apps/desktop/electron/**/*.test.ts',
     ],
   },

@@ -48,3 +48,7 @@ packages/runtime/native/ios-device/target/
 *.sqlite-shm
 *.pem
 *.key
+
+# Push provider credentials are deployment secrets.
+apps/notification-relay/secrets/
+apps/mobile/google-services.json

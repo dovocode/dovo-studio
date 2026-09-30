@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { RuntimeDefaults } from './storage/runtime-defaults.js'
 import { RuntimePreferences } from './storage/runtime-preferences.js'
 import { Context } from 'effect'
+import { PushNotifications } from './notifications/push.js'
 import { LiveActivities } from './notifications/live-activities.js'
 import { TitleGeneration } from './agents/tasks/title-generation.js'
 import { Attachments } from './storage/attachments.js'
@@ -104,7 +105,14 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       approvals.list().some((item) => item.taskId === id) ||
       questions.list().some((item) => item.taskId === id),
   )
+  const pushNotifications = new PushNotifications(db, store, devices, (id) => {
+    const question = questions.list().find((item) => item.taskId === id)
+    if (question) return { id: question.id, preview: question.prompt.title }
+    const approval = approvals.list().find((item) => item.taskId === id)
+    return approval ? { id: approval.id, preview: approval.title } : undefined
+  })
   return {
+    pushNotifications,
     acpInstallations,
     acpController: new AbortController(),
     preferences,
@@ -144,6 +152,7 @@ export interface Services {
   acpInstallations: AcpInstallations
   acpController: AbortController
   preferences: RuntimePreferences
+  pushNotifications: PushNotifications
   liveActivities: LiveActivities
   forgeCli: ForgeCliAccounts
   forgeWork: ForgeWork

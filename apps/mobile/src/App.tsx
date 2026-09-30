@@ -1,3 +1,4 @@
+import { PushNotificationProvider } from './notifications/provider'
 import { colors } from './ui/theme'
 import { RegistryProvider } from '@effect-atom/atom-react'
 import { LiveActivityProvider } from './live-activities/provider'
@@ -27,12 +28,14 @@ export default function App() {
       <ThemeProvider value={theme}>
         <RegistryProvider>
           <RuntimeProvider>
-            <LiveActivityProvider>
-              <TaskWidgetProvider>
-                <Workbench />
-                <LinkBrowser />
-              </TaskWidgetProvider>
-            </LiveActivityProvider>
+            <PushNotificationProvider>
+              <LiveActivityProvider>
+                <TaskWidgetProvider>
+                  <Workbench />
+                  <LinkBrowser />
+                </TaskWidgetProvider>
+              </LiveActivityProvider>
+            </PushNotificationProvider>
           </RuntimeProvider>
         </RegistryProvider>
       </ThemeProvider>

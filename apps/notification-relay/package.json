@@ -1,0 +1,20 @@
+{
+  "name": "@dovo/notification-relay",
+  "version": "0.0.1",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@dovo/protocol": "workspace:*",
+    "@dovo/push": "workspace:*",
+    "effect": "^3.22.1",
+    "firebase-admin": "^13.7.0"
+  }
+}

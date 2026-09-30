@@ -1,0 +1,13 @@
+.git
+**/node_modules
+**/dist
+**/.expo
+apps/mobile/ios
+apps/mobile/android
+**/secrets
+**/.env
+**/.env.*
+*.log
+
+work
+release

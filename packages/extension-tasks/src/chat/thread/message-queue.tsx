@@ -1,6 +1,6 @@
 import type { PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { ArrowUp, ArrowDown, CornerUpRight, X } from 'lucide-react'
+import { ArrowUp, ArrowDown, CornerUpRight, Pencil, X } from 'lucide-react'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import {
   Button,
@@ -16,8 +16,17 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
   const { request, connected } = useWorkspace(),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
+  const [editing, setEditing] = useApplicationState<{
+    id: string
+    text: string
+    expectedText: string
+  } | null>(null)
   const queue = task.queue ?? []
-  const act = async (action: string, messageId?: string) => {
+  const act = async (
+    action: string,
+    messageId?: string,
+    edit?: { text: string; expectedText: string },
+  ) => {
     setBusy(true)
     setError('')
     try {
@@ -27,16 +36,18 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
           id: task.id,
           action,
           messageId,
+          ...edit,
         },
         responses.ok,
       )
+      if (action === 'edit') setEditing(null)
     } catch (e) {
       setError(String(e))
     } finally {
       setBusy(false)
     }
   }
-  if (!queue.length) return null
+  if (!queue.length && !editing) return null
   return (
     <div
       className="mx-auto w-full max-w-[var(--chat-max)] px-5 text-xs"
@@ -68,6 +79,16 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
                   {pending.state === 'sending' ? 'Sending…' : 'Retry from composer'}
                 </span>
               )}
+              <IconButton
+                label={`Edit queued message ${index + 1}`}
+                className="size-6"
+                disabled={!connected || busy || pending?.message.id === message.id}
+                onClick={() =>
+                  setEditing({ id: message.id, text: message.text, expectedText: message.text })
+                }
+              >
+                <Pencil size={12} />
+              </IconButton>
               <IconButton
                 label={`Steer with queued message ${index + 1}`}
                 className="size-6"
@@ -114,6 +135,43 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
             </QueueItem>
           ))}
         </QueueList>
+        {editing && (
+          <>
+            {!queue.some((message) => message.id === editing.id) && (
+              <p role="status" className="text-muted-foreground">
+                This message already started or was removed. Your edit is kept below.
+              </p>
+            )}
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <textarea
+                aria-label="Edit queued message"
+                autoFocus
+                className="min-h-20 w-full rounded-md border bg-background p-2 text-sm"
+                value={editing.text}
+                onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+                disabled={busy}
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  disabled={
+                    !connected ||
+                    busy ||
+                    !queue.some((message) => message.id === editing.id) ||
+                    (!editing.text.trim() &&
+                      !queue.find((message) => message.id === editing.id)?.attachments?.length)
+                  }
+                  onClick={() => void act('edit', editing.id, editing)}
+                >
+                  Save
+                </Button>
+                <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(null)}>
+                  Cancel edit
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
         <Button
           variant="ghost"
           size="sm"

@@ -71,6 +71,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => services.agents.dispose(),
         () => services.attachments.dispose(),
         () => services.liveActivities.dispose(),
+        () => services.pushNotifications.dispose(),
         () => services.liveActivities.flush(),
         () => services.simulators.dispose(),
         () => services.browsers.dispose(),
@@ -151,6 +152,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
           (id) => services.jobs.ownsTask(id),
         )
         services.liveActivities.start()
+        services.pushNotifications.start()
         services.jobs.startScheduler()
         services.tasks.startScheduler()
         services.pullCache.start()

@@ -1,6 +1,6 @@
 import { pendingQueue, visibleMobileSend } from './pending-send'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { Pressable, View } from 'react-native'
+import { Pressable, View, TextInput } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -17,6 +17,30 @@ export function MessageQueue({ task }: { task: Task }) {
     { act, busy, error } = useAction()
   const { actions } = useTaskConversation()
   const [open, setOpen] = useApplicationState(false)
+  const [editing, setEditing] = useApplicationState<{
+    id: string
+    text: string
+    expectedText: string
+  } | null>(null)
+  const saveEdit = () => {
+    if (!editing) return
+    act(() =>
+      mobileWorkflow(function* () {
+        yield* callEffect(
+          '/api/tasks/queue',
+          {
+            id: task.id,
+            action: 'edit',
+            messageId: editing.id,
+            text: editing.text,
+            expectedText: editing.expectedText,
+          },
+          responses.ok,
+        )
+        setEditing(null)
+      }),
+    )
+  }
   const pending = visibleMobileSend(task, actions.pendingMessage)
   const queue = pendingQueue(task, actions.pendingMessage)
   const change = (action: string, messageId?: string) =>
@@ -98,6 +122,43 @@ export function MessageQueue({ task }: { task: Task }) {
               onPress={() => change(task.queuePaused ? 'resume' : 'pause')}
             />
           )}
+          {editing && (
+            <>
+              {!queue.some((message) => message.id === editing.id) && (
+                <Text style={styles.muted}>
+                  This message already started or was removed. Your edit is kept below.
+                </Text>
+              )}
+              <View style={{ gap: 8 }}>
+                <TextInput
+                  accessibilityLabel="Edit queued message"
+                  multiline
+                  autoFocus
+                  style={[styles.input, { minHeight: 80 }]}
+                  value={editing.text}
+                  onChangeText={(text) => setEditing({ ...editing, text })}
+                  editable={!busy}
+                />
+                <Action
+                  label="Save changes"
+                  disabled={
+                    !connected ||
+                    busy ||
+                    !queue.some((message) => message.id === editing.id) ||
+                    (!editing.text.trim() &&
+                      !queue.find((message) => message.id === editing.id)?.attachments?.length)
+                  }
+                  onPress={saveEdit}
+                />
+                <Action
+                  secondary
+                  label="Cancel edit"
+                  disabled={busy}
+                  onPress={() => setEditing(null)}
+                />
+              </View>
+            </>
+          )}
           {queue.map((message, index) => (
             <View
               key={message.id}
@@ -131,6 +192,14 @@ export function MessageQueue({ task }: { task: Task }) {
                   <Text style={styles.muted}>{message.attachments.length} attachments</Text>
                 )}
               </View>
+              <IconButton
+                icon="edit"
+                label={`Edit queued message ${index + 1}`}
+                disabled={!connected || busy || pending?.message.id === message.id}
+                onPress={() =>
+                  setEditing({ id: message.id, text: message.text, expectedText: message.text })
+                }
+              />
               <IconButton
                 icon="next"
                 label={`Steer with message ${index + 1}`}

@@ -3,6 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
+  '@firebase/util': true
   better-sqlite3: true
   esbuild: true
   node-pty: true

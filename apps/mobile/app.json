@@ -76,11 +76,14 @@
               "name": "DovoTasks",
               "displayName": "Dovo Tasks",
               "description": "Tasks working and waiting for you",
-              "ios": { "supportedFamilies": ["systemSmall", "systemMedium", "systemLarge"] }
+              "ios": {
+                "supportedFamilies": ["systemSmall", "systemMedium", "systemLarge"]
+              }
             }
           ]
         }
-      ]
+      ],
+      "expo-notifications"
     ]
   }
 }

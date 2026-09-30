@@ -1,0 +1,22 @@
+services:
+  relay:
+    build:
+      context: ../..
+      dockerfile: apps/notification-relay/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    environment:
+      DOVO_RELAY_TOKEN: ${DOVO_RELAY_TOKEN:?Set a random shared relay token}
+      DOVO_APNS_KEY_PATH: /run/secrets/apns.p8
+      DOVO_APNS_KEY_ID: ${DOVO_APNS_KEY_ID:-}
+      DOVO_APNS_TEAM_ID: ${DOVO_APNS_TEAM_ID:-}
+      DOVO_APNS_BUNDLE_ID: com.dovo.studio
+      GOOGLE_APPLICATION_CREDENTIALS: ${DOVO_FIREBASE_CREDENTIALS:-}
+      DOVO_FCM_PROJECT_ID: ${DOVO_FCM_PROJECT_ID:-}
+    volumes:
+      - ./secrets:/run/secrets:ro
+    user: '${DOVO_RELAY_UID:-1000}:${DOVO_RELAY_GID:-1000}'
+    read_only: true
+    tmpfs:
+      - /tmp

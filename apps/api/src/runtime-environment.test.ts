@@ -40,3 +40,19 @@ it('rejects unsupported persisted settings without exposing their values', () =>
     'Unsupported runtime environment setting: NODE_OPTIONS',
   )
 })
+
+it('preserves relay connection settings in the managed runtime environment', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'dovo-relay-env-'))
+  try {
+    const path = persistRuntimeEnvironment(directory, {
+      DOVO_NOTIFICATION_RELAY_URL: 'http://relay.lan:8080',
+      DOVO_NOTIFICATION_RELAY_TOKEN: 'relay-secret-at-least-thirty-two-characters',
+    })
+    expect(readRuntimeEnvironment(path)).toMatchObject({
+      DOVO_NOTIFICATION_RELAY_URL: 'http://relay.lan:8080',
+      DOVO_NOTIFICATION_RELAY_TOKEN: 'relay-secret-at-least-thirty-two-characters',
+    })
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})

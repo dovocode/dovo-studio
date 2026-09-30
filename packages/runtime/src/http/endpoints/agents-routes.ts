@@ -485,12 +485,30 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         const input = decode(
           mutableStruct({
             id: idSchema,
-            action: Schema.Literal('remove', 'restore', 'steer', 'up', 'down', 'pause', 'resume'),
+            action: Schema.Literal(
+              'edit',
+              'remove',
+              'restore',
+              'steer',
+              'up',
+              'down',
+              'pause',
+              'resume',
+            ),
             messageId: Schema.optional(idSchema),
+            text: Schema.optional(maxValue(Schema.String, 120000)),
+            expectedText: Schema.optional(maxValue(Schema.String, 120000)),
           }),
           yield* serviceResult(body(request)),
         )
-        if (input.action === 'steer') {
+        if (input.action === 'edit') {
+          if (!input.messageId || input.text === undefined || input.expectedText === undefined)
+            throw new HttpError(
+              400,
+              'Choose a queued message and provide its new and original text',
+            )
+          s.tasks.queue.edit(input.id, input.messageId, input.text, input.expectedText)
+        } else if (input.action === 'steer') {
           const queued = s.store
             .task(input.id)
             .queue?.find((message) => message.id === input.messageId)

@@ -1,0 +1,24 @@
+{
+  "name": "@dovo/push",
+  "version": "0.0.1",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/apns.ts",
+      "development": "./src/apns.ts",
+      "import": "./dist/apns.js",
+      "default": "./dist/apns.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "jose": "^6.2.12"
+  }
+}
