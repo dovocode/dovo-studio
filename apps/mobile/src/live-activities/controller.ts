@@ -111,9 +111,15 @@ export function createActivityController(onError: (message: string) => void) {
                     (repo) => repo.id === task.repositoryId,
                   )?.name ?? '',
                   false,
+                  source.snapshot.workspace.tasks.filter(
+                    (entry) => entry.status === 'running' && !entry.archived,
+                  ).length,
                 )
               : undefined
-            if (props && (task?.status === 'running' || task?.archived)) props.status = 'Stopped'
+            if (props && (task?.status === 'running' || task?.archived)) {
+              props.status = 'Stopped'
+              props.activity = 'Thread stopped'
+            }
             yield* nativeEffect(() => instance.end('default', props, new Date()))
             yield* remove(record)
           }
@@ -137,6 +143,7 @@ export function createActivityController(onError: (message: string) => void) {
                 snapshot.workspace.repositories.find((repo) => repo.id === task.repositoryId)
                   ?.name ?? '',
                 needsInput.has(task.id),
+                tasks.length,
               )
               let record = records.get(key)
               let instance = record ? instances.get(record.id) : undefined

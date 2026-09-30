@@ -1,4 +1,5 @@
-import { decode } from '@dovo/protocol'
+import { decode, mutableStruct, liveTaskPropsSchema } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { activityPayload, LiveActivities } from './live-activities'
 import { Apns } from './apns'
@@ -164,4 +165,66 @@ it('bounds push content and uses Unix seconds for stale and dismissal dates', ()
     name: 'DovoTask',
     props: JSON.stringify(props),
   })
+})
+
+it('pushes the current action, queue size, and other active threads while backgrounded', async () => {
+  const f = setup()
+  f.store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      {
+        ...f.task,
+        activity: 'Running formatting checks',
+        queue: [{ id: 'queued', role: 'user', text: 'Next', createdAt: '2026-09-23T00:00:00Z' }],
+      },
+      { ...f.task, id: 'second' },
+      { ...f.task, id: 'archived', archived: true },
+    ],
+  }))
+  f.service.register(f.device, f.registration)
+  await f.service.flush()
+  const pushedProps = (payload: unknown) => {
+    const content = decode(
+      mutableStruct({
+        aps: mutableStruct({
+          'content-state': mutableStruct({ props: Schema.String }),
+        }),
+      }),
+      payload,
+    )
+    return decode(liveTaskPropsSchema, JSON.parse(content.aps['content-state'].props))
+  }
+  expect(pushedProps(f.send.mock.calls[0]?.[1])).toMatchObject({
+    activity: 'Running formatting checks',
+    queued: 1,
+    activeThreads: 2,
+  })
+  f.input()
+  await f.service.flush()
+  expect(pushedProps(f.send.mock.calls[1]?.[1])).toMatchObject({
+    status: 'Needs input',
+    activity: 'Waiting for your reply or approval',
+  })
+})
+it('bounds activity details and prefers the current preparation step over stale provider activity', () => {
+  const f = setup()
+  expect(
+    liveTaskProps({ ...f.task, activity: 'x'.repeat(500) }, 'Mac', '', false).activity,
+  ).toHaveLength(140)
+  expect(
+    liveTaskProps({ ...f.task, activity: 'commandExecution' }, 'Mac', '', false).activity,
+  ).toBe('Running a command')
+  expect(liveTaskProps({ ...f.task, activity: 'Grep' }, 'Mac', '', false).activity).toBe(
+    'Searching files',
+  )
+  const preparing = {
+    ...f.task,
+    runPhase: 'preparing' as const,
+    activity: 'Previous action',
+    preparation: { steps: ['fetch', 'worktree'], current: 'worktree', startedAt: f.task.createdAt },
+  }
+  expect(liveTaskProps(preparing, 'Mac', '', false).activity).toBe('Create worktree')
+  expect(liveTaskProps({ ...f.task, status: 'review' }, 'Mac', '', false).activity).toBe(
+    'Ready for review',
+  )
 })

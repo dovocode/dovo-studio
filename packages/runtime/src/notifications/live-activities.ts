@@ -177,15 +177,21 @@ export class LiveActivities {
               hostname(),
               workspace.repositories.find((r) => r.id === task.repositoryId)?.name ?? '',
               this.needsInput(task.id),
+              workspace.tasks.filter((entry) => entry.status === 'running' && !entry.archived)
+                .length,
             )
           : {
               title: 'Task removed',
+              activity: 'Thread removed',
               project: '',
               device: hostname(),
               status: 'Stopped' as const,
               startedAt: 0,
             }
-        if (task && (!sameTurn || task.archived)) props.status = 'Stopped'
+        if (task && (!sameTurn || task.archived)) {
+          props.status = 'Stopped'
+          props.activity = 'Thread stopped'
+        }
         const fingerprint = JSON.stringify({
           props,
           ended,

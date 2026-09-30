@@ -209,3 +209,32 @@ it('cancels push-token registration and releases its listener on disposal', asyn
   expect(remove).toHaveBeenCalledOnce()
   expect(onError).not.toHaveBeenCalled()
 })
+
+it('updates a live thread when its current action or queued work changes', async () => {
+  const overview = source()
+  const controller = await runClientEffect(createActivityController(vi.fn()))
+  await runClientEffect(controller.sync([overview], read, true))
+  overview.snapshot!.workspace.tasks[0].activity = 'Running tests'
+  overview.snapshot!.workspace.tasks[0].queue = [
+    { id: 'queued', role: 'user', text: 'Next', createdAt: '2026-09-23T00:00:00Z' },
+  ]
+  await runClientEffect(controller.sync([overview], read, true))
+  expect(native.instance.update).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      title: 'Build',
+      activity: 'Running tests',
+      queued: 1,
+      activeThreads: 1,
+    }),
+    expect.any(Date),
+  )
+  expect(native.start).toHaveBeenCalledOnce()
+  overview.snapshot!.workspace.tasks[0].archived = true
+  await runClientEffect(controller.sync([overview], read, true))
+  expect(native.instance.end).toHaveBeenLastCalledWith(
+    'default',
+    expect.objectContaining({ status: 'Stopped', activity: 'Thread stopped' }),
+    expect.any(Date),
+  )
+  await controller.dispose()
+})

@@ -93,14 +93,17 @@ insufficient.
 ## Live Activities
 
 On iOS, up to three running task turns appear on the Lock Screen and Dynamic Island. Activities show
-a short task title, project, host device, elapsed time and Working/Needs input/Done/Failed/Stopped
-status. Tapping opens the thread on its owning computer. The first task message, project/device
-selection, provider locking and custom-agent settings are the same flows as desktop.
+a short thread title, current action, project, host device, elapsed time, queued-message count and
+Working/Needs input/Done/Failed/Stopped status. Each card shows how many threads are active on its
+host; Dynamic Island shows the count or an Input indicator. Tapping opens the thread on its owning
+computer. The first task message, project/device selection, provider locking and custom-agent
+settings are the same flows as desktop.
 
 Activity IDs survive app restarts. A dismissed activity is not recreated for the same turn.
 Finishing work ends its activity; removing a saved computer or disabling Live Activities ends its
-local cards. Use Settings → App & updates to disable them. Task titles are visible on the Lock
-Screen; prompts, command output, credentials and approval contents are not included.
+local cards. Use Settings → App & updates to disable them. Thread titles and short current-action
+summaries are visible on the Lock Screen. Full messages, tool output and approval details are not
+included.
 
 **Default: local updates only.** The app starts activities while it is foregrounded and receives
 task snapshots. Cards can remain visible after iOS suspends the app, but their content cannot keep
