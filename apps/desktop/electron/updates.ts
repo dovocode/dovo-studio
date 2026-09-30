@@ -73,7 +73,7 @@ export function registerUpdates(
   const refresh = () => {
     if (!app.isPackaged || (process.platform === 'linux' && !process.env.APPIMAGE))
       return Promise.resolve(false)
-    if (state.status === 'downloading' || state.status === 'downloaded')
+    if (state.status === 'downloading' || state.status === 'restarting')
       return Promise.resolve(true)
     if (checking) return checking
     checking = (async () => {
@@ -91,9 +91,12 @@ export function registerUpdates(
       .then((result) => {
         if (result?.isUpdateAvailable) {
           const notes = notesText(result.updateInfo.releaseNotes)
+          const downloaded =
+            state.status === 'downloaded' && state.version === result.updateInfo.version
           publish({
-            status: 'available',
+            status: downloaded ? 'downloaded' : 'available',
             version: result.updateInfo.version,
+            ...(downloaded ? { progress: 100 } : {}),
             notes,
           })
           if (!notes) void fetchReleaseNotes(result.updateInfo.version)
@@ -170,8 +173,13 @@ export function registerUpdates(
         (state.status !== 'downloaded' || state.version !== remote.version)
       )
         throw new Error('Download this desktop update before restarting')
-      if (remote?.action === 'download' && state.status !== 'downloaded') await refresh()
-      if (state.status !== 'available' && state.status !== 'downloaded' && !(await refresh())) {
+      if (
+        remote?.action !== 'restart' &&
+        (!direct || remote?.action === 'download' || state.status !== 'downloaded')
+      ) {
+        await refresh()
+      }
+      if (state.status !== 'available' && state.status !== 'downloaded') {
         if (remote) throw new Error('No desktop update is available. Check updates again.')
         await dialog.showMessageBox({
           type: 'info',

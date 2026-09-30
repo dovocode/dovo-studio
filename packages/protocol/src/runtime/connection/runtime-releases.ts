@@ -20,7 +20,8 @@ export function newerRuntimeVersion(a: string, b: string) {
 }
 
 export async function fetchRuntimeReleases(): Promise<RuntimeReleases> {
-  const options = {
+  const options: RequestInit = {
+    cache: 'no-store',
     headers: { Accept: 'application/vnd.github+json' },
     signal: AbortSignal.timeout(15000),
   }

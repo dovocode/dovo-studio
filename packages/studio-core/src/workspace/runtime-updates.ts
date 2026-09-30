@@ -15,12 +15,13 @@ export function useRuntimeReleaseCheck() {
   const check = useCallback((force = false) => {
     const current = ++generation.current
     if (force) cached = undefined
-    cached ??= fetchRuntimeReleases().catch((error) => {
-      cached = undefined
-      throw error
-    })
+    const pending = (cached ??= fetchRuntimeReleases())
+    const clear = () => {
+      if (cached === pending) cached = undefined
+    }
+    void pending.then(clear, clear)
     setState((current) => ({ ...current, checking: true, error: undefined }))
-    void cached.then(
+    void pending.then(
       (next) => {
         if (generation.current === current) setState({ releases: next, checking: false })
       },

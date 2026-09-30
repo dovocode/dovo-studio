@@ -184,6 +184,7 @@ export function createRuntimeUpgradeManager(options: {
       ...targets.filter((entry) => entry.snapshot?.owner),
     ]
     try {
+      if (!restart) update({ releases: await fetchRuntimeReleases(), error: undefined })
       for (const entry of ordered) {
         const id = entry.profile.id
         const release = runtimeUpdate(entry.snapshot, state.releases)
@@ -223,6 +224,8 @@ export function createRuntimeUpgradeManager(options: {
           }
         }
       }
+    } catch (cause) {
+      update({ error: cause instanceof Error ? cause.message : String(cause) })
     } finally {
       update({ busy: [] })
     }

@@ -15,6 +15,9 @@ const f = vi.hoisted(() => ({
   message: vi.fn<(options: unknown) => Promise<{ response: number }>>(async () => ({
     response: 0,
   })),
+  next: 'next',
+  checks: vi.fn(),
+  downloads: vi.fn(),
   version: 'fixture',
   notes: 'Faster setup and fixes' as string | undefined,
   menu: undefined as unknown,
@@ -57,11 +60,12 @@ vi.mock('electron-updater', () => ({
         f.listeners.set(name, listener)
       },
       removeListener: () => {},
-      checkForUpdates: async () => ({
-        isUpdateAvailable: true,
-        updateInfo: { version: 'next', releaseNotes: f.notes },
-      }),
+      checkForUpdates: async () => {
+        f.checks()
+        return { isUpdateAvailable: true, updateInfo: { version: f.next, releaseNotes: f.notes } }
+      },
       downloadUpdate: async () => {
+        f.downloads(f.next)
         f.listeners.get('download-progress')?.({
           percent: 50,
           transferred: 5_000_000,
@@ -84,6 +88,7 @@ afterEach(() => {
   vi.clearAllMocks()
   vi.mocked(readLocalSettingsSection).mockReturnValue(undefined)
   f.listeners.clear()
+  f.next = 'next'
   f.version = 'fixture'
   f.notes = 'Faster setup and fixes'
   f.menu = undefined
@@ -356,4 +361,40 @@ it('uses the architecture-specific feed when checking Windows ARM nightly releas
     provider: 'generic',
     url: 'https://github.com/dovocode/dovo-studio/releases/download/v0.0.7-nightly.43/',
   })
+})
+
+it('rechecks an existing offer before downloading the newest release', async () => {
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => async () => {})
+  await updates.refresh()
+  f.next = 'newer'
+  f.message.mockResolvedValueOnce({ response: 1 })
+  await updates.install()
+  expect(f.checks).toHaveBeenCalledTimes(2)
+  expect(f.downloads).toHaveBeenCalledWith('newer')
+  expect(updates.state()).toMatchObject({ status: 'downloaded', version: 'newer' })
+})
+it('checks online even with a downloaded release, preserving it only while still current', async () => {
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => async () => {})
+  f.message.mockResolvedValueOnce({ response: 1 })
+  await updates.install()
+  await updates.refresh()
+  expect(updates.state().status).toBe('downloaded')
+  f.next = 'newer'
+  await updates.refresh()
+  expect(updates.state()).toMatchObject({ status: 'available', version: 'newer' })
+  expect(f.checks).toHaveBeenCalledTimes(3)
+})
+
+it('does not download a stale offer when the online recheck fails', async () => {
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => async () => {})
+  await updates.refresh()
+  f.checks.mockImplementationOnce(() => {
+    throw new Error('Offline')
+  })
+  await updates.install()
+  expect(f.downloads).not.toHaveBeenCalled()
+  expect(f.message).toHaveBeenLastCalledWith(expect.objectContaining({ detail: 'Offline' }))
 })
