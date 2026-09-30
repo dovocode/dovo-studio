@@ -47,7 +47,17 @@ export function DesktopNetwork({ onChanged }: { onChanged: (moved: boolean) => P
           setPortInput(String(next.port))
         },
         catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-      }).pipe(Effect.catchAll((cause) => Effect.sync(() => setError(cause.message)))),
+      }).pipe(
+        Effect.catchAll((cause) =>
+          Effect.sync(() =>
+            setError(
+              cause.message.includes('EADDRINUSE')
+                ? 'This port is already used by another service. Choose a different port above, then enable LAN / VPN access again.'
+                : cause.message,
+            ),
+          ),
+        ),
+      ),
     )
     return () => {
       void scope.stop()
@@ -89,7 +99,15 @@ export function DesktopNetwork({ onChanged }: { onChanged: (moved: boolean) => P
         },
         catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
       }).pipe(
-        Effect.catchAll((cause) => Effect.sync(() => setError(cause.message))),
+        Effect.catchAll((cause) =>
+          Effect.sync(() =>
+            setError(
+              cause.message.includes('EADDRINUSE')
+                ? 'This port is already used by another service. Choose a different port above, then enable LAN / VPN access again.'
+                : cause.message,
+            ),
+          ),
+        ),
         Effect.ensuring(Effect.sync(() => setBusy(false))),
       ),
     )

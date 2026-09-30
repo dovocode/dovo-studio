@@ -34,7 +34,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Scan a Dovo pairing QR code to connect this phone to your server.",
+          "cameraPermission": "Take photos to attach to messages and scan Dovo pairing QR codes.",
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
         }
@@ -43,7 +43,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Choose photos to attach to Dovo messages.",
-          "cameraPermission": "Scan a Dovo pairing QR code to connect this phone to your server.",
+          "cameraPermission": "Take photos to attach to messages and scan Dovo pairing QR codes.",
           "microphonePermission": "Use the microphone to dictate a message in Dovo Studio."
         }
       ],

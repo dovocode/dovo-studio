@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Effect } from 'effect'
 import QRCode from 'qrcode'
-import { pairingInvitationUrl } from '@dovo/protocol'
+import { pairingInvitation, pairingInvitationUrl } from '@dovo/protocol'
 import { clientTaskScope, startPolling } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Button, Input, FormField } from '@dovo/studio-ui'
@@ -14,9 +14,18 @@ export function PairingGuide({
   fallbackAddress?: string
   pending: boolean
 }) {
-  const [address, setAddress] = useApplicationState(
-    code.addresses?.[0]?.address ?? fallbackAddress ?? '',
-  )
+  const available = [...(code.addresses?.map((item) => item.address) ?? []), fallbackAddress]
+  const initialAddress =
+    available.find((address) => {
+      if (!address) return false
+      try {
+        pairingInvitation({ ...code, address }, 0)
+        return true
+      } catch {
+        return false
+      }
+    }) ?? ''
+  const [address, setAddress] = useApplicationState(initialAddress)
   const [now, setNow] = useApplicationState(Date.now())
   const [qr, setQr] = useApplicationState('')
   const [error, setError] = useApplicationState('')
@@ -35,6 +44,7 @@ export function PairingGuide({
     setQr('')
     setError('')
     setCopied(false)
+    if (!address) return
     const commands = clientTaskScope()
     void commands.run(
       Effect.tryPromise({
@@ -103,6 +113,10 @@ export function PairingGuide({
         <p role="status" className="text-sm">
           Request received — approve your phone above to finish pairing.
         </p>
+      ) : !address ? (
+        <p role="status" className="text-sm">
+          Enable LAN / VPN access above, or enter a reachable computer address to pair your phone.
+        </p>
       ) : (
         <div className="flex flex-wrap items-start gap-4">
           {qr && (
@@ -116,7 +130,8 @@ export function PairingGuide({
           )}
           <div className="min-w-[160px] flex-1 space-y-3">
             <p className="text-xs text-muted-foreground">
-              Scan with the iPhone Camera, review the address in Dovo, then tap Connect.
+              In Dovo on your phone, open Computers and scan this QR code, review the address, then
+              tap Connect.
             </p>
             <p className="text-xs text-muted-foreground">
               Or enter the address and this code in Computers:
