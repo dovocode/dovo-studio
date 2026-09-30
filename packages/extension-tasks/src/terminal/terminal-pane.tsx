@@ -1,8 +1,8 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
-import { ChevronDown, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, Plus, X } from 'lucide-react'
 import { canChangeTaskCheckout, responses, useWorkspace } from '@dovo/studio-core'
-import { Button, IconButton, cn } from '@dovo/studio-ui'
+import { Button, IconButton, ChoicePicker, cn } from '@dovo/studio-ui'
 import { TerminalSession } from './terminal-session'
 export function TerminalPane({
   taskId,
@@ -20,6 +20,7 @@ export function TerminalPane({
     [selected, setSelected] = useApplicationState(focusId),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
+  const [layout, setLayout] = useApplicationState<'tabs' | 'columns' | 'rows'>('tabs')
   const pending = useRef(false)
   const autoTried = useRef(false)
   useEffect(() => {
@@ -70,16 +71,27 @@ export function TerminalPane({
     <section className="flex h-full min-h-0 flex-col bg-[#0d0e10]" aria-label="Terminal">
       <header className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
         {sessions.map((session) => (
-          <Button
-            key={session.id}
-            size="sm"
-            variant="ghost"
-            className={cn('h-6 px-2 text-[0.625rem]', session.id === active?.id && 'bg-accent')}
-            onClick={() => setSelected(session.id)}
-          >
-            {session.title}
-            {session.exited ? ' · exited' : ''}
-          </Button>
+          <div key={session.id} className="flex shrink-0 items-center rounded">
+            <Button
+              size="sm"
+              variant="ghost"
+              className={cn('h-6 px-2 text-[0.625rem]', session.id === active?.id && 'bg-accent')}
+              onClick={() => setSelected(session.id)}
+            >
+              {session.title}
+              {session.exited ? ' · exited' : ''}
+            </Button>
+            <IconButton
+              label={`Close ${session.title}`}
+              className="size-6"
+              disabled={!connected || busy}
+              onClick={() =>
+                act(() => request('/api/terminals/close', { id: session.id }, responses.ok))
+              }
+            >
+              <X size={12} />
+            </IconButton>
+          </div>
         ))}
         <IconButton
           label="New terminal session"
@@ -90,38 +102,67 @@ export function TerminalPane({
           <Plus size={12} />
         </IconButton>
         <span className="flex-1" />
-        <IconButton
-          label="Close terminal session"
-          className="size-6"
-          disabled={!connected || !active || busy}
-          onClick={() => {
-            if (active)
-              act(() =>
-                request(
-                  '/api/terminals/close',
-                  {
-                    id: active.id,
-                  },
-                  responses.ok,
-                ),
-              )
+        <ChoicePicker
+          aria-label="Terminal layout"
+          className="h-6 shrink-0 rounded px-1 text-[0.625rem]"
+          value={layout}
+          onValueChange={(value) => {
+            if (value === 'tabs' || value === 'columns' || value === 'rows') setLayout(value)
           }}
         >
-          <Trash2 size={12} />
-        </IconButton>
+          <option value="tabs">Tabs</option>
+          <option value="columns">Side by side</option>
+          <option value="rows">Stacked</option>
+        </ChoicePicker>
         <IconButton label="Hide terminal pane" className="size-6" onClick={onClose}>
           <ChevronDown size={12} />
         </IconButton>
       </header>
-      {sessions.map((session) => (
-        <TerminalSession key={session.id} id={session.id} active={session.id === active?.id} />
-      ))}
+      {!!sessions.length && (
+        <div
+          className={cn(
+            'flex min-h-0 min-w-0 flex-1',
+            layout === 'columns' ? 'flex-row' : 'flex-col',
+          )}
+        >
+          {sessions.map((session) => (
+            <div
+              key={session.id}
+              className={cn(
+                'min-h-0 min-w-0 flex-1 flex flex-col',
+                layout === 'tabs' && session.id !== active?.id && 'hidden',
+                layout !== 'tabs' && 'border border-white/10',
+              )}
+            >
+              {layout !== 'tabs' && (
+                <div className="flex h-7 shrink-0 items-center justify-between px-2 text-[0.625rem] text-muted-foreground">
+                  <span>{session.title}</span>
+                  <IconButton
+                    label={`Close ${session.title} pane`}
+                    className="size-6"
+                    disabled={!connected || busy}
+                    onClick={() =>
+                      act(() => request('/api/terminals/close', { id: session.id }, responses.ok))
+                    }
+                  >
+                    <X size={12} />
+                  </IconButton>
+                </div>
+              )}
+              <TerminalSession
+                id={session.id}
+                active={visible && (layout !== 'tabs' || session.id === active?.id)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
       {!sessions.length && (
         <div className="p-4 text-xs text-muted-foreground">
           <p>
             {connected
               ? shellReady
-                ? 'Opening a shell in this task’s checkout…'
+                ? 'No terminal open. Open a shell in this task’s checkout.'
                 : 'Send the first message to create this worktree before opening a shell.'
               : 'Connect a runtime to use terminals.'}
           </p>
