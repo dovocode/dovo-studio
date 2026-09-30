@@ -251,6 +251,11 @@ download first and wait for **Restart and install** or **Restart selected deskto
 upgrade also upgrades its bundled runtime; it is one installation, not two separate upgrades. If the
 initiating desktop is selected for restart, its command is sent last.
 
+A lost download or restart reply triggers status checks rather than resending the command. If the
+host reports that it did not accept the request, retry explicitly. Errors remain visible until a
+retry or verified recovery. Linux hosts also compare saved helper progress with their running
+release, so a successful upgrade does not remain stuck if the helper missed its final status write.
+
 Remote desktop control goes through the existing authenticated runtime connection, including HTTP
 LAN/VPN connections. The native updater exposes only a private loopback bridge with an owner-only
 credential file. It does not expose that credential to paired clients. After installing this release

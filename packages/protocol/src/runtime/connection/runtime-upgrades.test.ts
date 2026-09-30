@@ -45,6 +45,8 @@ function fixture(entries: RuntimeUpgradeEntry[]) {
   const commands: { id: string; path: string }[] = []
   const states = new Map<string, { status: string; version?: string }>()
   const failures = new Set<string>()
+  const lostReplies = new Set<string>()
+  const droppedRequests = new Set<string>()
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>(async (input) => {
@@ -66,11 +68,13 @@ function fixture(entries: RuntimeUpgradeEntry[]) {
         return Response.json(states.get(id) ?? { status: 'idle' })
       commands.push({ id, path: url.pathname })
       if (failures.has(id)) return Response.json({ error: 'Installer failed' }, { status: 409 })
+      if (droppedRequests.has(id)) throw new TypeError('Connection lost before dispatch')
       const next = {
         status: url.pathname.endsWith('/restart') ? 'installing' : 'queued',
         version: '1.0.1',
       }
       states.set(id, next)
+      if (lostReplies.delete(id)) throw new TypeError('Connection lost after dispatch')
       return Response.json(next)
     }),
   )
@@ -80,6 +84,8 @@ function fixture(entries: RuntimeUpgradeEntry[]) {
     commands,
     states,
     failures,
+    lostReplies,
+    droppedRequests,
     refreshed,
   }
 }
@@ -199,4 +205,64 @@ it('recognizes a newer installed version when a host was updated again during re
     status: 'complete',
     version: '1.0.2',
   })
+})
+
+it('reconciles a lost update reply without sending the command twice', async () => {
+  const f = fixture([entry('server')])
+  await f.manager.check()
+  f.lostReplies.add('server')
+  await f.manager.start(['server'])
+  expect(f.manager.getSnapshot().statuses.server.status).toBe('queued')
+  f.states.set('server', { status: 'downloading', version: '1.0.1' })
+  await f.manager.poll()
+  expect(f.manager.getSnapshot().statuses.server.status).toBe('downloading')
+  expect(f.commands).toHaveLength(1)
+})
+it('verifies a restarted desktop when the restart reply is lost', async () => {
+  const desktop = entry('desktop', true)
+  const f = fixture([desktop])
+  await f.manager.check()
+  f.states.set('desktop', { status: 'downloaded', version: '1.0.1' })
+  await f.manager.poll()
+  f.lostReplies.add('desktop')
+  await f.manager.restart(['desktop'])
+  expect(f.manager.getSnapshot().statuses.desktop.status).toBe('installing')
+  if (desktop.snapshot) desktop.snapshot.releaseVersion = '1.0.1'
+  await f.manager.poll()
+  expect(f.manager.getSnapshot().statuses.desktop.status).toBe('complete')
+  expect(f.commands).toHaveLength(1)
+  expect(f.refreshed).toHaveBeenCalledOnce()
+})
+it('allows an explicit retry when a lost request never reached the host', async () => {
+  const f = fixture([entry('server')])
+  await f.manager.check()
+  f.droppedRequests.add('server')
+  await f.manager.start(['server'])
+  await f.manager.poll()
+  expect(f.manager.getSnapshot().statuses.server).toMatchObject({
+    status: 'error',
+    error: expect.stringContaining('did not accept'),
+  })
+  await f.manager.poll()
+  expect(f.manager.getSnapshot().statuses.server.status).toBe('error')
+  f.droppedRequests.clear()
+  await f.manager.start(['server'])
+  expect(f.manager.getSnapshot().statuses.server.status).toBe('queued')
+  expect(f.commands).toHaveLength(2)
+})
+
+it('retains a rejected command error until retry or verified host recovery', async () => {
+  const server = entry('server')
+  const f = fixture([server])
+  await f.manager.check()
+  f.failures.add('server')
+  await f.manager.start(['server'])
+  await f.manager.poll()
+  expect(f.manager.getSnapshot().statuses.server.error).toContain('Installer failed')
+  if (server.snapshot) {
+    server.snapshot.releaseVersion = '1.0.1'
+    server.snapshot.releaseCanUpdate = false
+  }
+  await f.manager.poll()
+  expect(f.manager.getSnapshot().statuses.server.status).toBe('complete')
 })

@@ -820,12 +820,15 @@ Required placeholders must be replaced before saving or testing. Unsupported var
 with an explanation. Saving a catalog entry does not start the server. Duplicate names are rejected
 rather than replacing an existing project or agent resource.
 
-Mobile pairing checks approval immediately and resumes checking when the app returns to the
-foreground. Approved credentials are stored before loading the workspace, so a connection failure
-can be recovered with Reconnect without generating another code. The same pairing request secret can
-recover its issued credential until the request expires (two minutes); it cannot create another
-device or recover a revoked credential. Desktop preserves its runtime port and bind address across
-restarts; `DOVO_PORT` and `DOVO_HOST` explicitly override the saved listener.
+Mobile pairing checks approval immediately, cancels its waiting request when backgrounded, and
+starts a fresh check when the app returns to the foreground. Manual addresses accept a bare host and
+port using HTTP, or an explicit HTTPS address. Pairing rejects loopback and wildcard addresses
+before requesting approval; use a LAN or VPN address reachable from the connecting device. Approved
+credentials are stored before loading the workspace, so a connection failure can be recovered with
+Reconnect without generating another code. The same pairing request secret can recover its issued
+credential until the request expires (two minutes); it cannot create another device or recover a
+revoked credential. Desktop preserves its runtime port and bind address across restarts; `DOVO_PORT`
+and `DOVO_HOST` explicitly override the saved listener.
 
 Saved runtimes appear together in the device dashboard, with host-scoped tasks and loaded PR counts.
 Device filters narrow the overview; opening a task selects its owning runtime. Matching task or

@@ -8,12 +8,7 @@ import { useApplicationState } from '../state/application-state'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { ActivityIndicator, AppState, Keyboard, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import {
-  normalizeRuntimeAddress,
-  runtimeRequest,
-  runtimeRequestEffect,
-  responses,
-} from '@dovo/protocol'
+import { pairingAddress, runtimeRequest, runtimeRequestEffect, responses } from '@dovo/protocol'
 import { useRuntime } from './provider'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
@@ -121,23 +116,28 @@ export function PairComputer({
         }
       }
     })
-    const polling = startPolling(poll, {
-      interval: 1500,
-      onError: (error) => {
-        if (!stopped) {
-          if (pairingPhase.current === 'saving') pairingPhase.current = 'waiting'
-          setFinishing(false)
-          setPairError(error.message)
-        }
-      },
-    })
+    const start = () =>
+      startPolling(poll, {
+        interval: 1500,
+        onError: (error) => {
+          if (!stopped) {
+            if (pairingPhase.current === 'saving') pairingPhase.current = 'waiting'
+            setFinishing(false)
+            setPairError(error.message)
+          }
+        },
+      })
+    let polling = AppState.currentState === 'active' ? start() : undefined
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') polling.refresh()
+      if (state !== 'active') {
+        void polling?.stop()
+        polling = undefined
+      } else if (!polling) polling = start()
     })
     return () => {
       stopped = true
       subscription.remove()
-      void polling.stop()
+      void polling?.stop()
     }
   }, [pending, address, computerName, replaceId])
   const digits = code.length
@@ -146,7 +146,7 @@ export function PairComputer({
       mobileWorkflow(function* () {
         Keyboard.dismiss()
         setPairError('')
-        const target = normalizeRuntimeAddress(address)
+        const target = pairingAddress(address)
         setAddress(target)
         setPending(
           yield* nativeEffect(() =>

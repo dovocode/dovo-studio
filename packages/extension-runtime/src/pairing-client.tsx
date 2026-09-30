@@ -1,5 +1,5 @@
 import { LinuxSetupGuide } from './linux-setup-guide'
-import { PAIRING_PROTOCOL_VERSION } from '@dovo/studio-core'
+import { PAIRING_PROTOCOL_VERSION, pairingAddress } from '@dovo/protocol'
 import { ComputerUpdates } from './computer-updates'
 import { Effect } from 'effect'
 import { runtimeRequestEffect } from '@dovo/studio-core'
@@ -335,17 +335,22 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
               const attempt = ++generation.current
               setBusy(true)
               setError('')
-              void runtimeRequest(
-                null,
-                address,
-                '/api/pair/request',
-                {
-                  protocolVersion: PAIRING_PROTOCOL_VERSION,
-                  code,
-                  name,
-                },
-                responses.pairRequest,
-              )
+              void Promise.resolve()
+                .then(() => {
+                  const target = pairingAddress(address)
+                  setAddress(target)
+                  return runtimeRequest(
+                    null,
+                    target,
+                    '/api/pair/request',
+                    {
+                      protocolVersion: PAIRING_PROTOCOL_VERSION,
+                      code,
+                      name,
+                    },
+                    responses.pairRequest,
+                  )
+                })
                 .then((result) => {
                   if (generation.current === attempt) setPending(result)
                 })
@@ -362,7 +367,7 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
               <Input
                 aria-label="Runtime address"
                 required
-                type="url"
+                inputMode="url"
                 value={address}
                 onChange={(event) => setAddress(event.target.value)}
                 placeholder="http://my-desktop:51464"

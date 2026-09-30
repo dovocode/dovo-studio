@@ -1,4 +1,4 @@
-import { runtimeRequest } from '../../shared/client.js'
+import { runtimeRequest, RuntimeRequestError } from '../../shared/client.js'
 import { snapshotSchema, type RuntimeSnapshot } from './runtime.js'
 import type { RuntimeProfile } from './runtime-fleet.js'
 import {
@@ -47,6 +47,7 @@ export function createRuntimeUpgradeManager(options: {
   let state: RuntimeUpgradeState = { checking: false, busy: [], selected: [], statuses: {} }
   let polling = false
   const generations = new Map<string, number>()
+  const unconfirmed = new Set<string>()
   const listeners = new Set<() => void>()
   const update = (next: Partial<RuntimeUpgradeState>) => {
     state = { ...state, ...next }
@@ -61,7 +62,9 @@ export function createRuntimeUpgradeManager(options: {
           ...next,
           updatedAt:
             next.updatedAt ??
-            (previous?.version === next.version ? previous?.updatedAt : undefined) ??
+            (previous?.version === next.version && previous?.status === next.status
+              ? previous?.updatedAt
+              : undefined) ??
             new Date().toISOString(),
         },
       },
@@ -100,7 +103,10 @@ export function createRuntimeUpgradeManager(options: {
           .filter(
             (entry) =>
               inProgress(state.statuses[entry.profile.id]) ||
-              (entry.connected && entry.snapshot?.releaseCanUpdate),
+              (entry.connected &&
+                (entry.snapshot?.releaseCanUpdate ||
+                  (state.statuses[entry.profile.id]?.status === 'error' &&
+                    !!state.statuses[entry.profile.id]?.version))),
           )
           .map(async (entry) => {
             if (state.busy.includes(entry.profile.id)) return
@@ -108,7 +114,10 @@ export function createRuntimeUpgradeManager(options: {
             const previous = state.statuses[entry.profile.id]
             try {
               // Keep probing the saved connection during restart, even when fleet polling marks it offline.
-              if (previous?.status === 'installing') {
+              if (
+                previous?.status === 'installing' ||
+                (previous?.status === 'error' && previous.version)
+              ) {
                 const snapshot = await runtimeRequest(
                   entry.profile.connection,
                   entry.profile.connection.address,
@@ -125,6 +134,7 @@ export function createRuntimeUpgradeManager(options: {
                   (snapshot.releaseVersion === previous.version ||
                     newerRuntimeVersion(snapshot.releaseVersion, previous.version))
                 ) {
+                  unconfirmed.delete(entry.profile.id)
                   status(entry.profile.id, { status: 'complete', version: snapshot.releaseVersion })
                   await options.refreshed(entry)
                   return
@@ -132,6 +142,18 @@ export function createRuntimeUpgradeManager(options: {
               }
               const next = await request(entry, 'status')
               if (generations.get(entry.profile.id) !== generation) return
+              if (unconfirmed.has(entry.profile.id)) {
+                unconfirmed.delete(entry.profile.id)
+                if (next.version !== previous?.version || next.status === 'idle') {
+                  status(entry.profile.id, {
+                    status: 'error',
+                    version: previous?.version,
+                    error: 'The host did not accept the update request. Retry the update.',
+                  })
+                  return
+                }
+              }
+              if (previous?.status === 'error' && next.status === 'idle') return
               // Preserve restart progress until the new app reports the requested version.
               if (previous?.status === 'installing' && next.status === 'idle') {
                 stalled(entry.profile.id, previous)
@@ -180,13 +202,25 @@ export function createRuntimeUpgradeManager(options: {
         }
         try {
           generations.set(id, (generations.get(id) ?? 0) + 1)
+          unconfirmed.delete(id)
           status(id, await request(entry, restart ? 'restart' : 'start', version))
         } catch (cause) {
-          status(id, {
-            status: 'error',
-            version,
-            error: cause instanceof Error ? cause.message : String(cause),
-          })
+          if (
+            cause instanceof RuntimeRequestError &&
+            (cause.kind === 'connection' ||
+              cause.kind === 'timeout' ||
+              [502, 503, 504].includes(cause.status ?? 0))
+          ) {
+            // A mutation may already have reached the host. Probe reads; never resend it blindly.
+            unconfirmed.add(id)
+            status(id, { status: restart ? 'installing' : 'queued', version })
+          } else {
+            status(id, {
+              status: 'error',
+              version,
+              error: cause instanceof Error ? cause.message : String(cause),
+            })
+          }
         }
       }
     } finally {

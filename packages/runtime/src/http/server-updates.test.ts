@@ -94,3 +94,29 @@ it('runs the Linux updater outside the server service and reports launch failure
     error: expect.stringContaining('Could not start update service'),
   })
 })
+
+it('reports the running release after a helper was interrupted before its final status write', () => {
+  vi.stubEnv('DOVO_DATABASE_PATH', join(directory, 'runtime.sqlite'))
+  for (const phase of ['installing', 'error']) {
+    writeFileSync(
+      join(directory, 'server-update-status.json'),
+      JSON.stringify({
+        status: phase,
+        version: '1.0.1',
+        updatedAt: new Date(Date.now() - 60_000).toISOString(),
+        error: phase === 'error' ? 'Helper stopped' : undefined,
+      }),
+    )
+    vi.stubEnv('DOVO_RELEASE_VERSION', '1.0.1')
+    expect(serverUpdateStatus()).toMatchObject({
+      status: 'complete',
+      version: '1.0.1',
+      progress: 100,
+    })
+    expect(serverUpdateStatus().error).toBeUndefined()
+    vi.stubEnv('DOVO_RELEASE_VERSION', '1.0.2')
+    expect(serverUpdateStatus()).toMatchObject({ status: 'complete', version: '1.0.2' })
+    vi.stubEnv('DOVO_RELEASE_VERSION', '1.0.0')
+    expect(serverUpdateStatus().status).toBe(phase)
+  }
+})

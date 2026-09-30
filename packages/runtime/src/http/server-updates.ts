@@ -3,7 +3,12 @@ import { spawn } from 'node:child_process'
 import { closeSync, existsSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { decode, serverUpdateStatusSchema, type ServerUpdateStatus } from '@dovo/protocol'
+import {
+  decode,
+  newerRuntimeVersion,
+  serverUpdateStatusSchema,
+  type ServerUpdateStatus,
+} from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 
 const directory = () =>
@@ -42,6 +47,14 @@ export function canUpdateServer() {
 export function serverUpdateStatus(): ServerUpdateStatus {
   try {
     const state = decode(serverUpdateStatusSchema, JSON.parse(readFileSync(statusPath(), 'utf8')))
+    const installed = process.env.DOVO_RELEASE_VERSION
+    if (
+      state.version &&
+      installed &&
+      ['queued', 'downloading', 'installing', 'error'].includes(state.status) &&
+      (installed === state.version || newerRuntimeVersion(installed, state.version))
+    )
+      return { status: 'complete', version: installed, progress: 100, updatedAt: state.updatedAt }
     const deadline = state.status === 'queued' ? 45_000 : 15 * 60 * 1000
     if (
       ['queued', 'downloading', 'installing'].includes(state.status) &&

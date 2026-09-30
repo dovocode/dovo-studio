@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { pairingInvitationUrl, parsePairingInvitation } from './pairing-invitation'
+import { pairingAddress, pairingInvitationUrl, parsePairingInvitation } from './pairing-invitation'
 const invitation = {
   address: 'http://100.90.80.70:8787',
   code: '00112233',
@@ -29,4 +29,23 @@ it('rejects unrelated QR codes and missing or malformed pairing fields', () => {
     'not a URL',
   ])
     expect(() => parsePairingInvitation(url)).toThrow(/pairing|HTTP|Invalid URL|digit/)
+})
+
+it('normalizes manual LAN and VPN addresses while preserving optional HTTPS', () => {
+  expect(pairingAddress(' 100.90.80.70:8787/ ')).toBe('http://100.90.80.70:8787')
+  expect(pairingAddress('https://work.example:8787/')).toBe('https://work.example:8787')
+})
+it('rejects loopback variants and wildcard addresses before requesting pairing', () => {
+  for (const address of [
+    '127.0.0.2:8787',
+    '[::1]:8787',
+    '[::ffff:127.0.0.1]:8787',
+    'machine.localhost:8787',
+    '0.0.0.0:8787',
+    '[::]:8787',
+    'user:secret@host:8787',
+    'host:8787/path',
+  ]) {
+    expect(() => pairingAddress(address)).toThrow(/address|HTTP/)
+  }
 })
