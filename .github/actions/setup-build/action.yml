@@ -1,0 +1,27 @@
+name: Set up cached build dependencies
+description: Install the workspace package manager and cache platform-specific build downloads.
+inputs:
+  architecture:
+    description: Node architecture; defaults to the runner's native architecture.
+    required: false
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+        architecture: ${{ inputs.architecture }}
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
+    - name: Configure native download caches
+      id: downloads
+      shell: bash
+      run: node "$GITHUB_WORKSPACE/scripts/ci/build-cache.mjs"
+    # A server job must not save a header-only archive under the desktop tools key.
+    - uses: actions/cache@v4
+      with:
+        path: ${{ steps.downloads.outputs.directory }}
+        key: build-downloads-v1-${{ github.job }}-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-node-${{ steps.downloads.outputs.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          build-downloads-v1-${{ github.job }}-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-node-${{ steps.downloads.outputs.node }}-

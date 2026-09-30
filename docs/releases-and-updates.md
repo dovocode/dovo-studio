@@ -51,6 +51,11 @@ matching server archive, registers the user service, and uses the same command f
    update feed. Inspect the artifacts and publish the draft only after native installation tests.
 5. On an older install, exercise download, Later, restart/install and retained runtime data.
 
+Check and release jobs cache pnpm downloads, Node headers and Electron packaging tools. Download
+caches are separated by job, operating system, architecture and Node version; lockfile changes can
+reuse compatible downloads. Each release still builds, packages and signs fresh artifacts. Check
+runs its tests against the packages already built earlier in the job.
+
 Merging into `main` builds and publishes `vX.Y.Z-nightly.N` automatically after all platform
 artifacts pass verification. Nightly releases are GitHub prereleases and do not replace the latest
 Stable release. Their release notes list commit messages since the previous published nightly,

@@ -61,10 +61,12 @@ jobs:
             CHANNEL=stable
             APP_NAME='Dovo Studio'
           fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
-          echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "channel=$CHANNEL"
+            echo "app_name=$APP_NAME"
+          } >> "$GITHUB_OUTPUT"
           EXISTS=false
           if gh release view "$TAG" --json isDraft --jq .isDraft >/tmp/dovo-release-draft 2>/dev/null; then
             if test "$(cat /tmp/dovo-release-draft)" != true; then
@@ -97,10 +99,7 @@ jobs:
       DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-build
       - name: Verify Apple signing secrets
         env:
           MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
@@ -114,7 +113,7 @@ jobs:
             test -n "${!name}" || { echo "::error::Missing $name secret"; exit 1; }
           done
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      - run: pnpm --filter @dovo/api... --filter @dovo/desktop... -r build
       - name: Build signed update artifacts into a draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -165,11 +164,9 @@ jobs:
       DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-build
         with:
-          node-version: '24'
           architecture: ${{ matrix.arch }}
-      - uses: pnpm/action-setup@v4
       - name: Verify native architecture
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
@@ -186,6 +183,7 @@ jobs:
         run: pnpm run package:desktop:artifacts
       - uses: actions/upload-artifact@v4
         with:
+          compression-level: 0
           name: desktop-${{ matrix.runner }}
           if-no-files-found: error
           path: |
@@ -210,10 +208,7 @@ jobs:
       DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-build
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @dovo/api... -r build
       - run: pnpm run package:server
@@ -242,6 +237,7 @@ jobs:
           }
       - uses: actions/upload-artifact@v4
         with:
+          compression-level: 0
           name: server-${{ matrix.runner }}
           if-no-files-found: error
           path: release/Dovo-Server-*
@@ -334,6 +330,7 @@ jobs:
               echo "::error::Check workflow did not pass for $SHA: $result"
               exit 1
             fi
+            echo "Waiting for Check ($attempt/40): $result"
             sleep 15
           done
           echo "::error::Check workflow did not complete for $SHA"
