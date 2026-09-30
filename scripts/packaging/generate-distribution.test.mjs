@@ -84,8 +84,13 @@ await test('stages the release version for server diagnostics without editing so
   const temporary = await mkdtemp(join(tmpdir(), 'dovo-stage-version-'))
   try {
     const root = join(temporary, 'source')
-    for (const dir of ['apps/api/dist', 'packages', 'patches', 'scripts'])
+    for (const dir of ['apps/api/dist', 'packages/push/dist', 'patches', 'scripts'])
       await mkdir(join(root, dir), { recursive: true })
+    await writeFile(
+      join(root, 'packages/push/package.json'),
+      JSON.stringify({ name: '@dovo/push' }),
+    )
+    await writeFile(join(root, 'packages/push/dist/apns.js'), 'export class Apns {}')
     await writeFile(join(root, 'package.json'), JSON.stringify({ version: '1.2.3' }))
     await writeFile(
       join(root, 'apps/api/package.json'),
@@ -95,6 +100,10 @@ await test('stages the release version for server diagnostics without editing so
       await writeFile(join(root, file), '')
     const staged = join(temporary, 'staged')
     await stageWorkspace(root, staged)
+    assert.equal(
+      await readFile(join(staged, 'packages/push/dist/apns.js'), 'utf8'),
+      'export class Apns {}',
+    )
     assert.equal(
       JSON.parse(await readFile(join(staged, 'apps/api/package.json'), 'utf8')).version,
       '1.2.3',

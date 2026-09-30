@@ -15,6 +15,7 @@ export async function stageWorkspace(root, target) {
     'packages/runtime',
     'packages/protocol',
     'packages/client-runtime',
+    'packages/push',
   ])
   for (const category of ['apps', 'packages'])
     for (const entry of await readdir(join(root, category), { withFileTypes: true })) {
