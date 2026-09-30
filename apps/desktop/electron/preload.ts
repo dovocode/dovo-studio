@@ -1,6 +1,31 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('dovo', {
+  inputPreview: {
+    sync: (value: Parameters<import('@dovo/protocol').InputPreviewBridge['sync']>[0]) =>
+      ipcRenderer.invoke('input-preview:sync', value),
+    current: () => ipcRenderer.invoke('input-preview:current'),
+    answer: (value: import('@dovo/protocol').InputPreviewAnswer) =>
+      ipcRenderer.invoke('input-preview:answer', value),
+    dismiss: () => ipcRenderer.invoke('input-preview:dismiss'),
+    openThread: () => ipcRenderer.invoke('input-preview:open'),
+    subscribe: (listener: (value: import('@dovo/protocol').InputPreview | null) => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        value: import('@dovo/protocol').InputPreview | null,
+      ) => listener(value)
+      ipcRenderer.on('input-preview:state', handler)
+      return () => ipcRenderer.removeListener('input-preview:state', handler)
+    },
+    onOpenThread: (listener: (value: { runtimeId: string; entityId: string }) => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        value: { runtimeId: string; entityId: string },
+      ) => listener(value)
+      ipcRenderer.on('input-preview:open-thread', handler)
+      return () => ipcRenderer.removeListener('input-preview:open-thread', handler)
+    },
+  },
   appInfo: ipcRenderer.sendSync('app:info'),
   platform:
     process.platform === 'darwin' || process.platform === 'win32' ? process.platform : 'linux',

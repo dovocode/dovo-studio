@@ -30,7 +30,7 @@ import { useAppearance } from './appearance'
 import { useTaskNotifications, type NotificationTarget } from './task-notifications'
 import { createExtensionCatalog } from './extension-catalog'
 import { ActivityBar } from './activity-bar'
-import type { DesktopUpdateBridge, DesktopUpdateState } from '@dovo/protocol'
+import type { InputPreviewBridge, DesktopUpdateBridge, DesktopUpdateState } from '@dovo/protocol'
 import { CommandPalette } from './command-palette'
 import { TitleBar, type DesktopPlatform } from './title-bar'
 type WorkbenchProps = {
@@ -39,6 +39,7 @@ type WorkbenchProps = {
   pickDirectory?: StudioHostApi['pickDirectory']
   browser?: StudioHostApi['browser']
   desktopPlatform?: DesktopPlatform
+  inputPreview?: InputPreviewBridge
   updates?: DesktopUpdateBridge
 }
 type ViewModule = { default: ComponentType<StudioViewProps> }
@@ -124,6 +125,7 @@ function WorkbenchContent({
   appInfo,
   desktopPlatform,
   updates,
+  inputPreview,
 }: WorkbenchProps) {
   const compact = useCompactLayout()
   const { showIssues, showJira } = useAppPreferences()
@@ -189,7 +191,7 @@ function WorkbenchContent({
     },
     [runtimeRegistry.activeId, switchRuntime, navigate, setSwitchError],
   )
-  useTaskNotifications(openNotification)
+  useTaskNotifications(openNotification, inputPreview)
   const [palette, setPalette] = useApplicationState(false)
   const commands = useRef(new Map<string, StudioCommand>())
   const [, refreshCommands] = useApplicationState(0)

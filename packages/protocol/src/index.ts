@@ -113,3 +113,5 @@ export * from './tasks/launch-options.js'
 export * from './tasks/agent-presets.js'
 
 export * from './terminal-layout.js'
+
+export * from './input-preview.js'

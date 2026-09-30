@@ -50,6 +50,16 @@ export default function NotificationSettings() {
           />
         </SettingRow>
         <SettingRow
+          label="Quick input preview"
+          description="On desktop, show questions and approvals above your other apps while Dovo is inactive, including connected remote servers."
+        >
+          <Toggle
+            label="Show quick input preview"
+            checked={preferences.inputPreview}
+            onChange={(inputPreview) => updateAppPreferences({ inputPreview })}
+          />
+        </SettingRow>
+        <SettingRow
           label="When a task finishes"
           description="Includes tasks that stop with an error."
         >

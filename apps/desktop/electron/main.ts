@@ -1,3 +1,4 @@
+import { registerInputPreview } from './input-preview.js'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { registerUpdates } from './updates.js'
 import { registerRemoteUpdates } from './remote-updates.js'
@@ -119,6 +120,8 @@ if (!app.commandLine.hasSwitch('user-data-dir')) {
 app.setName('dovo-studio')
 app.setPath('userData', dataDirectory)
 registerConnectionStorage(join(__dirname, '../dist/index.html'))
+const inputPreview = registerInputPreview(rendererPath, join(__dirname, 'preload.mjs'))
+app.once('will-quit', () => inputPreview.dispose())
 const browserBridge = registerBrowser(
   join(__dirname, '../dist/index.html'),
   app.getPath('userData'),

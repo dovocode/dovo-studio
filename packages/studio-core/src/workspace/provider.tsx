@@ -84,6 +84,13 @@ const idleOverview = (
   pullError: null,
 })
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const {
+    inputPreview,
+    globalAgentPresets,
+    retiredGlobalAgentPresets,
+    globalModelPreferences,
+    globalModelPreferencesUpdatedAt,
+  } = useAppPreferences()
   const [previews, setPreviews] = useApplicationState<TaskPreview[]>([])
   const previewTask = useCallback(
     <A,>(
@@ -1192,7 +1199,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           profile.connection.token === connection.token,
       )?.id ?? runtimeProfile(connection).id
     const poll = Effect.suspend(() => {
-      if (document.visibilityState !== 'visible' || busySnapshots.current.has(id))
+      if (
+        (!inputPreview && document.visibilityState !== 'visible') ||
+        busySnapshots.current.has(id)
+      )
         return Effect.void
       busySnapshots.current.add(id)
       const order = (snapshotOrder.current.get(id) ?? 0) + 1
@@ -1310,21 +1320,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', wake)
       void polling.stop()
     }
-  }, [connection, connect, installSnapshot, synchronization, updateOverview])
+  }, [connection, connect, installSnapshot, synchronization, updateOverview, inputPreview])
   useEffect(() => {
     if (!ready) return
     const polling = startPolling(
       Effect.suspend(() =>
-        document.visibilityState === 'visible' ? refreshRuntimesEffect() : Effect.void,
+        inputPreview || document.visibilityState === 'visible'
+          ? refreshRuntimesEffect()
+          : Effect.void,
       ),
-      { interval: 30000, immediate: false, onError: (error) => setSyncError(String(error)) },
+      {
+        interval: inputPreview ? 3000 : 30000,
+        immediate: false,
+        onError: (error) => setSyncError(String(error)),
+      },
     )
     document.addEventListener('visibilitychange', polling.refresh)
     return () => {
       void polling.stop()
       document.removeEventListener('visibilitychange', polling.refresh)
     }
-  }, [ready, refreshRuntimesEffect])
+  }, [ready, refreshRuntimesEffect, inputPreview])
   const visibleWorkspace = useMemo(
     () => previewWorkspace(workspace, connection, previews),
     [workspace, connection, previews],
@@ -1347,12 +1363,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }),
     [runtimeRegistry.profiles, overviews, previews],
   )
-  const {
-    globalAgentPresets,
-    retiredGlobalAgentPresets,
-    globalModelPreferences,
-    globalModelPreferencesUpdatedAt,
-  } = useAppPreferences()
   useEffect(() => {
     for (const entry of visibleRuntimes) {
       if (!entry.connected || !entry.snapshot) {

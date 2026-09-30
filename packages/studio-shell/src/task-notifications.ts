@@ -1,5 +1,6 @@
+import type { InputPreviewBridge, InputPreviewItem } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
-import { readAppPreferences, useWorkspace } from '@dovo/studio-core'
+import { readAppPreferences, useAppPreferences, useWorkspace } from '@dovo/studio-core'
 
 type RuntimeOverview = ReturnType<typeof useWorkspace>['runtimes'][number]
 
@@ -102,8 +103,41 @@ export function taskNotificationEvents(
 }
 
 /** Settings → General → Notifications: tell the user while Dovo is in the background. */
-export function useTaskNotifications(onOpen: (target: NotificationTarget) => void) {
+export function useTaskNotifications(
+  onOpen: (target: NotificationTarget) => void,
+  preview?: InputPreviewBridge,
+) {
   const { runtimes } = useWorkspace()
+  const preferences = useAppPreferences()
+  useEffect(() => {
+    if (!preview) return
+    const items: InputPreviewItem[] = []
+    for (const entry of runtimes) {
+      const snapshot = entry.snapshot
+      if (!snapshot) continue
+      for (const request of [
+        ...snapshot.questions.map((value) => ({ kind: 'question' as const, value })),
+        ...snapshot.approvals.map((value) => ({ kind: 'approval' as const, value })),
+      ])
+        items.push({
+          runtimeId: entry.profile.id,
+          runtimeName: entry.profile.name,
+          taskTitle:
+            snapshot.workspace.tasks.find((task) => task.id === request.value.taskId)?.title ??
+            'Task',
+          connection: entry.profile.connection,
+          connected: entry.connected,
+          request,
+        })
+    }
+    void preview
+      .sync({ enabled: preferences.inputPreview, items })
+      .catch((error: unknown) => console.error('Could not update input preview', error))
+  }, [runtimes, preview, preferences.inputPreview])
+  useEffect(
+    () => preview?.onOpenThread((target) => onOpen({ ...target, viewId: 'tasks' })),
+    [preview, onOpen],
+  )
   const previous = useRef<Map<string, TaskState> | null>(null)
   useEffect(() => {
     const current = taskStates(runtimes)

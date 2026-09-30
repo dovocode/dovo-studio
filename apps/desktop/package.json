@@ -18,6 +18,7 @@
     "@dovo/extension-scm": "workspace:*",
     "@dovo/extension-tasks": "workspace:*",
     "@dovo/protocol": "workspace:*",
+    "@dovo/studio-core": "workspace:*",
     "@dovo/studio-shell": "workspace:*",
     "@dovo/studio-ui": "workspace:*",
     "effect": "^3.22.1",
