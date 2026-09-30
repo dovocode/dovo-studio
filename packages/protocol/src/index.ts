@@ -98,6 +98,8 @@ export {
 } from './runtime/cache/overview-state.js'
 export {
   visiblePendingMessage,
+  pendingMessageDestination,
+  pendingMessageQueue,
   type PendingMessage,
 } from './conversation/workflow/pending-message.js'
 export * from './scm/work/worktrees.js'

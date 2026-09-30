@@ -1,4 +1,4 @@
-import type { PendingMessage } from '@dovo/protocol'
+import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   generatedTitleSchema,
@@ -69,6 +69,9 @@ export function Composer({
   // Routing every keystroke through setWorkspace would deep-diff and sync the whole
   // workspace, re-rendering every useWorkspace consumer on each character typed.
   const [draft, setDraft] = useState(task.draft)
+  const [submittedText, setSubmittedText] = useState<string | null>(null)
+  const visibleDraft =
+    submitBusy && submittedText !== null && draft.trim() === submittedText ? '' : draft
   const insertedReference = useRef<string | null>(null)
   const insertedAnswer = useRef<string | null>(null)
   useEffect(() => {
@@ -256,6 +259,7 @@ export function Composer({
     sendingRequest.current = true
     setError('')
     setSending(true)
+    setSubmittedText(text)
     if (
       attempt.current?.mode !== mode ||
       attempt.current?.text !== text ||
@@ -270,6 +274,7 @@ export function Composer({
     const pending: PendingMessage = {
       taskId: task.id,
       state: 'sending',
+      destination: pendingMessageDestination(task, mode),
       message: {
         id: attempt.current.id,
         role: 'user',
@@ -325,7 +330,7 @@ export function Composer({
       setWorkspace((w) =>
         updateTask(w, task.id, (t) => ({
           ...t,
-          draft: t.draft === text ? '' : t.draft,
+          draft: t.draft.trim() === text ? '' : t.draft,
         })),
       )
       attempt.current = null
@@ -364,22 +369,23 @@ export function Composer({
         <div className={cn('px-3', pendingQuestion && 'hidden')}>
           <MessageAttachments
             taskId={task.id}
-            files={attachments.files}
+            files={submitBusy ? [] : attachments.files}
             remove={attachments.remove}
             disabled={sending || attachments.busy}
           />
         </div>
-        {mentions.menu}
+        {!submitBusy && mentions.menu}
         <PromptInputTextarea
           ref={input}
           autoFocus={firstMessage}
           aria-label="Message task"
           data-task-id={task.id}
           aria-autocomplete="list"
-          aria-expanded={mentions.open}
+          aria-expanded={mentions.open && !submitBusy}
           className={cn('min-h-24 max-h-64 px-4 pt-4 pb-2', pendingQuestion && 'hidden')}
-          value={draft}
-          disabled={sending || task.archived || pendingQuestion}
+          value={visibleDraft}
+          disabled={machineMoving || task.archived || pendingQuestion}
+          readOnly={submitBusy}
           onKeyDown={mentions.onKeyDown}
           onSelect={mentions.track}
           onChange={(e) => {

@@ -5,6 +5,7 @@ import {
   taskBudgetUsage,
   taskPreparation,
   visiblePendingMessage,
+  pendingMessageQueue,
   type PendingMessage,
 } from '@dovo/protocol'
 import { MessageQueue } from '../chat/thread/message-queue'
@@ -46,16 +47,18 @@ export function TaskConversation({
     () => visiblePendingMessage({ id, messages, queue }, pending),
     [id, messages, queue, pending],
   )
+  const threadPending = visiblePending?.destination === 'queue' ? null : visiblePending
+  const queueTask = { ...task, queue: pendingMessageQueue(task, pending) }
   const displayedTask = useMemo(
     () => ({
       id,
-      messages: visiblePending ? [...messages, visiblePending.message] : messages,
+      messages: threadPending ? [...messages, threadPending.message] : messages,
       queue,
       turns,
       status,
       compactions,
     }),
-    [id, messages, queue, turns, status, compactions, visiblePending],
+    [id, messages, queue, turns, status, compactions, threadPending],
   )
   const viewed = useTaskViewed(task, visible)
   const preparation = taskPreparation(task)
@@ -75,7 +78,7 @@ export function TaskConversation({
   }
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ChatThread task={displayedTask} onTerminal={onTerminal} pending={visiblePending} />
+      <ChatThread task={displayedTask} onTerminal={onTerminal} pending={threadPending} />
       {(budget.tokenExceeded || budget.timeExceeded) && (
         <p
           role="status"
@@ -122,7 +125,7 @@ export function TaskConversation({
       <PlanApproval task={task} />
       <ReviewFindings task={task} className="px-5 pb-2" onOpen={onReview} />
       <ReviewCommentsTray task={task} className="px-5 pb-2" />
-      <MessageQueue task={task} />
+      <MessageQueue task={queueTask} pending={visiblePending} />
       <Composer
         key={task.id}
         task={task}
