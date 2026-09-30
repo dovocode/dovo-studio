@@ -4,7 +4,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo } from 'react'
 import { getFiletypeFromFileName, parseDiffFromFile, preloadHighlighter } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
-import { BookmarkCheck, ChevronRight, Folder, Redo2, Undo2 } from 'lucide-react'
+import { BookmarkCheck, ChevronRight, Folder, Undo2 } from 'lucide-react'
 import type { ChangedFile, TaskTurn } from '@dovo/studio-core'
 import {
   Button,
@@ -92,7 +92,6 @@ export function TurnCheckpoint({
   const showFiles = expanded ?? !collapseChangedFiles
   const [open, setOpen] = useApplicationState(false)
   const [selected, setSelected] = useApplicationState('')
-  const [confirming, setConfirming] = useApplicationState(false)
   const [restoring, setRestoring] = useApplicationState(false)
   const [restoreError, setRestoreError] = useApplicationState('')
   const { request, connected } = useWorkspace()
@@ -107,24 +106,6 @@ export function TurnCheckpoint({
   const checkpoint = turn.checkpoint
   if (!checkpoint) return null
   const undone = !!checkpoint.undone
-  // Undo needs a finished turn with changes and an idle task; redo is always offered once undone.
-  const canRestore =
-    !!taskId && turn.status !== 'running' && (undone || (!!checkpoint.after && !checkpoint.error))
-  const restore = () => {
-    if (!taskId || restoring) return
-    setRestoring(true)
-    setRestoreError('')
-    void request(
-      '/api/tasks/turn/restore',
-      { id: taskId, turnId: turn.id, direction: undone ? 'redo' : 'undo' },
-      responses.ok,
-    )
-      .then(() => setConfirming(false))
-      .catch((cause: unknown) =>
-        setRestoreError(cause instanceof Error ? cause.message : String(cause)),
-      )
-      .finally(() => setRestoring(false))
-  }
   const file = selected
     ? checkpoint.files.find((entry) => entry.path === selected)
     : checkpoint.files[0]
@@ -162,20 +143,6 @@ export function TurnCheckpoint({
           {!!stats.length && <DiffAmounts stats={totals} />}
         </button>
         <span className="ml-auto flex items-center gap-1">
-          {canRestore && (!!count || undone) && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 text-xs"
-              disabled={!connected || taskRunning || restoring}
-              title={taskRunning ? 'Stop the agent first' : undefined}
-              onClick={() => setConfirming(true)}
-            >
-              {undone ? <Redo2 className="size-3" /> : <Undo2 className="size-3" />}
-              {undone ? 'Redo changes' : 'Undo changes'}
-            </Button>
-          )}
           {(!!count || checkpoint.error) && (
             <Button
               type="button"
@@ -190,31 +157,6 @@ export function TurnCheckpoint({
           )}
         </span>
       </div>
-      <Dialog open={confirming} onOpenChange={(value) => !restoring && setConfirming(value)}>
-        <DialogContent className="max-w-md">
-          <DialogTitle className="text-sm">
-            {undone ? 'Redo this turn’s changes?' : 'Undo this turn’s changes?'}
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            {undone
-              ? 'The files go back to how they were right before you undid this turn. The agent gets a note about it.'
-              : `The ${count} ${count === 1 ? 'file' : 'files'} this turn changed go back to how they were before it${turn.status === 'completed' ? '' : ' started'}. Later edits to the same files are replaced too. Your current files are saved first, so you can redo this. The agent gets a note about it.`}
-          </DialogDescription>
-          {restoreError && (
-            <p role="alert" className="text-xs text-destructive">
-              {restoreError}
-            </p>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" disabled={restoring} onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-            <Button disabled={restoring || !connected} onClick={restore}>
-              {undone ? 'Redo changes' : 'Undo changes'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
       {showFiles && (
         <div className="mt-2">
           {(folders.get('') ?? []).map((path) => (

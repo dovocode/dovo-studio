@@ -17,12 +17,10 @@ import {
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  Alert,
 } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { Schema } from 'effect'
-import { attachmentSchema, activitySchema, responses, type TaskTurn } from '@dovo/protocol'
-import { useAction } from '../../ui/controls/use-action'
+import { attachmentSchema, activitySchema, type TaskTurn } from '@dovo/protocol'
 import {
   MessagePrimitive,
   ThreadPrimitive,
@@ -78,31 +76,17 @@ function CheckpointPart({ data }: DataMessagePartProps<unknown>) {
   const car = useCarMode()
   if (car) return null
   const turn = task.turns?.find((item) => item.id === checkpoint.turnId)
-  return (
-    <CheckpointRow
-      checkpoint={checkpoint}
-      openCheckpoint={openCheckpoint}
-      taskId={task.id}
-      taskRunning={task.status === 'running'}
-      turn={turn}
-    />
-  )
+  return <CheckpointRow checkpoint={checkpoint} openCheckpoint={openCheckpoint} turn={turn} />
 }
 function CheckpointRow({
   checkpoint,
   openCheckpoint,
-  taskId,
-  taskRunning,
   turn,
 }: {
   checkpoint: Schema.Schema.Type<typeof checkpointSchema>
   openCheckpoint: (turnId: string, path?: string) => void
-  taskId: string
-  taskRunning: boolean
   turn: TaskTurn | undefined
 }) {
-  const { connected, callEffect } = useRuntime()
-  const restore = useAction()
   const { collapseChangedFiles } = useMobilePreferences()
   const [expanded, setExpanded] = useApplicationState<boolean | null>(null)
   const showFiles = expanded ?? !collapseChangedFiles
@@ -117,33 +101,6 @@ function CheckpointRow({
       ),
     [turn?.checkpoint?.files],
   )
-  const undone = !!turn?.checkpoint?.undone
-  const canRestore =
-    !!turn &&
-    turn.status !== 'running' &&
-    (undone || (!!turn.checkpoint?.after && !turn.checkpoint.error && checkpoint.files > 0))
-  const confirmRestore = () =>
-    Alert.alert(
-      undone ? 'Redo this turn’s changes?' : 'Undo this turn’s changes?',
-      undone
-        ? 'The files go back to how they were right before you undid this turn. The agent gets a note about it.'
-        : 'The files this turn changed go back to how they were before it. Your current files are saved first, so you can redo this. The agent gets a note about it.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: undone ? 'Redo changes' : 'Undo changes',
-          style: undone ? 'default' : 'destructive',
-          onPress: () =>
-            restore.act(() =>
-              callEffect(
-                '/api/tasks/turn/restore',
-                { id: taskId, turnId: checkpoint.turnId, direction: undone ? 'redo' : 'undo' },
-                responses.ok,
-              ),
-            ),
-        },
-      ],
-    )
   return (
     <View
       style={{
@@ -205,28 +162,6 @@ function CheckpointRow({
         <Text style={styles.muted}>{checkpoint.omitted} files omitted from snapshot</Text>
       )}
       {!!checkpoint.error && <Text style={styles.error}>{checkpoint.error}</Text>}
-      {canRestore && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={undone ? 'Redo this turn’s changes' : 'Undo this turn’s changes'}
-          accessibilityHint={taskRunning ? 'Stop the agent first.' : undefined}
-          disabled={!connected || taskRunning || restore.busy}
-          onPress={confirmRestore}
-          style={({ pressed }) => ({
-            minHeight: 36,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 8,
-            opacity: pressed || !connected || taskRunning || restore.busy ? 0.5 : 1,
-          })}
-        >
-          <Icon name="refresh" size={14} color={colors.muted} />
-          <Text style={styles.muted}>
-            {undone ? 'Changes undone · Redo' : 'Undo these changes'}
-          </Text>
-        </Pressable>
-      )}
-      {!!restore.error && <Text style={styles.error}>{restore.error}</Text>}
     </View>
   )
 }

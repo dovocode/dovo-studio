@@ -302,12 +302,16 @@ export default function TasksScreen() {
                   },
                 },
               ]),
-          {
-            label: car ? 'Exit car mode' : 'Car mode',
-            icon: 'car',
-            selected: car,
-            onPress: () => updateMobilePreferences({ carMode: !car }),
-          },
+          ...(car
+            ? [
+                {
+                  label: 'Exit car mode',
+                  icon: 'car' as const,
+                  selected: true,
+                  onPress: () => updateMobilePreferences({ carMode: false }),
+                },
+              ]
+            : []),
           {
             label: 'New task',
             icon: 'add',
