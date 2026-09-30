@@ -522,6 +522,25 @@ ${
                       }
                     }, 100)
                 },
+                onTextBoundary: () => {
+                  if (!acceptsProviderEvents()) return
+                  flush()
+                  this.store.updateTask(id, (task) => ({
+                    ...task,
+                    messages: task.messages.map((message) => {
+                      if (
+                        message.id !== assistantId ||
+                        !message.text.length ||
+                        message.textBreaks?.at(-1) === message.text.length
+                      )
+                        return message
+                      return {
+                        ...message,
+                        textBreaks: [...(message.textBreaks ?? []), message.text.length],
+                      }
+                    }),
+                  }))
+                },
                 onEvent: (name, payload) => {
                   if (!acceptsProviderEvents()) return
                   const compaction = completedCompaction(agent.provider, name, payload)

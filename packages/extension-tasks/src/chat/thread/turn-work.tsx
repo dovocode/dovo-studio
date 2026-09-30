@@ -38,7 +38,8 @@ export function TurnWork({
         {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         {label}
       </Button>
-      {open ? children : finalIndex >= 0 && children[finalIndex]}
+      {open && (finalIndex >= 0 ? children.slice(0, finalIndex) : children)}
+      {finalIndex >= 0 && children.slice(finalIndex)}
     </>
   )
 }

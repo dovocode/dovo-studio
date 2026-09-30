@@ -318,3 +318,21 @@ it('preserves the first tool group identity when concurrent tools finish out of 
     't2:second',
   ])
 })
+
+it('keeps completed provider message boundaries in the mobile work timeline', () => {
+  const messages = conversationMessages(
+    {
+      ...task,
+      messages: [
+        { id: 'a1', role: 'assistant', text: 'Progress.Final answer.', textBreaks: [9, 22] },
+      ],
+    },
+    [],
+  )
+  expect(messages[0].content).toEqual(
+    expect.arrayContaining([
+      { type: 'text', text: 'Progress.' },
+      { type: 'text', text: 'Final answer.' },
+    ]),
+  )
+})

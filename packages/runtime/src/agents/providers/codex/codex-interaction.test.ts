@@ -39,8 +39,9 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
    send({id:m.id,result:{turn:{id:'turn-1',status:'inProgress'}}});
    if(${JSON.stringify(mode)}==='child-events') {
      send({method:'item/agentMessage/delta',params:{threadId:'child',delta:'Child output'}});
+     send({method:'item/completed',params:{threadId:'child',item:{type:'agentMessage',id:'child-message'}}});
      send({method:'turn/completed',params:{threadId:'child',turn:{id:'child-turn',status:'completed'}}});
-     setTimeout(() => { send({method:'item/agentMessage/delta',params:{threadId:'thread-1',delta:'Parent output'}}); complete(); }, 30);
+     setTimeout(() => { send({method:'item/agentMessage/delta',params:{threadId:'thread-1',delta:'Parent output'}}); send({method:'item/completed',params:{threadId:'thread-1',item:{type:'agentMessage',id:'parent-message'}}}); complete(); }, 30);
    }
    if(${JSON.stringify(mode)}==='message-form') {
      const item={type:'agentMessage',id:'async-form',text:'',questions:[{title:'Which output style?',options:['Compact','Detailed']},{title:'Any additional context?',options:null}]};
@@ -80,6 +81,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     onSession: vi.fn<AgentRun['onSession']>(),
     onActivity: vi.fn<AgentRun['onActivity']>(),
     onText: vi.fn<AgentRun['onText']>(),
+    onTextBoundary: vi.fn<NonNullable<AgentRun['onTextBoundary']>>(),
     approve: async () => false,
     ask: async () => null,
   }
@@ -243,6 +245,7 @@ it('keeps child output and completion out of the parent conversation', async () 
   run.onEvent = vi.fn<NonNullable<AgentRun['onEvent']>>()
   await codexAdapter.run(run)
   expect(run.onText).toHaveBeenCalledExactlyOnceWith('Parent output')
+  expect(run.onTextBoundary).toHaveBeenCalledOnce()
   expect(run.onEvent).toHaveBeenCalledWith(
     'turn/completed',
     expect.objectContaining({

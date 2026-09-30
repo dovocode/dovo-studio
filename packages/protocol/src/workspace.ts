@@ -158,6 +158,8 @@ export const messageSchema = mutableStruct({
   id: Schema.String,
   role: Schema.Literal('user', 'assistant'),
   text: Schema.String,
+  /** Exact completed provider-message offsets within accumulated assistant text. */
+  textBreaks: Schema.optional(mutableArray(Schema.Number.pipe(Schema.int(), Schema.nonNegative()))),
   bookmarked: Schema.optional(Schema.Boolean),
   file: Schema.optional(Schema.String),
   attachments: Schema.optional(maxValue(mutableArray(attachmentSchema), MAX_ATTACHMENTS)),

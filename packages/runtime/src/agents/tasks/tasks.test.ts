@@ -1636,3 +1636,28 @@ it('retains legacy session consumption when admitting a new queued request', asy
   expect(run.mock.calls[1][0].prompt).toContain('New queued request')
   expect(run.mock.calls[1][0].prompt).not.toContain('Already completed original')
 })
+
+it('flushes streamed text at provider boundaries and retains them on the assistant message', async () => {
+  const s = await setup()
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      run.onText('Progress.')
+      run.onTextBoundary?.()
+      run.onTextBoundary?.()
+      run.onText('Final answer.')
+      run.onTextBoundary?.()
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Boundaries',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Test boundaries',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  const reply = s.store.task(task.id).messages.find((message) => message.role === 'assistant')
+  expect(reply).toMatchObject({ text: 'Progress.Final answer.', textBreaks: [9, 22] })
+})

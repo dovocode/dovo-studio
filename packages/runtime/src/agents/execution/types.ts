@@ -35,6 +35,7 @@ export interface AgentRun {
   onPromptAccepted?: () => void
   onSession: (id: string) => void
   onText: (text: string) => void
+  onTextBoundary?: () => void
   onActivity: (text: string) => void
   onEvent?: (name: string, payload: unknown) => void
   approve: (title: string, detail: string) => Promise<boolean>

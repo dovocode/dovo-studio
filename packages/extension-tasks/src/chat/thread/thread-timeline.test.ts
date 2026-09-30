@@ -145,3 +145,28 @@ it('folds intermediate work without hiding the completed answer', () => {
   expect(finalReplyIndex(threadTimeline('Legacy answer', [tool('legacy')]), false)).toBe(1)
   expect(finalReplyIndex(threadTimeline('', [tool('only')]), false)).toBe(-1)
 })
+
+it('keeps completed provider messages separate even without an intervening tool', () => {
+  const blocks = threadTimeline('Progress.Final answer.', [], [], [9, 22])
+  expect(blocks.filter((block) => block.kind === 'text').map((block) => block.text)).toEqual([
+    'Progress.',
+    'Final answer.',
+  ])
+  expect(blocks[finalReplyIndex(blocks, false)]).toMatchObject({
+    kind: 'text',
+    text: 'Final answer.',
+  })
+})
+
+it('keeps tool events at exact provider boundaries rather than shifting them into the next reply', () => {
+  const blocks = threadTimeline('FirstSecond sentence.', [tool('command', 5)], [], [5, 21])
+  expect(
+    blocks.map((block) =>
+      block.kind === 'text'
+        ? block.text
+        : block.kind === 'activity'
+          ? block.tools.map((item) => item.summary)
+          : 'compaction',
+    ),
+  ).toEqual([[], 'First', ['command'], 'Second sentence.'])
+})

@@ -56,6 +56,10 @@ export function conversationMessages(task: Task, events: ToolEvents): ThreadMess
         group.push({ kind: 'compaction', event })
         at.set(offset, group)
       }
+      for (const boundary of message.textBreaks ?? []) {
+        const offset = Math.max(0, Math.min(message.text.length, boundary))
+        if (!at.has(offset)) at.set(offset, [])
+      }
       let cursor = 0
       for (const offset of [...at.keys()].sort((a, b) => a - b)) {
         if (offset > cursor)

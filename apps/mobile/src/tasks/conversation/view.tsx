@@ -326,7 +326,8 @@ function AssistantParts() {
         <Icon name={open ? 'down' : 'next'} size={14} color={colors.muted} />
         <Text style={[styles.muted, { fontSize: 13 }]}>{label}</Text>
       </Pressable>
-      {open ? renderRange(0, end) : finalIndex >= 0 && renderRange(finalIndex, finalIndex + 1)}
+      {open && renderRange(0, finalIndex >= 0 ? finalIndex : end)}
+      {finalIndex >= 0 && renderRange(finalIndex, end)}
       {renderRange(end, message.content.length)}
     </>
   )
@@ -341,6 +342,7 @@ function Message() {
     state.message.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n\n'),
   )
   const car = useCarMode()
+  const [showActions, setShowActions] = useApplicationState(false)
   const time = createdAt && formatTime(createdAt, { hour: '2-digit', minute: '2-digit' })
   return (
     <MessagePrimitive.Root
@@ -349,7 +351,9 @@ function Message() {
         alignItems: user ? 'flex-end' : 'stretch',
       }}
     >
-      <View
+      <Pressable
+        onPress={() => setShowActions((value) => !value)}
+        accessibilityHint="Tap to show message actions and time"
         style={
           user
             ? {
@@ -367,7 +371,7 @@ function Message() {
         }
       >
         {user ? <MessagePrimitive.Parts components={userParts} /> : <AssistantParts />}
-      </View>
+      </Pressable>
       {pendingMessage?.message.id === id && (
         <Text
           accessibilityRole="text"
@@ -378,7 +382,7 @@ function Message() {
             : 'Sending…'}
         </Text>
       )}
-      {!!time && !car && (user || !streaming) && (
+      {showActions && !car && (user || !streaming) && (
         <View
           style={{
             flexDirection: 'row',

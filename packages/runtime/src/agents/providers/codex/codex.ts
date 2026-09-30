@@ -214,6 +214,10 @@ export function createCodexAdapter(): AgentAdapter {
           run.onPromptAccepted?.()
         if (method === 'item/agentMessage/delta' && typeof value.data.delta === 'string')
           run.onText(value.data.delta)
+        if (method === 'item/completed') {
+          const item = decodeResult(object, value.data.item)
+          if (item.success && item.data.type === 'agentMessage') run.onTextBoundary?.()
+        }
         if ((method === 'item/started' || method === 'item/completed') && run.onQuestions) {
           const form = codexAsyncQuestions(value.data.item)
           if (form && !questionItems.has(form.id)) {

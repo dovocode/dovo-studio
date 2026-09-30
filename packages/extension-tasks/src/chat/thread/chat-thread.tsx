@@ -1,3 +1,4 @@
+import { formatDateTime } from '@dovo/studio-core'
 import { turnSummary, type PendingMessage } from '@dovo/protocol'
 import { conversationTurns, conversationTurnLabel } from './conversation-turns'
 import { TurnWork } from './turn-work'
@@ -135,7 +136,7 @@ export function ChatThread({
               const tools = turn ? (activityGroups.byTurn.get(turn.id) ?? []) : []
               const timeline =
                 turn && message.role === 'assistant'
-                  ? threadTimeline(message.text, tools, compactions)
+                  ? threadTimeline(message.text, tools, compactions, message.textBreaks)
                   : null
               const showContent =
                 !!message.text ||
@@ -251,9 +252,20 @@ export function ChatThread({
                         : 'Sending…'}
                     </p>
                   )}
-                  {!!message.text && (
-                    <div className="flex items-center gap-1 group-[.is-user]:ml-auto">
-                      <MessageCopy text={message.text} />
+                  {(!!message.text || !!message.createdAt) && (
+                    <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 group-[.is-user]:ml-auto">
+                      {message.createdAt && (
+                        <time
+                          dateTime={message.createdAt}
+                          className="text-[0.625rem] text-muted-foreground"
+                        >
+                          {formatDateTime(message.createdAt, {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </time>
+                      )}
+                      {!!message.text && <MessageCopy text={message.text} />}
                       {message.role === 'assistant' && turn?.status !== 'running' && (
                         <Button
                           size="sm"
