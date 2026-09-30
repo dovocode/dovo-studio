@@ -8,19 +8,8 @@ import { compare, valid } from 'semver'
 import { Schema } from 'effect'
 import type { AgentDiscovery, CommandSettings } from '@dovo/protocol'
 import { exec, processEnvironment } from '../../process.js'
-export interface AdapterDiagnostic {
-  id: string
-  name: string
-  provider: AgentDiscovery['provider'] | 'mcp'
-  kind: 'executable' | 'sdk' | 'server'
-  available: boolean
-  installedVersion: string | null
-  latestVersion: string | null
-  updateStatus: 'not-checked' | 'current' | 'update-available' | 'ahead' | 'unknown'
-  detail: string
-  guidance: string
-  documentationUrl: string
-}
+import type { AdapterDiagnostic } from '@dovo/protocol'
+export type { AdapterDiagnostic } from '@dovo/protocol'
 interface Check {
   id: string
   name: string
@@ -226,7 +215,7 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
             : {},
         }
         const infoResponse = await fetch(new URL('api/info', base), options)
-        if (infoResponse.ok) {
+        if (infoResponse.ok && !infoResponse.headers.get('content-type')?.includes('text/html')) {
           const info = decode(mutableStruct({ version: Schema.String }), await infoResponse.json())
           if (info.version.startsWith('2.'))
             return {
@@ -319,7 +308,13 @@ export async function checkAdapterUpdates(
       }
       if (options.checkUpdates && check.packageName) {
         try {
-          base.latestVersion = await latest(check.packageName)
+          base.latestVersion = await latest(
+            check.provider === 'opencode' &&
+              check.kind === 'server' &&
+              base.installedVersion?.startsWith('2.')
+              ? '@opencode/cli'
+              : check.packageName,
+          )
           if (base.installedVersion && valid(base.installedVersion)) {
             const comparison = compare(base.latestVersion, base.installedVersion)
             base.updateStatus =

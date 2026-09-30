@@ -1,3 +1,4 @@
+import { checkAdapterUpdates } from '../../agents/execution/diagnostics.js'
 import { modelPreferencesSchema, agentPresetSchema, mutableArray } from '@dovo/protocol'
 import { canChangeTaskCheckout, taskSchema } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
@@ -32,6 +33,18 @@ export function agentsRoute(request: IncomingMessage, path: string) {
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/agents/updates') {
+        const { checkUpdates } = decode(
+          mutableStruct({ checkUpdates: Schema.Boolean }),
+          yield* serviceResult(body(request)),
+        )
+        return yield* serviceResult(
+          checkAdapterUpdates(s.commands.get(), {
+            checkUpdates,
+            agents: s.store.get().agents.map((agent) => s.agents.configure(agent)),
+          }),
+        )
+      }
       if (method === 'POST' && path === '/api/agents/presets/apply') {
         const { presets, retired, modelPreferences, modelPreferencesUpdatedAt } = decode(
           mutableStruct({

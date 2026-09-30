@@ -115,3 +115,5 @@ export * from './tasks/agent-presets.js'
 export * from './terminal-layout.js'
 
 export * from './input-preview.js'
+
+export * from './tasks/adapter-diagnostics.js'

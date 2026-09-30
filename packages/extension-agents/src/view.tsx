@@ -1,3 +1,4 @@
+import { HarnessUpdates } from './harness-updates'
 import { useAppPreferences, updateAppPreferences } from '@dovo/studio-core'
 import { Setup } from './setup'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -354,6 +355,7 @@ function ComputerAgents({ name }: { name: string }) {
               ))}
           </div>
           <div className="mt-6">
+            <HarnessUpdates />
             <AcpRegistrySettings />
           </div>
           <div className="mt-6">

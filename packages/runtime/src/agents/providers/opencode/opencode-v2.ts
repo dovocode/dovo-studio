@@ -30,6 +30,8 @@ export async function isOpencodeV2(address: string): Promise<boolean> {
     signal: AbortSignal.timeout(5000),
   })
   if (response.status === 404) return false
+  // V1 serves its browser SPA for unknown routes, including /api/info.
+  if (response.ok && response.headers.get('content-type')?.includes('text/html')) return false
   if (!response.ok) throw new Error(`OpenCode server info failed (${response.status})`)
   const info: unknown = await response.json()
   return (

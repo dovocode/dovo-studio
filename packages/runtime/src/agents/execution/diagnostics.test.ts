@@ -80,7 +80,8 @@ it('compares stable, prerelease, and newer installed versions correctly', async 
     const name = decodeURIComponent(new URL(urlString(url)).pathname.split('/')[1])
     return Response.json({
       name,
-      version: name === '@openai/codex' ? '0.154.0' : name === 'opencode-ai' ? '2.0.0' : '999.0.0',
+      version:
+        name === '@openai/codex' ? '0.154.0' : name === '@opencode/cli' ? '2.0.0' : '999.0.0',
     })
   })
   const diagnostics = await checkAdapterUpdates(settings, {
@@ -233,4 +234,17 @@ it('rejects mismatched registry packages without claiming an update is available
   })
   expect(diagnostics.every((item) => item.updateStatus === 'unknown')).toBe(true)
   expect(diagnostics.every((item) => item.latestVersion === null)).toBe(true)
+})
+
+it('falls back to V1 health when server info returns the browser HTML', async () => {
+  request.mockImplementation(async (input) =>
+    urlString(input).endsWith('/api/info')
+      ? new Response('<html>OpenCode</html>', { headers: { 'Content-Type': 'text/html' } })
+      : Response.json({ healthy: true, version: '1.18.33' }),
+  )
+  const diagnostics = await checkAdapterUpdates(settings)
+  expect(diagnostics.find((item) => item.kind === 'server')).toMatchObject({
+    available: true,
+    installedVersion: '1.18.33',
+  })
 })

@@ -1,3 +1,4 @@
+import { HarnessUpdates } from '../agents/harness-updates'
 import {
   useMobilePreferences,
   updateMobilePreferences,
@@ -337,6 +338,7 @@ function ComputerAgents({ name }: { name: string }) {
       </SettingsGroup>
       {registry && (
         <Sheet title={`ACP registry · ${name}`} onClose={() => setRegistry(false)}>
+          <HarnessUpdates />
           <AcpRegistrySettings />
         </Sheet>
       )}

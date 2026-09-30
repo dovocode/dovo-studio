@@ -183,3 +183,52 @@ it('waits for OpenCode 2 manual compaction to finish', async () => {
     server.close()
   }
 })
+
+it('recognizes V1 servers that return the browser app for unknown API routes', async () => {
+  const server = createServer((request, response) => {
+    if (request.url === '/api/info') {
+      response.writeHead(200, { 'Content-Type': 'text/html' })
+      response.end('<!doctype html><html>OpenCode</html>')
+    } else if (request.url?.startsWith('/global/health')) {
+      response.writeHead(200, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ healthy: true, version: '1.18.33' }))
+    } else if (request.url?.startsWith('/provider')) {
+      response.writeHead(200, { 'Content-Type': 'application/json' })
+      response.end(
+        JSON.stringify({
+          all: [
+            {
+              id: 'test',
+              name: 'Test provider',
+              models: { model: { id: 'model', name: 'Test model' } },
+            },
+          ],
+          connected: ['test'],
+          default: {},
+        }),
+      )
+    } else response.writeHead(404).end()
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing test address')
+  const agent = {
+    id: 'test',
+    name: 'OpenCode',
+    instructions: '',
+    permission: 'ask' as const,
+    provider: 'opencode' as const,
+    endpoint: `http://127.0.0.1:${address.port}`,
+    model: '',
+  }
+  try {
+    expect((await opencodeAdapter.probe(agent)).available).toBe(true)
+    expect((await opencodeAdapter.models!(agent)).models).toEqual([
+      { id: 'test/model', name: 'Test provider / Test model', reasoning: [] },
+    ])
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
