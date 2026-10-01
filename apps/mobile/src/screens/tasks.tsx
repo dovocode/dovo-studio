@@ -647,7 +647,8 @@ export default function TasksScreen() {
             }
           />
           <Text style={styles.muted}>
-            Pinned tasks stay first. Priority brings requests for input and failed tasks to the top.
+            Pinned tasks stay first. Latest prompt sorts by submitted input; answers and agent
+            activity do not move threads.
           </Text>
           <Action label="Done" onPress={() => setFiltersOpen(false)} />
         </Sheet>

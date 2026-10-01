@@ -30,7 +30,7 @@ describe('Thread sorting', () => {
     const first = (sort: string) =>
       [a, b].sort((x, y) => compareTasks(x, y, sort, needsInput, projects))[0].id
     expect(taskSortOptions.map((option) => first(option.id))).toEqual([
-      'Alpha',
+      'Beta',
       'Beta',
       'Beta',
       'Beta',
@@ -77,6 +77,7 @@ it('keeps running threads ordered by their trigger time while output streams', (
       ...task(id, '2026-09-01T00:00:00Z'),
       status: 'running',
       updatedAt,
+      lastPromptAt: startedAt,
       turns: [
         {
           id: id + '-turn',
@@ -103,4 +104,40 @@ it('keeps running threads ordered by their trigger time while output streams', (
       ),
     ).toBeGreaterThan(0)
   }
+})
+
+it('ignores questions, tools, completion and restarts when ordering by real prompt input', () => {
+  const older = { ...a, lastPromptAt: '2026-10-01T10:00:00Z', status: 'running' as const }
+  const newer = { ...b, lastPromptAt: '2026-10-01T10:01:00Z', status: 'review' as const }
+  expect(compareTasks(older, newer, 'priority', new Set([older.id]), projects)).toBeGreaterThan(0)
+  expect(
+    compareTasks(
+      { ...older, updatedAt: '2026-10-01T12:00:00Z', status: 'failed' },
+      newer,
+      'priority',
+      new Set(),
+      projects,
+    ),
+  ).toBeGreaterThan(0)
+})
+it('uses legacy prompt timestamps including queued input but excludes answer and review messages', () => {
+  const older = {
+    ...a,
+    messages: [
+      { id: 'prompt', role: 'user' as const, text: 'Prompt', createdAt: '2026-10-01T10:00:00Z' },
+      {
+        id: 'answer:question',
+        role: 'user' as const,
+        text: 'Answer',
+        createdAt: '2026-10-01T12:00:00Z',
+      },
+    ],
+  }
+  const newer = {
+    ...b,
+    queue: [
+      { id: 'queued', role: 'user' as const, text: 'Next', createdAt: '2026-10-01T11:00:00Z' },
+    ],
+  }
+  expect(compareTasks(older, newer, 'activity', new Set(), projects)).toBeGreaterThan(0)
 })

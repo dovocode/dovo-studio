@@ -14,7 +14,7 @@ const task = (id: string, status: Task['status'], updatedAt: string): Task => ({
   draft: '',
   example: false,
 })
-it('puts input ahead of failure, running, and recent completed work across projects', () => {
+it('orders threads by their latest prompt regardless of input and run status', () => {
   const tasks = [
     task('recent', 'review', '2026-09-12T12:00:00Z'),
     task('running', 'running', '2026-09-12T11:00:00Z'),
@@ -24,7 +24,7 @@ it('puts input ahead of failure, running, and recent completed work across proje
   ]
   expect(
     tasks.sort((a, b) => compareTaskActivity(a, b, new Set(['input']))).map((t) => t.id),
-  ).toEqual(['input', 'failed', 'running', 'recent', 'older'])
+  ).toEqual(['recent', 'running', 'failed', 'input', 'older'])
 })
 it('returns snoozed tasks at their deadline and supports clearing snooze', () => {
   const snoozed = {

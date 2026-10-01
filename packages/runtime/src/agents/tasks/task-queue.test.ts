@@ -328,3 +328,43 @@ it('edits a queued message in place, preserves attachments and order, and reject
     db.close()
   }
 })
+
+it('persists prompt submission time without moving it for answers, reviews or queue changes', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'prompt-order',
+          title: 'Task',
+          repositoryId: 'repo',
+          agentId: '',
+          status: 'draft',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    queue.add('prompt-order', 'prompt', 'Real prompt')
+    const submitted = store.task('prompt-order').lastPromptAt
+    expect(submitted).toBeTruthy()
+    queue.add('prompt-order', 'answer:question', 'Question answer', [], {
+      id: 'question',
+      fingerprint: 'receipt',
+    })
+    queue.add('prompt-order', 'review', 'Review changes', [], undefined, true)
+    queue.add('prompt-order', 'compact', '/compact')
+    queue.change('prompt-order', 'remove', 'prompt')
+    expect(new WorkspaceStore(db).task('prompt-order').lastPromptAt).toBe(submitted)
+    expect(queue.add('prompt-order', 'prompt', 'Real prompt')).toBe(false)
+    expect(store.task('prompt-order').lastPromptAt).toBe(submitted)
+  } finally {
+    db.close()
+  }
+})

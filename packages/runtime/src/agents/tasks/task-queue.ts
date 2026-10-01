@@ -47,11 +47,13 @@ export class TaskQueue {
     if (task.archived) throw new HttpError(409, 'Restore this task before sending a message')
     if ((task.queue?.length ?? 0) >= 50)
       throw new HttpError(409, 'Queue is full (50 messages). Remove a message or let it run.')
+    const createdAt = new Date().toISOString()
     this.store.updateTask(
       id,
       (t) => ({
         ...t,
         checkoutLocked: true,
+        ...(!response && !review && text.trim() !== '/compact' ? { lastPromptAt: createdAt } : {}),
         draft: t.draft.trim() === text.trim() ? '' : t.draft,
         ...(resumePaused ? { queuePaused: false, restartRecovery: undefined } : {}),
         draftAttachments: t.draftAttachments?.filter(
@@ -65,7 +67,7 @@ export class TaskQueue {
             text,
             ...(attachments.length ? { attachments } : {}),
             ...(review ? { review: true } : {}),
-            createdAt: new Date().toISOString(),
+            createdAt,
           },
         ],
       }),

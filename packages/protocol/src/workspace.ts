@@ -376,6 +376,8 @@ export const taskSchema = mutableStruct({
   agentId: Schema.String,
   status: Schema.Literal('draft', 'running', 'review', 'done', 'failed', 'cancelled'),
   createdAt: Schema.String,
+  /** Most recent accepted prompt, excluding question answers and generated agent input. */
+  lastPromptAt: Schema.optional(Schema.String),
   messages: mutableArray(messageSchema),
   files: mutableArray(fileSchema),
   draft: Schema.String,
