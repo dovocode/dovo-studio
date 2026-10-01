@@ -32,12 +32,14 @@ export function ChatThread({
   onTerminal,
   pending,
   onBrowser,
+  onPullLink,
 }: {
   task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'>
   /** Shows the terminal after a chat command ran in it. */
   onTerminal?: (terminalId: string) => void
   pending?: PendingMessage | null
   onBrowser?: (url: string) => void
+  onPullLink?: (url: string) => boolean
 }) {
   const { chooseLink } = useStudioHost()
   const [linkError, setLinkError] = useState('')
@@ -199,10 +201,15 @@ export function ChatThread({
           if (
             !(anchor instanceof HTMLAnchorElement) ||
             !/^https?:\/\//i.test(anchor.href) ||
-            !chooseLink ||
-            !onBrowser
+            (!onPullLink && (!chooseLink || !onBrowser))
           )
             return
+          if (onPullLink?.(anchor.href)) {
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+          if (!chooseLink || !onBrowser) return
           event.preventDefault()
           event.stopPropagation()
           const url = anchor.href

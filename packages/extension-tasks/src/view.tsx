@@ -1,3 +1,6 @@
+import type { Task } from '@dovo/protocol'
+import { PullDetail } from '@dovo/extension-scm/pull-detail'
+import { threadPullPreview } from './detail/thread-pull-preview'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskTools } from './detail/task-tools'
 import { TaskAgents } from './detail/task-agents'
@@ -160,6 +163,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   } | null>(null)
   const [terminalFocus, setTerminalFocus] = useApplicationState('')
   const panes = useRef<Record<TaskSurface, HTMLDivElement | null>>({
+    'pull-preview': null,
     chat: null,
     changes: null,
     files: null,
@@ -174,6 +178,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const selectSurface = useCallback(
     (next: TaskSurface, moveFocus = false) => {
       for (const id of [
+        'pull-preview',
         'chat',
         'changes',
         'files',
@@ -209,6 +214,22 @@ export default function TasksView({ entityId }: StudioViewProps) {
     },
     [compact, setSurface, threadKey],
   )
+  const [pullPreviews, setPullPreviews] = useApplicationState<
+    Record<string, { repositoryId: string; number: number }>
+  >({})
+  const openPullPreview = (target: Task, url: string) => {
+    const preview = threadPullPreview(url, target, workspace.repositories)
+    if (!preview) return false
+    const key = taskCollectionKey(activeRuntimeId, target.id)
+    setPullPreviews((current) => ({ ...current, [key]: preview }))
+    if (target.id !== task?.id) {
+      setSelectedId(target.id)
+      setSplitId(task?.id ?? '')
+      setThreadSurfaces((current) => ({ ...current, [key]: 'pull-preview' }))
+      setToolsVisible(true)
+    } else selectSurface('pull-preview')
+    return true
+  }
   const addCodeReference = useCallback(
     (taskId: string, text: string) => {
       setCodeReference({ taskId, id: crypto.randomUUID(), text })
@@ -637,6 +658,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 className="flex h-full min-h-0 flex-col"
               >
                 <TaskHeader
+                  onPullLink={(url) => openPullPreview(task, url)}
                   task={task}
                   surface={surface}
                   onSurface={(next) => {
@@ -712,6 +734,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                           visible={!listOpen && (!compact || surface === 'chat')}
                           onReview={() => selectSurface(hasDiff ? 'changes' : 'files')}
                           onTerminal={showTerminal}
+                          onPullLink={(url) => openPullPreview(task, url)}
                           onBrowser={(url) => {
                             setBrowserLink({ taskId: task.id, id: crypto.randomUUID(), url })
                             selectSurface('browser')
@@ -793,6 +816,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       </div>
                     )}
                     {!compact &&
+                      surface !== 'pull-preview' &&
                       surface !== 'browser' &&
                       surface !== 'devices' &&
                       surface !== 'changes' &&
@@ -809,6 +833,24 @@ export default function TasksView({ entityId }: StudioViewProps) {
                           </Button>
                         </div>
                       )}
+                    {surface === 'pull-preview' && pullPreviews[threadKey] && (
+                      <div
+                        ref={(element) => {
+                          panes.current['pull-preview'] = element
+                        }}
+                        tabIndex={-1}
+                        className="flex min-h-0 flex-1 flex-col"
+                      >
+                        <PullDetail
+                          key={JSON.stringify([threadKey, pullPreviews[threadKey]])}
+                          repositoryId={pullPreviews[threadKey]!.repositoryId}
+                          number={pullPreviews[threadKey]!.number}
+                          embedded
+                          onBack={() => selectSurface('chat', true)}
+                          onChanged={() => {}}
+                        />
+                      </div>
+                    )}
                     {surface === 'side-chats' && (
                       <div
                         className="flex min-h-0 flex-1 flex-col"
@@ -986,6 +1028,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   </header>
                   <div className="min-h-0 flex-1">
                     <TaskConversation
+                      onPullLink={(url) => openPullPreview(splitTask, url)}
                       key={`split:${splitTask.id}`}
                       task={splitTask}
                       visible

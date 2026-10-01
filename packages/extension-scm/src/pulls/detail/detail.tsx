@@ -24,7 +24,9 @@ export function PullDetail({
   number,
   onBack,
   onChanged,
+  embedded = false,
 }: {
+  embedded?: boolean
   repositoryId: string
   number: number
   onBack: () => void
@@ -55,7 +57,7 @@ export function PullDetail({
     <aside aria-label="Pull request details" className="min-w-0 flex-1 overflow-y-auto">
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/95 px-5 py-2 backdrop-blur">
         <Button size="sm" variant="ghost" onClick={onBack}>
-          <ArrowLeft className="size-4" /> Back to PRs
+          <ArrowLeft className="size-4" /> {embedded ? 'Close preview' : 'Back to PRs'}
         </Button>
         <span className="mr-auto min-w-0 flex-1 basis-24 truncate text-xs text-muted-foreground">
           {workspace.repositories.find((repo) => repo.id === repositoryId)?.name} / #{number}

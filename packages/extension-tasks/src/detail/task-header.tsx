@@ -52,6 +52,7 @@ import { TaskBranchMenu } from './task-branch-menu'
 import { TaskPullStatus } from './task-pull-status'
 import { TaskProjectActions } from './task-project-actions'
 export type TaskSurface =
+  | 'pull-preview'
   | 'chat'
   | 'changes'
   | 'files'
@@ -63,6 +64,7 @@ export type TaskSurface =
 export function TaskHeader({
   task,
   onSidebar,
+  onPullLink,
   surface,
   onSurface,
   compact,
@@ -75,6 +77,7 @@ export function TaskHeader({
   onBottomTerminal,
 }: {
   task: Task
+  onPullLink?: (url: string) => boolean
   onSidebar: () => void
   surface: TaskSurface
   onSurface: (surface: TaskSurface) => void
@@ -183,12 +186,14 @@ export function TaskHeader({
     }
   }
   const primary = gitPrimaryAction(gitState, linkedPulls.length > 0)
+  const openPull = (url: string) => {
+    if (!onPullLink?.(url)) window.open(url, '_blank', 'noopener,noreferrer')
+  }
   const primaryAction = () => {
     if (primary === 'Commit & push') void commitAndPush()
     else if (primary === 'Commit') void commitAndPush(false)
     else if (primary === 'Push branch') void pushBranch()
-    else if (primary === 'Open PR')
-      window.open(linkedPulls[0]!.url, '_blank', 'noopener,noreferrer')
+    else if (primary === 'Open PR') openPull(linkedPulls[0]!.url)
     else setGitOpen(true)
   }
   const executionHost = task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost
@@ -337,7 +342,7 @@ export function TaskHeader({
                   <DropdownMenu.Item
                     key={pull.url}
                     className="flex max-w-80 items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent"
-                    onSelect={() => window.open(pull.url, '_blank', 'noopener,noreferrer')}
+                    onSelect={() => openPull(pull.url)}
                   >
                     <GitPullRequest className="size-3.5 shrink-0" />
                     <span className="truncate">
@@ -474,7 +479,7 @@ export function TaskHeader({
                 Forked from {task.forkedFrom.title}
               </button>
             )}
-            <TaskPullStatus task={task} />
+            <TaskPullStatus task={task} onPullLink={onPullLink} />
             {!repo?.kind && (
               <TaskBranchMenu
                 task={task}

@@ -5,7 +5,13 @@ import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button, cn } from '@dovo/studio-ui'
 
 /** The task's pull request at a glance, with a one-click fix request when checks fail. */
-export function TaskPullStatus({ task }: { task: Task }) {
+export function TaskPullStatus({
+  task,
+  onPullLink,
+}: {
+  task: Task
+  onPullLink?: (url: string) => boolean
+}) {
   const { request, connected } = useWorkspace()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -36,6 +42,9 @@ export function TaskPullStatus({ task }: { task: Task }) {
     <span className="inline-flex min-w-0 items-center gap-1">
       <a
         href={status.url}
+        onClick={(event) => {
+          if (onPullLink?.(status.url)) event.preventDefault()
+        }}
         target="_blank"
         rel="noreferrer"
         title={

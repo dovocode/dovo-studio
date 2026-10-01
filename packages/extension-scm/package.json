@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./projects": "./src/connections/projects-menu.tsx",
     "./connections": "./src/connections/forge-connections.tsx",
+    "./pull-detail": "./src/pulls/detail/detail.tsx",
     "./repository-actions": "./src/connections/repository-actions.tsx"
   },
   "scripts": {

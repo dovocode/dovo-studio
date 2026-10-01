@@ -26,6 +26,7 @@ export function TaskConversation({
   onReview,
   onTerminal,
   onBrowser,
+  onPullLink,
   onAside,
   visible,
   codeReference,
@@ -36,6 +37,7 @@ export function TaskConversation({
   onReview: () => void
   onTerminal?: (terminalId: string) => void
   onBrowser?: (url: string) => void
+  onPullLink?: (url: string) => boolean
   /** Opens the side question dialog. */
   onAside?: () => void
   visible: boolean
@@ -84,6 +86,7 @@ export function TaskConversation({
         task={displayedTask}
         onTerminal={onTerminal}
         onBrowser={onBrowser}
+        onPullLink={onPullLink}
         pending={threadPending}
       />
       {(budget.tokenExceeded || budget.timeExceeded) && (
