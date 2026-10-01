@@ -1,20 +1,15 @@
 import { createHash } from 'node:crypto'
 import { OpenCode } from '@opencode/client'
+import { opencodeHeaders } from './opencode-server.js'
 import { decode, isImageAttachment, questionPromptSchema } from '@dovo/protocol'
 import { mcpHeaders, mcpServerEnvironment } from '../../configuration/mcp-settings.js'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 
 const addressOf = (address: string) => (address || 'http://127.0.0.1:4096').replace(/\/$/, '')
-const headers = (): Record<string, string> =>
-  process.env.OPENCODE_SERVER_PASSWORD
-    ? {
-        Authorization: `Basic ${Buffer.from(`${process.env.OPENCODE_SERVER_USERNAME || 'opencode'}:${process.env.OPENCODE_SERVER_PASSWORD}`).toString('base64')}`,
-      }
-    : {}
 const clients = new Map<string, ReturnType<typeof OpenCode.make>>()
-const client = (address: string) => {
+const client = (address: string, env?: Record<string, string>) => {
   const baseUrl = addressOf(address)
-  const authorization = headers()
+  const authorization = opencodeHeaders(env)
   const key = JSON.stringify([baseUrl, authorization])
   const existing = clients.get(key)
   if (existing) return existing
@@ -24,14 +19,28 @@ const client = (address: string) => {
 }
 
 /** A V1 server has no /api/info route. Authentication errors must not silently select V1. */
-export async function isOpencodeV2(address: string): Promise<boolean> {
+export async function isOpencodeV2(
+  address: string,
+  env?: Record<string, string>,
+): Promise<boolean> {
   const response = await fetch(`${addressOf(address)}/api/info`, {
-    headers: headers(),
+    headers: opencodeHeaders(env),
     signal: AbortSignal.timeout(5000),
+    redirect: 'error',
+  }).catch((cause: unknown) => {
+    const url = new URL(addressOf(address))
+    throw new Error(
+      `Cannot connect to OpenCode at ${url.origin}. Check that opencode serve is running there, or clear the server URL so Dovo starts it automatically.`,
+      { cause },
+    )
   })
   if (response.status === 404) return false
   // V1 serves its browser SPA for unknown routes, including /api/info.
   if (response.ok && response.headers.get('content-type')?.includes('text/html')) return false
+  if (response.status === 401 || response.status === 403)
+    throw new Error(
+      'OpenCode rejected authentication. Set OPENCODE_SERVER_PASSWORD and optionally OPENCODE_SERVER_USERNAME in the agent environment or runtime host environment.',
+    )
   if (!response.ok) throw new Error(`OpenCode server info failed (${response.status})`)
   const info: unknown = await response.json()
   return (
@@ -56,7 +65,9 @@ function modelOf(run: AgentRun) {
 
 export const opencodeV2Adapter: AgentAdapter = {
   models: async (agent) => {
-    const { data } = await client(agent.endpoint).model.list()
+    const { data } = await client(agent.endpoint, agent.env).model.list(undefined, {
+      signal: AbortSignal.timeout(15000),
+    })
     return {
       models: data
         .filter((model) => model.enabled)
@@ -70,7 +81,7 @@ export const opencodeV2Adapter: AgentAdapter = {
   },
   probe: async (agent) => {
     try {
-      await client(agent.endpoint).server.info({ signal: AbortSignal.timeout(5000) })
+      await client(agent.endpoint, agent.env).server.info({ signal: AbortSignal.timeout(5000) })
       return { provider: 'opencode', available: true, detail: 'OpenCode 2 Serve is reachable.' }
     } catch {
       return {
@@ -82,7 +93,7 @@ export const opencodeV2Adapter: AgentAdapter = {
   },
   async run(run) {
     run.signal.throwIfAborted()
-    const api = client(run.agent.endpoint)
+    const api = client(run.agent.endpoint, run.agent.env)
     const registered: string[] = []
     let ephemeralSessionId: string | undefined
     const location = { directory: run.cwd }

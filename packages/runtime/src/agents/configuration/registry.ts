@@ -21,7 +21,7 @@ export class AgentRegistry {
       ['codex', () => import('../providers/codex/codex.js').then((m) => m.createCodexAdapter())],
       [
         'opencode',
-        () => import('../providers/opencode/opencode.js').then((m) => m.opencodeAdapter),
+        () => import('../providers/opencode/opencode.js').then((m) => m.createOpenCodeAdapter()),
       ],
       [
         'claude',

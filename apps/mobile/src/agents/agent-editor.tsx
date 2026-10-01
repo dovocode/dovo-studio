@@ -212,7 +212,9 @@ export function AgentEditor({
       />
       <Field
         label={
-          draft.provider === 'opencode' ? 'Server URL' : 'Executable path · blank uses default'
+          draft.provider === 'opencode'
+            ? 'Server URL · blank starts OpenCode automatically'
+            : 'Executable path · blank uses default'
         }
         value={draft.acpInstallationId ? (draft.executablePath ?? '') : draft.endpoint}
         editable={!busy}
@@ -223,6 +225,14 @@ export function AgentEditor({
           })
         }
       />
+      {draft.provider === 'opencode' && !draft.endpoint.trim() && (
+        <Field
+          label="OpenCode executable path · optional"
+          value={draft.executablePath ?? ''}
+          editable={!busy}
+          onChangeText={(executablePath) => setDraft({ ...draft, executablePath })}
+        />
+      )}
       {(draft.provider === 'codex' || draft.provider === 'claude') && (
         <Field
           label={
@@ -233,7 +243,7 @@ export function AgentEditor({
           editable={!busy}
         />
       )}
-      {draft.provider !== 'opencode' && (
+      {(draft.provider !== 'opencode' || !draft.endpoint.trim()) && (
         <Field
           label="Arguments · one per line"
           editable={!busy}
@@ -247,21 +257,19 @@ export function AgentEditor({
           multiline
         />
       )}
-      {draft.provider !== 'opencode' && (
-        <>
-          <Field
-            label="Environment variables · NAME=value per line"
-            value={environment}
-            onChangeText={setEnvironment}
-            editable={!busy}
-            multiline
-          />
-          <Text style={styles.muted}>
-            Saved as readable configuration. Keep secrets in the server's environment. Claude flags
-            use --name or --name=value.
-          </Text>
-        </>
-      )}
+      <>
+        <Field
+          label="Environment variables · NAME=value per line"
+          value={environment}
+          onChangeText={setEnvironment}
+          editable={!busy}
+          multiline
+        />
+        <Text style={styles.muted}>
+          Saved as readable configuration. Keep secrets in the server's environment. Claude flags
+          use --name or --name=value.
+        </Text>
+      </>
       <Choice
         label="Access"
         disabled={busy}
