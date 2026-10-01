@@ -4,6 +4,7 @@ import { Schema } from 'effect'
 import type { ThreadMessageLike } from '@assistant-ui/react-native'
 import { toolPresentation, turnSummary, type Task } from '@dovo/protocol'
 import { taskToolEvents, pendingActivity, type ToolEvents } from './tool-events'
+export const convertConversationMessage = (message: ThreadMessageLike) => message
 export type { ToolEvents } from './tool-events'
 type ConversationTask = Pick<Task, 'id' | 'status' | 'messages' | 'turns' | 'compactions'>
 
@@ -14,12 +15,13 @@ export function createConversationMessages() {
     { input: string; text: string; tools: string[]; output: ThreadMessageLike }
   >()
   let taskId: string | undefined
+  let previousMessages: ThreadMessageLike[] = []
   return (task: ConversationTask, events: ToolEvents) => {
     if (taskId !== task.id) cache.clear()
     taskId = task.id
     const retained = new Set(task.messages.map((message) => message.id))
     for (const id of cache.keys()) if (!retained.has(id)) cache.delete(id)
-    return projectMessages(
+    const next = projectMessages(
       task,
       events,
       (message, turn, tools, compactions, activeTurnId, build) => {
@@ -57,6 +59,13 @@ export function createConversationMessages() {
         return output
       },
     )
+    if (
+      next.length === previousMessages.length &&
+      next.every((message, index) => message === previousMessages[index])
+    )
+      return previousMessages
+    previousMessages = next
+    return next
   }
 }
 

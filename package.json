@@ -27,7 +27,8 @@
     "mobile:update": "node scripts/update-mobile.mjs",
     "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm build",
     "test:mcp-apps:browser": "node scripts/build-mcp-apps.mjs && node scripts/check-mcp-apps-browser.mjs",
-    "test:thread-startup:browser": "node scripts/check-thread-startup-browser.mjs"
+    "test:thread-startup:browser": "node scripts/check-thread-startup-browser.mjs",
+    "test:mobile-thread-rendering:browser": "node scripts/check-mobile-thread-rendering.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

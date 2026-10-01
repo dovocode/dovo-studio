@@ -1,12 +1,23 @@
 import { visibleMobileSend } from '../../composer/pending-send'
 import { useApplicationState } from '../../../runtime/state/application-state'
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useCallback,
+  type ReactNode,
+} from 'react'
+import { RegistryContext, useAtomValue } from '@effect-atom/atom-react'
+import { applicationState } from '@dovo/client-runtime'
 import { AssistantRuntimeProvider } from '@assistant-ui/react-native'
 import { useExternalStoreRuntime } from '@assistant-ui/core/react'
 import { type PendingMessage, type Task } from '@dovo/protocol'
 import { useConversationActions } from './use-actions'
 import { useToolActivity } from './use-tool-activity'
-import { createConversationMessages } from './messages'
+import { createConversationMessages, convertConversationMessage } from './messages'
 import { useKeepScreenOn } from '../../detail/keep-screen-on'
 import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { AppState, Platform } from 'react-native'
@@ -27,12 +38,26 @@ type Conversation = {
   toggleTurn: (turnId: string) => void
   followRequest: number
 }
-const Context = createContext<Conversation | null>(null)
+const Context = createContext<ReturnType<typeof applicationState<Conversation>>['atom'] | null>(
+  null,
+)
 const PendingContext = createContext<PendingMessage | null>(null)
+const wholeConversation = (value: Conversation) => value
+export function useConversationSelector<A>(selector: (value: Conversation) => A) {
+  const atom = useContext(Context)
+  if (!atom) throw new Error('Task conversation provider is missing')
+  return useAtomValue(atom, selector)
+}
+export function useConversationTurn(assistantId: string) {
+  return useConversationSelector(
+    useCallback(
+      (value: Conversation) => value.task.turns?.find((turn) => turn.assistantId === assistantId),
+      [assistantId],
+    ),
+  )
+}
 export function useTaskConversation() {
-  const value = useContext(Context)
-  if (!value) throw new Error('Task conversation provider is missing')
-  return value
+  return useConversationSelector(wholeConversation)
 }
 export function usePendingConversationMessage() {
   return useContext(PendingContext)
@@ -158,7 +183,7 @@ export function ConversationProvider({
   }, [activity.events, task.id, task.status, task.turns, task.messages])
   const runtime = useExternalStoreRuntime({
     messages,
-    convertMessage: (message) => message,
+    convertMessage: convertConversationMessage,
     isRunning: task.status === 'running',
     isDisabled: !actions.connected || !!task.archived || !!task.example,
     onNew: async (message) => {
@@ -175,37 +200,58 @@ export function ConversationProvider({
       await actions.stop()
     },
   })
+  const currentTask = useRef(task)
+  currentTask.current = task
+  const navigation = useRef({ openCheckpoint, openTerminal })
+  navigation.current = { openCheckpoint, openTerminal }
+  const showCheckpoint = useCallback(
+    (turnId: string, path?: string) => navigation.current.openCheckpoint(turnId, path),
+    [],
+  )
+  const showTerminal = useCallback(
+    (terminalId: string) => navigation.current.openTerminal(terminalId),
+    [],
+  )
+  const toggleTurn = useCallback(
+    (turnId: string) =>
+      setCollapsedTurns((previous) => ({
+        ...previous,
+        [turnId]: !(
+          previous[turnId] ??
+          currentTask.current.turns?.find((turn) => turn.id === turnId)?.status === 'completed'
+        ),
+      })),
+    [setCollapsedTurns],
+  )
+  const value: Conversation = {
+    task,
+    visible,
+    actions,
+    openCheckpoint: showCheckpoint,
+    openTerminal: showTerminal,
+    legacyEvents,
+    activityError: activity.error,
+    collapsedTurns,
+    toggleTurn,
+    followRequest,
+    send: (mode = 'queue') => {
+      if (actions.canSend) {
+        // Only a local Send/Queue/Steer asks to leave a manually scrolled position.
+        // Remote messages and queued turns arriving later must not move the reader.
+        setFollowRequest((revision) => revision + 1)
+        void actions.run(() => actions.submit(mode))
+      }
+    },
+    stop: () => runtime.thread.cancelRun(),
+  }
+  const [{ atom }] = useState(() => applicationState(value))
+  const registry = useContext(RegistryContext)
+  // Publish after commit; selector subscriptions leave unrelated message cells untouched.
+  useLayoutEffect(() => {
+    registry.set(atom, value)
+  })
   return (
-    <Context.Provider
-      value={{
-        task,
-        visible,
-        actions,
-        openCheckpoint,
-        openTerminal,
-        legacyEvents,
-        activityError: activity.error,
-        collapsedTurns,
-        toggleTurn: (turnId) =>
-          setCollapsedTurns((previous) => ({
-            ...previous,
-            [turnId]: !(
-              previous[turnId] ??
-              task.turns?.find((turn) => turn.id === turnId)?.status === 'completed'
-            ),
-          })),
-        followRequest,
-        send: (mode = 'queue') => {
-          if (actions.canSend) {
-            // Only a local Send/Queue/Steer asks to leave a manually scrolled position.
-            // Remote messages and queued turns arriving later must not move the reader.
-            setFollowRequest((revision) => revision + 1)
-            void actions.run(() => actions.submit(mode))
-          }
-        },
-        stop: () => runtime.thread.cancelRun(),
-      }}
-    >
+    <Context.Provider value={atom}>
       <PendingContext.Provider value={pendingMessage}>
         <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
       </PendingContext.Provider>
