@@ -8,14 +8,18 @@ export const pendingActivity = (status: string) =>
   ['started', 'running', 'in_progress', 'pending', 'inProgress'].includes(status)
 
 /** A provider may omit the last tool event when the enclosing turn ends. */
-export function taskToolEvents(task: Task, events: ToolEvents): TaskToolEvent[] {
+export function taskToolEvents(
+  task: Pick<Task, 'id' | 'status' | 'turns'>,
+  events: ToolEvents,
+): TaskToolEvent[] {
   const activeTurnId =
     task.status === 'running'
       ? [...(task.turns ?? [])].reverse().find((turn) => turn.status === 'running')?.id
       : undefined
+  const turnsById = new Map(task.turns?.map((turn) => [turn.id, turn]))
   return recentTools(events.filter((event) => event.scope === task.id)).map((event) => {
     if (!pendingActivity(event.status)) return event
-    const turn = task.turns?.find((turn) => turn.id === event.turnId)
+    const turn = event.turnId ? turnsById.get(event.turnId) : undefined
     if (turn?.id === activeTurnId && turn?.status === 'running') return event
     return {
       ...event,

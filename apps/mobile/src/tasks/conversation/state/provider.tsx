@@ -6,7 +6,7 @@ import { useExternalStoreRuntime } from '@assistant-ui/core/react'
 import { type PendingMessage, type Task } from '@dovo/protocol'
 import { useConversationActions } from './use-actions'
 import { useToolActivity } from './use-tool-activity'
-import { conversationMessages } from './messages'
+import { createConversationMessages } from './messages'
 import { useKeepScreenOn } from '../../detail/keep-screen-on'
 import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { AppState, Platform } from 'react-native'
@@ -124,12 +124,29 @@ export function ConversationProvider({
     const pending = visibleMobileSend(task, actions.pendingMessage)
     return pending?.destination === 'thread' ? pending : null
   }, [task.id, task.messages, task.queue, actions.pendingMessage])
+  const projectMessages = useMemo(() => createConversationMessages(), [])
+  const { id, status, turns, compactions, messages: taskMessages } = task
   const messages = useMemo(() => {
-    const displayed = pendingMessage
-      ? { ...task, messages: [...task.messages, pendingMessage.message] }
-      : task
-    return conversationMessages(displayed, activity.events)
-  }, [task, activity.events, pendingMessage])
+    return projectMessages(
+      {
+        id,
+        status,
+        turns,
+        compactions,
+        messages: pendingMessage ? [...taskMessages, pendingMessage.message] : taskMessages,
+      },
+      activity.events,
+    )
+  }, [
+    projectMessages,
+    id,
+    status,
+    turns,
+    compactions,
+    taskMessages,
+    activity.events,
+    pendingMessage,
+  ])
   const legacyEvents = useMemo(() => {
     const messageIds = new Set(task.messages.map((message) => message.id))
     const visibleTurns = new Set(

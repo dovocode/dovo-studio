@@ -28,20 +28,21 @@ export function threadTimeline(
   compactions: Compaction[] = [],
   textBreaks: readonly number[] = [],
 ): ThreadBlock[] {
+  const explicitBreaks = new Set(textBreaks)
   const at = new Map<
     number,
     Array<{ kind: 'tool'; tool: Tool } | { kind: 'compaction'; event: Compaction }>
   >()
   for (const tool of tools) {
     const raw = tool.textOffset ?? 0
-    const offset = textBreaks.includes(raw) ? raw : displayOffset(text, raw)
+    const offset = explicitBreaks.has(raw) ? raw : displayOffset(text, raw)
     const group = at.get(offset) ?? []
     group.push({ kind: 'tool', tool })
     at.set(offset, group)
   }
   for (const event of compactions) {
     const raw = event.textOffset ?? text.length
-    const offset = textBreaks.includes(raw) ? raw : displayOffset(text, raw)
+    const offset = explicitBreaks.has(raw) ? raw : displayOffset(text, raw)
     const group = at.get(offset) ?? []
     group.push({ kind: 'compaction', event })
     at.set(offset, group)

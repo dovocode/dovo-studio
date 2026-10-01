@@ -56,7 +56,9 @@ export function ConversationRail({
   const [hovered, setHovered] = useApplicationState<string | null>(null)
   const hoverIndex = items.findIndex((item) => item.id === hovered)
   const [visible, setVisible] = useApplicationState<Set<string>>(new Set())
+  const observedIds = JSON.stringify(items.map((item) => item.id))
   useEffect(() => {
+    const ids: string[] = JSON.parse(observedIds)
     const root = scrollRef.current
     if (!root) return
     const observer = new IntersectionObserver(
@@ -67,7 +69,9 @@ export function ConversationRail({
             if (entry.isIntersecting) next.add(entry.target.id)
             else next.delete(entry.target.id)
           }
-          return next
+          return next.size === previous.size && [...next].every((id) => previous.has(id))
+            ? previous
+            : next
         })
       },
       {
@@ -75,12 +79,12 @@ export function ConversationRail({
         threshold: 0,
       },
     )
-    for (const item of items) {
-      const element = document.getElementById(item.id)
+    for (const id of ids) {
+      const element = document.getElementById(id)
       if (element && root.contains(element)) observer.observe(element)
     }
     return () => observer.disconnect()
-  }, [items, scrollRef])
+  }, [observedIds, scrollRef])
   // A single turn has nowhere to jump; its lone marker reads as a rendering glitch.
   if (items.length < 2) return null
   return (

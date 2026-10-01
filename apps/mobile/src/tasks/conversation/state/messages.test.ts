@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test'
 import type { Task, TaskTurn } from '@dovo/protocol'
-import { conversationMessages, type ToolEvents } from './messages'
+import { conversationMessages, createConversationMessages, type ToolEvents } from './messages'
 const startedAt = '2026-09-13T10:00:00Z'
 const turn = (id: string, assistantId: string, status: TaskTurn['status']): TaskTurn => ({
   id,
@@ -335,4 +335,68 @@ it('keeps completed provider message boundaries in the mobile work timeline', ()
       { type: 'text', text: 'Final answer.' },
     ]),
   )
+})
+
+describe('incremental conversation projection', () => {
+  it('retains historical entries across fresh snapshots and updates only changed messages', () => {
+    const project = createConversationMessages()
+    const events = [event('older', 't1', 'completed'), event('latest', 't2', 'running')]
+    const first = project(task, events)
+    const next = structuredClone(task)
+    next.messages[2].text += ' streamed'
+    const second = project(next, structuredClone(events))
+    expect(second[0]).toBe(first[0])
+    expect(second[1]).toBe(first[1])
+    expect(second[2]).not.toBe(first[2])
+    expect(second).toEqual(conversationMessages(next, events))
+  })
+  it('invalidates tools, turn completion and compactions without changing unrelated entries', () => {
+    const project = createConversationMessages()
+    const events = [event('latest', 't2', 'running')]
+    const first = project(task, events)
+    const completed = structuredClone(task)
+    completed.status = 'review'
+    completed.turns![1].status = 'completed'
+    const nextEvents = [event('latest', 't2', 'completed')]
+    const second = project(completed, nextEvents)
+    expect(second[1]).toBe(first[1])
+    expect(second[2]).not.toBe(first[2])
+    expect(second).toEqual(conversationMessages(completed, nextEvents))
+    completed.compactions = [
+      {
+        at: startedAt,
+        turnId: 't2',
+        sessionId: 'session',
+        provider: 'codex',
+        trigger: 'auto',
+        textOffset: 6,
+      },
+    ]
+    const compacted = project(completed, nextEvents)
+    expect(compacted[1]).toBe(second[1])
+    expect(compacted[2]).not.toBe(second[2])
+    expect(compacted).toEqual(conversationMessages(completed, nextEvents))
+    const third = project({ ...completed, id: 'different-thread' }, [])
+    expect(third[0]).not.toBe(second[0])
+  })
+  it('preserves all historical entries when one message streams in a thousand-turn thread', () => {
+    const project = createConversationMessages()
+    const large = {
+      ...task,
+      messages: Array.from({ length: 1000 }, (_, index) => ({
+        id: `answer-${index}`,
+        role: 'assistant' as const,
+        text: 'Historical answer '.repeat(50),
+      })),
+      turns: Array.from({ length: 1000 }, (_, index) =>
+        turn(`turn-${index}`, `answer-${index}`, index === 999 ? 'running' : 'completed'),
+      ),
+    }
+    const first = project(large, [])
+    const next = structuredClone(large)
+    next.messages[999].text += ' more'
+    const second = project(next, [])
+    expect(second.slice(0, 999).every((entry, index) => entry === first[index])).toBe(true)
+    expect(second[999]).not.toBe(first[999])
+  })
 })

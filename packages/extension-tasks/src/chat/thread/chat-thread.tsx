@@ -65,6 +65,15 @@ export function ChatThread({
     }
     return { byTurn, unassigned }
   }, [activity.tools, task.messages, turns])
+  const compactionsByTurn = useMemo(() => {
+    const byTurn = new Map<string, NonNullable<Task['compactions']>>()
+    for (const event of task.compactions ?? []) {
+      const events = byTurn.get(event.turnId) ?? []
+      events.push(event)
+      byTurn.set(event.turnId, events)
+    }
+    return byTurn
+  }, [task.compactions])
   const groups = useMemo(() => conversationTurns(task), [task.messages, task.turns])
   const markers = useMemo(
     () =>
@@ -127,12 +136,18 @@ export function ChatThread({
             id={`turn-${task.id}-${group.id}`}
             aria-label={`User request · ${conversationTurnLabel(group.status)}`}
             className="flex min-w-0 flex-col gap-3"
+            style={
+              group.status === 'completed'
+                ? {
+                    contentVisibility: 'auto',
+                    containIntrinsicSize: 'auto 240px',
+                  }
+                : undefined
+            }
           >
             {group.messages.map((message) => {
               const turn = turns.get(message.id)
-              const compactions = turn
-                ? (task.compactions ?? []).filter((item) => item.turnId === turn.id)
-                : []
+              const compactions = turn ? (compactionsByTurn.get(turn.id) ?? []) : []
               const tools = turn ? (activityGroups.byTurn.get(turn.id) ?? []) : []
               const timeline =
                 turn && message.role === 'assistant'
