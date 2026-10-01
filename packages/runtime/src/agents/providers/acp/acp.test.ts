@@ -1,4 +1,5 @@
 /// <reference types="node" />
+import * as warmProcesses from '../../execution/warm-processes.js'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -160,6 +161,7 @@ it('prefers replay-free resume and closes the active session when supported', as
 })
 it('keeps the ACP connection and session for a follow-up turn', async () => {
   const { cwd, record, launch } = await fixture(false, true)
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
   const first = run(cwd, launch, { taskId: 'warm-acp-task' })
   const second = run(cwd, launch, { taskId: 'warm-acp-task', sessionId: 'session' })
   try {
@@ -174,6 +176,7 @@ it('keeps the ACP connection and session for a follow-up turn', async () => {
     expect(second.output).toEqual(['new'])
   } finally {
     await acpAdapter.dispose?.()
+    pressure.mockRestore()
   }
 })
 

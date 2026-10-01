@@ -191,7 +191,11 @@ it('does not hide device, approval or question changes when the workspace revisi
       snapshot: received,
       lastSeen: time(1),
     })
-    expect(next.snapshot).toBe(received)
+    expect(next.snapshot).toEqual(received)
+    expect(next.snapshot?.devices).toBe(received.devices)
+    expect(next.snapshot?.approvals).toBe(received.approvals)
+    expect(next.snapshot?.questions).toBe(received.questions)
+    expect(next.snapshot?.workspace).toBe(previous.snapshot?.workspace)
     expect(next.snapshot?.revision).toBe(previous.snapshot?.revision)
     expect(shouldPublishOverview(previous, next)).toBe(true)
   }

@@ -1,3 +1,4 @@
+import { retainWorkspace } from '@dovo/protocol'
 import { recentSnapshot } from '../runtime/recent-snapshot'
 import { useAppPreferences } from '../preferences'
 import { pendingAgentPresets } from '@dovo/protocol'
@@ -221,7 +222,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       ...value,
       tasks: value.tasks.filter((task) => !task.example),
     }
-    setState(next)
+    setState(retainWorkspace(current.current, next))
   }, [])
   const installSnapshot = useCallback(
     (target: RuntimeConnection, value: RuntimeSnapshot) => {

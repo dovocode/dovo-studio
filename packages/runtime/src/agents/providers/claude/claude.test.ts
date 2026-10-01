@@ -1,3 +1,4 @@
+import * as warmProcesses from '../../execution/warm-processes.js'
 import { expect, it, vi } from 'vitest'
 import type { AgentRun } from '../../execution/types.js'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
@@ -67,6 +68,7 @@ it('runs the Claude compact command and reports its boundary', async () => {
   )
 })
 it('keeps a streaming Claude connection across turns', async () => {
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
   mocks.query.mockClear()
   const prompts: string[] = []
   const close = vi.fn<() => void>()
@@ -112,6 +114,7 @@ it('keeps a streaming Claude connection across turns', async () => {
     expect(mocks.query).toHaveBeenCalledTimes(1)
   } finally {
     await claudeAdapter.dispose?.()
+    pressure.mockRestore()
   }
   expect(close).toHaveBeenCalled()
 })

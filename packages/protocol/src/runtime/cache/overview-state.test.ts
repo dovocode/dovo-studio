@@ -163,7 +163,21 @@ it('suppresses idle freshness while still publishing outages and approval change
     snapshot: changedSnapshot,
     lastSeen: time(2),
   })
-  expect(withApproval.snapshot).toBe(changedSnapshot)
+  expect(withApproval.snapshot).toEqual(changedSnapshot)
+  expect(withApproval.snapshot?.approvals).toBe(changedSnapshot.approvals)
+  expect(withApproval.snapshot?.workspace).toBe(previousSnapshot.workspace)
   expect(withApproval.snapshot?.revision).toBe(previousSnapshot.revision)
   expect(shouldPublishOverview(idle, withApproval)).toBe(true)
+})
+
+it('retains unchanged workspace fields across changed validators and preserves the new validator', async () => {
+  const previous = await taggedSnapshot(profile.connection, snapshot, 'W/"old"')
+  const changed = await taggedSnapshot(profile.connection, { ...snapshot, revision: 2 }, 'W/"new"')
+  const retained = retainRuntimeSnapshot(previous, profile.connection, changed, profile.connection)
+  expect(retained?.workspace).toBe(previous.workspace)
+  expect(retained?.revision).toBe(2)
+  const repeated = await taggedSnapshot(profile.connection, { ...snapshot, revision: 2 }, 'W/"new"')
+  expect(retainRuntimeSnapshot(retained, profile.connection, repeated, profile.connection)).toBe(
+    retained,
+  )
 })

@@ -17,6 +17,9 @@ const snapshotTags = new WeakMap<object, string>()
 export function getRuntimeSnapshotTag(snapshot: object) {
   return snapshotTags.get(snapshot)
 }
+export function copyRuntimeSnapshotTag(source: object, target: object) {
+  rememberSnapshotTag(target, getRuntimeSnapshotTag(source))
+}
 function rememberSnapshotTag(value: unknown, tag: string | null | undefined) {
   if (tag && value && typeof value === 'object') snapshotTags.set(value, tag)
 }

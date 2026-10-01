@@ -1,4 +1,5 @@
-import { getRuntimeSnapshotTag } from '../../shared/client.js'
+import { retainWorkspace } from './retain-workspace.js'
+import { getRuntimeSnapshotTag, copyRuntimeSnapshotTag } from '../../shared/client.js'
 import type { RuntimeOverview } from '../connection/runtime-fleet.js'
 import type { RuntimeConnection, RuntimeSnapshot } from '../connection/runtime.js'
 
@@ -8,16 +9,24 @@ export function retainRuntimeSnapshot(
   next: RuntimeSnapshot | null,
   nextConnection: RuntimeConnection | null,
 ): RuntimeSnapshot | null {
-  const tag = next && getRuntimeSnapshotTag(next)
-  return previous &&
-    previousConnection &&
-    nextConnection &&
-    previousConnection.address === nextConnection.address &&
-    previousConnection.token === nextConnection.token &&
-    tag &&
-    tag === getRuntimeSnapshotTag(previous)
-    ? previous
-    : next
+  if (
+    !previous ||
+    !next ||
+    !previousConnection ||
+    !nextConnection ||
+    previousConnection.address !== nextConnection.address ||
+    previousConnection.token !== nextConnection.token
+  )
+    return next
+  const tag = getRuntimeSnapshotTag(next)
+  const previousTag = getRuntimeSnapshotTag(previous)
+  if (!tag || !previousTag) return next
+  if (tag === previousTag) return previous
+  const workspace = retainWorkspace(previous.workspace, next.workspace)
+  if (workspace === next.workspace) return next
+  const retained = { ...next, workspace }
+  copyRuntimeSnapshotTag(next, retained)
+  return retained
 }
 
 export function retainOverviewSnapshot(previous: RuntimeOverview, next: RuntimeOverview) {
