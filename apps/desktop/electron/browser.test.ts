@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => {
       removeChildView: vi.fn<(...args: unknown[]) => void>(),
     },
     getContentSize: () => [900, 700],
-    once: vi.fn<(...args: unknown[]) => void>(),
+    once: vi.fn<(event: string, callback: () => void) => void>(),
   }
   return {
     view,
@@ -81,7 +81,7 @@ it('rejects subframes and other pages before creating a browser', async () => {
   ).rejects.toThrow('Untrusted')
   expect(mocks.create).not.toHaveBeenCalled()
 })
-it('isolates the view, clamps its bounds, ignores stale hides and closes replaced task content', async () => {
+it('isolates tabs, clamps their bounds, ignores unknown hides and retains inactive pages', async () => {
   const call = handler()
   const command = {
     action: 'show',
@@ -107,7 +107,10 @@ it('isolates the view, clamps its bounds, ignores stale hides and closes replace
   await call(event, { action: 'hide', key: 'old-task' })
   expect(mocks.view.setVisible).not.toHaveBeenCalled()
   await call(event, { ...command, key: 'second' })
-  expect(mocks.contents.close).toHaveBeenCalledOnce()
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  expect(mocks.create).toHaveBeenCalledTimes(2)
+  await call(event, command)
+  expect(mocks.create).toHaveBeenCalledTimes(2)
   expect(mocks.window.once).toHaveBeenCalledOnce()
   await call(event, { action: 'hide', key: 'second' })
   expect(mocks.view.setVisible).toHaveBeenLastCalledWith(false)
@@ -186,4 +189,39 @@ it('does not re-enable agent access when a pending bridge startup finishes after
   ready(bridge)
   await enabling
   expect(bridge.register).not.toHaveBeenCalled()
+})
+
+it('closes one tab without destroying the remaining tab or reloading it on activation', async () => {
+  const call = handler()
+  const show = {
+    action: 'show',
+    key: 'tab-one',
+    url: 'https://example.com/one',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  }
+  await call(event, show)
+  await call(event, { ...show, key: 'tab-two', url: 'https://example.com/two' })
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  await call(event, { action: 'close', key: 'tab-two' })
+  expect(mocks.contents.close).toHaveBeenCalledOnce()
+  mocks.contents.loadURL.mockClear()
+  await call(event, show)
+  expect(mocks.create).toHaveBeenCalledTimes(2)
+  expect(mocks.contents.loadURL).not.toHaveBeenCalled()
+})
+
+it('releases every retained tab when its window closes', async () => {
+  const call = handler()
+  const show = {
+    action: 'show',
+    key: 'first-tab',
+    url: 'https://example.com/',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  }
+  await call(event, show)
+  await call(event, { ...show, key: 'second-tab' })
+  const closed = mocks.window.once.mock.calls.find(([name]) => name === 'closed')?.[1]
+  expect(closed).toBeDefined()
+  closed?.()
+  expect(mocks.contents.close).toHaveBeenCalledTimes(2)
 })

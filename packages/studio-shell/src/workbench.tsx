@@ -39,6 +39,7 @@ type WorkbenchProps = {
   extensions: readonly StudioExtension[]
   pickDirectory?: StudioHostApi['pickDirectory']
   browser?: StudioHostApi['browser']
+  chooseLink?: StudioHostApi['chooseLink']
   desktopPlatform?: DesktopPlatform
   inputPreview?: InputPreviewBridge
   taskLauncher?: StudioHostApi['taskLauncher']
@@ -124,6 +125,7 @@ function WorkbenchContent({
   extensions,
   pickDirectory,
   browser,
+  chooseLink,
   appInfo,
   desktopPlatform,
   updates,
@@ -213,11 +215,12 @@ function WorkbenchContent({
       registerCommand,
       pickDirectory,
       browser,
+      chooseLink,
       appInfo,
       updates,
       taskLauncher,
     }),
-    [registerCommand, pickDirectory, browser, appInfo, updates, taskLauncher],
+    [registerCommand, pickDirectory, browser, chooseLink, appInfo, updates, taskLauncher],
   )
   const catalog = useMemo(
     () => createExtensionCatalog([appSettingsExtension, ...extensions], api),

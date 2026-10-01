@@ -6,10 +6,12 @@ import { browserCommandSchema, previewUrl } from '@dovo/protocol'
 export function registerBrowser(indexPath: string, directory?: string) {
   let cdp: Awaited<ReturnType<typeof createBrowserCdp>> | undefined
   let cdpPending: Promise<Awaited<ReturnType<typeof createBrowserCdp>>> | undefined
+  const activeViews = new Map<number, string>()
   const registered = new WeakSet<BrowserWindow>()
   const views = new Map<
-    number,
+    string,
     {
+      windowId: number
       key: string
       profileId: string
       agentAccess: boolean
@@ -35,19 +37,41 @@ export function registerBrowser(indexPath: string, directory?: string) {
       await shell.openExternal(previewUrl(command.url))
       return
     }
-    let entry = views.get(window.id)
+    const viewKey = JSON.stringify([window.id, command.key])
+    let entry = views.get(viewKey)
+    if (command.action === 'close') {
+      if (activeViews.get(window.id) === viewKey) activeViews.delete(window.id)
+      if (entry) {
+        cdp?.remove(viewKey)
+        window.contentView.removeChildView(entry.view)
+        entry.view.webContents.close()
+        views.delete(viewKey)
+      }
+      return
+    }
     if (command.action === 'hide') {
+      if (activeViews.get(window.id) === viewKey) activeViews.delete(window.id)
       if (entry?.key === command.key) entry.view.setVisible(false)
       return
     }
     if (command.action === 'show') {
       const url = previewUrl(command.url)
+      activeViews.set(window.id, viewKey)
       const profileId = command.profileId ?? 'default'
-      if (entry && (entry.key !== command.key || entry.profileId !== profileId)) {
-        cdp?.remove(String(window.id))
+      for (const [key, other] of views) {
+        if (other.windowId !== window.id || other === entry) continue
+        other.view.setVisible(false)
+        if (other.taskId === command.taskId && !command.agentAccess) {
+          other.agentAccess = false
+          cdp?.remove(key)
+          other.cdp = undefined
+        }
+      }
+      if (entry && entry.profileId !== profileId) {
+        cdp?.remove(viewKey)
         window.contentView.removeChildView(entry.view)
         entry.view.webContents.close()
-        views.delete(window.id)
+        views.delete(viewKey)
         entry = undefined
       }
       if (!entry) {
@@ -74,20 +98,24 @@ export function registerBrowser(indexPath: string, directory?: string) {
         })
         window.contentView.addChildView(view)
         entry = {
+          windowId: window.id,
           key: command.key,
           profileId,
           agentAccess: false,
           view,
           url: '',
         }
-        views.set(window.id, entry)
+        views.set(viewKey, entry)
         if (!registered.has(window)) {
           registered.add(window)
           window.once('closed', () => {
-            const current = views.get(window.id)
-            if (current && !current.view.webContents.isDestroyed()) current.view.webContents.close()
-            cdp?.remove(String(window.id))
-            views.delete(window.id)
+            activeViews.delete(window.id)
+            for (const [key, current] of views) {
+              if (current.windowId !== window.id) continue
+              if (!current.view.webContents.isDestroyed()) current.view.webContents.close()
+              cdp?.remove(key)
+              views.delete(key)
+            }
           })
         }
       }
@@ -100,22 +128,19 @@ export function registerBrowser(indexPath: string, directory?: string) {
         })
         cdp = await cdpPending
         if (
-          views.get(window.id) !== entry ||
+          views.get(viewKey) !== entry ||
+          activeViews.get(window.id) !== viewKey ||
           !entry.agentAccess ||
           entry.taskId !== command.taskId ||
           entry.view.webContents.isDestroyed()
         )
           return
-        entry.cdp = cdp.register(
-          String(window.id),
-          command.taskId,
-          profileId,
-          entry.view.webContents,
-        )
+        entry.cdp = cdp.register(viewKey, command.taskId, profileId, entry.view.webContents)
       } else if (entry.cdp) {
-        cdp?.remove(String(window.id))
+        cdp?.remove(viewKey)
         entry.cdp = undefined
       }
+      if (activeViews.get(window.id) !== viewKey) return
       const [width, height] = window.getContentSize()
       const { x, y } = command.bounds
       if (x >= width || y >= height) {
@@ -151,7 +176,7 @@ export function registerBrowser(indexPath: string, directory?: string) {
       entry.view.setVisible(true)
       if (entry.url !== url) {
         entry.url = url
-        await entry.view.webContents.loadURL(url)
+        if (entry.view.webContents.getURL() !== url) await entry.view.webContents.loadURL(url)
       }
       return
     }

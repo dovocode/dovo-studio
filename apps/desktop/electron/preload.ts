@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('dovo', {
       return () => ipcRenderer.removeListener('input-preview:open-thread', handler)
     },
   },
+  chooseLink: (url: string): Promise<boolean> => ipcRenderer.invoke('links:choose', url),
   appInfo: ipcRenderer.sendSync('app:info'),
   platform:
     process.platform === 'darwin' || process.platform === 'win32' ? process.platform : 'linux',

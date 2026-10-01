@@ -42,3 +42,23 @@ it('opens externally only when chosen and ignores unsafe links', async () => {
   expect(fixture.loaded).not.toHaveBeenCalled()
   expect(fixture.answer).toHaveBeenCalledOnce()
 })
+
+it('returns the internal choice to the thread without creating a separate browser window', async () => {
+  fixture.answer.mockResolvedValueOnce({ response: 0 })
+  const internal = vi.fn<(url: string) => void>()
+  const { offerLink } = await import('./links')
+  expect(await offerLink(new BrowserWindow(), 'https://example.com/page', internal)).toBe(true)
+  expect(internal).toHaveBeenCalledWith('https://example.com/page')
+  expect(fixture.loaded).not.toHaveBeenCalled()
+  expect(fixture.external).not.toHaveBeenCalled()
+})
+
+it('does not dispatch a new sidebar tab for cancellation or an external choice', async () => {
+  fixture.answer.mockResolvedValueOnce({ response: 2 }).mockResolvedValueOnce({ response: 1 })
+  const internal = vi.fn<(url: string) => void>()
+  const { offerLink } = await import('./links')
+  expect(await offerLink(new BrowserWindow(), 'https://example.com/', internal)).toBe(false)
+  expect(await offerLink(new BrowserWindow(), 'https://example.com/', internal)).toBe(false)
+  expect(internal).not.toHaveBeenCalled()
+  expect(fixture.external).toHaveBeenCalledOnce()
+})

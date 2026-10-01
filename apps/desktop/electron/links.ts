@@ -1,12 +1,16 @@
 import { BrowserWindow, dialog, shell } from 'electron'
 import { previewUrl } from '@dovo/protocol'
 
-export async function offerLink(parent: BrowserWindow, raw: string) {
+export async function offerLink(
+  parent: BrowserWindow,
+  raw: string,
+  onInternal?: (url: string) => void,
+) {
   let url: string
   try {
     url = previewUrl(raw)
   } catch {
-    return
+    return false
   }
   const answer = await dialog.showMessageBox(parent, {
     type: 'question',
@@ -18,9 +22,13 @@ export async function offerLink(parent: BrowserWindow, raw: string) {
   })
   if (answer.response === 1) {
     await shell.openExternal(url)
-    return
+    return false
   }
-  if (answer.response !== 0) return
+  if (answer.response !== 0) return false
+  if (onInternal) {
+    onInternal(url)
+    return true
+  }
   const browser = new BrowserWindow({
     parent,
     width: 1100,
@@ -49,4 +57,5 @@ export async function offerLink(parent: BrowserWindow, raw: string) {
   )
   browser.webContents.session.setPermissionCheckHandler(() => false)
   await browser.loadURL(url)
+  return false
 }

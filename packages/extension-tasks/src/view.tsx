@@ -153,6 +153,11 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const [bottomTerminalTaskId, setBottomTerminalTaskId] = useApplicationState('')
   const bottomTerminalOpen = !compact && bottomTerminalTaskId === threadKey
   // The terminal a chat command just ran in, so the pane shows it.
+  const [browserLink, setBrowserLink] = useState<{
+    taskId: string
+    id: string
+    url: string
+  } | null>(null)
   const [terminalFocus, setTerminalFocus] = useApplicationState('')
   const panes = useRef<Record<TaskSurface, HTMLDivElement | null>>({
     chat: null,
@@ -699,6 +704,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
                           visible={!listOpen && (!compact || surface === 'chat')}
                           onReview={() => selectSurface(hasDiff ? 'changes' : 'files')}
                           onTerminal={showTerminal}
+                          onBrowser={(url) => {
+                            setBrowserLink({ taskId: task.id, id: crypto.randomUUID(), url })
+                            selectSurface('browser')
+                          }}
                           onAside={() => setAsking(true)}
                           composerInsert={
                             composerInsert?.taskId === task.id ? composerInsert : null
@@ -837,6 +846,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         ) : (
                           <BrowserPane
                             taskId={task.id}
+                            openLink={browserLink?.taskId === task.id ? browserLink : null}
+                            onLinkOpened={() => setBrowserLink(null)}
                             onClose={() => selectSurface('chat', true)}
                           />
                         )}
@@ -970,6 +981,16 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       key={`split:${splitTask.id}`}
                       task={splitTask}
                       visible
+                      onBrowser={(url) => {
+                        setBrowserLink({ taskId: splitTask.id, id: crypto.randomUUID(), url })
+                        setThreadSurfaces((current) => ({
+                          ...current,
+                          [taskCollectionKey(activeRuntimeId, splitTask.id)]: 'browser',
+                        }))
+                        setSelectedId(splitTask.id)
+                        setSplitId(task?.id ?? '')
+                        setToolsVisible(true)
+                      }}
                       onReview={() => {
                         setSelectedId(splitTask.id)
                         setSplitId(task?.id ?? '')

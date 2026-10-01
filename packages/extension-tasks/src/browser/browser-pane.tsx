@@ -11,6 +11,8 @@ import {
   Smartphone,
   PanelRightClose,
   SlidersHorizontal,
+  Plus,
+  X,
 } from 'lucide-react'
 import {
   useWorkspace,
@@ -40,8 +42,29 @@ import { RemoteBrowser } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
 const addresses = new Map<string, string>()
-export function BrowserPane({ taskId, onClose }: { taskId: string; onClose?: () => void }) {
-  return <PreviewPane taskId={taskId} onClose={onClose} mode="remote" />
+type BrowserTab = { id: string; url: string; title: string }
+type OpenLink = { id: string; url: string }
+const savedTabs = new Map<string, { tabs: BrowserTab[]; active: string }>()
+export function BrowserPane({
+  taskId,
+  onClose,
+  openLink,
+  onLinkOpened,
+}: {
+  taskId: string
+  onClose?: () => void
+  openLink?: OpenLink | null
+  onLinkOpened?: () => void
+}) {
+  return (
+    <PreviewPane
+      taskId={taskId}
+      onClose={onClose}
+      mode="remote"
+      openLink={openLink}
+      onLinkOpened={onLinkOpened}
+    />
+  )
 }
 export function DevicesPane({ taskId, onClose }: { taskId: string; onClose?: () => void }) {
   return <PreviewPane taskId={taskId} onClose={onClose} mode="devices" />
@@ -50,10 +73,14 @@ function PreviewPane({
   taskId,
   onClose,
   mode,
+  openLink,
+  onLinkOpened,
 }: {
   taskId: string
   onClose?: () => void
   mode: 'remote' | 'devices'
+  openLink?: OpenLink | null
+  onLinkOpened?: () => void
 }) {
   const { connection } = useWorkspace()
   const scope = `${connection?.address ?? ''}:${taskId}`
@@ -64,6 +91,8 @@ function PreviewPane({
       taskId={taskId}
       onClose={onClose}
       initialMode={mode}
+      openLink={openLink}
+      onLinkOpened={onLinkOpened}
     />
   )
 }
@@ -72,8 +101,12 @@ function BrowserContent({
   initialMode,
   taskId,
   onClose,
+  openLink,
+  onLinkOpened,
 }: {
   scope: string
+  openLink?: OpenLink | null
+  onLinkOpened?: () => void
   initialMode: 'remote' | 'devices'
   taskId: string
   onClose?: () => void
@@ -92,8 +125,11 @@ function BrowserContent({
   const agentAccess = preferences.browserAgentAccess[scope] ?? false
   const [managingProfiles, setManagingProfiles] = useApplicationState(false)
   const [profileName, setProfileName] = useApplicationState('')
-  const [input, setInput] = useApplicationState(addresses.get(scope) ?? 'http://localhost:3000')
-  const [url, setUrl] = useApplicationState(addresses.get(scope) ?? '')
+  const saved = savedTabs.get(scope)
+  const initialUrl =
+    saved?.tabs.find((tab) => tab.id === saved.active)?.url ?? addresses.get(scope) ?? ''
+  const [input, setInput] = useApplicationState(initialUrl || 'http://localhost:3000')
+  const [url, setUrl] = useApplicationState(initialUrl)
   const [history, setHistory] = useApplicationState({
     url: '',
     title: '',
@@ -101,10 +137,42 @@ function BrowserContent({
     back: false,
     forward: false,
   })
+  const [tabs, setTabs] = useApplicationState<BrowserTab[]>(
+    () =>
+      savedTabs.get(scope)?.tabs ?? [
+        { id: crypto.randomUUID(), url: addresses.get(scope) ?? '', title: '' },
+      ],
+  )
+  const [activeTab, setActiveTab] = useApplicationState(
+    () => savedTabs.get(scope)?.active ?? tabs[0].id,
+  )
+  const browserKey = `${scope}:${activeTab}`
+  const openedLink = useRef('')
+  useEffect(() => {
+    savedTabs.set(scope, { tabs, active: activeTab })
+  }, [scope, tabs, activeTab])
+  const selectTab = (tab: BrowserTab) => {
+    setActiveTab(tab.id)
+    setUrl(tab.url)
+    setInput(tab.url)
+    setHistory({ url: '', title: '', cdp: undefined, back: false, forward: false })
+  }
+  const newTab = (target = '') => {
+    const tab = { id: crypto.randomUUID(), url: target, title: '' }
+    setTabs((previous) => [...previous, tab])
+    selectTab(tab)
+  }
   const editing = useRef(false)
   const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>(
     initialMode === 'devices' ? 'devices' : browser ? 'web' : 'remote',
   )
+  useEffect(() => {
+    if (!openLink || openedLink.current === openLink.id) return
+    openedLink.current = openLink.id
+    newTab(previewUrl(openLink.url))
+    setMode(browser ? 'web' : 'remote')
+    onLinkOpened?.()
+  }, [openLink?.id, browser, onLinkOpened])
   const [preset, setPreset] = useApplicationState('fill'),
     [landscape, setLandscape] = useApplicationState(false)
   const [error, setError] = useApplicationState(''),
@@ -126,10 +194,21 @@ function BrowserContent({
     if (mode === 'remote') setTurnReload((value) => value + 1)
     if (mode === 'web' && url) {
       if (browser)
-        void browser({ action: 'reload', key: scope }).catch((cause) => setError(String(cause)))
+        void browser({ action: 'reload', key: browserKey }).catch((cause) =>
+          setError(String(cause)),
+        )
       else setReload((value) => value + 1)
     }
-  }, [latestTurn?.id, latestTurn?.status, latestTurn?.checkpoint, mode, url, browser, scope])
+  }, [
+    latestTurn?.id,
+    latestTurn?.status,
+    latestTurn?.checkpoint,
+    mode,
+    url,
+    browser,
+    scope,
+    browserKey,
+  ])
   const [devices, setDevices] = useApplicationState<PreviewDevice[]>([]),
     [diagnostics, setDiagnostics] = useApplicationState<string[]>([])
   const [liveDevice, setLiveDevice] = useApplicationState<PreviewDevice | undefined>(undefined)
@@ -183,11 +262,14 @@ function BrowserContent({
           void act(() =>
             browser({
               action: 'reload',
-              key: scope,
+              key: browserKey,
             }),
           )
         else setReload((n) => n + 1)
       }
+      setTabs((previous) =>
+        previous.map((tab) => (tab.id === activeTab ? { ...tab, url: target, title: '' } : tab)),
+      )
       setUrl(target)
       setInput(target)
       addresses.set(scope, target)
@@ -200,7 +282,7 @@ function BrowserContent({
     if (!browser || !url || mode !== 'web') return
     let alive = true
     const poll = Effect.tryPromise({
-      try: () => browser({ action: 'status', key: scope }),
+      try: () => browser({ action: 'status', key: browserKey }),
       catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
     }).pipe(
       Effect.tap((state) =>
@@ -209,6 +291,13 @@ function BrowserContent({
           setHistory({ ...state, title: state.title ?? '', cdp: state.cdp })
           if (!editing.current) setInput(state.url)
           addresses.set(scope, state.url)
+          setTabs((previous) =>
+            previous.map((tab) =>
+              tab.id === activeTab && (tab.url !== state.url || tab.title !== state.title)
+                ? { ...tab, url: state.url, title: state.title ?? '' }
+                : tab,
+            ),
+          )
         }),
       ),
       Effect.asVoid,
@@ -223,7 +312,7 @@ function BrowserContent({
       alive = false
       void polling.stop()
     }
-  }, [browser, url, mode, scope])
+  }, [browser, url, mode, scope, browserKey])
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
   useEffect(() => {
     if (!browser || !url || mode !== 'web') return
@@ -240,7 +329,7 @@ function BrowserContent({
               profileId,
               taskId,
               agentAccess,
-              key: scope,
+              key: browserKey,
               url,
               viewport:
                 preset === 'fill'
@@ -258,7 +347,7 @@ function BrowserContent({
             }
           : {
               action: 'hide' as const,
-              key: scope,
+              key: browserKey,
             }
       void browser(command).catch((e) => {
         if (alive) setError(String(e))
@@ -284,10 +373,22 @@ function BrowserContent({
       window.removeEventListener('scroll', update, true)
       void browser({
         action: 'hide',
-        key: scope,
+        key: browserKey,
       }).catch(() => {})
     }
-  }, [browser, url, mode, scope, preset, landscape, size, profileId, taskId, agentAccess])
+  }, [
+    browser,
+    url,
+    mode,
+    scope,
+    browserKey,
+    preset,
+    landscape,
+    size,
+    profileId,
+    taskId,
+    agentAccess,
+  ])
   const deviceAction = (
     device: PreviewDevice,
     action: 'boot' | 'shutdown' | 'open' | 'screenshot' | 'devicehub',
@@ -353,6 +454,48 @@ function BrowserContent({
       className="flex h-full min-h-0 flex-col"
       aria-label={initialMode === 'devices' ? 'Device previews' : 'Browser previews'}
     >
+      {initialMode !== 'devices' && (
+        <div
+          role="tablist"
+          aria-label="Browser tabs"
+          className="flex shrink-0 items-center gap-1 overflow-x-auto border-b bg-sidebar px-2 py-1"
+        >
+          {tabs.map((tab) => (
+            <div key={tab.id} className="flex shrink-0 items-center rounded bg-muted/50">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                className={`max-w-36 truncate rounded px-2 py-1 text-xs ${activeTab === tab.id ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}
+                title={tab.url || 'New tab'}
+                onClick={() => selectTab(tab)}
+              >
+                {tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'}
+              </button>
+              <IconButton
+                label={`Close tab ${tab.title || tab.url || 'New tab'}`}
+                className="size-6"
+                disabled={busy}
+                onClick={() => {
+                  const remaining = tabs.filter((item) => item.id !== tab.id)
+                  const next = remaining.length
+                    ? remaining
+                    : [{ id: crypto.randomUUID(), url: '', title: '' }]
+                  setTabs(next)
+                  if (activeTab === tab.id) selectTab(next[0])
+                  if (browser)
+                    void act(() => browser({ action: 'close', key: `${scope}:${tab.id}` }))
+                }}
+              >
+                <X size={12} />
+              </IconButton>
+            </div>
+          ))}
+          <IconButton label="New browser tab" className="size-7 shrink-0" onClick={() => newTab()}>
+            <Plus size={14} />
+          </IconButton>
+        </div>
+      )}
       {browser && mode === 'web' && (
         <div className="flex flex-wrap items-center gap-2 border-b px-2 py-1.5 text-xs">
           <select
@@ -532,7 +675,9 @@ function BrowserContent({
                     size="sm"
                     variant="ghost"
                     className="justify-start text-xs"
-                    onClick={() => void act(() => browser({ action: 'hard-reload', key: scope }))}
+                    onClick={() =>
+                      void act(() => browser({ action: 'hard-reload', key: browserKey }))
+                    }
                   >
                     Hard reload
                   </Button>
@@ -540,7 +685,7 @@ function BrowserContent({
                     size="sm"
                     variant="ghost"
                     className="justify-start text-xs"
-                    onClick={() => void act(() => browser({ action: 'devtools', key: scope }))}
+                    onClick={() => void act(() => browser({ action: 'devtools', key: browserKey }))}
                   >
                     Open DevTools
                   </Button>
@@ -550,7 +695,7 @@ function BrowserContent({
                     className="justify-start text-xs"
                     onClick={() =>
                       void act(() =>
-                        browser({ action: 'external', key: scope, url: history.url || url }),
+                        browser({ action: 'external', key: browserKey, url: history.url || url }),
                       )
                     }
                   >
@@ -606,7 +751,7 @@ function BrowserContent({
                   void act(() =>
                     browser({
                       action,
-                      key: scope,
+                      key: browserKey,
                     }),
                   )
                 }
@@ -639,7 +784,7 @@ function BrowserContent({
                 ? void act(() =>
                     browser({
                       action: 'reload',
-                      key: scope,
+                      key: browserKey,
                     }),
                   )
                 : setReload((n) => n + 1)
@@ -655,7 +800,7 @@ function BrowserContent({
                 void act(() =>
                   browser({
                     action: 'external',
-                    key: scope,
+                    key: browserKey,
                     url: history.url || url,
                   }),
                 )

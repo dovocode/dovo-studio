@@ -26,17 +26,21 @@ import {
   IconButton,
 } from '@dovo/studio-ui'
 import type { Task } from '@dovo/studio-core'
-import { responses, useWorkspace } from '@dovo/studio-core'
+import { responses, useWorkspace, useStudioHost } from '@dovo/studio-core'
 export function ChatThread({
   task,
   onTerminal,
   pending,
+  onBrowser,
 }: {
   task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'>
   /** Shows the terminal after a chat command ran in it. */
   onTerminal?: (terminalId: string) => void
   pending?: PendingMessage | null
+  onBrowser?: (url: string) => void
 }) {
+  const { chooseLink } = useStudioHost()
+  const [linkError, setLinkError] = useState('')
   const { request, connected } = useWorkspace()
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -183,7 +187,35 @@ export function ChatThread({
           {selectedMatch.role === 'user' ? 'You' : 'Agent'} · {selectedMatch.preview}
         </p>
       )}
-      <Conversation key={task.id}>
+      {linkError && (
+        <p role="alert" className="px-3 py-1 text-xs text-destructive">
+          {linkError}
+        </p>
+      )}
+      <Conversation
+        key={task.id}
+        onClickCapture={(event) => {
+          const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
+          if (
+            !(anchor instanceof HTMLAnchorElement) ||
+            !/^https?:\/\//i.test(anchor.href) ||
+            !chooseLink ||
+            !onBrowser
+          )
+            return
+          event.preventDefault()
+          event.stopPropagation()
+          const url = anchor.href
+          setLinkError('')
+          void chooseLink(url)
+            .then((internal) => {
+              if (internal) onBrowser(url)
+            })
+            .catch((cause: unknown) =>
+              setLinkError(cause instanceof Error ? cause.message : String(cause)),
+            )
+        }}
+      >
         <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-12 md:pr-5">
           {!!bookmarks.length && (
             <nav

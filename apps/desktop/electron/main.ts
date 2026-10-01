@@ -187,6 +187,13 @@ app.on('second-instance', () => {
   window?.focus()
 })
 
+ipcMain.handle('links:choose', async (event, url: unknown) => {
+  requireTrustedRenderer(event, rendererPath)
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!window || typeof url !== 'string') return false
+  return offerLink(window, url, () => {})
+})
+
 ipcMain.handle('runtime:connection', (event) => {
   requireTrustedRenderer(event, rendererPath)
   return startLocalRuntime(__dirname)

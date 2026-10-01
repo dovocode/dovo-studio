@@ -25,6 +25,7 @@ export function TaskConversation({
   task,
   onReview,
   onTerminal,
+  onBrowser,
   onAside,
   visible,
   codeReference,
@@ -34,6 +35,7 @@ export function TaskConversation({
   task: Task
   onReview: () => void
   onTerminal?: (terminalId: string) => void
+  onBrowser?: (url: string) => void
   /** Opens the side question dialog. */
   onAside?: () => void
   visible: boolean
@@ -78,7 +80,12 @@ export function TaskConversation({
   }
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ChatThread task={displayedTask} onTerminal={onTerminal} pending={threadPending} />
+      <ChatThread
+        task={displayedTask}
+        onTerminal={onTerminal}
+        onBrowser={onBrowser}
+        pending={threadPending}
+      />
       {(budget.tokenExceeded || budget.timeExceeded) && (
         <p
           role="status"

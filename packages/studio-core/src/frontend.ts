@@ -42,6 +42,8 @@ export interface StudioHostApi {
   updates?: import('@dovo/protocol').DesktopUpdateBridge
   taskLauncher?: import('@dovo/protocol').TaskLauncherBridge
   browser?: import('@dovo/protocol').BrowserBridge
+  /** Ask where a link should open; true requests the thread sidebar browser. */
+  chooseLink?: (url: string) => Promise<boolean>
   pickDirectory?: (runtimeAddress: string) => Promise<string | null>
   navigate: (target: StudioNavigation) => void
   registerCommand: (command: StudioCommand) => () => void

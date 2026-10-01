@@ -173,6 +173,7 @@ export const browserCommandSchema = Schema.Union(
     mutableStruct({
       action: Schema.Literal(
         'hide',
+        'close',
         'back',
         'forward',
         'reload',

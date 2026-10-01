@@ -6,6 +6,7 @@ interface Window {
     inputPreview: import('@dovo/protocol').InputPreviewBridge
     appInfo: NonNullable<import('@dovo/studio-core').StudioHostApi['appInfo']>
     platform: 'darwin' | 'win32' | 'linux'
+    chooseLink: NonNullable<import('@dovo/studio-core').StudioHostApi['chooseLink']>
     browser: import('@dovo/protocol').BrowserBridge
     updates: import('@dovo/protocol').DesktopUpdateBridge
     pickDirectory(this: void, runtimeAddress: string): Promise<string | null>
