@@ -41,3 +41,5 @@ export { ProjectIcon } from './project-icon'
 
 export { TaskDefaultSettings } from './task-default-settings'
 export { SettingsPage, SettingsGroup, SettingRow, Segmented, Toggle } from './settings-layout'
+
+export { PageHeader } from './page-header'

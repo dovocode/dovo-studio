@@ -1,3 +1,4 @@
+import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import { ArrowRight, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
@@ -214,13 +215,14 @@ export default function JobsView({ entityId }: StudioViewProps) {
   }, [pending, activeRuntimeId, connection, setWorkspace, runtimes])
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col">
-      <header className="studio-page-header flex shrink-0 flex-wrap items-center gap-3 border-b">
-        <div className="mr-auto min-w-0">
-          <h1 className="text-sm font-medium">Automations</h1>
-          <p className="mt-1 text-xs text-muted-foreground">
+      <PageHeader
+        title="Automations"
+        description={
+          <>
             {rows.length} automation{rows.length === 1 ? '' : 's'} across your computers
-          </p>
-        </div>
+          </>
+        }
+      >
         <Button
           size="sm"
           variant="ghost"
@@ -251,7 +253,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
         >
           <Plus className="size-3.5" /> New automation
         </Button>
-      </header>
+      </PageHeader>
       {!selected && error && (
         <p role="alert" className="px-4 py-2 text-xs text-destructive">
           {error}

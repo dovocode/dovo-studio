@@ -1,3 +1,4 @@
+import { PageHeader } from '@dovo/studio-ui'
 import { HarnessUpdates } from './harness-updates'
 import { useAppPreferences, updateAppPreferences } from '@dovo/studio-core'
 import { Setup } from './setup'
@@ -22,82 +23,82 @@ export default function AgentsView() {
   const { globalAgentPresets, retiredGlobalAgentPresets } = useAppPreferences()
   const [globalEditing, setGlobalEditing] = useApplicationState<Agent | null>(null)
   return (
-    <section className="min-h-0 flex-1 overflow-y-auto">
-      <header className="studio-page-header border-b">
-        <h1 className="text-lg font-semibold tracking-tight">Agents</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Reusable agents, titles and dictation across your computers.
-        </p>
-      </header>
-      <div className="mx-auto max-w-4xl space-y-5 p-4">
-        <section className="rounded-lg border p-4">
-          <header className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold">Global agent presets</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Defaults for servers connected to this app. Each server can override them.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              onClick={() =>
-                setGlobalEditing({
-                  ...defaultTaskHarness('codex'),
-                  id: crypto.randomUUID(),
-                  name: '',
-                })
-              }
-            >
-              <Plus size={14} />
-              New preset
-            </Button>
-          </header>
-          {globalAgentPresets.map((agent) => (
-            <div key={agent.id} className="mt-3 flex items-center justify-between gap-3">
-              <span className="text-sm">{agent.name}</span>
+    <section className="flex min-h-0 flex-1 flex-col">
+      <PageHeader
+        title="Agents"
+        description="Reusable agents, titles and dictation across your computers."
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="mx-auto max-w-4xl space-y-5">
+          <section className="rounded-lg border p-4">
+            <header className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold">Global agent presets</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Defaults for servers connected to this app. Each server can override them.
+                </p>
+              </div>
               <Button
                 size="sm"
-                variant="ghost"
-                onClick={() => {
-                  if (
-                    !window.confirm(
-                      'Remove this global preset? Existing server configurations stay available.',
-                    )
-                  )
-                    return
-                  updateAppPreferences({
-                    globalAgentPresets: globalAgentPresets.filter((item) => item.id !== agent.id),
-                    retiredGlobalAgentPresets: [...retiredGlobalAgentPresets, agent.id],
+                onClick={() =>
+                  setGlobalEditing({
+                    ...defaultTaskHarness('codex'),
+                    id: crypto.randomUUID(),
+                    name: '',
                   })
-                }}
+                }
               >
-                Remove preset
+                <Plus size={14} />
+                New preset
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setGlobalEditing(agent)}>
-                Configure
-              </Button>
-            </div>
+            </header>
+            {globalAgentPresets.map((agent) => (
+              <div key={agent.id} className="mt-3 flex items-center justify-between gap-3">
+                <span className="text-sm">{agent.name}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        'Remove this global preset? Existing server configurations stay available.',
+                      )
+                    )
+                      return
+                    updateAppPreferences({
+                      globalAgentPresets: globalAgentPresets.filter((item) => item.id !== agent.id),
+                      retiredGlobalAgentPresets: [...retiredGlobalAgentPresets, agent.id],
+                    })
+                  }}
+                >
+                  Remove preset
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setGlobalEditing(agent)}>
+                  Configure
+                </Button>
+              </div>
+            ))}
+          </section>
+          {globalEditing && (
+            <AgentEditor
+              initial={globalEditing}
+              creating={!globalAgentPresets.some((agent) => agent.id === globalEditing.id)}
+              global
+              computerName="Global"
+              onClose={() => setGlobalEditing(null)}
+            />
+          )}
+          {!sources.length && (
+            <p className="text-sm text-muted-foreground">
+              Connect a computer in Devices & runtime to configure agents.
+            </p>
+          )}
+          {sources.map((source) => (
+            <WorkspaceScope key={source.scope} profile={source.profile}>
+              <ComputerAgents name={source.name} />
+            </WorkspaceScope>
           ))}
-        </section>
-        {globalEditing && (
-          <AgentEditor
-            initial={globalEditing}
-            creating={!globalAgentPresets.some((agent) => agent.id === globalEditing.id)}
-            global
-            computerName="Global"
-            onClose={() => setGlobalEditing(null)}
-          />
-        )}
-        {!sources.length && (
-          <p className="text-sm text-muted-foreground">
-            Connect a computer in Devices & runtime to configure agents.
-          </p>
-        )}
-        {sources.map((source) => (
-          <WorkspaceScope key={source.scope} profile={source.profile}>
-            <ComputerAgents name={source.name} />
-          </WorkspaceScope>
-        ))}
+        </div>
       </div>
     </section>
   )

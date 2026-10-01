@@ -1,3 +1,4 @@
+import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowLeft, Ellipsis, Monitor, Plus, Workflow, X } from 'lucide-react'
 import { useWorkspace } from '@dovo/studio-core'
@@ -96,18 +97,21 @@ export function AutomationDetail({
   )
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col">
-      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3">
-        <IconButton label="Back to automations" className="size-8" onClick={onBack}>
-          <ArrowLeft className="size-4" />
-        </IconButton>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-sm font-medium">{flow?.name ?? 'Automation unavailable'}</h1>
-          <p className="mt-1 flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
+      <PageHeader
+        title={flow?.name ?? 'Automation unavailable'}
+        description={
+          <>
             <Monitor className="size-3" />
             Runs on {snapshot?.runtimeHost ?? 'the selected computer'}
             {!connected && ' · offline'}
-          </p>
-        </div>
+          </>
+        }
+        leading={
+          <IconButton label="Back to automations" className="size-8" onClick={onBack}>
+            <ArrowLeft className="size-4" />
+          </IconButton>
+        }
+      >
         {flow && (
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
@@ -137,7 +141,7 @@ export function AutomationDetail({
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
         )}
-      </header>
+      </PageHeader>
       {flow ? (
         <>
           <JobControls

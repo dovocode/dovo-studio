@@ -1,3 +1,4 @@
+import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { useEffect, useRef } from 'react'
@@ -99,51 +100,8 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       {!selected && (
-        <header className="studio-page-header space-y-3 border-b">
-          {!!pulls.length && (
-            <div
-              className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
-              aria-label="Visible pull request summary"
-            >
-              <span>
-                <strong className="font-medium text-foreground">
-                  {pulls.filter(pullNeedsAttention).length}
-                </strong>{' '}
-                need attention
-              </span>
-              <span>
-                <strong className="font-medium text-foreground">
-                  {pulls.filter((pull) => pull.state === 'open' && pull.draft).length}
-                </strong>{' '}
-                drafts
-              </span>
-              <span>
-                <strong className="font-medium text-foreground">
-                  {
-                    pulls.filter((pull) => pull.state === 'open' && pull.viewerReviewRequested)
-                      .length
-                  }
-                </strong>{' '}
-                awaiting your review
-              </span>
-              <span>In loaded, filtered results</span>
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="mr-2 text-lg font-semibold tracking-tight">Pull requests</h1>
-            <span className="text-xs text-muted-foreground">
-              {connected
-                ? `${pulls.length} across devices${pages.some((page) => page.hasMore) ? ' · more available' : ''}`
-                : 'Offline'}
-            </span>
-            <Input
-              aria-label="Search pull requests"
-              className="ml-auto h-9 min-w-40 max-w-full flex-1 text-sm sm:max-w-72"
-              placeholder="Search PRs, branches, people…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+        <>
+          <PageHeader title="Pull requests">
             <Button size="sm" variant="outline" disabled={!connected || busy} onClick={refresh}>
               Refresh PRs
             </Button>
@@ -162,69 +120,115 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
             >
               Create PR
             </Button>
+          </PageHeader>
+          <div className="studio-page-toolbar shrink-0 space-y-3 border-b">
+            {!!pulls.length && (
+              <div
+                className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
+                aria-label="Visible pull request summary"
+              >
+                <span>
+                  <strong className="font-medium text-foreground">
+                    {pulls.filter(pullNeedsAttention).length}
+                  </strong>{' '}
+                  need attention
+                </span>
+                <span>
+                  <strong className="font-medium text-foreground">
+                    {pulls.filter((pull) => pull.state === 'open' && pull.draft).length}
+                  </strong>{' '}
+                  drafts
+                </span>
+                <span>
+                  <strong className="font-medium text-foreground">
+                    {
+                      pulls.filter((pull) => pull.state === 'open' && pull.viewerReviewRequested)
+                        .length
+                    }
+                  </strong>{' '}
+                  awaiting your review
+                </span>
+                <span>In loaded, filtered results</span>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {connected
+                  ? `${pulls.length} across devices${pages.some((page) => page.hasMore) ? ' · more available' : ''}`
+                  : 'Offline'}
+              </span>
+              <Input
+                aria-label="Search pull requests"
+                className="ml-auto h-9 min-w-40 max-w-full flex-1 text-sm sm:max-w-72"
+                placeholder="Search PRs, branches, people…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <ChoicePicker
+                aria-label="PR repository"
+                className={selectStyle}
+                value={repositoryId}
+                onValueChange={(selection) => {
+                  setRepository(selection)
+                  setSelected(null)
+                }}
+              >
+                <option value="">All projects</option>
+                {sources.map((source) => (
+                  <option key={source.key} value={source.key}>
+                    {source.repository.name} · {source.runtimeName}
+                  </option>
+                ))}
+              </ChoicePicker>
+              <ChoicePicker
+                aria-label="PR state"
+                className={selectStyle}
+                value={state}
+                onValueChange={(selection) => {
+                  setState(selection)
+                  setSelected(null)
+                }}
+              >
+                {['open', 'closed', 'merged', 'all'].map((s) => (
+                  <option key={s} value={s}>
+                    {s === 'all' ? 'All states' : s.charAt(0).toUpperCase() + s.slice(1)}
+                  </option>
+                ))}
+              </ChoicePicker>
+              <ChoicePicker
+                aria-label="PR draft status"
+                className={selectStyle}
+                value={draft}
+                onValueChange={(selection) => setDraft(selection)}
+              >
+                <option value="all">Draft + ready</option>
+                <option value="draft">Drafts</option>
+                <option value="ready">Ready</option>
+              </ChoicePicker>
+              <ChoicePicker
+                aria-label="PR sort"
+                className={selectStyle}
+                value={sort}
+                onValueChange={setSort}
+              >
+                <option value="attention">Attention first</option>
+                <option value="updated">Recently updated</option>
+              </ChoicePicker>
+              <Button
+                size="sm"
+                variant={attention ? 'secondary' : 'ghost'}
+                aria-pressed={attention}
+                title="Your review requests, blocked PRs, and your approved PRs with passing checks"
+                onClick={() => setAttention((value) => !value)}
+              >
+                Needs attention
+              </Button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <ChoicePicker
-              aria-label="PR repository"
-              className={selectStyle}
-              value={repositoryId}
-              onValueChange={(selection) => {
-                setRepository(selection)
-                setSelected(null)
-              }}
-            >
-              <option value="">All projects</option>
-              {sources.map((source) => (
-                <option key={source.key} value={source.key}>
-                  {source.repository.name} · {source.runtimeName}
-                </option>
-              ))}
-            </ChoicePicker>
-            <ChoicePicker
-              aria-label="PR state"
-              className={selectStyle}
-              value={state}
-              onValueChange={(selection) => {
-                setState(selection)
-                setSelected(null)
-              }}
-            >
-              {['open', 'closed', 'merged', 'all'].map((s) => (
-                <option key={s} value={s}>
-                  {s === 'all' ? 'All states' : s.charAt(0).toUpperCase() + s.slice(1)}
-                </option>
-              ))}
-            </ChoicePicker>
-            <ChoicePicker
-              aria-label="PR draft status"
-              className={selectStyle}
-              value={draft}
-              onValueChange={(selection) => setDraft(selection)}
-            >
-              <option value="all">Draft + ready</option>
-              <option value="draft">Drafts</option>
-              <option value="ready">Ready</option>
-            </ChoicePicker>
-            <ChoicePicker
-              aria-label="PR sort"
-              className={selectStyle}
-              value={sort}
-              onValueChange={setSort}
-            >
-              <option value="attention">Attention first</option>
-              <option value="updated">Recently updated</option>
-            </ChoicePicker>
-            <Button
-              size="sm"
-              variant={attention ? 'secondary' : 'ghost'}
-              aria-pressed={attention}
-              title="Your review requests, blocked PRs, and your approved PRs with passing checks"
-              onClick={() => setAttention((value) => !value)}
-            >
-              Needs attention
-            </Button>
-          </div>
-        </header>
+        </>
       )}
       {opening && (
         <p role="status" className="px-5 py-2 text-xs text-muted-foreground">

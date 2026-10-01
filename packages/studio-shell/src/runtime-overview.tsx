@@ -1,3 +1,4 @@
+import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   ArrowUpRight,
@@ -101,15 +102,9 @@ export function RuntimeOverview() {
   }
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="All devices overview">
-      <header className="studio-page-header flex min-h-12 flex-wrap items-center gap-2 border-b px-4 py-2">
-        <div className="mr-auto">
-          <h1 className="text-base font-semibold tracking-tight">Overview</h1>
-          <p className="text-[0.6875rem] text-muted-foreground">
-            Needs attention, current work and recent outcomes.
-          </p>
-        </div>
+      <PageHeader title="Overview" description="Needs attention, current work and recent outcomes.">
         {runtimes.length > 1 && (
-          <div role="group" aria-label="Filter devices" className="flex max-w-full flex-wrap gap-1">
+          <div role="group" aria-label="Filter devices" className="flex shrink-0 gap-1">
             <Button
               size="sm"
               variant={!device ? 'secondary' : 'ghost'}
@@ -156,7 +151,7 @@ export function RuntimeOverview() {
           <Plus size={14} className="mr-1" />
           Connect computer
         </Button>
-      </header>
+      </PageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-6xl space-y-4">
           {error && (

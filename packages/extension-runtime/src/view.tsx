@@ -1,3 +1,4 @@
+import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import type { RuntimeProfile } from '@dovo/studio-core'
 import { useRuntimeSources, useStudioHost, WorkspaceScope } from '@dovo/studio-core'
@@ -26,12 +27,10 @@ export default function RuntimeView() {
   )
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <header className="studio-page-header shrink-0 border-b">
-        <h1 className="text-lg font-semibold tracking-tight">Devices & runtime</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Manage every connected computer in one place.
-        </p>
-      </header>
+      <PageHeader
+        title="Devices & runtime"
+        description="Manage every connected computer in one place."
+      />
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-4xl space-y-4">
           {host && (

@@ -1,3 +1,4 @@
+import { PageHeader } from '@dovo/studio-ui'
 import { formatDateTime } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowLeft, Monitor } from 'lucide-react'
@@ -22,17 +23,19 @@ export function CachedAutomation({
   const run = row.runs.find((run) => run.id === runId) ?? row.latest
   return (
     <section className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center gap-3 border-b px-4 py-3">
-        <IconButton label="Back to automations" className="size-8" onClick={onBack}>
-          <ArrowLeft className="size-4" />
-        </IconButton>
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-medium">{row.flow.name}</h2>
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+      <PageHeader
+        title={row.flow.name}
+        description={
+          <>
             <Monitor className="size-3" /> {row.runtimeName} · saved history
-          </p>
-        </div>
-      </header>
+          </>
+        }
+        leading={
+          <IconButton label="Back to automations" className="size-8" onClick={onBack}>
+            <ArrowLeft className="size-4" />
+          </IconButton>
+        }
+      ></PageHeader>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         <div className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
           <p className="min-w-0 flex-1 text-xs text-muted-foreground">

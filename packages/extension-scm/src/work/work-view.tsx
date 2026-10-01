@@ -1,3 +1,4 @@
+import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import {
@@ -210,55 +211,10 @@ function WorkView({
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       {!selected && (
-        <header className="studio-page-header space-y-3 border-b">
-          {mode === 'issues' && !!rows.length && (
-            <div
-              className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
-              aria-label="Visible issue summary"
-            >
-              <span>
-                <strong className="font-medium text-foreground">
-                  {rows.filter(({ item }) => 'assignees' in item && !item.assignees.length).length}
-                </strong>{' '}
-                unassigned
-              </span>
-              <span>
-                <strong className="font-medium text-foreground">
-                  {
-                    rows.filter(
-                      ({ source, item }) => source.jira && !source.projectLinks?.[item.id],
-                    ).length
-                  }
-                </strong>{' '}
-                without a linked project
-              </span>
-              <span>In loaded, filtered results</span>
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="mr-2 text-lg font-semibold tracking-tight">
-              {mode === 'issues' ? (sourceKind === 'jira' ? 'Jira' : 'Issues') : 'Pipelines'}
-            </h1>
-            <span className="text-xs text-muted-foreground">
-              {rows.length} loaded · {visibleSources.length}{' '}
-              {visibleSources.length === 1 ? 'source' : 'sources'}
-            </span>
-            <div className="relative ml-auto min-w-40 max-w-full flex-1 sm:max-w-72">
-              <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
-              <Input
-                className="h-9 w-full pl-9 text-sm"
-                aria-label={`Search ${mode}`}
-                placeholder={
-                  mode === 'issues'
-                    ? 'Search issue titles, keys, text…'
-                    : 'Search runs, branches, projects…'
-                }
-                value={search}
-                maxLength={300}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
+        <>
+          <PageHeader
+            title={mode === 'issues' ? (sourceKind === 'jira' ? 'Jira' : 'Issues') : 'Pipelines'}
+          >
             <Button
               size="sm"
               variant="outline"
@@ -289,78 +245,129 @@ function WorkView({
               <Plus className="size-3.5" />
               {mode === 'issues' ? 'New issue' : 'Run pipeline'}
             </Button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <ChoicePicker
-              aria-label="Issue source"
-              className="h-8 w-auto max-w-72 text-xs"
-              value={project}
-              onValueChange={(value) => {
-                setProject(value)
-                setState('all')
-              }}
-            >
-              <option value="">All sources</option>
-              {sources.map((source) => (
-                <option key={source.key} value={source.key}>
-                  {source.name} · {source.runtimeName}
-                </option>
-              ))}
-            </ChoicePicker>
-            <ChoicePicker
-              aria-label={mode === 'issues' ? 'Issue state' : 'Pipeline status'}
-              className="h-8 w-auto text-xs"
-              value={state}
-              onValueChange={setState}
-            >
-              <option value="all">All states</option>
-              {states.map((state) => (
-                <option key={state}>{state}</option>
-              ))}
-            </ChoicePicker>
-            {mode === 'issues' && (
-              <ChoicePicker
-                aria-label="Project links"
-                className="h-8 w-auto text-xs"
-                value={linked}
-                onValueChange={setLinked}
+          </PageHeader>
+          <div className="studio-page-toolbar shrink-0 space-y-3 border-b">
+            {mode === 'issues' && !!rows.length && (
+              <div
+                className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
+                aria-label="Visible issue summary"
               >
-                <option value="all">All project links</option>
-                <option value="unlinked">Not linked to a project</option>
-                <option value="linked">Linked to a project</option>
-              </ChoicePicker>
+                <span>
+                  <strong className="font-medium text-foreground">
+                    {
+                      rows.filter(({ item }) => 'assignees' in item && !item.assignees.length)
+                        .length
+                    }
+                  </strong>{' '}
+                  unassigned
+                </span>
+                <span>
+                  <strong className="font-medium text-foreground">
+                    {
+                      rows.filter(
+                        ({ source, item }) => source.jira && !source.projectLinks?.[item.id],
+                      ).length
+                    }
+                  </strong>{' '}
+                  without a linked project
+                </span>
+                <span>In loaded, filtered results</span>
+              </div>
             )}
-            <ChoicePicker
-              aria-label="Sort results"
-              className="h-8 w-auto text-xs"
-              value={sort}
-              onValueChange={setSort}
-            >
-              <option value="updated">Recently updated</option>
-              <option value="project">Source</option>
-              <option value="title">Title</option>
-            </ChoicePicker>
-            {mode === 'issues' && (
-              <span className="self-center text-[0.6875rem] text-muted-foreground">
-                Search your issue trackers · states filter loaded results
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {rows.length} loaded · {visibleSources.length}{' '}
+                {visibleSources.length === 1 ? 'source' : 'sources'}
               </span>
-            )}
-            {hasFilters && (
-              <Button
-                className="h-8 text-xs"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearch('')
-                  setLinked('all')
+              <div className="relative ml-auto min-w-40 max-w-full flex-1 sm:max-w-72">
+                <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
+                <Input
+                  className="h-9 w-full pl-9 text-sm"
+                  aria-label={`Search ${mode}`}
+                  placeholder={
+                    mode === 'issues'
+                      ? 'Search issue titles, keys, text…'
+                      : 'Search runs, branches, projects…'
+                  }
+                  value={search}
+                  maxLength={300}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <ChoicePicker
+                aria-label="Issue source"
+                className="h-8 w-auto max-w-72 text-xs"
+                value={project}
+                onValueChange={(value) => {
+                  setProject(value)
                   setState('all')
                 }}
               >
-                Clear filters
-              </Button>
-            )}
+                <option value="">All sources</option>
+                {sources.map((source) => (
+                  <option key={source.key} value={source.key}>
+                    {source.name} · {source.runtimeName}
+                  </option>
+                ))}
+              </ChoicePicker>
+              <ChoicePicker
+                aria-label={mode === 'issues' ? 'Issue state' : 'Pipeline status'}
+                className="h-8 w-auto text-xs"
+                value={state}
+                onValueChange={setState}
+              >
+                <option value="all">All states</option>
+                {states.map((state) => (
+                  <option key={state}>{state}</option>
+                ))}
+              </ChoicePicker>
+              {mode === 'issues' && (
+                <ChoicePicker
+                  aria-label="Project links"
+                  className="h-8 w-auto text-xs"
+                  value={linked}
+                  onValueChange={setLinked}
+                >
+                  <option value="all">All project links</option>
+                  <option value="unlinked">Not linked to a project</option>
+                  <option value="linked">Linked to a project</option>
+                </ChoicePicker>
+              )}
+              <ChoicePicker
+                aria-label="Sort results"
+                className="h-8 w-auto text-xs"
+                value={sort}
+                onValueChange={setSort}
+              >
+                <option value="updated">Recently updated</option>
+                <option value="project">Source</option>
+                <option value="title">Title</option>
+              </ChoicePicker>
+              {mode === 'issues' && (
+                <span className="self-center text-[0.6875rem] text-muted-foreground">
+                  Search your issue trackers · states filter loaded results
+                </span>
+              )}
+              {hasFilters && (
+                <Button
+                  className="h-8 text-xs"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSearch('')
+                    setLinked('all')
+                    setState('all')
+                  }}
+                >
+                  Clear filters
+                </Button>
+              )}
+            </div>
           </div>
-        </header>
+        </>
       )}
       {opening && (
         <p role="status" className="px-5 py-2 text-xs text-muted-foreground">

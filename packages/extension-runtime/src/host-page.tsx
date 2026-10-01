@@ -1,3 +1,4 @@
+import { PageHeader } from '@dovo/studio-ui'
 import { useEffect, type ReactNode } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useRuntimeSources, useWorkspace, WorkspaceScope } from '@dovo/studio-core'
@@ -26,11 +27,7 @@ export function HostPage({
     sources[0]
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <header className="studio-page-header flex shrink-0 flex-wrap items-end justify-between gap-3 border-b">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-        </div>
+      <PageHeader title={title} description={description}>
         {sources.length > 1 && source && (
           <ChoicePicker
             aria-label="Computer"
@@ -46,7 +43,7 @@ export function HostPage({
             ))}
           </ChoicePicker>
         )}
-      </header>
+      </PageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl space-y-4">
           {!source ? (

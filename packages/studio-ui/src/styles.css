@@ -173,6 +173,7 @@ textarea {
   background: transparent;
 }
 .studio {
+  --studio-header-height: 52px;
   height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -180,8 +181,8 @@ textarea {
 }
 .studio-titlebar {
   display: flex;
-  height: 52px;
-  min-height: 52px;
+  height: var(--studio-header-height, 52px);
+  min-height: var(--studio-header-height, 52px);
   flex: none;
   align-items: center;
   justify-content: space-between;
@@ -227,8 +228,8 @@ textarea {
 .studio-task-sidebar-header,
 .studio-task-thread-header,
 .studio-task-rail-header {
-  height: 52px;
-  min-height: 52px;
+  height: var(--studio-header-height, 52px);
+  min-height: var(--studio-header-height, 52px);
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
   user-select: none;
@@ -685,14 +686,62 @@ textarea {
 .studio-navigation-item svg {
   flex-shrink: 0;
 }
+/* A single fixed title row; filters never determine the page header height. */
 .studio-page-header {
-  min-height: 52px;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  height: var(--studio-header-height, 52px);
+  min-height: var(--studio-header-height, 52px);
+  padding: 0 16px;
   background: var(--background);
-  padding: 12px 16px;
+}
+.studio-page-heading {
+  min-width: 0;
+  flex: 1;
 }
 .studio-page-header h1 {
-  font-size: 16px;
-  letter-spacing: -0.035em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: -0.025em;
+}
+.studio-page-description {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 16px;
+}
+.studio-page-description > svg {
+  flex-shrink: 0;
+}
+.studio-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 65%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.studio-page-actions > * {
+  flex-shrink: 0;
+}
+.studio-page-actions :is(button, [role='combobox']) {
+  height: 28px;
+  font-size: 12px;
+}
+.studio-page-toolbar {
+  padding: 12px 16px;
 }
 .studio-empty-icon {
   padding: 8px;
@@ -743,7 +792,7 @@ a:focus-visible {
 }
 @media (max-width: 600px) {
   .studio-page-header {
-    padding: 12px;
+    padding-inline: 12px;
   }
   .studio-summary {
     gap: 8px;

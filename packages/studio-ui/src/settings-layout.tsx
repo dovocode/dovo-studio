@@ -1,3 +1,4 @@
+import { PageHeader } from './page-header'
 import type { ReactNode } from 'react'
 
 /** Settings page frame and row, in the label-left / control-right style of Codex and T3 Code. */
@@ -12,10 +13,7 @@ export function SettingsPage({
 }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <header className="studio-page-header shrink-0 border-b">
-        <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-      </header>
+      <PageHeader title={title} description={description} />
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl space-y-6">{children}</div>
       </div>

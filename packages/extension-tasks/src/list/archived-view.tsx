@@ -1,3 +1,4 @@
+import { PageHeader } from '@dovo/studio-ui'
 import { useMemo } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { responses, useRuntimeSources, useWorkspace } from '@dovo/studio-core'
@@ -54,12 +55,10 @@ export default function ArchivedTasksView() {
   }
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <header className="studio-page-header shrink-0 border-b">
-        <h1 className="text-lg font-semibold tracking-tight">Archived tasks</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Restore a task to bring it back to your task list with its conversation and checkout.
-        </p>
-      </header>
+      <PageHeader
+        title="Archived tasks"
+        description="Restore a task to bring it back to your task list with its conversation and checkout."
+      />
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl space-y-3">
           <div className="relative">
