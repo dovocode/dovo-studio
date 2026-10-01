@@ -145,3 +145,24 @@ it('handles legacy text, unknown payloads and truncated event JSON without crash
   expect(toolPresentation('{}', 'Tool').output).toBe('')
   expect(recentTools([{ ...event('x', 'x', 'recorded', {}), payload: '{broken' }])).toHaveLength(1)
 })
+
+it('reuses immutable tool display data without hiding changed payloads, summaries or inputs', () => {
+  const payload = JSON.stringify({ text: 'cache-output-fixture' })
+  const first = toolPresentation(payload, 'Original')
+  expect(toolPresentation(payload, 'Original')).toBe(first)
+  expect(Object.isFrozen(first)).toBe(true)
+  expect(toolPresentation(payload, 'Changed').title).toBe('Changed')
+  expect(toolPresentation(JSON.stringify({ text: 'new-output' }), 'Original')).not.toBe(first)
+  const input = JSON.stringify({ command: 'git status' })
+  const changed = toolPresentation(payload, 'Original', input)
+  expect(changed).not.toBe(first)
+  expect(toolPresentation(payload, 'Original', input)).toBe(changed)
+})
+
+it('bounds cached presentations and skips oversized payloads', () => {
+  const first = toolPresentation('cache-eviction-fixture', 'Original')
+  for (let index = 0; index < 257; index++) toolPresentation(`eviction-${index}`, 'Tool')
+  expect(toolPresentation('cache-eviction-fixture', 'Original')).not.toBe(first)
+  const large = 'x'.repeat(2_000_001)
+  expect(toolPresentation(large, 'Large')).not.toBe(toolPresentation(large, 'Large'))
+})

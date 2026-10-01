@@ -28,12 +28,15 @@ export function TaskActivity({
     setOpen(toolActivity === 'expanded')
   }, [toolActivity])
   const activity = taskToolEvents(task, events).reverse()
-  const reasoning = activity.filter(
-    (event) =>
+  const reasoning: typeof activity = []
+  const tools: typeof activity = []
+  for (const event of activity) {
+    const isReasoning =
       event.kind === 'reasoning' ||
-      toolPresentation(event.payload, event.summary, event.inputPayload).kind === 'reasoning',
-  )
-  const tools = activity.filter((event) => !reasoning.includes(event))
+      toolPresentation(event.payload, event.summary, event.inputPayload).kind === 'reasoning'
+    if (isReasoning) reasoning.push(event)
+    else tools.push(event)
+  }
   if (!activity.length && !error) return null
   return (
     <View

@@ -26,15 +26,68 @@ const text = (value: unknown): string => {
 }
 const argument = (value: unknown) => object(typeof value === 'string' ? parse(value) : value)
 export type ToolKind = 'computer' | 'command' | 'web' | 'file' | 'tool' | 'reasoning'
-export type ToolPresentation = {
+export type ToolPresentation = Readonly<{
   title: string
   input: string
   output: string
   kind: ToolKind
-}
+}>
+
+// Shared by rows, group summaries and reasoning classification on desktop and mobile.
+// Bound both entry count and retained strings; large tool output is never retained here.
+const MAX_PRESENTATIONS = 256
+const MAX_PRESENTATION_CHARS = 2_000_000
+const presentations = new Map<
+  string,
+  {
+    summary: string
+    inputPayload?: string
+    result: ToolPresentation
+    size: number
+  }
+>()
+let presentationChars = 0
 
 /** Extract displayable tool data without exposing transport envelopes or image blobs. */
 export function toolPresentation(
+  payload: string,
+  summary: string,
+  inputPayload?: string,
+): ToolPresentation {
+  const cached = presentations.get(payload)
+  if (cached?.summary === summary && cached.inputPayload === inputPayload) {
+    presentations.delete(payload)
+    presentations.set(payload, cached)
+    return cached.result
+  }
+  if (cached) {
+    presentations.delete(payload)
+    presentationChars -= cached.size
+  }
+  const result = Object.freeze(computePresentation(payload, summary, inputPayload))
+  const size =
+    payload.length +
+    summary.length +
+    (inputPayload?.length ?? 0) +
+    result.title.length +
+    result.input.length +
+    result.output.length
+  if (size > MAX_PRESENTATION_CHARS) return result
+  while (
+    presentations.size >= MAX_PRESENTATIONS ||
+    presentationChars + size > MAX_PRESENTATION_CHARS
+  ) {
+    const oldest = presentations.keys().next().value
+    if (oldest === undefined) break
+    presentationChars -= presentations.get(oldest)!.size
+    presentations.delete(oldest)
+  }
+  presentations.set(payload, { summary, inputPayload, result, size })
+  presentationChars += size
+  return result
+}
+
+function computePresentation(
   payload: string,
   summary: string,
   inputPayload?: string,
