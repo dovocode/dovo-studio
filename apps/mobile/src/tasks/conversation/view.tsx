@@ -385,6 +385,12 @@ export function Conversation() {
   )
   const car = useCarMode()
   const { activeId, connected } = useRuntime()
+  const messageCount = useAuiState((state) => state.thread.messages.length)
+  const initialWindow = useRef<{ taskId: string; index?: number }>({ taskId: task.id })
+  if (initialWindow.current.taskId !== task.id || messageCount === 0)
+    initialWindow.current = { taskId: task.id }
+  if (initialWindow.current.index === undefined && messageCount > 0)
+    initialWindow.current.index = Math.max(0, messageCount - 8)
   const list = useRef<FlatList<ThreadMessage>>(null)
   const [scroll] = useApplicationState(createConversationScroll)
   const [following, setFollowing] = useApplicationState(true)
@@ -453,8 +459,21 @@ export function Conversation() {
         </View>
       )}
       <ThreadPrimitive.MessagesFlatList
+        key={`${task.id}:${messageCount ? 'messages' : 'empty'}`}
+        initialScrollIndex={
+          initialWindow.current.index === undefined
+            ? undefined
+            : Math.min(initialWindow.current.index, Math.max(0, messageCount - 1))
+        }
+        initialNumToRender={8}
+        maxToRenderPerBatch={6}
+        windowSize={7}
         ref={list}
         onScrollToIndexFailed={({ index, averageItemLength }) => {
+          if (scroll.following) {
+            latest()
+            return
+          }
           list.current?.scrollToOffset({ offset: index * averageItemLength, animated: false })
           setTimeout(
             () => list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 }),
