@@ -39,6 +39,8 @@ export function createDraftStorage(storage: Storage) {
   const locks = new Map<string, { semaphore: Effect.Semaphore; users: number }>()
   const listeners = new Map<string, Set<(value: string) => void>>()
   const records = new Map<string, DraftRecord | null>()
+  // Text already published to the composer may be ahead of serialized disk writes.
+  const publishedText = new Map<string, string>()
   const dirty = new Set<string>()
   const serialize = <A, E>(key: string, operation: Effect.Effect<A, E>) =>
     Effect.suspend(() => {
@@ -113,6 +115,7 @@ export function createDraftStorage(storage: Storage) {
     readRecordEffect(key, legacyKey).pipe(Effect.map((record) => record?.text ?? null))
   const writeEffect = (key: string, value: string) =>
     Effect.suspend(() => {
+      publishedText.set(key, value)
       listeners.get(key)?.forEach((listener) => listener(value))
       return serialize(
         key,
@@ -146,10 +149,14 @@ export function createDraftStorage(storage: Storage) {
       Effect.gen(function* () {
         const previous = yield* load(key)
         if (!previous || previous.submission?.attempt.id !== attempt.id) return
-        const text = clear && previous.text.trim() === attempt.text ? '' : previous.text
+        const current = publishedText.get(key) ?? previous.text
+        const text = clear && current.trim() === attempt.text ? '' : current
         const next = { ...previous, text, submission: { ...previous.submission, accepted: true } }
         // Publish before awaiting storage, retaining the accepted record in memory if saving fails.
-        if (text !== previous.text) listeners.get(key)?.forEach((listener) => listener(text))
+        if (text !== current) {
+          publishedText.set(key, text)
+          listeners.get(key)?.forEach((listener) => listener(text))
+        }
         yield* save(key, next)
       }),
     )

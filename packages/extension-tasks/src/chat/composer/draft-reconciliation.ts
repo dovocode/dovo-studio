@@ -4,8 +4,10 @@ export function reconcileComposerDraft(
   written: string,
   received: string,
   submitted: string | null,
+  previousReceived?: string,
 ) {
   if (
+    received === previousReceived ||
     current !== written ||
     (current === '' && submitted !== null && received.trim() === submitted)
   )

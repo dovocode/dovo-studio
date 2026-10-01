@@ -93,10 +93,18 @@ export function Composer({
     setDraft((current) => [current.trimEnd(), codeReference.text].filter(Boolean).join('\n\n'))
   }, [codeReference, task.id])
   const lastWritten = useRef(task.draft)
+  const lastReceived = useRef(task.draft)
   useEffect(() => {
     // Adopt external draft changes (e.g. moving the task to another machine) without
     // clobbering in-progress typing.
-    const reconciled = reconcileComposerDraft(draft, lastWritten.current, task.draft, submittedText)
+    const reconciled = reconcileComposerDraft(
+      draft,
+      lastWritten.current,
+      task.draft,
+      submittedText,
+      lastReceived.current,
+    )
+    lastReceived.current = task.draft
     if (reconciled !== draft) {
       lastWritten.current = reconciled
       setDraft(reconciled)

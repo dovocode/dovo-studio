@@ -12,3 +12,11 @@ it('does not resurrect submitted text but accepts a new external draft while idl
     'Side chat answer',
   )
 })
+it('does not replay an unchanged saved draft after local text has been written', () => {
+  expect(reconcileComposerDraft('New typing', 'New typing', 'Old draft', null, 'Old draft')).toBe(
+    'New typing',
+  )
+  expect(
+    reconcileComposerDraft('New typing', 'New typing', 'External edit', null, 'Old draft'),
+  ).toBe('External edit')
+})
