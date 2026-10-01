@@ -111,7 +111,7 @@ export function TaskSettings({
         disabled={task.status === 'running' || busy || !connected}
         onPress={() => setHarness(true)}
       />
-      <BranchPicker repositoryId={task.repositoryId} taskId={task.id} />
+      {!repository?.kind && <BranchPicker repositoryId={task.repositoryId} taskId={task.id} />}
       <View style={{ gap: 8 }}>
         <Text style={styles.text}>Project approval rules</Text>
         <Text style={styles.muted}>These exact commands run without asking again.</Text>

@@ -168,83 +168,87 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
           />
         </>
       )}
-      <Choice
-        label="Working directory"
-        disabled={disabled}
-        value={draft.execution ?? (repository ? 'inherit' : 'main')}
-        items={[
-          ...(repository
-            ? [
-                {
-                  id: 'inherit',
-                  name: `Use runtime default (${setup?.defaults.execution === 'worktree' ? 'Worktree' : 'Local checkout'})`,
-                },
-              ]
-            : []),
-          { id: 'main', name: 'Local checkout' },
-          { id: 'worktree', name: 'New worktree' },
-        ]}
-        onChange={(value) =>
-          change({
-            ...draft,
-            execution: value === 'inherit' ? undefined : decode(executionSchema, value),
-          })
-        }
-      />
-      <View style={{ gap: 4 }}>
-        <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
-          <Text style={[styles.text, { flex: 1 }]}>Start from origin</Text>
-          <Switch
-            accessibilityLabel="Start from origin"
+      {!repository?.kind && (
+        <>
+          <Choice
+            label="Working directory"
             disabled={disabled}
-            value={draft.worktreeFromOrigin ?? setup?.defaults.worktreeFromOrigin ?? false}
-            onValueChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
+            value={draft.execution ?? (repository ? 'inherit' : 'main')}
+            items={[
+              ...(repository
+                ? [
+                    {
+                      id: 'inherit',
+                      name: `Use runtime default (${setup?.defaults.execution === 'worktree' ? 'Worktree' : 'Local checkout'})`,
+                    },
+                  ]
+                : []),
+              { id: 'main', name: 'Local checkout' },
+              { id: 'worktree', name: 'New worktree' },
+            ]}
+            onChange={(value) =>
+              change({
+                ...draft,
+                execution: value === 'inherit' ? undefined : decode(executionSchema, value),
+              })
+            }
           />
-        </View>
-        <Text style={styles.muted}>
-          Creates the worktree from the latest matching branch on origin instead of your local
-          branch. Without a matching branch, origin’s default branch is used.
-        </Text>
-        {!!repository && draft.worktreeFromOrigin !== undefined && (
-          <Action
-            secondary
-            label={`Use this computer’s setting (${setup?.defaults.worktreeFromOrigin ? 'on' : 'off'})`}
-            disabled={disabled}
-            onPress={() => change({ ...draft, worktreeFromOrigin: undefined })}
-          />
-        )}
-      </View>
-      {repository && (
-        <Choice
-          label="Worktree setup"
-          disabled={disabled}
-          value={draft.setupCommand === undefined ? 'inherit' : 'custom'}
-          items={[
-            { id: 'inherit', name: 'Use runtime default' },
-            { id: 'custom', name: 'Project override (empty disables setup)' },
-          ]}
-          onChange={(value) =>
-            change({ ...draft, setupCommand: value === 'inherit' ? undefined : '' })
-          }
-        />
+          <View style={{ gap: 4 }}>
+            <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
+              <Text style={[styles.text, { flex: 1 }]}>Start from origin</Text>
+              <Switch
+                accessibilityLabel="Start from origin"
+                disabled={disabled}
+                value={draft.worktreeFromOrigin ?? setup?.defaults.worktreeFromOrigin ?? false}
+                onValueChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
+              />
+            </View>
+            <Text style={styles.muted}>
+              Creates the worktree from the latest matching branch on origin instead of your local
+              branch. Without a matching branch, origin’s default branch is used.
+            </Text>
+            {!!repository && draft.worktreeFromOrigin !== undefined && (
+              <Action
+                secondary
+                label={`Use this computer’s setting (${setup?.defaults.worktreeFromOrigin ? 'on' : 'off'})`}
+                disabled={disabled}
+                onPress={() => change({ ...draft, worktreeFromOrigin: undefined })}
+              />
+            )}
+          </View>
+          {repository && (
+            <Choice
+              label="Worktree setup"
+              disabled={disabled}
+              value={draft.setupCommand === undefined ? 'inherit' : 'custom'}
+              items={[
+                { id: 'inherit', name: 'Use runtime default' },
+                { id: 'custom', name: 'Project override (empty disables setup)' },
+              ]}
+              onChange={(value) =>
+                change({ ...draft, setupCommand: value === 'inherit' ? undefined : '' })
+              }
+            />
+          )}
+          {(!repository || draft.setupCommand !== undefined) && (
+            <Field
+              label="Setup command"
+              multiline
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!disabled}
+              value={draft.setupCommand ?? ''}
+              placeholder="pnpm install --frozen-lockfile"
+              onChangeText={(setupCommand) => change({ ...draft, setupCommand })}
+            />
+          )}
+          <Text style={styles.muted}>
+            Setup runs in each new worktree using this runtime’s shell, before the agent starts.
+            Five-minute limit. Failures stop startup; retrying the task retries setup. Use an
+            idempotent command.
+          </Text>
+        </>
       )}
-      {(!repository || draft.setupCommand !== undefined) && (
-        <Field
-          label="Setup command"
-          multiline
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!disabled}
-          value={draft.setupCommand ?? ''}
-          placeholder="pnpm install --frozen-lockfile"
-          onChangeText={(setupCommand) => change({ ...draft, setupCommand })}
-        />
-      )}
-      <Text style={styles.muted}>
-        Setup runs in each new worktree using this runtime’s shell, before the agent starts.
-        Five-minute limit. Failures stop startup; retrying the task retries setup. Use an idempotent
-        command.
-      </Text>
       <Action
         label={busy ? 'Saving…' : 'Save defaults'}
         disabled={disabled}

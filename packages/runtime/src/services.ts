@@ -1,3 +1,4 @@
+import { ScratchWorkspaces } from './scm/repositories/scratch-workspaces.js'
 import { AcpInstallations } from './agents/configuration/acp-installations.js'
 import type { ExternalListener } from './http/external-listener.js'
 import { randomUUID } from 'node:crypto'
@@ -84,7 +85,14 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   activity.workspace({ ...store.get(), tasks: [] }, store.get())
   const attachments = new Attachments(db, store, activity)
   const pullCache = new PullCache(db, pulls, store, (cwd, refresh) => pulls.identity(cwd, refresh))
-  const checkouts = new TaskCheckout(store, git, () => preferences.get().branchPrefix)
+  const scratch = new ScratchWorkspaces(
+    db.name === ':memory:'
+      ? join(tmpdir(), `dovo-scratch-${randomUUID()}`)
+      : join(dirname(resolve(db.name)), 'scratch'),
+    store,
+    git,
+  )
+  const checkouts = new TaskCheckout(store, git, () => preferences.get().branchPrefix, scratch)
   const tasks = new Tasks(
       store,
       git,
@@ -112,6 +120,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     return approval ? { id: approval.id, preview: approval.title } : undefined
   })
   return {
+    scratch,
     pushNotifications,
     acpInstallations,
     acpController: new AbortController(),
@@ -148,6 +157,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  scratch: ScratchWorkspaces
   network?: ExternalListener
   acpInstallations: AcpInstallations
   acpController: AbortController

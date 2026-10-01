@@ -190,7 +190,10 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
   }, [handoff.error])
   const inWorktree = task.execution === 'worktree'
   const moveActions: HeaderAction[] =
-    !canChangeTaskCheckout(task) && !task.pullRequest && !task.workItem
+    !snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.kind &&
+    !canChangeTaskCheckout(task) &&
+    !task.pullRequest &&
+    !task.workItem
       ? [
           {
             label: inWorktree ? 'Move to the project folder' : 'Move to its own worktree',

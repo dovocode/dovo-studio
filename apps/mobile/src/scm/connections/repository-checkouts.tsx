@@ -14,25 +14,29 @@ export function RepositoryCheckouts({ repository }: { repository: Repository }) 
         gap: 8,
       }}
     >
-      <Choice
-        label={`${repository.name} working directory`}
-        value={taskId}
-        onChange={setTaskId}
-        items={[
-          {
-            id: '',
-            name: 'Project checkout',
-          },
-          ...(snapshot?.workspace.tasks ?? [])
-            .filter((t) => t.repositoryId === repository.id && t.execution === 'worktree')
-            .map((t) => ({
-              id: t.id,
-              name: `${t.title} · worktree`,
-            })),
-        ]}
-      />
-      <TaskDefaultSettings repository={repository} />
-      <RepositoryCard key={taskId} repository={repository} taskId={taskId || undefined} />
+      {!repository.kind && (
+        <Choice
+          label={`${repository.name} working directory`}
+          value={taskId}
+          onChange={setTaskId}
+          items={[
+            {
+              id: '',
+              name: 'Project checkout',
+            },
+            ...(snapshot?.workspace.tasks ?? [])
+              .filter((t) => t.repositoryId === repository.id && t.execution === 'worktree')
+              .map((t) => ({
+                id: t.id,
+                name: `${t.title} · worktree`,
+              })),
+          ]}
+        />
+      )}
+      {repository.kind !== 'scratch' && <TaskDefaultSettings repository={repository} />}
+      {!repository.kind && (
+        <RepositoryCard key={taskId} repository={repository} taskId={taskId || undefined} />
+      )}
     </View>
   )
 }

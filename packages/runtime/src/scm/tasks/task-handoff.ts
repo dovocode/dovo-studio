@@ -54,6 +54,7 @@ export async function handoffTask(s: HandoffServices, id: string, target: 'workt
     throw new HttpError(409, 'Close this task’s terminals before moving it.')
   const repo = s.store.get().repositories.find((item) => item.id === task.repositoryId)
   if (!repo) throw new HttpError(404, 'Repository not found')
+  if (repo.kind) throw new HttpError(400, 'This project does not use Git worktrees')
   const { path: root, branch: projectBranch } = await s.git.inspect(repo.path)
   const label = `dovo: move task ${id} to ${target === 'worktree' ? 'its worktree' : 'the project folder'}`
 

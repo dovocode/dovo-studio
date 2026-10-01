@@ -252,7 +252,7 @@ export function ProjectsMenu({
                           className="size-8 shrink-0 px-0 text-muted-foreground"
                           aria-label={`Settings for ${group.name}`}
                           title={`Settings for ${group.name}`}
-                          disabled={busy || !repo.source.online}
+                          disabled={busy || !repo.source.online || repo.kind === 'scratch'}
                           onClick={() => {
                             setMenuOpen(false)
                             void open(repo.source.runtimeId, repo.id)
@@ -375,11 +375,15 @@ export function ProjectsMenu({
                 key={`defaults-${activeRuntimeId}:${managed.id}`}
                 repository={managed}
               />
-              <RepositoryCheckouts key={`${activeRuntimeId}:${managed.id}`} repo={managed} />
-              <ProjectForgeBinding
-                key={`forge-${connection?.address}-${managed.id}`}
-                repo={managed}
-              />
+              {!managed.kind && (
+                <RepositoryCheckouts key={`${activeRuntimeId}:${managed.id}`} repo={managed} />
+              )}
+              {!managed.kind && (
+                <ProjectForgeBinding
+                  key={`forge-${connection?.address}-${managed.id}`}
+                  repo={managed}
+                />
+              )}
             </>
           )}
         </DialogContent>

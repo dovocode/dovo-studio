@@ -147,7 +147,7 @@ export class TaskPullWatcher {
       )
         continue
       const repo = workspace.repositories.find((item) => item.id === task.repositoryId)
-      if (!repo) continue
+      if (!repo || repo.kind) continue
       try {
         const mentioned = await this.linkMentions(task, repo.path)
         if (!task.pullRequest && !task.checkoutBranch) continue

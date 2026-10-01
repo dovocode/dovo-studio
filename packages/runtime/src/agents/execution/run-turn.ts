@@ -64,6 +64,25 @@ export class TaskTurnRunner {
   finalizeEffect(id: string, cwd: string) {
     return Effect.gen(this, function* () {
       const turn = this.store.task(id).turns?.at(-1)
+      if (
+        turn &&
+        turn.status !== 'running' &&
+        turn.finishedAt &&
+        this.store.get().repositories.find((repo) => repo.id === this.store.task(id).repositoryId)
+          ?.kind
+      ) {
+        this.store.updateTask(id, (task) => ({
+          ...task,
+          status: turn.status === 'completed' ? 'review' : turn.status,
+          runPhase: undefined,
+          runAttempt: undefined,
+          restartRecovery: undefined,
+          activity: undefined,
+          error: turn.error,
+          files: [],
+        }))
+        return
+      }
       if (!turn || turn.status === 'running' || !turn.finishedAt || !turn.checkpoint)
         throw new HttpError(409, 'No completed provider turn is awaiting change capture')
       const before = turn.checkpoint.before
@@ -154,7 +173,11 @@ ${
             `${agent.provider} does not support access mode ${agent.permission}`,
           )
         const commands = this.commands.get()
-        const { branch } = yield* runtimeOperation(() => this.git.inspect(cwd))
+        const hasGit = !this.store.get().repositories.find((repo) => repo.id === task.repositoryId)
+          ?.kind
+        const branch = hasGit
+          ? (yield* runtimeOperation(() => this.git.inspect(cwd))).branch
+          : undefined
         let assistantId = randomUUID()
         const turnId = randomUUID(),
           fingerprint = createHash('sha256')
@@ -209,9 +232,11 @@ ${
               .filter(Boolean)
               .join('\n\n')
           : context || 'Continue the task and report the result.'
-        const before = yield* runtimeOperation(() =>
-          this.git.snapshot(cwd, `refs/dovo/checkpoints/${turnId}/before`),
-        )
+        const before = hasGit
+          ? yield* runtimeOperation(() =>
+              this.git.snapshot(cwd, `refs/dovo/checkpoints/${turnId}/before`),
+            )
+          : ''
         controller.signal.throwIfAborted()
         this.store.updateTask(id, (t) => ({
           ...t,
@@ -230,7 +255,7 @@ ${
               runtimeHost: hostname(),
               id: turnId,
               assistantId,
-              checkpoint: { before, files: [], omitted: [] },
+              checkpoint: hasGit ? { before, files: [], omitted: [] } : undefined,
               agentId: agent.id,
               provider: agent.provider,
               branch,
@@ -246,6 +271,14 @@ ${
           ],
         }))
         const checkpoint = () => {
+          if (!hasGit)
+            return Effect.succeed({
+              before,
+              after: undefined,
+              files: [],
+              omitted: [],
+              error: undefined,
+            })
           let after: string | undefined
           return Effect.gen(this, function* () {
             const capturedAfter = yield* runtimeOperation(() =>
@@ -727,7 +760,9 @@ ${
             ),
           }))
           const captured = yield* checkpoint()
-          const review = yield* runtimeOperation(() => this.git.changes(cwd)).pipe(
+          const review = yield* (
+            hasGit ? runtimeOperation(() => this.git.changes(cwd)) : Effect.succeed([])
+          ).pipe(
             Effect.map((files) => ({ files, error: undefined })),
             Effect.catchAll((error) =>
               Effect.succeed({
@@ -755,7 +790,7 @@ ${
                 ? {
                     ...turn,
                     ...tokenField(),
-                    checkpoint: captured,
+                    checkpoint: hasGit ? captured : undefined,
                     status: 'completed',
                     finishedAt,
                   }
@@ -839,7 +874,7 @@ ${
                     ? {
                         ...turn,
                         ...tokenField(),
-                        checkpoint: captured,
+                        checkpoint: hasGit ? captured : undefined,
                         status,
                         finishedAt,
                         error: errorMessage(controller.signal.reason ?? error),

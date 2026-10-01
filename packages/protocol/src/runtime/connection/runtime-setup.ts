@@ -48,13 +48,18 @@ export function resolveTaskDefaults(
     repository?.taskDefaults?.harness ?? runtime?.harness ?? defaultTaskHarness('codex')
   const permission = repository?.taskDefaults?.permission ?? runtime?.permission ?? 'full-access'
   return {
-    setupCommand: repository?.taskDefaults?.setupCommand ?? runtime?.setupCommand,
+    setupCommand: repository?.kind
+      ? undefined
+      : (repository?.taskDefaults?.setupCommand ?? runtime?.setupCommand),
     harness: {
       ...selected,
       permission: supportsAccess(selected.provider, permission) ? permission : 'ask',
     },
-    execution: repository?.taskDefaults?.execution ?? runtime?.execution ?? 'main',
-    worktreeFromOrigin:
-      repository?.taskDefaults?.worktreeFromOrigin ?? runtime?.worktreeFromOrigin ?? false,
+    execution: repository?.kind
+      ? ('main' as const)
+      : (repository?.taskDefaults?.execution ?? runtime?.execution ?? 'main'),
+    worktreeFromOrigin: repository?.kind
+      ? false
+      : (repository?.taskDefaults?.worktreeFromOrigin ?? runtime?.worktreeFromOrigin ?? false),
   }
 }

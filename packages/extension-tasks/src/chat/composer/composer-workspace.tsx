@@ -62,6 +62,14 @@ export function ComposerWorkspace({
       setBusy(false)
     }
   }
+  if (repository?.kind)
+    return (
+      <div className="mx-auto flex w-[calc(100%-24px)] max-w-[744px] items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
+        <TaskMachineSelector task={task} disabled={disabled} onMoving={onMachineMoving} />
+        <Folder className="size-3" />{' '}
+        {repository.kind === 'scratch' ? 'No project · private thread folder' : 'Project folder'}
+      </div>
+    )
   return (
     <div className="relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[744px] flex-wrap items-center gap-x-2 gap-y-1 rounded-b-xl border border-t-0 bg-muted/15 px-2 pb-1.5 pt-4 text-muted-foreground">
       <TaskMachineSelector task={task} disabled={disabled} onMoving={onMachineMoving} />

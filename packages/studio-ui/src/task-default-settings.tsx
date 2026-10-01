@@ -177,58 +177,62 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
             </FormField>
           </>
         )}
-        <FormField label="Working directory">
-          <ChoicePicker
-            value={draft.execution ?? (repository ? 'inherit' : 'main')}
-            onValueChange={(value) =>
-              change({
-                ...draft,
-                execution: value === 'inherit' ? undefined : decode(executionSchema, value),
-              })
-            }
-          >
-            {repository && (
-              <option value="inherit">
-                Use runtime default (
-                {setup?.defaults.execution === 'worktree' ? 'Worktree' : 'Local checkout'})
-              </option>
-            )}
-            <option value="main">Local checkout</option>
-            <option value="worktree">New worktree</option>
-          </ChoicePicker>
-        </FormField>
-        <StartFromOrigin
-          value={draft.worktreeFromOrigin}
-          inherited={repository ? (setup?.defaults.worktreeFromOrigin ?? false) : undefined}
-          onChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
-        />
-        {repository && (
-          <FormField label="Worktree setup">
-            <ChoicePicker
-              value={draft.setupCommand === undefined ? 'inherit' : 'custom'}
-              onValueChange={(value) =>
-                change({ ...draft, setupCommand: value === 'inherit' ? undefined : '' })
-              }
-            >
-              <option value="inherit">Use runtime default</option>
-              <option value="custom">Project override (empty disables setup)</option>
-            </ChoicePicker>
-          </FormField>
-        )}
-        {(!repository || draft.setupCommand !== undefined) && (
-          <FormField label="Setup command">
-            <Textarea
-              value={draft.setupCommand ?? ''}
-              placeholder="pnpm install --frozen-lockfile"
-              onChange={(event) => change({ ...draft, setupCommand: event.target.value })}
+        {!repository?.kind && (
+          <>
+            <FormField label="Working directory">
+              <ChoicePicker
+                value={draft.execution ?? (repository ? 'inherit' : 'main')}
+                onValueChange={(value) =>
+                  change({
+                    ...draft,
+                    execution: value === 'inherit' ? undefined : decode(executionSchema, value),
+                  })
+                }
+              >
+                {repository && (
+                  <option value="inherit">
+                    Use runtime default (
+                    {setup?.defaults.execution === 'worktree' ? 'Worktree' : 'Local checkout'})
+                  </option>
+                )}
+                <option value="main">Local checkout</option>
+                <option value="worktree">New worktree</option>
+              </ChoicePicker>
+            </FormField>
+            <StartFromOrigin
+              value={draft.worktreeFromOrigin}
+              inherited={repository ? (setup?.defaults.worktreeFromOrigin ?? false) : undefined}
+              onChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
             />
-          </FormField>
+            {repository && (
+              <FormField label="Worktree setup">
+                <ChoicePicker
+                  value={draft.setupCommand === undefined ? 'inherit' : 'custom'}
+                  onValueChange={(value) =>
+                    change({ ...draft, setupCommand: value === 'inherit' ? undefined : '' })
+                  }
+                >
+                  <option value="inherit">Use runtime default</option>
+                  <option value="custom">Project override (empty disables setup)</option>
+                </ChoicePicker>
+              </FormField>
+            )}
+            {(!repository || draft.setupCommand !== undefined) && (
+              <FormField label="Setup command">
+                <Textarea
+                  value={draft.setupCommand ?? ''}
+                  placeholder="pnpm install --frozen-lockfile"
+                  onChange={(event) => change({ ...draft, setupCommand: event.target.value })}
+                />
+              </FormField>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Setup runs in each new worktree using this runtime’s shell, before the agent starts.
+              Five-minute limit. Failures stop startup; retrying the task retries setup. Use an
+              idempotent command.
+            </p>
+          </>
         )}
-        <p className="text-xs text-muted-foreground">
-          Setup runs in each new worktree using this runtime’s shell, before the agent starts.
-          Five-minute limit. Failures stop startup; retrying the task retries setup. Use an
-          idempotent command.
-        </p>
         <div className="flex gap-2">
           <Button
             onClick={() => {

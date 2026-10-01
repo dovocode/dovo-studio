@@ -14,6 +14,7 @@ export function worktreeChoicesEffect(s: Pick<Services, 'git' | 'store'>, reposi
     runtimeOperation(async () => {
       const repository = s.store.get().repositories.find((item) => item.id === repositoryId)
       if (!repository) throw new HttpError(404, 'Project not found')
+      if (repository.kind) throw new HttpError(400, 'This project does not use Git worktrees')
       const { path: root } = await s.git.inspect(repository.path)
       const records = (await s.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
         .split('\0\0')
@@ -47,6 +48,7 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
       const worktrees: Worktree[] = []
       const seen = new Set<string>()
       for (const repository of workspace.repositories) {
+        if (repository.kind) continue
         // A missing or broken project checkout shouldn't hide the others' worktrees.
         const listed = yield* Effect.either(
           runtimeOperation(async () => {

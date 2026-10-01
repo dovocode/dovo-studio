@@ -12,12 +12,14 @@ export const projectSourceKey = (runtimeId: string, repositoryId: string) =>
 
 export function collectionSources(overviews: RuntimeOverview[]): ProjectSource[] {
   return overviews.flatMap((entry) =>
-    (entry.snapshot?.workspace.repositories ?? []).map((repository) => ({
-      key: projectSourceKey(entry.profile.id, repository.id),
-      profile: entry.profile,
-      repository,
-      connected: entry.connected,
-    })),
+    (entry.snapshot?.workspace.repositories ?? [])
+      .filter((repository) => !repository.kind)
+      .map((repository) => ({
+        key: projectSourceKey(entry.profile.id, repository.id),
+        profile: entry.profile,
+        repository,
+        connected: entry.connected,
+      })),
   )
 }
 

@@ -50,6 +50,7 @@ export class ForgeWork {
   }> {
     const repo = this.store.get().repositories.find((v) => v.id === repositoryId)
     if (!repo) throw new HttpError(404, 'Project not found')
+    if (repo.kind) throw new HttpError(400, 'This project does not use Git')
     const connection = repo.forge ? this.forges.get(repo.forge.connectionId) : undefined
     if (connection && connection.provider !== 'github') {
       const http = connectionHttp(this.forges, connection, repo.path)

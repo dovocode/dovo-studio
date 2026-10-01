@@ -296,7 +296,7 @@ function RepositoryDialogContent({
                   ? 'Clones into a new repository folder inside this parent folder, then adds it as a project on the runtime.'
                   : !connection
                     ? 'Offline paths are saved as unverified drafts.'
-                    : 'The runtime verifies the checkout and detects its current branch.'}
+                    : 'Choose a project folder. Git controls appear when it contains a repository.'}
               </p>
               {source !== 'local' && !connected && (
                 <p className="text-xs text-muted-foreground">

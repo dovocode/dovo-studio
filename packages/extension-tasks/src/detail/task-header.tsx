@@ -193,7 +193,7 @@ export function TaskHeader({
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       )}
-      {!compact && repo && (
+      {!compact && repo && !repo.kind && (
         <div className="flex flex-col items-end gap-0.5">
           <div className="flex">
             <Button
@@ -252,7 +252,11 @@ export function TaskHeader({
           {openError}
         </span>
       )}
-      <TaskActions key={task.id} task={task} onLinkPull={() => setLinking(true)} />
+      <TaskActions
+        key={task.id}
+        task={task}
+        onLinkPull={repo?.kind ? undefined : () => setLinking(true)}
+      />
     </div>
   )
   return (
@@ -310,13 +314,15 @@ export function TaskHeader({
               </button>
             )}
             <TaskPullStatus task={task} />
-            <TaskBranchMenu
-              task={task}
-              label={
-                task.checkoutBranch ||
-                (task.execution === 'worktree' ? 'Worktree' : repo?.branch || 'Local checkout')
-              }
-            />
+            {!repo?.kind && (
+              <TaskBranchMenu
+                task={task}
+                label={
+                  task.checkoutBranch ||
+                  (task.execution === 'worktree' ? 'Worktree' : repo?.branch || 'Local checkout')
+                }
+              />
+            )}
             <span
               className="inline-flex min-w-0 max-w-36 items-center gap-1 truncate"
               title={`Runs on ${executionHost ?? 'the selected computer'}${!connected ? ' · offline' : ''}`}

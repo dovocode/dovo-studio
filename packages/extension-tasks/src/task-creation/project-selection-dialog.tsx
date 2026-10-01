@@ -56,7 +56,8 @@ export function ProjectSelectionDialog({
       <DialogContent className="max-w-md">
         <DialogTitle>New task</DialogTitle>
         <DialogDescription>
-          Choose a project. You can switch devices before sending your first message.
+          Choose a project or start without one. You can switch devices before sending your first
+          message.
         </DialogDescription>
         {error && (
           <p role="alert" className="text-xs text-destructive">
@@ -111,7 +112,7 @@ export function ProjectSelectionDialog({
                       <Monitor className="size-3" />
                       {deviceCount > 1
                         ? `${deviceCount} devices · ${onlineCount} online${normalizedProjectQuery && matches.length === 1 ? ` · ${source.name}` : ''}`
-                        : `${source.name} · ${repository.branch}`}
+                        : `${source.name}${repository.branch ? ` · ${repository.branch}` : ''}`}
                     </span>
                     {!!repository.gitIdentityError && (
                       <span className="block text-xs text-destructive">

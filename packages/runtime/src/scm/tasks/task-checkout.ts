@@ -1,9 +1,11 @@
+import type { ScratchWorkspaces } from '../repositories/scratch-workspaces.js'
+import { repositoryPath } from '../repositories/paths.js'
 import { taskBranchName, taskWorktreePath } from './task-branch.js'
 import { defaultWorktreeBase, canChangeTaskCheckout } from '@dovo/protocol'
 import { listBranches } from '../git/branches.js'
 import { fetchPullHead } from '../pulls/pull-head.js'
 import { createHash } from 'node:crypto'
-import { mkdir, stat } from 'node:fs/promises'
+import { mkdir, stat, realpath } from 'node:fs/promises'
 import { basename, dirname, join, sep } from 'node:path'
 import { homedir } from 'node:os'
 import type { WorkspaceStore } from '../../storage/workspace.js'
@@ -39,6 +41,7 @@ export class TaskCheckout {
     private git: GitService,
     /** Settings → Coding → Task defaults → Branch prefix for new task branches. */
     private branchPrefix: () => string = () => 'dovo/',
+    private scratch?: ScratchWorkspaces,
   ) {}
   directory(id: string): Promise<string> {
     const pending = this.pending.get(id)
@@ -55,6 +58,9 @@ export class TaskCheckout {
       cached.execution === task.execution &&
       cached.existingWorktreePath === task.existingWorktreePath &&
       (!task.setupCommand?.trim() || task.worktreeSetupComplete) &&
+      (this.store.get().repositories.find((repo) => repo.id === task.repositoryId)?.kind !==
+        'scratch' ||
+        (await realpath(cached.path).catch(() => '')) === cached.path) &&
       (await stat(cached.path)
         .then((entry) => entry.isDirectory())
         .catch((error: unknown) => {
@@ -77,6 +83,15 @@ export class TaskCheckout {
     const task = this.store.task(id)
     const repo = this.store.get().repositories.find((r) => r.id === task.repositoryId)
     if (!repo) throw new HttpError(404, 'Repository not found')
+    if (repo.kind) {
+      if (task.execution === 'worktree' || task.existingWorktreePath || task.pullRequest)
+        throw new HttpError(400, 'This project does not support Git worktrees or pull requests')
+      if (repo.kind === 'scratch') {
+        if (!this.scratch) throw new HttpError(503, 'Scratch workspaces are unavailable')
+        return this.scratch.directory(id)
+      }
+      return repositoryPath(repo.path)
+    }
     const { path: root } = await this.git.inspect(repo.path)
     if (task.execution !== 'worktree') return root
     if (task.existingWorktreePath) {

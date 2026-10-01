@@ -161,30 +161,32 @@ export function TaskSettings({
         <DialogDescription className="text-xs">
           Choose a harness directly or use a saved agent. Configuration applies only to this task.
         </DialogDescription>
-        <BranchPicker
-          disabled={!connected || busy || task.status === 'running'}
-          load={() =>
-            request(
-              '/api/scm/branches',
-              {
-                repositoryId: task.repositoryId,
-                taskId: task.id,
-              },
-              branchesSchema,
-            )
-          }
-          change={(input) =>
-            request(
-              '/api/scm/branch',
-              {
-                repositoryId: task.repositoryId,
-                taskId: task.id,
-                ...input,
-              },
-              branchesSchema,
-            )
-          }
-        />
+        {!workspace.repositories.find((repo) => repo.id === task.repositoryId)?.kind && (
+          <BranchPicker
+            disabled={!connected || busy || task.status === 'running'}
+            load={() =>
+              request(
+                '/api/scm/branches',
+                {
+                  repositoryId: task.repositoryId,
+                  taskId: task.id,
+                },
+                branchesSchema,
+              )
+            }
+            change={(input) =>
+              request(
+                '/api/scm/branch',
+                {
+                  repositoryId: task.repositoryId,
+                  taskId: task.id,
+                  ...input,
+                },
+                branchesSchema,
+              )
+            }
+          />
+        )}
         <FormField label="Title">
           <Input aria-label="Task title" value={title} onChange={(e) => setTitle(e.target.value)} />
         </FormField>

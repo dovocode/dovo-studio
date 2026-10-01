@@ -1125,7 +1125,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             if (
               initial.owner &&
               !initial.workspace.agents.length &&
-              !initial.workspace.repositories.length &&
+              !initial.workspace.repositories.some((repo) => repo.kind !== 'scratch') &&
               !initial.workspace.tasks.length
             )
               yield* runtimeRequestEffect(

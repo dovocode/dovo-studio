@@ -173,7 +173,9 @@ export function ProjectThreadFilter({
                 <Text style={styles.muted}>{repository.path}</Text>
                 {entry.connected ? (
                   <>
-                    <ProjectIconSettings repository={repository} />
+                    {repository.kind !== 'scratch' && (
+                      <ProjectIconSettings repository={repository} />
+                    )}
                     <RepositoryCheckouts repository={repository} />
                   </>
                 ) : (

@@ -1,10 +1,10 @@
 import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { decode, addRepositorySchema } from '@dovo/protocol'
+import { repositoryPath } from './paths.js'
 import { randomUUID } from 'node:crypto'
 import type { Services } from '../../services.js'
 import { HttpError, errorMessage, runtimeOperation, runtimeProgram } from '../../errors.js'
-import { repositoryPath } from './paths.js'
 export function addRepositoryEffect(s: Services, value: unknown) {
   return runtimeProgram(
     Effect.gen(function* () {
@@ -36,12 +36,17 @@ export function addRepositoryEffect(s: Services, value: unknown) {
         }
         if (input.source === 'github')
           return yield* runtimeOperation(() => s.git.cloneGithub(input.repository, input.directory))
-        return yield* runtimeOperation(() => s.git.inspect(input.path)).pipe(
+        return yield* runtimeOperation(async () => {
+          const path = await repositoryPath(input.path)
+          if (!(await s.git.isRepository(path)))
+            return { path, branch: '', kind: 'folder' as const }
+          return s.git.inspect(path)
+        }).pipe(
           Effect.mapError(
             (error) =>
               new HttpError(
                 400,
-                `Choose an existing Git repository on the runtime host. ${errorMessage(error)}`,
+                `Choose an existing project folder on the runtime host. ${errorMessage(error)}`,
               ),
           ),
         )

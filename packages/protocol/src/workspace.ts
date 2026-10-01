@@ -98,7 +98,10 @@ export const taskTemplateSchema = mutableStruct({
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
 })
 export type TaskTemplate = Schema.Schema.Type<typeof taskTemplateSchema>
+export const SCRATCH_PROJECT_ID = 'dovo:scratch'
 export const repositorySchema = mutableStruct({
+  /** Missing means a Git project, preserving existing workspaces. */
+  kind: Schema.optional(Schema.Literal('folder', 'scratch')),
   /** User-selected project icon, stored as a small PNG for every client. */
   iconOverride: Schema.optional(
     maxValue(Schema.String.pipe(Schema.pattern(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)), 50000),

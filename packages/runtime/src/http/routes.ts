@@ -1,3 +1,4 @@
+import { SCRATCH_PROJECT_ID } from '@dovo/protocol'
 import { usageResets } from './endpoints/usage-resets.js'
 import { RUNTIME_PROTOCOL_VERSION, PAIRING_PROTOCOL_VERSION } from '@dovo/protocol'
 import { routeProgram, serviceResult } from './support/effect.js'
@@ -334,7 +335,12 @@ export function route(
         if (!device.owner) throw new HttpError(403, 'Only the runtime host can manage device trust')
       }
       if (method === 'GET' && path === '/api/snapshot') {
-        const workspace = s.store.publicWorkspace()
+        const storedWorkspace = s.store.publicWorkspace()
+        const scratch = yield* serviceResult(s.scratch.available())
+        const workspace =
+          scratch && !storedWorkspace.repositories.some((repo) => repo.id === scratch.id)
+            ? { ...storedWorkspace, repositories: [...storedWorkspace.repositories, scratch] }
+            : storedWorkspace
         const overview = url.searchParams.get('scope') === 'overview'
         return yield* serviceResult({
           protocolVersion: RUNTIME_PROTOCOL_VERSION,
@@ -360,9 +366,18 @@ export function route(
               workspace.repositories,
               (repo) =>
                 Effect.gen(function* () {
+                  if (repo.kind === 'scratch')
+                    return { ...repo, gitIdentity: undefined, gitIdentityError: undefined }
                   const discoveredIcon = yield* serviceResult(discoverProjectIcon(repo.path))
                   // Never block the snapshot on spawning git: use the last known identity and
                   // refresh it in the background. Unknown identity is not an error, it is pending.
+                  if (repo.kind === 'folder')
+                    return {
+                      ...repo,
+                      discoveredIcon,
+                      gitIdentity: undefined,
+                      gitIdentityError: undefined,
+                    }
                   const cached = s.git.cachedRepositoryIdentity(repo.path)
                   if (!cached)
                     return {
@@ -509,13 +524,37 @@ export function route(
         )
           throw new HttpError(409, 'Runtime already has workspace data')
         const workspace = decode(workspaceSchema, yield* serviceResult(body(request)))
-        s.store.update(() => workspace)
-        return yield* serviceResult({
-          ok: true,
-        })
+        const scratch = workspace.repositories.some((repo) => repo.id === SCRATCH_PROJECT_ID)
+          ? yield* serviceResult(s.scratch.available())
+          : undefined
+        if (workspace.tasks.some((task) => task.repositoryId === SCRATCH_PROJECT_ID) && !scratch)
+          throw new HttpError(409, 'Scratch threads cannot be restored in this Git checkout')
+        s.store.update(() => ({
+          ...workspace,
+          repositories: [
+            ...workspace.repositories.filter(
+              (repo) => repo.id !== SCRATCH_PROJECT_ID && repo.kind !== 'scratch',
+            ),
+            ...(scratch ? [scratch] : []),
+          ],
+        }))
+        return yield* serviceResult({ ok: true })
       }
       if (method === 'PATCH' && path === '/api/workspace') {
         const patch = decode(patchSchema, yield* serviceResult(body(request)))
+        if (patch.collection === 'repositories' && patch.id === SCRATCH_PROJECT_ID) {
+          if (!patch.create || Object.keys(patch.changes).length)
+            throw new HttpError(400, 'The scratch workspace is managed by Dovo')
+          yield* serviceResult(s.scratch.ensure())
+          return { revision: s.store.version() }
+        }
+        if (patch.collection === 'tasks') {
+          const candidate =
+            patch.create && typeof patch.create === 'object' && 'repositoryId' in patch.create
+              ? patch.create.repositoryId
+              : patch.changes.repositoryId?.after
+          if (candidate === SCRATCH_PROJECT_ID) yield* serviceResult(s.scratch.ensure())
+        }
         if (
           patch.collection === 'automations' &&
           (patch.changes.enabled?.after === true ||

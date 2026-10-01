@@ -302,6 +302,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(s.git.openFolder(cwd, target))
           return { ok: true }
         }
+        if (repo.kind) throw new HttpError(400, 'This project does not use Git')
         if (path === '/api/scm/pulls/options/read')
           return yield* serviceResult(s.pulls.createOptions(cwd))
         if (path === '/api/scm/repositories/forge/bind') {

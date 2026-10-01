@@ -66,6 +66,8 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
   const meter = contextMeter(task)
   const { callEffect: commandCall } = useRuntime()
   const commandAction = useAction()
+  const hasGit = !snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
+    ?.kind
   const worktreeAction = useAction()
   const [worktrees, setWorktrees] = useApplicationState<WorktreeChoices | null>(null)
   const [choosingWorktree, setChoosingWorktree] = useApplicationState(false)
@@ -399,7 +401,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                     {meter.short}
                   </Text>
                 )}
-              {showOptions && checkoutEditable && !dictation.active && (
+              {showOptions && checkoutEditable && hasGit && !dictation.active && (
                 <Pressable
                   testID="Checkout & branch"
                   accessibilityRole="button"
@@ -596,7 +598,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
           onMoving={setMachineMoving}
         />
       )}
-      {checkout && checkoutEditable && (
+      {checkout && checkoutEditable && hasGit && (
         <Sheet title="Checkout & branch" onClose={() => setCheckout(false)}>
           <CheckoutChoice
             value={task.existingWorktreePath ? 'existing' : (task.execution ?? 'main')}

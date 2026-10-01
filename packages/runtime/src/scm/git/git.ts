@@ -254,6 +254,21 @@ export class GitService {
     // Ambiguous remotes remain separate rather than changing identity with the branch.
     return undefined
   }
+  async isRepository(cwd: string) {
+    try {
+      return (
+        (
+          await this.command(cwd, ['rev-parse', '--is-inside-work-tree'], {
+            ...processEnvironment(),
+            LC_ALL: 'C',
+          })
+        ).trim() === 'true'
+      )
+    } catch (error) {
+      if (/not a git repository/i.test(errorMessage(error))) return false
+      throw error
+    }
+  }
   async inspect(path: string) {
     const cwd = await repositoryPath(path)
     const root = (await this.command(cwd, ['rev-parse', '--show-toplevel'])).replace(/\r?\n$/, '')

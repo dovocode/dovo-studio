@@ -640,6 +640,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       if (method === 'POST' && path === '/api/tasks/commit-message') {
         const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
         const cwd = yield* serviceResult(s.checkouts.directory(id))
+        if (
+          s.store.get().repositories.find((repo) => repo.id === s.store.task(id).repositoryId)?.kind
+        )
+          throw new HttpError(400, 'This project does not use Git')
         const diff = yield* serviceResult(uncommittedChanges(s.git, cwd))
         if (!diff.trim()) throw new HttpError(409, 'There are no uncommitted changes to describe.')
         return yield* s.titles.commitMessageEffect({ id, diff })
@@ -655,6 +659,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
+        if (
+          s.store.get().repositories.find((repo) => repo.id === s.store.task(input.id).repositoryId)
+            ?.kind
+        )
+          throw new HttpError(400, 'This project does not use Git')
         if (s.store.task(input.id).status === 'running')
           throw new HttpError(409, 'Wait for the agent to finish before committing.')
         const cwd = yield* serviceResult(s.checkouts.directory(input.id))
@@ -752,10 +761,13 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         const repo = s.store.get().repositories.find((item) => item.id === task.repositoryId)
         if (!repo) throw new HttpError(404, 'Repository not found')
         // A draft has no worktree yet; its files match the project it will start from.
-        const cwd = canChangeTaskCheckout(task)
-          ? repo.path
-          : yield* serviceResult(s.checkouts.directory(input.id))
-        return { files: yield* serviceResult(s.projectFiles.search(cwd, input.query)) }
+        const cwd =
+          canChangeTaskCheckout(task) && repo.kind !== 'scratch'
+            ? repo.path
+            : yield* serviceResult(s.checkouts.directory(input.id))
+        return {
+          files: yield* serviceResult(s.projectFiles.search(cwd, input.query, 8, !!repo.kind)),
+        }
       }
       if (
         method === 'POST' &&
@@ -775,11 +787,12 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         const task = s.store.task(input.id)
         const repo = s.store.get().repositories.find((item) => item.id === task.repositoryId)
         if (!repo) throw new HttpError(404, 'Repository not found')
-        const cwd = canChangeTaskCheckout(task)
-          ? repo.path
-          : yield* serviceResult(s.checkouts.directory(input.id))
+        const cwd =
+          canChangeTaskCheckout(task) && repo.kind !== 'scratch'
+            ? repo.path
+            : yield* serviceResult(s.checkouts.directory(input.id))
         if (path === '/api/tasks/files/list')
-          return { files: yield* serviceResult(s.projectFiles.all(cwd)) }
+          return { files: yield* serviceResult(s.projectFiles.all(cwd, !!repo.kind)) }
         if (!input.path) throw new HttpError(400, 'File path is required')
         const filename = yield* serviceResult(
           safeFile(yield* serviceResult(repositoryPath(cwd)), input.path),

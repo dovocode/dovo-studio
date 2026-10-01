@@ -394,6 +394,21 @@ export class WorkspaceStore {
       ),
     }))
   }
+  private validateProjectTask(task: Task) {
+    const repository = this.workspace.repositories.find((repo) => repo.id === task.repositoryId)
+    if (
+      repository?.kind &&
+      (task.execution === 'worktree' ||
+        task.existingWorktreePath ||
+        task.worktreeBaseBranch ||
+        task.worktreeFromOrigin ||
+        task.setupCommand)
+    )
+      throw new HttpError(
+        400,
+        'Plain folders and projectless threads do not support Git worktree settings',
+      )
+  }
   patch(patch: WorkspacePatch) {
     patch = decode(patchSchema, {
       ...patch,
@@ -453,6 +468,9 @@ export class WorkspaceStore {
       )
         throw new HttpError(400, 'New tasks must be drafts')
       const parsed = decode(workspaceSchema.fields[patch.collection].value, record)
+      if (patch.collection === 'tasks') this.validateProjectTask(decode(taskSchema, parsed))
+      if (patch.collection === 'repositories' && 'kind' in record && record.kind === 'scratch')
+        throw new HttpError(400, 'The scratch workspace is managed by Dovo')
       if (entity) {
         if (isDeepStrictEqual(entity, parsed)) return
         throw new HttpError(409, 'This item already exists. Refresh to load the latest version.')
@@ -487,6 +505,8 @@ export class WorkspaceStore {
       ),
       entity,
     )
+    if (patch.collection === 'repositories' && (patch.changes.kind || current.kind === 'scratch'))
+      throw new HttpError(400, 'Cannot edit the managed project kind')
     const allowed =
       patch.collection === 'tasks'
         ? new Set([
@@ -566,6 +586,7 @@ export class WorkspaceStore {
     }
     if (patch.collection === 'tasks' && current.archived === false) current.archivedAt = undefined
     if (!changed) return
+    if (patch.collection === 'tasks') this.validateProjectTask(decode(taskSchema, current))
     this.update((w) => ({
       ...w,
       [patch.collection]: list.map((item) => (item.id === patch.id ? current : item)),
