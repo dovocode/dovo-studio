@@ -213,6 +213,14 @@ export const responses = {
   }),
   projectFileList: mutableStruct({ files: mutableArray(Schema.String) }),
   projectFile: mutableStruct({ path: Schema.String, contents: Schema.String }),
+  gitActionState: mutableStruct({
+    dirty: Schema.Boolean,
+    branch: Schema.String,
+    ahead: Schema.Number,
+    behind: Schema.Number,
+    tracking: Schema.Boolean,
+    canPush: Schema.Boolean,
+  }),
   inspected: mutableStruct({
     path: Schema.String,
     branch: Schema.String,

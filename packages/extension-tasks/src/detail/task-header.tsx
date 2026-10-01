@@ -1,6 +1,9 @@
+import { gitPrimaryAction } from './git-primary-action'
 import { RepositoryActions } from '@dovo/extension-scm/repository-actions'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
+import { useLiveRefresh } from './live-refresh'
+import { canChangeTaskCheckout } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
 import { TaskPullLinkDialog } from '../dialogs/task-pull-link-dialog'
@@ -92,7 +95,7 @@ export function TaskHeader({
   const [commitBusy, setCommitBusy] = useApplicationState(false)
   const [commitStatus, setCommitStatus] = useApplicationState('')
   const committing = useRef(false)
-  const commitAndPush = async () => {
+  const commitAndPush = async (push = true) => {
     if (committing.current) return
     committing.current = true
     setCommitBusy(true)
@@ -105,19 +108,22 @@ export function TaskHeader({
       )
       const result = await request(
         '/api/tasks/commit',
-        { id: task.id, message: generated.message, push: true },
+        { id: task.id, message: generated.message, push },
         mutableStruct({ commit: Schema.String, pushError: Schema.optional(Schema.String) }),
       )
       setCommitStatus(
         result.pushError
           ? `Committed ${result.commit.slice(0, 8)}; push failed: ${result.pushError}`
-          : `Committed and pushed ${result.commit.slice(0, 8)}`,
+          : `${push ? 'Committed and pushed' : 'Committed'} ${result.commit.slice(0, 8)}`,
       )
     } catch (cause) {
       setCommitStatus(cause instanceof Error ? cause.message : String(cause))
     } finally {
       committing.current = false
       setCommitBusy(false)
+      void refreshGit().catch((cause: unknown) =>
+        setCommitStatus(cause instanceof Error ? cause.message : String(cause)),
+      )
     }
   }
   const [gitOpen, setGitOpen] = useApplicationState(false)
@@ -131,6 +137,60 @@ export function TaskHeader({
     return () => clearInterval(timer)
   }, [task.status])
   const repo = workspace.repositories.find((r) => r.id === task.repositoryId)
+  const [gitState, setGitState] = useApplicationState<Schema.Schema.Type<
+    typeof responses.gitActionState
+  > | null>(null)
+  const gitReady =
+    !compact &&
+    connected &&
+    !!repo &&
+    !repo.kind &&
+    !(task.execution === 'worktree' && !task.existingWorktreePath && canChangeTaskCheckout(task))
+  const gitTarget = useRef({ id: task.id, request })
+  gitTarget.current = { id: task.id, request }
+  const refreshGit = useCallback(async () => {
+    const state = await request(
+      '/api/scm/action-state',
+      { repositoryId: task.repositoryId, taskId: task.id },
+      responses.gitActionState,
+    )
+    if (gitTarget.current.id === task.id && gitTarget.current.request === request)
+      setGitState(state)
+  }, [request, task.repositoryId, task.id])
+  useEffect(() => {
+    setGitState(null)
+  }, [task.id, request])
+  const gitError = useLiveRefresh(gitReady, refreshGit)
+  const mutable = gitReady && !!gitState && !gitError && !commitBusy && task.status !== 'running'
+  const pushAvailable =
+    !!gitState?.canPush && (gitState.ahead > 0 || !gitState.tracking) && gitState.behind === 0
+  const pushBranch = async () => {
+    if (committing.current || !repo) return
+    committing.current = true
+    setCommitBusy(true)
+    setCommitStatus('')
+    try {
+      await request('/api/scm/push', { repositoryId: repo.id, taskId: task.id }, responses.ok)
+      setCommitStatus('Branch pushed')
+    } catch (cause) {
+      setCommitStatus(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      committing.current = false
+      setCommitBusy(false)
+      void refreshGit().catch((cause: unknown) =>
+        setCommitStatus(cause instanceof Error ? cause.message : String(cause)),
+      )
+    }
+  }
+  const primary = gitPrimaryAction(gitState, linkedPulls.length > 0)
+  const primaryAction = () => {
+    if (primary === 'Commit & push') void commitAndPush()
+    else if (primary === 'Commit') void commitAndPush(false)
+    else if (primary === 'Push branch') void pushBranch()
+    else if (primary === 'Open PR')
+      window.open(linkedPulls[0]!.url, '_blank', 'noopener,noreferrer')
+    else setGitOpen(true)
+  }
   const executionHost = task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost
   const needsInput =
     !!snapshot?.questions.some((request) => request.taskId === task.id) ||
@@ -204,44 +264,109 @@ export function TaskHeader({
         </DropdownMenu.Root>
       )}
       {!compact && repo && !repo.kind && (
-        <div className="flex flex-col items-end gap-0.5">
-          <div className="flex">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1 rounded-r-none px-2 text-[0.6875rem]"
-              disabled={!connected || commitBusy || task.status === 'running'}
-              onClick={() => void commitAndPush()}
-              title="Generate a message with the title model, commit all changes and push"
-            >
-              <GitBranch className="size-3.5" /> {commitBusy ? 'Committing…' : 'Commit & push'}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 rounded-l-none border-l-0 px-1.5"
-              aria-label="Manual Git actions"
-              onClick={() => setGitOpen(true)}
-            >
-              <ChevronDown className="size-3" />
-            </Button>
-          </div>
-          {!!linkedPulls.length && (
-            <div className="flex max-w-64 items-center gap-2 overflow-hidden text-[0.625rem] text-muted-foreground">
-              {linkedPulls.map((pull) => (
-                <a
-                  key={pull.url}
-                  href={pull.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex shrink-0 items-center gap-0.5 hover:text-foreground hover:underline"
-                  title={pull.title}
+        <div className="flex">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 rounded-r-none px-2 text-[0.6875rem]"
+            disabled={primary === 'Open PR' || primary === 'Git actions' ? false : !mutable}
+            onClick={primaryAction}
+            title={gitError || primary}
+          >
+            <GitBranch className="size-3.5" /> {commitBusy ? 'Working…' : primary}
+          </Button>
+          <DropdownMenu.Root
+            onOpenChange={(open) => {
+              if (open && gitReady)
+                void refreshGit().catch((cause: unknown) =>
+                  setCommitStatus(cause instanceof Error ? cause.message : String(cause)),
+                )
+            }}
+          >
+            <DropdownMenu.Trigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 rounded-l-none border-l-0 px-1.5"
+                aria-label="Git actions and pull requests"
+              >
+                <ChevronDown className="size-3" />
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                align="end"
+                sideOffset={6}
+                className="z-50 min-w-56 rounded-md border bg-popover p-1 text-xs text-popover-foreground shadow-md"
+              >
+                {gitState?.dirty && (
+                  <>
+                    {gitState.canPush && !gitState.behind && (
+                      <DropdownMenu.Item
+                        disabled={!mutable}
+                        className="rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                        onSelect={() => void commitAndPush()}
+                      >
+                        Commit & push
+                      </DropdownMenu.Item>
+                    )}
+                    <DropdownMenu.Item
+                      disabled={!mutable}
+                      className="rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                      onSelect={() => void commitAndPush(false)}
+                    >
+                      Commit only
+                    </DropdownMenu.Item>
+                  </>
+                )}
+                {pushAvailable && (
+                  <DropdownMenu.Item
+                    disabled={!mutable}
+                    className="rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                    onSelect={() => void pushBranch()}
+                  >
+                    Push branch
+                  </DropdownMenu.Item>
+                )}
+                {!!linkedPulls.length && (
+                  <DropdownMenu.Label className="px-2 pt-2 pb-1 text-muted-foreground">
+                    Linked pull requests
+                  </DropdownMenu.Label>
+                )}
+                {linkedPulls.map((pull) => (
+                  <DropdownMenu.Item
+                    key={pull.url}
+                    className="flex max-w-80 items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent"
+                    onSelect={() => window.open(pull.url, '_blank', 'noopener,noreferrer')}
+                  >
+                    <GitPullRequest className="size-3.5 shrink-0" />
+                    <span className="truncate">
+                      #{pull.number} · {pull.title}
+                    </span>
+                  </DropdownMenu.Item>
+                ))}
+                <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                <DropdownMenu.Item
+                  className="rounded px-2 py-1.5 outline-none focus:bg-accent"
+                  onSelect={() => setLinking(true)}
                 >
-                  <GitPullRequest size={10} />#{pull.number}
-                </a>
-              ))}
-            </div>
-          )}
+                  Manage PR links…
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="rounded px-2 py-1.5 outline-none focus:bg-accent"
+                  onSelect={() => host.navigate({ viewId: 'pulls', entityId: repo.id })}
+                >
+                  Pull requests…
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="rounded px-2 py-1.5 outline-none focus:bg-accent"
+                  onSelect={() => setGitOpen(true)}
+                >
+                  Advanced Git actions…
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         </div>
       )}
       {commitStatus && (

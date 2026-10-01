@@ -1,3 +1,4 @@
+import { gitActionState } from '../../scm/git/action-state.js'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
 import {
   repositoryFolderSchema,
@@ -294,6 +295,15 @@ export function scmRoute(request: IncomingMessage, path: string) {
         const cwd = input.taskId
           ? yield* serviceResult(s.checkouts.directory(input.taskId))
           : repo.path
+        if (path === '/api/scm/action-state') {
+          const [status, remotes] = yield* serviceResult(
+            Promise.all([
+              s.git.command(cwd, ['status', '--porcelain=v2', '--branch']),
+              s.git.command(cwd, ['remote']),
+            ]),
+          )
+          return gitActionState(status, remotes)
+        }
         if (path === '/api/scm/push') {
           yield* serviceResult(s.git.push(cwd))
           return { ok: true }
