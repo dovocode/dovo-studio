@@ -346,6 +346,8 @@ export class Jobs {
         const task = this.tasks.create({
           title: node.data.label,
           agentId: node.data.agentId,
+          harness: node.data.harness,
+          agentOverrides: node.data.agentOverrides,
           repositoryId: node.data.repositoryId,
           execution: node.data.execution,
           objective:

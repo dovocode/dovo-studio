@@ -1,4 +1,6 @@
 import { CronExpressionParser } from 'cron-parser'
+import { resolveTaskAgent } from '../workspace.js'
+import { supportsAccess } from '../auth/access.js'
 import type { Automation, Workspace } from '../workspace.js'
 
 export function automationIssues(
@@ -52,8 +54,12 @@ export function automationIssues(
     }
     if (data.kind === 'task') {
       if (!data.objective.trim()) errors.push(`Add instructions to ${data.label}.`)
-      if (!workspace.agents.some((agent) => agent.id === data.agentId))
-        errors.push(`Choose an agent for ${data.label}.`)
+      const agent = resolveTaskAgent({ ...data, id: node.id }, workspace.agents)
+      if (!agent) errors.push(`Choose an agent for ${data.label}.`)
+      if (agent && !supportsAccess(agent.provider, agent.permission))
+        errors.push(`Choose a supported permission mode for ${data.label}.`)
+      if (agent?.provider === 'acp' && !agent.acpInstallationId && !agent.endpoint.trim())
+        errors.push(`Choose an installed ACP agent or executable for ${data.label}.`)
       if (!workspace.repositories.some((repo) => repo.id === data.repositoryId))
         errors.push(`Choose a repository for ${data.label}.`)
     }

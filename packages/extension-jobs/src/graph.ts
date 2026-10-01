@@ -1,4 +1,4 @@
-import { automationIssues } from '@dovo/studio-core'
+import { automationIssues, defaultTaskHarness } from '@dovo/studio-core'
 import type { Automation, AutomationNode, Workspace } from '@dovo/studio-core'
 
 export function validateGraph(flow: Automation, workspace: Workspace): string[] {
@@ -21,7 +21,8 @@ export function newNode(
       schedule: '0 9 * * 1-5',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       objective: '',
-      agentId: workspace.agents[0]?.id ?? '',
+      agentId: '',
+      ...(kind === 'task' ? { harness: defaultTaskHarness('codex') } : {}),
       repositoryId: workspace.repositories[0]?.id ?? '',
     },
   }

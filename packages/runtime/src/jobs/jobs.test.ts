@@ -1,4 +1,5 @@
 import { runtimeIntegration, waitForRuntime as waitForJob } from '../testing/integration'
+import { defaultTaskHarness } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type { AgentAdapter } from '../agents/execution/types'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -709,4 +710,39 @@ it('prunes finished runs and delivery receipts past the retention window', async
   expect(runtime.services.jobs.list()).toEqual([])
   expect(db.prepare('SELECT COUNT(*) AS count FROM job_runs').get()).toEqual({ count: 0 })
   expect(db.prepare('SELECT COUNT(*) AS count FROM deliveries').get()).toEqual({ count: 0 })
+})
+
+it('runs an automation with its own harness, model, thinking and permissions without saved agents', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const flow = createFlow()
+  const harness = {
+    ...defaultTaskHarness('claude'),
+    model: 'claude-sonnet-4-5',
+    reasoning: 'high',
+    permission: 'ask' as const,
+  }
+  flow.nodes[1].data = { ...flow.nodes[1].data, agentId: '', harness }
+  runtime.services.store.update(() => ({ ...f.workspace, agents: [], automations: [flow] }))
+  const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Done'))
+  vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run,
+  })
+  runtime.services.jobs.start(flow.id)
+  await waitForJob(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
+  const taskId = runtime.services.jobs.list()[0].taskIds[0]
+  expect(runtime.services.store.task(taskId).harness).toEqual(harness)
+  expect(run.mock.calls[0][0].agent).toMatchObject({
+    provider: harness.provider,
+    model: harness.model,
+    reasoning: harness.reasoning,
+    permission: harness.permission,
+  })
 })

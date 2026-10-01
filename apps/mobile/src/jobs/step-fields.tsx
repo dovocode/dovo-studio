@@ -1,5 +1,23 @@
 import { View } from 'react-native'
 import { Text } from '../ui/content/text'
+import {
+  defaultTaskHarness,
+  resolveTaskAgent,
+  decode,
+  taskHarnessSchema,
+  agentSchema,
+  selectableAccessModes,
+  supportsAccess,
+  type Task,
+  type Agent,
+} from '@dovo/protocol'
+import { useRuntime } from '../runtime/connection/provider'
+import { ModelSettings } from '../agents/model-settings'
+import {
+  taskHarnessChoices,
+  taskHarnessSelection,
+  selectedTaskHarness,
+} from '../tasks/creation/harness-choices'
 import type { AutomationData, Workspace } from '@dovo/protocol'
 import { Choice } from '../ui/controls/choice'
 import { Field } from '../ui/controls/field'
@@ -16,6 +34,29 @@ export function StepFields({
   disabled: boolean
   onChange: (patch: Partial<AutomationData>) => void
 }) {
+  const { snapshot } = useRuntime()
+  const task: Task = {
+    id: 'automation-step',
+    title: data.label,
+    status: 'draft',
+    createdAt: '',
+    draft: '',
+    messages: [],
+    files: [],
+    example: false,
+    repositoryId: data.repositoryId,
+    agentId: data.agentId,
+    harness: data.harness,
+    agentOverrides: data.agentOverrides,
+  }
+  const agent = resolveTaskAgent(task, workspace.agents) ?? {
+    ...defaultTaskHarness('codex'),
+    id: task.id,
+    name: 'Codex',
+  }
+  const installations = snapshot?.acpInstallations ?? []
+  const changeAgent = (next: Agent) =>
+    onChange({ agentId: '', agentOverrides: undefined, harness: decode(taskHarnessSchema, next) })
   return (
     <View style={{ gap: 12 }}>
       <Field
@@ -47,19 +88,50 @@ export function StepFields({
             onChange={(repositoryId) => onChange({ repositoryId })}
           />
           <Choice
-            label="Agent"
-            value={data.agentId}
-            items={workspace.agents.map((agent) => ({
-              id: agent.id,
-              name: `${agent.name} · ${agent.model || agent.provider}`,
-            }))}
-            disabled={disabled || !workspace.agents.length}
-            onChange={(agentId) => onChange({ agentId })}
+            label="Harness"
+            value={taskHarnessSelection(task)}
+            items={taskHarnessChoices(
+              task,
+              workspace.agents,
+              installations,
+              snapshot?.defaults?.modelPreferences,
+            )}
+            disabled={disabled}
+            onChange={(selection) => {
+              const next = selectedTaskHarness(task, workspace.agents, selection, installations)
+              if (!next) return
+              if (selection.startsWith('agent:'))
+                onChange({
+                  agentId: selection.slice(6),
+                  harness: undefined,
+                  agentOverrides: undefined,
+                })
+              else changeAgent(next)
+            }}
           />
-          {!workspace.agents.length && (
-            <Text style={styles.muted}>
-              Add a custom agent in Settings → Agents to use it in an automation.
-            </Text>
+          <ModelSettings agent={agent} onChange={changeAgent} disabled={disabled} />
+          <Choice
+            label="Permissions"
+            value={agent.permission}
+            disabled={disabled}
+            items={selectableAccessModes(agent.permission)
+              .filter((mode) => supportsAccess(agent.provider, mode.id))
+              .map((mode) => ({ id: mode.id, name: mode.name }))}
+            onChange={(permission) =>
+              changeAgent({
+                ...agent,
+                permission: decode(agentSchema.fields.permission, permission),
+              })
+            }
+          />
+          {(agent.provider === 'opencode' ||
+            (agent.provider === 'acp' && !agent.acpInstallationId)) && (
+            <Field
+              label={agent.provider === 'acp' ? 'ACP executable' : 'OpenCode server URL'}
+              value={agent.endpoint}
+              editable={!disabled}
+              onChangeText={(endpoint) => changeAgent({ ...agent, endpoint })}
+            />
           )}
           {!workspace.repositories.length && (
             <Text style={styles.muted}>Add a project in Tasks → Projects first.</Text>

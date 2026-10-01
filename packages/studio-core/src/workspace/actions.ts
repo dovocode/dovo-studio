@@ -17,6 +17,7 @@ export function createTask(
     | 'repositoryId'
     | 'execution'
     | 'harness'
+    | 'agentOverrides'
     | 'worktreeBaseBranch'
     | 'worktreeFromOrigin'
     | 'setupCommand'
@@ -31,6 +32,7 @@ export function createTask(
     repositoryId: input.repositoryId,
     agentId: input.agentId,
     harness: input.harness,
+    agentOverrides: input.agentOverrides,
     execution: input.execution,
     worktreeBaseBranch: input.worktreeBaseBranch,
     worktreeFromOrigin: input.worktreeFromOrigin,

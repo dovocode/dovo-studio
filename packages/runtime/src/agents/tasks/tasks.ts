@@ -987,6 +987,8 @@ export class Tasks {
   create(
     input: Pick<Task, 'title' | 'agentId' | 'repositoryId' | 'execution' | 'pullRequest'> & {
       objective: string
+      harness?: Task['harness']
+      agentOverrides?: Task['agentOverrides']
       origin?: string
     },
   ) {
@@ -996,7 +998,7 @@ export class Tasks {
       id: randomUUID(),
       ...input,
       execution: input.execution ?? defaults.execution,
-      harness: input.agentId ? undefined : defaults.harness,
+      harness: input.harness ?? (input.agentId ? undefined : defaults.harness),
       status: 'draft',
       createdAt: new Date().toISOString(),
       messages: input.objective.trim()

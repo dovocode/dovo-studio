@@ -30,6 +30,8 @@ export function useAutomation(automationId: string) {
           title: node.data.label,
           objective: node.data.objective,
           agentId: node.data.agentId,
+          harness: node.data.harness,
+          agentOverrides: node.data.agentOverrides,
           repositoryId: node.data.repositoryId,
           origin: flow.id,
           execution: node.data.execution,

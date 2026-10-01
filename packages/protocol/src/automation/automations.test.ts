@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { defaultTaskHarness } from '../workspace.js'
 import { automationIssues } from './automations.js'
 import type { Automation, AutomationData, Workspace } from '../workspace.js'
 
@@ -78,4 +79,23 @@ describe('shared automation validation', () => {
     automation.edges = [flow().edges[0], { ...flow().edges[0], id: 'duplicate' }]
     expect(automationIssues(automation, workspace)).toContain('Remove duplicate connections.')
   })
+})
+
+it('validates direct harnesses without predefined agents and checks provider permissions', () => {
+  const automation = flow()
+  const data = automation.nodes[1].data
+  data.agentId = ''
+  data.harness = {
+    ...defaultTaskHarness('codex'),
+    model: 'gpt-5',
+    reasoning: 'high',
+    permission: 'ask',
+  }
+  expect(automationIssues(automation, { ...workspace, agents: [] })).toEqual([])
+  data.harness = { ...defaultTaskHarness('acp') }
+  expect(automationIssues(automation, workspace)).toContain(
+    'Choose an installed ACP agent or executable for Review.',
+  )
+  data.harness = { ...data.harness, acpInstallationId: 'installed-agent' }
+  expect(automationIssues(automation, workspace)).toEqual([])
 })

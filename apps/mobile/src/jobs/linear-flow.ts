@@ -1,3 +1,4 @@
+import { defaultTaskHarness } from '@dovo/protocol'
 import type { Automation, AutomationData, AutomationNode } from '@dovo/protocol'
 
 /** Mobile edits a single ordered path; never flatten a canvas with branches or missing nodes. */
@@ -63,7 +64,8 @@ export function newAutomationNode(
       timezone: defaults.timezone,
       objective: '',
       repositoryId: defaults.repositoryId,
-      agentId: defaults.agentId,
+      agentId: '',
+      ...(kind === 'task' ? { harness: defaultTaskHarness('codex') } : {}),
       execution: 'worktree',
     },
   }

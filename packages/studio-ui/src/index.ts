@@ -46,3 +46,5 @@ export { PageHeader } from './page-header'
 
 export { ComposerModelPicker } from './composer-model-picker'
 export { useHarnessCatalog } from './harness-catalog'
+
+export { HarnessFields } from './harness-fields'
