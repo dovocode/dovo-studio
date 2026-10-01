@@ -1,3 +1,4 @@
+import { useDeferredValue, useMemo, useState } from 'react'
 import { FileIcon, DiffAmounts } from '../files/presentation'
 import { Check, ChevronDown } from 'lucide-react'
 import type { ChangedFile } from '@dovo/studio-core'
@@ -104,6 +105,12 @@ export function FileTree({
   selected: string
   onSelect: (path: string) => void
 }) {
+  const [query, setQuery] = useState('')
+  const filter = useDeferredValue(query.trim().toLowerCase())
+  const filtered = useMemo(
+    () => files.filter((file) => file.path.toLowerCase().includes(filter)),
+    [files, filter],
+  )
   return (
     <aside
       className="flex w-64 max-w-[40%] shrink-0 flex-col border-l bg-sidebar"
@@ -113,9 +120,19 @@ export function FileTree({
         <span>Files</span>
         <span className="tabular-nums text-muted-foreground">{files.length}</span>
       </div>
+      <div className="border-b p-2">
+        <input
+          type="search"
+          aria-label="Search changed files"
+          placeholder="Search files…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          className="h-7 w-full rounded border bg-background px-2 text-xs"
+        />
+      </div>
       <div className="min-h-0 overflow-auto p-2">
         <FolderRows
-          folder={fileTree(files)}
+          folder={fileTree(filtered)}
           stats={new Map(stats.map((stat) => [stat.path, stat]))}
           selected={selected}
           onSelect={onSelect}

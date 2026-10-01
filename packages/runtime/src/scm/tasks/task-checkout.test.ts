@@ -111,6 +111,14 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
   })
   const files = decode(responses.files, await call('/api/scm/changes', scope)).files
   expect(files[0].after).toBe('review edit\n')
+  s.store.updateTask(isolated.id, (task) => ({
+    ...task,
+    files: task.files.map((file) => ({ ...file, viewed: true })),
+  }))
+  const beforeRefresh = s.store.task(isolated.id).files
+  await call('/api/scm/changes', scope)
+  expect(s.store.task(isolated.id).files).toBe(beforeRefresh)
+  expect(s.store.task(isolated.id).files[0].viewed).toBe(true)
   await call('/api/scm/stage', {
     ...scope,
     paths: ['hello.txt'],

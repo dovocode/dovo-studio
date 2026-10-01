@@ -22,8 +22,10 @@ export function PierreEditor({
   comments,
   onComment,
   onReference,
+  onEditingChange,
 }: {
   file: ChangedFile
+  onEditingChange?: (editing: boolean) => void
   taskId: string
   readOnly?: boolean
   comments: Task['messages']
@@ -67,6 +69,12 @@ export function PierreEditor({
   const diffs = useDiffOptions()
   const [split, setSplit] = useApplicationState(diffs.defaultSplit)
   const [dirty, setDirty] = useApplicationState(false)
+  useEffect(() => {
+    onEditingChange?.(
+      editing || dirty || (file.diskContents !== undefined && file.diskContents !== file.after),
+    )
+    return () => onEditingChange?.(false)
+  }, [editing, dirty, file.diskContents, file.after, onEditingChange])
   const saveRef = useRef(onSave)
   saveRef.current = onSave
   const diff = useMemo(

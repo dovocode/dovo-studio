@@ -1,6 +1,6 @@
 import { fileStats, FileIcon, DiffAmounts } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useDeferredValue } from 'react'
 import { getFiletypeFromFileName, preloadHighlighter } from '@pierre/diffs'
 import { Editor } from '@pierre/diffs/edit'
 import {
@@ -12,6 +12,7 @@ import {
 import { ChevronDown, Folder, RefreshCw } from 'lucide-react'
 import { responses, useDiffOptions, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button, IconButton, cn } from '@dovo/studio-ui'
+import { useLiveRefresh } from './live-refresh'
 import { formatCodeReference } from './code-reference'
 const createEditor: EditorFactory<undefined, undefined> = (type, options, key) =>
   new Editor(type, options, key)
@@ -22,11 +23,13 @@ function HighlightedFile({
   contents,
   onReference,
   onSave,
+  onEditingChange,
 }: {
   taskId: string
   path: string
   contents: string
   onReference?: (text: string) => void
+  onEditingChange?: (editing: boolean) => void
   onSave: (contents: string, expectedContents: string) => Promise<void>
 }) {
   const [ready, setReady] = useApplicationState(false)
@@ -38,6 +41,10 @@ function HighlightedFile({
   const [saveError, setSaveError] = useApplicationState('')
   const [pending, setPending] = useApplicationState<string | null>(null)
   const [editRevision, setEditRevision] = useApplicationState(0)
+  useEffect(() => {
+    onEditingChange?.(editing || pending !== null || saving)
+    return () => onEditingChange?.(false)
+  }, [editing, pending, saving, onEditingChange])
   const cancelEdit = useRef(false)
   const diffs = useDiffOptions()
   useEffect(() => {
@@ -309,8 +316,10 @@ function DirectoryRows({
 export function TaskFiles({
   task,
   onReference,
+  onEditingChange,
 }: {
   task: Task
+  onEditingChange?: (editing: boolean) => void
   onReference?: (text: string) => void
 }) {
   const stats = useMemo(
@@ -324,56 +333,59 @@ export function TaskFiles({
   selectedRef.current = selected
   const [contents, setContents] = useApplicationState('')
   const [loading, setLoading] = useApplicationState(false)
-  const [error, setError] = useApplicationState('')
   const [revision, setRevision] = useApplicationState(0)
+  const editing = useRef(false)
+  const editGeneration = useRef(0)
+  const changedEditing = useCallback(
+    (value: boolean) => {
+      if (editing.current !== value) editGeneration.current += 1
+      editing.current = value
+      onEditingChange?.(value)
+    },
+    [onEditingChange],
+  )
+  const [query, setQuery] = useApplicationState('')
+  const filter = useDeferredValue(query.trim().toLowerCase())
   useEffect(() => {
-    if (!connected) return
-    let active = true
-    setLoading(true)
-    void request('/api/tasks/files/list', { id: task.id }, responses.projectFileList)
-      .then(
-        (result) => {
-          if (active) {
-            setPaths(result.files)
-            setError('')
-          }
-        },
-        (cause: unknown) => {
-          if (active) setError(cause instanceof Error ? cause.message : String(cause))
-        },
-      )
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [connected, request, task.id, revision])
-  useEffect(() => {
-    if (!selected || !connected) return
-    let active = true
     setContents('')
-    setLoading(true)
-    void request('/api/tasks/files/read', { id: task.id, path: selected }, responses.projectFile)
-      .then(
-        (result) => {
-          if (active) {
-            setContents(result.contents)
-            setError('')
-          }
-        },
-        (cause: unknown) => {
-          if (active) setError(cause instanceof Error ? cause.message : String(cause))
-        },
-      )
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
+    setLoading(!!selected)
+  }, [selected])
+  const refresh = useCallback(async () => {
+    const listing = await request(
+      '/api/tasks/files/list',
+      { id: task.id },
+      responses.projectFileList,
+    )
+    setPaths((previous) =>
+      previous.length === listing.files.length &&
+      previous.every((path, index) => path === listing.files[index])
+        ? previous
+        : listing.files,
+    )
+    if (selected && !editing.current) {
+      const generation = editGeneration.current
+      try {
+        const result = await request(
+          '/api/tasks/files/read',
+          { id: task.id, path: selected },
+          responses.projectFile,
+        )
+        if (
+          selectedRef.current === selected &&
+          !editing.current &&
+          generation === editGeneration.current
+        )
+          setContents(result.contents)
+      } finally {
+        if (selectedRef.current === selected) setLoading(false)
+      }
     }
-  }, [connected, request, task.id, selected, revision])
-  const root = useMemo(() => tree(paths), [paths])
+  }, [request, task.id, selected, revision])
+  const refreshError = useLiveRefresh(connected, refresh)
+  const root = useMemo(
+    () => tree(paths.filter((path) => path.toLowerCase().includes(filter))),
+    [paths, filter],
+  )
   return (
     <section className="flex h-full min-w-0 flex-col bg-background" aria-label="Project files">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs font-medium">
@@ -387,9 +399,9 @@ export function TaskFiles({
           <RefreshCw size={14} />
         </IconButton>
       </header>
-      {error && (
+      {refreshError && (
         <p role="alert" className="border-b px-3 py-2 text-xs text-destructive">
-          {error}
+          {refreshError}
         </p>
       )}
       <div className="flex min-h-0 min-w-0 flex-1">
@@ -400,7 +412,8 @@ export function TaskFiles({
                 <p className="p-4 text-xs text-muted-foreground">Loading file…</p>
               ) : (
                 <HighlightedFile
-                  key={`${selected}:${revision}`}
+                  key={selected}
+                  onEditingChange={changedEditing}
                   taskId={task.id}
                   path={selected}
                   contents={contents}
@@ -424,8 +437,20 @@ export function TaskFiles({
           aria-label="Project file tree"
           className="flex w-64 max-w-[40%] shrink-0 flex-col border-l bg-sidebar"
         >
-          <div className="border-b px-3 py-3 text-xs font-medium">Files</div>
+          <div className="border-b p-2">
+            <input
+              type="search"
+              aria-label="Search project files"
+              placeholder="Search files…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="h-7 w-full rounded border bg-background px-2 text-xs"
+            />
+          </div>
           <div className="min-h-0 overflow-auto p-2">
+            {filter && !root.files.length && !root.folders.size && (
+              <p className="px-2 py-1 text-xs text-muted-foreground">No matching files.</p>
+            )}
             <DirectoryRows node={root} selected={selected} select={setSelected} stats={stats} />
           </div>
         </aside>

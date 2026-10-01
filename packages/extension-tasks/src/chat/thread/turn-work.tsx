@@ -9,13 +9,15 @@ export function TurnWork({
   turn,
   finalIndex,
   children,
+  reveal = false,
 }: {
   turn: TaskTurn
+  reveal?: boolean
   finalIndex: number
   children: ReactNode[]
 }) {
   const [expanded, setExpanded] = useState<boolean | null>(null)
-  const open = expanded ?? turn.status !== 'completed'
+  const open = reveal || (expanded ?? turn.status !== 'completed')
   const label =
     turn.status === 'running' ? (
       'Turn in progress'

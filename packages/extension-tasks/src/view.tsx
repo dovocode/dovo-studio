@@ -3,7 +3,7 @@ import { TaskTools } from './detail/task-tools'
 import { TaskAgents } from './detail/task-agents'
 import { BrowserPane, DevicesPane } from './browser/browser-pane'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { X, Maximize2, Minimize2 } from 'lucide-react'
 import { templateTaskFields } from '@dovo/protocol'
 import {
   createTask,
@@ -35,6 +35,7 @@ import { TaskHeader, type TaskSurface } from './detail/task-header'
 import { TaskConversation } from './detail/task-conversation'
 import { ReviewPane } from './review/review-pane'
 import { TaskFiles } from './detail/task-files'
+import { useLiveRefresh } from './detail/live-refresh'
 import type { CodeReference } from './detail/code-reference'
 import { TerminalPane } from './terminal/terminal-pane'
 import {
@@ -87,6 +88,14 @@ export default function TasksView({ entityId }: StudioViewProps) {
     if (!entityId && task && !deselected) host.navigate({ viewId: 'tasks', entityId: task.id })
   }, [entityId, task?.id, deselected])
   const compact = useCompactLayout()
+  const [viewerExpanded, setViewerExpanded] = useState(false)
+  const [viewerDocked, setViewerDocked] = useState(false)
+  const workspacePane = useRef<HTMLDivElement | null>(null)
+  const editingFile = useRef(false)
+  const setFileEditing = useCallback((value: boolean) => {
+    editingFile.current = value
+  }, [])
+
   // Split view: a second task from the connected computer, next to the selected one.
   const [splitId, setSplitId] = useApplicationState('')
   const splitTask =
@@ -105,6 +114,34 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const threadKey = taskCollectionKey(activeRuntimeId, task?.id ?? selectedId)
   const [threadSurfaces, setThreadSurfaces] = useApplicationState<Record<string, TaskSurface>>({})
   const surface = threadSurfaces[threadKey] ?? 'chat'
+  const fileViewer = surface === 'files' || surface === 'changes'
+  useEffect(() => {
+    const element = workspacePane.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) =>
+      setViewerDocked(entry.contentRect.width >= 1050),
+    )
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [task?.id])
+  const repository = workspace.repositories.find((item) => item.id === task?.repositoryId)
+  const refreshChanges = useCallback(async () => {
+    if (!task || repository?.kind || editingFile.current) return
+    await store.request(
+      '/api/scm/changes',
+      { repositoryId: task.repositoryId, taskId: task.id },
+      responses.files,
+    )
+  }, [task?.id, task?.repositoryId, repository?.kind, store.request])
+  const changesError = useLiveRefresh(
+    connected &&
+      !!task &&
+      !task.archived &&
+      !task.archivedAt &&
+      !repository?.kind &&
+      (task.execution !== 'worktree' || !!task.checkoutBranch || !!task.existingWorktreePath),
+    refreshChanges,
+  )
   const lastToolSurface = useRef<TaskSurface>('files')
   const setSurface = useCallback(
     (next: TaskSurface) => {
@@ -612,7 +649,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   bottomTerminalOpen={bottomTerminalOpen}
                   onBottomTerminal={toggleBottomTerminal}
                 />
-                <div className="flex min-h-0 min-w-0 flex-1">
+                <div
+                  ref={workspacePane}
+                  className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
+                >
                   <div
                     ref={(element) => {
                       panes.current.chat = element
@@ -620,9 +660,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
                     tabIndex={-1}
                     className={cn(
                       'relative flex min-h-0 min-w-0 flex-1 flex-col',
-                      (surface === 'changes' ||
-                        surface === 'files' ||
-                        (surface !== 'chat' && compact)) &&
+                      ((fileViewer && viewerExpanded) ||
+                        (surface !== 'chat' && compact && !fileViewer)) &&
                         'hidden',
                     )}
                   >
@@ -636,6 +675,11 @@ export default function TasksView({ entityId }: StudioViewProps) {
                     >
                       {transcriptNotice}
                     </p>
+                    {changesError && (
+                      <p role="status" className="px-5 py-1 text-xs text-destructive">
+                        Couldn’t refresh changes: {changesError}
+                      </p>
+                    )}
                     {stopError && (
                       <p role="alert" className="px-5 pt-2 text-xs text-destructive">
                         Could not stop the agent. {stopError}
@@ -693,13 +737,44 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   <aside
                     aria-label="Workspace tools"
                     className={cn(
-                      'min-h-0 min-w-0 flex-col',
+                      'min-h-0 min-w-0 flex-col bg-background',
                       surface === 'chat' ? 'hidden' : 'flex',
-                      compact || surface === 'changes' || surface === 'files'
-                        ? 'flex-1'
-                        : 'w-[380px] max-w-[48%] shrink-0 border-l',
+                      fileViewer
+                        ? viewerExpanded
+                          ? 'flex-1 border-l'
+                          : viewerDocked && !compact
+                            ? 'w-[560px] max-w-[50%] shrink-0 border-l'
+                            : cn(
+                                'absolute inset-y-2 z-30 w-[min(640px,calc(100%-72px))] rounded-lg border shadow-2xl overflow-hidden',
+                                !compact && toolsVisible ? 'right-14' : 'right-2',
+                              )
+                        : compact
+                          ? 'flex-1'
+                          : 'w-[380px] max-w-[48%] shrink-0 border-l',
                     )}
                   >
+                    {fileViewer && (
+                      <div className="flex h-9 shrink-0 items-center gap-1 border-b px-3 text-xs">
+                        <span className="flex-1 text-muted-foreground">
+                          {surface === 'files' ? 'Project files' : 'Changes'}
+                        </span>
+                        <IconButton
+                          label={viewerExpanded ? 'Restore side panel' : 'Expand viewer'}
+                          aria-pressed={viewerExpanded}
+                          className="size-7"
+                          onClick={() => setViewerExpanded((value) => !value)}
+                        >
+                          {viewerExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                        </IconButton>
+                        <IconButton
+                          label="Close viewer"
+                          className="size-7"
+                          onClick={() => selectSurface('chat', true)}
+                        >
+                          <X size={14} />
+                        </IconButton>
+                      </div>
+                    )}
                     {!compact &&
                       surface !== 'browser' &&
                       surface !== 'devices' &&
@@ -774,11 +849,14 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       tabIndex={-1}
                       className={cn('min-h-0 min-w-0 flex-1', surface !== 'changes' && 'hidden')}
                     >
-                      <ReviewPane
-                        key={task.id}
-                        task={task}
-                        onReference={(text) => addCodeReference(task.id, text)}
-                      />
+                      {surface === 'changes' && (
+                        <ReviewPane
+                          key={task.id}
+                          task={task}
+                          onReference={(text) => addCodeReference(task.id, text)}
+                          onEditingChange={setFileEditing}
+                        />
+                      )}
                     </div>
                     <div
                       ref={(element) => {
@@ -791,6 +869,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         <TaskFiles
                           key={task.id}
                           task={task}
+                          onEditingChange={setFileEditing}
                           onReference={(text) => addCodeReference(task.id, text)}
                         />
                       )}

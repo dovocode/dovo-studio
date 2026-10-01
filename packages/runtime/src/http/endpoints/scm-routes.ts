@@ -1,3 +1,4 @@
+import { retainChangedFiles } from '../../scm/git/retain-changes.js'
 import {
   repositoryFolderSchema,
   createGithubRepositorySchema,
@@ -445,12 +446,11 @@ export function scmRoute(request: IncomingMessage, path: string) {
           return yield* serviceResult(result)
         }
         if (path === '/api/scm/changes') {
-          const files = yield* serviceResult(s.git.changes(cwd))
+          let files = yield* serviceResult(s.git.changes(cwd))
           if (typeof input.taskId === 'string') {
-            s.store.updateTask(input.taskId, (t) => ({
-              ...t,
-              files,
-            }))
+            const previous = s.store.task(input.taskId).files
+            files = retainChangedFiles(previous, files)
+            if (files !== previous) s.store.updateTask(input.taskId, (t) => ({ ...t, files }))
           }
           return yield* serviceResult({
             files,

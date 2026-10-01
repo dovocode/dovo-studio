@@ -1,6 +1,7 @@
 import { fileStats } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
+import { useLiveRefresh } from '../detail/live-refresh'
 import { DiskActions } from './disk-actions'
 import {
   FileDiff,
@@ -27,12 +28,22 @@ export function ReviewPane({
   task,
   onClose,
   onReference,
+  onEditingChange,
 }: {
   task: Task
+  onEditingChange?: (editing: boolean) => void
   onClose?: () => void
   onReference?: (text: string) => void
 }) {
   const { setWorkspace, request, connected } = useWorkspace()
+  const [editing, setEditing] = useApplicationState(false)
+  const editingChanged = useCallback(
+    (value: boolean) => {
+      setEditing(value)
+      onEditingChange?.(value)
+    },
+    [onEditingChange],
+  )
   const [reviewBusy, setReviewBusy] = useApplicationState(false)
   const [reviewError, setReviewError] = useApplicationState('')
   const [actionsOpen, setActionsOpen] = useApplicationState(
@@ -50,7 +61,6 @@ export function ReviewPane({
     base: string
   } | null>(null)
   const [branchLoading, setBranchLoading] = useApplicationState(false)
-  const [sourceError, setSourceError] = useApplicationState('')
   const [selected, setSelected] = useApplicationState('')
   const turns = task.turns ?? []
   const selectedTurn =
@@ -78,36 +88,26 @@ export function ReviewPane({
         : source.kind === 'latest'
           ? 'Latest turn'
           : `Turn ${turns.findIndex((turn) => turn.id === (source.kind === 'turn' ? source.id : '')) + 1}`
-  useEffect(() => {
-    if (source.kind !== 'branch') return
-    let active = true
-    setBranchLoading(true)
-    setSourceError('')
-    void request(
-      '/api/scm/branch-changes',
-      { repositoryId: task.repositoryId, taskId: task.id },
-      responses.branchDiff,
-    )
-      .then((result) => {
-        if (active) setBranchDiff(result)
-      })
-      .catch((cause: unknown) => {
-        if (active) {
-          setBranchDiff(null)
-          setSourceError(cause instanceof Error ? cause.message : String(cause))
-        }
-      })
-      .finally(() => {
-        if (active) setBranchLoading(false)
-      })
-    return () => {
-      active = false
+  const refreshBranch = useCallback(async () => {
+    try {
+      const result = await request(
+        '/api/scm/branch-changes',
+        { repositoryId: task.repositoryId, taskId: task.id },
+        responses.branchDiff,
+      )
+      setBranchDiff(result)
+    } finally {
+      setBranchLoading(false)
     }
-  }, [source.kind, branchRefresh, task.id, task.repositoryId, request])
+  }, [request, task.repositoryId, task.id, branchRefresh])
+  const branchError = useLiveRefresh(connected && source.kind === 'branch', refreshBranch)
   const chooseSource = (next: DiffSource) => {
     setSelected('')
-    setSourceError('')
-    if (next.kind === 'branch') setBranchDiff(null)
+    if (next.kind === 'branch') {
+      setBranchRefresh((value) => value + 1)
+      setBranchDiff(null)
+      setBranchLoading(true)
+    }
     setSource(next)
   }
   const stats = useMemo(() => files.map(fileStats), [files])
@@ -201,7 +201,10 @@ export function ReviewPane({
           label="Reload disk changes"
           className="ml-auto size-7"
           disabled={
-            !connected || refreshBusy || (source.kind !== 'working' && source.kind !== 'branch')
+            !connected ||
+            editing ||
+            refreshBusy ||
+            (source.kind !== 'working' && source.kind !== 'branch')
           }
           onClick={() => {
             if (source.kind === 'branch') {
@@ -274,14 +277,9 @@ export function ReviewPane({
           </IconButton>
         )}
       </header>
-      {reviewError && (
+      {(reviewError || branchError) && (
         <p role="alert" className="border-b px-3 py-2 text-xs text-destructive">
-          {reviewError}
-        </p>
-      )}
-      {sourceError && (
-        <p role="alert" className="border-b px-3 py-2 text-xs text-destructive">
-          {sourceError}
+          {reviewError || branchError}
         </p>
       )}
       {!!omitted.length && (
@@ -315,6 +313,7 @@ export function ReviewPane({
               <PierreEditor
                 key={`${task.id}:${sourceLabel}:${file.path}`}
                 taskId={task.id}
+                onEditingChange={editingChanged}
                 onReference={onReference}
                 readOnly={source.kind !== 'working'}
                 comments={source.kind === 'working' ? task.messages : []}
@@ -364,7 +363,7 @@ export function ReviewPane({
       ) : (
         <EmptyState
           icon={<FileDiff />}
-          title={sourceError ? 'Diff unavailable' : 'No changed files'}
+          title={branchError ? 'Diff unavailable' : 'No changed files'}
           description={
             source.kind === 'working'
               ? 'Changes will appear here when a connected agent produces them.'
