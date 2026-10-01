@@ -25,6 +25,21 @@ const same = (a: PullStatus | undefined, b: PullStatus) =>
   a.state === b.state &&
   a.checks === b.checks &&
   JSON.stringify(a.failedChecks ?? []) === JSON.stringify(b.failedChecks ?? [])
+/** GitHub REST uses owner:branch labels, unlike the checkout's plain branch name. */
+function matchesBranch(pull: { head: string; url: string }, branch: string | undefined) {
+  if (!branch) return false
+  if (pull.head === branch) return true
+  const colon = pull.head.indexOf(':')
+  if (colon < 1 || pull.head.slice(colon + 1) !== branch) return false
+  try {
+    const url = new URL(pull.url)
+    const match = url.pathname.match(/^\/([^/]+)\/[^/]+\/pull\/\d+\/?$/)
+    // A fork using the same branch name must not settle this checkout's thread.
+    return !!match && match[1]!.toLowerCase() === pull.head.slice(0, colon).toLowerCase()
+  } catch {
+    return false
+  }
+}
 const summaryChecks = (state: string | null | undefined) => {
   if (!state) return undefined
   const outcome = checkOutcome(state)
@@ -154,20 +169,26 @@ export class TaskPullWatcher {
         let open = openPulls.get(repo.path)
         if (!open) {
           open = await this.s.pullCache.list(repo.path, 'open', 1)
+          const preferences = this.s.preferences.get()
+          if (open.stale && (preferences.settleOnPullClose || preferences.archiveOnPullMerge))
+            open = await this.s.pullCache.list(repo.path, 'open', 1, true)
           openPulls.set(repo.path, open)
         }
         // A task with only a branch may have a pull request beyond the first page.
         // Keep pages already fetched for this repository so other tasks reuse them.
         if (task.checkoutBranch && !task.pullRequest && !task.pullStatus?.number)
-          while (open.hasMore && !open.pulls.some((pull) => pull.head === task.checkoutBranch)) {
+          while (
+            open.hasMore &&
+            !open.pulls.some((pull) => matchesBranch(pull, task.checkoutBranch))
+          ) {
             const next = await this.s.pullCache.list(repo.path, 'open', open.page + 1)
             open = { ...next, pulls: [...open.pulls, ...next.pulls] }
             openPulls.set(repo.path, open)
             if (!next.pulls.length) break
           }
-        const branchMatches = open.pulls.filter((pull) => pull.head === task.checkoutBranch)
+        const branchMatches = open.pulls.filter((pull) => matchesBranch(pull, task.checkoutBranch))
         const byBranch = branchMatches.length === 1 ? branchMatches[0] : undefined
-        const mentionedBranch = mentioned.filter((pull) => pull.head === task.checkoutBranch)
+        const mentionedBranch = mentioned.filter((pull) => matchesBranch(pull, task.checkoutBranch))
         const number =
           task.pullRequest?.number ??
           byBranch?.number ??
@@ -210,7 +231,7 @@ export class TaskPullWatcher {
           freshClosure =
             !detail.stale &&
             !detail.refreshError &&
-            (!!task.pullRequest || detail.pull.head === task.checkoutBranch)
+            (!!task.pullRequest || matchesBranch(detail.pull, task.checkoutBranch))
           this.attach(task, detail.pull)
           const outcomes = detail.checks.map((check) => ({
             name: check.name,

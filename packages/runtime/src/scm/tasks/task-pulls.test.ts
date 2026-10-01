@@ -314,3 +314,48 @@ it('discovers an already closed main PR from its verified message URL before bra
   expect(f.s.store.task(f.task.id).archivedAt).toBeUndefined()
   expect(f.s.store.task(f.task.id).pullRequest).toBeUndefined()
 })
+
+it('matches GitHub owner-qualified branches and settles their freshly confirmed merged PR', async () => {
+  const f = await smartFixture('merged')
+  const closed = await f.detail('unused', 7)
+  f.list.mockResolvedValue({
+    pulls: [{ ...pull('open', null), head: 'o:dovo/fix-7' }],
+    hasMore: false,
+    page: 1,
+  })
+  f.detail.mockResolvedValue({ ...closed, pull: { ...closed.pull, head: 'o:dovo/fix-7' } })
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id).pullStatus).toMatchObject({ number: 7, state: 'open' })
+  f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+  f.s.preferences.save({ settleOnPullClose: true })
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id)).toMatchObject({
+    archived: true,
+    pullStatus: { number: 7, state: 'merged' },
+  })
+})
+it('does not associate another owner’s same-named fork branch with the thread', async () => {
+  const f = await smartFixture('merged')
+  f.list.mockResolvedValue({
+    pulls: [{ ...pull('open', null), head: 'contributor:dovo/fix-7' }],
+    hasMore: false,
+    page: 1,
+  })
+  f.s.preferences.save({ settleOnPullClose: true })
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id).pullStatus).toBeUndefined()
+  expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+})
+it('refreshes a stale open list before deciding a main PR is still open', async () => {
+  const f = await smartFixture('merged')
+  await f.watcher.refresh()
+  f.s.preferences.save({ settleOnPullClose: true })
+  f.list.mockImplementation(async (_path, _state, _page, force) =>
+    force
+      ? { pulls: [], hasMore: false, page: 1 }
+      : { pulls: [pull('open', null)], hasMore: false, page: 1, stale: true },
+  )
+  await f.watcher.refresh()
+  expect(f.list).toHaveBeenCalledWith(expect.any(String), 'open', 1, true)
+  expect(f.s.store.task(f.task.id).archived).toBe(true)
+})
