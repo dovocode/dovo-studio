@@ -1,7 +1,7 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskTools } from './detail/task-tools'
 import { TaskAgents } from './detail/task-agents'
-import { BrowserPane } from './browser/browser-pane'
+import { BrowserPane, DevicesPane } from './browser/browser-pane'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { templateTaskFields } from '@dovo/protocol'
@@ -717,12 +717,17 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         tabIndex={-1}
                         className="min-h-0 min-w-0 flex-1"
                       >
-                        <BrowserPane
-                          key={surface}
-                          taskId={task.id}
-                          initialMode={surface === 'devices' ? 'devices' : 'remote'}
-                          onClose={() => selectSurface('chat', true)}
-                        />
+                        {surface === 'devices' ? (
+                          <DevicesPane
+                            taskId={task.id}
+                            onClose={() => selectSurface('chat', true)}
+                          />
+                        ) : (
+                          <BrowserPane
+                            taskId={task.id}
+                            onClose={() => selectSurface('chat', true)}
+                          />
+                        )}
                       </div>
                     )}
                     <div

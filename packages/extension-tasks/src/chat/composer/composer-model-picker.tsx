@@ -115,8 +115,9 @@ export function ComposerModelPicker({
         : { ...defaultTaskHarness(activeProvider), permission: value.permission }
   const { catalog, loading, error } = useHarnessCatalog(selectedHarness, open && mode === 'models')
   const listId = useId()
-  const items: PickerItem[] =
-    mode === 'agents'
+  const items: PickerItem[] = !open
+    ? []
+    : mode === 'agents'
       ? agents.map((agent) => ({
           id: agent.id,
           name: agent.name,

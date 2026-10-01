@@ -40,24 +40,30 @@ import { RemoteBrowser } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
 const addresses = new Map<string, string>()
-export function BrowserPane({
+export function BrowserPane({ taskId, onClose }: { taskId: string; onClose?: () => void }) {
+  return <PreviewPane taskId={taskId} onClose={onClose} mode="remote" />
+}
+export function DevicesPane({ taskId, onClose }: { taskId: string; onClose?: () => void }) {
+  return <PreviewPane taskId={taskId} onClose={onClose} mode="devices" />
+}
+function PreviewPane({
   taskId,
   onClose,
-  initialMode = 'remote',
+  mode,
 }: {
   taskId: string
   onClose?: () => void
-  initialMode?: 'remote' | 'devices'
+  mode: 'remote' | 'devices'
 }) {
   const { connection } = useWorkspace()
   const scope = `${connection?.address ?? ''}:${taskId}`
   return (
     <BrowserContent
-      key={scope}
+      key={`${scope}:${mode}`}
       scope={scope}
       taskId={taskId}
       onClose={onClose}
-      initialMode={initialMode}
+      initialMode={mode}
     />
   )
 }
@@ -476,36 +482,34 @@ function BrowserContent({
         </Dialog>
       )}
       <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2 text-xs">
-        <Button
-          size="sm"
-          className="h-7 max-w-[155px] rounded-lg px-2.5 text-xs"
-          variant={mode === 'web' ? 'secondary' : 'ghost'}
-          onClick={() => setMode('web')}
-        >
-          <ProjectIcon repository={repository} className="mr-1 size-3.5" />
-          <span className="min-w-0 truncate">
-            {mode === 'web' && history.title ? history.title : (repository?.name ?? 'Browser')}
+        {initialMode === 'devices' ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Smartphone size={14} />
+            Devices
           </span>
-        </Button>
-        <Button
-          size="sm"
-          className="h-7 rounded-lg px-2.5 text-xs"
-          variant={mode === 'remote' ? 'secondary' : 'ghost'}
-          onClick={() => setMode('remote')}
-        >
-          Remote canvas
-        </Button>
-        <IconButton
-          label="Devices"
-          className="size-7"
-          aria-pressed={mode === 'devices'}
-          onClick={() => {
-            setMode('devices')
-            void act(loadDevices)
-          }}
-        >
-          <Smartphone size={15} />
-        </IconButton>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              className="h-7 max-w-[155px] rounded-lg px-2.5 text-xs"
+              variant={mode === 'web' ? 'secondary' : 'ghost'}
+              onClick={() => setMode('web')}
+            >
+              <ProjectIcon repository={repository} className="mr-1 size-3.5" />
+              <span className="min-w-0 truncate">
+                {mode === 'web' && history.title ? history.title : (repository?.name ?? 'Browser')}
+              </span>
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 rounded-lg px-2.5 text-xs"
+              variant={mode === 'remote' ? 'secondary' : 'ghost'}
+              onClick={() => setMode('remote')}
+            >
+              Remote canvas
+            </Button>
+          </>
+        )}
         <span className="flex-1" />
         {onClose && (
           <IconButton label="Hide preview sidebar" className="size-7 shrink-0" onClick={onClose}>

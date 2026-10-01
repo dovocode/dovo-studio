@@ -299,7 +299,13 @@ function CommitSection({ task }: { task: Task }) {
   const idle = connected && !busy && task.status !== 'running'
   const commit = (push: boolean) =>
     act(() =>
-      callEffect('/api/tasks/commit', { id: task.id, message, push }, commitSchema).pipe(
+      (message.trim()
+        ? Effect.succeed({ message: message.trim() })
+        : callEffect('/api/tasks/commit-message', { id: task.id }, messageSchema)
+      ).pipe(
+        Effect.flatMap(({ message }) =>
+          callEffect('/api/tasks/commit', { id: task.id, message, push }, commitSchema),
+        ),
         Effect.tap((result) =>
           Effect.sync(() => {
             setMessage('')
@@ -341,11 +347,7 @@ function CommitSection({ task }: { task: Task }) {
           disabled={!idle || !message.trim()}
           onPress={() => commit(false)}
         />
-        <Action
-          label="Commit & push"
-          disabled={!idle || !message.trim()}
-          onPress={() => commit(true)}
-        />
+        <Action label="Commit & push" disabled={!idle} onPress={() => commit(true)} />
       </View>
       {!!status && <Text style={styles.muted}>{status}</Text>}
       {!!error && <Text style={styles.error}>{error}</Text>}

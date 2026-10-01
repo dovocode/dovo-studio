@@ -23,17 +23,21 @@ import { useAction } from '../../ui/controls/use-action'
 import { RemoteBrowser } from './remote-browser'
 import { PhysicalControls } from './physical-controls'
 const addresses = new Map<string, string>()
-export function BrowserPane({
+type PreviewProps = { taskId: string; expanded: boolean; onExpand: (value: boolean) => void }
+export function BrowserPane(props: PreviewProps) {
+  return <PreviewPane {...props} initialMode="remote" />
+}
+export function DevicesPane(props: PreviewProps) {
+  return <PreviewPane {...props} initialMode="devices" />
+}
+function PreviewPane({
   taskId,
   expanded,
   onExpand,
-}: {
-  taskId: string
-  expanded: boolean
-  onExpand: (value: boolean) => void
-}) {
+  initialMode,
+}: PreviewProps & { initialMode: 'remote' | 'devices' }) {
   const { profile, snapshot } = useRuntime()
-  const [mode, setMode] = useApplicationState('remote')
+  const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>(initialMode)
   const [reloadToken, setReloadToken] = useApplicationState(0)
   const latestTurn = snapshot?.workspace.tasks.find((task) => task.id === taskId)?.turns?.at(-1)
   const seenTurn = useRef(latestTurn?.status === 'completed' ? latestTurn.id : '')
@@ -67,7 +71,8 @@ export function BrowserPane({
             flex: 1,
           }}
         >
-          {!expanded && (
+          {initialMode === 'devices' && <Text style={styles.muted}>Devices</Text>}
+          {!expanded && initialMode !== 'devices' && (
             <Choice
               label="Browser mode"
               compact
@@ -82,12 +87,10 @@ export function BrowserPane({
                   id: 'web',
                   name: 'Direct preview',
                 },
-                {
-                  id: 'devices',
-                  name: 'Devices',
-                },
               ]}
-              onChange={setMode}
+              onChange={(value) => {
+                if (value === 'remote' || value === 'web') setMode(value)
+              }}
             />
           )}
           {expanded && <Text style={styles.muted}>Preview</Text>}

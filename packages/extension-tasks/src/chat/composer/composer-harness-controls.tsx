@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode } from '@dovo/protocol'
-import { useRef } from 'react'
+import { memo, useMemo, useRef } from 'react'
 import {
   Check,
   LockKeyhole,
@@ -52,14 +52,22 @@ const accessIcon = {
   'full-access': LockKeyholeOpen,
   'read-only': Eye,
 }
-export function ComposerHarnessControls({ task, disabled }: { task: Task; disabled: boolean }) {
+export const ComposerHarnessControls = memo(function ComposerHarnessControls({
+  task,
+  disabled,
+}: {
+  task: Task
+  disabled: boolean
+}) {
   const { workspace, setWorkspace, flush } = useWorkspace()
   const providerLock = lockedTaskProvider(task, workspace.agents)
   const installationLock = lockedAcpInstallationId(task, workspace.agents)
-  const resolved = resolveTaskAgent(task, workspace.agents)
-  const value = resolved
-    ? decode(taskHarnessSchema, resolved)
-    : defaultTaskHarness(providerLock ?? 'codex')
+  const value = useMemo(() => {
+    const resolved = resolveTaskAgent(task, workspace.agents)
+    return resolved
+      ? decode(taskHarnessSchema, resolved)
+      : defaultTaskHarness(providerLock ?? 'codex')
+  }, [task.id, task.agentId, task.agentOverrides, task.harness, workspace.agents, providerLock])
   const [open, setOpen] = useApplicationState(false)
   const [reasoningOpen, setReasoningOpen] = useApplicationState(false)
   const [connection, setConnection] = useApplicationState(false)
@@ -392,4 +400,4 @@ export function ComposerHarnessControls({ task, disabled }: { task: Task; disabl
         ))}
     </>
   )
-}
+})

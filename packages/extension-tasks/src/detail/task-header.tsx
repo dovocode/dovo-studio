@@ -1,6 +1,8 @@
 import { RepositoryActions } from '@dovo/extension-scm/repository-actions'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { Schema } from 'effect'
+import { mutableStruct } from '@dovo/protocol'
 import { TaskPullLinkDialog } from '../dialogs/task-pull-link-dialog'
 import { taskPullLinks } from './task-pull-links'
 import { TaskActions } from './task-actions'
@@ -77,6 +79,37 @@ export function TaskHeader({
   const updates = useRuntimeReleaseCheck()
   const serverUpdate = runtimeUpdate(snapshot, updates.releases)
   const host = useStudioHost()
+  const [commitBusy, setCommitBusy] = useApplicationState(false)
+  const [commitStatus, setCommitStatus] = useApplicationState('')
+  const committing = useRef(false)
+  const commitAndPush = async () => {
+    if (committing.current) return
+    committing.current = true
+    setCommitBusy(true)
+    setCommitStatus('')
+    try {
+      const generated = await request(
+        '/api/tasks/commit-message',
+        { id: task.id },
+        mutableStruct({ message: Schema.String }),
+      )
+      const result = await request(
+        '/api/tasks/commit',
+        { id: task.id, message: generated.message, push: true },
+        mutableStruct({ commit: Schema.String, pushError: Schema.optional(Schema.String) }),
+      )
+      setCommitStatus(
+        result.pushError
+          ? `Committed ${result.commit.slice(0, 8)}; push failed: ${result.pushError}`
+          : `Committed and pushed ${result.commit.slice(0, 8)}`,
+      )
+    } catch (cause) {
+      setCommitStatus(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      committing.current = false
+      setCommitBusy(false)
+    }
+  }
   const [gitOpen, setGitOpen] = useApplicationState(false)
   const [linking, setLinking] = useApplicationState(false)
   const [openError, setOpenError] = useApplicationState('')
@@ -97,12 +130,12 @@ export function TaskHeader({
     snapshot?.terminals.filter((session) => session.taskId === task.id && !session.exited).length ??
     0
   const actions = (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex shrink-0 items-center gap-1.5">
       {snapshot?.releaseDistribution !== 'desktop' && serverUpdate.available && (
         <Button
           size="sm"
           variant="outline"
-          className="h-8 gap-1.5 px-2.5 text-[0.6875rem]"
+          className="h-7 gap-1 px-2 text-[0.6875rem]"
           title={`Server ${serverUpdate.latest?.version} available. Open Devices & runtime for release notes.`}
           onClick={() => host.navigate({ viewId: 'runtime' })}
         >
@@ -116,7 +149,7 @@ export function TaskHeader({
             <Button
               size="sm"
               variant="outline"
-              className="h-8 gap-1.5 px-2.5 text-[0.6875rem]"
+              className="h-7 gap-1 px-2 text-[0.6875rem]"
               disabled={!connected || openBusy}
               title={openError || 'Open this task checkout on its machine'}
             >
@@ -161,14 +194,54 @@ export function TaskHeader({
         </DropdownMenu.Root>
       )}
       {!compact && repo && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 gap-1.5 px-2.5 text-[0.6875rem]"
-          onClick={() => setGitOpen(true)}
+        <div className="flex flex-col items-end gap-0.5">
+          <div className="flex">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 rounded-r-none px-2 text-[0.6875rem]"
+              disabled={!connected || commitBusy || task.status === 'running'}
+              onClick={() => void commitAndPush()}
+              title="Generate a message with the title model, commit all changes and push"
+            >
+              <GitBranch className="size-3.5" /> {commitBusy ? 'Committing…' : 'Commit & push'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 rounded-l-none border-l-0 px-1.5"
+              aria-label="Manual Git actions"
+              onClick={() => setGitOpen(true)}
+            >
+              <ChevronDown className="size-3" />
+            </Button>
+          </div>
+          {!!linkedPulls.length && (
+            <div className="flex max-w-64 items-center gap-2 overflow-hidden text-[0.625rem] text-muted-foreground">
+              {linkedPulls.map((pull) => (
+                <a
+                  key={pull.url}
+                  href={pull.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex shrink-0 items-center gap-0.5 hover:text-foreground hover:underline"
+                  title={pull.title}
+                >
+                  <GitPullRequest size={10} />#{pull.number}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {commitStatus && (
+        <span
+          role="status"
+          className="max-w-40 truncate text-[0.625rem] text-muted-foreground"
+          title={commitStatus}
         >
-          <GitBranch className="size-3.5" /> Commit &amp; push <ChevronDown className="size-3" />
-        </Button>
+          {commitStatus}
+        </span>
       )}
       {openError && (
         <span

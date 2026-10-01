@@ -13,7 +13,7 @@ import { useAction } from '../../ui/controls/use-action'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { TaskAgents } from './task-agents'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { BrowserPane } from '../preview/browser-pane'
+import { BrowserPane, DevicesPane } from '../preview/browser-pane'
 import { Conversation } from '../conversation/view'
 import { ConversationProvider } from '../conversation/state/provider'
 import { useNavigation } from '../../shell/navigation'
@@ -85,33 +85,6 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
   const [editingInstructions, setEditingInstructions] = useApplicationState(false)
   const review = useAction()
   const compaction = useAction()
-  const openOnComputer = useAction()
-  // Open the task's checkout on the computer that runs it; handy to continue at the desk.
-  const openActions = task.checkoutBranch
-    ? (
-        [
-          ['vscode', 'VS Code'],
-          ['cursor', 'Cursor'],
-          ['finder', 'Finder'],
-        ] as const
-      ).map(([target, name]): HeaderAction => ({
-        label: `Open in ${name} on computer`,
-        icon: 'device',
-        overflow: true,
-        disabled: !connected || openOnComputer.busy,
-        onPress: () =>
-          openOnComputer.act(() =>
-            callEffect(
-              '/api/scm/open-folder',
-              { repositoryId: task.repositoryId, taskId: task.id, target },
-              responses.ok,
-            ),
-          ),
-      }))
-    : []
-  useEffect(() => {
-    if (openOnComputer.error) Alert.alert('Could not open on the computer', openOnComputer.error)
-  }, [openOnComputer.error])
   const branch = task.checkoutBranch
   const projectAction = useAction()
   useEffect(() => {
@@ -290,9 +263,9 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
   const [checkpointPath, setCheckpointPath] = useApplicationState('')
   const [terminalId, setTerminalId] = useApplicationState('')
   const car = useCarMode()
-  const [pane, setPane] = useApplicationState<'chat' | 'diff' | 'terminal' | 'browser' | 'agents'>(
-    'chat',
-  )
+  const [pane, setPane] = useApplicationState<
+    'chat' | 'diff' | 'terminal' | 'browser' | 'devices' | 'agents'
+  >('chat')
   const hasDiff =
     task.files.length > 0 ||
     (task.turns ?? []).some(
@@ -310,7 +283,7 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
     <View
       style={[
         styles.screen,
-        pane === 'browser' &&
+        (pane === 'browser' || pane === 'devices') &&
           expandedPreview && {
             paddingTop: insets.top,
             paddingBottom: insets.bottom,
@@ -347,12 +320,19 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
             </Text>
           </Pressable>
         }
-        hidden={pane === 'browser' && expandedPreview}
-        gestureEnabled={pane !== 'browser'}
-        onBack={pane === 'browser' ? onBack : undefined}
+        hidden={(pane === 'browser' || pane === 'devices') && expandedPreview}
+        gestureEnabled={pane !== 'browser' && pane !== 'devices'}
+        onBack={pane === 'browser' || pane === 'devices' ? onBack : undefined}
         leading={<Action secondary label="Back" onPress={onBack} />}
         buttons={(
-          ['chat', ...(hasDiff ? ['diff' as const] : []), 'terminal', 'browser', 'agents'] as const
+          [
+            'chat',
+            ...(hasDiff ? ['diff' as const] : []),
+            'terminal',
+            'browser',
+            'devices',
+            'agents',
+          ] as const
         )
           .map((tab): HeaderAction => ({
             label:
@@ -364,14 +344,25 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
                     ? 'Terminal'
                     : tab === 'agents'
                       ? 'Agents'
-                      : 'Browser',
-            icon: tab === 'diff' ? 'changes' : tab === 'browser' ? 'web' : tab,
+                      : tab === 'devices'
+                        ? 'Devices'
+                        : 'Browser',
+            icon:
+              tab === 'diff'
+                ? 'changes'
+                : tab === 'browser'
+                  ? 'web'
+                  : tab === 'devices'
+                    ? 'device'
+                    : tab,
             selected: pane === tab,
             // Car mode keeps changes and terminals in the menu, out of sight.
-            overflow: car || tab === 'chat' || tab === 'browser' || tab === 'agents',
+            overflow:
+              car || tab === 'chat' || tab === 'browser' || tab === 'devices' || tab === 'agents',
             onPress: () => {
               Keyboard.dismiss()
               setCheckpoint('')
+              setExpandedPreview(false)
               if (tab === 'terminal') setTerminalId('')
               setPane(tab)
             },
@@ -383,7 +374,6 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
             branchActions,
             worktreeActions,
             moveActions,
-            openActions,
             [
               {
                 label: 'Edit project instructions',
@@ -565,6 +555,9 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
         {asking && <SideQuestion task={task} onClose={() => setAsking(false)} />}
         {pane === 'browser' && (
           <BrowserPane taskId={task.id} expanded={expandedPreview} onExpand={setExpandedPreview} />
+        )}
+        {pane === 'devices' && (
+          <DevicesPane taskId={task.id} expanded={expandedPreview} onExpand={setExpandedPreview} />
         )}
         {pane === 'diff' && (
           <TaskReview task={task} initialCheckpoint={checkpoint} initialPath={checkpointPath} />

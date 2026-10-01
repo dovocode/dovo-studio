@@ -648,7 +648,9 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         const input = decode(
           mutableStruct({
             id: idSchema,
-            message: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 4000),
+            message: Schema.optional(
+              maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 4000),
+            ),
             push: Schema.optionalWith(Schema.Boolean, { default: () => false }),
           }),
           yield* serviceResult(body(request)),
@@ -656,11 +658,20 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         if (s.store.task(input.id).status === 'running')
           throw new HttpError(409, 'Wait for the agent to finish before committing.')
         const cwd = yield* serviceResult(s.checkouts.directory(input.id))
+        let message = input.message
+        if (!message) {
+          const diff = yield* serviceResult(uncommittedChanges(s.git, cwd))
+          if (!diff.trim()) throw new HttpError(409, 'There are no uncommitted changes to commit.')
+          message = (yield* s.titles.commitMessageEffect({ id: input.id, diff })).message
+        }
+        const commitMessage = message
         // Everything in the checkout, like "Commit all" in other Git tools.
         const commit = yield* serviceResult(
           s.tasks.withCheckoutMutation(cwd, async () => {
+            if (s.store.task(input.id).status === 'running')
+              throw new HttpError(409, 'Wait for the agent to finish before committing.')
             await s.git.command(cwd, ['add', '-A', '--', '.'])
-            return s.git.commit(cwd, input.message)
+            return s.git.commit(cwd, commitMessage)
           }),
         )
         const files = yield* serviceResult(s.git.changes(cwd).catch(() => undefined))

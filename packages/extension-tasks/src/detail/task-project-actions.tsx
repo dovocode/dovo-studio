@@ -58,7 +58,7 @@ export function TaskProjectActions({
           <Button
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5 px-2.5 text-[0.6875rem]"
+            className="h-7 gap-1 px-2 text-[0.6875rem]"
             title={error || 'Project actions'}
             aria-label="Project actions"
           >
