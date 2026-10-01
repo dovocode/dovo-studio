@@ -9,10 +9,10 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prestart": "node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs",
-    "preios": "node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs",
-    "preandroid": "node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs",
-    "build": "node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs"
+    "prestart": "node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs",
+    "preios": "node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs",
+    "preandroid": "node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs",
+    "build": "node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs"
   },
   "dependencies": {
     "@assistant-ui/core": "0.3.18",

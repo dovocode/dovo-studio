@@ -760,7 +760,7 @@ importers:
         version: 1.2.1
       mdast-util-from-adf:
         specifier: ^2.2.0
-        version: 2.2.0(react@19.2.8)
+        version: 2.2.0(react@18.3.1)
       mdast-util-gfm:
         specifier: ^3.1.0
         version: 3.1.0(supports-color@8.1.1)
@@ -887,6 +887,15 @@ importers:
       '@dovo/studio-core':
         specifier: workspace:*
         version: link:../studio-core
+      '@mcp-ui/legacy':
+        specifier: npm:@mcp-ui/client@5.17.3
+        version: '@mcp-ui/client@5.17.3(@preact/signals-core@1.14.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@8.1.1)(zod@4.5.4)'
+      '@modelcontextprotocol/ext-apps':
+        specifier: 1.2.0
+        version: 1.2.0(@modelcontextprotocol/sdk@1.30.0(supports-color@8.1.1)(zod@4.5.4))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.5.4)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(supports-color@8.1.1)(zod@4.5.4)
       '@radix-ui/react-checkbox':
         specifier: ^1.3.3
         version: 1.3.11(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -950,6 +959,9 @@ importers:
       use-stick-to-bottom:
         specifier: ^1.1.3
         version: 1.1.6(react@19.2.8)
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
       '@types/react':
         specifier: ^19.2.18
@@ -2294,11 +2306,30 @@ packages:
     resolution: {integrity: sha512-9QOtNffcOF/c1seMCDnjckb3R9WHcG34tky+FHpNKKCW0wc/scYLwMtO+ptyGUfMW0/b/n4qRiALlaFHc9Oj7Q==}
     engines: {node: '>= 10.0.0'}
 
+  '@mcp-ui/client@5.17.3':
+    resolution: {integrity: sha512-Xxi8d5NYbCBUdBEqhwnm7PgJE6+F1wOV2sPA0AWnfLoudpiq8iomovL/AMFI+alVZwhSBxzqJKqUdbPD2yz5tQ==}
+    peerDependencies:
+      react: ^18 || ^19
+      react-dom: ^18 || ^19
+
   '@mermaid-js/parser@1.2.1':
     resolution: {integrity: sha512-n12NohV3mrUyUL2o93IgG/ifeW9FTyeJn3zDxkhwa8MJ9Fxg3HQMlA3RiGmD/3UnJvheztkjjQAjA2T4LmUcpw==}
 
   '@mixmark-io/domino@2.2.0':
     resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
+
+  '@modelcontextprotocol/ext-apps@1.2.0':
+    resolution: {integrity: sha512-ijUQJX/FmNq8PWgOLzph/BAfy84sUZxoIRuHzr+F37wYtWjhdl8pliBJybapYolppY+XJ8oqjFZmTOuMqxwbWQ==}
+    peerDependencies:
+      '@modelcontextprotocol/sdk': ^1.24.0
+      react: ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^17.0.0 || ^18.0.0 || ^19.0.0
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      react:
+        optional: true
+      react-dom:
+        optional: true
 
   '@modelcontextprotocol/sdk@1.30.0':
     resolution: {integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==}
@@ -2729,6 +2760,9 @@ packages:
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
 
+  '@preact/signals-core@1.14.4':
+    resolution: {integrity: sha512-HNB6HYeYKhQbJ1aKl+YRjrS4+QWHLKX6qKoUsfS/m0vqzsVaEBiZiaKbG/e+NKk2ch5ALQr/ihWaMHxiCuuWHA==}
+
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
 
@@ -2755,6 +2789,28 @@ packages:
 
   '@protobufjs/utf8@1.1.2':
     resolution: {integrity: sha512-b1UQwcEZ4yCnMCD8DAL1VlbvBJE9/IX4FTIp7BG1xYpf29SLazLSrqUkj4w7Y5y7cCVP6E5tcqqcI0xemPkHug==}
+
+  '@quilted/events@2.1.5':
+    resolution: {integrity: sha512-WUsJtSI2npAVo1WZNl60dagmC7JxBbMqTikvGuAMzGP9ZKPBpLw0AnhaBoX6mmCfvUTylMLDYbMW8zHqSinUfw==}
+    engines: {node: '>=14.0.0'}
+
+  '@quilted/threads@3.3.1':
+    resolution: {integrity: sha512-0ASnjTH+hOu1Qwzi9NnsVcsbMhWVx8pEE8SXIHknqcc/1rXAU0QlKw9ARq0W43FAdzyVeuXeXtZN27ZC0iALKg==}
+    engines: {node: '>=14.0.0'}
+    peerDependencies:
+      '@preact/signals-core': ^1.8.0
+    peerDependenciesMeta:
+      '@preact/signals-core':
+        optional: true
+
+  '@r2wc/core@1.3.1':
+    resolution: {integrity: sha512-x9nMthXsTjqr1alE+boX1Zuzqb6/oFi4wAOdWaWcWKcrwq9M/PATK74c3DFJfRnUOkYWPlsz0e4CsFBXJGStSA==}
+
+  '@r2wc/react-to-web-component@2.1.1':
+    resolution: {integrity: sha512-AXsIdjxK9ALv0ySWjVadUg3uJ5nS8L4H8eZMYaaWuM+9LNj9DP/r4+sMjI+6jZwb7/FqwxRPHQUq8yimQwBfOA==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
 
   '@radix-ui/number@1.1.3':
     resolution: {integrity: sha512-Road2bidD0uu/1BGDOWNdPI06g0lIRy6IF9GZcIrDK2KGItfor8IQwQa+yM2ERgHM1MmHxaxpTzk0/Jp42lNfA==}
@@ -3223,6 +3279,31 @@ packages:
       react-native: 0.86.3
     peerDependenciesMeta:
       '@types/react':
+        optional: true
+
+  '@remote-dom/core@1.12.0':
+    resolution: {integrity: sha512-mK+vo7aHLklGWLtFP0zCP8Itb4cNWcvRvErGLJvg/oGBF4ChuLEexdDtbZPQ5plJoRNhkwSDOwZcFmA/A9O/yA==}
+    engines: {node: '>=14.0.0'}
+    peerDependencies:
+      '@preact/signals-core': ^1.3.0
+      preact: '*'
+    peerDependenciesMeta:
+      '@preact/signals-core':
+        optional: true
+      preact:
+        optional: true
+
+  '@remote-dom/polyfill@1.6.0':
+    resolution: {integrity: sha512-o2kb/cgJfqomrVOJLegsiHCIIRGwxlRp3G11gWmlUReDh51uRsI1eJVsyVDyHH3h8j7SxwaLSBZAr191akSGng==}
+    engines: {node: '>=14.0.0'}
+
+  '@remote-dom/react@1.2.2':
+    resolution: {integrity: sha512-PkvioODONTr1M0StGDYsR4Ssf5M0Rd4+IlWVvVoK3Zrw8nr7+5mJkgNofaj/z7i8Aep78L28PCW8/WduUt4unA==}
+    engines: {node: '>=18.0.0'}
+    peerDependencies:
+      react: ^17.0.0 || ^18.0.0
+    peerDependenciesMeta:
+      react:
         optional: true
 
   '@rolldown/pluginutils@1.0.1':
@@ -3742,6 +3823,9 @@ packages:
   '@types/node@26.4.1':
     resolution: {integrity: sha512-k97ENvZWtvA6yqz5/FS6a7duDgOPEeOQOc2iKS/nY6mX6qJUKtLnWzQS+Xj6tXweyj6ZcTAK2Qecetnvi9nCLA==}
 
+  '@types/prop-types@15.7.15':
+    resolution: {integrity: sha512-F6bEyamV9jKGAFBEmlQnesRPGOQqS2+Uwi0Em15xenOxHaf2hv6L8YCVn3rPdPJOiJfPiCnLIRyvwVaqMY3MIw==}
+
   '@types/proper-lockfile@4.1.4':
     resolution: {integrity: sha512-uo2ABllncSqg9F1D4nugVl9v93RmjxF6LJzQLMLDdPaXCUIDPeOJ21Gbqi43xNKzBi/WQ0Q0dICqufzQbMjipQ==}
 
@@ -3763,6 +3847,9 @@ packages:
 
   '@types/react-test-renderer@19.3.0':
     resolution: {integrity: sha512-TX4p2D4Z2oigM3SXU7+QyLSUnSR0vR1S1Pfxm/qFL9nHQ3jclgi6ioGoWQmlIr1DeKRVmPJrmNlhgM0JlWlLUg==}
+
+  '@types/react@18.3.31':
+    resolution: {integrity: sha512-vfEqpXTvwT91yhmwdfouStN2hSKwTvyRs8qpLfADyrq/kxDw0hZM7Wk9Ug1FELj8hIby+S/+kQCSRFF32nv2Qw==}
 
   '@types/react@19.2.18':
     resolution: {integrity: sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w==}
@@ -5930,6 +6017,9 @@ packages:
     resolution: {integrity: sha512-puUZAUKT5m8Zzvs72XWy3HtvVbTWljRE66cP60bxJzAqf2DgICo7lYTY2IHUmLnNpjYvw5bvmoHvPc0QO2a62w==}
     engines: {node: ^16.14.0 || >=18.0.0}
 
+  htm@3.1.1:
+    resolution: {integrity: sha512-983Vyg8NwUE7JkZ6NmOqpCZ+sh1bKv2iYTlUkzlWmA5JD2acKoxd4KVxbMmxX/85mtfdnDmTFoNKcg5DGAvxNQ==}
+
   html-entities@2.6.0:
     resolution: {integrity: sha512-kig+rMn/QOVRvr7c86gQ8lWXq+Hkv6CbAH1hLu+RG338StTpE8Z0b44SDVaqVu7HGKf27frdmUYEs9hTUX/cLQ==}
 
@@ -7497,6 +7587,10 @@ packages:
       '@types/react':
         optional: true
 
+  react@18.3.1:
+    resolution: {integrity: sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==}
+    engines: {node: '>=0.10.0'}
+
   react@19.2.3:
     resolution: {integrity: sha512-Ku/hhYbVjOQnXDZFv2+RibmLFGwFdeeKHFcOTlrt7xplBnya5OGn/hIRDsqDiSUcfORsDC7MPxwork8jBwsIWA==}
     engines: {node: '>=0.10.0'}
@@ -8675,11 +8769,11 @@ snapshots:
       '@types/react': 19.2.18
       react: 19.2.3
 
-  '@atlaskit/adf-schema@24.0.3(react@19.2.8)':
+  '@atlaskit/adf-schema@24.0.3(react@18.3.1)':
     dependencies:
       '@atlaskit/codemod-utils': 4.3.0
       '@atlaskit/editor-palette': 0.1.0
-      '@atlaskit/editor-tables': 2.10.23(react@19.2.8)
+      '@atlaskit/editor-tables': 2.10.23(react@18.3.1)
       '@babel/runtime': 7.29.7
       '@types/linkify-it': 2.1.0
       '@types/prosemirror-model': 1.17.0
@@ -8692,15 +8786,15 @@ snapshots:
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/atlassian-context@0.11.0(react@19.2.8)':
+  '@atlaskit/atlassian-context@0.11.0(react@18.3.1)':
     dependencies:
       '@babel/runtime': 7.29.7
-      react: 19.2.8
+      react: 18.3.1
 
-  '@atlaskit/browser-apis@0.0.2(react@19.2.8)':
+  '@atlaskit/browser-apis@0.0.2(react@18.3.1)':
     dependencies:
       '@babel/runtime': 7.29.7
-      react: 19.2.8
+      react: 18.3.1
 
   '@atlaskit/codemod-utils@4.3.0':
     dependencies:
@@ -8724,18 +8818,18 @@ snapshots:
       prosemirror-utils: 1.2.2(prosemirror-model@1.25.4)(prosemirror-state@1.4.4)
       prosemirror-view: 1.41.5
 
-  '@atlaskit/editor-tables@2.10.23(react@19.2.8)':
+  '@atlaskit/editor-tables@2.10.23(react@18.3.1)':
     dependencies:
       '@atlaskit/editor-prosemirror': 7.3.0
-      '@atlaskit/platform-feature-flags': 1.1.3(react@19.2.8)
-      '@atlaskit/tmp-editor-statsig': 103.0.1(react@19.2.8)
+      '@atlaskit/platform-feature-flags': 1.1.3(react@18.3.1)
+      '@atlaskit/tmp-editor-statsig': 103.0.1(react@18.3.1)
       '@babel/runtime': 7.29.7
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/feature-gate-js-client@5.8.0(react@19.2.8)':
+  '@atlaskit/feature-gate-js-client@5.8.0(react@18.3.1)':
     dependencies:
-      '@atlaskit/atlassian-context': 0.11.0(react@19.2.8)
+      '@atlaskit/atlassian-context': 0.11.0(react@18.3.1)
       '@babel/runtime': 7.29.7
       '@statsig/client-core': 3.33.5
       '@statsig/js-client': 3.33.5
@@ -8743,40 +8837,40 @@ snapshots:
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/interaction-context@3.1.0(react@19.2.8)':
+  '@atlaskit/interaction-context@3.1.0(react@18.3.1)':
     dependencies:
       '@babel/runtime': 7.29.7
-      react: 19.2.8
+      react: 18.3.1
 
-  '@atlaskit/platform-feature-flags@1.1.3(react@19.2.8)':
+  '@atlaskit/platform-feature-flags@1.1.3(react@18.3.1)':
     dependencies:
-      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.2.8)
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@18.3.1)
       '@babel/runtime': 7.29.7
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/react-ufo@6.7.5(react@19.2.8)':
+  '@atlaskit/react-ufo@6.7.5(react@18.3.1)':
     dependencies:
-      '@atlaskit/atlassian-context': 0.11.0(react@19.2.8)
-      '@atlaskit/browser-apis': 0.0.2(react@19.2.8)
-      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.2.8)
-      '@atlaskit/interaction-context': 3.1.0(react@19.2.8)
-      '@atlaskit/platform-feature-flags': 1.1.3(react@19.2.8)
+      '@atlaskit/atlassian-context': 0.11.0(react@18.3.1)
+      '@atlaskit/browser-apis': 0.0.2(react@18.3.1)
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@18.3.1)
+      '@atlaskit/interaction-context': 3.1.0(react@18.3.1)
+      '@atlaskit/platform-feature-flags': 1.1.3(react@18.3.1)
       '@babel/runtime': 7.29.7
       '@opentelemetry/api': 1.9.1
       bind-event-listener: 3.0.0
       bowser-ultralight: 1.0.6
-      react: 19.2.8
+      react: 18.3.1
       scheduler: 0.23.2
       uuid: 11.1.1
 
-  '@atlaskit/tmp-editor-statsig@103.0.1(react@19.2.8)':
+  '@atlaskit/tmp-editor-statsig@103.0.1(react@18.3.1)':
     dependencies:
-      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.2.8)
-      '@atlaskit/platform-feature-flags': 1.1.3(react@19.2.8)
-      '@atlaskit/react-ufo': 6.7.5(react@19.2.8)
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@18.3.1)
+      '@atlaskit/platform-feature-flags': 1.1.3(react@18.3.1)
+      '@atlaskit/react-ufo': 6.7.5(react@18.3.1)
       '@babel/runtime': 7.29.7
-      react: 19.2.8
+      react: 18.3.1
 
   '@babel/code-frame@7.27.1':
     dependencies:
@@ -10252,11 +10346,35 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@mcp-ui/client@5.17.3(@preact/signals-core@1.14.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@8.1.1)(zod@4.5.4)':
+    dependencies:
+      '@modelcontextprotocol/sdk': 1.30.0(supports-color@8.1.1)(zod@4.5.4)
+      '@quilted/threads': 3.3.1(@preact/signals-core@1.14.4)
+      '@r2wc/react-to-web-component': 2.1.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@remote-dom/core': 1.12.0(@preact/signals-core@1.14.4)
+      '@remote-dom/react': 1.2.2(@preact/signals-core@1.14.4)(react@19.2.8)
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - '@preact/signals-core'
+      - preact
+      - supports-color
+      - zod
+
   '@mermaid-js/parser@1.2.1':
     dependencies:
       '@chevrotain/types': 11.1.2
 
   '@mixmark-io/domino@2.2.0': {}
+
+  '@modelcontextprotocol/ext-apps@1.2.0(@modelcontextprotocol/sdk@1.30.0(supports-color@8.1.1)(zod@4.5.4))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.5.4)':
+    dependencies:
+      '@modelcontextprotocol/sdk': 1.30.0(supports-color@8.1.1)(zod@4.5.4)
+      zod: 4.5.4
+    optionalDependencies:
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
 
   '@modelcontextprotocol/sdk@1.30.0(supports-color@8.1.1)(zod@4.5.4)':
     dependencies:
@@ -10532,6 +10650,8 @@ snapshots:
 
   '@polka/url@1.0.0-next.29': {}
 
+  '@preact/signals-core@1.14.4': {}
+
   '@protobufjs/aspromise@1.1.2': {}
 
   '@protobufjs/base64@1.1.2': {}
@@ -10551,6 +10671,24 @@ snapshots:
   '@protobufjs/pool@1.1.0': {}
 
   '@protobufjs/utf8@1.1.2': {}
+
+  '@quilted/events@2.1.5':
+    dependencies:
+      '@preact/signals-core': 1.14.4
+
+  '@quilted/threads@3.3.1(@preact/signals-core@1.14.4)':
+    dependencies:
+      '@quilted/events': 2.1.5
+    optionalDependencies:
+      '@preact/signals-core': 1.14.4
+
+  '@r2wc/core@1.3.1': {}
+
+  '@r2wc/react-to-web-component@2.1.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+    dependencies:
+      '@r2wc/core': 1.3.1
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
 
   '@radix-ui/number@1.1.3': {}
 
@@ -11278,6 +11416,26 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.18
 
+  '@remote-dom/core@1.12.0(@preact/signals-core@1.14.4)':
+    dependencies:
+      '@remote-dom/polyfill': 1.6.0
+      htm: 3.1.1
+    optionalDependencies:
+      '@preact/signals-core': 1.14.4
+
+  '@remote-dom/polyfill@1.6.0': {}
+
+  '@remote-dom/react@1.2.2(@preact/signals-core@1.14.4)(react@19.2.8)':
+    dependencies:
+      '@remote-dom/core': 1.12.0(@preact/signals-core@1.14.4)
+      '@types/react': 18.3.31
+      htm: 3.1.1
+    optionalDependencies:
+      react: 19.2.8
+    transitivePeerDependencies:
+      - '@preact/signals-core'
+      - preact
+
   '@rolldown/pluginutils@1.0.1': {}
 
   '@shikijs/core@3.23.0':
@@ -11908,6 +12066,8 @@ snapshots:
     dependencies:
       undici-types: 8.3.0
 
+  '@types/prop-types@15.7.15': {}
+
   '@types/proper-lockfile@4.1.4':
     dependencies:
       '@types/retry': 0.12.5
@@ -11931,6 +12091,11 @@ snapshots:
   '@types/react-test-renderer@19.3.0':
     dependencies:
       '@types/react': 19.2.18
+
+  '@types/react@18.3.31':
+    dependencies:
+      '@types/prop-types': 15.7.15
+      csstype: 3.2.3
 
   '@types/react@19.2.18':
     dependencies:
@@ -14352,6 +14517,8 @@ snapshots:
     dependencies:
       lru-cache: 10.4.3
 
+  htm@3.1.1: {}
+
   html-entities@2.6.0:
     optional: true
 
@@ -14879,9 +15046,9 @@ snapshots:
       unist-util-is: 6.0.1
       unist-util-visit-parents: 6.0.2
 
-  mdast-util-from-adf@2.2.0(react@19.2.8):
+  mdast-util-from-adf@2.2.0(react@18.3.1):
     dependencies:
-      '@atlaskit/adf-schema': 24.0.3(react@19.2.8)
+      '@atlaskit/adf-schema': 24.0.3(react@18.3.1)
       '@types/mdast': 4.0.4
       unist-builder: 3.0.1
     transitivePeerDependencies:
@@ -16279,6 +16446,10 @@ snapshots:
       tslib: 2.8.1
     optionalDependencies:
       '@types/react': 19.2.18
+
+  react@18.3.1:
+    dependencies:
+      loose-envify: 1.4.0
 
   react@19.2.3: {}
 

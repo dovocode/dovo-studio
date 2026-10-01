@@ -135,3 +135,5 @@ export {
   runtimeSyncOnline,
   watchRuntimeActivity,
 } from './runtime/connection/live-sync.js'
+export * from './conversation/mcp-apps.js'
+export * from './conversation/mcp-app-downloads.js'

@@ -1,3 +1,8 @@
+import { mcpAppReferences } from '@dovo/protocol'
+import { lazy, Suspense } from 'react'
+const McpAppView = lazy(() =>
+  import('../mcp-app').then((module) => ({ default: module.McpAppView })),
+)
 import { runtimeSyncOnline, watchRuntimeActivity } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Effect, Schema } from 'effect'
@@ -160,12 +165,13 @@ export function TaskActivity({
         ),
     [tools, turn?.status, status],
   )
+  const apps = useMemo(() => tools.flatMap((tool) => mcpAppReferences(tool.payload)), [tools])
   const running = entries.filter((entry) => entry.state === 'running')
   const current =
     running.filter((entry) => entry.presentation.kind !== 'reasoning').at(-1) ?? running.at(-1)
   if (!tools.length && !error && !turn) return null
   // Replies only: the agent's text stays, its steps are hidden (errors still show).
-  if (toolActivity === 'hidden' && !error) return null
+  if (toolActivity === 'hidden' && !error && !apps.length) return null
   const outcome = taskActivityOutcome(
     entries.filter((entry) => entry.presentation.kind !== 'reasoning').map((entry) => entry.state),
   )
@@ -245,6 +251,11 @@ export function TaskActivity({
           </div>
         )
       )}
+      {apps.map((reference) => (
+        <Suspense key={reference.id} fallback={<p>Loading app…</p>}>
+          <McpAppView reference={reference} />
+        </Suspense>
+      ))}
       {error && (
         <p role="alert" className="py-2 text-destructive">
           Activity could not be loaded. {error}

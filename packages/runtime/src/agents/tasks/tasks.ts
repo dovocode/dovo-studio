@@ -1,3 +1,4 @@
+import type { McpApps } from '../../mcp-apps/bridge.js'
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { decode } from '@dovo/protocol'
@@ -63,6 +64,11 @@ export class Tasks {
       activity,
     )
     this.queue = new TaskQueue(store, activity)
+  }
+  private mcpApps?: McpApps
+  setMcpApps(apps: McpApps) {
+    this.mcpApps = apps
+    this.runner.setMcpApps(apps)
   }
   setTaskTools(port: number, token: string, host: string) {
     this.runner.setTaskTools(port, token, host)
@@ -865,6 +871,7 @@ export class Tasks {
       restartRecovery: undefined,
     }))
     this.questions.cancelTask(id)
+    this.mcpApps?.cancelTask(id)
     run.controller.abort(new Error('Cancelled by user'))
   }
   /** Startup work is owned by this executor, so shutdown also drains its current task. */
