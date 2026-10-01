@@ -1,3 +1,4 @@
+import { TaskLauncherControls } from './task-launcher-controls'
 import { useEffect, useRef } from 'react'
 import { router, useLocalSearchParams } from 'expo-router'
 import {
@@ -12,12 +13,13 @@ import { randomUUID } from 'expo-crypto'
 import {
   createLauncherTask,
   dispatchLauncherTask,
-  launcherAgents,
+  launcherDefaultAgent,
+  type LauncherAgent,
   snapshotSchema,
   type LauncherAttempt,
   type RuntimeSnapshot,
 } from '@dovo/protocol'
-import { useRuntime } from '../../runtime/connection/provider'
+import { useRuntime, RuntimeScope } from '../../runtime/connection/provider'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
@@ -33,7 +35,8 @@ export function TaskLauncherScreen() {
   const [runtimeId, setRuntimeId] = useApplicationState(activeId ?? '')
   const [snapshot, setSnapshot] = useApplicationState<RuntimeSnapshot | null>(null)
   const [repositoryId, setRepositoryId] = useApplicationState('')
-  const [agentKey, setAgentKey] = useApplicationState('')
+  const [selection, setSelection] = useApplicationState<LauncherAgent | null>(null)
+  const [loadedRuntimeId, setLoadedRuntimeId] = useApplicationState('')
   const [text, setText] = useApplicationState(() =>
     typeof params.text === 'string' ? params.text.slice(0, 120000) : '',
   )
@@ -64,11 +67,8 @@ export function TaskLauncherScreen() {
               ? id
               : (next.workspace.repositories[0]?.id ?? ''),
           )
-          setAgentKey((key) =>
-            launcherAgents(next).some((agent) => agent.key === key)
-              ? key
-              : (launcherAgents(next)[0]?.key ?? ''),
-          )
+          setLoadedRuntimeId(runtimeId)
+          void refreshRuntime(profile).catch((cause: unknown) => setError(String(cause)))
         },
         (cause: unknown) => {
           if (current) setError(cause instanceof Error ? cause.message : String(cause))
@@ -80,15 +80,22 @@ export function TaskLauncherScreen() {
     return () => {
       current = false
     }
-  }, [ready, runtimeId, profiles, readRuntime, retry])
-  const choices = snapshot ? launcherAgents(snapshot) : []
+  }, [ready, runtimeId, profiles, readRuntime, refreshRuntime, retry])
+  useEffect(() => {
+    if (attempt.current) return
+    const repository = snapshot?.workspace.repositories.find((entry) => entry.id === repositoryId)
+    setSelection(snapshot && repository ? launcherDefaultAgent(snapshot, repository) : null)
+  }, [snapshot, repositoryId])
+  const selectedRepository = snapshot?.workspace.repositories.find(
+    (entry) => entry.id === repositoryId,
+  )
   const dispatch = async () => {
     if (submitting.current) return
     const profile = profiles.find((profile) => profile.id === runtimeId)
     const repository = snapshot?.workspace.repositories.find(
       (repository) => repository.id === repositoryId,
     )
-    const agent = choices.find((agent) => agent.key === agentKey)
+    const agent = loadedRuntimeId === runtimeId ? selection : null
     if (!attempt.current && (!snapshot || !profile || !repository || !agent || !text.trim())) return
     submitting.current = true
     setBusy(true)
@@ -140,7 +147,7 @@ export function TaskLauncherScreen() {
           contentContainerStyle={styles.content}
         >
           <Text style={styles.muted}>
-            Choose a computer, project and favorite agent, then send your idea.
+            Choose a computer, project, agent and model, then send your idea.
           </Text>
           {!ready ? (
             <ActivityIndicator color={colors.accent} />
@@ -171,19 +178,17 @@ export function TaskLauncherScreen() {
                 onChange={setRepositoryId}
                 disabled={locked || loading}
               />
-              <Choice
-                label="Favorite agent"
-                value={agentKey}
-                items={choices.map((agent) => ({ id: agent.key, name: agent.name }))}
-                onChange={setAgentKey}
-                disabled={locked || loading}
-              />
               {loading && <ActivityIndicator color={colors.accent} />}
-              {snapshot && !choices.length && (
-                <Text style={styles.muted}>
-                  Favorite an agent configuration or model in this computer’s model picker first.
-                  Disabled models are excluded.
-                </Text>
+              {selection && snapshot && selectedRepository && loadedRuntimeId === runtimeId && (
+                <RuntimeScope runtimeId={runtimeId}>
+                  <TaskLauncherControls
+                    selection={selection}
+                    onChange={setSelection}
+                    snapshot={snapshot}
+                    repository={selectedRepository}
+                    disabled={locked || loading}
+                  />
+                </RuntimeScope>
               )}
               {snapshot && !snapshot.workspace.repositories.length && (
                 <Text style={styles.muted}>
@@ -222,7 +227,12 @@ export function TaskLauncherScreen() {
                 disabled={
                   busy ||
                   (!attempt.current &&
-                    (!snapshot || loading || !repositoryId || !agentKey || !text.trim()))
+                    (!snapshot ||
+                      loading ||
+                      !repositoryId ||
+                      !selection ||
+                      loadedRuntimeId !== runtimeId ||
+                      !text.trim()))
                 }
                 onPress={() => void dispatch()}
               />

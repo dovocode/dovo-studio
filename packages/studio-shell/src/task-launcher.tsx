@@ -1,5 +1,6 @@
+import { TaskLauncherControls } from './task-launcher-controls'
 import { useEffect, useRef, useState } from 'react'
-import { useAppPreferences, useWorkspace, useStudioHost } from '@dovo/studio-core'
+import { useAppPreferences, useWorkspace, useStudioHost, WorkspaceScope } from '@dovo/studio-core'
 import { snapshotSchema, type RuntimeSnapshot, type TaskLauncherBridge } from '@dovo/protocol'
 import {
   Dialog,
@@ -9,9 +10,10 @@ import {
   DialogDescription,
   Button,
 } from '@dovo/studio-ui'
-import { ArrowUpRight, Star } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
 import {
-  launcherAgents,
+  launcherDefaultAgent,
+  type LauncherAgent,
   createLauncherTask,
   dispatchLauncherTask,
   type LauncherAttempt,
@@ -40,7 +42,8 @@ export function TaskLauncher({
   const [runtimeId, setRuntimeId] = useState(activeRuntimeId ?? '')
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null)
   const [repositoryId, setRepositoryId] = useState('')
-  const [agentKey, setAgentKey] = useState('')
+  const [selection, setSelection] = useState<LauncherAgent | null>(null)
+  const [loadedRuntimeId, setLoadedRuntimeId] = useState('')
   const [text, setText] = useState('')
   const [error, setError] = useState('')
   const [shortcutError, setShortcutError] = useState('')
@@ -86,11 +89,8 @@ export function TaskLauncher({
               ? id
               : (next.workspace.repositories[0]?.id ?? ''),
           )
-          setAgentKey((key) =>
-            launcherAgents(next, legacyFavorites()).some((agent) => agent.key === key)
-              ? key
-              : (launcherAgents(next, legacyFavorites())[0]?.key ?? ''),
-          )
+          setLoadedRuntimeId(runtimeId)
+          void refreshRuntime(profile).catch((cause: unknown) => setError(String(cause)))
         },
         (cause: unknown) => {
           if (current) setError(cause instanceof Error ? cause.message : String(cause))
@@ -102,15 +102,19 @@ export function TaskLauncher({
     return () => {
       current = false
     }
-  }, [open, runtimeId, runtimeRegistry.profiles, readRuntime, refresh])
-  const choices = snapshot ? launcherAgents(snapshot, legacyFavorites()) : []
+  }, [open, runtimeId, runtimeRegistry.profiles, readRuntime, refreshRuntime, refresh])
+  useEffect(() => {
+    if (attempt.current) return
+    const repository = snapshot?.workspace.repositories.find((entry) => entry.id === repositoryId)
+    setSelection(snapshot && repository ? launcherDefaultAgent(snapshot, repository) : null)
+  }, [snapshot, repositoryId])
   const dispatch = async () => {
     if (submitting.current) return
     const profile = runtimeRegistry.profiles.find((profile) => profile.id === runtimeId)
     const repository = snapshot?.workspace.repositories.find(
       (repository) => repository.id === repositoryId,
     )
-    const agent = choices.find((agent) => agent.key === agentKey)
+    const agent = loadedRuntimeId === runtimeId ? selection : null
     if (!attempt.current && (!profile || !repository || !agent || !text.trim())) return
     submitting.current = true
     setBusy(true)
@@ -141,6 +145,7 @@ export function TaskLauncher({
     }
   }
   const locked = busy || !!attempt.current
+  const selectedProfile = runtimeRegistry.profiles.find((profile) => profile.id === runtimeId)
   const selectClass = 'h-10 w-full rounded-lg border bg-background px-3 text-sm disabled:opacity-50'
   return (
     <Dialog
@@ -158,7 +163,7 @@ export function TaskLauncher({
         <DialogHeader>
           <DialogTitle>Start a task</DialogTitle>
           <DialogDescription>
-            Send an idea to a favorite agent on any of your computers.
+            Choose an agent and model, then send an idea to any of your computers.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -205,33 +210,14 @@ export function TaskLauncher({
               </select>
             </label>
           </div>
-          <label className="block space-y-1.5 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <Star size={12} />
-              Favorite agent
-            </span>
-            <select
-              aria-label="Favorite agent"
-              className={selectClass}
-              value={agentKey}
-              disabled={locked || loading}
-              onChange={(event) => setAgentKey(event.target.value)}
-            >
-              <option value="" disabled>
-                Choose a favorite
-              </option>
-              {choices.map((agent) => (
-                <option key={agent.key} value={agent.key}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {snapshot && !choices.length && (
-            <p className="text-xs text-muted-foreground">
-              Favorite an agent configuration or model in this server’s model picker first. Disabled
-              models are excluded.
-            </p>
+          {selection && loadedRuntimeId === runtimeId && selectedProfile && (
+            <WorkspaceScope key={runtimeId} profile={selectedProfile}>
+              <TaskLauncherControls
+                selection={selection}
+                onChange={setSelection}
+                disabled={locked || loading}
+              />
+            </WorkspaceScope>
           )}
           <textarea
             autoFocus
@@ -275,7 +261,12 @@ export function TaskLauncher({
               disabled={
                 busy ||
                 (!attempt.current &&
-                  (!snapshot || loading || !repositoryId || !agentKey || !text.trim()))
+                  (!snapshot ||
+                    loading ||
+                    !repositoryId ||
+                    !selection ||
+                    loadedRuntimeId !== runtimeId ||
+                    !text.trim()))
               }
             >
               {busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start task'}
@@ -286,11 +277,4 @@ export function TaskLauncher({
       </DialogContent>
     </Dialog>
   )
-}
-function legacyFavorites() {
-  try {
-    return localStorage.getItem('dovo:model-favorites')?.split('\n').filter(Boolean) ?? []
-  } catch {
-    return []
-  }
 }

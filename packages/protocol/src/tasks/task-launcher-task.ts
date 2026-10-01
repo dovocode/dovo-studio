@@ -29,14 +29,51 @@ export function createLauncherTask(
     title: text.trim().split('\n')[0].slice(0, 80) || 'New task',
     repositoryId: repository.id,
     agentId: agent.agentId ?? '',
+    agentOverrides:
+      agent.agentId && agent.harness
+        ? {
+            model: agent.harness.model,
+            reasoning: agent.harness.reasoning ?? '',
+            permission: agent.harness.permission,
+            serviceTier: agent.harness.serviceTier ?? null,
+            cyberAccessProgram: agent.harness.cyberAccessProgram ?? null,
+            ...(agent.provider === 'acp'
+              ? {
+                  acpInstallationId: agent.harness.acpInstallationId ?? null,
+                  acpMode: agent.harness.acpMode ?? '',
+                  acpConfig: agent.harness.acpConfig ?? {},
+                }
+              : {}),
+          }
+        : undefined,
     harness: agent.agentId
       ? undefined
-      : { ...base, model: agent.model ?? '', acpInstallationId: agent.acpInstallationId },
+      : (agent.harness ?? {
+          ...base,
+          model: agent.model ?? '',
+          acpInstallationId: agent.acpInstallationId,
+        }),
     status: 'draft',
     createdAt,
     messages: [],
     files: [],
     draft: '',
     example: false,
+  }
+}
+
+export function launcherDefaultAgent(
+  snapshot: RuntimeSnapshot,
+  repository: Repository,
+): LauncherAgent {
+  const defaults = resolveTaskDefaults(snapshot.defaults, repository)
+  const harness = defaults.harness
+  return {
+    key: `harness:${harness.provider}`,
+    name: harness.provider,
+    provider: harness.provider,
+    model: harness.model,
+    acpInstallationId: harness.acpInstallationId,
+    harness,
   }
 }
