@@ -179,3 +179,33 @@ it('redacts historical literal credentials when upgrading the activity database'
     db.close()
   }
 })
+
+it('filters scoped activity without losing tool kinds, search matches, or pagination', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const log = new Activity(db)
+    log.add('tool', 'thread', 'Command', { text: 'needle' }, 'a')
+    log.add('reasoning', 'thread', 'Thinking', {}, 'b')
+    log.add('task-activity', 'thread', 'State', {}, 'c')
+    log.add('message', 'thread', 'Message', {}, 'd')
+    log.add('tool', 'other', 'Command', { text: 'needle' }, 'e')
+    db.prepare('UPDATE activity SET time=?').run('2026-10-01T12:00:00Z')
+    expect(log.list('', 'task-activity', 0, 'thread').events.map((item) => item.id)).toEqual([
+      'c',
+      'b',
+      'a',
+    ])
+    expect(log.list('needle', 'task-activity', 0, 'thread').events.map((item) => item.id)).toEqual([
+      'a',
+    ])
+    expect(log.list('', 'task-activity', 1, 'thread').events.map((item) => item.id)).toEqual([
+      'b',
+      'a',
+    ])
+    expect(log.list('', 'tool', 0, 'thread').events.map((item) => item.id)).toEqual(['a'])
+    expect(log.list('', '', 0, 'thread').events).toHaveLength(4)
+    expect(log.list('', '', 0).events).toHaveLength(5)
+  } finally {
+    db.close()
+  }
+})

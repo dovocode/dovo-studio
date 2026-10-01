@@ -44,7 +44,7 @@ const record = mutableStruct({
 export class Activity {
   constructor(private db: Database.Database) {
     db.exec(
-      'CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY,time TEXT NOT NULL,kind TEXT NOT NULL,scope TEXT NOT NULL,summary TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS activity_time ON activity(time DESC)',
+      'CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY,time TEXT NOT NULL,kind TEXT NOT NULL,scope TEXT NOT NULL,summary TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS activity_time ON activity(time DESC); CREATE INDEX IF NOT EXISTS activity_scope_time ON activity(scope,time DESC,id DESC)',
     )
     // Remove previously recorded literal MCP values and API-key fields once per database.
     if (!db.prepare('SELECT value FROM documents WHERE id=?').get('activity-redaction-v3')) {
@@ -123,14 +123,30 @@ export class Activity {
       .run(before, limit).changes
   }
   list(query: string, kind: string, offset: number, scope = '') {
+    const filters: string[] = []
+    const values: (string | number)[] = []
+    if (scope) {
+      filters.push('scope=?')
+      values.push(scope)
+    }
+    if (kind === 'task-activity') {
+      filters.push("kind IN ('task-activity','tool','reasoning')")
+    } else if (kind) {
+      filters.push('kind=?')
+      values.push(kind)
+    }
+    if (query) {
+      filters.push('(summary LIKE ? OR payload LIKE ? OR scope LIKE ?)')
+      values.push(`%${query}%`, `%${query}%`, `%${query}%`)
+    }
     return {
       events: decode(
         mutableArray(record),
         this.db
           .prepare(
-            "SELECT * FROM activity WHERE (?='' OR scope=?) AND (?='' OR kind=? OR (?='task-activity' AND kind IN ('tool','reasoning'))) AND (summary LIKE ? OR payload LIKE ? OR scope LIKE ?) ORDER BY time DESC,id DESC LIMIT 100 OFFSET ?",
+            `SELECT * FROM activity${filters.length ? ` WHERE ${filters.join(' AND ')}` : ''} ORDER BY time DESC,id DESC LIMIT 100 OFFSET ?`,
           )
-          .all(scope, scope, kind, kind, kind, `%${query}%`, `%${query}%`, `%${query}%`, offset),
+          .all(...values, offset),
       ),
     }
   }

@@ -32,7 +32,7 @@ import {
   taskActivityOutcome,
   type ActivityState,
 } from './task-activity-state'
-export function useTaskActivity(taskId: string) {
+export function useTaskActivity(taskId: string, running = false) {
   const { requestEffect: request, connected, connection, activeRuntimeId } = useWorkspace()
   const identity = JSON.stringify([activeRuntimeId, clientScopeKey(connection), taskId])
   const [snapshot, setSnapshot] = useApplicationState<{
@@ -68,7 +68,7 @@ export function useTaskActivity(taskId: string) {
         })
     })
     const polling = startPolling(load, {
-      interval: 2000,
+      interval: running ? 2000 : 10000,
       onError: (error) => {
         if (!stopped)
           setSnapshot((previous) =>
@@ -82,7 +82,7 @@ export function useTaskActivity(taskId: string) {
       document.removeEventListener('visibilitychange', polling.refresh)
       void polling.stop()
     }
-  }, [request, connected, taskId, identity])
+  }, [request, connected, taskId, identity, running])
 
   return {
     tools: useMemo(

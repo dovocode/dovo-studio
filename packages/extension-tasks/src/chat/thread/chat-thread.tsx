@@ -90,7 +90,7 @@ export function ChatThread({
   const bookmarks = task.messages.filter(
     (message) => message.role === 'assistant' && message.bookmarked,
   )
-  const activity = useTaskActivity(task.id)
+  const activity = useTaskActivity(task.id, task.status === 'running')
   const turns = useMemo(
     () => new Map(task.turns?.map((turn) => [turn.assistantId, turn])),
     [task.turns],
