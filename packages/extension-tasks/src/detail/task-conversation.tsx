@@ -81,7 +81,7 @@ export function TaskConversation({
       .finally(() => setRetrying(false))
   }
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div data-task-conversation={task.id} className="flex h-full min-h-0 flex-col">
       <ChatThread
         task={displayedTask}
         onTerminal={onTerminal}

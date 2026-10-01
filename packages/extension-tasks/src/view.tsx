@@ -546,6 +546,16 @@ export default function TasksView({ entityId }: StudioViewProps) {
       // ⌘P jumps to a task; ⌘⇧F searches every conversation.
       if (mod && !e.altKey && !e.shiftKey && key === 'p') return run(() => setSearching('tasks'))
       if (mod && !e.altKey && e.shiftKey && key === 'f') return run(() => setSearching('messages'))
+      if (mod && !e.altKey && !e.shiftKey && key === 'f' && current.task)
+        return run(() => {
+          const focusedThread =
+            e.target instanceof Element
+              ? e.target.closest<HTMLElement>('[data-task-conversation]')?.dataset.taskConversation
+              : undefined
+          const id = focusedThread ?? current.task!.id
+          if (id === current.task!.id) current.selectSurface('chat')
+          window.dispatchEvent(new CustomEvent('dovo:search-thread', { detail: id }))
+        })
       // ⌘\ (Ctrl+\ elsewhere) closes the side-by-side task.
       if (mod && !e.altKey && !e.shiftKey && e.key === '\\' && current.split)
         return run(() => setSplitId(''))

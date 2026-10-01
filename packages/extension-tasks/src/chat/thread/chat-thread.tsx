@@ -4,7 +4,7 @@ import { conversationTurns, conversationTurnLabel } from './conversation-turns'
 import { searchThread } from './thread-search'
 import { TurnWork } from './turn-work'
 import { threadTimeline, finalReplyIndex } from './thread-timeline'
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { TurnCheckpoint } from './turn-checkpoint'
 import { MessageAttachments } from '../composer/message-attachments'
 import { MessageCopy } from './message-copy'
@@ -13,7 +13,7 @@ import { ForkTurn } from '../actions/fork-turn'
 import { RetryTurn } from '../actions/retry-turn'
 import { TaskActivity, useTaskActivity } from './task-activity'
 import { TurnLabel } from './turn-label'
-import { Star, Search, ChevronUp, ChevronDown, X } from 'lucide-react'
+import { Star, ChevronUp, ChevronDown, X } from 'lucide-react'
 import {
   Conversation,
   ConversationContent,
@@ -45,6 +45,20 @@ export function ChatThread({
   const [linkError, setLinkError] = useState('')
   const { request, connected } = useWorkspace()
   const [searchOpen, setSearchOpen] = useState(false)
+  const searchInput = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const open = (event: Event) => {
+      if (event instanceof CustomEvent && event.detail === task.id) {
+        setSearchOpen(true)
+        requestAnimationFrame(() => {
+          searchInput.current?.focus()
+          searchInput.current?.select()
+        })
+      }
+    }
+    window.addEventListener('dovo:search-thread', open)
+    return () => window.removeEventListener('dovo:search-thread', open)
+  }, [task.id])
   const [query, setQuery] = useState('')
   const [matchIndex, setMatchIndex] = useState(0)
   const filter = useDeferredValue(searchOpen ? query : '')
@@ -121,66 +135,58 @@ export function ChatThread({
   )
   return (
     <>
-      <div className="flex shrink-0 items-center justify-end gap-1 border-b px-3 py-1">
-        {searchOpen ? (
-          <>
-            <input
-              type="search"
-              autoFocus
-              aria-label="Search this thread"
-              placeholder="Search this thread…"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value)
-                setMatchIndex(0)
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  event.stopPropagation()
-                  setSearchOpen(false)
-                }
-                if (event.key === 'Enter' && matches.length)
-                  setMatchIndex(
-                    (index) => (index + (event.shiftKey ? matches.length - 1 : 1)) % matches.length,
-                  )
-              }}
-              className="h-7 min-w-0 flex-1 rounded border bg-background px-2 text-xs"
-            />
-            <span role="status" className="text-xs tabular-nums text-muted-foreground">
-              {matches.length ? Math.min(matchIndex + 1, matches.length) : 0}/{matches.length}
-            </span>
-            <IconButton
-              label="Previous match"
-              className="size-7"
-              disabled={!matches.length}
-              onClick={() =>
-                setMatchIndex((index) => (index + matches.length - 1) % matches.length)
+      {searchOpen && (
+        <div className="flex shrink-0 items-center justify-end gap-1 border-b px-3 py-1">
+          <input
+            type="search"
+            autoFocus
+            aria-label="Search this thread"
+            placeholder="Search this thread…"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setMatchIndex(0)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.stopPropagation()
+                setSearchOpen(false)
               }
-            >
-              <ChevronUp size={14} />
-            </IconButton>
-            <IconButton
-              label="Next match"
-              className="size-7"
-              disabled={!matches.length}
-              onClick={() => setMatchIndex((index) => (index + 1) % matches.length)}
-            >
-              <ChevronDown size={14} />
-            </IconButton>
-            <IconButton
-              label="Close thread search"
-              className="size-7"
-              onClick={() => setSearchOpen(false)}
-            >
-              <X size={14} />
-            </IconButton>
-          </>
-        ) : (
-          <IconButton label="Search thread" className="size-7" onClick={() => setSearchOpen(true)}>
-            <Search size={14} />
+              if (event.key === 'Enter' && matches.length)
+                setMatchIndex(
+                  (index) => (index + (event.shiftKey ? matches.length - 1 : 1)) % matches.length,
+                )
+            }}
+            className="h-7 min-w-0 flex-1 rounded border bg-background px-2 text-xs"
+          />
+          <span role="status" className="text-xs tabular-nums text-muted-foreground">
+            {matches.length ? Math.min(matchIndex + 1, matches.length) : 0}/{matches.length}
+          </span>
+          <IconButton
+            label="Previous match"
+            className="size-7"
+            disabled={!matches.length}
+            onClick={() => setMatchIndex((index) => (index + matches.length - 1) % matches.length)}
+          >
+            <ChevronUp size={14} />
           </IconButton>
-        )}
-      </div>
+          <IconButton
+            label="Next match"
+            className="size-7"
+            disabled={!matches.length}
+            onClick={() => setMatchIndex((index) => (index + 1) % matches.length)}
+          >
+            <ChevronDown size={14} />
+          </IconButton>
+          <IconButton
+            label="Close thread search"
+            className="size-7"
+            onClick={() => setSearchOpen(false)}
+          >
+            <X size={14} />
+          </IconButton>
+        </div>
+      )}
       {searchOpen && selectedMatch && (
         <p
           className="shrink-0 truncate border-b px-3 py-1 text-xs text-muted-foreground"

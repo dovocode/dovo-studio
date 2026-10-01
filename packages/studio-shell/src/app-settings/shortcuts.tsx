@@ -46,6 +46,7 @@ export default function KeyboardShortcuts() {
       [
         ['New task', `${mod}+N`],
         ['Go to a task', `${mod}+P`],
+        ['Search this thread', `${mod}+F`],
         ['Search all conversations', `${mod}+Shift+F`],
         ['Next task', 'Ctrl+Tab'],
         ['Previous task', 'Ctrl+Shift+Tab'],
