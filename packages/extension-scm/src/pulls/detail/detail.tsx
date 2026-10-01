@@ -54,7 +54,7 @@ export function PullDetail({
     if (value === 'changes') setChangesOpened(true)
   }
   return (
-    <aside aria-label="Pull request details" className="min-w-0 flex-1 overflow-y-auto">
+    <aside aria-label="Pull request details" className="@container min-w-0 flex-1 overflow-y-auto">
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/95 px-5 py-2 backdrop-blur">
         <Button size="sm" variant="ghost" onClick={onBack}>
           <ArrowLeft className="size-4" /> {embedded ? 'Close preview' : 'Back to PRs'}
@@ -130,7 +130,7 @@ export function PullDetail({
               <Signal signal={pullDetailReviews(detail)} />
               <Signal signal={pullMergeability(detail.pull)} />
             </div>
-            <dl className="grid grid-cols-2 gap-3 rounded-md border bg-card px-3 py-3 text-xs sm:grid-cols-4">
+            <dl className="grid grid-cols-2 gap-3 rounded-md border bg-card px-3 py-3 text-xs @2xl:grid-cols-4">
               <div>
                 <dt className="text-muted-foreground">Changes</dt>
                 <dd className="mt-1 font-medium">
@@ -250,7 +250,7 @@ export function PullDetail({
               aria-labelledby="pr-tab-overview"
               hidden={tab !== 'overview'}
             >
-              <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_240px]">
+              <div className="grid items-start gap-5 @4xl:grid-cols-[minmax(0,1fr)_240px]">
                 <section aria-label="PR description" className="min-w-0 py-1">
                   <h3 className="mb-4 text-sm font-medium">Description</h3>
                   <div className="min-w-0 max-w-prose text-sm leading-7">
@@ -265,7 +265,7 @@ export function PullDetail({
                     </MessageResponse>
                   </div>
                 </section>
-                <aside className="min-w-0 space-y-4 border-t pt-4 text-xs xl:border-l xl:border-t-0 xl:pl-5 xl:pt-0">
+                <aside className="min-w-0 space-y-4 border-t pt-4 text-xs @4xl:border-l @4xl:border-t-0 @4xl:pl-5 @4xl:pt-0">
                   <div>
                     <h3 className="mb-2 font-medium">Review decisions</h3>
                     {reviews.length ? (
@@ -386,6 +386,7 @@ export function PullDetail({
                 <PullChanges
                   key={detail.pull.headSha}
                   detail={detail}
+                  embedded={embedded}
                   repositoryId={repositoryId}
                   onPosted={changed}
                   onSteer={(value) => {

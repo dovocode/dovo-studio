@@ -181,6 +181,7 @@ export function PullPatch({
           options={{
             ...diffs.options,
             diffStyle: split ? 'split' : 'unified',
+            overflow: 'scroll',
             disableFileHeader: true,
             enableLineSelection: !!onComment,
             enableGutterUtility: !!onComment,

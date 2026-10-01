@@ -382,10 +382,31 @@ export function Composer({
           <MessageAttachments
             taskId={task.id}
             files={submitBusy ? [] : attachments.files}
+            previews={attachments.previews}
             remove={attachments.remove}
             disabled={sending || attachments.busy}
           />
         </div>
+        {!!attachments.uploading.length && (
+          <div
+            className="flex flex-wrap gap-2 px-3 py-1"
+            role="status"
+            aria-label="Uploading attachments"
+          >
+            {attachments.uploading.map(({ attachment, url }) => (
+              <div
+                key={attachment.id}
+                className="flex min-w-0 items-center gap-2 rounded-md border bg-secondary/40 px-2 py-1 text-xs"
+              >
+                {url && (
+                  <img src={url} alt={attachment.name} className="size-10 rounded object-cover" />
+                )}
+                <span className="max-w-40 truncate">{attachment.name}</span>
+                <span className="animate-pulse text-muted-foreground">Uploading…</span>
+              </div>
+            ))}
+          </div>
+        )}
         {!submitBusy && mentions.menu}
         <PromptInputTextarea
           ref={input}

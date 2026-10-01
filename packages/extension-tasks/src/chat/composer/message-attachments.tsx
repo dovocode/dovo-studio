@@ -9,10 +9,12 @@ export function MessageAttachments({
   files = [],
   remove,
   disabled,
+  previews,
 }: {
   taskId: string
   files?: Attachment[]
   remove?: (id: string) => Promise<void>
+  previews?: Map<string, string>
   disabled?: boolean
 }) {
   const { request, connected } = useWorkspace()
@@ -61,7 +63,15 @@ export function MessageAttachments({
             aria-label={`Preview ${file.name}`}
           >
             {isImageAttachment(file) ? (
-              <AttachmentThumbnail taskId={taskId} file={file} />
+              previews?.get(file.id) ? (
+                <img
+                  src={previews.get(file.id)}
+                  alt={file.name}
+                  className="size-10 shrink-0 rounded object-cover"
+                />
+              ) : (
+                <AttachmentThumbnail taskId={taskId} file={file} />
+              )
             ) : (
               <Paperclip className="size-3 shrink-0" />
             )}

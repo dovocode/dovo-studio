@@ -14,7 +14,9 @@ export function PullChanges({
   repositoryId,
   onSteer,
   onPosted,
+  embedded = false,
 }: {
+  embedded?: boolean
   detail: PullDetail
   repositoryId: string
   onSteer: (objective: string) => void
@@ -22,7 +24,9 @@ export function PullChanges({
 }) {
   const { request, connected } = useWorkspace()
   const [selected, setSelected] = useApplicationState(detail.files[0]?.path ?? ''),
-    [split, setSplit] = useApplicationState(readAppPreferences().diffLayout === 'split'),
+    [split, setSplit] = useApplicationState(
+      !embedded && readAppPreferences().diffLayout === 'split',
+    ),
     [treeOpen, setTreeOpen] = useApplicationState(true),
     [query, setQuery] = useApplicationState(''),
     [viewed, setViewed] = useApplicationState<Set<string>>(new Set())
@@ -50,7 +54,7 @@ export function PullChanges({
           {treeOpen ? 'Hide files' : 'Show files'}
         </Button>
       </div>
-      <div className="flex min-w-0 flex-col-reverse gap-3 lg:flex-row">
+      <div className="flex min-w-0 flex-col-reverse gap-3 @4xl:flex-row">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2 py-3">
             <span className="min-w-0 flex-1 break-all font-mono text-xs">
@@ -143,7 +147,7 @@ export function PullChanges({
           />
         </div>
         {treeOpen && (
-          <aside className="max-h-[65vh] shrink-0 overflow-y-auto border-l p-2 lg:sticky lg:top-2 lg:w-56">
+          <aside className="max-h-[65vh] shrink-0 overflow-y-auto border-b p-2 @4xl:border-b-0 @4xl:border-l @4xl:sticky @4xl:top-2 @4xl:w-56">
             <Input
               aria-label="Filter changed files"
               placeholder="Find a file…"
