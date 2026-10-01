@@ -25,6 +25,8 @@ import {
   MessageSquare,
   Monitor,
   PanelLeft,
+  PanelRight,
+  PanelBottom,
   Terminal,
   FolderOpen,
   ChevronDown,
@@ -64,6 +66,10 @@ export function TaskHeader({
   sidebarVisible,
   onTerminal,
   hasDiff,
+  toolsVisible,
+  onTools,
+  bottomTerminalOpen,
+  onBottomTerminal,
 }: {
   task: Task
   onSidebar: () => void
@@ -74,6 +80,10 @@ export function TaskHeader({
   /** Shows the terminal after a project action ran in it. */
   onTerminal?: (terminalId: string) => void
   hasDiff: boolean
+  toolsVisible: boolean
+  onTools: () => void
+  bottomTerminalOpen: boolean
+  onBottomTerminal: () => void
 }) {
   const { workspace, snapshot, connected, request } = useWorkspace()
   const updates = useRuntimeReleaseCheck()
@@ -273,6 +283,32 @@ export function TaskHeader({
             <span className="studio-titlebar-task">{task.title}</span>
           </h1>
           {actions}
+          <div className="flex shrink-0 items-center gap-0.5 border-l pl-2">
+            <IconButton
+              label={sidebarVisible ? 'Hide left sidebar' : 'Show left sidebar'}
+              aria-pressed={sidebarVisible}
+              className="size-7"
+              onClick={onSidebar}
+            >
+              <PanelLeft size={15} />
+            </IconButton>
+            <IconButton
+              label={bottomTerminalOpen ? 'Hide bottom terminal' : 'Show bottom terminal'}
+              aria-pressed={bottomTerminalOpen}
+              className="size-7"
+              onClick={onBottomTerminal}
+            >
+              <PanelBottom size={15} />
+            </IconButton>
+            <IconButton
+              label={toolsVisible ? 'Hide right sidebar' : 'Show right sidebar'}
+              aria-pressed={toolsVisible}
+              className="size-7"
+              onClick={onTools}
+            >
+              <PanelRight size={15} />
+            </IconButton>
+          </div>
         </header>
       )}
       <header

@@ -1,14 +1,5 @@
 import { Fragment } from 'react'
-import {
-  Bot,
-  MessageCircleQuestion,
-  Files,
-  FileCode2,
-  Globe,
-  PanelBottom,
-  Smartphone,
-  Terminal,
-} from 'lucide-react'
+import { Bot, MessageCircleQuestion, Files, FileCode2, Globe, Smartphone } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from '@dovo/studio-ui'
 import type { TaskSurface } from './task-header'
 
@@ -16,14 +7,10 @@ export function TaskTools({
   surface,
   onSelect,
   hasDiff,
-  bottomTerminalOpen,
-  onBottomTerminal,
 }: {
   surface: TaskSurface
   onSelect: (surface: TaskSurface) => void
   hasDiff: boolean
-  bottomTerminalOpen: boolean
-  onBottomTerminal: () => void
 }) {
   return (
     <nav className="studio-navigation studio-tools-navigation" aria-label="Thread tools">
@@ -34,7 +21,6 @@ export function TaskTools({
         [
           ['files', 'Files', Files],
           ...(hasDiff ? [['changes', 'Diff', FileCode2] as const] : []),
-          ['terminal', 'Terminal', Terminal],
           ['agents', 'Agents', Bot],
           ['side-chats', 'Side chats', MessageCircleQuestion],
           ['browser', 'Browsers', Globe],
@@ -63,26 +49,6 @@ export function TaskTools({
               {label}
             </TooltipContent>
           </Tooltip>
-          {id === 'terminal' && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Terminal below thread"
-                  aria-pressed={bottomTerminalOpen}
-                  className={cn('studio-navigation-item', bottomTerminalOpen && 'is-active')}
-                  onClick={onBottomTerminal}
-                >
-                  <PanelBottom size={18} strokeWidth={1.7} aria-hidden="true" />
-                  <span className="studio-navigation-label">Bottom terminal</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left" sideOffset={10}>
-                Terminal below thread
-              </TooltipContent>
-            </Tooltip>
-          )}
         </Fragment>
       ))}
     </nav>
