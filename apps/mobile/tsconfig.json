@@ -4,5 +4,13 @@
     "types": ["node"],
     "moduleResolution": "Bundler"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "*.ts", "*.cts", "plugins/**/*.ts", "terminal/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "*.ts",
+    "*.cts",
+    "plugins/**/*.ts",
+    "terminal/**/*.ts",
+    "mermaid/**/*.ts"
+  ]
 }

@@ -1,13 +1,18 @@
 // Adapted from Vercel AI Elements (MIT), packages/elements/src/message.tsx.
-import { memo, useCallback, useMemo, type HTMLAttributes } from 'react'
+import { memo, lazy, Suspense, useCallback, useMemo, type HTMLAttributes } from 'react'
 import { resolveMarkdownLink } from '@dovo/protocol'
 import { Streamdown } from 'streamdown'
 import { code } from '@streamdown/code'
 import { cn } from '../../lib/utils'
 import { IconButton } from '../icon-button'
 import { markdownPluginsForLinks } from './markdown-plugins'
+const MermaidResponse = lazy(() => import('./mermaid-response'))
 const markdownPlugins = { code }
-const markdownControls = { code: { copy: true, download: false }, table: false }
+const markdownControls = {
+  code: { copy: true, download: false },
+  table: false,
+  mermaid: { copy: true, download: true, fullscreen: true, panZoom: true },
+}
 export function Message({
   from,
   className,
@@ -54,21 +59,26 @@ export const MessageResponse = memo(function MessageResponse({
     () => markdownPluginsForLinks(baseURL, fileBaseURL),
     [baseURL, fileBaseURL],
   )
-  return (
-    <Streamdown
-      className="studio-markdown min-w-0 max-w-full"
-      plugins={markdownPlugins}
-      controls={markdownControls}
-      codeBlockMaxHeight={400}
-      tableMaxHeight={400}
-      lineNumbers={false}
-      urlTransform={urlTransform}
-      rehypePlugins={rehypePlugins}
-      mode={isStreaming ? 'streaming' : 'static'}
-      isAnimating={isStreaming}
-    >
-      {children}
-    </Streamdown>
+  const props = {
+    className: 'studio-markdown min-w-0 max-w-full',
+    plugins: markdownPlugins,
+    controls: markdownControls,
+    codeBlockMaxHeight: 400,
+    tableMaxHeight: 400,
+    lineNumbers: false,
+    urlTransform,
+    rehypePlugins,
+    mode: isStreaming ? ('streaming' as const) : ('static' as const),
+    isAnimating: isStreaming,
+    children,
+  }
+  const markdown = <Streamdown {...props} />
+  return /(?:^|\n) {0,3}(?:`{3,}|~{3,})mermaid(?:\s|$)/i.test(children) ? (
+    <Suspense fallback={markdown}>
+      <MermaidResponse {...props} />
+    </Suspense>
+  ) : (
+    markdown
   )
 })
 export function MessageActions({ className, ...props }: HTMLAttributes<HTMLDivElement>) {

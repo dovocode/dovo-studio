@@ -26,6 +26,7 @@ release/
 apps/mobile/ios/
 apps/mobile/android/
 apps/mobile/assets/terminal.json
+apps/mobile/assets/mermaid.json
 
 # Generated shared canvas viewer
 packages/protocol/src/generated/browser-viewer.ts

@@ -1,13 +1,18 @@
+import { Text } from './text'
 import { openAppLink } from './open-link'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { memo } from 'react'
-import { Alert, Platform } from 'react-native'
+import { mermaidBlocks } from './mermaid-blocks'
+import { memo, lazy, Suspense, useMemo } from 'react'
+import { Alert, Platform, View } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { resolveMarkdownLink } from '@dovo/protocol'
 import { colors, styles } from '../theme'
 import { carZoom, useCarMode } from '../../runtime/preferences/app-preferences'
+const MermaidDiagram = lazy(() =>
+  import('./mermaid-diagram').then((module) => ({ default: module.MermaidDiagram })),
+)
 const monospace = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
 const heading = {
   color: colors.text,
@@ -223,6 +228,7 @@ export const Markdown = memo(function Markdown({
   preserveLineBreaks?: boolean
   variant?: 'default' | 'chat'
 }) {
+  const parts = useMemo(() => mermaidBlocks(text), [text])
   const car = useCarMode()
   const style =
     variant === 'chat'
@@ -233,38 +239,52 @@ export const Markdown = memo(function Markdown({
         ? carMarkdownStyle
         : markdownStyle
   return (
-    <EnrichedMarkdownText
-      markdown={text}
-      flavor="github"
-      markdownStyle={style}
-      selectable
-      allowFontScaling
-      lineBreakStrategyIOS="standard"
-      enableTaskListItemToggle={false}
-      md4cFlags={{
-        latexMath: false,
-        hardSoftBreaks: preserveLineBreaks,
-      }}
-      containerStyle={{
-        width: '100%',
-        maxWidth: '100%',
-        minWidth: 0,
-        flexShrink: 1,
-      }}
-      onLinkPress={({ url }) => {
-        const target = resolveMarkdownLink(url, baseURL, fileBaseURL)
-        if (target) {
-          void runClientEffect(
-            nativeEffect(() => openAppLink(target)).pipe(
-              Effect.catchAll((error) =>
-                nativeEffect(() => Alert.alert('Could not open link', String(error))),
-              ),
-            ),
-          )
-        } else {
-          Alert.alert('Desktop link', 'Open this file or link on your desktop.')
-        }
-      }}
-    />
+    <View style={{ width: '100%', gap: 8 }}>
+      {parts.map((part) =>
+        part.kind === 'mermaid' ? (
+          <Suspense
+            key={part.offset}
+            fallback={<Text style={styles.muted}>Rendering diagram…</Text>}
+          >
+            <MermaidDiagram chart={part.text} />
+          </Suspense>
+        ) : (
+          <EnrichedMarkdownText
+            key={part.offset}
+            markdown={part.text}
+            flavor="github"
+            markdownStyle={style}
+            selectable
+            allowFontScaling
+            lineBreakStrategyIOS="standard"
+            enableTaskListItemToggle={false}
+            md4cFlags={{
+              latexMath: false,
+              hardSoftBreaks: preserveLineBreaks,
+            }}
+            containerStyle={{
+              width: '100%',
+              maxWidth: '100%',
+              minWidth: 0,
+              flexShrink: 1,
+            }}
+            onLinkPress={({ url }) => {
+              const target = resolveMarkdownLink(url, baseURL, fileBaseURL)
+              if (target) {
+                void runClientEffect(
+                  nativeEffect(() => openAppLink(target)).pipe(
+                    Effect.catchAll((error) =>
+                      nativeEffect(() => Alert.alert('Could not open link', String(error))),
+                    ),
+                  ),
+                )
+              } else {
+                Alert.alert('Desktop link', 'Open this file or link on your desktop.')
+              }
+            }}
+          />
+        ),
+      )}
+    </View>
   )
 })

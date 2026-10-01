@@ -1062,3 +1062,10 @@ repository name (optionally owner/name) and private or public visibility; privat
 The runtime uses its configured GitHub CLI account, initializes Git when necessary, and adds origin
 without staging or uploading files. Existing remotes are never replaced. After creation, add the
 project, review and stage its files, then commit and push.
+
+### Mermaid diagrams in threads
+
+Fenced `mermaid` blocks render as diagrams on desktop and mobile. Desktop diagrams offer copy,
+download, fullscreen and pan/zoom controls. Mobile renders completed fences offline; unfinished
+streaming fences stay as source. Invalid diagrams keep their readable source instead of breaking the
+message. Diagram rendering loads only when needed and uses Mermaid's strict security mode.
