@@ -553,7 +553,23 @@ export class WorkspaceStore {
         ['agentId', 'agentOverrides', 'harness', 'repositoryId', 'archived'].includes(key)
       )
         throw new HttpError(409, 'Stop the active turn before changing task settings')
-      if (!isDeepStrictEqual(current[key] ?? null, change.before ?? null))
+      // Sending consumes the draft outside workspace PATCH. A client may type its next
+      // message before that clear reaches its snapshot; this is not a competing edit.
+      const task =
+        patch.collection === 'tasks'
+          ? this.workspace.tasks.find((t) => t.id === patch.id)
+          : undefined
+      const previousDraft = typeof change.before === 'string' ? change.before.trim() : ''
+      const consumedDraft =
+        key === 'draft' &&
+        current.draft === '' &&
+        previousDraft !== '' &&
+        !!task &&
+        [
+          [...task.messages].reverse().find((message) => message.role === 'user'),
+          task.queue?.at(-1),
+        ].some((message) => message?.text.trim() === previousDraft)
+      if (!consumedDraft && !isDeepStrictEqual(current[key] ?? null, change.before ?? null))
         throw new HttpError(
           409,
           `Another client changed ${key}. Reconnect to load the latest version.`,
