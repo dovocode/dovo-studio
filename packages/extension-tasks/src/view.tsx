@@ -740,6 +740,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         <TaskConversation
                           key={taskCollectionKey(activeRuntimeId, task.id)}
                           task={task}
+                          revealMessage={revealMessage}
                           codeReference={codeReference?.taskId === task.id ? codeReference : null}
                           visible={!listOpen && (!compact || surface === 'chat')}
                           onReview={() => selectSurface(hasDiff ? 'changes' : 'files')}

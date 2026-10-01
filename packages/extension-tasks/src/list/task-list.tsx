@@ -9,7 +9,15 @@ import {
 import { compareTasks, taskSortOptions, taskGroupOptions, isSnoozed } from '@dovo/studio-core'
 import { ProjectsMenu } from '@dovo/extension-scm/projects'
 import { ChoicePicker } from '@dovo/studio-ui'
-import { Plus, Search, ChevronDown, SlidersHorizontal, ListChecks, Layers2 } from 'lucide-react'
+import {
+  Plus,
+  MessageCirclePlus,
+  Search,
+  ChevronDown,
+  SlidersHorizontal,
+  ListChecks,
+  Layers2,
+} from 'lucide-react'
 import { useEffect, useCallback, useMemo, useRef } from 'react'
 import { Button, Input } from '@dovo/studio-ui'
 import { responses, useWorkspace } from '@dovo/studio-core'
@@ -350,6 +358,17 @@ export function TaskList({
             size="icon"
             variant="ghost"
             className="size-8 shrink-0"
+            aria-label="New task without a project"
+            title="New task without a project"
+            disabled={busy}
+            onClick={onCreateNoProject}
+          >
+            <MessageCirclePlus size={17} aria-hidden="true" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8 shrink-0"
             aria-label="New task"
             onClick={() => onCreate()}
             disabled={busy}
@@ -358,15 +377,6 @@ export function TaskList({
           </Button>
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mx-2 mb-1 justify-start text-xs"
-        disabled={busy}
-        onClick={onCreateNoProject}
-      >
-        <Plus className="mr-1 size-3.5" /> No project task
-      </Button>
       <details className="group/filter mx-2 mb-1 rounded-md border border-transparent open:border-border/70 open:bg-muted/35">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded px-1.5 py-1 text-[0.6875rem] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
           <SlidersHorizontal aria-hidden="true" className="size-3" />

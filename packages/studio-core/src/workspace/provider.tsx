@@ -1,3 +1,4 @@
+import { recentSnapshot } from '../runtime/recent-snapshot'
 import { useAppPreferences } from '../preferences'
 import { pendingAgentPresets } from '@dovo/protocol'
 import {
@@ -490,14 +491,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 )
               outbox = oldOutbox ?? outbox
             }
-            const value = yield* runtimeRequestEffect(
-              profile.connection,
-              profile.connection.address,
-              '/api/snapshot',
-              undefined,
-              snapshotSchema,
-              'GET',
-            )
+            const cached =
+              !proof && !replacing
+                ? recentSnapshot(profile, overviewsRef.current[profile.id])
+                : null
+            const value =
+              cached ??
+              (yield* runtimeRequestEffect(
+                profile.connection,
+                profile.connection.address,
+                '/api/snapshot',
+                undefined,
+                snapshotSchema,
+                'GET',
+              ))
             if (attempt !== connecting.current)
               return yield* Effect.fail(new Error('Another runtime connection was selected'))
             if (!accepts())
