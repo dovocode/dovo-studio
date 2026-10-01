@@ -119,6 +119,8 @@ it('discards a mismatched delta and requests a new baseline instead of guessing'
     }),
   })
   expect(live.online()).toBe(true)
+  first.onmessage?.({ data: JSON.stringify({ type: 'heartbeat', epoch: 'first', sequence: 1 }) })
+  expect(receive).toHaveBeenCalledOnce()
   first.onmessage?.({
     data: JSON.stringify({
       type: 'delta',

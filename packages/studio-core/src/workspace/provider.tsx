@@ -123,6 +123,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const snapshotConnection = useRef<RuntimeConnection | null>(null)
   const setSnapshot = useCallback(
     (value: RuntimeSnapshot | null, target: RuntimeConnection | null) => {
+      if (value && !synchronization.acceptsRevision(value.revision, value.runtimeInstanceId)) return
       const retained = retainRuntimeSnapshot(
         snapshotRef.current,
         snapshotConnection.current,
@@ -227,6 +228,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [])
   const installSnapshot = useCallback(
     (target: RuntimeConnection, value: RuntimeSnapshot) => {
+      if (!synchronization.acceptsRevision(value.revision, value.runtimeInstanceId)) return
       const tag = getRuntimeSnapshotTag(value)
       const previous = installedSnapshot.current
       if (
@@ -305,6 +307,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [storageLock, persistRegistryEffect],
   )
   const updateOverview = useCallback((value: RuntimeOverview) => {
+    if (
+      value.connected &&
+      value.snapshot &&
+      !synchronization.acceptsRevision(value.snapshot.revision, value.snapshot.runtimeInstanceId)
+    )
+      return
     const profile = registryRef.current.profiles.find(
       (entry) =>
         entry.id === value.profile.id && entry.connection.token === value.profile.connection.token,
@@ -1228,7 +1236,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       active: () => inputPreview || document.visibilityState === 'visible',
       onWake: () => wakeFallback(),
       onSnapshot: (value) => {
-        if (stopped) return
+        if (stopped || !synchronization.acceptsRevision(value.revision, value.runtimeInstanceId))
+          return
         const checkpoint = synchronization.checkpoint()
         snapshotOrder.current.set(id, (snapshotOrder.current.get(id) ?? 0) + 1)
         setSnapshot(value, connection)

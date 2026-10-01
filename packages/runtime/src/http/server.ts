@@ -162,11 +162,12 @@ export function createRuntimeServer(services: Services, internal = false) {
       const url = new URL(request.url ?? '/', 'http://runtime.local')
       if (url.pathname === '/ws/sync') {
         const ticket = services.tickets.consume(url.searchParams.get('ticket') ?? '')
-        if (ticket.resourceId !== 'runtime-sync') throw new HttpError(401, 'Invalid sync ticket')
+        if (!['runtime-sync', 'runtime-sync-2'].includes(ticket.resourceId))
+          throw new HttpError(401, 'Invalid sync ticket')
         services.devices.authenticate(ticket.token)
         syncSockets.handleUpgrade(request, socket, head, (client) => {
           track(client, ticket.token)
-          attachRuntimeSync(client, ticket.token, services)
+          attachRuntimeSync(client, ticket.token, services, ticket.resourceId === 'runtime-sync-2')
         })
         return
       }

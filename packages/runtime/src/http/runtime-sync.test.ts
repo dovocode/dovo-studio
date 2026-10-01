@@ -161,3 +161,25 @@ it('shares snapshot preparation without sharing device trust views or replay epo
   expect(second.snapshot.pendingDevices).toEqual([])
   expect(available).toHaveBeenCalledOnce()
 })
+
+it('keeps a snapshot revision paired with the workspace captured before asynchronous preparation', async () => {
+  const { Effect } = await import('effect')
+  const { runtimeSnapshot } = await import('./support/runtime-snapshot.js')
+  const { runtime } = await setup()
+  let release: (value: undefined) => void = () => {}
+  const waiting = new Promise<undefined>((resolve) => {
+    release = resolve
+  })
+  const available = vi.spyOn(runtime.services.scratch, 'available').mockReturnValue(waiting)
+  cleanup.push(() => {
+    available.mockRestore()
+  })
+  const revision = runtime.services.store.version()
+  const pending = Effect.runPromise(runtimeSnapshot(runtime.services, { id: 'owner', owner: true }))
+  await expect.poll(() => available.mock.calls.length).toBeGreaterThan(0)
+  runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Newer workspace' }))
+  release(undefined)
+  const snapshot = await pending
+  expect(snapshot.revision).toBe(revision)
+  expect(snapshot.workspace.tasks[0]!.title).toBe('Task')
+})

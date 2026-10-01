@@ -259,3 +259,33 @@ it('retains an accepted clear in memory after a disk failure and flushes it on t
   await Effect.runPromise(drafts.flushEffect())
   expect(await createDraftStorage(storage).read('runtime.task')).toBe('')
 })
+
+it('reconciles a lost send acknowledgement before exposing its saved text', async () => {
+  const { Effect } = await import('effect')
+  const storage = memoryStorage()
+  const first = createDraftStorage(storage)
+  await first.write('runtime.task', submission.text)
+  await Effect.runPromise(first.stageEffect('runtime.task', submission, submission.text))
+  const reopened = createDraftStorage(storage)
+  const record = await Effect.runPromise(
+    reopened.readRecordEffect('runtime.task', undefined, [submission.id]),
+  )
+  expect(record?.text).toBe('')
+  expect(record?.submission?.accepted).toBe(true)
+  await Effect.runPromise(reopened.flushEffect())
+  expect(await createDraftStorage(storage).read('runtime.task')).toBe('')
+})
+it('keeps an intentional identical follow-up after a previously accepted send', async () => {
+  const { Effect } = await import('effect')
+  const storage = memoryStorage()
+  const drafts = createDraftStorage(storage)
+  await drafts.write('runtime.task', submission.text)
+  await Effect.runPromise(drafts.stageEffect('runtime.task', submission, submission.text))
+  await Effect.runPromise(drafts.confirmEffect('runtime.task', submission, true))
+  await drafts.write('runtime.task', submission.text)
+  const record = await Effect.runPromise(
+    createDraftStorage(storage).readRecordEffect('runtime.task', undefined, [submission.id]),
+  )
+  expect(record?.text).toBe(submission.text)
+  expect(record?.submission).toBeUndefined()
+})

@@ -79,7 +79,36 @@ export function createDraftStorage(storage: Storage) {
       yield* nativeEffect(() => storage.setItem(key, encodeRecord(record)))
       dirty.delete(key)
     })
-  const readRecordEffect = (key: string, legacyKey?: string) => serialize(key, load(key, legacyKey))
+  const readRecordEffect = (
+    key: string,
+    legacyKey?: string,
+    deliveredIds: readonly string[] | (() => readonly string[]) = [],
+  ) =>
+    serialize(
+      key,
+      Effect.gen(function* () {
+        const record = yield* load(key, legacyKey)
+        const submission = record?.submission
+        if (
+          !record ||
+          !submission ||
+          !(
+            submission.accepted ||
+            (typeof deliveredIds === 'function' ? deliveredIds() : deliveredIds).includes(
+              submission.attempt.id,
+            )
+          )
+        )
+          return record
+        const text = record.text.trim() === submission.attempt.text ? '' : record.text
+        const next = { ...record, text, submission: { ...submission, accepted: true } }
+        if (text !== record.text || !submission.accepted) {
+          records.set(key, next)
+          dirty.add(key)
+        }
+        return next
+      }),
+    )
   const readEffect = (key: string, legacyKey?: string) =>
     readRecordEffect(key, legacyKey).pipe(Effect.map((record) => record?.text ?? null))
   const writeEffect = (key: string, value: string) =>
@@ -89,7 +118,11 @@ export function createDraftStorage(storage: Storage) {
         key,
         Effect.gen(function* () {
           const previous = yield* load(key)
-          yield* save(key, { ...previous, text: value })
+          yield* save(key, {
+            ...previous,
+            text: value,
+            submission: previous?.submission?.accepted ? undefined : previous?.submission,
+          })
         }),
       )
     })

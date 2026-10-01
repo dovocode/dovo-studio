@@ -278,3 +278,19 @@ it('does not release edits for replacement if local durability failed', async ()
   await expect(Effect.runPromise(sync.savedEffect())).rejects.toThrow('Disk full')
   expect(sync.hasPending()).toBe(true)
 })
+
+it('rejects pre-acknowledgement stream revisions but accepts a restarted runtime', async () => {
+  const sync = new WorkspaceSynchronization(
+    () => {},
+    async () => ({ revision: 12, runtimeInstanceId: 'first-runtime' }),
+  )
+  sync.bind(connection)
+  sync.enqueue([patch])
+  await sync.flush()
+  expect(sync.acceptsRevision(11, 'first-runtime')).toBe(false)
+  expect(sync.acceptsRevision(12, 'first-runtime')).toBe(true)
+  expect(sync.acceptsRevision(1, 'restarted-runtime')).toBe(true)
+  expect(sync.acceptsRevision(1)).toBe(true)
+  sync.bind(connection)
+  expect(sync.acceptsRevision(1, 'first-runtime')).toBe(true)
+})

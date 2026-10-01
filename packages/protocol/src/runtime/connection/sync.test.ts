@@ -1,7 +1,14 @@
 import { expect, it } from 'vite-plus/test'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from './runtime.js'
-import { applySnapshotDelta, snapshotDelta, snapshotDeltaSchema } from './sync.js'
+import {
+  applySnapshotDelta,
+  snapshotDelta,
+  snapshotDeltaSchema,
+  activityDelta,
+  applyActivityDelta,
+  activityDeltaSchema,
+} from './sync.js'
 const snapshot = () =>
   decode(snapshotSchema, {
     revision: 1,
@@ -68,4 +75,76 @@ it('adds threads and refuses to guess through a missing append baseline', () => 
   const delta = snapshotDelta(before, next)
   before.workspace.tasks[0]!.messages[0]!.text = 'Wrong baseline'
   expect(() => applySnapshotDelta(before, delta)).toThrow('baseline')
+})
+
+it('omits unchanged metadata and ID lists from lean packets while preserving the legacy format', () => {
+  const previous = snapshot(),
+    next = snapshot()
+  next.revision++
+  next.workspace.tasks[0]!.messages[0]!.text += 'More'
+  const lean = decode(
+    snapshotDeltaSchema,
+    JSON.parse(JSON.stringify(snapshotDelta(previous, next, true))),
+  )
+  expect(lean.state).toBeUndefined()
+  expect(lean.workspace.metadata).toBeUndefined()
+  expect(lean.workspace.tasks?.order).toBeUndefined()
+  expect(lean.workspace.tasks?.changes[0]?.messages?.order).toBeUndefined()
+  expect(applySnapshotDelta(previous, lean)).toEqual(next)
+  const legacy = snapshotDelta(previous, next)
+  expect(legacy.state?.revision).toBe(next.revision)
+  expect(legacy.workspace.tasks?.order).toEqual(['one', 'two'])
+  expect(JSON.stringify(lean).length).toBeLessThan(JSON.stringify(legacy).length)
+})
+it('keeps lean reorders, removals and optional metadata deletion authoritative', () => {
+  const previous = snapshot(),
+    next = snapshot()
+  previous.workspace.tasks[0]!.pinned = true
+  previous.runtimeHost = 'Removed host'
+  next.workspace.tasks.reverse()
+  next.workspace.tasks[0]!.messages = []
+  expect(
+    applySnapshotDelta(previous, decode(snapshotDeltaSchema, snapshotDelta(previous, next, true))),
+  ).toEqual(next)
+})
+
+it('does not retransmit turn history when only text and the task timestamp change', () => {
+  const previous = snapshot(),
+    next = snapshot()
+  next.workspace.tasks[0]!.updatedAt = '2026-10-01T12:00:00Z'
+  next.workspace.tasks[0]!.messages[0]!.text += 'Latest'
+  const delta = snapshotDelta(previous, next, true)
+  expect(delta.workspace.tasks?.changes[0]?.fields).toBeUndefined()
+  expect(delta.workspace.tasks?.changes[0]?.updatedAt).toBe('2026-10-01T12:00:00Z')
+  expect(applySnapshotDelta(previous, decode(snapshotDeltaSchema, delta))).toEqual(next)
+})
+
+it('sends a small splice for streamed tool or reasoning JSON instead of repeating its payload', () => {
+  const before = [
+    {
+      id: 'tool',
+      time: '2026-10-01',
+      kind: 'reasoning',
+      scope: 'thread',
+      summary: 'Reasoning',
+      payload: JSON.stringify({ text: 'Reasoning '.repeat(10000), status: 'running' }),
+    },
+  ]
+  const next = [
+    {
+      ...before[0]!,
+      payload: JSON.stringify({
+        text: 'Reasoning '.repeat(10000) + 'Another thought',
+        status: 'running',
+      }),
+    },
+  ]
+  const delta = decode(activityDeltaSchema, JSON.parse(JSON.stringify(activityDelta(before, next))))
+  expect(delta.order).toBeUndefined()
+  expect(JSON.stringify(delta).length).toBeLessThan(JSON.stringify(next).length / 20)
+  expect(applyActivityDelta(before, delta, 'thread')).toEqual(next)
+  expect(() =>
+    applyActivityDelta([{ ...before[0]!, payload: 'Wrong baseline' }], delta, 'thread'),
+  ).toThrow('baseline')
+  expect(applyActivityDelta(before, activityDelta(before, []), 'thread')).toEqual([])
 })

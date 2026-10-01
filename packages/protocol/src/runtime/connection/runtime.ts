@@ -71,6 +71,7 @@ export const providerStatusSchema = mutableStruct({
   detail: Schema.String,
 })
 export const snapshotSchema = mutableStruct({
+  runtimeInstanceId: Schema.optional(Schema.String),
   protocolVersion: Schema.optional(Schema.Number.pipe(Schema.int())),
   runtimeHost: Schema.optional(Schema.String),
   releaseVersion: Schema.optional(Schema.String),

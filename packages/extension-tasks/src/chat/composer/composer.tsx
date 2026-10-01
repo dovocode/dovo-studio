@@ -1,3 +1,4 @@
+import { reconcileComposerDraft } from './draft-reconciliation'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -95,11 +96,12 @@ export function Composer({
   useEffect(() => {
     // Adopt external draft changes (e.g. moving the task to another machine) without
     // clobbering in-progress typing.
-    if (task.draft !== lastWritten.current) {
-      lastWritten.current = task.draft
-      setDraft(task.draft)
+    const reconciled = reconcileComposerDraft(draft, lastWritten.current, task.draft, submittedText)
+    if (reconciled !== draft) {
+      lastWritten.current = reconciled
+      setDraft(reconciled)
     }
-  }, [task.draft])
+  }, [task.draft, draft, submittedText])
   const writeDraft = useRef((_value: string) => {})
   writeDraft.current = (value: string) => {
     try {
@@ -110,8 +112,12 @@ export function Composer({
     }
   }
   const unwritten = useRef<string | null>(null)
+  const draftSave = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => {
-    if (draft === lastWritten.current) {
+    if (
+      draft === lastWritten.current ||
+      (sendingRequest.current && draft.trim() === submittedText)
+    ) {
       unwritten.current = null
       return
     }
@@ -120,8 +126,9 @@ export function Composer({
       unwritten.current = null
       writeDraft.current(draft)
     }, 300)
+    draftSave.current = timer
     return () => clearTimeout(timer)
-  }, [draft, task.id, setWorkspace])
+  }, [draft, task.id, setWorkspace, submittedText])
   // Leaving the task inside the debounce window must not drop the last typed characters.
   useEffect(
     () => () => {
@@ -269,6 +276,8 @@ export function Composer({
       return
     if (firstMessage && (!connected || !task.repositoryId || !agent)) return
     sendingRequest.current = true
+    clearTimeout(draftSave.current)
+    unwritten.current = null
     setError('')
     setSending(true)
     setSubmittedText(text)

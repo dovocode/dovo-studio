@@ -334,7 +334,12 @@ export function route(
         if (!device.owner) throw new HttpError(403, 'Only the runtime host can manage device trust')
       }
       if (method === 'POST' && path === '/api/sync/ticket')
-        return { ticket: s.tickets.issue(token, 'runtime-sync') }
+        return {
+          ticket: s.tickets.issue(
+            token,
+            url.searchParams.get('format') === '2' ? 'runtime-sync-2' : 'runtime-sync',
+          ),
+        }
       if (method === 'GET' && path === '/api/snapshot') {
         return yield* runtimeSnapshot(s, device, url.searchParams.get('scope') === 'overview')
       }
@@ -467,7 +472,7 @@ export function route(
           if (!patch.create || Object.keys(patch.changes).length)
             throw new HttpError(400, 'The scratch workspace is managed by Dovo')
           yield* serviceResult(s.scratch.ensure())
-          return { revision: s.store.version() }
+          return { revision: s.store.version(), runtimeInstanceId: s.instanceId }
         }
         if (patch.collection === 'tasks') {
           const candidate =
@@ -498,6 +503,7 @@ export function route(
         s.store.patch(patch)
         return yield* serviceResult({
           revision: s.store.version(),
+          runtimeInstanceId: s.instanceId,
         })
       }
       if (method === 'POST' && path === '/api/pair/code') {

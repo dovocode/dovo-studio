@@ -358,10 +358,15 @@ visible thread activity. Updates are batched briefly and assistant text is sent 
 than repeated history. Reconnecting resumes from a bounded replay cursor; server restarts or gaps
 load a fresh snapshot. Mobile closes the stream in the background and resumes on return without
 stopping the agent. Older servers and connections that block WebSockets fall back to HTTP polling.
-Other computers retain their less frequent fleet refreshes. The runtime must stay running and both
-devices must be reachable within the private network. The native app allows HTTP for user-selected
-private runtimes, including LAN, Tailscale and NetBird hostnames. Use a VPN or HTTPS for encrypted
-remote transport. An HTTPS browser frontend requires HTTPS/WSS for its runtime.
+The current stream format omits unchanged metadata and ordering lists, and uses small string patches
+for growing tool/reasoning payloads. Older clients retain their compatible stream format. Workspace
+acknowledgements include the runtime instance and revision so a delayed stream frame cannot undo a
+newer draft save; a server restart establishes a new instance. Mobile reconciles saved send
+identities before hydrating draft text, preserving genuinely newer or unsent input. Other computers
+retain their less frequent fleet refreshes. The runtime must stay running and both devices must be
+reachable within the private network. The native app allows HTTP for user-selected private runtimes,
+including LAN, Tailscale and NetBird hostnames. Use a VPN or HTTPS for encrypted remote transport.
+An HTTPS browser frontend requires HTTPS/WSS for its runtime.
 
 Native folders and terminal HTML are generated. The checked-in Expo scene plugin reproduces iOS
 scene lifecycle support for Xcode 27. Explicit app keychain entitlements also keep simulator

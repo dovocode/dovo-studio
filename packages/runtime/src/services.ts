@@ -120,6 +120,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     return approval ? { id: approval.id, preview: approval.title } : undefined
   })
   return {
+    instanceId: randomUUID(),
     scratch,
     pushNotifications,
     acpInstallations,
@@ -157,6 +158,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  instanceId: string
   scratch: ScratchWorkspaces
   network?: ExternalListener
   acpInstallations: AcpInstallations

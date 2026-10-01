@@ -1,18 +1,15 @@
 import { mutableStruct, mutableArray } from '../shared/schema.js'
 import { decodeResult } from '../shared/schema.js'
 import { Schema } from 'effect'
-export const activitySchema = mutableStruct({
-  events: mutableArray(
-    mutableStruct({
-      id: Schema.String,
-      time: Schema.String,
-      kind: Schema.String,
-      scope: Schema.String,
-      summary: Schema.String,
-      payload: Schema.String,
-    }),
-  ),
+export const activityEventSchema = mutableStruct({
+  id: Schema.String,
+  time: Schema.String,
+  kind: Schema.String,
+  scope: Schema.String,
+  summary: Schema.String,
+  payload: Schema.String,
 })
+export const activitySchema = mutableStruct({ events: mutableArray(activityEventSchema) })
 const toolPayload = mutableStruct({
   turnId: Schema.String,
   toolId: Schema.String,
