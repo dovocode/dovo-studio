@@ -24,6 +24,7 @@ export function TaskList({
   selectedId,
   onSelect,
   onCreate,
+  onCreateNoProject,
   onDeselect,
   onOrderChange,
   onSplit,
@@ -39,6 +40,7 @@ export function TaskList({
   selectedId: string
   onSelect: (entry: TaskEntry) => void
   onCreate: (projectId?: string) => void
+  onCreateNoProject: () => void
   onDeselect: () => void
   /** The tasks in the order they appear in open groups, for keyboard task switching. */
   onOrderChange?: (entries: TaskEntry[]) => void
@@ -356,6 +358,15 @@ export function TaskList({
           </Button>
         </div>
       </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="mx-2 mb-1 justify-start text-xs"
+        disabled={busy}
+        onClick={onCreateNoProject}
+      >
+        <Plus className="mr-1 size-3.5" /> No project task
+      </Button>
       <details className="group/filter mx-2 mb-1 rounded-md border border-transparent open:border-border/70 open:bg-muted/35">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded px-1.5 py-1 text-[0.6875rem] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
           <SlidersHorizontal aria-hidden="true" className="size-3" />

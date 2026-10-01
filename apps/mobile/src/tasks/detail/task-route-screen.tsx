@@ -90,6 +90,7 @@ export function TaskRouteScreen() {
 }
 
 export function NewTaskScreen() {
+  const { noProject } = useLocalSearchParams<{ noProject?: string }>()
   const { ready, overviews } = useRuntime()
   const { navigate } = useNavigation()
   if (!ready)
@@ -113,6 +114,7 @@ export function NewTaskScreen() {
     <>
       <ScreenHeader title="New task" />
       <ProjectMachinePicker
+        noProject={noProject === '1'}
         onCancel={backToTasks}
         onCreated={(runtimeId, id) => router.replace(taskHref(runtimeId, id))}
       />

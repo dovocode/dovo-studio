@@ -70,3 +70,37 @@ describe('Thread sorting', () => {
     expect(compareTasks(a, a, 'activity', needsInput, projects)).toBe(0)
   })
 })
+
+it('keeps running threads ordered by their trigger time while output streams', () => {
+  const running = (id: string, startedAt: string, updatedAt: string) =>
+    decode(taskSchema, {
+      ...task(id, '2026-09-01T00:00:00Z'),
+      status: 'running',
+      updatedAt,
+      turns: [
+        {
+          id: id + '-turn',
+          assistantId: id + '-reply',
+          agentId: '',
+          provider: 'codex',
+          model: '',
+          startedAt,
+          status: 'running',
+        },
+      ],
+    })
+  const first = running('first', '2026-10-01T10:00:00Z', '2026-10-01T10:10:00Z')
+  const last = running('last', '2026-10-01T10:01:00Z', '2026-10-01T10:02:00Z')
+  for (const sort of ['priority', 'status', 'activity']) {
+    expect(compareTasks(first, last, sort, new Set(), new Map())).toBeGreaterThan(0)
+    expect(
+      compareTasks(
+        { ...first, updatedAt: '2026-10-01T10:20:00Z' },
+        last,
+        sort,
+        new Set(),
+        new Map(),
+      ),
+    ).toBeGreaterThan(0)
+  }
+})

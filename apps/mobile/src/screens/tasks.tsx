@@ -319,6 +319,15 @@ export default function TasksScreen() {
             onPress: () => router.push('/launch'),
           },
           {
+            label: 'No project task',
+            icon: 'add',
+            disabled: !overviews.some((entry) => entry.connected) || busy,
+            onPress: () => {
+              retainPosition()
+              router.push('/new?noProject=1', { withAnchor: true })
+            },
+          },
+          {
             label: 'New task',
             icon: 'add',
             disabled: !overviews.some((entry) => entry.connected) || busy,

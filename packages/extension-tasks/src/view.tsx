@@ -264,6 +264,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const [projectId, setProjectId] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
+  const [noProject, setNoProject] = useApplicationState(false)
   const [choosingProject, setChoosingProject] = useApplicationState(false)
   const [projectQuery, setProjectQuery] = useApplicationState('')
   const [suggestedProject, setSuggestedProject] = useApplicationState('')
@@ -283,6 +284,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     async (requestedProject?: string, confirmed = false, templateId?: string) => {
       if (busy) return
       if (!confirmed) {
+        setNoProject(false)
         setSuggestedProject(requestedProject ?? projectId)
         setProjectQuery('')
         setError('')
@@ -608,6 +610,12 @@ export default function TasksView({ entityId }: StudioViewProps) {
                     error={error}
                     onSelect={(entry) => void selectTask(entry)}
                     onCreate={(project) => void startTask(project)}
+                    onCreateNoProject={() => {
+                      setNoProject(true)
+                      setProjectQuery('')
+                      setError('')
+                      setChoosingProject(true)
+                    }}
                     onDeselect={deselectTask}
                     onOrderChange={reportOrder}
                     onSplit={(entry) => {
@@ -1018,6 +1026,12 @@ export default function TasksView({ entityId }: StudioViewProps) {
             error={error}
             onSelect={(entry) => void selectTask(entry)}
             onCreate={(project) => void startTask(project)}
+            onCreateNoProject={() => {
+              setNoProject(true)
+              setProjectQuery('')
+              setError('')
+              setChoosingProject(true)
+            }}
             onDeselect={deselectTask}
             onOrderChange={reportOrder}
           />
@@ -1042,6 +1056,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
           if (!busy) setChoosingProject(open)
         }}
         sources={sources}
+        noProject={noProject}
         busy={busy}
         error={error}
         projectQuery={projectQuery}

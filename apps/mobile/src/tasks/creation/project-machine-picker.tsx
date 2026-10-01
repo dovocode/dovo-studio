@@ -12,8 +12,10 @@ import { useMemo } from 'react'
 
 export function ProjectMachinePicker({
   onCreated,
+  noProject = false,
   onCancel,
 }: {
+  noProject?: boolean
   onCreated: (runtimeId: string, taskId: string) => void
   onCancel: () => void
 }) {
@@ -28,11 +30,13 @@ export function ProjectMachinePicker({
     () =>
       projectMachineGroups(
         overviews.flatMap((entry) =>
-          (entry.snapshot?.workspace.repositories ?? []).map((repository) => ({
-            repository,
-            runtimeId: entry.profile.id,
-            entry,
-          })),
+          (entry.snapshot?.workspace.repositories ?? [])
+            .filter((repository) => repository.kind !== 'scratch')
+            .map((repository) => ({
+              repository,
+              runtimeId: entry.profile.id,
+              entry,
+            })),
         ),
       ),
     [overviews],
@@ -47,6 +51,30 @@ export function ProjectMachinePicker({
           onCreated={(id) => onCreated(selection.runtimeId, id)}
         />
       </RuntimeScope>
+    )
+  if (noProject)
+    return (
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.title}>New task without a project</Text>
+        <Text style={styles.muted}>Choose the computer where this task should run.</Text>
+        {overviews.map((entry) => {
+          const repository = entry.snapshot?.workspace.repositories.find(
+            (item) => item.kind === 'scratch',
+          )
+          return (
+            <Action
+              key={entry.profile.id}
+              label={`${entry.profile.name}${entry.connected ? '' : ' · Offline'}`}
+              disabled={!entry.connected || !repository}
+              onPress={() => {
+                if (repository)
+                  setSelection({ runtimeId: entry.profile.id, repositoryId: repository.id })
+              }}
+            />
+          )
+        })}
+        <Action secondary label="Cancel" onPress={onCancel} />
+      </ScrollView>
     )
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
