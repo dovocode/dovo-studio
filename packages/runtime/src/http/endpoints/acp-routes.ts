@@ -1,3 +1,4 @@
+import { AcpAuthenticationJobs } from '../../agents/providers/acp/acp-authentication.js'
 import { Effect, Schema } from 'effect'
 import { homedir } from 'node:os'
 import type { IncomingMessage } from 'node:http'
@@ -16,6 +17,15 @@ import { routeProgram, serviceResult } from '../support/effect.js'
 
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 const installationRequest = mutableStruct({ id: idSchema })
+const authenticationJobs = new WeakMap<Services, AcpAuthenticationJobs>()
+function jobs(s: Services) {
+  let value = authenticationJobs.get(s)
+  if (!value) {
+    value = new AcpAuthenticationJobs(s.acpController.signal)
+    authenticationJobs.set(s, value)
+  }
+  return value
+}
 const authenticationOperations = new WeakMap<Services, Set<string>>()
 function operations(s: Services) {
   let set = authenticationOperations.get(s)
@@ -82,6 +92,18 @@ export function acpRoute(request: IncomingMessage, path: string) {
         yield* serviceResult(s.acpInstallations.remove(id))
         return { ok: true }
       }
+      if (path === '/api/agents/acp/authenticate/callback') {
+        const { url } = decode(mutableStruct({ url: maxValue(Schema.String, 16_384) }), input)
+        yield* serviceResult(jobs(s).complete(id, url))
+        return { ok: true }
+      }
+      if (path === '/api/agents/acp/authenticate/cancel') {
+        jobs(s).cancel(id)
+        return { ok: true }
+      }
+      const authentication = jobs(s).state(id)
+      if (path === '/api/agents/acp/inspect' && authentication?.status === 'waiting')
+        return { authMethods: [], canLogout: false, authentication }
       const launch = s.acpInstallations.launch(id)
       if (path === '/api/agents/acp/sessions') {
         const { cursor } = decode(
@@ -131,6 +153,7 @@ export function acpRoute(request: IncomingMessage, path: string) {
             type: 'type' in method && method.type === 'terminal' ? 'terminal' : 'agent',
           })),
           canLogout: result.canLogout,
+          ...(authentication ? { authentication } : {}),
           terminal: s.terminals
             .list()
             .find((terminal) => terminal.taskId === `acp:${id}` && !terminal.exited),
@@ -139,6 +162,18 @@ export function acpRoute(request: IncomingMessage, path: string) {
       if (path === '/api/agents/acp/authenticate' || path === '/api/agents/acp/logout') {
         requireAvailable(s, id)
         requireTasksIdle(s, id)
+        const { background } = decode(
+          mutableStruct({ background: Schema.optional(Schema.Boolean) }),
+          input,
+        )
+        if (path.endsWith('/authenticate') && background) {
+          const { methodId } = decode(mutableStruct({ methodId: idSchema }), input)
+          operations(s).add(id)
+          // initialize/authenticate validates the advertised method inside the job.
+          // No second process probe or long-running request is needed to start sign-in.
+          void jobs(s).start(id, launch, methodId, () => operations(s).delete(id))
+          return { ok: true }
+        }
         operations(s).add(id)
         // A failed or interrupted yield never resumes the generator, so a try/finally
         // would leave the installation marked busy until the runtime restarts.

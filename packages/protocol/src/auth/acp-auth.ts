@@ -2,6 +2,13 @@ import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../shared/schema.js'
 import { terminalSchema } from '../runtime/connection/runtime.js'
 
+const authenticationProgressSchema = mutableStruct({
+  status: Schema.Literal('waiting', 'completed', 'failed'),
+  output: Schema.String,
+  urls: mutableArray(Schema.String),
+  error: Schema.optional(Schema.String),
+})
+
 export const acpInspectionSchema = mutableStruct({
   authMethods: mutableArray(
     mutableStruct({
@@ -12,6 +19,7 @@ export const acpInspectionSchema = mutableStruct({
     }),
   ),
   canLogout: Schema.Boolean,
+  authentication: Schema.optional(authenticationProgressSchema),
   terminal: Schema.optional(terminalSchema),
 })
 export const acpAuthenticationSchema = mutableStruct({

@@ -1,3 +1,4 @@
+import { createServer } from 'node:http'
 import { afterEach, expect, it, vi } from 'vitest'
 import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
@@ -203,4 +204,130 @@ it('releases the authentication lock when ACP authentication is interrupted', as
   finish()
   vi.spyOn(acp, 'authenticateAcp').mockResolvedValue()
   expect((await call('authenticate', { id: 'first', methodId: 'browser' })).status).toBe(200)
+})
+
+it('keeps browser sign-in alive across requests and exposes its progress without spawning probes', async () => {
+  const { call } = await setup()
+  const inspect = vi.spyOn(acp, 'inspectAcp').mockResolvedValue(browserAuth)
+  let finish = () => {}
+  vi.spyOn(acp, 'authenticateAcp').mockImplementation((_launch, _method, _signal, output) => {
+    output?.('Open https://accounts.example.test/sign-in?state=abc\n')
+    return new Promise<void>((resolve) => {
+      finish = resolve
+    })
+  })
+  expect(
+    (await call('authenticate', { id: 'first', methodId: 'browser', background: true })).status,
+  ).toBe(200)
+  inspect.mockClear()
+  const progress = await (await call('inspect', { id: 'first' })).json()
+  expect(progress.authentication.status).toBe('waiting')
+  expect(progress.authentication.urls).toEqual(['https://accounts.example.test/sign-in?state=abc'])
+  expect(inspect).not.toHaveBeenCalled()
+  expect(
+    (await call('authenticate', { id: 'first', methodId: 'browser', background: true })).status,
+  ).toBe(409)
+  finish()
+  await vi.waitFor(async () =>
+    expect((await (await call('inspect', { id: 'first' })).json()).authentication.status).toBe(
+      'completed',
+    ),
+  )
+})
+
+it('cancels browser sign-in and releases the installation lock', async () => {
+  const { call } = await setup()
+  vi.spyOn(acp, 'inspectAcp').mockResolvedValue(browserAuth)
+  vi.spyOn(acp, 'authenticateAcp').mockImplementation(
+    (_launch, _method, signal) =>
+      new Promise<void>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+      }),
+  )
+  expect(
+    (await call('authenticate', { id: 'first', methodId: 'browser', background: true })).status,
+  ).toBe(200)
+  expect((await call('authenticate/cancel', { id: 'first' })).status).toBe(200)
+  await vi.waitFor(async () => {
+    const progress = await (await call('inspect', { id: 'first' })).json()
+    expect(progress.authentication).toMatchObject({ status: 'failed', error: 'Sign-in cancelled.' })
+  })
+  vi.spyOn(acp, 'authenticateAcp').mockResolvedValue()
+  expect((await call('authenticate', { id: 'first', methodId: 'browser' })).status).toBe(200)
+})
+
+it('forwards only callbacks matching the active OAuth redirect and state', async () => {
+  const { call } = await setup()
+  let finish = () => {}
+  const received: string[] = []
+  const callback = createServer((request, response) => {
+    received.push(request.url ?? '')
+    response.end('Signed in')
+    finish()
+  })
+  await new Promise<void>((resolve) => callback.listen(0, '127.0.0.1', resolve))
+  cleanups.push(
+    () =>
+      new Promise<void>((resolve, reject) =>
+        callback.close((error) => (error ? reject(error) : resolve())),
+      ),
+  )
+  const address = callback.address()
+  if (!address || typeof address === 'string') throw new Error('No callback listener')
+  const redirect = `http://127.0.0.1:${address.port}/oauth/callback`
+  vi.spyOn(acp, 'inspectAcp').mockResolvedValue(browserAuth)
+  vi.spyOn(acp, 'authenticateAcp').mockImplementation((_launch, _method, _signal, output) => {
+    output?.(
+      `Open https://accounts.example.test/sign-in?redirect_uri=${encodeURIComponent(redirect)}&state=correct\n`,
+    )
+    return new Promise<void>((resolve) => {
+      finish = resolve
+    })
+  })
+  expect(
+    (await call('authenticate', { id: 'first', methodId: 'browser', background: true })).status,
+  ).toBe(200)
+  for (const url of [
+    `${redirect}?code=secret&state=wrong`,
+    `http://127.0.0.1:12345/oauth/callback?code=secret&state=correct`,
+    `${redirect}/other?code=secret&state=correct`,
+    'https://example.test?code=secret&state=correct',
+  ])
+    expect((await call('authenticate/callback', { id: 'first', url })).ok).toBe(false)
+  expect(received).toEqual([])
+  expect(
+    (
+      await call('authenticate/callback', {
+        id: 'first',
+        url: `${redirect}?code=secret&state=correct`,
+      })
+    ).status,
+  ).toBe(200)
+  expect(received).toEqual(['/oauth/callback?code=secret&state=correct'])
+  const completed = await (await call('inspect', { id: 'first' })).json()
+  expect(completed.authentication).toMatchObject({ status: 'completed', output: '', urls: [] })
+})
+
+it('stops an outstanding browser sign-in when the runtime closes', async () => {
+  const { runtime, call } = await setup()
+  vi.spyOn(acp, 'inspectAcp').mockResolvedValue(browserAuth)
+  let stopped = false
+  vi.spyOn(acp, 'authenticateAcp').mockImplementation(
+    (_launch, _method, signal) =>
+      new Promise<void>((_resolve, reject) => {
+        signal?.addEventListener(
+          'abort',
+          () => {
+            stopped = true
+            reject(new Error('aborted'))
+          },
+          { once: true },
+        )
+      }),
+  )
+  expect(
+    (await call('authenticate', { id: 'first', methodId: 'browser', background: true })).status,
+  ).toBe(200)
+  await runtime.close()
+  expect(stopped).toBe(true)
 })

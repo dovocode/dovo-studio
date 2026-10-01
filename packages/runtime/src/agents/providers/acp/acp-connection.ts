@@ -22,6 +22,7 @@ export function openAcpConnection(
   client: Client,
   cwd?: string,
   signal?: AbortSignal,
+  onStderr?: (text: string) => void,
 ) {
   signal?.throwIfAborted()
   const env = { ...processEnvironment(), ...launch.env }
@@ -33,7 +34,10 @@ export function openAcpConnection(
     detached: process.platform !== 'win32',
     stdio: ['pipe', 'pipe', 'pipe'],
   })
-  child.stderr.resume()
+  if (onStderr) {
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', onStderr)
+  } else child.stderr.resume()
   const rpc = new ClientSideConnection(
     () => client,
     ndJsonStream(
@@ -150,8 +154,13 @@ export async function inspectAcp(launch: AcpLaunch, signal?: AbortSignal) {
   }
 }
 
-export async function authenticateAcp(launch: AcpLaunch, methodId: string, signal?: AbortSignal) {
-  const connection = openAcpConnection(launch, noClientServices, undefined, signal)
+export async function authenticateAcp(
+  launch: AcpLaunch,
+  methodId: string,
+  signal?: AbortSignal,
+  onOutput?: (text: string) => void,
+) {
+  const connection = openAcpConnection(launch, noClientServices, undefined, signal, onOutput)
   try {
     const initialization = await initializeAcp(connection, { auth: { terminal: true } })
     const method = initialization.authMethods?.find((entry) => entry.id === methodId)

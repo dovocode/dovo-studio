@@ -21,6 +21,7 @@ export const acpInstallationSchema = mutableStruct({
   version: minValue(Schema.String, 1),
   distribution: Schema.Literal('binary', 'npx', 'uvx'),
   installedAt: Schema.String,
+  needsRepair: Schema.optional(Schema.Boolean),
 })
 export type AcpInstallation = Schema.Schema.Type<typeof acpInstallationSchema>
 

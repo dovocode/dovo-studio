@@ -1,6 +1,6 @@
 import { Effect, Either, Schema } from 'effect'
-import { useEffect } from 'react'
-import { Alert, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { Alert, Linking, View } from 'react-native'
 import {
   acpAuthenticationSchema,
   acpInspectionSchema,
@@ -21,7 +21,7 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { useRuntime } from '../runtime/connection/provider'
 import { Action } from '../ui/controls/action'
 import { Choice } from '../ui/controls/choice'
-import { SearchField } from '../ui/controls/field'
+import { SearchField, Field } from '../ui/controls/field'
 import { Text } from '../ui/content/text'
 import { styles } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
@@ -176,7 +176,42 @@ export function AcpRegistry({
           onChange={setManagedId}
         />
       )}
-      {selected && <AcpAuthentication key={selected.id} installation={selected} agent={agent} />}
+      {selected && (
+        <Action
+          secondary
+          label={
+            selected.needsRepair
+              ? 'Repair installation in this runtime'
+              : 'Check installation / update'
+          }
+          disabled={!connected || busy}
+          onPress={() =>
+            act(() =>
+              mobileWorkflow(function* () {
+                yield* callEffect(
+                  '/api/agents/acp/install',
+                  { registryId: selected.registryId },
+                  acpInstallationSchema,
+                  'POST',
+                )
+                yield* nativeEffect(() => setRefresh((value) => value + 1))
+              }),
+            )
+          }
+        />
+      )}
+      {selected?.needsRepair && (
+        <Text style={styles.muted}>
+          Repair the installation’s old folder before signing in. Existing threads keep their agent.
+        </Text>
+      )}
+      {selected && !selected.needsRepair && (
+        <AcpAuthentication
+          key={`${selected.id}:${selected.installedAt}`}
+          installation={selected}
+          agent={agent}
+        />
+      )}
       {showRegistry && (
         <View style={{ gap: 8 }}>
           <Action
@@ -315,6 +350,7 @@ function AcpAuthentication({
     typeof acpInspectionSchema
   > | null>(null)
   const [terminal, setTerminal] = useApplicationState('')
+  const [callbackUrl, setCallbackUrl] = useState('')
   const [notice, setNotice] = useApplicationState('')
   const [inspectError, setInspectError] = useApplicationState('')
   const [sessionsOpen, setSessionsOpen] = useApplicationState(false)
@@ -352,6 +388,38 @@ function AcpAuthentication({
       active = false
     }
   }, [callEffect, connected, installation.id])
+  const waiting = methods?.authentication?.status === 'waiting'
+  useEffect(() => {
+    if (!connected || !waiting) return
+    let active = true
+    const poll = async () => {
+      await runClientEffect(
+        callEffect(
+          '/api/agents/acp/inspect',
+          { id: installation.id },
+          acpInspectionSchema,
+          'POST',
+        ).pipe(
+          Effect.flatMap((value) =>
+            nativeEffect(() => {
+              if (active) setMethods(value)
+            }),
+          ),
+          Effect.catchAll((cause) =>
+            nativeEffect(() => {
+              if (active) setInspectError(String(cause))
+            }),
+          ),
+        ),
+      )
+      if (active) timer = setTimeout(() => void poll(), 1500)
+    }
+    let timer = setTimeout(() => void poll(), 500)
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [callEffect, connected, installation.id, waiting])
   const run = (methodId: string) =>
     act(() =>
       mobileWorkflow(function* () {
@@ -360,7 +428,12 @@ function AcpAuthentication({
         else {
           const result = yield* callEffect(
             '/api/agents/acp/authenticate',
-            { id: installation.id, methodId },
+            {
+              id: installation.id,
+              methodId,
+              background:
+                methods?.authMethods.find((method) => method.id === methodId)?.type !== 'terminal',
+            },
             acpAuthenticationSchema,
             'POST',
           )
@@ -381,7 +454,7 @@ function AcpAuthentication({
               ? 'Sign-out request completed.'
               : terminalIssued
                 ? 'Complete sign-in in the terminal, then check the connection.'
-                : 'Sign-in request completed.',
+                : 'Sign-in started. Follow the instructions below.',
           )
         })
       }),
@@ -412,6 +485,84 @@ function AcpAuthentication({
           )
         }
       />
+      {methods?.authentication && (
+        <View style={{ gap: 6 }}>
+          <Text style={styles.muted}>
+            {waiting
+              ? 'Waiting for sign-in…'
+              : methods.authentication.status === 'completed'
+                ? 'Sign-in completed. Check the connection to verify access.'
+                : methods.authentication.error}
+          </Text>
+          {methods.authentication.urls.map((url) => (
+            <Action
+              key={url}
+              secondary
+              label={`Open sign-in in browser · ${new URL(url).hostname}`}
+              onPress={() => act(() => nativeEffect(() => Linking.openURL(url)))}
+            />
+          ))}
+          {!!methods.authentication.output && (
+            <Text selectable style={styles.muted}>
+              {methods.authentication.output}
+            </Text>
+          )}
+          {waiting && (
+            <Action
+              secondary
+              label="Cancel sign-in"
+              onPress={() =>
+                act(() =>
+                  mobileWorkflow(function* () {
+                    yield* callEffect(
+                      '/api/agents/acp/authenticate/cancel',
+                      { id: installation.id },
+                      responses.ok,
+                      'POST',
+                    )
+                  }),
+                )
+              }
+            />
+          )}
+          {waiting &&
+            methods.authentication.urls.some((url) =>
+              new URL(url).searchParams.has('redirect_uri'),
+            ) && (
+              <View style={{ gap: 6 }}>
+                <Text style={styles.muted}>
+                  If the browser returns to an unreachable localhost page, copy its full address
+                  here to finish sign-in on this server.
+                </Text>
+                <Field
+                  label="Browser sign-in callback URL"
+                  value={callbackUrl}
+                  onChangeText={setCallbackUrl}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Action
+                  secondary
+                  label="Complete remote sign-in"
+                  disabled={!callbackUrl.trim() || busy}
+                  onPress={() =>
+                    act(() =>
+                      mobileWorkflow(function* () {
+                        yield* callEffect(
+                          '/api/agents/acp/authenticate/callback',
+                          { id: installation.id, url: callbackUrl.trim() },
+                          responses.ok,
+                          'POST',
+                        )
+                        yield* nativeEffect(() => setCallbackUrl(''))
+                      }),
+                    )
+                  }
+                />
+              </View>
+            )}
+        </View>
+      )}
       {methods?.authMethods.map((method) => (
         <View key={method.id} style={[styles.row, { justifyContent: 'space-between' }]}>
           <View style={{ flex: 1, minWidth: 0 }}>

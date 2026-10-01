@@ -1,6 +1,16 @@
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  rename,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { gzipSync } from 'node:zlib'
@@ -196,6 +206,7 @@ describe('ACP registry installations', () => {
         platform: 'linux',
         arch: 'x64',
       })
+      expect(restored.list()[0]?.needsRepair).toBe(true)
       expect(() => restored.launch(entry.id)).toThrow(/outside the managed directory/)
       await expect(restored.remove(entry.id)).rejects.toThrow(/outside the managed directory/)
       expect(await readFile(outsideCommand, 'utf8')).toBe(outsideContent)
@@ -524,6 +535,55 @@ it('preserves executable ZIP helpers without granting special or public permissi
     expect((await stat(join(dirname(command), 'config'))).mode & 0o7777).toBe(0o600)
   } finally {
     await installer.dispose()
+    db.close()
+    await rm(temp, { recursive: true, force: true })
+  }
+})
+
+it('rebases launch paths when the desktop profile and its installations move together', async () => {
+  const temp = await mkdtemp(join(tmpdir(), 'dovo-acp-moved-'))
+  const oldRoot = join(temp, 'old', 'acp')
+  const newRoot = join(temp, 'new', 'acp')
+  const id = 'test-agent'
+  const versionFolder = '1.2.3-fixture'
+  const oldPath = join(oldRoot, id, versionFolder)
+  const newPath = join(newRoot, id, versionFolder)
+  const db = openDatabase(':memory:')
+  try {
+    await mkdir(oldPath, { recursive: true })
+    await writeFile(join(oldPath, 'agent'), '#!/bin/sh\necho ready\n', { mode: 0o700 })
+    db.prepare('INSERT INTO documents VALUES (?, ?)').run(
+      'acp-installations',
+      JSON.stringify([
+        {
+          id,
+          registryId: id,
+          name: 'Test',
+          version: '1.2.3',
+          distribution: 'binary',
+          installedAt: new Date().toISOString(),
+          command: join(oldPath, 'agent'),
+          args: ['--stdio', join(oldPath, 'agent')],
+          env: { PATH: `${oldPath}:/usr/bin` },
+          installPath: oldPath,
+          metadataPath: join(oldPath, 'registry-entry.json'),
+        },
+      ]),
+    )
+    await mkdir(join(temp, 'new'), { recursive: true })
+    await rename(oldRoot, newRoot)
+    const installer = new AcpInstallations(db, newRoot)
+    expect(installer.launch(id)).toMatchObject({
+      command: join(newPath, 'agent'),
+      args: ['--stdio', join(newPath, 'agent')],
+      env: { PATH: `${newPath}:/usr/bin` },
+    })
+    expect(installer.list()[0]?.needsRepair).toBeUndefined()
+    await installer.dispose()
+    const reopened = new AcpInstallations(db, newRoot)
+    expect(reopened.launch(id).command).toBe(join(newPath, 'agent'))
+    await reopened.dispose()
+  } finally {
     db.close()
     await rm(temp, { recursive: true, force: true })
   }

@@ -394,7 +394,49 @@ export class AcpInstallations {
     )
     if (row) {
       const saved = decode(storedInstallationsSchema, JSON.parse(row.value))
-      this.installations = new Map(saved.map((installation) => [installation.id, installation]))
+      this.installations = new Map(
+        saved.map((installation) => {
+          // The desktop profile migration moves files but SQLite retains absolute launch paths.
+          if (this.isManagedInstallationPath(installation)) return [installation.id, installation]
+          const installPath = join(
+            this.directory,
+            installation.id,
+            basename(installation.installPath),
+          )
+          const relocatedPath = (path: string) =>
+            isAbsolute(path) &&
+            (resolve(path) === resolve(installation.installPath) ||
+              pathIsInside(installation.installPath, path))
+              ? resolve(installPath, relative(installation.installPath, path))
+              : path
+          const relocated = {
+            ...installation,
+            installPath,
+            command: relocatedPath(installation.command),
+            args: installation.args.map((arg) => (isAbsolute(arg) ? relocatedPath(arg) : arg)),
+            env: Object.fromEntries(
+              Object.entries(installation.env).map(([key, value]) => [
+                key,
+                key.toLowerCase() === 'path'
+                  ? value.split(delimiter).map(relocatedPath).join(delimiter)
+                  : relocatedPath(value),
+              ]),
+            ),
+            metadataPath: join(installPath, 'registry-entry.json'),
+          }
+          return [
+            installation.id,
+            this.isManagedInstallationPath(relocated) ? relocated : installation,
+          ]
+        }),
+      )
+      if (
+        saved.some(
+          (installation) =>
+            this.installations.get(installation.id)?.installPath !== installation.installPath,
+        )
+      )
+        this.persist()
     }
   }
 
@@ -560,7 +602,9 @@ export class AcpInstallations {
       const current = this.installations.get(id)
       if (!current) return
       if (!this.isManagedInstallationPath(current))
-        throw new Error('ACP installation path is outside the managed directory')
+        throw new Error(
+          'ACP installation path is outside the managed directory. Repair the installation in Agents settings on this runtime.',
+        )
       const managedParent = resolve(this.directory, id)
       const trash = join(dirname(managedParent), `.remove-${randomUUID()}`)
       await rename(managedParent, trash)
@@ -581,7 +625,9 @@ export class AcpInstallations {
     const installation = this.installations.get(id)
     if (!installation) throw new Error('ACP agent is not installed on this runtime')
     if (!this.isManagedInstallationPath(installation))
-      throw new Error('ACP installation path is outside the managed directory')
+      throw new Error(
+        'ACP installation path is outside the managed directory. Repair the installation in Agents settings on this runtime.',
+      )
     return {
       command: installation.command,
       args: [...installation.args],
@@ -624,6 +670,7 @@ export class AcpInstallations {
       version: value.version,
       distribution: value.distribution,
       installedAt: value.installedAt,
+      ...(!this.isManagedInstallationPath(value) ? { needsRepair: true } : {}),
     })
   }
 

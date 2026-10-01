@@ -36,6 +36,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       authMethods: [{ id: 'browser', name: 'Browser' }, { id: 'login', name: 'Terminal', type: 'terminal', args: ['--login'] }]
     } }) + '\\n')
   } else if (input.method === 'authenticate') {
+    process.stderr.write('Open https://accounts.example.test/sign-in?state=test\\n')
     writeFileSync(process.env.TEST_AUTH_RECORD, JSON.stringify(input.params))
     process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: input.id, result: {} }) + '\\n')
   } else if (input.method === 'session/list') {
@@ -150,4 +151,10 @@ it('keeps ACP server details when control requests fail', async () => {
   } finally {
     await connection.close()
   }
+})
+
+it('forwards browser authentication instructions from stderr', async () => {
+  const output: string[] = []
+  await authenticateAcp(await fixture(), 'browser', undefined, (text) => output.push(text))
+  expect(output.join('')).toContain('https://accounts.example.test/sign-in?state=test')
 })

@@ -1,5 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useWorkspace } from '@dovo/studio-core'
+import { useWorkspace, useStudioHost } from '@dovo/studio-core'
 import {
   acpAuthenticationSchema,
   acpInspectionSchema,
@@ -15,7 +15,7 @@ import {
   type Agent,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { TerminalSession } from '@dovo/extension-tasks/terminal-session'
 import { Button, ChoicePicker, Input } from '@dovo/studio-ui'
 import { Check, KeyRound, RefreshCw, Trash2 } from 'lucide-react'
@@ -182,8 +182,36 @@ export function AcpRegistry({
         </ChoicePicker>
       )}
       {selected && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!connected || !!busyId}
+          onClick={() =>
+            void mutate(selected.id, () =>
+              request(
+                '/api/agents/acp/install',
+                { registryId: selected.registryId },
+                acpInstallationSchema,
+                'POST',
+              ),
+            )
+          }
+        >
+          {selected.needsRepair
+            ? 'Repair installation in this runtime'
+            : 'Check installation / update'}
+        </Button>
+      )}
+      {selected?.needsRepair && (
+        <p className="text-xs text-muted-foreground">
+          This installation points to an old folder. Repair it here; existing threads keep their
+          agent.
+        </p>
+      )}
+      {selected && !selected.needsRepair && (
         <AcpAuthentication
-          key={selected.id}
+          key={`${selected.id}:${selected.installedAt}`}
           installation={selected}
           agent={agent}
           connected={connected}
@@ -352,11 +380,13 @@ function AcpAuthentication({
   disabled: boolean
   request: Request
 }) {
+  const { browser } = useStudioHost()
   const [methods, setMethods] = useApplicationState<Schema.Schema.Type<
     typeof acpInspectionSchema
   > | null>(null)
   const [terminal, setTerminal] = useApplicationState<string | null>(null)
   const [busyId, setBusyId] = useApplicationState('')
+  const [callbackUrl, setCallbackUrl] = useState('')
   const [notice, setNotice] = useApplicationState('')
   const [error, setError] = useApplicationState('')
   const [sessions, setSessions] = useApplicationState<Schema.Schema.Type<
@@ -386,6 +416,25 @@ function AcpAuthentication({
     }
   }, [connected, refreshMethods])
 
+  const waiting = methods?.authentication?.status === 'waiting'
+  useEffect(() => {
+    if (!connected || !waiting) return
+    let active = true
+    const poll = async () => {
+      try {
+        await refreshMethods()
+      } catch (cause) {
+        if (active) setError(message(cause))
+      }
+      if (active) timer = setTimeout(() => void poll(), 1500)
+    }
+    let timer = setTimeout(() => void poll(), 500)
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [connected, waiting, refreshMethods])
+
   const run = async (label: string, operation: () => Promise<unknown>) => {
     setBusyId(label)
     setNotice('')
@@ -395,11 +444,15 @@ function AcpAuthentication({
       const terminalIssued =
         typeof value === 'object' && value !== null && 'terminal' in value && value.terminal != null
       setNotice(
-        label === 'logout'
-          ? 'Sign-out request completed.'
-          : terminalIssued
-            ? 'Complete sign-in in the terminal, then check the connection.'
-            : 'Sign-in request completed.',
+        label === 'cancel'
+          ? 'Sign-in cancelled.'
+          : label === 'callback'
+            ? 'Browser response sent to the server.'
+            : label === 'logout'
+              ? 'Sign-out request completed.'
+              : terminalIssued
+                ? 'Complete sign-in in the terminal, then check the connection.'
+                : 'Sign-in started. Follow the instructions below.',
       )
       await refreshMethods()
     } catch (cause) {
@@ -505,8 +558,99 @@ function AcpAuthentication({
       {!methods && !error && (
         <p className="text-xs text-muted-foreground">Checking available sign-in methods…</p>
       )}
-      {methods && methods.authMethods.length === 0 && !methods.terminal && (
-        <p className="text-xs text-muted-foreground">No sign-in method is currently available.</p>
+      {methods &&
+        methods.authMethods.length === 0 &&
+        !methods.terminal &&
+        !methods.authentication && (
+          <p className="text-xs text-muted-foreground">No sign-in method is currently available.</p>
+        )}
+      {methods?.authentication && (
+        <div className="grid gap-2" role="status">
+          <p className="text-xs text-muted-foreground">
+            {waiting
+              ? 'Waiting for sign-in…'
+              : methods.authentication.status === 'completed'
+                ? 'Sign-in completed. Check the connection to verify access.'
+                : methods.authentication.error}
+          </p>
+          {methods.authentication.urls.map((url) => (
+            <a
+              key={url}
+              href={url}
+              onClick={(event) => {
+                if (!browser) return
+                event.preventDefault()
+                void browser({ action: 'external', key: `acp:${installation.id}`, url }).catch(
+                  (cause: unknown) => setError(message(cause)),
+                )
+              }}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-primary underline"
+            >
+              Open sign-in in browser · {new URL(url).hostname}
+            </a>
+          ))}
+          {!!methods.authentication.output && (
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all text-xs text-muted-foreground">
+              {methods.authentication.output}
+            </pre>
+          )}
+          {waiting && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                void run('cancel', () =>
+                  request(
+                    '/api/agents/acp/authenticate/cancel',
+                    { id: installation.id },
+                    responses.ok,
+                    'POST',
+                  ),
+                )
+              }
+            >
+              Cancel sign-in
+            </Button>
+          )}
+          {waiting &&
+            methods.authentication.urls.some((url) =>
+              new URL(url).searchParams.has('redirect_uri'),
+            ) && (
+              <div className="grid gap-2">
+                <p className="text-xs text-muted-foreground">
+                  If your browser returns to an unreachable localhost page, copy its full address
+                  here to finish sign-in on this server.
+                </p>
+                <Input
+                  aria-label="Browser sign-in callback URL"
+                  placeholder="http://localhost:…?code=…"
+                  autoComplete="off"
+                  value={callbackUrl}
+                  onChange={(event) => setCallbackUrl(event.target.value)}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!callbackUrl.trim() || !!busyId}
+                  onClick={() =>
+                    void run('callback', async () => {
+                      await request(
+                        '/api/agents/acp/authenticate/callback',
+                        { id: installation.id, url: callbackUrl.trim() },
+                        responses.ok,
+                        'POST',
+                      )
+                      setCallbackUrl('')
+                    })
+                  }
+                >
+                  Complete remote sign-in
+                </Button>
+              </div>
+            )}
+        </div>
       )}
       {methods?.authMethods.map((method) => (
         <div key={method.id} className="flex items-center justify-between gap-3">
@@ -523,7 +667,11 @@ function AcpAuthentication({
               void run(method.id, () =>
                 request(
                   '/api/agents/acp/authenticate',
-                  { id: installation.id, methodId: method.id },
+                  {
+                    id: installation.id,
+                    methodId: method.id,
+                    background: method.type !== 'terminal',
+                  },
                   acpAuthenticationSchema,
                   'POST',
                 ),
