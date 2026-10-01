@@ -6,7 +6,7 @@ import { HttpError } from '../../errors.js'
 const compress = promisify(gzip)
 const observers = new WeakMap<IncomingMessage, (value: unknown) => void>()
 const workspaceFingerprints = new WeakMap<object, string>()
-function snapshotTag(data: unknown) {
+export function snapshotTag(data: unknown) {
   if (!data || typeof data !== 'object' || !('workspace' in data)) return undefined
   const { workspace, ...state } = data
   if (!workspace || typeof workspace !== 'object') return undefined

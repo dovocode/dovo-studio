@@ -353,10 +353,15 @@ pnpm --filter @dovo/mobile android
 7. **Settings → Devices & runtime** manages saved computers. **Disconnect** deselects the active
    runtime; **Forget computer** removes its saved connection. Revoke device access on the host.
 
-Mobile pauses polling in the background and refreshes on return. The runtime must stay running and
-both devices must be reachable within the private network. The native app allows HTTP for
-user-selected private runtimes, including LAN, Tailscale and NetBird hostnames. Use a VPN or HTTPS
-for encrypted remote transport. An HTTPS browser frontend requires HTTPS/WSS for its runtime.
+Desktop and mobile use one authenticated change stream for the selected runtime's workspace and
+visible thread activity. Updates are batched briefly and assistant text is sent as appends rather
+than repeated history. Reconnecting resumes from a bounded replay cursor; server restarts or gaps
+load a fresh snapshot. Mobile closes the stream in the background and resumes on return without
+stopping the agent. Older servers and connections that block WebSockets fall back to HTTP polling.
+Other computers retain their less frequent fleet refreshes. The runtime must stay running and both
+devices must be reachable within the private network. The native app allows HTTP for user-selected
+private runtimes, including LAN, Tailscale and NetBird hostnames. Use a VPN or HTTPS for encrypted
+remote transport. An HTTPS browser frontend requires HTTPS/WSS for its runtime.
 
 Native folders and terminal HTML are generated. The checked-in Expo scene plugin reproduces iOS
 scene lifecycle support for Xcode 27. Explicit app keychain entitlements also keep simulator

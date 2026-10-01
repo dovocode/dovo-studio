@@ -1,8 +1,10 @@
+import { Effect } from 'effect'
 import { decode, decodeResult } from '../../shared/schema.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   aggregateRuntimeTasks,
   loadRuntimeOverview,
+  loadRuntimeOverviewEffect,
   removeRuntime,
   runtimeProfile,
   runtimeRegistrySchema,
@@ -399,4 +401,31 @@ it('completes a typed runtime address without upgrading HTTP', async () => {
   expect(normalizeRuntimeAddress('http://100.64.0.2:51464')).toBe('http://100.64.0.2:51464')
   expect(normalizeRuntimeAddress('https://studio.example')).toBe('https://studio.example')
   expect(normalizeRuntimeAddress('   ')).toBe('')
+})
+
+it('reuses a live snapshot for fleet PR counts without requesting it again', async () => {
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockResolvedValue(json({ pulls: [pull], page: 1, hasMore: false }))
+  vi.stubGlobal('fetch', fetch)
+  const result = await Effect.runPromise(
+    loadRuntimeOverviewEffect(profile, overview, undefined, false, true),
+  )
+  expect(result.snapshot).toBe(snapshot)
+  expect(result.pulls?.total).toBe(1)
+  expect(fetch).toHaveBeenCalledOnce()
+  expect(fetch.mock.calls[0]![0]).toEqual(new URL('http://one.local:51464/api/scm/pulls/overview'))
+})
+it('does not reuse a live snapshot after its saved address changes', async () => {
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(json(snapshot))
+    .mockResolvedValue(json({ pulls: [], page: 1, hasMore: false }))
+  vi.stubGlobal('fetch', fetch)
+  const moved = {
+    ...profile,
+    connection: { ...profile.connection, address: 'http://moved.local:8787' },
+  }
+  await Effect.runPromise(loadRuntimeOverviewEffect(moved, overview, undefined, false, true))
+  expect(fetch.mock.calls[0]![0]).toEqual(new URL('http://moved.local:8787/api/snapshot'))
 })

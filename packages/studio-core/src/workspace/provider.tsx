@@ -1,3 +1,4 @@
+import { startRuntimeSync, runtimeSyncOnline } from '@dovo/protocol'
 import { retainWorkspace } from '@dovo/protocol'
 import { recentSnapshot } from '../runtime/recent-snapshot'
 import { useAppPreferences } from '../preferences'
@@ -925,6 +926,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   profile,
                   overviewsRef.current[profile.id],
                   receiveSnapshot,
+                  false,
+                  runtimeSyncOnline(profile.connection),
                 )
                 if (!valid()) return
                 const previous = overviewsRef.current[profile.id]
@@ -1183,19 +1186,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   ])
   useEffect(() => {
     if (!ready || !writable.current) return
-    // Encoding validates the workspace; a throw here would unmount the whole application.
-    let encoded: string
-    try {
-      encoded = encodeWorkspace(workspace)
-    } catch (error) {
-      setStorageError(
-        `Could not save workspace. Keep this window open. ${error instanceof Error ? error.message : String(error)}`,
+    // Coalesce streaming frames instead of validating/encoding the entire history on every
+    // text append. Mutation outboxes are persisted separately; this is the local fallback view.
+    const save = () => {
+      let encoded: string
+      try {
+        encoded = encodeWorkspace(current.current)
+      } catch (error) {
+        setStorageError(
+          `Could not save workspace. Keep this window open. ${error instanceof Error ? error.message : String(error)}`,
+        )
+        return
+      }
+      void writeWorkspaceDocument(storageKey, encoded).catch(() =>
+        setStorageError('Could not save workspace. Keep this window open.'),
       )
-      return
     }
-    void writeWorkspaceDocument(storageKey, encoded).catch(() =>
-      setStorageError('Could not save workspace. Keep this window open.'),
-    )
+    const timer = setTimeout(save, 500)
+    const background = () => {
+      if (document.visibilityState === 'hidden') save()
+    }
+    document.addEventListener('visibilitychange', background)
+    window.addEventListener('pagehide', save)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', background)
+      window.removeEventListener('pagehide', save)
+    }
   }, [workspace, ready])
   useEffect(() => {
     if (!connection) return
@@ -1206,8 +1223,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           profile.connection.address === connection.address &&
           profile.connection.token === connection.token,
       )?.id ?? runtimeProfile(connection).id
+    let wakeFallback = () => {}
+    const live = startRuntimeSync(connection, {
+      active: () => inputPreview || document.visibilityState === 'visible',
+      onWake: () => wakeFallback(),
+      onSnapshot: (value) => {
+        if (stopped) return
+        const checkpoint = synchronization.checkpoint()
+        snapshotOrder.current.set(id, (snapshotOrder.current.get(id) ?? 0) + 1)
+        setSnapshot(value, connection)
+        setConnected(true)
+        synchronization.clearNetworkError()
+        if (synchronization.accepts(checkpoint)) installSnapshot(connection, value)
+        const profile = registryRef.current.profiles.find(
+          (entry) => entry.id === id && entry.connection.token === connection.token,
+        )
+        if (profile)
+          updateOverview({
+            ...(overviewsRef.current[id] ?? idleOverview(profile)),
+            profile,
+            snapshot: value,
+            connected: true,
+            lastSeen: new Date().toISOString(),
+            error: null,
+          })
+      },
+    })
     const poll = Effect.suspend(() => {
       if (
+        live.online() ||
         (!inputPreview && document.visibilityState !== 'visible') ||
         busySnapshots.current.has(id)
       )
@@ -1317,13 +1361,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       backoff: connection.token === localOwnerToken.current ? 2000 : 10000,
       onError: () => {},
     })
+    wakeFallback = polling.refresh
     const wake = () => {
-      if (document.visibilityState === 'visible') polling.refresh()
+      if (document.visibilityState === 'visible') {
+        live.refresh()
+        polling.refresh()
+      }
     }
     window.addEventListener('online', wake)
     document.addEventListener('visibilitychange', wake)
     return () => {
       stopped = true
+      live.stop()
       window.removeEventListener('online', wake)
       document.removeEventListener('visibilitychange', wake)
       void polling.stop()

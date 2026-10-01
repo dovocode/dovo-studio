@@ -1,3 +1,4 @@
+import { startRuntimeSync } from '@dovo/protocol'
 import { useMobilePreferences } from '../preferences/app-preferences'
 import { pendingAgentPresets } from '@dovo/protocol'
 import {
@@ -798,10 +799,29 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   }, [ready, storageLock, persistRegistryEffect])
   useEffect(() => {
     if (!ready || !profile || !appActive) return
+    let stopped = false
+    let wakeFallback = () => {}
+    const live = startRuntimeSync(profile.connection, {
+      onWake: () => wakeFallback(),
+      onSnapshot: (snapshot) => {
+        if (stopped) return
+        sequence.current.set(profile.id, (sequence.current.get(profile.id) ?? 0) + 1)
+        updateEntry(profile, (previous) => ({
+          ...previous,
+          snapshot,
+          connected: true,
+          lastSeen: new Date().toISOString(),
+          error: null,
+          unauthorized: false,
+        }))
+      },
+    })
     const polling = startPolling(
       Effect.suspend(() =>
         // A revoked pairing cannot recover by polling; explicit Reconnect still checks it.
-        !entryRef.current[profile.id]?.unauthorized ? refreshProfileEffect(profile) : Effect.void,
+        !live.online() && !entryRef.current[profile.id]?.unauthorized
+          ? refreshProfileEffect(profile)
+          : Effect.void,
       ),
       {
         interval: 1000,
@@ -815,7 +835,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           })),
       },
     )
+    wakeFallback = polling.refresh
     return () => {
+      stopped = true
+      live.stop()
       void polling.stop()
     }
   }, [ready, profile, appActive, refreshProfileEffect, updateEntry])

@@ -1,3 +1,4 @@
+import { disposeRuntimeSync } from './http/support/runtime-sync.js'
 import { Housekeeping } from './agents/tasks/housekeeping.js'
 import { TaskPullWatcher } from './scm/tasks/task-pulls.js'
 import { Context, Data, Effect, Layer, ManagedRuntime } from 'effect'
@@ -79,6 +80,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => services.questions.dispose(),
         () => services.approvals.dispose(),
         () => services.pullCache.dispose(),
+        () => disposeRuntimeSync(services),
       ]
       for (const close of finalizers) yield* Effect.addFinalizer(() => release(close))
       const http = yield* Effect.acquireRelease(

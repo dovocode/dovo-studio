@@ -1,3 +1,4 @@
+import { runtimeSyncOnline, watchRuntimeActivity } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Effect, Schema } from 'effect'
 import { useEffect, useId, useMemo } from 'react'
@@ -49,14 +50,28 @@ export function useTaskActivity(taskId: string, running = false) {
     setSnapshot((previous) =>
       previous.identity === identity ? previous : { identity, events: [], error: '' },
     )
+    const unwatch = connection
+      ? watchRuntimeActivity(connection, taskId, (events) => {
+          if (!stopped)
+            setSnapshot((previous) => ({
+              identity,
+              events: retainActivityEvents(
+                previous.identity === identity ? previous.events : [],
+                events,
+              ),
+              error: '',
+            }))
+        })
+      : () => {}
     const load = Effect.gen(function* () {
+      if (runtimeSyncOnline(connection, taskId)) return
       if (!connected || document.visibilityState !== 'visible') return
       const result = yield* request(
         '/api/activity',
         { scope: taskId, kind: 'task-activity' },
         activitySchema,
       )
-      if (!stopped)
+      if (!stopped && !runtimeSyncOnline(connection, taskId))
         setSnapshot((previous) => {
           const events =
             previous.identity === identity
@@ -70,7 +85,7 @@ export function useTaskActivity(taskId: string, running = false) {
     const polling = startPolling(load, {
       interval: running ? 2000 : 10000,
       onError: (error) => {
-        if (!stopped)
+        if (!stopped && !runtimeSyncOnline(connection, taskId))
           setSnapshot((previous) =>
             previous.identity === identity ? { ...previous, error: error.message } : previous,
           )
@@ -79,6 +94,7 @@ export function useTaskActivity(taskId: string, running = false) {
     document.addEventListener('visibilitychange', polling.refresh)
     return () => {
       stopped = true
+      unwatch()
       document.removeEventListener('visibilitychange', polling.refresh)
       void polling.stop()
     }

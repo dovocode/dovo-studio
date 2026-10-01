@@ -127,3 +127,11 @@ export * from './tasks/task-launcher-dispatch.js'
 export * from './tasks/task-launcher-task.js'
 
 export { retainWorkspace } from './runtime/cache/retain-workspace.js'
+
+export * from './runtime/connection/sync.js'
+
+export {
+  startRuntimeSync,
+  runtimeSyncOnline,
+  watchRuntimeActivity,
+} from './runtime/connection/live-sync.js'

@@ -42,6 +42,7 @@ const record = mutableStruct({
   payload: Schema.String,
 })
 export class Activity {
+  revision = 0
   constructor(private db: Database.Database) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY,time TEXT NOT NULL,kind TEXT NOT NULL,scope TEXT NOT NULL,summary TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS activity_time ON activity(time DESC); CREATE INDEX IF NOT EXISTS activity_scope_time ON activity(scope,time DESC,id DESC)',
@@ -86,6 +87,7 @@ export class Activity {
         String(redact(summary)),
         JSON.stringify(redact(payload)),
       )
+    this.revision++
   }
   workspace(before: Workspace, after: Workspace) {
     for (const task of after.tasks) {
@@ -116,11 +118,13 @@ export class Activity {
   /** Deletes up to `limit` entries older than `before`, oldest first; returns how many. Small
    * batches keep the database responsive while a large history is trimmed. */
   pruneBefore(before: string, limit = 2000) {
-    return this.db
+    const changes = this.db
       .prepare(
         'DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE time < ? ORDER BY time LIMIT ?)',
       )
       .run(before, limit).changes
+    if (changes) this.revision++
+    return changes
   }
   list(query: string, kind: string, offset: number, scope = '') {
     const filters: string[] = []

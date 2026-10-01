@@ -1,3 +1,4 @@
+import { attachRuntimeSync } from './support/runtime-sync.js'
 import { pairingAddresses } from './support/pairing-addresses.js'
 import { ValidationError, safeValidationIssues, safeValidationMessage } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
@@ -108,6 +109,18 @@ export function createRuntimeServer(services: Services, internal = false) {
     maxPayload: 128 * 1024,
   })
   // One activity row per keystroke would grow the database with every character typed.
+  // Compress sync JSON only: terminal/video transports retain their existing behavior.
+  const syncSockets = new WebSocketServer({
+    noServer: true,
+    maxPayload: 128 * 1024,
+    perMessageDeflate: {
+      serverNoContextTakeover: true,
+      clientNoContextTakeover: true,
+      threshold: 1024,
+      concurrencyLimit: 2,
+      zlibDeflateOptions: { level: 3 },
+    },
+  })
   // Record terminal input as a count per terminal, at most every few seconds.
   const typed = new Map<string, { characters: number; timer: ReturnType<typeof setTimeout> }>()
   const recordInput = (terminalId: string, characters: number) => {
@@ -147,6 +160,16 @@ export function createRuntimeServer(services: Services, internal = false) {
     }
     try {
       const url = new URL(request.url ?? '/', 'http://runtime.local')
+      if (url.pathname === '/ws/sync') {
+        const ticket = services.tickets.consume(url.searchParams.get('ticket') ?? '')
+        if (ticket.resourceId !== 'runtime-sync') throw new HttpError(401, 'Invalid sync ticket')
+        services.devices.authenticate(ticket.token)
+        syncSockets.handleUpgrade(request, socket, head, (client) => {
+          track(client, ticket.token)
+          attachRuntimeSync(client, ticket.token, services)
+        })
+        return
+      }
       if (url.pathname === '/ws/simulator') {
         const ticket = services.simulatorTickets.consume(url.searchParams.get('ticket') ?? '')
         services.devices.authenticate(ticket.token)
@@ -260,6 +283,7 @@ export function createRuntimeServer(services: Services, internal = false) {
     typed.clear()
     for (const socket of authenticated.keys()) socket.terminate()
     sockets.close()
+    syncSockets.close()
   }
   return {
     server,

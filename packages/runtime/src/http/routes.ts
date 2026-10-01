@@ -1,6 +1,7 @@
+import { runtimeSnapshot } from './support/runtime-snapshot.js'
 import { SCRATCH_PROJECT_ID } from '@dovo/protocol'
 import { usageResets } from './endpoints/usage-resets.js'
-import { RUNTIME_PROTOCOL_VERSION, PAIRING_PROTOCOL_VERSION } from '@dovo/protocol'
+import { PAIRING_PROTOCOL_VERSION } from '@dovo/protocol'
 import { routeProgram, serviceResult } from './support/effect.js'
 import { uuidSchema } from '@dovo/protocol'
 import { mutableStruct } from '@dovo/protocol'
@@ -13,10 +14,9 @@ import {
 } from '@dovo/protocol'
 import { hostname } from 'node:os'
 import { trackRequest } from './support/request-activity.js'
-import { canUpdateDesktop, desktopUpdate, desktopAppUpdateInfo } from './desktop-updates.js'
-import { canUpdateServer, serverUpdateStatus, startServerUpdate } from './server-updates.js'
+import { desktopUpdate } from './desktop-updates.js'
+import { serverUpdateStatus, startServerUpdate } from './server-updates.js'
 import { defaultShell } from '../terminal/shell.js'
-import { discoverProjectIcon } from '../scm/repositories/project-icon.js'
 import { agentsRoute } from './endpoints/agents-routes.js'
 import { terminalsRoute } from './endpoints/terminals-routes.js'
 import { jobsRoute } from './endpoints/jobs-routes.js'
@@ -27,7 +27,6 @@ import { patchSchema, workspaceSchema } from '@dovo/protocol'
 import { RuntimeServices } from '../services.js'
 import { HttpError } from '../errors.js'
 import { body } from './support/body.js'
-import { overviewWorkspace } from './support/snapshot-overview.js'
 import { hashSecret, equalSecret } from '../auth/devices.js'
 import { validateAutomation } from '../jobs/validation.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
@@ -334,88 +333,10 @@ export function route(
       const owner = () => {
         if (!device.owner) throw new HttpError(403, 'Only the runtime host can manage device trust')
       }
+      if (method === 'POST' && path === '/api/sync/ticket')
+        return { ticket: s.tickets.issue(token, 'runtime-sync') }
       if (method === 'GET' && path === '/api/snapshot') {
-        const storedWorkspace = s.store.publicWorkspace()
-        const scratch = yield* serviceResult(s.scratch.available())
-        const workspace =
-          scratch && !storedWorkspace.repositories.some((repo) => repo.id === scratch.id)
-            ? { ...storedWorkspace, repositories: [...storedWorkspace.repositories, scratch] }
-            : storedWorkspace
-        const overview = url.searchParams.get('scope') === 'overview'
-        return yield* serviceResult({
-          protocolVersion: RUNTIME_PROTOCOL_VERSION,
-          runtimeHost: hostname(),
-          releaseVersion: process.env.DOVO_RELEASE_VERSION || undefined,
-          desktopApp: desktopAppUpdateInfo(),
-          releaseDistribution:
-            process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop'
-              ? 'desktop'
-              : process.env.DOVO_SERVER_DISTRIBUTION === 'archive'
-                ? 'archive'
-                : 'source',
-          releaseCanUpdate:
-            process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop'
-              ? canUpdateDesktop()
-              : canUpdateServer(),
-          defaults: s.defaults.get(),
-          acpInstallations: s.acpInstallations.list(),
-          revision: s.store.version(),
-          workspace: {
-            ...(overview ? overviewWorkspace(workspace) : workspace),
-            repositories: yield* Effect.forEach(
-              workspace.repositories,
-              (repo) =>
-                Effect.gen(function* () {
-                  if (repo.kind === 'scratch')
-                    return { ...repo, gitIdentity: undefined, gitIdentityError: undefined }
-                  const discoveredIcon = yield* serviceResult(discoverProjectIcon(repo.path))
-                  // Never block the snapshot on spawning git: use the last known identity and
-                  // refresh it in the background. Unknown identity is not an error, it is pending.
-                  if (repo.kind === 'folder')
-                    return {
-                      ...repo,
-                      discoveredIcon,
-                      gitIdentity: undefined,
-                      gitIdentityError: undefined,
-                    }
-                  const cached = s.git.cachedRepositoryIdentity(repo.path)
-                  if (!cached)
-                    return {
-                      ...repo,
-                      discoveredIcon,
-                      gitIdentity: undefined,
-                      gitIdentityError: undefined,
-                    }
-                  return yield* serviceResult(cached).pipe(
-                    Effect.map((gitIdentity) => ({
-                      ...repo,
-                      discoveredIcon,
-                      gitIdentity,
-                      gitIdentityError: undefined,
-                    })),
-                    Effect.catchAll(() =>
-                      Effect.succeed({
-                        ...repo,
-                        discoveredIcon,
-                        gitIdentity: undefined,
-                        gitIdentityError: 'Checkout unavailable: could not inspect its Git remote',
-                      }),
-                    ),
-                  )
-                }),
-              { concurrency: 4 },
-            ),
-          },
-          approvals: s.approvals.list(),
-          questions: s.questions.list(),
-          terminals: s.terminals.list(),
-          runs: s.jobs.list(),
-          devices: device.owner
-            ? s.devices.list()
-            : s.devices.list().filter((d) => d.id === device.id),
-          pendingDevices: device.owner ? s.pairing.pending() : [],
-          owner: device.owner,
-        })
+        return yield* runtimeSnapshot(s, device, url.searchParams.get('scope') === 'overview')
       }
       if (method === 'POST' && path === '/api/runtime/prepare-restart') {
         owner()

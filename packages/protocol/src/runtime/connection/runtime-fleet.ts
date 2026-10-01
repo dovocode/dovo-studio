@@ -141,23 +141,27 @@ export function loadRuntimeOverviewEffect(
   previous?: RuntimeOverview,
   onSnapshot?: (overview: RuntimeOverview) => void,
   compact = false,
+  useLiveSnapshot = false,
 ): Effect.Effect<RuntimeOverview> {
   return Effect.gen(function* () {
     const cached =
       previous?.profile.id === profile.id &&
-      previous.profile.connection.token === profile.connection.token
+      previous.profile.connection.token === profile.connection.token &&
+      previous.profile.connection.address === profile.connection.address
         ? previous
         : undefined
     const result = yield* Effect.either(
-      runtimeRequestEffect(
-        profile.connection,
-        profile.connection.address,
-        compact ? '/api/snapshot?scope=overview' : '/api/snapshot',
-        undefined,
-        snapshotSchema,
-        'GET',
-        10000,
-      ),
+      useLiveSnapshot && cached?.connected && cached.snapshot
+        ? Effect.succeed(cached.snapshot)
+        : runtimeRequestEffect(
+            profile.connection,
+            profile.connection.address,
+            compact ? '/api/snapshot?scope=overview' : '/api/snapshot',
+            undefined,
+            snapshotSchema,
+            'GET',
+            10000,
+          ),
     )
     if (Either.isLeft(result))
       return {
