@@ -110,15 +110,6 @@ function TaskRowView({
                 {compactStatus}
               </span>
               {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-              {!!linkedPulls.length && (
-                <span
-                  className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground"
-                  title={linkedPulls.map((pull) => `#${pull.number} · ${pull.title}`).join(' · ')}
-                >
-                  <GitPullRequest className="size-3" />
-                  {linkedPulls[0]!.number}
-                </span>
-              )}
               {task.execution === 'worktree' && (
                 <GitBranch className="size-3 shrink-0" aria-label="Worktree checkout" />
               )}
@@ -135,6 +126,19 @@ function TaskRowView({
             <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
               <GitBranch className="size-3 shrink-0" />
               <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
+              {!!linkedPulls.length && (
+                <span
+                  className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground"
+                  aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
+                  title={linkedPulls.map((pull) => `#${pull.number} · ${pull.title}`).join(' · ')}
+                >
+                  <GitPullRequest className="size-3" />
+                  {linkedPulls[0]!.number}
+                  {linkedPulls.length > 1 && (
+                    <span className="text-[0.625rem]">+{linkedPulls.length - 1}</span>
+                  )}
+                </span>
+              )}
               <Monitor className="size-3 shrink-0" aria-label={host ?? 'Unknown host'} />
               {provider && (
                 <AgentAvatar provider={provider} customIcon={customIcon} className="size-3.5" />
