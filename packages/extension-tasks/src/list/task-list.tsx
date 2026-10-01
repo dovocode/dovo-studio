@@ -18,7 +18,7 @@ import {
   ListChecks,
   Layers2,
 } from 'lucide-react'
-import { useEffect, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useCallback, useDeferredValue, useMemo, useRef } from 'react'
 import { Button, Input } from '@dovo/studio-ui'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { TaskRow } from './task-row'
@@ -90,8 +90,9 @@ export function TaskList({
     () => new Map(entries.map((entry) => [entry.projectKey, entry.projectName])),
     [entries],
   )
+  const deferredQuery = useDeferredValue(query)
   const tasks = useMemo(() => {
-    const needle = query.toLowerCase()
+    const needle = deferredQuery.toLowerCase()
     return entries
       .filter(
         ({ task: t, source, key, projectKey, projectName }) =>
@@ -110,16 +111,17 @@ export function TaskList({
           (['active', 'archived', 'archive'].includes(filter) ||
             (filter === 'snoozed' && isSnoozed(t, now)) ||
             (filter === 'input' ? needsInput.has(key) : t.status === filter)) &&
-          [
-            t.title,
-            t.checkoutBranch ??
-              source.workspace.repositories.find((r) => r.id === t.repositoryId)?.branch ??
-              '',
-            resolveTaskAgent(t, source.workspace.agents)?.name ?? '',
-            source.name,
-            projectName,
-            ...t.messages.map((m) => m.text),
-          ].some((text) => text.toLowerCase().includes(needle)),
+          (!needle ||
+            [
+              t.title,
+              t.checkoutBranch ??
+                source.workspace.repositories.find((r) => r.id === t.repositoryId)?.branch ??
+                '',
+              resolveTaskAgent(t, source.workspace.agents)?.name ?? '',
+              source.name,
+              projectName,
+            ].some((text) => text.toLowerCase().includes(needle)) ||
+            t.messages.some((message) => message.text.toLowerCase().includes(needle))),
       )
       .sort((a, b) =>
         compareTasks(
@@ -138,7 +140,7 @@ export function TaskList({
           projects,
         ),
       )
-  }, [entries, projectId, filter, query, sort, needsInput, projects, now])
+  }, [entries, projectId, filter, deferredQuery, sort, needsInput, projects, now])
   const selectedEntries = entries.filter((entry) => selected.has(entry.key))
   const bulk = async (action: 'archive' | 'snooze' | 'pin' | 'delete') => {
     if (!selectedEntries.length || bulkBusy) return

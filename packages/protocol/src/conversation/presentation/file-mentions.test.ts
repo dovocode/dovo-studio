@@ -30,3 +30,23 @@ it('ranks file-name matches first and supports letters in order', () => {
   expect(rankPaths(paths, 'cthr')).toEqual(['src/chat/thread.tsx'])
   expect(rankPaths(paths, '', 2)).toEqual(['src/chat/thread.tsx', 'src/chat/composer.tsx'])
 })
+
+it('keeps the best matches even when they occur late in a large catalog', () => {
+  const paths = Array.from({ length: 10_000 }, (_, index) => `archive/component-${index}/index.ts`)
+  paths.push('z/component.ts', 'a/component.ts', 'component.ts')
+  expect(rankPaths(paths, 'component', 3)).toEqual([
+    'component.ts',
+    'a/component.ts',
+    'z/component.ts',
+  ])
+  expect(rankPaths([...paths].reverse(), 'component', 3)).toEqual(rankPaths(paths, 'component', 3))
+})
+
+it('preserves score and alphabetical ordering across result limits', () => {
+  const paths = ['ab.ts', 'ab.ts', 'folder/ab.ts', 'folder/cab.ts', 'a/b/file.ts', 'missing.ts']
+  for (const query of ['', 'ab', 'AB', 'fbf', 'no-match']) {
+    const all = rankPaths(paths, query, paths.length)
+    for (const limit of [0, 1, 2, 4, 20])
+      expect(rankPaths(paths, query, limit)).toEqual(all.slice(0, limit))
+  }
+})

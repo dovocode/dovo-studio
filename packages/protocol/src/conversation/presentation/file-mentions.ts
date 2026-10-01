@@ -25,10 +25,14 @@ export function insertMention(
 /** Ranks project paths for a query: contiguous matches in the file name beat matches in the
  * folder, which beat scattered letters. Case-insensitive; an empty query lists short paths. */
 export function rankPaths(paths: readonly string[], query: string, limit = 8) {
+  const count = Math.max(0, Math.trunc(limit))
+  if (!count) return []
   const needle = query.toLowerCase()
   const scored: { path: string; score: number }[] = []
+  const compare = (a: { path: string; score: number }, b: { path: string; score: number }) =>
+    b.score - a.score || a.path.localeCompare(b.path)
   for (const path of paths) {
-    const lower = path.toLowerCase()
+    const lower = needle ? path.toLowerCase() : ''
     const name = lower.slice(lower.lastIndexOf('/') + 1)
     let score: number
     if (!needle) score = 1000 - path.length
@@ -42,10 +46,17 @@ export function rankPaths(paths: readonly string[], query: string, limit = 8) {
       if (at < needle.length) continue
       score = 1000 - path.length
     }
-    scored.push({ path, score })
+    const entry = { path, score }
+    if (scored.length === count && compare(entry, scored[scored.length - 1]!) >= 0) continue
+    let left = 0
+    let right = scored.length
+    while (left < right) {
+      const middle = (left + right) >>> 1
+      if (compare(entry, scored[middle]!) < 0) right = middle
+      else left = middle + 1
+    }
+    scored.splice(left, 0, entry)
+    if (scored.length > count) scored.pop()
   }
-  return scored
-    .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
-    .slice(0, limit)
-    .map((entry) => entry.path)
+  return scored.map((entry) => entry.path)
 }
