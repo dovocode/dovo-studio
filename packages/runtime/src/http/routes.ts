@@ -10,6 +10,7 @@ import { minValue, maxValue, decode } from '@dovo/protocol'
 import { previewDevices, previewDeviceAction } from '../previews/devices.js'
 import {
   previewActionSchema,
+  browserProfilesResultSchema,
   remoteBrowserOpenSchema,
   remoteBrowserInputSchema,
 } from '@dovo/protocol'
@@ -263,19 +264,54 @@ export function route(
         )
         return yield* serviceResult({ ok: true })
       }
-      if (method === 'POST' && path === '/api/previews/browser/open') {
-        const { taskId } = decode(remoteBrowserOpenSchema, yield* serviceResult(body(request)))
-        s.store.task(taskId)
-        yield* serviceResult(s.browsers.open(taskId))
+      if (method === 'POST' && path === '/api/previews/browser/profiles/read')
+        return yield* serviceResult({ profiles: s.preferences.get().browserProfiles })
+      if (method === 'POST' && path === '/api/previews/browser/profiles/save') {
+        const { profiles } = decode(
+          browserProfilesResultSchema,
+          yield* serviceResult(body(request)),
+        )
         return yield* serviceResult({
-          ticket: s.browserTickets.issue(token, taskId),
+          profiles: s.preferences.save({ browserProfiles: profiles }).browserProfiles,
+        })
+      }
+      if (method === 'POST' && path === '/api/previews/browser/open') {
+        const {
+          taskId,
+          tabId,
+          profileId = 'default',
+          url,
+        } = decode(remoteBrowserOpenSchema, yield* serviceResult(body(request)))
+        s.store.task(taskId)
+        if (!s.preferences.get().browserProfiles.some((profile) => profile.id === profileId))
+          throw new HttpError(404, 'Browser profile is unavailable. Choose another profile.')
+        const resourceId = JSON.stringify(
+          profileId === 'default' ? [taskId, tabId ?? null] : [taskId, tabId ?? null, profileId],
+        )
+        yield* serviceResult(s.browsers.open(resourceId, taskId, profileId, url))
+        return yield* serviceResult({
+          ticket: s.browserTickets.issue(token, resourceId, taskId),
+          tabId,
+          profileId,
           host: hostname(),
         })
       }
       if (method === 'POST' && path === '/api/previews/browser/close') {
-        const { taskId } = decode(remoteBrowserOpenSchema, yield* serviceResult(body(request)))
+        const {
+          taskId,
+          tabId,
+          profileId = 'default',
+        } = decode(remoteBrowserOpenSchema, yield* serviceResult(body(request)))
         s.store.task(taskId)
-        yield* serviceResult(s.browsers.close(taskId))
+        yield* serviceResult(
+          s.browsers.close(
+            JSON.stringify(
+              profileId === 'default'
+                ? [taskId, tabId ?? null]
+                : [taskId, tabId ?? null, profileId],
+            ),
+          ),
+        )
         return yield* serviceResult({
           ok: true,
         })

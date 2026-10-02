@@ -75,7 +75,7 @@ export async function archiveTask(
   now = Date.now(),
 ) {
   try {
-    await s.browsers.close(id)
+    await s.browsers.closeTask(id)
     await s.simulators.closeTask(id)
     s.store.updateTask(id, (task) => ({
       ...task,

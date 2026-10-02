@@ -6,6 +6,8 @@ import {
   decodeResult,
   mutableStruct,
   mutableArray,
+  browserProfilesSchema,
+  defaultBrowserProfiles,
 } from '@dovo/protocol'
 
 /** Preferences for this app window only (like Codex and T3 Code "General" and "Appearance").
@@ -48,12 +50,8 @@ const schema = mutableStruct({
   chatWidth: Schema.Literal('standard', 'wide', 'full'),
   mergeMethod: Schema.Literal('auto', 'merge', 'squash', 'rebase'),
   pullDraft: Schema.Boolean,
-  browserProfiles: mutableArray(
-    mutableStruct({
-      id: Schema.String.pipe(Schema.pattern(/^[a-zA-Z0-9_-]{1,100}$/)),
-      name: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(100)),
-    }),
-  ),
+  browserProfiles: browserProfilesSchema,
+  // Legacy initial-tab default; new profile selections belong to individual tabs.
   browserProfileByThread: Schema.Record({ key: Schema.String, value: Schema.String }),
   browserAgentAccess: Schema.Record({ key: Schema.String, value: Schema.Boolean }),
   browserViewport: Schema.Literal('fill', 'phone', 'tablet', 'desktop'),
@@ -93,7 +91,7 @@ export const defaultAppPreferences: AppPreferences = {
   chatWidth: 'standard',
   mergeMethod: 'auto',
   pullDraft: false,
-  browserProfiles: [{ id: 'default', name: 'Default' }],
+  browserProfiles: defaultBrowserProfiles(),
   browserProfileByThread: {},
   browserAgentAccess: {},
   browserViewport: 'fill',

@@ -187,3 +187,5 @@ export {
 } from './preferences'
 
 export { LauncherWorkspaceProvider } from './workspace/launcher-provider'
+
+export { useRemoteBrowserProfiles } from './browser-profiles'

@@ -193,24 +193,6 @@ export default function GeneralSettings() {
           />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup title="Browser previews">
-        <SettingRow
-          label="Default viewport"
-          description="The page size a task’s browser preview opens at. You can still change it in the preview."
-        >
-          <Segmented
-            label="Default viewport"
-            value={preferences.browserViewport}
-            options={[
-              ['fill', 'Fit window'],
-              ['phone', 'Phone'],
-              ['tablet', 'Tablet'],
-              ['desktop', 'Desktop'],
-            ]}
-            onChange={(browserViewport) => updateAppPreferences({ browserViewport })}
-          />
-        </SettingRow>
-      </SettingsGroup>
       <SettingsGroup title="Confirmations">
         <SettingRow
           label="Confirm before archiving a task"

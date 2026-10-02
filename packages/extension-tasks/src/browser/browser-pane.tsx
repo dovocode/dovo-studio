@@ -12,6 +12,7 @@ import {
   PanelRightClose,
   SlidersHorizontal,
   Plus,
+  MonitorUp,
   X,
 } from 'lucide-react'
 import {
@@ -20,29 +21,28 @@ import {
   startPolling,
   useAppPreferences,
   updateAppPreferences,
+  useRemoteBrowserProfiles,
 } from '@dovo/studio-core'
 import {
   previewUrl,
   previewPresets,
   previewDevicesSchema,
   previewResultSchema,
+  responses,
   type PreviewDevice,
 } from '@dovo/studio-core'
-import {
-  Button,
-  IconButton,
-  Input,
-  ProjectIcon,
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from '@dovo/studio-ui'
+import { Button, IconButton, Input, DropdownMenu } from '@dovo/studio-ui'
 import { RemoteBrowser } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
 const addresses = new Map<string, string>()
-type BrowserTab = { id: string; url: string; title: string }
+type BrowserTab = {
+  id: string
+  url: string
+  title: string
+  kind: 'web' | 'remote'
+  profileId: string
+}
 type OpenLink = { id: string; url: string }
 const savedTabs = new Map<string, { tabs: BrowserTab[]; active: string }>()
 export function BrowserPane({
@@ -117,14 +117,8 @@ function BrowserContent({
   const profiles = preferences.browserProfiles.length
     ? preferences.browserProfiles
     : [{ id: 'default', name: 'Default' }]
-  const profileId = profiles.some(
-    (profile) => profile.id === preferences.browserProfileByThread[scope],
-  )
-    ? preferences.browserProfileByThread[scope]
-    : 'default'
+  const remoteProfiles = useRemoteBrowserProfiles(undefined, initialMode !== 'devices')
   const agentAccess = preferences.browserAgentAccess[scope] ?? false
-  const [managingProfiles, setManagingProfiles] = useApplicationState(false)
-  const [profileName, setProfileName] = useApplicationState('')
   const saved = savedTabs.get(scope)
   const initialUrl =
     saved?.tabs.find((tab) => tab.id === saved.active)?.url ?? addresses.get(scope) ?? ''
@@ -140,12 +134,24 @@ function BrowserContent({
   const [tabs, setTabs] = useApplicationState<BrowserTab[]>(
     () =>
       savedTabs.get(scope)?.tabs ?? [
-        { id: crypto.randomUUID(), url: addresses.get(scope) ?? '', title: '' },
+        {
+          id: crypto.randomUUID(),
+          url: addresses.get(scope) ?? '',
+          title: '',
+          kind: browser ? 'web' : 'remote',
+          profileId:
+            browser &&
+            profiles.some((profile) => profile.id === preferences.browserProfileByThread[scope])
+              ? (preferences.browserProfileByThread[scope] ?? 'default')
+              : 'default',
+        },
       ],
   )
   const [activeTab, setActiveTab] = useApplicationState(
     () => savedTabs.get(scope)?.active ?? tabs[0].id,
   )
+  const selectedTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0]
+  const profileId = selectedTab.profileId ?? 'default'
   const browserKey = `${scope}:${activeTab}`
   const openedLink = useRef('')
   useEffect(() => {
@@ -157,20 +163,27 @@ function BrowserContent({
     setInput(tab.url)
     setHistory({ url: '', title: '', cdp: undefined, back: false, forward: false })
   }
-  const newTab = (target = '') => {
-    const tab = { id: crypto.randomUUID(), url: target, title: '' }
+  const newTab = (target = '', kind: BrowserTab['kind'] = 'web', profileId = 'default') => {
+    const tab: BrowserTab = {
+      id: crypto.randomUUID(),
+      url: target,
+      title: '',
+      kind,
+      profileId,
+    }
     setTabs((previous) => [...previous, tab])
     selectTab(tab)
   }
   const editing = useRef(false)
-  const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>(
-    initialMode === 'devices' ? 'devices' : browser ? 'web' : 'remote',
-  )
+  const mode =
+    initialMode === 'devices'
+      ? 'devices'
+      : (tabs.find((tab) => tab.id === activeTab)?.kind ?? 'web')
+  const tabProfiles = mode === 'remote' ? (remoteProfiles.profiles ?? []) : profiles
   useEffect(() => {
     if (!openLink || openedLink.current === openLink.id) return
     openedLink.current = openLink.id
     newTab(previewUrl(openLink.url))
-    setMode(browser ? 'web' : 'remote')
     onLinkOpened?.()
   }, [openLink?.id, browser, onLinkOpened])
   const [preset, setPreset] = useApplicationState('fill'),
@@ -179,8 +192,6 @@ function BrowserContent({
     [reload, setReload] = useApplicationState(0)
   const [turnReload, setTurnReload] = useApplicationState(0)
   const latestTurn = snapshot?.workspace.tasks.find((task) => task.id === taskId)?.turns?.at(-1)
-  const task = snapshot?.workspace.tasks.find((task) => task.id === taskId)
-  const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task?.repositoryId)
   const seenTurn = useRef(latestTurn?.status === 'completed' ? latestTurn.id : '')
   useEffect(() => {
     if (!latestTurn || latestTurn.status !== 'completed' || seenTurn.current === latestTurn.id)
@@ -467,10 +478,19 @@ function BrowserContent({
                 role="tab"
                 aria-selected={activeTab === tab.id}
                 className={`max-w-36 truncate rounded px-2 py-1 text-xs ${activeTab === tab.id ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}
-                title={tab.url || 'New tab'}
+                title={`${tab.kind === 'remote' ? 'Remote · ' : ''}${tab.url || 'New tab'}`}
                 onClick={() => selectTab(tab)}
               >
-                {tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'}
+                {tab.kind === 'remote' && (
+                  <MonitorUp
+                    size={12}
+                    aria-label="Remote tab"
+                    className="mr-1.5 inline-block shrink-0 text-muted-foreground"
+                  />
+                )}
+                {tab.title ||
+                  tab.url.replace(/^https?:\/\//, '') ||
+                  (tab.kind === 'remote' ? 'Remote tab' : 'New tab')}
               </button>
               <IconButton
                 label={`Close tab ${tab.title || tab.url || 'New tab'}`}
@@ -478,12 +498,28 @@ function BrowserContent({
                 disabled={busy}
                 onClick={() => {
                   const remaining = tabs.filter((item) => item.id !== tab.id)
-                  const next = remaining.length
+                  const next: BrowserTab[] = remaining.length
                     ? remaining
-                    : [{ id: crypto.randomUUID(), url: '', title: '' }]
+                    : [
+                        {
+                          id: crypto.randomUUID(),
+                          url: '',
+                          title: '',
+                          kind: 'web',
+                          profileId: 'default',
+                        },
+                      ]
                   setTabs(next)
                   if (activeTab === tab.id) selectTab(next[0])
-                  if (browser)
+                  if (tab.kind === 'remote')
+                    void act(() =>
+                      request(
+                        '/api/previews/browser/close',
+                        { taskId, tabId: tab.id, profileId: tab.profileId },
+                        responses.ok,
+                      ),
+                    )
+                  else if (browser)
                     void act(() => browser({ action: 'close', key: `${scope}:${tab.id}` }))
                 }}
               >
@@ -491,54 +527,128 @@ function BrowserContent({
               </IconButton>
             </div>
           ))}
-          <IconButton label="New browser tab" className="size-7 shrink-0" onClick={() => newTab()}>
-            <Plus size={14} />
-          </IconButton>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <IconButton label="New browser tab" className="size-7 shrink-0">
+                <Plus size={14} />
+              </IconButton>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                align="start"
+                className="z-50 min-w-44 rounded-lg border bg-popover p-1 text-sm shadow-lg"
+              >
+                {browser ? (
+                  <DropdownMenu.Sub>
+                    <DropdownMenu.SubTrigger className="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 outline-none focus:bg-accent">
+                      New tab<span aria-hidden>›</span>
+                    </DropdownMenu.SubTrigger>
+                    <DropdownMenu.Portal>
+                      <DropdownMenu.SubContent className="z-50 min-w-44 rounded-lg border bg-popover p-1 text-sm shadow-lg">
+                        {profiles.map((profile) => (
+                          <DropdownMenu.Item
+                            key={profile.id}
+                            className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
+                            onSelect={() => newTab('', 'web', profile.id)}
+                          >
+                            {profile.name}
+                          </DropdownMenu.Item>
+                        ))}
+                      </DropdownMenu.SubContent>
+                    </DropdownMenu.Portal>
+                  </DropdownMenu.Sub>
+                ) : (
+                  <DropdownMenu.Item
+                    className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
+                    onSelect={() => newTab()}
+                  >
+                    New tab
+                  </DropdownMenu.Item>
+                )}
+                <DropdownMenu.Sub>
+                  <DropdownMenu.SubTrigger
+                    disabled={!connected || !remoteProfiles.profiles}
+                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                  >
+                    <MonitorUp size={14} />
+                    New remote tab
+                    <span aria-hidden className="ml-auto">
+                      ›
+                    </span>
+                  </DropdownMenu.SubTrigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.SubContent className="z-50 min-w-44 rounded-lg border bg-popover p-1 text-sm shadow-lg">
+                      {remoteProfiles.profiles?.map((profile) => (
+                        <DropdownMenu.Item
+                          key={profile.id}
+                          className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
+                          onSelect={() => newTab('', 'remote', profile.id)}
+                        >
+                          {profile.name}
+                        </DropdownMenu.Item>
+                      ))}
+                    </DropdownMenu.SubContent>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Sub>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         </div>
       )}
-      {browser && mode === 'web' && (
+      {initialMode !== 'devices' && (mode === 'remote' || browser) && (
         <div className="flex flex-wrap items-center gap-2 border-b px-2 py-1.5 text-xs">
           <select
-            aria-label="Browser profile"
+            aria-label="Profile for this tab"
             className="min-w-0 flex-1 rounded border bg-background p-1"
             value={profileId}
-            onChange={(event) =>
-              updateAppPreferences({
-                browserProfileByThread: {
-                  ...preferences.browserProfileByThread,
-                  [scope]: event.target.value,
-                },
-              })
-            }
+            disabled={busy || (mode === 'remote' && (!remoteProfiles.profiles || !connected))}
+            onChange={(event) => {
+              const next = event.target.value
+              setUrl(selectedTab.url)
+              setInput(selectedTab.url)
+              setHistory({ url: '', title: '', cdp: undefined, back: false, forward: false })
+              setTabs((previous) =>
+                previous.map((tab) => (tab.id === activeTab ? { ...tab, profileId: next } : tab)),
+              )
+              if (mode === 'remote')
+                void act(() =>
+                  request(
+                    '/api/previews/browser/close',
+                    { taskId, tabId: activeTab, profileId },
+                    responses.ok,
+                  ),
+                )
+            }}
           >
-            {profiles.map((profile) => (
+            {!tabProfiles.some((profile) => profile.id === profileId) && (
+              <option value={profileId} disabled>
+                {mode === 'remote' && !remoteProfiles.profiles
+                  ? 'Loading remote profiles…'
+                  : 'Unavailable profile'}
+              </option>
+            )}
+            {tabProfiles.map((profile) => (
               <option key={profile.id} value={profile.id}>
                 {profile.name}
               </option>
             ))}
           </select>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={() => setManagingProfiles(true)}
-          >
-            Profiles
-          </Button>
-          <Button
-            variant={agentAccess ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-2 text-xs"
-            aria-pressed={agentAccess}
-            onClick={() =>
-              updateAppPreferences({
-                browserAgentAccess: { ...preferences.browserAgentAccess, [scope]: !agentAccess },
-              })
-            }
-          >
-            Agent CDP
-          </Button>
-          {agentAccess && history.cdp && (
+          {browser && mode === 'web' && (
+            <Button
+              variant={agentAccess ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 px-2 text-xs"
+              aria-pressed={agentAccess}
+              onClick={() =>
+                updateAppPreferences({
+                  browserAgentAccess: { ...preferences.browserAgentAccess, [scope]: !agentAccess },
+                })
+              }
+            >
+              Agent CDP
+            </Button>
+          )}
+          {mode === 'web' && agentAccess && history.cdp && (
             <Button
               variant="ghost"
               size="sm"
@@ -554,76 +664,6 @@ function BrowserContent({
           )}
         </div>
       )}
-      {managingProfiles && (
-        <Dialog open onOpenChange={setManagingProfiles}>
-          <DialogContent>
-            <DialogTitle>Browser profiles</DialogTitle>
-            <DialogDescription>
-              Each profile keeps separate cookies and site storage on this desktop. Agent CDP allows
-              local agents to control the selected page.
-            </DialogDescription>
-            {profiles.map((profile) => (
-              <div key={profile.id} className="flex items-center gap-2">
-                <Input
-                  aria-label={`Name for ${profile.name}`}
-                  value={profile.name}
-                  maxLength={100}
-                  onChange={(event) =>
-                    event.target.value.trim() &&
-                    updateAppPreferences({
-                      browserProfiles: profiles.map((item) =>
-                        item.id === profile.id ? { ...item, name: event.target.value } : item,
-                      ),
-                    })
-                  }
-                />
-                {profile.id !== 'default' && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          'Remove this profile from the picker? Its saved website data will remain on this desktop.',
-                        )
-                      )
-                        updateAppPreferences({
-                          browserProfiles: profiles.filter((item) => item.id !== profile.id),
-                        })
-                    }}
-                  >
-                    Remove
-                  </Button>
-                )}
-              </div>
-            ))}
-            <form
-              className="flex gap-2"
-              onSubmit={(event) => {
-                event.preventDefault()
-                if (!profileName.trim()) return
-                const id = crypto.randomUUID()
-                updateAppPreferences({
-                  browserProfiles: [...profiles, { id, name: profileName.trim() }],
-                  browserProfileByThread: { ...preferences.browserProfileByThread, [scope]: id },
-                })
-                setProfileName('')
-                setManagingProfiles(false)
-              }}
-            >
-              <Input
-                aria-label="New profile name"
-                placeholder="Work, Personal…"
-                value={profileName}
-                maxLength={100}
-                onChange={(event) => setProfileName(event.target.value)}
-              />
-              <Button type="submit" disabled={!profileName.trim()}>
-                Add profile
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-      )}
       <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2 text-xs">
         {initialMode === 'devices' ? (
           <span className="inline-flex items-center gap-1.5">
@@ -631,27 +671,9 @@ function BrowserContent({
             Devices
           </span>
         ) : (
-          <>
-            <Button
-              size="sm"
-              className="h-7 max-w-[155px] rounded-lg px-2.5 text-xs"
-              variant={mode === 'web' ? 'secondary' : 'ghost'}
-              onClick={() => setMode('web')}
-            >
-              <ProjectIcon repository={repository} className="mr-1 size-3.5" />
-              <span className="min-w-0 truncate">
-                {mode === 'web' && history.title ? history.title : (repository?.name ?? 'Browser')}
-              </span>
-            </Button>
-            <Button
-              size="sm"
-              className="h-7 rounded-lg px-2.5 text-xs"
-              variant={mode === 'remote' ? 'secondary' : 'ghost'}
-              onClick={() => setMode('remote')}
-            >
-              Remote canvas
-            </Button>
-          </>
+          <span className="text-muted-foreground">
+            {mode === 'remote' ? 'Remote browser' : 'Browser'}
+          </span>
         )}
         <span className="flex-1" />
         {onClose && (
@@ -822,14 +844,52 @@ function BrowserContent({
           )}
         </form>
       )}
+      {mode === 'remote' && remoteProfiles.error && (
+        <p role="alert" className="p-3 text-xs text-destructive">
+          {remoteProfiles.error}
+        </p>
+      )}
       {error && (
         <p role="alert" className="p-3 text-xs text-destructive">
           {error}
         </p>
       )}
-      {mode === 'remote' ? (
-        <RemoteBrowser taskId={taskId} reloadToken={turnReload} />
-      ) : mode === 'web' ? (
+      {tabs
+        .filter((tab) => tab.kind === 'remote')
+        .map((tab) => (
+          <div
+            key={tab.id}
+            className={
+              mode === 'remote' && activeTab === tab.id ? 'flex min-h-0 flex-1 flex-col' : 'hidden'
+            }
+          >
+            <RemoteBrowser
+              key={`${tab.id}:${tab.profileId}`}
+              taskId={taskId}
+              profileId={tab.profileId}
+              initialUrl={tab.url}
+              tabId={tab.id}
+              active={mode === 'remote' && activeTab === tab.id}
+              reloadToken={activeTab === tab.id ? turnReload : undefined}
+              onState={(state) =>
+                setTabs((previous) => {
+                  const url = state.url === 'about:blank' ? '' : state.url
+                  if (
+                    !previous.some(
+                      (item) =>
+                        item.id === tab.id && (item.url !== url || item.title !== state.title),
+                    )
+                  )
+                    return previous
+                  return previous.map((item) =>
+                    item.id === tab.id ? { ...item, url, title: state.title } : item,
+                  )
+                })
+              }
+            />
+          </div>
+        ))}
+      {mode === 'web' ? (
         <div className="min-h-0 flex-1 overflow-auto bg-muted/30 p-3">
           {!url ? (
             <div className="p-6 text-sm text-muted-foreground">
@@ -873,7 +933,7 @@ function BrowserContent({
             </>
           )}
         </div>
-      ) : (
+      ) : mode === 'devices' ? (
         <div className="min-h-0 flex-1 overflow-auto p-2">
           <div className="mb-1 flex items-center justify-between">
             <p className="text-xs text-muted-foreground">Choose a device</p>
@@ -922,7 +982,7 @@ function BrowserContent({
             </figure>
           )}
         </div>
-      )}
+      ) : null}
     </section>
   )
 }

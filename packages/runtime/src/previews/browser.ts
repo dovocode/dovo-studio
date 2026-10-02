@@ -1,5 +1,6 @@
 import { decode } from '@dovo/protocol'
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Browser, BrowserContext, Dialog, Page, CDPSession } from 'playwright'
 import {
   previewUrl,
@@ -37,7 +38,7 @@ type QueuedInput = {
   operation?: Promise<void>
 }
 type Session = {
-  context: BrowserContext
+  release: () => Promise<void>
   page: Page
   cdp: CDPSession
   pendingInput?: QueuedInput
@@ -51,6 +52,7 @@ type Session = {
   touching: boolean
   stateTimer?: ReturnType<typeof setTimeout>
   listeners: Set<Listener>
+  visibleListeners: Set<Listener>
   queue: Promise<void>
   queued: number
   loading: boolean
@@ -64,27 +66,35 @@ const idleMs = 5 * 60 * 1000
 export class RemoteBrowsers {
   private browser?: Promise<Browser>
   private sessions = new Map<string, Promise<Session>>()
+  private owners = new Map<string, string>()
+  private profiles = new Map<string, { context: Promise<BrowserContext>; users: number }>()
+  private closingProfiles = new Map<string, Promise<void>>()
   private disposed = false
+  constructor(private profileDirectory?: string) {}
+  private async executable() {
+    const chromium = await loadChromium()
+    const bundled = chromium.executablePath()
+    const installed =
+      process.platform === 'darwin'
+        ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        : process.platform === 'win32'
+          ? `${process.env.PROGRAMFILES}\\Google\\Chrome\\Application\\chrome.exe`
+          : ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'].find(
+              existsSync,
+            )
+    const executablePath =
+      process.env.DOVO_BROWSER_EXECUTABLE ||
+      (existsSync(bundled) ? bundled : installed && existsSync(installed) ? installed : undefined)
+    if (!executablePath)
+      throw new HttpError(
+        503,
+        'Install Chrome on the host, or run pnpm --filter @dovo/runtime exec playwright install chromium. Then reconnect the browser.',
+      )
+    return { chromium, executablePath }
+  }
   private async launch() {
     if (!this.browser) {
-      const chromium = await loadChromium()
-      const bundled = chromium.executablePath()
-      const installed =
-        process.platform === 'darwin'
-          ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-          : process.platform === 'win32'
-            ? `${process.env.PROGRAMFILES}\\Google\\Chrome\\Application\\chrome.exe`
-            : ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'].find(
-                existsSync,
-              )
-      const executablePath =
-        process.env.DOVO_BROWSER_EXECUTABLE ||
-        (existsSync(bundled) ? bundled : installed && existsSync(installed) ? installed : undefined)
-      if (!executablePath)
-        throw new HttpError(
-          503,
-          'Install Chrome on the host, or run pnpm --filter @dovo/runtime exec playwright install chromium. Then reconnect the browser.',
-        )
+      const { chromium, executablePath } = await this.executable()
       this.browser = chromium
         .launch({
           executablePath,
@@ -104,45 +114,106 @@ export class RemoteBrowsers {
     }
     return this.browser
   }
-  async open(taskId: string): Promise<void> {
+  async open(
+    taskId: string,
+    owner = taskId,
+    profileId = 'default',
+    initialUrl?: string,
+  ): Promise<void> {
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
     let pending = this.sessions.get(taskId)
     if (!pending) {
       if (this.sessions.size >= 8)
         throw new HttpError(409, 'Close an unused host browser before opening another (maximum 8).')
-      pending = this.create(taskId)
+      if (!/^[a-zA-Z0-9_-]{1,100}$/.test(profileId))
+        throw new HttpError(400, 'Invalid browser profile')
+      const target = initialUrl ? previewUrl(initialUrl) : undefined
+      pending = this.create(taskId, profileId, target)
       this.sessions.set(taskId, pending)
+      this.owners.set(taskId, owner)
       void pending.catch(() => {
-        if (this.sessions.get(taskId) === pending) this.sessions.delete(taskId)
+        if (this.sessions.get(taskId) === pending) {
+          this.sessions.delete(taskId)
+          this.owners.delete(taskId)
+        }
       })
     }
     const session = await pending
     if (!session.listeners.size) this.scheduleClose(taskId, session)
   }
-  private async create(taskId: string) {
-    const browser = await this.launch()
-    const context = await browser.newContext({
-      viewport: {
-        width: 1280,
-        height: 800,
-      },
-      deviceScaleFactor: 2,
-      acceptDownloads: false,
-      serviceWorkers: 'block',
-      hasTouch: true,
-    })
+  private async profile(profileId: string) {
+    await this.closingProfiles.get(profileId)
+    let entry = this.profiles.get(profileId)
+    if (!entry) {
+      const create = async () => {
+        const options = {
+          viewport: { width: 1280, height: 800 },
+          deviceScaleFactor: 2,
+          acceptDownloads: false,
+          serviceWorkers: 'block' as const,
+          hasTouch: true,
+        }
+        let context: BrowserContext
+        if (this.profileDirectory) {
+          const { chromium, executablePath } = await this.executable()
+          context = await chromium.launchPersistentContext(join(this.profileDirectory, profileId), {
+            ...options,
+            executablePath,
+            headless: true,
+            chromiumSandbox: true,
+          })
+        } else context = await (await this.launch()).newContext(options)
+        try {
+          if (this.profileDirectory) for (const page of context.pages()) await page.close()
+          // No runtime credentials, personal browser profile, file access or native permissions
+          // are exposed to the preview. Local HTTP services are intentionally reachable.
+          await context.route('**/*', (route) => {
+            if (!/^https?:\/\//i.test(route.request().url())) return route.abort('blockedbyclient')
+            return route.continue()
+          })
+          return context
+        } catch (error) {
+          await context.close()
+          throw error
+        }
+      }
+      entry = { context: create(), users: 0 }
+      this.profiles.set(profileId, entry)
+    }
+    const current = entry
+    current.users++
+    let released: Promise<void> | undefined
+    const release = () =>
+      (released ??= (async () => {
+        if (--current.users) return
+        if (this.profiles.get(profileId) === current) this.profiles.delete(profileId)
+        const closing = current.context.then((context) => context.close())
+        this.closingProfiles.set(profileId, closing)
+        try {
+          await closing
+        } finally {
+          if (this.closingProfiles.get(profileId) === closing)
+            this.closingProfiles.delete(profileId)
+        }
+      })())
     try {
-      // No runtime credentials, personal browser profile, file access or native permissions
-      // are exposed to the preview. Local HTTP services are intentionally reachable.
-      await context.route('**/*', (route) => {
-        if (!/^https?:\/\//i.test(route.request().url())) return route.abort('blockedbyclient')
-        return route.continue()
-      })
+      return { context: await current.context, release }
+    } catch (error) {
+      if (!--current.users && this.profiles.get(profileId) === current)
+        this.profiles.delete(profileId)
+      throw error
+    }
+  }
+  private async create(taskId: string, profileId: string, initialUrl?: string) {
+    const { context, release } = await this.profile(profileId)
+    let createdPage: Page | undefined
+    try {
       const page = await context.newPage()
+      createdPage = page
       page.setDefaultTimeout(10000)
       page.setDefaultNavigationTimeout(20000)
       const session: Session = {
-        context,
+        release,
         page,
         cdp: await context.newCDPSession(page),
         statePending: false,
@@ -158,6 +229,7 @@ export class RemoteBrowsers {
         },
         touching: false,
         listeners: new Set(),
+        visibleListeners: new Set(),
         queue: Promise.resolve(),
         queued: 0,
         loading: false,
@@ -207,25 +279,33 @@ export class RemoteBrowsers {
           message: 'The host browser crashed. Close the session and reconnect.',
         })
       })
-      context.once('close', () => {
+      page.once('close', () => {
+        void release().catch((error) => this.report(session, error))
         clearTimeout(session.idle)
         clearTimeout(session.stateTimer)
         this.sessions.delete(taskId)
+        this.owners.delete(taskId)
         this.emit(session, {
           type: 'closed',
           message: 'Host browser session closed. Reconnect to start again.',
         })
         session.listeners.clear()
       })
+      if (initialUrl) await page.goto(initialUrl, { waitUntil: 'domcontentloaded' })
       this.scheduleClose(taskId, session)
       return session
     } catch (error) {
-      await context.close()
+      try {
+        await createdPage?.close()
+      } finally {
+        await release()
+      }
       throw error
     }
   }
   private emit(session: Session, message: BrowserOutput) {
     for (const listener of session.listeners) {
+      if (message.type === 'frame' && !session.visibleListeners.has(listener)) continue
       try {
         listener(message)
       } catch (error) {
@@ -313,20 +393,23 @@ export class RemoteBrowsers {
     const session = await pending
     clearTimeout(session.idle)
     session.listeners.add(listener)
+    session.visibleListeners.add(listener)
     if (session.frame) listener(session.frame)
     try {
       await this.syncStream(session)
       await this.state(session)
     } catch (error) {
       session.listeners.delete(listener)
+      session.visibleListeners.delete(listener)
       if (!session.listeners.size) this.scheduleClose(taskId, session)
       throw error
     }
     return () => {
       session.listeners.delete(listener)
+      session.visibleListeners.delete(listener)
+      void this.syncStream(session).catch((error) => this.report(session, error))
       if (!session.listeners.size) {
         // Keep the page and its login state briefly for reconnects, but stop streaming.
-        void this.syncStream(session).catch((error) => this.report(session, error))
         session.queue = session.queue
           .then(async () => {
             if (!session.touching || session.page.isClosed()) return
@@ -343,10 +426,18 @@ export class RemoteBrowsers {
       }
     }
   }
+  async visibility(taskId: string, listener: Listener, visible: boolean) {
+    const session = await this.sessions.get(taskId)
+    if (!session || !session.listeners.has(listener)) return
+    if (visible) session.visibleListeners.add(listener)
+    else session.visibleListeners.delete(listener)
+    await this.syncStream(session)
+    if (visible && session.frame) listener(session.frame)
+  }
   private syncStream(session: Session) {
     const operation = session.stream.then(async () => {
       if (session.page.isClosed()) return
-      if (session.listeners.size && !session.streaming) {
+      if (session.visibleListeners.size && !session.streaming) {
         await session.page.screencast.start({
           quality: 85,
           size: {
@@ -364,7 +455,7 @@ export class RemoteBrowsers {
           },
         })
         session.streaming = true
-      } else if (!session.listeners.size && session.streaming) {
+      } else if (!session.visibleListeners.size && session.streaming) {
         await session.page.screencast.stop()
         session.streaming = false
       }
@@ -525,12 +616,21 @@ export class RemoteBrowsers {
       })
     await operation
   }
+  async closeTask(taskId: string) {
+    await Promise.all(
+      [...this.owners].filter(([, owner]) => owner === taskId).map(([id]) => this.close(id)),
+    )
+  }
   async close(taskId: string) {
     const pending = this.sessions.get(taskId)
     if (!pending) return
     const session = await pending
     clearTimeout(session.idle)
-    await session.context.close()
+    try {
+      await session.page.close()
+    } finally {
+      await session.release()
+    }
   }
   async dispose() {
     this.disposed = true
@@ -538,7 +638,9 @@ export class RemoteBrowsers {
     for (const result of results)
       if (result.status === 'rejected')
         console.error('Could not close browser context', result.reason)
+    await Promise.allSettled([...this.closingProfiles.values()])
     if (this.browser) await (await this.browser).close()
     this.sessions.clear()
+    this.owners.clear()
   }
 }

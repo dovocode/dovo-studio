@@ -12,8 +12,18 @@ export const appSettingsExtension = defineStudioExtension(
       order: 0.1,
       settingsSection: 'app',
       keywords:
-        'send enter shortcut composer conversation chat follow up queue steer confirm archive stop cancel launch startup open time clock 12 24 hour sort order tool activity commands expanded collapsed browser preview viewport phone tablet desktop size',
+        'send enter shortcut composer conversation chat follow up queue steer confirm archive stop cancel launch startup open time clock 12 24 hour sort order tool activity commands expanded collapsed',
       load: () => import('./app-settings/general'),
+    },
+    {
+      id: 'browser-settings',
+      navigationGroup: 'settings',
+      title: 'Browser',
+      icon: 'runtime',
+      order: 0.14,
+      settingsSection: 'app',
+      keywords: 'browser local remote tabs profile profiles cookies logins viewport preview',
+      load: () => import('./app-settings/browser'),
     },
     {
       id: 'notifications',

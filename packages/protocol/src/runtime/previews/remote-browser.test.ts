@@ -1,6 +1,10 @@
 import { decodeResult } from '../../shared/schema.js'
 import { expect, it } from 'vitest'
-import { remoteBrowserInputSchema, remoteBrowserViewportSchema } from './remote-browser'
+import {
+  remoteBrowserInputSchema,
+  remoteBrowserViewportSchema,
+  remoteBrowserOpenSchema,
+} from './remote-browser'
 import { previewUrl } from './previews'
 it('keeps host-local URLs on the host and only allows HTTP navigation', () => {
   expect(previewUrl('localhost:3000/path')).toBe('http://localhost:3000/path')
@@ -101,4 +105,19 @@ it('round-trips binary frames and rejects malformed dimensions and headers', asy
   expect(() => decodeBrowserFrame(new ArrayBuffer(12))).toThrow('size')
   new DataView(packet.buffer).setUint32(4, 9000)
   expect(() => decodeBrowserFrame(packet.buffer)).toThrow('dimensions')
+})
+
+it('accepts optional remote tab IDs and validates stream visibility', () => {
+  expect(decodeResult(remoteBrowserOpenSchema, { taskId: 'task' }).success).toBe(true)
+  expect(decodeResult(remoteBrowserOpenSchema, { taskId: 'task', tabId: 'tab' }).success).toBe(true)
+  expect(decodeResult(remoteBrowserOpenSchema, { taskId: 'task', tabId: '' }).success).toBe(false)
+  expect(
+    decodeResult(remoteBrowserOpenSchema, { taskId: 'task', tabId: 'x'.repeat(201) }).success,
+  ).toBe(false)
+  expect(
+    decodeResult(remoteBrowserInputSchema, { type: 'visibility', visible: false }).success,
+  ).toBe(true)
+  expect(
+    decodeResult(remoteBrowserInputSchema, { type: 'visibility', visible: 'false' }).success,
+  ).toBe(false)
 })

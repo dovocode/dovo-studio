@@ -41,6 +41,8 @@ let socket: WebSocket | undefined
 let width = 1280,
   height = 800,
   landscape = false
+let visible = true
+let visibilityConfigured = false
 let simulator = false
 let nativeTouch = false
 let activePointer: number | undefined
@@ -113,7 +115,7 @@ function enabled(value: boolean) {
   }
 }
 function fit() {
-  if (!online || simulator) return
+  if (!online || simulator || !viewport.clientWidth || !viewport.clientHeight) return
   const chosen = previewPresets.find((item) => item.id === preset.value) ?? previewPresets[0]
   const w = chosen.width ? (landscape ? chosen.height : chosen.width) : viewport.clientWidth
   const h = chosen.height ? (landscape ? chosen.width : chosen.height) : viewport.clientHeight
@@ -230,6 +232,7 @@ function connect(url: string) {
     retryAttempt = 0
     cancelReconnect()
     enabled(true)
+    if (visibilityConfigured && !simulator) send({ type: 'visibility', visible })
     notice('')
     fit()
   }
@@ -320,6 +323,8 @@ function connect(url: string) {
         if (!empty.hidden) canvas.hidden = true
         keyboard.title = message.editable ? 'Type into focused field' : 'Keyboard'
         document.title = message.title || 'Host browser'
+        if (!window.ReactNativeWebView)
+          window.parent.postMessage({ channel: 'dovo-browser', ...message }, '*')
       } else if (message.type === 'error' || message.type === 'closed') {
         if (message.type === 'closed') enabled(false)
         notice(message.message, true)
@@ -351,13 +356,24 @@ window.addEventListener('message', (event) => {
     document.body.classList.toggle('expanded', 'expanded' in message && message.expanded === true)
     return
   }
+  if (
+    'type' in message &&
+    message.type === 'visibility' &&
+    'visible' in message &&
+    typeof message.visible === 'boolean'
+  ) {
+    visible = message.visible
+    visibilityConfigured = true
+    if (online && !simulator) send({ type: 'visibility', visible })
+    return
+  }
   if ('type' in message && message.type === 'reload') {
     if (online) send({ type: 'reload' })
     return
   }
   if ('type' in message && message.type === 'configure') {
     configure('device' in message ? message.device : undefined)
-    // Settings → General → Browser previews → Default viewport.
+    // The app’s default browser viewport.
     const viewport = 'viewport' in message ? message.viewport : undefined
     if (!presetChosen && previewPresets.some((item) => item.id === viewport)) {
       preset.value = String(viewport)

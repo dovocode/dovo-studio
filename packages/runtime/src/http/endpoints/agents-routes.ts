@@ -339,7 +339,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               409,
               'Close this thread’s terminals before archiving or deleting it.',
             )
-          yield* serviceResult(s.browsers.close(id))
+          yield* serviceResult(s.browsers.closeTask(id))
           yield* serviceResult(s.simulators.closeTask(id))
           s.tasks.requireIdle(id)
           s.jobs.requireTaskIdle(id)

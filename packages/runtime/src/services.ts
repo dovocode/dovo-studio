@@ -156,7 +156,9 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     tickets,
     simulators: new SimulatorPreviews(),
     simulatorTickets: new SocketTickets(),
-    browsers: new RemoteBrowsers(),
+    browsers: new RemoteBrowsers(
+      db.name === ':memory:' ? undefined : join(dirname(resolve(db.name)), 'browser-profiles'),
+    ),
     browserTickets: new SocketTickets(),
     checkouts,
     projectFiles: new ProjectFiles(git),

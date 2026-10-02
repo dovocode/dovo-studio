@@ -1,3 +1,4 @@
+import { browserProfileIdSchema } from './browser-profiles.js'
 import { mutableStruct } from '../../shared/schema.js'
 import { minValue, maxValue } from '../../shared/schema.js'
 import { Schema } from 'effect'
@@ -26,10 +27,15 @@ export const remoteBrowserViewportSchema = mutableStruct({
 })
 export const remoteBrowserOpenSchema = mutableStruct({
   taskId: maxValue(minValue(Schema.String, 1), 200),
+  tabId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  profileId: Schema.optional(browserProfileIdSchema),
+  url: Schema.optional(maxValue(Schema.String, 4096)),
 })
 export const remoteBrowserTicketSchema = mutableStruct({
   ticket: Schema.String,
   host: Schema.String,
+  tabId: Schema.optional(Schema.String),
+  profileId: Schema.optional(browserProfileIdSchema),
   device: Schema.optional(previewDeviceSchema),
 })
 const point = {
@@ -44,6 +50,10 @@ export const remoteBrowserInputSchema = Schema.Union(
     }),
     mutableStruct({
       type: Schema.Literal('back', 'forward', 'reload', 'status'),
+    }),
+    mutableStruct({
+      type: Schema.Literal('visibility'),
+      visible: Schema.Boolean,
     }),
     mutableStruct({
       type: Schema.Literal('resize'),

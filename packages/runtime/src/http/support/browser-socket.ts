@@ -15,9 +15,11 @@ export function attachBrowserSocket(
   services: Services,
   binary = false,
   simulatorId?: string,
+  browserId = taskId,
 ) {
   const source = simulatorId ? services.simulators : services.browsers
-  const resourceId = simulatorId ?? taskId
+  const resourceId = simulatorId ?? browserId
+  let visible = true
   let closed = false
   let detach: (() => void) | undefined
   let frame: BrowserFrame | undefined
@@ -62,6 +64,7 @@ export function attachBrowserSocket(
   }
   const watchdog = binary
     ? setInterval(() => {
+        if (!visible) return
         const oldest = inFlight.values().next().value
         if (oldest !== undefined && Date.now() - oldest > 10000)
           client.close(1008, 'Browser renderer stopped responding')
@@ -121,7 +124,15 @@ export function attachBrowserSocket(
       }
       if (++count > 200) throw new Error('Too many browser commands')
       const input = decode(remoteBrowserInputSchema, value)
-      void source.input(resourceId, input, authorize).catch((error) => {
+      if (input.type === 'visibility' && !simulatorId) {
+        visible = input.visible
+        if (visible) for (const sequence of inFlight.keys()) inFlight.set(sequence, Date.now())
+      }
+      const operation =
+        input.type === 'visibility' && !simulatorId
+          ? services.browsers.visibility(resourceId, send, input.visible)
+          : source.input(resourceId, input, authorize)
+      void operation.catch((error) => {
         send({
           type: 'error',
           message: errorMessage(error),

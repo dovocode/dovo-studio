@@ -58,7 +58,7 @@ it('checks task ownership and credentials before launching, isolates browser tic
   const device = runtime.services.devices.add('Test phone', deviceToken)
   const result = await call('task', deviceToken)
   expect(result.status).toBe(200)
-  expect(open).toHaveBeenCalledWith('task')
+  expect(open).toHaveBeenCalledWith(JSON.stringify(['task', null]), 'task', 'default', undefined)
   const ticket = (await result.json()).ticket
   const url = `ws://127.0.0.1:${runtime.port}/ws/browser?ticket=${ticket}`
   const socket = new WebSocket(url)
@@ -79,7 +79,7 @@ it('checks task ownership and credentials before launching, isolates browser tic
   )
   await vi.waitFor(() =>
     expect(input).toHaveBeenCalledWith(
-      'task',
+      JSON.stringify(['task', null]),
       {
         type: 'text',
         text: 'remote input',
@@ -203,4 +203,124 @@ it('rejects expired tickets without keeping bearer credentials reusable', () => 
   time.mockReturnValue(32000)
   expect(() => tickets.consume(ticket)).toThrow('expired')
   expect(() => tickets.consume(ticket)).toThrow('expired')
+})
+
+it('isolates remote tabs, binds their tickets to the task, and closes only the requested tab', async () => {
+  const open = vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
+  const close = vi.spyOn(RemoteBrowsers.prototype, 'close').mockResolvedValue()
+  const attach = vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})
+  const visibility = vi.spyOn(RemoteBrowsers.prototype, 'visibility').mockResolvedValue()
+  const token = 'browser-tabs-token-with-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      {
+        id: 'task',
+        title: 'Browser',
+        repositoryId: '',
+        agentId: '',
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        messages: [],
+        files: [],
+        draft: '',
+        example: false,
+      },
+    ],
+  }))
+  const call = (action: string, taskId: string, tabId: string) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/previews/browser/${action}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, tabId }),
+    })
+  const first = await call('open', 'task', 'first')
+  const second = await call('open', 'task', 'second')
+  expect(first.status).toBe(200)
+  expect(second.status).toBe(200)
+  expect(open.mock.calls).toEqual([
+    [JSON.stringify(['task', 'first']), 'task', 'default', undefined],
+    [JSON.stringify(['task', 'second']), 'task', 'default', undefined],
+  ])
+  const ticket = (await first.json()).ticket
+  expect((await second.json()).tabId).toBe('second')
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${runtime.port}/ws/browser?ticket=${ticket}&frames=binary-v1`,
+  )
+  cleanups.unshift(async () => {
+    socket.terminate()
+  })
+  await once(socket, 'open')
+  await vi.waitFor(() =>
+    expect(attach).toHaveBeenCalledWith(JSON.stringify(['task', 'first']), expect.any(Function)),
+  )
+  socket.send(JSON.stringify({ type: 'visibility', visible: false }))
+  await vi.waitFor(() =>
+    expect(visibility).toHaveBeenCalledWith(
+      JSON.stringify(['task', 'first']),
+      expect.any(Function),
+      false,
+    ),
+  )
+  const frameReceived = once(socket, 'message')
+  attach.mock.calls[0][1]({ type: 'frame', width: 390, height: 844, data: Buffer.from('frame') })
+  await frameReceived
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 20000)
+  await new Promise((resolve) => setTimeout(resolve, 2100))
+  expect(socket.readyState).toBe(WebSocket.OPEN)
+  socket.send(JSON.stringify({ type: 'visibility', visible: true }))
+  await vi.waitFor(() =>
+    expect(visibility).toHaveBeenLastCalledWith(
+      JSON.stringify(['task', 'first']),
+      expect.any(Function),
+      true,
+    ),
+  )
+  clock.mockRestore()
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 1 }))
+  expect((await call('close', 'missing', 'first')).status).toBe(404)
+  expect(close).not.toHaveBeenCalled()
+  expect((await call('close', 'task', 'first')).status).toBe(200)
+  expect(close).toHaveBeenCalledWith(JSON.stringify(['task', 'first']))
+  const catalog = (action: string, profiles?: Array<{ id: string; name: string }>) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/previews/browser/profiles/${action}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(profiles ? { profiles } : {}),
+    })
+  expect((await (await catalog('read')).json()).profiles).toEqual([
+    { id: 'default', name: 'Default' },
+  ])
+  const profiles = [
+    { id: 'default', name: 'Default' },
+    { id: 'work', name: 'Remote Work' },
+  ]
+  expect((await catalog('save', profiles)).status).toBe(200)
+  expect((await (await catalog('read')).json()).profiles).toEqual(profiles)
+  expect((await catalog('save', [{ id: '../outside', name: 'Bad' }])).status).toBe(400)
+  const openProfile = (profileId: string) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/previews/browser/open`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        taskId: 'task',
+        tabId: 'first',
+        profileId,
+        url: 'http://localhost:3000',
+      }),
+    })
+  const count = open.mock.calls.length
+  expect((await openProfile('missing')).status).toBe(404)
+  expect(open).toHaveBeenCalledTimes(count)
+  const work = await openProfile('work')
+  expect(work.status).toBe(200)
+  expect((await work.json()).profileId).toBe('work')
+  expect(open).toHaveBeenLastCalledWith(
+    JSON.stringify(['task', 'first', 'work']),
+    'task',
+    'work',
+    'http://localhost:3000',
+  )
 })

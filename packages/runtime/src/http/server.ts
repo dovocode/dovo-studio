@@ -191,15 +191,17 @@ export function createRuntimeServer(services: Services, internal = false) {
       if (url.pathname === '/ws/browser') {
         const ticket = services.browserTickets.consume(url.searchParams.get('ticket') ?? '')
         services.devices.authenticate(ticket.token)
-        services.store.task(ticket.resourceId)
+        services.store.task(ticket.taskId ?? ticket.resourceId)
         sockets.handleUpgrade(request, socket, head, (client) => {
           track(client, ticket.token)
           attachBrowserSocket(
             client,
-            ticket.resourceId,
+            ticket.taskId ?? ticket.resourceId,
             ticket.token,
             services,
             url.searchParams.get('frames') === 'binary-v1',
+            undefined,
+            ticket.resourceId,
           )
         })
         return

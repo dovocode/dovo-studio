@@ -30,3 +30,13 @@ no text, no watermark. Production macOS Dock icon, 1024 by 1024.
 
 `node scripts/generate-app-icons.mjs` exports 1024px PNGs and macOS ICNS sizes from the retained
 high-resolution renders. Mobile PNGs are opaque; desktop PNGs preserve transparency.
+
+## macOS Tahoe
+
+macOS packaging uses `apps/desktop/build/Dovo.icon`, an Icon Composer asset with the full-square
+Dovo artwork. The system supplies the corner mask and outer tile; there are no baked-in rounded
+corners or transparent margins inside it. Electron-builder compiles `Assets.car`, sets
+`CFBundleIconName`, and generates an ICNS fallback for older macOS versions.
+
+The exporter refreshes its artwork from `dovo-icon-v2.png`. The existing desktop PNG remains
+the Windows/Linux icon. Packaging on macOS requires Xcode with Icon Composer support.

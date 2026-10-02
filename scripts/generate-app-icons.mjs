@@ -13,6 +13,8 @@ const ios = join(root, 'assets/brand/dovo-icon-v2.png')
 const mac = join(root, 'assets/brand/dovo-mac-icon-v2.png')
 await mkdir(join(root, 'apps/desktop/build'), { recursive: true })
 resize(ios, 1024, join(root, 'apps/mobile/assets/icon.png'))
+await mkdir(join(root, 'apps/desktop/build/Dovo.icon/Assets'), { recursive: true })
+resize(ios, 1024, join(root, 'apps/desktop/build/Dovo.icon/Assets/Dovo.png'))
 resize(mac, 1024, join(root, 'apps/desktop/build/icon.png'))
 const temporary = await mkdtemp(join(tmpdir(), 'dovo-icons-'))
 try {

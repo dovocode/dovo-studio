@@ -1,3 +1,4 @@
+import { browserProfilesSchema, defaultBrowserProfiles } from '../previews/browser-profiles.js'
 export const RUNTIME_PROTOCOL_VERSION = 2
 export const PAIRING_PROTOCOL_VERSION = 2
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
@@ -250,6 +251,7 @@ export const responses = {
 }
 
 export const runtimePreferencesSchema = mutableStruct({
+  browserProfiles: Schema.optionalWith(browserProfilesSchema, { default: defaultBrowserProfiles }),
   autoContinueAfterRestart: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   /** Archive tasks with no activity for this many days; 0 turns it off. */
   autoArchiveDays: Schema.optionalWith(Schema.Literal(0, 7, 14, 30), { default: () => 0 as const }),

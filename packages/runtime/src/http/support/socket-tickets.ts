@@ -1,12 +1,15 @@
 import { newSecret, hashSecret } from '../../auth/devices.js'
 import { HttpError } from '../../errors.js'
 export class SocketTickets {
-  private tickets = new Map<string, { token: string; resourceId: string; expires: number }>()
-  issue(token: string, resourceId: string) {
+  private tickets = new Map<
+    string,
+    { token: string; resourceId: string; expires: number; taskId?: string }
+  >()
+  issue(token: string, resourceId: string, taskId?: string) {
     for (const [key, value] of this.tickets)
       if (value.expires < Date.now()) this.tickets.delete(key)
     const ticket = newSecret()
-    this.tickets.set(hashSecret(ticket), { token, resourceId, expires: Date.now() + 30000 })
+    this.tickets.set(hashSecret(ticket), { token, resourceId, taskId, expires: Date.now() + 30000 })
     return ticket
   }
   consume(ticket: string) {

@@ -208,7 +208,7 @@ try {
         },
       ],
       mac: {
-        icon: join(root, 'apps/desktop/build/icon.icns'),
+        icon: join(root, 'apps/desktop/build/Dovo.icon'),
         category: 'public.app-category.developer-tools',
         identity: macSigningIdentity?.replace(/^Developer ID Application:\s*/, '') ?? null,
         hardenedRuntime: true,
