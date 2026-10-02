@@ -61,8 +61,16 @@ export default function TasksView({ entityId }: StudioViewProps) {
   // Depend on the exact slices taskSources reads so the collection is only rebuilt when
   // the underlying data changes, not on every context value identity change.
   const sources = useMemo(
-    () => taskSources({ workspace, snapshot, activeRuntimeId, connected, runtimes }),
-    [workspace, snapshot, activeRuntimeId, connected, runtimes],
+    () =>
+      taskSources({
+        workspace,
+        snapshot,
+        activeRuntimeId,
+        connected,
+        runtimes,
+        connection: store.connection,
+      }),
+    [workspace, snapshot, activeRuntimeId, connected, runtimes, store.connection],
   )
   const host = useStudioHost()
   const localTasks = useMemo(

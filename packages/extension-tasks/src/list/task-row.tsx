@@ -1,6 +1,6 @@
 import { pullStackLabel } from '@dovo/protocol'
 import { taskPullLinks } from '../detail/task-pull-links'
-import { AgentAvatar, ProjectIcon } from '@dovo/studio-ui'
+import { AgentAvatar, ProjectIcon, useModelLabel } from '@dovo/studio-ui'
 import { acpHarnessName, resolveTaskAgent, formatDateTime } from '@dovo/studio-core'
 import { TaskLifecycleActions } from '../detail/task-lifecycle-actions'
 import { hasUnviewedTaskCompletion } from '@dovo/protocol'
@@ -73,6 +73,19 @@ function TaskRowView({
     task.status === 'running'
       ? (latest?.provider ?? agent?.provider)
       : (agent?.provider ?? latest?.provider)
+  const model = latest?.model || task.agentOverrides?.model || agent?.model
+  const modelProvider = latest?.model ? (latest.provider ?? agent?.provider) : agent?.provider
+  const modelName = useModelLabel(
+    source.address,
+    model && modelProvider
+      ? {
+          provider: modelProvider,
+          endpoint: agent?.endpoint ?? '',
+          acpInstallationId: agent?.acpInstallationId,
+          model,
+        }
+      : undefined,
+  )
   const branch =
     task.checkoutBranch ?? (task.execution === 'worktree' ? latest?.branch : repository?.branch)
   const host = latest?.runtimeHost ?? source.name
@@ -223,7 +236,7 @@ function TaskRowView({
               ) : (
                 <Bot className="size-3 shrink-0" />
               )}
-              {latest?.model || task.agentOverrides?.model || agent?.model || agentName}
+              {modelName || model || agentName}
             </p>
             <p>{agentDetail}</p>
             <p>{statusDetail}</p>

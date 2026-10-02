@@ -77,6 +77,8 @@ it('uses unsent active edits once and preserves the identities of identical task
   expect(entries.map((entry) => entry.task.title)).toEqual(['Unsent edit', 'Cached title'])
   expect(new Set(entries.map((entry) => entry.key)).size).toBe(2)
   expect(new Set(entries.map((entry) => entry.projectKey)).size).toBe(2)
+  expect(entries[0].source.address).toBe(mac.profile.connection.address)
+  expect(entries[1].source.address).toBe(linux.profile.connection.address)
   expect(entries[0].source.workspace).toBe(workspace)
   expect(entries[0].task.pinned).toBe(true)
 })

@@ -1,6 +1,6 @@
-import { createModelLabels } from './model-labels'
+import { createModelLabels, type ModelLabelHarness } from './model-labels'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import {
   modelCatalogSchema,
   useWorkspace,
@@ -14,9 +14,18 @@ const modelLabels = (() => {
     return createModelLabels()
   }
 })()
+/** Read cached presentation metadata without discovering models or subscribing to workspace state. */
+export function useModelLabel(address: string | undefined, harness: ModelLabelHarness | undefined) {
+  return useSyncExternalStore(
+    modelLabels.subscribe,
+    () => (harness ? modelLabels.get(address, harness) : undefined),
+    () => undefined,
+  )
+}
 const cachedCatalogs = new Map<string, { value: ModelCatalog; expires: number }>()
 export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
   const { request, connected, connection } = useWorkspace()
+  const savedModelName = useModelLabel(connection?.address, harness)
   const [catalog, setCatalog] = useApplicationState<{
     key: string
     value: ModelCatalog
@@ -106,7 +115,7 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
     modelName:
       (catalog?.key === key ? catalog.value : cachedCatalogs.get(key)?.value)?.models.find(
         (item) => item.id === model,
-      )?.name ?? modelLabels.get(connection?.address, harness),
+      )?.name ?? savedModelName,
     error,
     loading,
   }
