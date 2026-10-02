@@ -12,7 +12,6 @@ import {
   CloudOff,
   CircleX,
   CircleStop,
-  Eye,
   FilePenLine,
   GitFork,
   MessageCircleQuestion,
@@ -41,7 +40,6 @@ const statusIcons: Record<string, LucideIcon> = {
   Settled: CircleCheck,
   Archived: Archive,
   Draft: FilePenLine,
-  Review: Eye,
   'Needs input': MessageCircleQuestion,
   'Saving changes': Save,
 }
@@ -87,7 +85,11 @@ function TaskRowView({
   const status = !source.online && source.runtimeId ? 'Offline · Cached' : presentation.label
   const offline = !source.online && !!source.runtimeId
   const compactStatus = offline ? 'Offline' : presentation.compactLabel
-  const StatusIcon = offline ? CloudOff : (statusIcons[presentation.state] ?? CircleDashed)
+  const StatusIcon = offline
+    ? CloudOff
+    : presentation.state === 'Review'
+      ? undefined
+      : (statusIcons[presentation.state] ?? CircleDashed)
   const showingTime =
     !offline && presentation.state !== 'Working' && presentation.compactLabel !== presentation.state
   const statusDetail = [
@@ -143,7 +145,7 @@ function TaskRowView({
                   !offline && presentation.state === 'Failed' && 'text-destructive',
                 )}
               >
-                <StatusIcon className="size-3.5" aria-hidden="true" />
+                {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
                 {showingTime && <Clock className="size-3" aria-hidden="true" />}
                 {compactStatus}
               </span>
