@@ -38,5 +38,5 @@ Dovo artwork. The system supplies the corner mask and outer tile; there are no b
 corners or transparent margins inside it. Electron-builder compiles `Assets.car`, sets
 `CFBundleIconName`, and generates an ICNS fallback for older macOS versions.
 
-The exporter refreshes its artwork from `dovo-icon-v2.png`. The existing desktop PNG remains
-the Windows/Linux icon. Packaging on macOS requires Xcode with Icon Composer support.
+The exporter refreshes its artwork from `dovo-icon-v2.png`. The existing desktop PNG remains the
+Windows/Linux icon. Packaging on macOS requires Xcode with Icon Composer support.
