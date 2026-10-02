@@ -17,7 +17,10 @@ function setup() {
   const send = vi
     .fn<(value: RelayNotification) => Promise<{ delivered: boolean; invalidToken: boolean }>>()
     .mockResolvedValue({ delivered: true, invalidToken: false })
-  let input: { id: string; preview: string } | undefined
+  let input:
+    | { id: string; preview: string; type?: 'question' | 'approval' }
+    | Array<{ id: string; preview: string; type?: 'question' | 'approval' }>
+    | undefined
   const service = new PushNotifications(db, store, devices, () => input, { send })
   cleanups.push(async () => {
     await service.dispose()
@@ -174,4 +177,58 @@ it('does not deliver an input preview after the question was answered during a r
   expect(f.send).toHaveBeenCalledTimes(1)
   expect(f.db.prepare('SELECT id FROM push_outbox').all()).toEqual([])
   await reopened.dispose()
+})
+
+it('notifies each concurrent request with its exact identity and drops replaced requests on retry', async () => {
+  const f = setup()
+  await f.service.flush()
+  f.input([
+    { id: 'first', preview: 'First', type: 'question' },
+    { id: 'second', preview: 'Second', type: 'question' },
+  ])
+  await f.service.flush()
+  expect(f.send.mock.calls.map(([message]) => message.data.inputId)).toEqual(['first', 'second'])
+  expect(f.send.mock.calls[1][0].data.inputType).toBe('question')
+  f.send.mockRejectedValueOnce(new Error('Offline relay'))
+  f.input([
+    { id: 'second', preview: 'Second', type: 'question' },
+    { id: 'old', preview: 'Old', type: 'question' },
+  ])
+  await f.service.flush()
+  f.input([
+    { id: 'second', preview: 'Second', type: 'question' },
+    { id: 'new', preview: 'New', type: 'question' },
+  ])
+  const reopened = new PushNotifications(
+    f.db,
+    f.store,
+    f.devices,
+    () => [
+      { id: 'second', preview: 'Second', type: 'question' },
+      { id: 'new', preview: 'New', type: 'question' },
+    ],
+    { send: f.send },
+  )
+  f.db.prepare('UPDATE push_outbox SET next=0').run()
+  await reopened.flush()
+  expect(f.send.mock.calls.map(([message]) => message.data.inputId)).toEqual([
+    'first',
+    'second',
+    'old',
+    'new',
+  ])
+  expect(f.db.prepare('SELECT id FROM push_outbox').all()).toEqual([])
+  await reopened.dispose()
+})
+
+it('delivers questions already pending on the first capture without replaying them later', async () => {
+  const f = setup()
+  f.input({ id: 'first-question', preview: 'Choose', type: 'question' })
+  await f.service.flush()
+  await f.service.flush()
+  expect(f.send).toHaveBeenCalledOnce()
+  expect(f.send.mock.calls[0][0].data).toMatchObject({
+    inputId: 'first-question',
+    inputType: 'question',
+  })
 })

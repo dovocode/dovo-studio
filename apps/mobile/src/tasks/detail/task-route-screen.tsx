@@ -19,7 +19,7 @@ function backToTasks() {
 }
 
 export function TaskRouteScreen() {
-  const params = useLocalSearchParams<{ runtimeId: string; taskId: string }>()
+  const params = useLocalSearchParams<{ runtimeId: string; taskId: string; questionId?: string }>()
   const { ready, activeId, profiles, snapshot, refresh, connected } = useRuntime()
   const { focused, navigate } = useNavigation()
   const { busy, error, act } = useAction()
@@ -31,7 +31,14 @@ export function TaskRouteScreen() {
       ? snapshot?.workspace.tasks.find((task) => task.id === params.taskId)
       : undefined
   if (task)
-    return <TaskDetail key={`${params.runtimeId}:${task.id}`} task={task} onBack={backToTasks} />
+    return (
+      <TaskDetail
+        key={`${params.runtimeId}:${task.id}:${params.questionId ?? ''}`}
+        task={task}
+        questionId={params.questionId}
+        onBack={backToTasks}
+      />
+    )
   return (
     <View style={styles.screen}>
       <ScreenHeader

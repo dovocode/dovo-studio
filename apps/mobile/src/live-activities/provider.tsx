@@ -22,6 +22,8 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
   const [supported] = useApplicationState(
     () => Platform.OS === 'ios' && !!requireOptionalNativeModule('ExpoWidgets'),
   )
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const refresh = useRef<() => void>(() => {})
   const latest = useRef({
     overviews,
     readRuntimeEffect,
@@ -32,6 +34,14 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
     readRuntimeEffect,
     ready,
   }
+  useEffect(() => {
+    // Coalesce streamed workspace updates while reacting promptly to status and input changes.
+    if (refreshTimer.current) return
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = undefined
+      refresh.current()
+    }, 250)
+  }, [overviews, ready, enabled])
   useEffect(() => {
     if (!supported) return
     const commands = clientTaskScope()
@@ -74,11 +84,16 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
             retryAfter = Date.now() + 60_000
           },
         })
+        refresh.current = polling.refresh
+        polling.refresh()
         yield* Effect.addFinalizer(() => Effect.promise(() => polling.stop()))
         yield* Effect.acquireRelease(
           Effect.sync(() =>
             AppState.addEventListener('change', (state) => {
-              if (state === 'active') polling.refresh()
+              if (state === 'active') {
+                retryAfter = 0
+                polling.refresh()
+              }
             }),
           ),
           (subscription) => Effect.sync(() => subscription.remove()),
@@ -96,6 +111,9 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
     void commands.run(program)
     return () => {
       disposed = true
+      clearTimeout(refreshTimer.current)
+      refreshTimer.current = undefined
+      refresh.current = () => {}
       void commands.stop()
     }
   }, [supported])

@@ -59,10 +59,10 @@ The runtime registers push tokens only for authenticated paired devices. Tokens 
 stay in its private database and are excluded from workspace snapshots and activity logs. Revoking a
 paired device stops future delivery. Delivery records survive runtime restarts and retry temporary
 relay failures with bounded backoff for up to one hour. Invalid device tokens are removed and the
-phone registers a replacement on its next connection. Pending input notifications are discarded if
-the request has already been answered. Notification delivery is best effort: provider outages, OS
-settings, and relay restarts can affect timing. The relay's retry cache is in memory; runtime
-records are durable.
+phone registers a replacement on its next connection. Each pending request carries its own identity.
+Pending input notifications are discarded if the exact request has already been answered or
+replaced. Notification delivery is best effort: provider outages, OS settings, and relay restarts
+can affect timing. The relay's retry cache is in memory; runtime records are durable.
 
 ## Build and enable the mobile app
 
@@ -84,10 +84,18 @@ Both platforms use native device push tokens, not Expo's hosted push relay. In t
 **Settings → App & updates → Push notifications** and enable Task notifications. The app requests
 system permission and registers with its connected computers. It sends completion, failure,
 input-request, and PR-check notifications with a task title and short preview. Tapping a
-notification opens the originating thread and computer, including from cold launch. Permission is
-opt-in; the app suppresses foreground banners and sound. Turning the setting off unregisters it from
-reachable runtimes; disconnected runtimes can only unregister when they reconnect. Revoking the
-device on the runtime also stops delivery.
+notification opens the originating thread and computer, including from cold launch. Question
+notifications include an **Answer question** action that opens the full form for that exact request,
+including all choices and fields, alongside its thread, computer, and project. An answered request
+is shown as no longer pending instead of silently opening another question. Permission is opt-in;
+input requests show foreground banners and sound, while other task events remain quiet in the
+foreground. Turning the setting off unregisters it from reachable runtimes; disconnected runtimes
+can only unregister when they reconnect. Revoking the device on the runtime also stops delivery.
+
+Push-capable iOS builds enable Live Activity push tokens and frequent updates by default. Set
+`DOVO_LIVE_ACTIVITY_PUSH=0` to opt out, or `DOVO_PUSH_NOTIFICATIONS=0` for a local-only build.
+Foreground workspace changes update Live Activities promptly; background updates still need the
+runtime’s existing APNs configuration.
 
 Live Activities retain their existing APNs configuration; this relay adds ordinary iOS and Android
 notifications.

@@ -1,7 +1,7 @@
 /** Task identity includes its owning computer; task IDs can collide across runtimes. */
-export function taskHref(runtimeId: string, taskId: string) {
+export function taskHref(runtimeId: string, taskId: string, questionId?: string) {
   return {
     pathname: '/(tasks)/thread/[runtimeId]/[taskId]' as const,
-    params: { runtimeId, taskId },
+    params: { runtimeId, taskId, ...(questionId ? { questionId } : {}) },
   }
 }

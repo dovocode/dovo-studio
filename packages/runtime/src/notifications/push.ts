@@ -27,6 +27,7 @@ const stateSchema = mutableStruct({
   pull: Schema.Number,
 })
 type State = Schema.Schema.Type<typeof stateSchema>
+type PendingInput = { id: string; preview: string; type?: 'question' | 'approval' }
 type Relay = {
   error?: string
   send?: (message: RelayNotification) => Promise<{ delivered: boolean; invalidToken: boolean }>
@@ -76,7 +77,7 @@ export class PushNotifications {
     private db: Database.Database,
     private store: WorkspaceStore,
     private devices: Devices,
-    private input: (taskId: string) => { id: string; preview: string } | undefined,
+    private input: (taskId: string) => PendingInput | PendingInput[] | undefined,
     private relay: Relay = notificationRelay(),
   ) {
     this.error = relay.error ?? null
@@ -117,13 +118,21 @@ export class PushNotifications {
       this.db.prepare('DELETE FROM push_outbox WHERE device_id=?').run(deviceId)
     })()
   }
+  private inputs(taskId: string): PendingInput[] {
+    const value = this.input(taskId)
+    return value ? (Array.isArray(value) ? value : [value]) : []
+  }
   private state(task: Task): State {
     const turn = task.turns?.at(-1)
     return {
       running: task.status === 'running',
       failed: task.status === 'failed',
       cancelled: turn?.status === 'cancelled',
-      input: this.input(task.id)?.id ?? '',
+      input: JSON.stringify(
+        this.inputs(task.id)
+          .map((entry) => entry.id)
+          .sort(),
+      ),
       turn: turn?.id ?? '',
       checks: task.pullStatus?.checks ?? '',
       pull: task.pullStatus?.number ?? 0,
@@ -165,25 +174,36 @@ export class PushNotifications {
         this.db
           .prepare('INSERT OR REPLACE INTO push_states VALUES (?,?)')
           .run(task.id, JSON.stringify(current))
-        if (!before || task.example || task.archived) continue
-        const kinds: RelayNotification['data']['kind'][] = []
-        if (current.input && current.input !== before.input) kinds.push('input')
-        else if (before.running && !current.running && !current.cancelled)
-          kinds.push(current.failed ? 'failed' : 'done')
+        if (task.example || task.archived) continue
+        const kinds: Array<{ kind: RelayNotification['data']['kind']; input?: PendingInput }> = []
+        let previousInputs: string[]
+        try {
+          const parsed: unknown = JSON.parse(before?.input ?? '[]')
+          previousInputs = Array.isArray(parsed)
+            ? parsed.filter((id): id is string => typeof id === 'string')
+            : []
+        } catch {
+          previousInputs = before?.input ? [before.input] : []
+        }
+        const inputs = this.inputs(task.id)
+        for (const input of inputs)
+          if (!previousInputs.includes(input.id)) kinds.push({ kind: 'input', input })
+        if (!inputs.length && before?.running && !current.running && !current.cancelled)
+          kinds.push({ kind: current.failed ? 'failed' : 'done' })
         if (
-          before.checks === 'pending' &&
+          before?.checks === 'pending' &&
           current.pull === before.pull &&
           (current.checks === 'passed' || current.checks === 'failed')
         )
-          kinds.push(current.checks === 'passed' ? 'checks-passed' : 'checks-failed')
-        for (const kind of kinds)
+          kinds.push({ kind: current.checks === 'passed' ? 'checks-passed' : 'checks-failed' })
+        for (const { kind, input } of kinds)
           for (const registration of registrations) {
             const id = createHash('sha256')
-              .update(JSON.stringify([registration.deviceId, task.id, kind, current]))
+              .update(JSON.stringify([registration.deviceId, task.id, kind, current, input?.id]))
               .digest('hex')
             const detail =
               kind === 'input'
-                ? this.input(task.id)?.preview
+                ? input?.preview
                 : [...task.messages].reverse().find((message) => message.role === 'assistant')?.text
             const label = {
               input: 'Needs your input',
@@ -197,7 +217,21 @@ export class PushNotifications {
               id,
               title: `${task.title || 'Dovo task'} · ${label}`.slice(0, 160),
               body: preview(detail ?? '') || label,
-              data: { runtimeId: registration.value.runtimeId, taskId: task.id, kind },
+              data: {
+                runtimeId: registration.value.runtimeId,
+                taskId: task.id,
+                kind,
+                ...(kind === 'input'
+                  ? {
+                      inputId: input?.id,
+                      inputType: input?.type,
+                    }
+                  : {}),
+                project: this.store
+                  .get()
+                  .repositories.find((repo) => repo.id === task.repositoryId)
+                  ?.name.slice(0, 200),
+              },
             }
             this.db
               .prepare('INSERT OR IGNORE INTO push_outbox VALUES (?,?,?,?,0,0)')
@@ -259,7 +293,12 @@ export class PushNotifications {
         ).token !== value.token
       )
         continue
-      if (value.data.kind === 'input' && !this.input(value.data.taskId)) {
+      if (
+        value.data.kind === 'input' &&
+        (!this.inputs(value.data.taskId).length ||
+          (value.data.inputId &&
+            !this.inputs(value.data.taskId).some((input) => input.id === value.data.inputId)))
+      ) {
         this.db.prepare('DELETE FROM push_outbox WHERE id=?').run(entry.id)
         continue
       }

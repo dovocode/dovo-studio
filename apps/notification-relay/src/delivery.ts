@@ -4,6 +4,23 @@ import { applicationDefault, initializeApp } from 'firebase-admin/app'
 import { getMessaging } from 'firebase-admin/messaging'
 
 export type DeliveryResult = { delivered: boolean; invalidToken: boolean }
+export function appleNotificationPayload(value: RelayNotification) {
+  return {
+    aps: {
+      alert: {
+        title: value.title,
+        body: value.body,
+        ...(value.data.project ? { subtitle: value.data.project } : {}),
+      },
+      sound: 'default',
+      ...(value.data.kind === 'input' && value.data.inputType === 'question'
+        ? { category: 'dovo-question' }
+        : {}),
+      'thread-id': `${value.data.runtimeId}:${value.data.taskId}`,
+    },
+    ...value.data,
+  }
+}
 export function createDelivery(env = process.env) {
   const config = apnsConfig(env)
   const apple = config
@@ -25,14 +42,7 @@ export function createDelivery(env = process.env) {
         if (!apple) throw new Error('Apple push is not configured on this relay')
         const result = await apple[value.environment].sendAlert(
           value.token,
-          {
-            aps: {
-              alert: { title: value.title, body: value.body },
-              sound: 'default',
-              'thread-id': `${value.data.runtimeId}:${value.data.taskId}`,
-            },
-            ...value.data,
-          },
+          appleNotificationPayload(value),
           value.id,
         )
         if (result.status === 200) return { delivered: true, invalidToken: false }
@@ -49,7 +59,11 @@ export function createDelivery(env = process.env) {
         await firebase.send({
           token: value.token,
           notification: { title: value.title, body: value.body },
-          data: { ...value.data, notificationId: value.id },
+          data: Object.fromEntries(
+            Object.entries({ ...value.data, notificationId: value.id }).filter(
+              (entry): entry is [string, string] => typeof entry[1] === 'string',
+            ),
+          ),
           android: {
             priority: 'high',
             ttl: 3_600_000,

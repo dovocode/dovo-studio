@@ -131,7 +131,8 @@ This setup is deferred until you choose to enable APNs. To enable it later:
 
 1. Create an APNs signing key in your Apple Developer account. Store the `.p8` outside this repo
    with access restricted to the runtime user. Enable Push Notifications for the application ID.
-2. Rebuild the phone app with `DOVO_LIVE_ACTIVITY_PUSH=1` (plus `DOVO_APPLE_TEAM_ID`).
+2. Rebuild the phone app with `DOVO_APPLE_TEAM_ID`. Live Activity push and frequent updates are
+   enabled by default; `DOVO_LIVE_ACTIVITY_PUSH=0` opts out.
 3. Set these variables in **each task-host runtime's environment** before starting/restarting it:
 
    ```sh

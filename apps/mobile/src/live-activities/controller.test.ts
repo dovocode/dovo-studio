@@ -238,3 +238,64 @@ it('updates a live thread when its current action or queued work changes', async
   )
   await controller.dispose()
 })
+
+it('keeps updating and ending locally when the background registration fails', async () => {
+  const onError = vi.fn<(message: string) => void>()
+  const failedRead: ReturnType<typeof useRuntime>['readRuntimeEffect'] = () =>
+    Effect.fail(new Error('Offline'))
+  native.instance.getPushToken.mockResolvedValueOnce('token')
+  const overview = source()
+  const controller = await runClientEffect(createActivityController(onError))
+  await runClientEffect(controller.sync([overview], failedRead, true))
+  await vi.waitFor(() => expect(onError).toHaveBeenCalled())
+  overview.snapshot!.workspace.tasks[0].activity = 'New action'
+  await runClientEffect(controller.sync([overview], failedRead, true))
+  expect(native.instance.update).toHaveBeenLastCalledWith(
+    expect.objectContaining({ activity: 'New action' }),
+    expect.any(Date),
+  )
+  overview.snapshot!.workspace.tasks[0].status = 'review'
+  await runClientEffect(controller.sync([overview], failedRead, true))
+  expect(native.instance.end).toHaveBeenCalledOnce()
+  await controller.dispose()
+})
+
+it('retries registration when the computer is not configured yet', async () => {
+  vi.spyOn(Date, 'now').mockReturnValue(1000)
+  native.instance.getPushToken.mockResolvedValue('token')
+  const read = vi.fn<() => void>()
+  const reader: ReturnType<typeof useRuntime>['readRuntimeEffect'] = (
+    _profile,
+    _path,
+    _input,
+    schema,
+  ) =>
+    Effect.sync(() => {
+      read()
+      return decode(schema, { configured: false, environment: 'sandbox', error: null })
+    })
+  const controller = await runClientEffect(createActivityController(vi.fn()))
+  await runClientEffect(controller.sync([source()], reader, true))
+  await vi.waitFor(() => expect(read).toHaveBeenCalledOnce())
+  vi.spyOn(Date, 'now').mockReturnValue(62000)
+  await runClientEffect(controller.sync([source()], reader, true))
+  await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+  await controller.dispose()
+  native.instance.getPushToken.mockResolvedValue(null)
+  vi.restoreAllMocks()
+})
+
+it('does not block foreground progress behind a slow token registration', async () => {
+  native.instance.getPushToken.mockResolvedValueOnce('token')
+  const reader: ReturnType<typeof useRuntime>['readRuntimeEffect'] = () => Effect.never
+  const controller = await runClientEffect(createActivityController(vi.fn()))
+  const overview = source()
+  await runClientEffect(controller.sync([overview], reader, true))
+  overview.snapshot!.workspace.tasks[0].activity = 'Still updating'
+  await runClientEffect(controller.sync([overview], reader, true))
+  expect(native.instance.update).toHaveBeenLastCalledWith(
+    expect.objectContaining({ activity: 'Still updating' }),
+    expect.any(Date),
+  )
+  await controller.dispose()
+})

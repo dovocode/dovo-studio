@@ -1,6 +1,7 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config'
 export default ({ config }: ConfigContext): ExpoConfig => {
-  const push = process.env.DOVO_LIVE_ACTIVITY_PUSH === '1'
+  const push =
+    process.env.DOVO_LIVE_ACTIVITY_PUSH !== '0' && process.env.DOVO_PUSH_NOTIFICATIONS !== '0'
   const notifications = process.env.DOVO_PUSH_NOTIFICATIONS !== '0'
   return {
     ...config,
@@ -25,7 +26,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ['./plugins/with-live-activity-push.ts', { enabled: push || notifications }],
       ...(config.plugins ?? []).map((plugin): NonNullable<ExpoConfig['plugins']>[number] =>
         Array.isArray(plugin) && plugin[0] === 'expo-widgets'
-          ? ['expo-widgets', { ...plugin[1], enablePushNotifications: push }]
+          ? ['expo-widgets', { ...plugin[1], enablePushNotifications: push, frequentUpdates: push }]
           : plugin,
       ),
     ],

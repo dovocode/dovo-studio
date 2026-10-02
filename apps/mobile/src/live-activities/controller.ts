@@ -38,6 +38,7 @@ export function createActivityController(onError: (message: string) => void) {
     const records = new Map(saved.records.map((record) => [record.key, record]))
     const fingerprints = new Map<string, string>()
     const registered = new Map<string, string>()
+    const registering = new Map<string, string>()
     const retryAt = new Map<string, number>()
     const listeners = new Map<
       string,
@@ -63,24 +64,33 @@ export function createActivityController(onError: (message: string) => void) {
           TaskActivity.getInstances().map((instance) => [instance.getId(), instance]),
         )
         const remove = (record: Record) => {
-          return mobileWorkflow(function* () {
+          return Effect.sync(() => {
             const source = overviews.find((entry) => entry.profile.id === record.runtimeId)
             if (source?.connected)
-              yield* read(
-                source.profile,
-                '/api/live-activities/remove',
-                {
-                  activityId: record.id,
-                },
-                mutableStruct({
-                  ok: Schema.Boolean,
-                }),
+              void commands.run(
+                read(
+                  source.profile,
+                  '/api/live-activities/remove',
+                  { activityId: record.id },
+                  mutableStruct({ ok: Schema.Boolean }),
+                ).pipe(
+                  Effect.catchAll(() =>
+                    Effect.sync(() => {
+                      if (!disposed)
+                        onError(
+                          'Could not remove the background registration. Local Live Activity updates remain available.',
+                        )
+                    }),
+                  ),
+                ),
               )
             listeners.get(record.id)?.remove()
             listeners.delete(record.id)
             records.delete(record.key)
             registered.delete(record.id)
+            registering.delete(record.id)
             fingerprints.delete(record.id)
+            retryAt.delete(record.id)
           })
         }
         for (const record of records.values()) {
@@ -181,6 +191,7 @@ export function createActivityController(onError: (message: string) => void) {
                     (retryAt.get(id) ?? 0) > Date.now()
                   )
                     return
+                  registering.set(id, token)
                   retryAt.set(id, Date.now() + 60_000)
                   const status = yield* read(
                     source.profile,
@@ -193,7 +204,8 @@ export function createActivityController(onError: (message: string) => void) {
                     },
                     liveActivityStatusSchema,
                   )
-                  registered.set(id, token)
+                  if (disposed || !records.has(key) || registering.get(id) !== token) return
+                  if (status.configured && !status.error) registered.set(id, token)
                   if (!status.configured)
                     onError(
                       'Background Live Activities need APNs setup on the task’s computer. See docs/releases-and-updates.md.',
@@ -201,30 +213,31 @@ export function createActivityController(onError: (message: string) => void) {
                   else if (status.error) onError(status.error)
                 })
               }
+              const scheduleRegistration = (token: string) => {
+                void commands.run(
+                  register(token).pipe(
+                    Effect.catchAll(() =>
+                      Effect.sync(() => {
+                        if (!disposed)
+                          onError(
+                            'Could not register background updates. Reconnect to the task’s computer.',
+                          )
+                      }),
+                    ),
+                  ),
+                )
+              }
               if (!listeners.has(id))
                 listeners.set(
                   id,
                   instance.addPushTokenListener((event) => {
                     registered.delete(id)
                     retryAt.delete(id)
-                    void commands.run(
-                      permit
-                        .withPermits(1)(register(event.pushToken))
-                        .pipe(
-                          Effect.catchAll(() =>
-                            Effect.sync(() => {
-                              if (!disposed)
-                                onError(
-                                  'Could not register background updates. Reconnect to the task’s computer.',
-                                )
-                            }),
-                          ),
-                        ),
-                    )
+                    scheduleRegistration(event.pushToken)
                   }),
                 )
               const token = yield* nativeEffect(() => instance.getPushToken())
-              if (token) yield* register(token)
+              if (token) scheduleRegistration(token)
             }
           }
         yield* nativeEffect(() => persist())

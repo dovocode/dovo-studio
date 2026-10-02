@@ -27,6 +27,9 @@ export const relayNotificationSchema = mutableStruct({
     runtimeId: text(200),
     taskId: text(200),
     kind: Schema.Literal('input', 'done', 'failed', 'checks-passed', 'checks-failed'),
+    inputId: Schema.optional(text(200)),
+    inputType: Schema.optional(Schema.Literal('question', 'approval')),
+    project: Schema.optional(maxValue(Schema.String, 200)),
   }),
 })
 export const relayResultSchema = mutableStruct({

@@ -52,7 +52,15 @@ import { SideQuestion } from '../conversation/components/side-question'
 import { ProjectInstructions } from './project-instructions'
 import { ReviewFindings } from '../conversation/components/review-findings'
 import { randomUUID } from 'expo-crypto'
-export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void }) {
+export function TaskDetail({
+  task,
+  onBack,
+  questionId,
+}: {
+  task: Task
+  onBack: () => void
+  questionId?: string
+}) {
   const { profile, snapshot, connected, refresh, readCache } = useRuntime()
   const { focused } = useNavigation()
   useEffect(() => {
@@ -108,10 +116,19 @@ export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void })
     <TaskDetailContent
       task={!loaded && available ? cachedThread(task, cached.task) : task}
       onBack={onBack}
+      questionId={questionId}
     />
   )
 }
-function TaskDetailContent({ task, onBack }: { task: Task; onBack: () => void }) {
+function TaskDetailContent({
+  task,
+  onBack,
+  questionId,
+}: {
+  task: Task
+  onBack: () => void
+  questionId?: string
+}) {
   const { focused, navigate } = useNavigation()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
@@ -531,7 +548,7 @@ function TaskDetailContent({ task, onBack }: { task: Task; onBack: () => void })
               <Text style={[styles.muted, { flex: 1 }]}>Starting agent…</Text>
             </View>
           ) : null}
-          <TaskQuestions taskId={task.id} />
+          <TaskQuestions taskId={task.id} questionId={questionId} />
           {(budget.tokenExceeded || budget.timeExceeded) && (
             <Text
               accessibilityRole="alert"

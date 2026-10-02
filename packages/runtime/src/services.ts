@@ -119,10 +119,27 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       questions.list().some((item) => item.taskId === id),
   )
   const pushNotifications = new PushNotifications(db, store, devices, (id) => {
-    const question = questions.list().find((item) => item.taskId === id)
-    if (question) return { id: question.id, preview: question.prompt.title }
-    const approval = approvals.list().find((item) => item.taskId === id)
-    return approval ? { id: approval.id, preview: approval.title } : undefined
+    return [
+      ...questions
+        .list()
+        .filter((item) => item.taskId === id)
+        .map((question) => ({
+          id: question.id,
+          type: 'question' as const,
+          preview: [
+            question.prompt.title,
+            ...question.prompt.questions.filter((q) => !q.secret).map((q) => q.question),
+          ].join(' · '),
+        })),
+      ...approvals
+        .list()
+        .filter((item) => item.taskId === id)
+        .map((approval) => ({
+          id: approval.id,
+          type: 'approval' as const,
+          preview: approval.title,
+        })),
+    ]
   })
   return {
     mutations: new MutationReceipts(db),

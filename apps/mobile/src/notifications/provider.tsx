@@ -2,26 +2,15 @@ import { createContext, useContext, useEffect, useRef, type ReactNode } from 're
 import { AppState, Platform } from 'react-native'
 import { requireOptionalNativeModule } from 'expo'
 import Constants from 'expo-constants'
+import type { NotificationResponse } from 'expo-notifications'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { router } from 'expo-router'
-import {
-  pushStatusSchema,
-  responses,
-  decodeResult,
-  mutableStruct,
-  minValue,
-  maxValue,
-} from '@dovo/protocol'
-import { Schema } from 'effect'
+import { pushStatusSchema, responses } from '@dovo/protocol'
+import { notificationTarget, notificationHref, type NotificationTarget } from './target'
 import { useRuntime } from '../runtime/connection/provider'
 import { useApplicationState } from '../runtime/state/application-state'
-import { taskHref } from '../shell/task-route'
 
 const preferenceKey = 'dovo.push-notifications.enabled'
-const targetSchema = mutableStruct({
-  runtimeId: maxValue(minValue(Schema.String, 1), 200),
-  taskId: maxValue(minValue(Schema.String, 1), 200),
-})
 const Context = createContext({
   enabled: false,
   supported: false,
@@ -32,13 +21,13 @@ const Context = createContext({
 export const usePushNotifications = () => useContext(Context)
 export function PushNotificationProvider({ children }: { children: ReactNode }) {
   const runtime = useRuntime()
-  const deferredTarget = useRef<{ runtimeId: string; taskId: string } | null>(null)
+  const deferredTarget = useRef<NotificationTarget | null>(null)
   useEffect(() => {
     const target = deferredTarget.current
     if (!target || !runtime.ready) return
     deferredTarget.current = null
     if (runtime.profiles.some((profile) => profile.id === target.runtimeId))
-      router.push(taskHref(target.runtimeId, target.taskId))
+      router.push(notificationHref(target))
   }, [runtime.ready, runtime.profiles])
   const latest = useRef(runtime)
   latest.current = runtime
@@ -62,37 +51,44 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
     const initialize = async () => {
       const Notifications = await import('expo-notifications')
       if (disposed) return
+      await Notifications.setNotificationCategoryAsync('dovo-question', [
+        {
+          identifier: 'answer-question',
+          buttonTitle: 'Answer question',
+          options: { opensAppToForeground: true },
+        },
+      ])
+      if (disposed) return
       Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldPlaySound: false,
+        handleNotification: async (notification) => ({
+          shouldPlaySound: notification.request.content.data?.kind === 'input',
           shouldSetBadge: false,
-          shouldShowBanner: false,
+          shouldShowBanner: notification.request.content.data?.kind === 'input',
           shouldShowList: true,
         }),
       })
       const open = (data: unknown) => {
-        const target = decodeResult(targetSchema, data)
-        if (!target.success) return
+        const target = notificationTarget(data)
+        if (!target) return
         if (!latest.current.ready) {
-          deferredTarget.current = target.data
+          deferredTarget.current = target
           return
         }
-        if (!latest.current.profiles.some((profile) => profile.id === target.data.runtimeId)) return
-        router.push(taskHref(target.data.runtimeId, target.data.taskId))
+        if (!latest.current.profiles.some((profile) => profile.id === target.runtimeId)) return
+        router.push(notificationHref(target))
       }
-      const response = await Notifications.getLastNotificationResponseAsync()
-      if (response) {
+      let lastOpened: string | undefined
+      const handleResponse = (response: NotificationResponse) => {
+        if (disposed || lastOpened === response.notification.request.identifier) return
+        lastOpened = response.notification.request.identifier
         open(response.notification.request.content.data)
-        await Notifications.clearLastNotificationResponseAsync()
+        void Notifications.clearLastNotificationResponseAsync().catch(() => {
+          if (!disposed) setError('Could not clear the opened notification')
+        })
       }
-      subscriptions.push(
-        Notifications.addNotificationResponseReceivedListener((response) => {
-          open(response.notification.request.content.data)
-          void Notifications.clearLastNotificationResponseAsync().catch(() => {
-            if (!disposed) setError('Could not clear the opened notification')
-          })
-        }),
-      )
+      subscriptions.push(Notifications.addNotificationResponseReceivedListener(handleResponse))
+      const response = await Notifications.getLastNotificationResponseAsync()
+      if (response) handleResponse(response)
       const sync = () => {
         if (syncPending) return syncPending
         syncPending = (async () => {
