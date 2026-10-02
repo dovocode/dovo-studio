@@ -66,7 +66,10 @@ it('captures each turn against dirty starting contents and preserves HEAD, stagi
 it('lists every changed file while keeping inline text and on-demand previews bounded', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
-  const git = new GitService(),
+  let blobReads = 0
+  const git = new GitService(undefined, (_cwd, args, result) => {
+      if (!result && args[1] === 'cat-file' && args[2] === 'blob') blobReads++
+    }),
     cwd = f.directory
   const before = await git.snapshot(cwd, 'refs/dovo/checkpoints/bounded/before')
   await Promise.all(
@@ -85,6 +88,8 @@ it('lists every changed file while keeping inline text and on-demand previews bo
   await git.command(cwd, ['worktree', 'add', '--detach', 'module', 'HEAD'])
   const after = await git.snapshot(cwd, 'refs/dovo/checkpoints/bounded/after')
   const result = await git.checkpointChanges(cwd, before, after)
+  // The 205 identical text files share one read; the binary needs one, and later previews defer.
+  expect(blobReads).toBe(2)
   expect(result.omitted).toEqual([])
   expect(result.files).toHaveLength(209)
   expect(result.files.filter((file) => !file.preview)).toHaveLength(200)

@@ -596,6 +596,25 @@ export class GitService {
     // These limits bound embedded previews, never the list of saved files.
     let remaining = 1024 * 1024
     let previews = 0
+    // A blob is immutable. Identical files and unchanged sides need only one Git read.
+    const blobs = new Map<string, string>()
+    let cachedBytes = 0
+    const contentOf = async (hash: string) => {
+      const saved = blobs.get(hash)
+      if (saved !== undefined) return saved
+      const content = await this.command(cwd, ['cat-file', 'blob', hash])
+      if (content.includes('\0') || content.includes('\ufffd')) {
+        // Keep only the classification marker, never hundreds of binary bodies.
+        blobs.set(hash, '\0')
+      } else {
+        const bytes = Buffer.byteLength(content)
+        if (cachedBytes + bytes <= 1024 * 1024) {
+          cachedBytes += bytes
+          blobs.set(hash, content)
+        }
+      }
+      return content
+    }
     for (const name of names) {
       const sides = { before: trees[0].get(name), after: trees[1].get(name) }
       const entries = [sides.before, sides.after].filter((side) => side !== undefined)
@@ -613,7 +632,7 @@ export class GitService {
       const contents: string[] = []
       if (!kind) {
         for (const side of [sides.before, sides.after]) {
-          const content = side ? await this.command(cwd, ['cat-file', 'blob', side.hash]) : ''
+          const content = side ? await contentOf(side.hash) : ''
           if (content.includes('\0') || content.includes('\ufffd')) {
             kind = /\.(png|jpe?g|webp|gif|avif|tiff?|heic|ico)$/i.test(name) ? 'image' : 'binary'
             break
