@@ -26,7 +26,7 @@ export const Button = ({variant,size,children,...props}) => React.createElement(
 export const Input = props => React.createElement('input',props);
 export const ChoicePicker = ({onValueChange,children,...props})=>React.createElement('select',{...props,onChange:event=>onValueChange(event.target.value)},children);`,
   '@dovo/extension-scm/projects': `export const ProjectsMenu = () => null;`,
-  './task-row': `import React from 'react'; export const TaskRow = ({task,onSelect,selected,disabled}) => React.createElement('button',{'aria-current':selected?'true':undefined,disabled,onClick:onSelect},task.title);`,
+  './task-row': `import React from 'react'; export const TaskRow = ({task,onSelect,selected,multiSelected,disabled}) => React.createElement('button',{'aria-current':selected?'true':undefined,'data-multi-selected':multiSelected?'true':'false',disabled,onClick:onSelect},task.title);`,
   '../detail/task-context-menu': `import React from 'react';import * as Menu from '@radix-ui/react-context-menu';export const TaskContextMenu = ({children,selectionMenu})=>React.createElement(Menu.Root,null,React.createElement(Menu.Trigger,{asChild:true},React.createElement('div',null,children)),React.createElement(Menu.Portal,null,React.createElement(Menu.Content,null,selectionMenu)));`,
 }
 const built = await build({
@@ -73,9 +73,13 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('button', { name: 'A', exact: true }).click()
   await page.getByRole('button', { name: 'B', exact: true }).click({ modifiers: ['Meta'] })
-  await page.getByText('2 selected', { exact: true }).waitFor()
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-multi-selected=true]').length === 2,
+  )
   await page.getByRole('button', { name: 'C', exact: true }).click({ modifiers: ['Meta', 'Shift'] })
-  await page.getByText('3 selected', { exact: true }).waitFor()
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-multi-selected=true]').length === 3,
+  )
   await page.getByRole('button', { name: 'B', exact: true }).click({ button: 'right' })
   await page.getByText('3 threads selected', { exact: true }).waitFor()
   for (const name of [
@@ -105,7 +109,6 @@ try {
     ['Mark as unread', '/api/tasks/viewed'],
     ['Delete', '/api/tasks/lifecycle'],
   ]) {
-    await page.getByRole('button', { name: 'Select tasks', exact: true }).waitFor()
     await page.evaluate(() => {
       window.requests = []
     })
@@ -124,6 +127,27 @@ try {
     )
       throw new Error(`${name}: ${JSON.stringify(batch)}`)
   }
+  await page.getByRole('button', { name: 'A', exact: true }).click()
+  await page.getByRole('button', { name: 'B', exact: true }).click({ modifiers: ['Meta'] })
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-multi-selected=true]').length === 2,
+  )
+  await page.getByRole('button', { name: 'C', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-multi-selected=true]').length === 0,
+  )
+  await page.getByRole('button', { name: 'A', exact: true }).click({ modifiers: ['Shift'] })
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-multi-selected=true]').length === 3,
+  )
+  await page.getByRole('button', { name: 'A', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-multi-selected=true]').length === 0,
+  )
+  if (await page.getByRole('button', { name: 'Select tasks', exact: true }).count())
+    throw new Error('The explicit selection-mode icon must be removed.')
+  if (await page.getByRole('button', { name: 'Archive', exact: true }).count())
+    throw new Error('Bulk actions must stay inside the context menu.')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Modifier and range selection, right-click retention, all six bulk actions and their requests for all selected threads passed.',

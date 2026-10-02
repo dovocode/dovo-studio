@@ -19,7 +19,6 @@ import {
   Search,
   ChevronDown,
   SlidersHorizontal,
-  ListChecks,
   Layers2,
 } from 'lucide-react'
 import { useEffect, useCallback, useDeferredValue, useMemo, useRef } from 'react'
@@ -67,8 +66,8 @@ export function TaskList({
 }) {
   const { appInfo } = useStudioHost()
   const store = useWorkspace()
-  const [selecting, setSelecting] = useApplicationState(false)
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
+  const selecting = selected.size > 0
   const selectionAnchor = useRef<string | null>(null)
   const bulkLock = useRef(false)
   const [bulkBusy, setBulkBusy] = useApplicationState(false)
@@ -217,7 +216,6 @@ export function TaskList({
         })
       }
       setSelected(new Set())
-      setSelecting(false)
       await store.refreshRuntimes()
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : String(cause))
@@ -396,23 +394,6 @@ export function TaskList({
         </header>
       )}
       <div className="shrink-0 space-y-1.5 px-2 pt-3 pb-1">
-        {selecting && (
-          <div className="flex flex-wrap items-center gap-1 text-xs">
-            <span className="mr-1">{selected.size} selected</span>
-            {selectionActions.map(({ id: action, label }) => (
-              <Button
-                key={action}
-                size="sm"
-                variant={action === 'delete' ? 'destructive' : 'outline'}
-                className="h-7 px-2 text-xs"
-                disabled={blockedAction(action)}
-                onClick={() => void bulk(action)}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
-        )}
         <div className="flex items-center gap-1">
           <div className="relative min-w-0 flex-1 text-sm">
             <Search
@@ -420,10 +401,10 @@ export function TaskList({
               className="absolute left-2 top-2 size-3 text-muted-foreground"
             />
             <Input
-              aria-label="Search tasks"
+              aria-label="Search threads"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search tasks"
+              placeholder="Search threads"
               className="h-8 border-transparent bg-transparent pl-7 shadow-none focus:border-border"
             />
           </div>
@@ -434,19 +415,6 @@ export function TaskList({
             onChange={onProjectChange}
             disabled={busy}
           />
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-8 shrink-0"
-            aria-label={selecting ? 'Cancel selection' : 'Select tasks'}
-            aria-pressed={selecting}
-            onClick={() => {
-              setSelecting(!selecting)
-              setSelected(new Set())
-            }}
-          >
-            <ListChecks size={16} aria-hidden="true" />
-          </Button>
           <Button
             size="icon"
             variant="ghost"
@@ -548,7 +516,8 @@ export function TaskList({
                     event.target.closest('button') !== event.currentTarget.querySelector('button')
                   )
                     return
-                  if (!selecting && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+                  if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
+                    setSelected(new Set())
                     selectionAnchor.current = entry.key
                     return
                   }
@@ -559,7 +528,7 @@ export function TaskList({
                     .flatMap((group) => group.tasks.map((item) => item.key))
                   setSelected((current) =>
                     selectTaskKeys(
-                      current.size || selecting || !selectedId ? current : new Set([selectedId]),
+                      current.size || !selectedId ? current : new Set([selectedId]),
                       entry.key,
                       order,
                       selectionAnchor.current,
@@ -568,30 +537,12 @@ export function TaskList({
                     ),
                   )
                   if (!event.shiftKey) selectionAnchor.current = entry.key
-                  setSelecting(true)
                 }}
                 onContextMenuCapture={() => {
                   if (selecting && !selected.has(entry.key) && !bulkBusy)
                     setSelected(new Set([entry.key]))
                 }}
               >
-                {selecting && (
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${entry.task.title}`}
-                    checked={selected.has(entry.key)}
-                    disabled={bulkBusy}
-                    onChange={(event) =>
-                      setSelected((current) => {
-                        const next = new Set(current)
-                        if (event.target.checked) next.add(entry.key)
-                        else next.delete(entry.key)
-                        return next
-                      })
-                    }
-                    className="ml-1 size-4"
-                  />
-                )}
                 <TaskContextMenu
                   entry={entry}
                   selectionMenu={selecting ? selectionMenu : undefined}
