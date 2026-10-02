@@ -152,3 +152,5 @@ export * from './runtime/connection/mutations.js'
 export * from './tasks/task-search.js'
 
 export * from './runtime/cache/thread-cache.js'
+
+export * from './tasks/harness-icon-data.js'

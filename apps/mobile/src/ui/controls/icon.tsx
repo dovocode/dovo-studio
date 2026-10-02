@@ -1,8 +1,47 @@
-import { Platform } from 'react-native'
-import { Text } from '../content/text'
-import { SymbolView } from 'expo-symbols'
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpRight,
+  Check,
+  ChevronLeft,
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  Copy,
+  Ellipsis,
+  Folder,
+  GitBranch,
+  GitPullRequest,
+  Globe,
+  House,
+  Keyboard,
+  Layers,
+  ListFilter,
+  ListTodo,
+  Maximize2,
+  Mic,
+  Minimize2,
+  Monitor,
+  Paperclip,
+  Pencil,
+  Plus,
+  RotateCw,
+  Search,
+  Settings,
+  Square,
+  SquareTerminal,
+  Star,
+  Trash2,
+  Users,
+  Waves,
+  X,
+  Car,
+  MessageCircle,
+  ListPlus,
+  type LucideIcon,
+} from 'lucide-react-native'
 import { colors } from '../theme'
-/** [SF Symbol, text fallback, Material Symbol]. Android draws the Material icon, like its tabs. */
+/** Native toolbar and tab symbols; custom React Native controls use Lucide below. */
 export const symbols = {
   agents: ['person.2', '♙', 'group'],
   expand: ['arrow.up.left.and.arrow.down.right', '⤢', 'open_in_full'],
@@ -47,6 +86,49 @@ export const symbols = {
   more: ['ellipsis', '⋯', 'more_vert'],
 } as const
 export type IconName = keyof typeof symbols
+const icons = {
+  agents: Users,
+  expand: Maximize2,
+  collapse: Minimize2,
+  edit: Pencil,
+  add: Plus,
+  web: Globe,
+  chat: MessageCircle,
+  device: Monitor,
+  terminal: SquareTerminal,
+  changes: GitBranch,
+  refresh: RotateCw,
+  star: Star,
+  moveUp: ArrowUp,
+  moveDown: ArrowDown,
+  trash: Trash2,
+  filters: ListFilter,
+  search: Search,
+  tasks: ListTodo,
+  pulls: GitPullRequest,
+  stack: Layers,
+  jobs: Layers,
+  settings: Settings,
+  send: ArrowUp,
+  queue: ListPlus,
+  steer: ArrowUpRight,
+  stop: Square,
+  close: X,
+  back: ChevronLeft,
+  down: ChevronDown,
+  next: ChevronRight,
+  check: Check,
+  copy: Copy,
+  error: CircleAlert,
+  attach: Paperclip,
+  keyboard: Keyboard,
+  folder: Folder,
+  home: House,
+  microphone: Mic,
+  waveform: Waves,
+  car: Car,
+  more: Ellipsis,
+} satisfies Record<IconName, LucideIcon>
 export function Icon({
   name,
   size = 20,
@@ -56,25 +138,6 @@ export function Icon({
   size?: number
   color?: string
 }) {
-  return Platform.OS === 'ios' ? (
-    <SymbolView
-      name={symbols[name][0]}
-      tintColor={color}
-      size={size}
-      weight="medium"
-      style={{ width: size, height: size }}
-    />
-  ) : Platform.OS === 'android' ? (
-    <SymbolView
-      name={{ android: symbols[name][2] }}
-      tintColor={color}
-      size={size}
-      style={{ width: size, height: size }}
-      fallback={
-        <Text style={{ color, fontSize: size, lineHeight: size + 3 }}>{symbols[name][1]}</Text>
-      }
-    />
-  ) : (
-    <Text style={{ color, fontSize: size, lineHeight: size + 3 }}>{symbols[name][1]}</Text>
-  )
+  const Glyph = icons[name]
+  return <Glyph size={size} color={color} strokeWidth={2} accessible={false} />
 }

@@ -1,6 +1,24 @@
+import { HarnessIcon } from '../../agents/harness-icon'
 import { useCachedModelCatalog } from '../../agents/use-model-catalog'
 import { harnessNames } from '../creation/harness-choices'
 import { pullStackLabel } from '@dovo/protocol'
+import {
+  Archive,
+  CircleCheck,
+  CircleDashed,
+  CircleStop,
+  CircleX,
+  Clock,
+  CloudOff,
+  FilePenLine,
+  GitBranch,
+  GitFork,
+  MessageCircleQuestion,
+  Moon,
+  Pin,
+  Save,
+  type LucideIcon,
+} from 'lucide-react-native'
 import { Icon } from '../../ui/controls/icon'
 import { Image, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
@@ -19,6 +37,20 @@ import { colors, styles } from '../../ui/theme'
 import { showTaskDone, taskRowStatus } from './task-row-status'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
 
+const statusIcons: Record<string, LucideIcon> = {
+  Working: CircleDashed,
+  'Was working': CloudOff,
+  Done: CircleCheck,
+  Finished: CircleCheck,
+  Failed: CircleX,
+  Stopped: CircleStop,
+  Snoozed: Moon,
+  Settled: CircleCheck,
+  Archived: Archive,
+  Draft: FilePenLine,
+  'Needs input': MessageCircleQuestion,
+  'Saving changes': Save,
+}
 export function TaskListRow({
   row,
   runtime,
@@ -77,9 +109,12 @@ export function TaskListRow({
     (task.execution === 'worktree' ? 'Worktree' : repository?.branch) ??
     'Project checkout'
   const icon = projectIcon(repository)
+  const StatusIcon = statusIcons[state]
+  const showingTime = !!age && !working
+
   return (
     <View style={{ marginVertical: 3, borderRadius: 12, backgroundColor: colors.surface }}>
-      {/* Top-aligned so every row's menu sits on its title's first line, whatever the height. */}
+      {/* The menu shares the metadata line, leaving the title its full width. */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
         <Pressable
           testID={testID}
@@ -95,12 +130,20 @@ export function TaskListRow({
             flexDirection: 'row',
             paddingVertical: 12,
             paddingLeft: 12,
-            paddingRight: 4,
+            paddingRight: 12,
             opacity: pressed ? 0.55 : 1,
           })}
         >
           <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                minHeight: 32,
+                paddingRight: car ? 0 : 32,
+              }}
+            >
               <View
                 style={{
                   width: 22,
@@ -123,11 +166,17 @@ export function TaskListRow({
               <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
                 {row.projectName || 'No project'}
               </Text>
-              <Text style={{ color: stateColor, fontSize: 13 }}>
-                {working || row.needsInput || done || failed
-                  ? `${state}${age ? ` ${age}` : ''}`
-                  : age || state}
-              </Text>
+              {task.pinned && <Pin size={12} color={colors.muted} />}
+              {worktree && <GitFork size={12} color={colors.muted} />}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {StatusIcon && <StatusIcon size={14} color={stateColor} />}
+                {showingTime && <Clock size={12} color={stateColor} />}
+                <Text style={{ color: stateColor, fontSize: 13 }}>
+                  {working || row.needsInput || done || failed
+                    ? `${state}${age ? ` ${age}` : ''}`
+                    : age || state}
+                </Text>
+              </View>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
               <Text
@@ -144,8 +193,8 @@ export function TaskListRow({
               </Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <GitBranch size={12} color={colors.muted} />
               <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
-                {task.pinned ? 'Pinned · ' : ''}
                 {branch}
               </Text>
               {showDevice && !car && (
@@ -162,12 +211,17 @@ export function TaskListRow({
                   </Text>
                 </View>
               )}
-              {!!agent && <Text style={[styles.muted, { fontSize: 12 }]}>{providerName}</Text>}
+              {!!agent && (
+                <>
+                  <HarnessIcon provider={agent.provider} />
+                  <Text style={[styles.muted, { fontSize: 12 }]}>{providerName}</Text>
+                </>
+              )}
             </View>
           </View>
         </Pressable>
         {!car && (
-          <View style={{ marginTop: 27 }}>
+          <View style={{ position: 'absolute', right: 0, top: 6 }}>
             <TaskRowMenu
               testID={`${testID} actions`}
               task={task}

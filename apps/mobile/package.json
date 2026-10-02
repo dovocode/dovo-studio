@@ -51,6 +51,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.3",
     "expo-widgets": "~57.0.20",
+    "lucide-react-native": "0.577.0",
     "mdast-util-from-markdown": "^2.0.3",
     "mermaid": "^11.17.2",
     "react": "19.2.3",
@@ -62,6 +63,7 @@
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.2",
+    "react-native-svg": "^15.15.4",
     "react-native-webview": "13.16.1",
     "react-native-worklets": "0.10.1"
   },
