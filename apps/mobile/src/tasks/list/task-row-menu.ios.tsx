@@ -1,4 +1,5 @@
-import { Button, Divider, Host, Image, Menu } from '@expo/ui/swift-ui'
+import { NativeIcon, NativeMenuButton, NativeIconLabel } from '../../ui/controls/native-icon'
+import { Button, Divider, Host, Menu } from '@expo/ui/swift-ui'
 import {
   accessibilityLabel,
   buttonStyle,
@@ -30,8 +31,8 @@ export function TaskRowMenu({
       <Menu
         testID={testID}
         label={
-          <Image
-            systemName="ellipsis"
+          <NativeIcon
+            name="more"
             size={18}
             color={colors.muted}
             modifiers={[frame({ width: 20, height: 20 })]}
@@ -46,21 +47,21 @@ export function TaskRowMenu({
         ]}
       >
         {!actions.onCurrentRuntime && (
-          <Button label="Open task" systemImage="bubble.left" onPress={onOpen} />
+          <NativeMenuButton label="Open task" icon="chat" onPress={onOpen} />
         )}
-        <Button
+        <NativeMenuButton
           testID="Task menu details"
           label="Task details"
-          systemImage="info.circle"
+          icon="info"
           onPress={onDetails}
         />
         {!task.archived && latestCompletedTaskTurn(task) && (
           <>
             <Divider />
-            <Button
+            <NativeMenuButton
               testID="Task menu read status"
               label={actions.unread ? 'Mark read' : 'Mark unread'}
-              systemImage={actions.unread ? 'envelope.open' : 'envelope.badge'}
+              icon={actions.unread ? 'read' : 'unread'}
               modifiers={[disabledModifier(!actions.readStateEnabled || actions.busy)]}
               onPress={actions.toggleRead}
             />
@@ -69,27 +70,26 @@ export function TaskRowMenu({
         {actions.onCurrentRuntime && (
           <>
             <Divider />
-            <Button
+            <NativeMenuButton
               testID="Task menu pin"
               label={task.pinned ? 'Unpin task' : 'Pin task'}
-              systemImage={task.pinned ? 'pin.slash' : 'pin'}
+              icon={task.pinned ? 'unpin' : 'pin'}
               modifiers={[disabledModifier(unavailable)]}
               onPress={actions.togglePinned}
             />
             {!task.archived &&
               (isSnoozed(task, Date.now()) ? (
-                <Button
+                <NativeMenuButton
                   testID="Task menu unsnooze"
                   label="Unsnooze"
-                  systemImage="clock"
+                  icon="snooze"
                   modifiers={[disabledModifier(unavailable)]}
                   onPress={() => actions.snooze(null)}
                 />
               ) : (
                 <Menu
                   testID="Task menu snooze"
-                  label="Snooze"
-                  systemImage="clock"
+                  label={<NativeIconLabel title="Snooze" icon="snooze" />}
                   modifiers={[disabledModifier(unavailable)]}
                 >
                   {snoozeOptions.map((option) => (
@@ -104,23 +104,23 @@ export function TaskRowMenu({
                   ))}
                 </Menu>
               ))}
-            <Button
+            <NativeMenuButton
               label={task.archivedAt ? 'Restore thread' : 'Archive thread'}
-              systemImage="archivebox"
+              icon="archive"
               modifiers={[disabledModifier(unavailable || task.status === 'running')]}
               onPress={actions.toggleArchived}
             />
-            <Button
+            <NativeMenuButton
               label="Delete thread…"
-              systemImage="trash"
+              icon="trash"
               modifiers={[disabledModifier(unavailable || task.status === 'running')]}
               onPress={actions.deleteThread}
             />
             {!task.archivedAt && (
-              <Button
+              <NativeMenuButton
                 testID="Task menu settle"
                 label={task.archived ? 'Reopen task' : 'Settle task'}
-                systemImage={task.archived ? 'arrow.uturn.backward' : 'checkmark'}
+                icon={task.archived ? 'reopen' : 'check'}
                 modifiers={[disabledModifier(unavailable || task.status === 'running')]}
                 onPress={actions.toggleSettled}
               />

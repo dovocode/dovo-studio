@@ -24,6 +24,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     plugins: [
       './plugins/with-cocoapods-uuids.ts',
+      './plugins/with-lucide-icons.ts',
       ['./plugins/with-live-activity-push.ts', { enabled: push || notifications }],
       ...(config.plugins ?? []).map((plugin): NonNullable<ExpoConfig['plugins']>[number] =>
         Array.isArray(plugin) && plugin[0] === 'expo-widgets'

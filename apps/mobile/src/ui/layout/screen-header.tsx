@@ -6,7 +6,9 @@ import { NavigationContext } from '../../shell/navigation'
 import { Sheet, useInsideSheet } from './sheet'
 import { Icon } from '../controls/icon'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { symbols, type IconName } from '../controls/icon'
+import type { IconName } from '../controls/icon'
+import { iconAssets } from '../controls/icon-assets'
+import { NativeActionMenu } from '../controls/native-action-menu'
 import { IconButton } from '../controls/icon-button'
 import { Text } from '../content/text'
 import { colors } from '../theme'
@@ -71,13 +73,19 @@ export function ScreenHeader({
             ...(titleContent ? { headerTitle: () => titleContent } : {}),
             headerShown: true,
             headerBackVisible: !onBack,
+            headerBackImageSource: iconAssets.back,
             gestureEnabled,
             fullScreenGestureEnabled: gestureEnabled ? undefined : false,
           }}
         />
         {!!onBack && (
           <Stack.Toolbar placement="left">
-            <Stack.Toolbar.Button icon="chevron.left" accessibilityLabel="Back" onPress={onBack}>
+            <Stack.Toolbar.Button
+              icon={iconAssets.back}
+              iconRenderingMode="template"
+              accessibilityLabel="Back"
+              onPress={onBack}
+            >
               Back
             </Stack.Toolbar.Button>
           </Stack.Toolbar>
@@ -88,7 +96,8 @@ export function ScreenHeader({
             .map((button) => (
               <Stack.Toolbar.Button
                 key={button.label}
-                icon={symbols[button.icon][0]}
+                icon={iconAssets[button.icon]}
+                iconRenderingMode="template"
                 accessibilityLabel={button.label}
                 disabled={button.disabled}
                 selected={button.selected}
@@ -99,21 +108,12 @@ export function ScreenHeader({
               </Stack.Toolbar.Button>
             ))}
           {buttons?.some((button) => button.overflow) && (
-            <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Task tools">
-              <Stack.Toolbar.Label>Task tools</Stack.Toolbar.Label>
-              {buttons
-                .filter((button) => button.overflow)
-                .map((button) => (
-                  <Stack.Toolbar.MenuAction
-                    key={button.label}
-                    icon={symbols[button.icon][0]}
-                    onPress={button.onPress}
-                    disabled={button.disabled}
-                  >
-                    {button.label}
-                  </Stack.Toolbar.MenuAction>
-                ))}
-            </Stack.Toolbar.Menu>
+            <Stack.Toolbar.View>
+              <NativeActionMenu
+                label="Task tools"
+                actions={buttons.filter((button) => button.overflow)}
+              />
+            </Stack.Toolbar.View>
           )}
           {!!actions && (
             <Stack.Toolbar.View>

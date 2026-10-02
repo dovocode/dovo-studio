@@ -1,4 +1,5 @@
-import { Button, Host, Image, Menu } from '@expo/ui/swift-ui'
+import { NativeIcon } from '../../ui/controls/native-icon'
+import { Button, Host, Menu } from '@expo/ui/swift-ui'
 import {
   accessibilityLabel,
   buttonStyle,
@@ -21,8 +22,8 @@ export function WorkMenu({
       <Menu
         testID={label}
         label={
-          <Image
-            systemName="ellipsis"
+          <NativeIcon
+            name="more"
             color={colors.text}
             size={20}
             modifiers={[frame({ width: 44, height: 44 })]}

@@ -1,3 +1,4 @@
+import { NativeIcon, NativeMenuButton } from '../controls/native-icon'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from 'react'
 import {
@@ -132,10 +133,10 @@ export function Sheet({
                 </RNHostView>
                 <Toolbar.Content>
                   {keyboard && (
-                    <Button
+                    <NativeMenuButton
                       testID="Dismiss keyboard"
                       label="Dismiss keyboard"
-                      systemImage="keyboard.chevron.compact.down"
+                      icon="keyboard"
                       onPress={Keyboard.dismiss}
                       modifiers={[labelStyle('iconOnly'), accessibilityLabel('Dismiss keyboard')]}
                     />
@@ -145,7 +146,9 @@ export function Sheet({
                     role="close"
                     onPress={close}
                     modifiers={[disabled(busy || !presented), accessibilityLabel('Close')]}
-                  />
+                  >
+                    <NativeIcon name="close" color={colors.text} />
+                  </Button>
                 </Toolbar.Content>
               </Toolbar>
             </NavigationStack>

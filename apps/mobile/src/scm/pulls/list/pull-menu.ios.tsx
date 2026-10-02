@@ -1,4 +1,5 @@
-import { Button, Divider, Host, Image, Menu } from '@expo/ui/swift-ui'
+import { NativeIcon, NativeMenuButton } from '../../../ui/controls/native-icon'
+import { Button, Divider, Host, Menu } from '@expo/ui/swift-ui'
 import {
   accessibilityLabel,
   buttonStyle,
@@ -16,8 +17,8 @@ export function PullMenu(props: PullMenuProps) {
       <Menu
         testID="PR actions"
         label={
-          <Image
-            systemName="ellipsis"
+          <NativeIcon
+            name="more"
             color={colors.text}
             size={20}
             modifiers={[frame({ width: 44, height: 44 })]}
@@ -41,24 +42,24 @@ export function PullMenu(props: PullMenuProps) {
           />
         ))}
         {props.actions.length > 0 && <Divider />}
-        <Button
+        <NativeMenuButton
           testID="Start task from PR"
           label="Start task from PR"
-          systemImage="plus.bubble"
+          icon="newChat"
           onPress={props.onStartTask}
           modifiers={[disabled(props.taskDisabled)]}
         />
-        <Button
+        <NativeMenuButton
           testID={`Open on ${props.providerName ?? 'GitHub'}`}
           label={`Open on ${props.providerName ?? 'GitHub'}`}
-          systemImage="arrow.up.right.square"
+          icon="external"
           onPress={props.onOpen}
         />
         <Divider />
-        <Button
+        <NativeMenuButton
           testID="Refresh details"
           label="Refresh details"
-          systemImage="arrow.clockwise"
+          icon="refresh"
           onPress={props.onRefresh}
           modifiers={[disabled(props.refreshDisabled)]}
         />

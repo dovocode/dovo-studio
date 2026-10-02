@@ -1,5 +1,6 @@
+import { NativeIcon, NativeIconLabel } from './native-icon'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { Button, Host, HStack, Image, Menu, Spacer, Text } from '@expo/ui/swift-ui'
+import { Button, Host, HStack, Menu, Spacer, Text } from '@expo/ui/swift-ui'
 import {
   accessibilityAddTraits,
   accessibilityLabel,
@@ -79,7 +80,7 @@ export function ChoiceMenu(props: ChoiceProps) {
                 {selected}
               </Text>
               <Spacer minLength={0} />
-              <Image systemName="chevron.down" size={11} color={colors.muted} />
+              <NativeIcon name="down" size={11} color={colors.muted} />
             </HStack>
           }
         >
@@ -87,14 +88,17 @@ export function ChoiceMenu(props: ChoiceProps) {
             <Button
               key={item.id}
               testID={`Choose ${item.name}`}
-              label={item.name}
-              systemImage={item.id === props.value ? 'checkmark' : undefined}
+              label={item.id === props.value ? undefined : item.name}
               modifiers={[
                 disabled((props.disabled ?? false) || (item.disabled ?? false)),
                 accessibilityAddTraits(item.id === props.value ? ['isSelected'] : []),
               ]}
               onPress={() => props.onChange(item.id)}
-            />
+            >
+              {item.id === props.value ? (
+                <NativeIconLabel title={item.name} icon="check" />
+              ) : undefined}
+            </Button>
           ))}
         </Menu>
       </Host>

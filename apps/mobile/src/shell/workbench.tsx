@@ -1,3 +1,4 @@
+import { iconAssets } from '../ui/controls/icon-assets'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -500,7 +501,7 @@ export function Workbench() {
                   },
                 }}
               >
-                <NativeTabs.Trigger.Icon sf="checklist" md="checklist" />
+                <NativeTabs.Trigger.Icon src={iconAssets.tasks} renderingMode="template" />
                 <NativeTabs.Trigger.Label>Tasks</NativeTabs.Trigger.Label>
               </NativeTabs.Trigger>
               <NativeTabs.Trigger
@@ -513,7 +514,7 @@ export function Workbench() {
                   tabPress: () => active === 'issues' && router.dismissTo('/issues'),
                 }}
               >
-                <NativeTabs.Trigger.Icon sf="exclamationmark.bubble" md="assignment" />
+                <NativeTabs.Trigger.Icon src={iconAssets.issues} renderingMode="template" />
                 <NativeTabs.Trigger.Label>Issues</NativeTabs.Trigger.Label>
               </NativeTabs.Trigger>
               <NativeTabs.Trigger
@@ -526,7 +527,7 @@ export function Workbench() {
                   tabPress: () => active === 'pulls' && router.dismissTo('/pulls'),
                 }}
               >
-                <NativeTabs.Trigger.Icon sf="arrow.triangle.pull" md="merge" />
+                <NativeTabs.Trigger.Icon src={iconAssets.pulls} renderingMode="template" />
                 <NativeTabs.Trigger.Label>PRs</NativeTabs.Trigger.Label>
               </NativeTabs.Trigger>
               <NativeTabs.Trigger
@@ -539,7 +540,7 @@ export function Workbench() {
                   tabPress: () => active === 'jobs' && router.dismissTo('/jobs'),
                 }}
               >
-                <NativeTabs.Trigger.Icon sf="square.3.layers.3d" md="layers" />
+                <NativeTabs.Trigger.Icon src={iconAssets.jobs} renderingMode="template" />
                 <NativeTabs.Trigger.Label>Automations</NativeTabs.Trigger.Label>
               </NativeTabs.Trigger>
               <NativeTabs.Trigger
@@ -550,7 +551,7 @@ export function Workbench() {
                   tabPress: () => active === 'settings' && router.dismissTo('/settings'),
                 }}
               >
-                <NativeTabs.Trigger.Icon sf="gearshape" md="settings" />
+                <NativeTabs.Trigger.Icon src={iconAssets.settings} renderingMode="template" />
                 <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
               </NativeTabs.Trigger>
             </NativeTabs>

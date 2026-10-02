@@ -1,4 +1,4 @@
-import { Button, Host, Image } from '@expo/ui/swift-ui'
+import { Button, Host } from '@expo/ui/swift-ui'
 import {
   accessibilityAddTraits,
   accessibilityLabel,
@@ -14,7 +14,8 @@ import {
 } from '@expo/ui/swift-ui/modifiers'
 import { isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect'
 import { Platform, Pressable, View } from 'react-native'
-import { Icon, symbols, type IconName } from './icon'
+import { Icon, type IconName } from './icon'
+import { NativeIcon } from './native-icon'
 import { colors } from '../theme'
 
 type IconButtonProps = {
@@ -72,9 +73,9 @@ export function NativeIconButton({
         accessibilityAddTraits(selected ? ['isSelected'] : []),
       ]}
     >
-      {/* Equal label bounds keep narrow SF Symbols from producing smaller circles. */}
-      <Image
-        systemName={symbols[icon][0]}
+      {/* Equal label bounds keep every icon button the same size. */}
+      <NativeIcon
+        name={icon}
         size={icon === 'stop' ? 18 : 20}
         color={
           variant === 'filled'
