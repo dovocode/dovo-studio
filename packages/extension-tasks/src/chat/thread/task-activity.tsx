@@ -1,7 +1,10 @@
-import { mcpAppReferences } from '@dovo/protocol'
+import { mcpAppReferences, artifactReferences } from '@dovo/protocol'
 import { lazy, Suspense } from 'react'
 const McpAppView = lazy(() =>
   import('../mcp-app').then((module) => ({ default: module.McpAppView })),
+)
+const ArtifactCard = lazy(() =>
+  import('../artifacts').then((module) => ({ default: module.ArtifactCard })),
 )
 import { runtimeSyncOnline, watchRuntimeActivity } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -179,12 +182,16 @@ export function TaskActivity({
     [tools, turn?.status, status],
   )
   const apps = useMemo(() => tools.flatMap((tool) => mcpAppReferences(tool.payload)), [tools])
+  const artifacts = useMemo(
+    () => tools.flatMap((tool) => artifactReferences(tool.payload)),
+    [tools],
+  )
   const running = entries.filter((entry) => entry.state === 'running')
   const current =
     running.filter((entry) => entry.presentation.kind !== 'reasoning').at(-1) ?? running.at(-1)
   if (!tools.length && !error && !turn) return null
   // Replies only: the agent's text stays, its steps are hidden (errors still show).
-  if (toolActivity === 'hidden' && !error && !apps.length) return null
+  if (toolActivity === 'hidden' && !error && !apps.length && !artifacts.length) return null
   const outcome = taskActivityOutcome(
     entries.filter((entry) => entry.presentation.kind !== 'reasoning').map((entry) => entry.state),
   )
@@ -268,6 +275,11 @@ export function TaskActivity({
       {apps.map((reference) => (
         <Suspense key={reference.id} fallback={<p>Loading app…</p>}>
           <McpAppView reference={reference} />
+        </Suspense>
+      ))}
+      {artifacts.map((reference) => (
+        <Suspense key={`${reference.id}:${reference.revision}`} fallback={<p>Loading artifact…</p>}>
+          <ArtifactCard reference={reference} />
         </Suspense>
       ))}
       {error && (

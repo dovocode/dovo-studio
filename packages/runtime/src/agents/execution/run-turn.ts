@@ -67,6 +67,7 @@ export class TaskTurnRunner {
     private questions: Questions,
     private attachments: Attachments,
     private activity?: Pick<Activity, 'add'>,
+    private artifactsEnabled: () => boolean = () => false,
   ) {}
   /** Retry only change capture for an already terminal provider turn. */
   finalizeEffect(id: string, cwd: string) {
@@ -142,6 +143,7 @@ export class TaskTurnRunner {
     return Effect.scoped(
       Effect.gen(this, function* () {
         const task = this.store.task(id)
+        const artifactsEnabled = this.artifactsEnabled()
         const configured = resolveTaskAgent(task, this.store.get().agents)
         if (!configured) throw new HttpError(400, 'Choose a harness or agent first')
         const providerLock = lockedTaskProvider(task, this.store.get().agents)
@@ -167,6 +169,7 @@ export class TaskTurnRunner {
               this.taskTools.token,
               this.taskTools.host,
               configured.permission === 'read-only',
+              artifactsEnabled,
             ),
           )
         }
@@ -560,6 +563,9 @@ ${
                   instructions: [
                     agent.instructions,
                     browserCdpInstructions(id),
+                    this.taskTools && artifactsEnabled && configured.permission !== 'read-only'
+                      ? 'Dovo Artifacts is enabled. Use dovo_task artifact_create for persistent documents, code, SVG diagrams and self-contained interactive HTML the user can view inside Dovo. Use artifact_list/read to find existing artifacts and artifact_update to save a new revision. Artifact HTML has no external network access; embed assets and scripts.'
+                      : '',
                     `Project working directory: ${JSON.stringify(cwd)}. Run project commands, including git and gh, from this checkout. Configured Git executable: ${JSON.stringify(commands.git)}; GitHub CLI executable: ${JSON.stringify(commands.gh)}. Use gh for GitHub operations in the repository linked to this checkout; do not target another repository unless the user explicitly requests it.`,
                     this.taskTools
                       ? 'The dovo_task tools let you operate this task’s visible terminal and simulators. Use your normal command tool for quick, noninteractive commands. Use the Dovo terminal when a command needs an interactive or persistent session, or when the user should follow it in the task panel. Use simulator tools when the task needs device interaction.'

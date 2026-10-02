@@ -15,6 +15,10 @@ const task = taskId
 const base = address
 const credential = token
 const readOnly = process.env.DOVO_TASK_READ_ONLY === '1'
+const artifactsEnabled = process.env.DOVO_TASK_ARTIFACTS_ENABLED === '1'
+const artifacts = () => {
+  if (!artifactsEnabled) throw new Error('Dovo Artifacts is disabled')
+}
 const terminals = new Set<string>()
 const writable = () => {
   if (readOnly) throw new Error('This agent has read-only access to Dovo task tools')
@@ -87,6 +91,25 @@ async function socket(path: string, payloads: unknown[], firstMessage = false): 
 const server = new Server({ name: 'dovo-task', version: '0.1.0' }, { capabilities: { tools: {} } })
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
+    ...(artifactsEnabled
+      ? [
+          {
+            name: 'artifact_list',
+            description: 'List persistent Dovo artifacts in this thread. Returns metadata only.',
+            inputSchema: { type: 'object' as const, properties: {} },
+          },
+          {
+            name: 'artifact_read',
+            description:
+              'Read a Dovo artifact’s content and revision, optionally an earlier revision.',
+            inputSchema: {
+              type: 'object' as const,
+              properties: { id: { type: 'string' }, revision: { type: 'integer', minimum: 1 } },
+              required: ['id'],
+            },
+          },
+        ]
+      : []),
     {
       name: 'devices',
       description: 'List iOS and Android devices available to this task.',
@@ -124,6 +147,42 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     ...(!readOnly
       ? [
+          ...(artifactsEnabled
+            ? [
+                {
+                  name: 'artifact_create',
+                  description:
+                    'Create a persistent artifact in this thread. Dovo shows a preview card on desktop and mobile. Use markdown for documents, html for self-contained interactive pages, svg for diagrams, code for source files. HTML runs in a sandbox without external network access; embed assets and scripts. Returns the artifact ID and revision, not its body.',
+                  inputSchema: {
+                    type: 'object' as const,
+                    properties: {
+                      title: { type: 'string' },
+                      format: { type: 'string', enum: ['markdown', 'html', 'svg', 'code'] },
+                      content: { type: 'string' },
+                      language: { type: 'string' },
+                    },
+                    required: ['title', 'format', 'content'],
+                  },
+                },
+                {
+                  name: 'artifact_update',
+                  description:
+                    'Save a new revision of an existing Dovo artifact, keeping earlier versions. Read first and pass expectedRevision to avoid overwriting newer work. Supply its complete title, format and content.',
+                  inputSchema: {
+                    type: 'object' as const,
+                    properties: {
+                      id: { type: 'string' },
+                      expectedRevision: { type: 'integer', minimum: 1 },
+                      title: { type: 'string' },
+                      format: { type: 'string', enum: ['markdown', 'html', 'svg', 'code'] },
+                      content: { type: 'string' },
+                      language: { type: 'string' },
+                    },
+                    required: ['id', 'expectedRevision', 'title', 'format', 'content'],
+                  },
+                },
+              ]
+            : []),
           {
             name: 'simulator_tap',
             description:
@@ -180,6 +239,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     const input = decode(args, request.params.arguments ?? {})
     switch (request.params.name) {
+      case 'artifact_list':
+        artifacts()
+        return text(await post('/api/artifacts/list', { taskId: task }))
+      case 'artifact_read':
+        artifacts()
+        return text(
+          await post('/api/artifacts/read', {
+            taskId: task,
+            id: input.id,
+            revision: input.revision,
+          }),
+        )
+      case 'artifact_create':
+      case 'artifact_update':
+        artifacts()
+        writable()
+        return text(
+          await post(
+            request.params.name === 'artifact_create'
+              ? '/api/artifacts/create'
+              : '/api/artifacts/update',
+            { ...input, taskId: task },
+          ),
+        )
       case 'devices':
         return text(
           decode(previewDevicesSchema, await post('/api/previews/devices', { taskId: task })),

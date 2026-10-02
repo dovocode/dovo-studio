@@ -3,29 +3,21 @@ import { openAppLink } from '../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../runtime/state/application-state'
-import { mutableStruct } from '@dovo/protocol'
-import { urlSchema, decode } from '@dovo/protocol'
+import { fetchRuntimeReleases, type RuntimeRelease } from '@dovo/protocol'
 import { Platform, ScrollView, View } from 'react-native'
 import { Switch } from '../ui/controls/switch'
 import Constants from 'expo-constants'
-import { Schema, Effect } from 'effect'
+import { Effect } from 'effect'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
 import { Action } from '../ui/controls/action'
 import { styles } from '../ui/theme'
 import { SettingsGroup } from './settings-group'
 import { useLiveActivities } from '../live-activities/provider'
-const releaseSchema = mutableStruct({
-  tag_name: Schema.String,
-  html_url: Schema.String.pipe(Schema.compose(urlSchema())),
-  published_at: Schema.NullOr(Schema.String),
-})
 export default function AppUpdates() {
   const activity = useLiveActivities()
   const notifications = usePushNotifications()
-  const [release, setRelease] = useApplicationState<Schema.Schema.Type<
-    typeof releaseSchema
-  > | null>(null)
+  const [release, setRelease] = useApplicationState<RuntimeRelease | null>(null)
   const [busy, setBusy] = useApplicationState(false),
     [message, setMessage] = useApplicationState('')
   const check = () => {
@@ -34,26 +26,15 @@ export default function AppUpdates() {
         setBusy(true)
         setMessage('')
         return yield* mobileWorkflow(function* () {
-          const response = yield* nativeEffect(() =>
-            fetch('https://api.github.com/repos/dovocode/dovo-studio/releases/latest', {
-              headers: {
-                Accept: 'application/vnd.github+json',
-              },
-              signal: AbortSignal.timeout(15_000),
-            }),
-          )
-          if (response.status === 404) {
+          const releases = yield* nativeEffect(fetchRuntimeReleases)
+          const next = releases.stable
+          if (!next) {
             setRelease(null)
-            setMessage('No published release yet. Local builds can use the latest GitHub source.')
+            setMessage(
+              'No published stable release yet. Local builds can use the latest GitHub source.',
+            )
             return
           }
-          if (!response.ok)
-            return yield* Effect.fail(
-              new Error(`Release check failed (${response.status}). Try again later.`),
-            )
-          const next = decode(releaseSchema, yield* nativeEffect(() => response.json()))
-          if (!next.html_url.startsWith('https://github.com/dovocode/dovo-studio/releases/'))
-            return yield* Effect.fail(new Error('Unexpected release address'))
           setRelease(next)
         }).pipe(
           Effect.catchAll((error) =>
@@ -94,10 +75,10 @@ export default function AppUpdates() {
         {release && (
           <Action
             secondary
-            label={`View release ${release.tag_name}`}
+            label={`View release ${release.version}`}
             onPress={() =>
               void runClientEffect(
-                nativeEffect(() => openAppLink(release.html_url)).pipe(
+                nativeEffect(() => openAppLink(release.url)).pipe(
                   Effect.catchAll(() =>
                     nativeEffect(() => setMessage('Could not open release notes.')),
                   ),

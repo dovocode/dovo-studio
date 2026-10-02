@@ -27,6 +27,7 @@
     "mobile:update": "node scripts/update-mobile.mjs",
     "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm build",
     "test:mcp-apps:browser": "node scripts/build-mcp-apps.mjs && node scripts/check-mcp-apps-browser.mjs",
+    "test:artifacts:browser": "node scripts/check-artifacts-browser.mjs",
     "test:thread-streaming:browser": "node scripts/check-thread-streaming-browser.mjs",
     "test:composer-send:browser": "node scripts/check-composer-send-browser.mjs",
     "test:thread-startup:browser": "node scripts/check-thread-startup-browser.mjs",

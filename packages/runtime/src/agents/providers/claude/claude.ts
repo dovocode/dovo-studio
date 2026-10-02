@@ -77,7 +77,8 @@ function claudeStream(
               mcpServers: claudeMcpServers(run.agent.resources.mcpServers),
             }
           : {}),
-      settingSources: [],
+      // Coding sessions inherit Claude settings; text-only utilities stay isolated.
+      settingSources: run.tools === 'none' ? [] : ['user', 'project', 'local'],
       includePartialMessages: true,
       onElicitation: async (request, options) => {
         if (request.mode !== 'form' && request.mode !== undefined) {

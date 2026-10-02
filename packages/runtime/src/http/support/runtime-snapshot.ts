@@ -40,6 +40,7 @@ export function runtimeSnapshot(
           ? canUpdateDesktop()
           : canUpdateServer(),
       defaults: s.defaults.get(),
+      artifactsEnabled: s.preferences.get().enableArtifacts,
       acpInstallations: s.acpInstallations.list(),
       revision,
       workspace: {

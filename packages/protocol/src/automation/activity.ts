@@ -3,6 +3,7 @@ import { decodeResult } from '../shared/schema.js'
 import { Schema } from 'effect'
 import { toolPresentation } from '../conversation/presentation/tool-presentation.js'
 import { mcpAppReferences } from '../conversation/mcp-apps.js'
+import { artifactReferences } from '../conversation/artifacts.js'
 export const activityEventSchema = mutableStruct({
   id: Schema.String,
   time: Schema.String,
@@ -161,6 +162,7 @@ export function compactActivityEvents(events: Event[]): Event[] {
       const fields = decodeResult(toolPayload, metadata).data
       const presentation = toolPresentation(call.payload, call.summary)
       const apps = mcpAppReferences(call.payload)
+      const artifacts = artifactReferences(metadata)
       return {
         ...call,
         payload: JSON.stringify({
@@ -171,6 +173,7 @@ export function compactActivityEvents(events: Event[]): Event[] {
             output: '',
           },
           ...(apps.length ? { mcpApps: apps } : {}),
+          ...(artifacts.length ? { artifacts } : {}),
         }),
       }
     })

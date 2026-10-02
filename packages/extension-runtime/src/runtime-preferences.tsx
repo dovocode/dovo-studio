@@ -1,6 +1,12 @@
 import { useEffect } from 'react'
 import { Effect } from 'effect'
-import { normalizeBranchPrefix, runtimePreferencesSchema } from '@dovo/protocol'
+import {
+  normalizeBranchPrefix,
+  runtimePreferencesSchema,
+  artifactRetentionChoices,
+  artifactRetentionSchema,
+  decode,
+} from '@dovo/protocol'
 import { clientTaskScope, useWorkspace } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ChoicePicker, Input, SettingRow, SettingsGroup, Toggle } from '@dovo/studio-ui'
@@ -74,6 +80,47 @@ export function RunningTaskPreferences() {
             onChange={(preventSleepWhileRunning) => save({ preventSleepWhileRunning })}
           />
         </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup title="Optional features">
+        <SettingRow
+          label="Dovo Artifacts"
+          description="Let agents create documents, diagrams, code and interactive previews inside threads. Shared by desktop and mobile for this computer."
+        >
+          <Toggle
+            label="Enable Dovo Artifacts"
+            checked={value?.enableArtifacts ?? false}
+            disabled={disabled}
+            onChange={(enableArtifacts) => save({ enableArtifacts })}
+          />
+        </SettingRow>
+        {(['settledArtifactRetention', 'archivedArtifactRetention'] as const).map((key) => (
+          <SettingRow
+            key={key}
+            label={
+              key === 'settledArtifactRetention'
+                ? 'Artifacts when settled'
+                : 'Artifacts when archived'
+            }
+            description="Applies to existing artifacts and all saved versions, even with the feature disabled. Deletion is permanent. The archived rule takes priority; reopening or restoring resets the state’s timer."
+          >
+            <ChoicePicker
+              aria-label={
+                key === 'settledArtifactRetention'
+                  ? 'Artifacts when settled'
+                  : 'Artifacts when archived'
+              }
+              disabled={disabled}
+              value={value?.[key] ?? 'forever'}
+              onValueChange={(policy) => save({ [key]: decode(artifactRetentionSchema, policy) })}
+            >
+              {artifactRetentionChoices.map((choice) => (
+                <option key={choice.value} value={choice.value}>
+                  {choice.label}
+                </option>
+              ))}
+            </ChoicePicker>
+          </SettingRow>
+        ))}
       </SettingsGroup>
       <SettingsGroup title="Pull requests">
         <SettingRow

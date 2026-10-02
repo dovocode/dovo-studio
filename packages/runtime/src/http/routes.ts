@@ -4,6 +4,13 @@ import { searchTaskMessages } from '@dovo/protocol'
 import { recoverableMutation } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
 import { mcpAppRpcSchema } from '@dovo/protocol'
+import {
+  ARTIFACT_MAX_BYTES,
+  artifactCreateSchema,
+  artifactUpdateSchema,
+  artifactReadSchema,
+  artifactScopeSchema,
+} from '@dovo/protocol'
 import { mutableArray } from '@dovo/protocol'
 import { runtimeSnapshot } from './support/runtime-snapshot.js'
 import { SCRATCH_PROJECT_ID } from '@dovo/protocol'
@@ -138,6 +145,36 @@ export function route(
         )
       }
       const device = s.devices.authenticate(token)
+      if (method === 'POST' && path.startsWith('/api/artifacts/')) {
+        if (!s.preferences.get().enableArtifacts)
+          throw new HttpError(403, 'Enable Dovo Artifacts in this computer’s settings first')
+        if (path === '/api/artifacts/library')
+          return yield* serviceResult({ artifacts: s.artifacts.library() })
+        if (path === '/api/artifacts/create' || path === '/api/artifacts/update') {
+          if (!device.owner) throw new HttpError(403, 'Artifacts are created by the thread’s agent')
+          // JSON can escape each content byte as six characters; metadata stays small.
+          const value = yield* serviceResult(body(request, ARTIFACT_MAX_BYTES * 6 + 4096))
+          const input = path.endsWith('/create')
+            ? decode(artifactCreateSchema, value)
+            : decode(artifactUpdateSchema, value)
+          return yield* serviceResult({ artifact: s.artifacts.write(input) })
+        }
+        if (path === '/api/artifacts/list') {
+          const { taskId } = decode(artifactScopeSchema, yield* serviceResult(body(request, 4096)))
+          return yield* serviceResult({ artifacts: s.artifacts.list(taskId) })
+        }
+        if (path === '/api/artifacts/read' || path === '/api/artifacts/versions') {
+          const { taskId, id, revision } = decode(
+            artifactReadSchema,
+            yield* serviceResult(body(request, 4096)),
+          )
+          return yield* serviceResult(
+            path.endsWith('/read')
+              ? { artifact: s.artifacts.read(taskId, id, revision) }
+              : { versions: s.artifacts.versions(taskId, id) },
+          )
+        }
+      }
       if (method === 'POST' && path === '/api/mcp-apps/read') {
         const { taskId, id } = decode(
           mutableStruct({ taskId: uuidSchema, id: uuidSchema }),
@@ -553,8 +590,11 @@ export function route(
       }
       if (method === 'POST' && path === '/api/runtime/preferences/read')
         return yield* serviceResult(s.preferences.get())
-      if (method === 'POST' && path === '/api/runtime/preferences/save')
-        return yield* serviceResult(s.preferences.save(yield* serviceResult(body(request))))
+      if (method === 'POST' && path === '/api/runtime/preferences/save') {
+        const settings = s.preferences.save(yield* serviceResult(body(request)))
+        s.artifacts.prune()
+        return yield* serviceResult(settings)
+      }
       if (method === 'POST' && path === '/api/commands/read')
         return yield* serviceResult({
           settings: s.commands.get(),

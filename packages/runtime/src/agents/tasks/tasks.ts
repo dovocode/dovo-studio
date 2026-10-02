@@ -55,6 +55,7 @@ export class Tasks {
     private questions: Questions,
     private attachments: Attachments,
     private activity?: Pick<Activity, 'add'>,
+    artifactsEnabled: () => boolean = () => false,
   ) {
     this.runner = new TaskTurnRunner(
       store,
@@ -65,6 +66,7 @@ export class Tasks {
       questions,
       attachments,
       activity,
+      artifactsEnabled,
     )
     this.queue = new TaskQueue(store, activity)
   }

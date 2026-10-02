@@ -5,6 +5,8 @@ import { startRuntime } from '../index.js'
 import { taskToolsServer } from './config.js'
 import * as previews from '../previews/devices.js'
 import * as native from '../previews/simulator-native.js'
+import { decode, artifactWriteResponseSchema, artifactResponseSchema } from '@dovo/protocol'
+import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -39,7 +41,8 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
     const action = vi
       .spyOn(previews, 'previewDeviceAction')
       .mockResolvedValue({ ok: true, image: 'data:image/png;base64,aGVsbG8=' })
-    const server = taskToolsServer('task', runtime.port, token, '127.0.0.1')
+    runtime.services.preferences.save({ enableArtifacts: true })
+    const server = taskToolsServer('task', runtime.port, token, '127.0.0.1', false, true)
     transport = new StdioClientTransport({
       command: server.command,
       args: server.args,
@@ -64,12 +67,38 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
     })
     expect(screenshot.content).toEqual([{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }])
     expect(action).toHaveBeenCalledWith({ taskId: 'task', id: 'ios:test', action: 'screenshot' })
+    const created = await client.callTool({
+      name: 'artifact_create',
+      arguments: {
+        title: 'Notes',
+        format: 'markdown',
+        content: '# Persisted notes',
+        taskId: 'another-thread',
+      },
+    })
+    const result = decode(artifactWriteResponseSchema, JSON.parse(decodeToolText(created)))
+    expect(result.artifact.taskId).toBe('task')
+    expect(runtime.services.artifacts.read('task', result.artifact.id).content).toBe(
+      '# Persisted notes',
+    )
+    const read = await client.callTool({
+      name: 'artifact_read',
+      arguments: { id: result.artifact.id },
+    })
+    expect(decode(artifactResponseSchema, JSON.parse(decodeToolText(read))).artifact.revision).toBe(
+      1,
+    )
   } finally {
     await client.close()
     await transport?.close()
     await runtime.close()
   }
 })
+function decodeToolText(result: Awaited<ReturnType<Client['callTool']>>) {
+  const item = CallToolResultSchema.parse(result).content.find((item) => item.type === 'text')
+  if (!item || item.type !== 'text') throw new Error('Expected a text result')
+  return item.text
+}
 
 it('taps the point corresponding to a full-resolution iOS screenshot', async () => {
   const token = 'task-tools-owner-token-at-least-thirty-two-characters'
@@ -149,7 +178,7 @@ it('taps the point corresponding to a full-resolution iOS screenshot', async () 
 })
 
 it('keeps read-only providers from sending task terminal or device input', async () => {
-  const server = taskToolsServer('task', 1, 'unused-token', '127.0.0.1', true)
+  const server = taskToolsServer('task', 1, 'unused-token', '127.0.0.1', true, true)
   const client = new Client({ name: 'read-only-test', version: '1.0.0' })
   const transport = new StdioClientTransport({
     command: server.command,
@@ -159,7 +188,20 @@ it('keeps read-only providers from sending task terminal or device input', async
   })
   try {
     await client.connect(transport)
-    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(['devices', 'device'])
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+      'artifact_list',
+      'artifact_read',
+      'devices',
+      'device',
+    ])
+    expect(
+      (
+        await client.callTool({
+          name: 'artifact_create',
+          arguments: { title: 'Blocked', format: 'html', content: '<h1>Blocked</h1>' },
+        })
+      ).isError,
+    ).toBe(true)
     expect(
       (await client.callTool({ name: 'terminal_run', arguments: { command: 'echo unsafe' } }))
         .isError,
@@ -167,6 +209,37 @@ it('keeps read-only providers from sending task terminal or device input', async
     expect(
       (await client.callTool({ name: 'device', arguments: { id: 'ios:test', action: 'boot' } }))
         .isError,
+    ).toBe(true)
+  } finally {
+    await client.close()
+    await transport.close()
+  }
+})
+
+it('does not advertise or execute artifacts unless explicitly enabled', async () => {
+  const server = taskToolsServer('task', 1, 'unused-token', '127.0.0.1')
+  const client = new Client({ name: 'disabled-artifacts-test', version: '1' })
+  const transport = new StdioClientTransport({
+    command: server.command,
+    args: server.args,
+    env: { ...server.envValues },
+    stderr: 'ignore',
+  })
+  try {
+    await client.connect(transport)
+    expect((await client.listTools()).tools.some((tool) => tool.name.startsWith('artifact_'))).toBe(
+      false,
+    )
+    expect(
+      (
+        await client.callTool({
+          name: 'artifact_create',
+          arguments: { title: 'Blocked', format: 'markdown', content: 'Blocked' },
+        })
+      ).isError,
+    ).toBe(true)
+    expect(
+      (await client.callTool({ name: 'artifact_read', arguments: { id: 'blocked' } })).isError,
     ).toBe(true)
   } finally {
     await client.close()

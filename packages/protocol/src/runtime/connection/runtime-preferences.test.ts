@@ -10,6 +10,9 @@ it('defaults new preferences and accepts only Git-safe branch prefixes', () => {
     settleOnPullClose: false,
     autoLinkPullRequests: true,
     activityRetentionDays: 90,
+    enableArtifacts: false,
+    settledArtifactRetention: 'forever',
+    archivedArtifactRetention: 'forever',
   })
   const valid = (branchPrefix: string) =>
     decodeResult(runtimePreferencesSchema, { branchPrefix }).success

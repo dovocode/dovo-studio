@@ -108,6 +108,7 @@ export class Housekeeping {
       | 'questions'
       | 'approvals'
       | 'activity'
+      | 'artifacts'
       | 'git'
     >,
   ) {}
@@ -126,6 +127,7 @@ export class Housekeeping {
         [
           step('archive inactive tasks', () => this.archiveInactive()),
           step('prune activity history', () => this.pruneActivity()),
+          step('prune expired artifacts', () => this.s.artifacts.prune()),
           step('prune automation runs', () => this.s.jobs.prune()),
           step('remove archived worktrees', () => this.removeArchivedWorktrees()),
         ],

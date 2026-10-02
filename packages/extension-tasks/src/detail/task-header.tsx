@@ -51,6 +51,7 @@ import { taskPresentation } from '../list/task-presentation'
 import { TaskBranchMenu } from './task-branch-menu'
 import { TaskPullStatus } from './task-pull-status'
 import { TaskProjectActions } from './task-project-actions'
+import { ArtifactLibrary } from '../chat/artifacts'
 export type TaskSurface =
   | 'pull-preview'
   | 'chat'
@@ -392,6 +393,7 @@ export function TaskHeader({
           {openError}
         </span>
       )}
+      <ArtifactLibrary key={`artifacts:${task.id}`} taskId={task.id} />
       <TaskActions
         key={task.id}
         task={task}

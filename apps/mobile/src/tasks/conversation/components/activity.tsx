@@ -84,6 +84,14 @@ export function TaskActivity({
       )}
       {open &&
         tools.map((event) => <ToolActivityRow key={activityIdentity(event)} event={event} />)}
+      {!open &&
+        tools
+          .flatMap((event) => artifactReferences(event.payload))
+          .map((reference) => (
+            <ArtifactCard key={`${reference.id}:${reference.revision}`} reference={reference} />
+          ))}
     </View>
   )
 }
+import { artifactReferences } from '@dovo/protocol'
+import { ArtifactCard } from '../../../ui/content/artifacts'

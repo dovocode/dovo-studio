@@ -164,6 +164,9 @@ function WorkbenchContent({
     retrySync,
     switchRuntime,
   } = useWorkspace()
+  const artifactsEnabled =
+    snapshot?.artifactsEnabled === true ||
+    runtimes.some((runtime) => runtime.snapshot?.artifactsEnabled === true)
   const [switchError, setSwitchError] = useApplicationState('')
   const [switching, setSwitching] = useApplicationState(false)
   // Restore the last thread, otherwise open the task list.
@@ -281,7 +284,9 @@ function WorkbenchContent({
   const taskChrome = target.viewId === 'tasks' && !compact
   const View = views.get(target.viewId)
   const navigationCommands = catalog.views
-    .filter((view) => view.navigationGroup !== 'hidden')
+    .filter(
+      (view) => view.navigationGroup !== 'hidden' && (view.id !== 'artifacts' || artifactsEnabled),
+    )
     .map((view) => ({
       id: `${view.extensionId}.open.${view.id}`,
       title: `Open ${view.title}`,
@@ -367,7 +372,13 @@ function WorkbenchContent({
             onUpdate={updates ? () => void updates.install() : undefined}
             onCheckUpdates={updates ? () => void updates.check() : undefined}
             views={catalog.views.filter((view) =>
-              view.id === 'issues' ? showIssues : view.id === 'jira' ? showJira : true,
+              view.id === 'artifacts'
+                ? artifactsEnabled
+                : view.id === 'issues'
+                  ? showIssues
+                  : view.id === 'jira'
+                    ? showJira
+                    : true,
             )}
             activeId={target.viewId}
             onSelect={(viewId) =>

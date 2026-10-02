@@ -11,6 +11,8 @@ import { Text } from '../../../ui/content/text'
 import { colors, styles } from '../../../ui/theme'
 import { Icon } from '../../../ui/controls/icon'
 import { activityOutcome } from '../state/tool-events'
+import { artifactReferences } from '@dovo/protocol'
+import { ArtifactCard } from '../../../ui/content/artifacts'
 
 const toolSchema = mutableStruct({
   ...activitySchema.fields.events.value.fields,
@@ -88,6 +90,12 @@ export function ConversationWorkGroup({
         </Text>
       )}
       {open && <View style={{ paddingBottom: 6 }}>{children}</View>}
+      {!open &&
+        groupEvents
+          .flatMap((event) => artifactReferences(event.payload))
+          .map((reference) => (
+            <ArtifactCard key={`${reference.id}:${reference.revision}`} reference={reference} />
+          ))}
     </View>
   )
 }

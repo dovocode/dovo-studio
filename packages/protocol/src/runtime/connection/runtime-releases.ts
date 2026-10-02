@@ -19,7 +19,7 @@ export function newerRuntimeVersion(a: string, b: string) {
   return false
 }
 
-export async function fetchRuntimeReleases(): Promise<RuntimeReleases> {
+async function fetchGitHubReleases(): Promise<RuntimeReleases> {
   const options: RequestInit = {
     cache: 'no-store',
     headers: { Accept: 'application/vnd.github+json' },
@@ -57,6 +57,57 @@ export async function fetchRuntimeReleases(): Promise<RuntimeReleases> {
       result[channel] = release
   }
   return result
+}
+
+/** Published tap definitions remain readable when the unauthenticated REST API is rate limited. */
+async function publishedRuntimeReleases(): Promise<RuntimeReleases> {
+  const channels = ['stable', 'nightly'] as const
+  const entries = await Promise.all(
+    channels.map(async (channel) => {
+      const file = channel === 'nightly' ? 'dovo-studio-nightly.rb' : 'dovo-studio.rb'
+      const response = await fetch(
+        `https://raw.githubusercontent.com/dovocode/dovo-studio/main/Casks/${file}`,
+        { cache: 'no-store', signal: AbortSignal.timeout(15000) },
+      )
+      if (response.status === 404) return undefined
+      if (!response.ok)
+        throw new Error(`Published ${channel} release check failed (HTTP ${response.status})`)
+      const source = await response.text()
+      const version = /^\s*version "([^"\r\n]+)"\s*$/m.exec(source)?.[1]
+      if (
+        !version ||
+        !versionParts(version) ||
+        (version.includes('-nightly.') ? 'nightly' : 'stable') !== channel
+      )
+        throw new Error(`Invalid published ${channel} release version`)
+      const url = `https://github.com/dovocode/dovo-studio/releases/tag/v${version}`
+      if (!source.includes(`/releases/download/v${version}/`))
+        throw new Error(`Invalid published ${channel} release address`)
+      return [channel, { version, notes: '', url }] as const
+    }),
+  )
+  if (!entries.some(Boolean)) throw new Error('No published release metadata is available')
+  return Object.fromEntries(entries.filter((entry) => entry !== undefined))
+}
+let pending: Promise<RuntimeReleases> | undefined
+export function fetchRuntimeReleases(): Promise<RuntimeReleases> {
+  if (pending) return pending
+  const request = fetchGitHubReleases().catch(async (cause: unknown) => {
+    try {
+      return await publishedRuntimeReleases()
+    } catch (fallback: unknown) {
+      throw new AggregateError(
+        [cause, fallback],
+        `Could not check releases: ${fallback instanceof Error ? fallback.message : String(fallback)}`,
+      )
+    }
+  })
+  pending = request
+  const clear = () => {
+    if (pending === request) pending = undefined
+  }
+  void request.then(clear, clear)
+  return request
 }
 
 export function runtimeUpdate(

@@ -142,6 +142,7 @@ export {
   watchRuntimeActivity,
 } from './runtime/connection/live-sync.js'
 export * from './conversation/mcp-apps.js'
+export * from './conversation/artifacts.js'
 export * from './conversation/mcp-app-downloads.js'
 
 export * from './conversation/presentation/turn-duration.js'

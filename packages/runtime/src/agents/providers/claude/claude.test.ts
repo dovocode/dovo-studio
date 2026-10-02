@@ -57,6 +57,7 @@ it('runs the Claude compact command and reports its boundary', async () => {
       options: expect.objectContaining({
         extraArgs: { verbose: null, settings: '/config with spaces' },
         env: expect.objectContaining({ TEST_AGENT_ENV: 'configured' }),
+        settingSources: ['user', 'project', 'local'],
       }),
     }),
   )
@@ -64,7 +65,30 @@ it('runs the Claude compact command and reports its boundary', async () => {
   mocks.query.mockClear()
   await claudeAdapter.run({ ...run, compact: undefined, sessionId: undefined, ephemeral: true })
   expect(mocks.query).toHaveBeenCalledWith(
-    expect.objectContaining({ options: expect.objectContaining({ persistSession: false }) }),
+    expect.objectContaining({
+      options: expect.objectContaining({
+        persistSession: false,
+        settingSources: ['user', 'project', 'local'],
+      }),
+    }),
+  )
+  mocks.query.mockClear()
+  await claudeAdapter.run({
+    ...run,
+    compact: undefined,
+    sessionId: undefined,
+    ephemeral: true,
+    tools: 'none',
+  })
+  expect(mocks.query).toHaveBeenCalledWith(
+    expect.objectContaining({
+      options: expect.objectContaining({
+        settingSources: [],
+        tools: [],
+        strictMcpConfig: true,
+        mcpServers: {},
+      }),
+    }),
   )
 })
 it('keeps a streaming Claude connection across turns', async () => {
@@ -112,6 +136,11 @@ it('keeps a streaming Claude connection across turns', async () => {
     await claudeAdapter.run({ ...run, sessionId: 'session', prompt: 'second' })
     expect(prompts).toEqual(['first', 'second'])
     expect(mocks.query).toHaveBeenCalledTimes(1)
+    expect(mocks.query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({ settingSources: ['user', 'project', 'local'] }),
+      }),
+    )
   } finally {
     await claudeAdapter.dispose?.()
     pressure.mockRestore()

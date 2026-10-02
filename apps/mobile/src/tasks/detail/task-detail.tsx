@@ -57,6 +57,7 @@ import { SideQuestion } from '../conversation/components/side-question'
 import { ProjectInstructions } from './project-instructions'
 import { ReviewFindings } from '../conversation/components/review-findings'
 import { randomUUID } from 'expo-crypto'
+import { ArtifactBrowser } from '../../ui/content/artifacts'
 export function TaskDetail({
   task,
   onBack,
@@ -137,7 +138,7 @@ function TaskDetailContent({
   const { focused, navigate } = useNavigation()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const { snapshot, connected, profiles, callEffect, read } = useRuntime()
+  const { snapshot, connected, profiles, callEffect, read, activeId } = useRuntime()
   const worktreeThread = useAction()
   const worktreeActions: HeaderAction[] =
     task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
@@ -383,6 +384,7 @@ function TaskDetailContent({
   }, [pane, hasDiff])
   const [expandedPreview, setExpandedPreview] = useApplicationState(false)
   const [settings, setSettings] = useApplicationState(false)
+  const [artifactsOpen, setArtifactsOpen] = useState(false)
   const [settingsBusy, setSettingsBusy] = useApplicationState(false)
   const viewed = useTaskViewed(task, pane === 'chat' && !settings)
   return (
@@ -481,13 +483,23 @@ function TaskDetailContent({
             worktreeActions,
             moveActions,
             [
+              ...(snapshot?.artifactsEnabled
+                ? [
+                    {
+                      label: 'Artifacts',
+                      icon: 'artifact' as const,
+                      overflow: true,
+                      onPress: () => setArtifactsOpen(true),
+                    },
+                  ]
+                : []),
               {
                 label: 'Edit project instructions',
                 icon: 'settings',
                 overflow: true,
                 onPress: () => setEditingInstructions(true),
               },
-            ],
+            ] satisfies HeaderAction[],
           )}
       />
       <PullStatus task={task} />
@@ -672,6 +684,13 @@ function TaskDetailContent({
           <TerminalPane task={task} selected={terminalId} onSelect={setTerminalId} />
         )}
       </ConversationProvider>
+      {artifactsOpen && snapshot?.artifactsEnabled && (
+        <ArtifactBrowser
+          key={`${activeId}:${task.id}`}
+          taskId={task.id}
+          onClose={() => setArtifactsOpen(false)}
+        />
+      )}
       {settings && (
         <Sheet title="Task settings" busy={settingsBusy} onClose={() => setSettings(false)}>
           <TaskSettings

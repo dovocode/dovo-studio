@@ -3,7 +3,13 @@ import { View } from 'react-native'
 import { Switch } from '../../ui/controls/switch'
 import { Effect } from 'effect'
 import { clientTaskScope } from '@dovo/client-runtime'
-import { normalizeBranchPrefix, runtimePreferencesSchema } from '@dovo/protocol'
+import {
+  normalizeBranchPrefix,
+  runtimePreferencesSchema,
+  artifactRetentionChoices,
+  artifactRetentionSchema,
+  decode,
+} from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { useRuntime } from './provider'
 import { useAction } from '../../ui/controls/use-action'
@@ -57,6 +63,44 @@ export function RuntimePreferences() {
   }
   return (
     <View style={{ gap: 16 }}>
+      <Section title="Optional features">
+        <View style={{ gap: 6 }}>
+          <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
+            <Text style={[styles.text, { flex: 1 }]}>Dovo Artifacts</Text>
+            <Switch
+              accessibilityLabel="Enable Dovo Artifacts"
+              value={value?.enableArtifacts ?? false}
+              disabled={disabled}
+              onValueChange={(enableArtifacts) => save({ enableArtifacts })}
+            />
+          </View>
+          <Text style={styles.muted}>
+            Let agents create documents, diagrams, code and interactive previews inside threads.
+            Shared by desktop and mobile for this computer.
+          </Text>
+        </View>
+        {(['settledArtifactRetention', 'archivedArtifactRetention'] as const).map((key) => (
+          <Choice
+            key={key}
+            label={
+              key === 'settledArtifactRetention'
+                ? 'Artifacts when settled'
+                : 'Artifacts when archived'
+            }
+            disabled={disabled}
+            value={value?.[key] ?? 'forever'}
+            items={artifactRetentionChoices.map((choice) => ({
+              id: choice.value,
+              name: choice.label,
+            }))}
+            onChange={(policy) => save({ [key]: decode(artifactRetentionSchema, policy) })}
+          />
+        ))}
+        <Text style={styles.muted}>
+          Applies to existing artifacts and all versions, even when disabled. Deletion is permanent.
+          The archived rule takes priority; reopening or restoring resets the state’s timer.
+        </Text>
+      </Section>
       <Section title="Running tasks">
         <View style={{ gap: 6 }}>
           <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>

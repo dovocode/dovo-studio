@@ -1,8 +1,11 @@
 import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
-import { mcpAppReferences } from '@dovo/protocol'
+import { mcpAppReferences, artifactReferences } from '@dovo/protocol'
 import { lazy, Suspense } from 'react'
 const McpAppView = lazy(() =>
   import('../../../ui/content/mcp-app').then((module) => ({ default: module.McpAppView })),
+)
+const ArtifactCard = lazy(() =>
+  import('../../../ui/content/artifacts').then((module) => ({ default: module.ArtifactCard })),
 )
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { ActivityIndicator, Pressable, View } from 'react-native'
@@ -94,6 +97,14 @@ export function ToolActivityRow({
       {mcpAppReferences(event.payload).map((reference) => (
         <Suspense key={reference.id} fallback={<Text>Loading app…</Text>}>
           <McpAppView reference={reference} />
+        </Suspense>
+      ))}
+      {artifactReferences(event.payload).map((reference) => (
+        <Suspense
+          key={`${reference.id}:${reference.revision}`}
+          fallback={<Text>Loading artifact…</Text>}
+        >
+          <ArtifactCard reference={reference} />
         </Suspense>
       ))}
       {open && expandable && (

@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import { runServerUpdateCommand } from './server-update-command.js'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
@@ -10,7 +9,6 @@ import { readConnection } from './connection.js'
 import { writePrivateJson } from './server-config.js'
 import { updateService } from './server-service.js'
 
-const execute = promisify(execFile)
 const versionNumbers = (value: string) =>
   /^\d+\.\d+\.\d+(?:-nightly\.\d+)?$/.test(value)
     ? value.replace('-nightly.', '.').split('.').map(Number)
@@ -214,10 +212,10 @@ export async function runRemoteServerUpdate(directory: string, version: string) 
           await download(directory, version, archive, asset)
           const extracted = join(stage, 'extracted')
           await mkdir(extracted)
-          await execute('tar', ['-xzf', archive, '-C', extracted], { timeout: 120000 })
+          await runServerUpdateCommand('tar', ['-xzf', archive, '-C', extracted], 120000)
           const candidate = join(extracted, 'bin', name)
           if (!existsSync(candidate)) throw new Error('Server archive has no launcher')
-          await execute(candidate, ['--help'], { timeout: 15000 })
+          await runServerUpdateCommand(candidate, ['--help'], 15000)
           await rename(extracted, destination)
         }
         status(directory, { status: 'installing', version, progress: 100 })

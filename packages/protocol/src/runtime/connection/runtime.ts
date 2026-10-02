@@ -1,4 +1,5 @@
 import { browserProfilesSchema, defaultBrowserProfiles } from '../previews/browser-profiles.js'
+import { artifactRetentionSchema } from '../../conversation/artifacts.js'
 export const RUNTIME_PROTOCOL_VERSION = 2
 export const PAIRING_PROTOCOL_VERSION = 2
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
@@ -72,6 +73,7 @@ export const providerStatusSchema = mutableStruct({
   detail: Schema.String,
 })
 export const snapshotSchema = mutableStruct({
+  artifactsEnabled: Schema.optional(Schema.Boolean),
   /** Present on scoped replicas; only these threads contain authoritative history. */
   detailTaskIds: Schema.optional(mutableArray(Schema.String)),
   runtimeInstanceId: Schema.optional(Schema.String),
@@ -253,6 +255,13 @@ export const responses = {
 }
 
 export const runtimePreferencesSchema = mutableStruct({
+  settledArtifactRetention: Schema.optionalWith(artifactRetentionSchema, {
+    default: () => 'forever' as const,
+  }),
+  archivedArtifactRetention: Schema.optionalWith(artifactRetentionSchema, {
+    default: () => 'forever' as const,
+  }),
+  enableArtifacts: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   browserProfiles: Schema.optionalWith(browserProfilesSchema, { default: defaultBrowserProfiles }),
   autoContinueAfterRestart: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   /** Archive tasks with no activity for this many days; 0 turns it off. */

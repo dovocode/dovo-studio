@@ -1,5 +1,6 @@
 import { MutationReceipts } from './storage/mutation-receipts.js'
 import { McpApps } from './mcp-apps/bridge.js'
+import { Artifacts } from './artifacts/artifacts.js'
 import { ScratchWorkspaces } from './scm/repositories/scratch-workspaces.js'
 import { AcpInstallations } from './agents/configuration/acp-installations.js'
 import type { ExternalListener } from './http/external-listener.js'
@@ -47,7 +48,12 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       ? join(tmpdir(), `dovo-acp-${randomUUID()}`)
       : join(dirname(resolve(db.name)), 'acp'),
   )
-  const store = new WorkspaceStore(db, (before, after) => activity.workspace(before, after))
+  let artifacts: Artifacts | undefined
+  const store = new WorkspaceStore(db, (before, after) => {
+    activity.workspace(before, after)
+    artifacts?.workspace(before, after)
+  })
+  artifacts = new Artifacts(db, store, activity, () => preferences.get())
   const forgeCli = new ForgeCliAccounts(() => commands.get())
   const forges = new ForgeConnections(
     db,
@@ -105,6 +111,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       questions,
       attachments,
       activity,
+      () => preferences.get().enableArtifacts,
     ),
     jobs = new Jobs(db, store, tasks, activity)
   const mcpApps = new McpApps(db, store, activity, approvals)
@@ -145,6 +152,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     mutations: new MutationReceipts(db),
     instanceId: randomUUID(),
     mcpApps,
+    artifacts,
     scratch,
     pushNotifications,
     acpInstallations,
@@ -184,6 +192,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  artifacts: Artifacts
   mutations: MutationReceipts
   mcpApps: McpApps
   instanceId: string

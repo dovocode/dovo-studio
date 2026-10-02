@@ -11,6 +11,7 @@ import {
   Download,
   RefreshCw,
   PanelsTopLeft,
+  FileCode2,
 } from 'lucide-react'
 import type { DesktopUpdateState } from '@dovo/protocol'
 import type { StudioIcon, StudioView } from '@dovo/studio-core'
@@ -28,6 +29,7 @@ const size = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 
 const icons: Record<StudioIcon, typeof Bot> = {
   tasks: MessagesSquare,
+  artifacts: FileCode2,
   issues: CircleDot,
   jira: PanelsTopLeft,
   scm: GitBranch,
