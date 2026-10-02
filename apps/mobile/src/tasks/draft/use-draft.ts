@@ -26,6 +26,7 @@ export function useDraft(taskId: string, initial = '') {
   useEffect(() => {
     const commands = clientTaskScope()
     let edited = false
+    let disposed = false
     activeKey.current = key
     setLoadedKey(null)
     setSubmission(undefined)
@@ -38,7 +39,11 @@ export function useDraft(taskId: string, initial = '') {
     void commands.run(
       hydrateDraft(
         drafts.readRecordEffect(key, migrateLegacy ? `dovo.draft.${taskId}` : undefined).pipe(
-          Effect.tap((record) => Effect.sync(() => setSubmission(record?.submission))),
+          Effect.tap((record) =>
+            Effect.sync(() => {
+              if (!disposed) setSubmission(record?.submission)
+            }),
+          ),
           Effect.map((record) => record?.text ?? null),
         ),
         {
@@ -48,6 +53,7 @@ export function useDraft(taskId: string, initial = '') {
       ).pipe(
         Effect.tap((hydration) =>
           Effect.sync(() => {
+            if (disposed) return
             if (hydration.text !== undefined) setText(hydration.text)
             setLoadedKey(key)
             setError(hydration.error)
@@ -56,6 +62,7 @@ export function useDraft(taskId: string, initial = '') {
       ),
     )
     return () => {
+      disposed = true
       void commands.stop()
       activeKey.current = null
       unsubscribe()
@@ -86,7 +93,7 @@ export function useDraft(taskId: string, initial = '') {
     )
   }
   return {
-    text: activeKey.current === key ? text : initial,
+    text: loadedKey === key ? text : '',
     update,
     ready: loadedKey === key,
     submission: loadedKey === key ? submission : undefined,

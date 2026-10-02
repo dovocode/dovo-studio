@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
+import { useEffect, useState, type KeyboardEvent, type RefObject } from 'react'
 import { Schema } from 'effect'
 import { FileText, Hash, Plug, Settings2, Sparkles, SquareSlash } from 'lucide-react'
 import {
@@ -102,25 +102,27 @@ export function useFileMentions({
     !!mention &&
     dismissed !== mention.start &&
     (suggestions.length > 0 || (managing && !mention.query))
-  const generation = useRef(0)
   useEffect(() => {
     if (trigger !== '@' || query === undefined || !connected) {
       setFiles([])
       return
     }
-    const current = ++generation.current
+    let disposed = false
     const timer = setTimeout(() => {
       void request('/api/tasks/files', { id: taskId, query }, filesSchema).then(
         (result) => {
-          if (generation.current !== current) return
+          if (disposed) return
           setFiles(result.files)
         },
         () => {
-          if (generation.current === current) setFiles([])
+          if (!disposed) setFiles([])
         },
       )
     }, 120)
-    return () => clearTimeout(timer)
+    return () => {
+      disposed = true
+      clearTimeout(timer)
+    }
   }, [trigger, query, taskId, connected, request])
   useEffect(() => setActive(0), [trigger, query])
   const track = () => setCaret(input.current?.selectionStart ?? draft.length)

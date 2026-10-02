@@ -10,6 +10,8 @@ import { AttachmentPicker } from './attachment-picker'
 import { MessageAttachments } from './message-attachments'
 import { useAttachments } from './use-attachments'
 import { useEffect, useRef, useState, useMemo } from 'react'
+import { useComposerDraft } from './use-composer-draft'
+import { ComposerCommandDialog } from './composer-command-dialog'
 import { useFileMentions, type ComposerCommandId } from './file-mentions'
 import { SavedPromptsDialog } from '../../dialogs/saved-prompts-dialog'
 import { REVIEW_PROMPT, contextMeter, taskResources } from '@dovo/protocol'
@@ -25,10 +27,6 @@ import {
 import { useWorkspace, updateTask, responses, type Task } from '@dovo/studio-core'
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
   IconButton,
   PromptInput,
   PromptInputTextarea,
@@ -65,13 +63,13 @@ export function Composer({
   const sending = submitBusy || machineMoving
   const sendingRequest = useRef(false)
   const attachments = useAttachments(task)
-  // Draft text is edited locally and written back to the workspace on a short debounce.
-  // Routing every keystroke through setWorkspace would deep-diff and sync the whole
-  // workspace, re-rendering every useWorkspace consumer on each character typed.
-  const [draft, setDraft] = useState(task.draft)
+  const composerDraft = useComposerDraft(task)
+  const draft = composerDraft.text
+  const setDraft = composerDraft.update
   const [submittedText, setSubmittedText] = useState<string | null>(null)
   const visibleDraft =
     submitBusy && submittedText !== null && draft.trim() === submittedText ? '' : draft
+  const input = useRef<HTMLTextAreaElement>(null)
   const insertedReference = useRef<string | null>(null)
   const insertedAnswer = useRef<string | null>(null)
   useEffect(() => {
@@ -80,7 +78,7 @@ export function Composer({
     setDraft((current) => [current.trimEnd(), composerInsert.text].filter(Boolean).join('\n\n'))
     input.current?.focus()
     onComposerInsertApplied?.()
-  }, [composerInsert])
+  }, [composerInsert, setDraft, onComposerInsertApplied])
   useEffect(() => {
     if (
       !codeReference ||
@@ -90,47 +88,7 @@ export function Composer({
       return
     insertedReference.current = codeReference.id
     setDraft((current) => [current.trimEnd(), codeReference.text].filter(Boolean).join('\n\n'))
-  }, [codeReference, task.id])
-  const lastWritten = useRef(task.draft)
-  useEffect(() => {
-    // Adopt external draft changes (e.g. moving the task to another machine) without
-    // clobbering in-progress typing.
-    if (task.draft !== lastWritten.current) {
-      lastWritten.current = task.draft
-      setDraft(task.draft)
-    }
-  }, [task.draft])
-  const writeDraft = useRef((_value: string) => {})
-  writeDraft.current = (value: string) => {
-    try {
-      setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, draft: value })))
-      lastWritten.current = value
-    } catch {
-      // A connection change refuses edits; the next change or unmount retries the write.
-    }
-  }
-  const unwritten = useRef<string | null>(null)
-  useEffect(() => {
-    if (draft === lastWritten.current) {
-      unwritten.current = null
-      return
-    }
-    unwritten.current = draft
-    const timer = setTimeout(() => {
-      unwritten.current = null
-      writeDraft.current(draft)
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [draft, task.id, setWorkspace])
-  // Leaving the task inside the debounce window must not drop the last typed characters.
-  useEffect(
-    () => () => {
-      if (unwritten.current !== null && unwritten.current !== lastWritten.current)
-        writeDraft.current(unwritten.current)
-    },
-    [],
-  )
-  const input = useRef<HTMLTextAreaElement>(null)
+  }, [codeReference, task.id, setDraft])
   const [command, setCommand] = useState<'new-session' | 'undo' | null>(null)
   const [commandBusy, setCommandBusy] = useState(false)
   const [commandError, setCommandError] = useState('')
@@ -223,7 +181,18 @@ export function Composer({
     attachmentIds: string[]
     mode: 'queue' | 'steer'
     title?: string
+    accepted?: boolean
   } | null>(null)
+  const acceptDraft = composerDraft.accept
+  useEffect(() => {
+    const submitted = attempt.current
+    if (!submitted || submitted.accepted) return
+    if (![...task.messages, ...(task.queue ?? [])].some((message) => message.id === submitted.id))
+      return
+    submitted.accepted = true
+    acceptDraft(submitted.text)
+    onPending(null)
+  }, [task.messages, task.queue, acceptDraft, onPending])
   const firstMessage = task.messages.length === 0 && !task.queue?.length && !task.turns?.length
   const agent = resolveTaskAgent(task, workspace.agents)
   // Settings → General → Follow-ups while a task runs: what Enter does mid-turn.
@@ -297,6 +266,7 @@ export function Composer({
     }
     onPending(pending)
     try {
+      composerDraft.flush()
       await flush()
       if (firstMessage) {
         const summary =
@@ -337,18 +307,15 @@ export function Composer({
             messages: [...t.messages, pending.message],
           })),
         )
-      lastWritten.current = ''
-      setDraft((current) => (current.trim() === text ? '' : current))
-      setWorkspace((w) =>
-        updateTask(w, task.id, (t) => ({
-          ...t,
-          draft: t.draft.trim() === text ? '' : t.draft,
-        })),
-      )
+      if (!attempt.current.accepted) composerDraft.accept(text)
       attempt.current = null
     } catch (e) {
-      onPending({ ...pending, state: 'failed' })
-      setError(String(e))
+      if (attempt.current?.accepted) {
+        attempt.current = null
+      } else {
+        onPending({ ...pending, state: 'failed' })
+        setError(String(e))
+      }
     } finally {
       sendingRequest.current = false
       setSending(false)
@@ -568,9 +535,9 @@ export function Composer({
             )}
           </div>
         </PromptInputFooter>
-        {(error || attachments.error) && (
+        {(error || composerDraft.error || attachments.error) && (
           <p role="alert" className="px-3 pb-2 text-xs text-destructive">
-            {error || attachments.error}
+            {error || composerDraft.error || attachments.error}
           </p>
         )}
       </PromptInput>
@@ -580,41 +547,16 @@ export function Composer({
           onClose={() => setManagingPrompts(false)}
         />
       )}
-      <Dialog open={!!command} onOpenChange={(open) => !open && !commandBusy && setCommand(null)}>
-        <DialogContent className="max-w-md">
-          <DialogTitle className="text-sm">
-            {command === 'undo' ? 'Undo the last turn’s changes?' : 'Start a new agent session?'}
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            {command === 'undo'
-              ? undoable
-                ? 'The files that turn changed go back to how they were before it. Your current files are saved first, so you can redo this from the turn.'
-                : 'No turn has file changes left to undo.'
-              : 'The next message starts the agent fresh, with this conversation as context. The current session is not deleted.'}
-          </DialogDescription>
-          {commandError && (
-            <p role="alert" className="text-xs text-destructive">
-              {commandError}
-            </p>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" disabled={commandBusy} onClick={() => setCommand(null)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={
-                commandBusy ||
-                !connected ||
-                task.status === 'running' ||
-                (command === 'undo' && !undoable)
-              }
-              onClick={confirmCommand}
-            >
-              {command === 'undo' ? 'Undo changes' : 'Start fresh'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ComposerCommandDialog
+        command={command}
+        commandBusy={commandBusy}
+        canUndo={!!undoable}
+        connected={connected}
+        running={task.status === 'running'}
+        error={commandError}
+        onClose={() => setCommand(null)}
+        onConfirm={confirmCommand}
+      />
       <div className={pendingQuestion ? 'hidden' : undefined}>
         <ComposerWorkspace
           task={task}
