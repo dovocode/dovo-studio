@@ -24,6 +24,7 @@ export function useConversationHistory<
   })
   const active = useRef(scope)
   const pending = useRef<string | null>(null)
+  const initiallyLoaded = useRef<string | null>(null)
   const previous = useRef({ scope, live })
   useEffect(() => {
     active.current = scope
@@ -50,7 +51,7 @@ export function useConversationHistory<
   const pages = loaded.scope === scope ? loaded.pages : emptyPages
   const task = useMemo(() => mergeConversationHistory(live, pages), [live, pages])
   const cursor = pages.length ? pages[0]?.before : live.historyBefore
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!cursor || !connected || pending.current === scope) return
     pending.current = scope
     setDelivery({ scope, busy: true, error: '' })
@@ -80,7 +81,14 @@ export function useConversationHistory<
       if (pending.current === scope) pending.current = null
       setDelivery((value) => (value.scope === scope ? { ...value, busy: false } : value))
     }
-  }
+  }, [cursor, connected, scope, request, live])
+  useEffect(() => {
+    // Fetch one bounded page on opening, rather than waiting for the reader to
+    // expand the small live snapshot. Further pages stay explicitly requested.
+    if (!cursor || !connected || initiallyLoaded.current === scope) return
+    initiallyLoaded.current = scope
+    void load()
+  }, [scope, cursor, connected, load])
   const setBookmark = useCallback(
     (messageId: string, bookmarked: boolean) =>
       setLoaded((value) =>

@@ -24,7 +24,7 @@ try {
         contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {useConversationHistory} from './${file}';
-window.connection={connected:true,connection:{address:'http://host-a',token:'paired-a'},request:()=>new Promise((resolve,reject)=>{window.reply={resolve,reject}})};
+window.requests=0;window.connection={connected:true,connection:{address:'http://host-a',token:'paired-a'},request:()=>new Promise((resolve,reject)=>{window.requests++;window.reply={resolve,reject}})};
 const message=id=>({id,role:'assistant',text:id});
 function App(){const [live,setLive]=useState({id:'thread',messages:[message('m2'),message('m3')],turns:[],historyBefore:'m2'});window.setLive=setLive;window.historyState=useConversationHistory(live);return <div>{window.historyState.task.messages.map(m=>m.id).join(',')}</div>}
 createRoot(document.getElementById('app')).render(<App/>);`,
@@ -62,6 +62,11 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.waitForFunction(() => window.historyState?.task?.messages.length === 2)
+    if (file.startsWith('apps/mobile/')) {
+      await page.waitForFunction(() => window.historyState.busy && window.requests === 1)
+    } else if ((await page.evaluate(() => window.requests)) !== 0) {
+      throw new Error(`${file}: desktop history unexpectedly prefetched`)
+    }
     await page.evaluate(() => {
       window.historyState.load()
     })
@@ -91,6 +96,8 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       'm0,m1,m2,m3,m4'
     )
       throw new Error(`${file}: streaming lost paged history`)
+    if ((await page.evaluate(() => window.requests)) !== 1)
+      throw new Error(`${file}: duplicate history request during streaming`)
     await page.evaluate(() => window.historyState.setBookmark('m1', true))
     await page.waitForFunction(
       () => window.historyState.task.messages.find((m) => m.id === 'm1')?.bookmarked,
@@ -145,6 +152,41 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         !window.historyState.error &&
         window.historyState.task.messages.length === 2,
     )
+    if (file.startsWith('apps/mobile/')) {
+      const requests = await page.evaluate(() => window.requests)
+      await page.evaluate(() => {
+        window.connection = { ...window.connection, connected: false }
+        window.setLive({
+          id: 'offline',
+          messages: [{ id: 'latest', role: 'assistant', text: 'Latest' }],
+          turns: [],
+          historyBefore: 'latest',
+        })
+      })
+      await page.waitForFunction(() => window.historyState.task.id === 'offline')
+      if ((await page.evaluate(() => window.requests)) !== requests)
+        throw new Error('Mobile attempted to prefetch while disconnected')
+      await page.evaluate(() => {
+        window.connection = { ...window.connection, connected: true }
+        window.setLive((old) => ({ ...old }))
+      })
+      await page.waitForFunction(() => window.historyState.busy)
+      await page.evaluate(() =>
+        window.reply.resolve({
+          messages: [{ id: 'recent', role: 'user', text: 'Recent' }],
+          turns: [],
+          before: 'recent',
+        }),
+      )
+      await page.waitForFunction(() => !window.historyState.busy)
+      if (
+        (await page.evaluate(() =>
+          window.historyState.task.messages.map((m) => m.id).join(','),
+        )) !== 'recent,latest' ||
+        (await page.evaluate(() => window.requests)) !== requests + 1
+      )
+        throw new Error('Mobile did not prefetch exactly one recent page after reconnecting')
+    }
     if (errors.length) throw new Error(errors.join('\n'))
     await page.close()
   }
