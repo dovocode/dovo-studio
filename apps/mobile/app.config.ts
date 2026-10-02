@@ -23,6 +23,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...(process.env.DOVO_APPLE_TEAM_ID ? { appleTeamId: process.env.DOVO_APPLE_TEAM_ID } : {}),
     },
     plugins: [
+      './plugins/with-cocoapods-uuids.ts',
       ['./plugins/with-live-activity-push.ts', { enabled: push || notifications }],
       ...(config.plugins ?? []).map((plugin): NonNullable<ExpoConfig['plugins']>[number] =>
         Array.isArray(plugin) && plugin[0] === 'expo-widgets'
