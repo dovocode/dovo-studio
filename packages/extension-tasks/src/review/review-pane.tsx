@@ -1,3 +1,5 @@
+import { SavedFilePreview } from '../files/saved-file-preview'
+import { checkpointFiles } from '@dovo/protocol'
 import { fileStats } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useCallback, useMemo } from 'react'
@@ -69,16 +71,23 @@ export function ReviewPane({
       : source.kind === 'turn'
         ? turns.find((turn) => turn.id === source.id)
         : undefined
-  const files =
+  const sourceFiles =
     source.kind === 'working'
       ? task.files
       : source.kind === 'branch'
         ? (branchDiff?.files ?? [])
         : (selectedTurn?.checkpoint?.files ?? [])
-  const omitted =
-    source.kind === 'branch'
-      ? (branchDiff?.omitted ?? [])
-      : (selectedTurn?.checkpoint?.omitted ?? [])
+  const files = useMemo(
+    () =>
+      checkpointFiles({
+        files: sourceFiles,
+        omitted:
+          source.kind === 'branch'
+            ? (branchDiff?.omitted ?? [])
+            : (selectedTurn?.checkpoint?.omitted ?? []),
+      }),
+    [sourceFiles, source.kind, branchDiff?.omitted, selectedTurn?.checkpoint?.omitted],
+  )
   const file = files.find((item) => item.path === selected) ?? files[0]
   const sourceLabel =
     source.kind === 'working'
@@ -282,11 +291,6 @@ export function ReviewPane({
           {reviewError || branchError}
         </p>
       )}
-      {!!omitted.length && (
-        <p className="border-b px-3 py-1 text-[0.6875rem] text-muted-foreground">
-          {omitted.length} {omitted.length === 1 ? 'file has' : 'files have'} no text preview.
-        </p>
-      )}
       {actionsOpen && source.kind === 'working' && (
         <div className="max-h-[40%] shrink-0 overflow-y-auto border-b">
           <ReviewCommentsTray task={task} className="p-2" />
@@ -310,50 +314,59 @@ export function ReviewPane({
         <div className="flex min-h-0 min-w-0 flex-1">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <ErrorBoundary key={task.id + file.path}>
-              <PierreEditor
-                key={`${task.id}:${sourceLabel}:${file.path}`}
-                taskId={task.id}
-                onEditingChange={editingChanged}
-                onReference={onReference}
-                readOnly={source.kind !== 'working'}
-                comments={source.kind === 'working' ? task.messages : []}
-                onComment={async (body, range) => {
-                  const excerpt = (range.side === 'additions' ? file.after : file.before)
-                    .split('\n')
-                    .slice(range.start - 1, range.end)
-                    .join('\n')
-                  await request(
-                    '/api/tasks/feedback',
-                    {
-                      id: task.id,
-                      path: file.path,
-                      body,
-                      excerpt,
-                      ...range,
-                    },
-                    responses.ok,
-                  )
-                  setActionsOpen(true)
-                }}
-                file={file}
-                onSave={(after) =>
-                  setWorkspace((w) =>
-                    updateTask(w, task.id, (t) => ({
-                      ...t,
-                      files: t.files.map((f) =>
-                        f.path === file.path
-                          ? {
-                              ...f,
-                              diskContents: f.diskContents ?? f.after,
-                              after,
-                              viewed: f.after === after && f.viewed,
-                            }
-                          : f,
-                      ),
-                    })),
-                  )
-                }
-              />
+              {file.preview ? (
+                <SavedFilePreview
+                  key={`${sourceLabel}:${file.path}`}
+                  file={file}
+                  taskId={task.id}
+                  turnId={selectedTurn?.id}
+                />
+              ) : (
+                <PierreEditor
+                  key={`${task.id}:${sourceLabel}:${file.path}`}
+                  taskId={task.id}
+                  onEditingChange={editingChanged}
+                  onReference={onReference}
+                  readOnly={source.kind !== 'working'}
+                  comments={source.kind === 'working' ? task.messages : []}
+                  onComment={async (body, range) => {
+                    const excerpt = (range.side === 'additions' ? file.after : file.before)
+                      .split('\n')
+                      .slice(range.start - 1, range.end)
+                      .join('\n')
+                    await request(
+                      '/api/tasks/feedback',
+                      {
+                        id: task.id,
+                        path: file.path,
+                        body,
+                        excerpt,
+                        ...range,
+                      },
+                      responses.ok,
+                    )
+                    setActionsOpen(true)
+                  }}
+                  file={file}
+                  onSave={(after) =>
+                    setWorkspace((w) =>
+                      updateTask(w, task.id, (t) => ({
+                        ...t,
+                        files: t.files.map((f) =>
+                          f.path === file.path
+                            ? {
+                                ...f,
+                                diskContents: f.diskContents ?? f.after,
+                                after,
+                                viewed: f.after === after && f.viewed,
+                              }
+                            : f,
+                        ),
+                      })),
+                    )
+                  }
+                />
+              )}
             </ErrorBoundary>
           </div>
           {filesOpen && (

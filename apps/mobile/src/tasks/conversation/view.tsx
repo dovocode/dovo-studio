@@ -143,7 +143,7 @@ function CheckpointRow({
           >
             {checkpoint.files} {checkpoint.files === 1 ? 'file' : 'files'} changed
           </Text>
-          {!!turn?.checkpoint?.files.length && (
+          {!!turn?.checkpoint?.files.some((file) => !file.preview) && (
             <>
               <Text style={{ color: '#34d399', fontSize: 12 }}>+{totals.additions}</Text>
               <Text style={{ color: '#fb7185', fontSize: 12 }}>-{totals.deletions}</Text>
@@ -167,9 +167,6 @@ function CheckpointRow({
         />
       )}
 
-      {!!checkpoint.omitted && (
-        <Text style={styles.muted}>{checkpoint.omitted} files omitted from snapshot</Text>
-      )}
       {!!checkpoint.error && <Text style={styles.error}>{checkpoint.error}</Text>}
     </View>
   )

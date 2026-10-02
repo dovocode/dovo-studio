@@ -1,3 +1,5 @@
+import { SavedFilePreview } from '../../files/saved-file-preview'
+import { checkpointFiles, filePreviewLabel } from '@dovo/protocol'
 import { fileStats, FileIcon, DiffAmounts } from '../../files/presentation'
 import { responses, useDiffOptions, useWorkspace, useAppPreferences } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -95,7 +97,12 @@ export function TurnCheckpoint({
   const [restoring, setRestoring] = useApplicationState(false)
   const [restoreError, setRestoreError] = useApplicationState('')
   const { request, connected } = useWorkspace()
-  const stats = useMemo(() => turn.checkpoint?.files.map(fileStats) ?? [], [turn.checkpoint?.files])
+  const files = useMemo(
+    () => (turn.checkpoint ? checkpointFiles(turn.checkpoint) : []),
+    [turn.checkpoint],
+  )
+  const stats = useMemo(() => files.filter((file) => !file.preview).map(fileStats), [files])
+  const byPath = useMemo(() => new Map(files.map((file) => [file.path, file])), [files])
   const totals = stats.reduce(
     (sum, file) => ({
       additions: sum.additions + file.additions,
@@ -106,15 +113,13 @@ export function TurnCheckpoint({
   const checkpoint = turn.checkpoint
   if (!checkpoint) return null
   const undone = !!checkpoint.undone
-  const file = selected
-    ? checkpoint.files.find((entry) => entry.path === selected)
-    : checkpoint.files[0]
-  const count = checkpoint.files.length + checkpoint.omitted.length
+  const file = selected ? files.find((entry) => entry.path === selected) : files[0]
+  const count = files.length
   // Show checkpoint controls only once the turn has a result to inspect.
   if ((!checkpoint.after && !checkpoint.error) || (!count && checkpoint.after && !checkpoint.error))
     return null
   const folders = new Map<string, string[]>()
-  for (const path of [...checkpoint.files.map((entry) => entry.path), ...checkpoint.omitted]) {
+  for (const path of files.map((entry) => entry.path)) {
     const directory = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
     const paths = folders.get(directory) ?? []
     paths.push(path)
@@ -171,7 +176,13 @@ export function TurnCheckpoint({
             >
               <FileIcon path={path} />
               <span className="min-w-0 flex-1 truncate">{path}</span>
-              <DiffAmounts stats={stats.find((file) => file.path === path)} />
+              {byPath.get(path)?.preview ? (
+                <span className="text-[0.625rem] text-muted-foreground">
+                  {filePreviewLabel(byPath.get(path))}
+                </span>
+              ) : (
+                <DiffAmounts stats={stats.find((file) => file.path === path)} />
+              )}
             </button>
           ))}
           {Array.from(folders)
@@ -213,7 +224,13 @@ export function TurnCheckpoint({
                       <span className="min-w-0 flex-1 truncate">
                         {path.slice(path.lastIndexOf('/') + 1)}
                       </span>
-                      <DiffAmounts stats={stats.find((file) => file.path === path)} />
+                      {byPath.get(path)?.preview ? (
+                        <span className="text-[0.625rem] text-muted-foreground">
+                          {filePreviewLabel(byPath.get(path))}
+                        </span>
+                      ) : (
+                        <DiffAmounts stats={stats.find((file) => file.path === path)} />
+                      )}
                     </button>
                   ))}
                 </div>
@@ -232,25 +249,6 @@ export function TurnCheckpoint({
             <p role="alert" className="text-xs text-destructive">
               {checkpoint.error}
             </p>
-          )}
-          {!!checkpoint.omitted.length && (
-            <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer">
-                {checkpoint.omitted.length} files without text previews
-              </summary>
-              <p className="py-2">
-                Binary files, symlinks, submodules and files beyond preview limits are listed here.
-                Git snapshots retain repository file contents; submodules retain only their commit
-                reference.
-              </p>
-              <ul>
-                {checkpoint.omitted.map((path) => (
-                  <li key={path} className="break-all font-mono">
-                    {path}
-                  </li>
-                ))}
-              </ul>
-            </details>
           )}
           {file && taskId && (
             <div className="flex items-center gap-2 text-xs">
@@ -290,7 +288,7 @@ export function TurnCheckpoint({
               value={file.path}
               onValueChange={setSelected}
             >
-              {checkpoint.files.map((entry) => (
+              {files.map((entry) => (
                 <option key={entry.path} value={entry.path}>
                   {entry.path}
                 </option>
@@ -300,10 +298,14 @@ export function TurnCheckpoint({
           <div className="studio-code min-h-0 flex-1 overflow-auto rounded-md border">
             {file ? (
               <ErrorBoundary key={file.path}>
-                <CheckpointDiff key={file.path} file={file} />
+                {file.preview ? (
+                  <SavedFilePreview key={file.path} file={file} taskId={taskId} turnId={turn.id} />
+                ) : (
+                  <CheckpointDiff key={file.path} file={file} />
+                )}
               </ErrorBoundary>
             ) : (
-              <p className="p-4 text-xs text-muted-foreground">No text diffs available.</p>
+              <p className="p-4 text-xs text-muted-foreground">No changed files.</p>
             )}
           </div>
         </DialogContent>

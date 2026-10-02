@@ -1,3 +1,4 @@
+import { filePreviewLabel } from '@dovo/protocol'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { FileIcon, DiffAmounts } from '../files/presentation'
 import { Check, ChevronDown } from 'lucide-react'
@@ -86,8 +87,28 @@ function FolderRows({
             <FileIcon path={file.path} />
             {file.viewed && <Check className="size-3 shrink-0 text-emerald-400" />}
             <span className="min-w-0 flex-1 truncate text-left">{file.path.split('/').at(-1)}</span>
-            <DiffAmounts stats={stats.get(file.path)} />
-            <span className="text-[0.625rem] text-muted-foreground">{file.before ? 'M' : 'A'}</span>
+            {file.preview ? (
+              <span className="text-[0.625rem] text-muted-foreground">
+                {filePreviewLabel(file)}
+              </span>
+            ) : (
+              <DiffAmounts stats={stats.get(file.path)} />
+            )}
+            <span className="text-[0.625rem] text-muted-foreground">
+              {file.preview
+                ? file.preview.before
+                  ? file.preview.after
+                    ? 'M'
+                    : 'D'
+                  : file.preview.after
+                    ? 'A'
+                    : ''
+                : file.before
+                  ? file.after
+                    ? 'M'
+                    : 'D'
+                  : 'A'}
+            </span>
           </Button>
         ))}
     </>

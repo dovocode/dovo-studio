@@ -1,3 +1,5 @@
+import { SavedFilePreview } from '../files/saved-file-preview'
+import { checkpointFiles, filePreviewLabel } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -28,7 +30,10 @@ export function TaskReview({
     { busy, error, act } = useAction()
   const [checkpoint, setCheckpoint] = useApplicationState(initialCheckpoint)
   const history = task.turns?.find((turn) => turn.id === checkpoint)?.checkpoint
-  const files = checkpoint ? (history?.files ?? []) : task.files
+  const files = useMemo(
+    () => (checkpoint ? (history ? checkpointFiles(history) : []) : task.files),
+    [checkpoint, history, task.files],
+  )
   const [path, setPath] = useApplicationState(initialPath),
     [edit, setEdit] = useApplicationState<{
       path: string
@@ -38,7 +43,7 @@ export function TaskReview({
   const file = files.find((file) => file.path === path) ?? files[0]
   const patch = useMemo(
     () =>
-      file
+      file && !file.preview
         ? createTwoFilesPatch(file.path, file.path, file.before, file.after, undefined, undefined, {
             headerOptions: FILE_HEADERS_ONLY,
           })
@@ -77,7 +82,7 @@ export function TaskReview({
               .filter((turn) => turn.checkpoint)
               .map((turn, index) => ({
                 id: turn.id,
-                name: `Turn ${index + 1} · ${turn.status} · ${turn.checkpoint?.files.length ?? 0} files`,
+                name: `Turn ${index + 1} · ${turn.status} · ${turn.checkpoint ? checkpointFiles(turn.checkpoint).length : 0} files`,
               })),
           ]}
           onChange={(value) => {
@@ -86,9 +91,6 @@ export function TaskReview({
           }}
         />
         {!!history?.error && <Text style={styles.error}>{history.error}</Text>}
-        {!!history?.omitted.length && (
-          <Text style={styles.muted}>Not included: {history.omitted.join(', ')}</Text>
-        )}
         {!!checkpoint && (
           <Text style={styles.muted}>
             Snapshot diff for this turn. Select Current changes to edit files.
@@ -208,7 +210,7 @@ export function TaskReview({
               const name = parts.pop() ?? entry.path
               return {
                 id: entry.path,
-                name: `${entry.viewed ? '✓ ' : ''}${name} +${stats.additions} -${stats.deletions}${parts.length ? ` · ${parts.join('/')}` : ''}`,
+                name: `${entry.viewed ? '✓ ' : ''}${name} ${entry.preview ? filePreviewLabel(entry) : `+${stats.additions} -${stats.deletions}`}${parts.length ? ` · ${parts.join('/')}` : ''}`,
               }
             })}
             onChange={setPath}
@@ -216,7 +218,7 @@ export function TaskReview({
         </View>
       )}
       {!file && !edit ? (
-        <Text style={[styles.muted, styles.content]}>No changed text files.</Text>
+        <Text style={[styles.muted, styles.content]}>No changed files.</Text>
       ) : edit ? (
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Field
@@ -266,6 +268,13 @@ export function TaskReview({
             Applies on the connected computer only if the file still matches the loaded baseline.
           </Text>
         </ScrollView>
+      ) : file?.preview ? (
+        <SavedFilePreview
+          key={`${checkpoint}:${file.path}`}
+          file={file}
+          taskId={task.id}
+          turnId={checkpoint || undefined}
+        />
       ) : (
         <DiffView patch={patch} />
       )}

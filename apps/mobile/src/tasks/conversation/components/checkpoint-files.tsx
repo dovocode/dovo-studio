@@ -1,3 +1,4 @@
+import { checkpointFiles, filePreviewLabel } from '@dovo/protocol'
 import { useState } from 'react'
 import { Pressable, View } from 'react-native'
 import type { ChangedFile } from '@dovo/protocol'
@@ -24,8 +25,12 @@ export function CheckpointFiles({
   onOpen: (path: string) => void
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const stats = new Map(files.map((file) => [file.path, fileStats(file)]))
-  const groups = checkpointFolders([...files.map((file) => file.path), ...omitted])
+  const entries = checkpointFiles({ files, omitted })
+  const byPath = new Map(entries.map((file) => [file.path, file]))
+  const stats = new Map(
+    entries.filter((file) => !file.preview).map((file) => [file.path, fileStats(file)]),
+  )
+  const groups = checkpointFolders(entries.map((file) => file.path))
   const row = (path: string) => {
     const counts = stats.get(path)
     return (
@@ -40,7 +45,11 @@ export function CheckpointFiles({
         <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 12 }]}>
           {path.split('/').at(-1)}
         </Text>
-        {counts && <Amounts {...counts} />}
+        {counts ? (
+          <Amounts {...counts} />
+        ) : (
+          <Text style={[styles.muted, { fontSize: 11 }]}>{filePreviewLabel(byPath.get(path))}</Text>
+        )}
       </Pressable>
     )
   }

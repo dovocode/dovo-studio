@@ -1,6 +1,7 @@
 import { diffLines } from 'diff'
 import type { ChangedFile } from '@dovo/protocol'
 export function fileStats(file: ChangedFile) {
+  if (file.preview) return { additions: 0, deletions: 0 }
   return diffLines(file.before, file.after).reduce(
     (sum, change) => ({
       additions: sum.additions + (change.added ? change.count : 0),

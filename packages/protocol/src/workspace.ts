@@ -1,4 +1,5 @@
 import { pullStackSummarySchema } from './scm/pulls/pull-stack.js'
+import { filePreviewMetadataSchema } from './scm/repositories/file-previews.js'
 import { mutableArray, mutableStruct } from './shared/schema.js'
 import { minValue, maxValue, refine, urlSchema, isoDateTime } from './shared/schema.js'
 import { subagentSchema } from './conversation/workflow/subagents.js'
@@ -135,6 +136,7 @@ export const fileSchema = mutableStruct({
   after: Schema.String,
   viewed: Schema.Boolean,
   diskContents: Schema.optional(Schema.String),
+  preview: Schema.optional(filePreviewMetadataSchema),
 })
 export const diffCommentSchema = mutableStruct({
   side: Schema.Literal('additions', 'deletions'),

@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { createFilePreview } from './file-preview.js'
+import type { FilePreviewMetadata } from '@dovo/protocol'
 import { GithubBudget } from './github-budget.js'
 import { gitRemoteIdentity } from '@dovo/protocol'
 import { defaultShell, shellArguments } from '../../terminal/shell.js'
@@ -578,69 +581,142 @@ export class GitService {
       return '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
     }
   }
-  async checkpointChanges(cwd: string, before: string, after: string) {
+  async checkpointChanges(
+    cwd: string,
+    before: string,
+    after: string,
+  ): Promise<{ files: ChangedFile[]; omitted: string[] }> {
     const names = (
       await this.command(cwd, ['diff', '--name-only', '--no-renames', '-z', before, after, '--'])
     )
       .split('\0')
       .filter(Boolean)
-    const files: ChangedFile[] = [],
-      omitted: string[] = []
-    let remaining = 8 * 1024 * 1024
+    const files: ChangedFile[] = []
+    const trees = await Promise.all([before, after].map((tree) => this.treeFiles(cwd, tree, names)))
+    // These limits bound embedded previews, never the list of saved files.
+    let remaining = 1024 * 1024
+    let previews = 0
     for (const name of names) {
-      if (files.length >= 200) {
-        omitted.push(name)
-        continue
-      }
+      const sides = { before: trees[0].get(name), after: trees[1].get(name) }
+      const entries = [sides.before, sides.after].filter((side) => side !== undefined)
+      let kind: FilePreviewMetadata['kind'] | undefined = entries.some(
+        (side) => side.mode === '160000',
+      )
+        ? 'submodule'
+        : entries.some((side) => side.mode === '120000')
+          ? 'symlink'
+          : entries.some((side) => side.size > 256 * 1024)
+            ? 'large'
+            : previews >= 200 || entries.reduce((sum, side) => sum + side.size, 0) > remaining
+              ? 'deferred'
+              : undefined
       const contents: string[] = []
-      let supported = true
-      for (const tree of [before, after]) {
-        const entry = await this.command(cwd, [
-          '--literal-pathspecs',
-          'ls-tree',
-          '-z',
-          tree,
-          '--',
-          name,
-        ])
-        if (!entry) {
-          contents.push('')
-          continue
+      if (!kind) {
+        for (const side of [sides.before, sides.after]) {
+          const content = side ? await this.command(cwd, ['cat-file', 'blob', side.hash]) : ''
+          if (content.includes('\0') || content.includes('\ufffd')) {
+            kind = /\.(png|jpe?g|webp|gif|avif|tiff?|heic|ico)$/i.test(name) ? 'image' : 'binary'
+            break
+          }
+          contents.push(content)
         }
-        const [mode, type, hash] = entry.split('\t')[0].split(' ')
-        if (type !== 'blob' || !['100644', '100755'].includes(mode)) {
-          supported = false
-          break
-        }
-        const size = Number((await this.command(cwd, ['cat-file', '-s', hash])).trim())
-        if (size > 2 * 1024 * 1024 || size > remaining) {
-          supported = false
-          break
-        }
-        const content = await this.command(cwd, ['cat-file', 'blob', hash])
-        if (content.includes('\0') || content.includes('\ufffd')) {
-          supported = false
-          break
-        }
-        remaining -= size
-        contents.push(content)
       }
-      if (!supported) omitted.push(name)
-      else
+      if (kind) {
+        if (kind === 'large' && /\.(png|jpe?g|webp|gif|avif|tiff?|heic|ico)$/i.test(name))
+          kind = 'image'
         files.push({
           path: name,
-          before: contents[0],
-          after: contents[1],
+          before: '',
+          after: '',
           viewed: false,
+          preview: { kind, ...sides },
         })
+      } else {
+        remaining -= entries.reduce((sum, side) => sum + side.size, 0)
+        previews++
+        files.push({ path: name, before: contents[0], after: contents[1], viewed: false })
+      }
     }
-    return {
-      files,
-      omitted,
-    }
+    return { files, omitted: [] }
   }
+  private async treeFiles(cwd: string, tree: string, names: string[]) {
+    const files = new Map<string, NonNullable<FilePreviewMetadata['before']>>()
+    for (let index = 0; index < names.length; index += 200) {
+      const output = await this.command(cwd, [
+        '--literal-pathspecs',
+        'ls-tree',
+        '-z',
+        '-l',
+        tree,
+        '--',
+        ...names.slice(index, index + 200),
+      ])
+      for (const entry of output.split('\0').filter(Boolean)) {
+        const tab = entry.indexOf('\t')
+        const [mode, , hash, size] = entry.slice(0, tab).trim().split(/\s+/)
+        files.set(entry.slice(tab + 1), { mode, hash, size: size === '-' ? 0 : Number(size) })
+      }
+    }
+    return files
+  }
+  async checkpointFilePreview(cwd: string, before: string, after: string, path: string) {
+    const sides = await Promise.all(
+      [before, after].map((tree) => this.treeFiles(cwd, tree, [path])),
+    )
+    const old = sides[0].get(path),
+      next = sides[1].get(path)
+    if (!old && !next) throw new HttpError(404, 'This file is not in the saved snapshots.')
+    return createFilePreview(path, { before: old, after: next }, (hash, limit) =>
+      this.blobPrefix(cwd, hash, limit),
+    )
+  }
+  /** Read a bounded prefix without buffering the rest of a potentially huge saved blob. */
+  private blobPrefix(cwd: string, hash: string, limit: number): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(this.settings().git, ['cat-file', 'blob', hash], {
+        cwd,
+        env: processEnvironment(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      const chunks: Buffer[] = []
+      let size = 0,
+        stopped = false,
+        stderr = ''
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL')
+        reject(new HttpError(504, 'File preview timed out.'))
+      }, 30000)
+      child.stdout.on('data', (chunk: Buffer) => {
+        const prefix = chunk.subarray(0, limit - size)
+        chunks.push(prefix)
+        size += prefix.length
+        if (size >= limit) {
+          stopped = true
+          child.kill('SIGKILL')
+        }
+      })
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr = (stderr + chunk.toString()).slice(0, 4000)
+      })
+      child.on('error', (error) => {
+        clearTimeout(timer)
+        reject(error)
+      })
+      child.on('close', (code) => {
+        clearTimeout(timer)
+        if (code !== 0 && !stopped)
+          reject(new HttpError(500, stderr || 'Could not load the saved file.'))
+        else resolve(Buffer.concat(chunks, size))
+      })
+    })
+  }
+
   /** Committed changes on this branch since its merge base with the default branch. */
   async branchChangesFiles(cwd: string) {
+    const { before, after, base } = await this.branchTrees(cwd)
+    return { ...(await this.checkpointChanges(cwd, before, after)), base }
+  }
+  async branchTrees(cwd: string) {
     const head = (await this.command(cwd, ['rev-parse', '--verify', 'HEAD'])).trim()
     const originHead = await this.command(cwd, [
       'symbolic-ref',
@@ -671,7 +747,7 @@ export class GitService {
         'No default branch was found. Set origin/HEAD or create a main or master branch.',
       )
     const ancestor = (await this.command(cwd, ['merge-base', base, head])).trim()
-    return { ...(await this.checkpointChanges(cwd, ancestor, head)), base }
+    return { before: ancestor, after: head, base }
   }
   async save(path: string, name: string, expected: string, contents: string) {
     const { path: root } = await this.inspect(path)

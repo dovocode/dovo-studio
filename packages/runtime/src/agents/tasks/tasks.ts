@@ -282,6 +282,22 @@ export class Tasks {
       return { ok: true }
     })
   }
+  async filePreview(id: string, path: string, turnId?: string) {
+    const task = this.store.task(id)
+    const cwd = await this.checkouts.directory(id)
+    if (turnId) {
+      const checkpoint = task.turns?.find((turn) => turn.id === turnId)?.checkpoint
+      if (!checkpoint?.after) throw new HttpError(404, 'This turn has no saved snapshot.')
+      if (
+        !checkpoint.files.some((file) => file.path === path) &&
+        !checkpoint.omitted.includes(path)
+      )
+        throw new HttpError(404, 'This file was not changed in this turn.')
+      return this.git.checkpointFilePreview(cwd, checkpoint.before, checkpoint.after, path)
+    }
+    const trees = await this.git.branchTrees(cwd)
+    return this.git.checkpointFilePreview(cwd, trees.before, trees.after, path)
+  }
   /** Runs the latest turn's request again, optionally with another model of the same
    * provider. That turn's file changes are undone first (saved to a ref, never lost). */
   retryTurnEffect(id: string, turnId: string, model?: string) {

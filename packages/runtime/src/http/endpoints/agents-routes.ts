@@ -753,6 +753,17 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
         return yield* serviceResult(handoffTask(s, input.id, input.target))
       }
+      if (method === 'POST' && path === '/api/tasks/file/preview') {
+        const input = decode(
+          mutableStruct({
+            id: idSchema,
+            path: maxValue(minValue(Schema.String, 1), 4000),
+            turnId: Schema.optional(idSchema),
+          }),
+          yield* serviceResult(body(request)),
+        )
+        return yield* serviceResult(s.tasks.filePreview(input.id, input.path, input.turnId))
+      }
       if (method === 'POST' && path === '/api/tasks/file/restore') {
         const input = decode(
           mutableStruct({

@@ -57,6 +57,23 @@ it('undoes and redoes a turn’s file changes without touching the branch or ind
     await s.tasks.start(task.id)
   ).done
   const turnId = s.store.task(task.id).turns?.at(-1)?.id ?? ''
+
+  const preview = await call('/api/tasks/file/preview', { id: task.id, path: 'hello.txt', turnId })
+  expect(preview.status).toBe(200)
+  expect(preview.body).toMatchObject({
+    before: { text: 'original\n' },
+    after: { text: 'agent edit\n' },
+  })
+  expect(
+    (await call('/api/tasks/file/preview', { id: task.id, path: '../outside', turnId })).status,
+  ).toBe(404)
+  expect(
+    (await call('/api/tasks/file/preview', { id: task.id, path: '.gitignore', turnId })).status,
+  ).toBe(404)
+  expect(
+    (await call('/api/tasks/file/preview', { id: task.id, path: 'hello.txt', turnId: 'missing' }))
+      .status,
+  ).toBe(404)
   const head = (await exec('git', ['rev-parse', 'HEAD'], { cwd: f.directory })).stdout
   const staged = (await exec('git', ['diff', '--cached', '--name-only'], { cwd: f.directory }))
     .stdout

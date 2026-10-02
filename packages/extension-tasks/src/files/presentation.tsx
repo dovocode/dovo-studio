@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import type { ChangedFile } from '@dovo/studio-core'
 export function fileStats(file: ChangedFile) {
+  if (file.preview) return { path: file.path, additions: 0, deletions: 0 }
   const diff = parseDiffFromFile(
     { name: file.path, contents: file.before },
     { name: file.path, contents: file.after },
