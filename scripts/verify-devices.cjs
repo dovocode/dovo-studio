@@ -58,7 +58,7 @@ app.on('browser-window-created', (_event, window) => {
         repository: 'first',
         title: localTitle,
       })
-      console.log('Device smoke: pairing and checking dashboard')
+      console.log('Device smoke: pairing and checking task list')
       await window.webContents.executeJavaScript(`(async()=>{
         const {wait,button,input}=deviceSmoke;
         await wait(()=>button('Settings'));button('Settings').click();
@@ -72,30 +72,21 @@ app.on('browser-window-created', (_event, window) => {
         button('Connect runtime').click();
         await wait(()=>!document.querySelector('[role="dialog"]'));
         await wait(async()=>{const saved=JSON.parse(await window.dovo.readRuntimeRegistry());return saved.profiles.length===2&&saved.activeId===${JSON.stringify(remote.connection.address)}});
-        button('Overview').click();
-        await wait(()=>document.querySelector('[aria-label="All devices overview"]'));
-        button('Refresh devices').click();
-        await new Promise(r=>setTimeout(r,100));
-        await wait(()=>!button('Refresh devices').disabled);
-        const overview=()=>document.querySelector('[aria-label="All devices overview"]');
-        await wait(()=>overview().innerText.includes(${JSON.stringify(localTitle)})&&overview().innerText.includes(${JSON.stringify(remoteTitle)}));
-        if(overview().querySelectorAll('article').length!==2)throw new Error('Both device cards were not preserved');
-        const computers=()=>overview().querySelector('[aria-label="Connected computers"]');
-        if(!computers()?.innerText.includes('2 of 2 online'))throw new Error('Online aggregate is not 2 of 2');
-        await wait(()=>computers()?.innerText.includes('1 PR needs attention'));
-        for(const article of overview().querySelectorAll('article'))if(!article.innerText.includes('1 PRs'))throw new Error('Host PR count missing: '+article.innerText);
-        if(overview().querySelector('[aria-label="Tasks across devices"]').querySelectorAll('button[aria-label^="Open "]').length!==2)throw new Error('Overlapping task IDs were merged');
-        const pick=async(label,value)=>{button(label).click();await wait(()=>document.querySelector('[role="listbox"]'));const option=[...document.querySelectorAll('[role="option"]')].find(el=>el.dataset.value===value);if(!option)throw new Error('Missing '+label+' '+value);option.click();await wait(()=>!document.querySelector('[role="listbox"]'))};
-        await pick('Overview device',${JSON.stringify(remote.connection.address)});
-        await wait(()=>overview().querySelectorAll('article').length===1);
-        if(overview().innerText.includes(${JSON.stringify(localTitle)}))throw new Error('Device filter leaks another host task');
-        if(!overview().innerText.includes(${JSON.stringify(remoteTitle)}))throw new Error('Device filter removed its task');
-        await pick('Overview device','');
-        const openTask=title=>[...(overview()?.querySelectorAll('button[aria-label^="Open "]')??[])].find(b=>b.getAttribute('aria-label').startsWith('Open '+title+' on '));
+        button('Tasks').click();
+        await wait(()=>document.querySelector('[aria-label="Task sidebar"]'));
+        const sidebar=()=>document.querySelector('[aria-label="Task sidebar"]');
+        const openTask=title=>[...(sidebar()?.querySelectorAll('button')??[])].find(b=>b.innerText.includes(title));
+        await wait(()=>openTask(${JSON.stringify(localTitle)})&&openTask(${JSON.stringify(remoteTitle)}));
+        if(button('Overview'))throw new Error('Removed Overview page is still in navigation');
+        if(openTask(${JSON.stringify(localTitle)})===openTask(${JSON.stringify(remoteTitle)}))throw new Error('Overlapping task IDs were merged');
+        input('Search threads',${JSON.stringify(remoteTitle)});
+        await wait(()=>!openTask(${JSON.stringify(localTitle)})&&openTask(${JSON.stringify(remoteTitle)}));
+        input('Search threads','');
+        await wait(()=>openTask(${JSON.stringify(localTitle)}));
         openTask(${JSON.stringify(localTitle)}).click();
         await wait(()=>document.querySelector('h1')?.textContent===${JSON.stringify(localTitle)});
         await wait(async()=>JSON.parse(await window.dovo.readRuntimeRegistry()).activeId===${JSON.stringify(local.address)});
-        button('Overview').click();await wait(()=>openTask(${JSON.stringify(remoteTitle)}));openTask(${JSON.stringify(remoteTitle)}).click();
+        await wait(()=>openTask(${JSON.stringify(remoteTitle)}));openTask(${JSON.stringify(remoteTitle)}).click();
         await wait(()=>document.querySelector('h1')?.textContent===${JSON.stringify(remoteTitle)});
         await wait(async()=>JSON.parse(await window.dovo.readRuntimeRegistry()).activeId===${JSON.stringify(remote.connection.address)});
         button('Task actions').click();await wait(()=>button('Pin task'));button('Pin task').click();
@@ -224,9 +215,8 @@ app.on('browser-window-created', (_event, window) => {
       })()`)
       console.log('Device smoke: failed credential replacement preserves host and cache isolation')
       await window.webContents.executeJavaScript(`(async()=>{
-        const {wait,button}=deviceSmoke;button('Overview').click();
-        await wait(()=>document.querySelector('[aria-label="All devices overview"]'));
-        button('Refresh devices').click();await new Promise(r=>setTimeout(r,100));await wait(()=>!button('Refresh devices').disabled);
+        const {wait,button}=deviceSmoke;button('Tasks').click();
+        await wait(()=>document.querySelector('[aria-label="Task sidebar"]'));
       })()`)
       const captures = join(root, 'work/implementation-reference')
       mkdirSync(captures, { recursive: true })
@@ -237,16 +227,14 @@ app.on('browser-window-created', (_event, window) => {
       await remote.stop()
       const result = await window.webContents.executeJavaScript(`(async()=>{
         const {wait,button}=deviceSmoke;
-        button('Refresh devices').click();await new Promise(r=>setTimeout(r,100));await wait(()=>!button('Refresh devices').disabled);
-        const overview=document.querySelector('[aria-label="All devices overview"]');
-        await wait(()=>[...overview.querySelectorAll('article')].some(a=>a.innerText.includes(${JSON.stringify(remote.connection.address)})&&a.innerText.includes('Offline')));
-        const task=[...overview.querySelectorAll('button[aria-label^="Open "]')].find(b=>b.getAttribute('aria-label').startsWith('Open '+${JSON.stringify(remoteTitle)}+' on '));
-        if(!task?.disabled||!task.innerText.includes('Offline'))throw new Error('Offline task is missing or still actionable');
-        if(!overview.innerText.includes('Cached tasks shown'))throw new Error('Offline cache freshness is not explained');
-        if(!overview.innerText.includes(${JSON.stringify(localTitle)}))throw new Error('Offline host removed online tasks');
+        const sidebar=()=>document.querySelector('[aria-label="Task sidebar"]');
+        const task=()=>[...sidebar().querySelectorAll('button')].find(b=>b.innerText.includes(${JSON.stringify(remoteTitle)}));
+        await wait(()=>task()?.innerText.includes('Offline'));
+        if(!task().querySelector('[title*="Offline"]')?.title.includes('Cached'))throw new Error('Offline cache is not explained');
+        if(!sidebar().innerText.includes(${JSON.stringify(localTitle)}))throw new Error('Offline host removed online tasks');
         const saved=JSON.parse(await window.dovo.readRuntimeRegistry());
         if(saved.profiles.length!==2)throw new Error('Offline runtime was forgotten');
-        return {pairedWhileConnected:true,overlappingIds:true,unifiedCounts:true,deviceFilter:true,taskHostSwitch:true,noCrossHostWrite:true,offlineCache:true,durableOutboxReload:true,explicitRetry:true,unchangedSnapshotWritesSkipped:true,failedCredentialReplacementIsolated:true};
+        return {pairedWhileConnected:true,overlappingIds:true,taskSearch:true,taskHostSwitch:true,noCrossHostWrite:true,offlineCache:true,durableOutboxReload:true,explicitRetry:true,unchangedSnapshotWritesSkipped:true,failedCredentialReplacementIsolated:true};
       })()`)
       writeFileSync(
         join(captures, 'devices-desktop-offline.png'),

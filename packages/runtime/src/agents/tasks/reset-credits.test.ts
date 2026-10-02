@@ -57,7 +57,7 @@ it('refreshes Claude quota percentages without mistaking OAuth percentages for S
   ).toMatchObject([
     {
       provider: 'claude',
-      window: '5-hour',
+      window: 'Session',
       usedPercent: 62,
       resetsAt: Date.parse('2026-10-01T00:00:00Z') / 1000,
     },

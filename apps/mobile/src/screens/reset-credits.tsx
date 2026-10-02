@@ -12,9 +12,22 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
   const { overviews, readRuntime, refreshRuntime } = useRuntime()
   const sources = overviews.flatMap((entry) => {
     const limit = entry.snapshot?.workspace.planLimits?.find(
-      (limit) => limit.account?.id === window.account?.id && !!limit.sourceTaskId,
+      (limit) =>
+        limit.account?.id === window.account?.id && (!!limit.sourceTaskId || !!limit.agentId),
     )
-    return limit ? [{ profile: entry.profile, taskId: limit.sourceTaskId }] : []
+    return limit && entry.connected
+      ? [
+          {
+            profile: entry.profile,
+            taskId:
+              limit.sourceTaskId &&
+              entry.snapshot?.workspace.tasks.some((task) => task.id === limit.sourceTaskId)
+                ? limit.sourceTaskId
+                : undefined,
+            agentId: limit.agentId,
+          },
+        ]
+      : []
   })
   const [runtimeId, setRuntimeId] = useState(window.sourceId ?? '')
   const source = sources.find((source) => source.profile.id === runtimeId) ?? sources[0]
@@ -24,7 +37,7 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
   const [error, setError] = useState('')
   const [outcome, setOutcome] = useState('')
   const attempt = useRef<string | undefined>(undefined)
-  const input = { taskId: source?.taskId, accountId: window.account?.id }
+  const input = { taskId: source?.taskId, agentId: source?.agentId, accountId: window.account?.id }
   const load = async () => {
     if (!profile) return
     const data = await readRuntime(
@@ -89,7 +102,7 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
       <Action
         secondary
         label={busy ? 'Contacting provider…' : 'Check reset credits'}
-        disabled={busy || !profile || !window.account || !source?.taskId}
+        disabled={busy || !profile || !window.account || (!source?.taskId && !source?.agentId)}
         onPress={() => void check()}
       />
       {credits && (

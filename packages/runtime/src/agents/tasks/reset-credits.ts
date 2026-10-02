@@ -126,7 +126,7 @@ export function codexCredits(payload: unknown, now = Date.now()): ResetCredits {
 }
 
 /** A status-only app-server connection: no thread or model prompt is created. */
-async function codexAccount<T>(
+export async function codexAccount<T>(
   agent: Agent,
   action: (request: (method: string, params?: object) => Promise<unknown>) => Promise<T>,
 ) {
@@ -237,36 +237,12 @@ async function claudeRequest(
   return response.json() as Promise<unknown>
 }
 export function claudeQuotaLimits(payload: unknown): PlanLimit[] {
-  const record = decodeResult(Schema.Record({ key: Schema.String, value: Schema.Unknown }), payload)
-  if (!record.success) return []
-  const nested = decodeResult(
-    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-    record.data.rate_limits,
+  const value = decodeResult(Schema.Record({ key: Schema.String, value: Schema.Unknown }), payload)
+  return reportedPlanLimits(
+    'claude',
+    'account/usage/read',
+    value.success ? (value.data.rate_limits ?? payload) : payload,
   )
-  const windows = nested.success ? nested.data : record.data
-  const labels = {
-    five_hour: '5-hour',
-    seven_day: '7-day',
-    seven_day_opus: '7-day Opus',
-    seven_day_sonnet: '7-day Sonnet',
-  }
-  return Object.entries(labels).flatMap(([key, window]) => {
-    const result = decodeResult(
-      mutableStruct({ utilization: Schema.Number.pipe(Schema.finite()), resets_at: optionalText }),
-      windows[key],
-    )
-    if (!result.success) return []
-    const reset = result.data.resets_at ? Date.parse(result.data.resets_at) / 1000 : undefined
-    return [
-      {
-        provider: 'claude',
-        window,
-        usedPercent: Math.max(0, Math.min(100, result.data.utilization)),
-        ...(reset !== undefined && Number.isFinite(reset) ? { resetsAt: reset } : {}),
-        updatedAt: new Date().toISOString(),
-      },
-    ]
-  })
 }
 export async function readResetCredits(
   agent: Agent,

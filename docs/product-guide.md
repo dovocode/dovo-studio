@@ -840,13 +840,13 @@ credential until the request expires (two minutes); it cannot create another dev
 revoked credential. Desktop preserves its runtime port and bind address across restarts; `DOVO_PORT`
 and `DOVO_HOST` explicitly override the saved listener.
 
-Saved runtimes appear together in the device dashboard, with host-scoped tasks and loaded PR counts.
-Device filters narrow the overview; opening a task selects its owning runtime. Matching task or
-repository IDs on different computers remain independent. Offline devices retain their last-seen
-activity during the session, and incomplete PR counts are marked as partial. Adding a runtime never
-imports another device's workspace. Desktop stores credentials with Electron's encrypted storage;
-mobile uses the iOS Keychain / Android Keystore through SecureStore. Browser connections remain in
-the current browser's local storage.
+Desktop opens Tasks or restores the last-opened thread. Tasks from saved runtimes appear together in
+the task sidebar; opening a task selects its owning runtime. Computers are managed in Settings →
+Devices & runtime. Matching task or repository IDs on different computers remain independent.
+Offline devices retain cached tasks, labelled offline. Adding a runtime never imports another
+device's workspace. Desktop stores credentials with Electron's encrypted storage; mobile uses the
+iOS Keychain / Android Keystore through SecureStore. Browser connections remain in the current
+browser's local storage.
 
 The mobile native build permits HTTP to user-selected runtime addresses, including LAN IPs,
 Tailscale DNS names, and NetBird custom domains. Its ATS configuration uses `NSAllowsArbitraryLoads`

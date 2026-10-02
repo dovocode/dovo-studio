@@ -51,19 +51,6 @@ export default function GeneralSettings() {
         </SettingsGroup>
       )}
       <UpdateSettings />
-      <SettingsGroup title="Startup">
-        <SettingRow label="Open on launch" description="The view Dovo shows when it starts.">
-          <Segmented
-            label="Open on launch"
-            value={preferences.launchView}
-            options={[
-              ['tasks', 'Tasks'],
-              ['overview', 'Overview'],
-            ]}
-            onChange={(launchView) => updateAppPreferences({ launchView })}
-          />
-        </SettingRow>
-      </SettingsGroup>
       <SettingsGroup title="Navigation">
         {taskLauncher && (
           <SettingRow

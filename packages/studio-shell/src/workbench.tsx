@@ -23,7 +23,6 @@ import {
   type StudioNavigation,
 } from '@dovo/studio-core'
 import { Button, ErrorBoundary, TooltipProvider, useCompactLayout } from '@dovo/studio-ui'
-import { RuntimeOverview } from './runtime-overview'
 import { SettingsNav } from './settings-nav'
 import { appSettingsExtension } from './app-extension'
 import { useAppearance } from './appearance'
@@ -167,16 +166,13 @@ function WorkbenchContent({
   } = useWorkspace()
   const [switchError, setSwitchError] = useApplicationState('')
   const [switching, setSwitching] = useApplicationState(false)
-  // Settings → General → Open on launch.
+  // Restore the last thread, otherwise open the task list.
   const [target, navigate] = useApplicationState<StudioNavigation>(() => {
     const preferences = readAppPreferences()
     return preferences.lastThreadId
       ? { viewId: 'tasks', entityId: preferences.lastThreadId }
       : {
-          viewId:
-            preferences.launchView === 'overview'
-              ? 'overview'
-              : (extensions[0]?.views[0]?.id ?? ''),
+          viewId: extensions[0]?.views[0]?.id ?? '',
         }
   })
   useEffect(() => {
@@ -303,9 +299,7 @@ function WorkbenchContent({
             section={
               inSettings
                 ? 'Settings'
-                : target.viewId === 'overview'
-                  ? 'Overview'
-                  : catalog.views.find((view) => view.id === target.viewId)?.title
+                : catalog.views.find((view) => view.id === target.viewId)?.title
             }
             online={runtimes.filter((runtime) => runtime.connected).length}
             devices={runtimeRegistry.profiles.length}
@@ -399,9 +393,7 @@ function WorkbenchContent({
                       <p className="p-6 text-xs text-muted-foreground">Loading extension…</p>
                     }
                   >
-                    {ready && target.viewId === 'overview' ? (
-                      <RuntimeOverview />
-                    ) : ready && View ? (
+                    {ready && View ? (
                       <View entityId={target.entityId} />
                     ) : !ready ? (
                       <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
@@ -422,18 +414,10 @@ function WorkbenchContent({
           onOpenChange={setPalette}
           commands={[
             ...new Map(
-              [
-                {
-                  id: 'studio.overview',
-                  title: 'Overview · all computers',
-                  run: () =>
-                    navigate({
-                      viewId: 'overview',
-                    }),
-                },
-                ...navigationCommands,
-                ...commands.current.values(),
-              ].map((command) => [command.id, command]),
+              [...navigationCommands, ...commands.current.values()].map((command) => [
+                command.id,
+                command,
+              ]),
             ).values(),
           ]}
         />

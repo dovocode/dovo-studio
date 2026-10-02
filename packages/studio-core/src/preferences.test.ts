@@ -20,6 +20,8 @@ it('keeps valid saved choices, fills in new defaults and ignores invalid values'
     storage({
       'dovo.app-preferences.v1': JSON.stringify({
         theme: 'light',
+        launchView: 'overview',
+        lastThreadId: 'saved-thread',
         sendWith: 'bogus',
         threadSidebarWidth: -10,
         toolsSidebarWidth: 420,
@@ -30,12 +32,14 @@ it('keeps valid saved choices, fills in new defaults and ignores invalid values'
   // The invalid field falls back alone; the valid saved theme survives.
   expect(readAppPreferences()).toMatchObject({
     theme: 'light',
+    lastThreadId: 'saved-thread',
     threadSidebarWidth: 280,
     toolsSidebarWidth: 420,
     sendWith: 'enter',
     textSize: 'default',
     collapseChangedFiles: true,
   })
+  expect(readAppPreferences()).not.toHaveProperty('launchView')
 })
 
 it('moves desktop preferences from browser storage to the settings bridge', async () => {

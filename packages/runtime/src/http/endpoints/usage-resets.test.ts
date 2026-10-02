@@ -81,3 +81,46 @@ it('requires authentication, isolates read from consume, and reuses a failed att
     await f.cleanup()
   }
 })
+
+it('checks credits from a verified account configuration without starting a thread', async () => {
+  const token = randomBytes(32).toString('base64url'),
+    f = await fixture()
+  const runtime = await startRuntime({
+    databasePath: join(f.directory, 'usage-direct.sqlite'),
+    ownerToken: token,
+    port: 0,
+  })
+  try {
+    runtime.services.store.update(() => ({
+      ...f.workspace,
+      planLimits: [
+        {
+          provider: 'codex',
+          window: 'Session',
+          agentId: 'agent',
+          account: { id: 'verified', label: 'Account' },
+          usedPercent: 40,
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    }))
+    vi.mocked(readResetCredits).mockResolvedValue({
+      credits: { supported: true, availableCount: 0, credits: [] },
+      limits: [],
+    })
+    const response = await fetch(`http://127.0.0.1:${runtime.port}/api/usage/resets/read`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId: 'agent', accountId: 'verified' }),
+    })
+    expect(response.status).toBe(200)
+    expect(runtime.services.store.get().tasks).toHaveLength(0)
+    expect(readResetCredits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 'agent' }),
+      expect.objectContaining({ id: 'verified' }),
+    )
+  } finally {
+    await runtime.close()
+    await f.cleanup()
+  }
+})

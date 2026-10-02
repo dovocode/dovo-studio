@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import {
   REVIEW_PROMPT,
   contextMeter,
+  composerPlanLimit,
   responses,
   taskResources,
   worktreeChoicesSchema,
@@ -76,6 +77,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
   )
   const meter = contextMeter(task)
   const { callEffect: commandCall } = useRuntime()
+  const quota = composerPlanLimit(task, snapshot?.workspace.planLimits ?? [], connected)
   const commandAction = useAction()
   const hasGit = !snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
     ?.kind
@@ -379,6 +381,23 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                   </Text>
                   <Icon name="down" size={10} color={colors.muted} />
                 </Pressable>
+              )}
+              {showOptions && !dictation.active && quota && (
+                <Text
+                  accessibilityLabel={quota.label}
+                  style={{
+                    fontSize: 11,
+                    color:
+                      quota.state === 'fresh' && quota.remaining <= 10
+                        ? colors.warning
+                        : colors.muted,
+                    fontVariant: ['tabular-nums'],
+                  }}
+                >
+                  {quota.state === 'fresh'
+                    ? `${quota.remaining}% quota`
+                    : `Quota ${quota.state === 'awaiting' ? 'pending' : quota.state}`}
+                </Text>
               )}
               {showOptions &&
                 !dictation.active &&

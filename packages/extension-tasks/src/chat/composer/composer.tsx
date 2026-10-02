@@ -16,6 +16,7 @@ import type { ComposerCommandId } from './file-mentions'
 import { ComposerEditor } from './composer-editor'
 import { SavedPromptsDialog } from '../../dialogs/saved-prompts-dialog'
 import { REVIEW_PROMPT, contextMeter, taskResources } from '@dovo/protocol'
+import { PlanLimit } from '../thread/plan-limit'
 import { ContextMeter } from '../thread/context-meter'
 import {
   ArrowUp,
@@ -403,6 +404,7 @@ export function Composer({
             </span>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            <PlanLimit task={task} />
             <ContextMeter task={task} />
             {meter && meter.level !== 'ok' && (
               <span role="status" className="text-[0.625rem] text-amber-400">

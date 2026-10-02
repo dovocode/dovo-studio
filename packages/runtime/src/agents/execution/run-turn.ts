@@ -17,6 +17,7 @@ import {
   lockedTaskProvider,
   mergeResources,
   reportedPlanLimits,
+  mergePlanLimits,
 } from '@dovo/protocol'
 import { hostname } from 'node:os'
 import type { Attachments } from '../../storage/attachments.js'
@@ -362,11 +363,27 @@ ${
         const tokens = turnTokenCounter(agent.provider, () => this.store.task(id).sessionId)
         const tokenField = () => {
           const total = tokens.total()
-          const estimatedCostUsd = tokens.mixedModels()
-            ? undefined
-            : estimatedTurnCost(agent.provider, tokens.model() ?? agent.model, tokens.usage())
+          const reportedModel = tokens.model()
+          const estimatedCostUsd =
+            tokens.cost() ??
+            (tokens.mixedModels()
+              ? undefined
+              : estimatedTurnCost(agent.provider, tokens.model() ?? agent.model, tokens.usage()))
           return {
             ...(total === undefined ? {} : { tokens: total }),
+            ...(tokens.usage() ? { tokenUsage: tokens.usage() } : {}),
+            ...(tokens.mixedModels()
+              ? { mixedModels: true, model: 'Multiple models' }
+              : reportedModel
+                ? { model: reportedModel }
+                : {}),
+            ...(estimatedCostUsd === undefined
+              ? {}
+              : {
+                  costSource:
+                    tokens.cost() !== undefined ? ('provider' as const) : ('estimated' as const),
+                  pricingVersion: '2026-09',
+                }),
             ...(estimatedCostUsd === undefined ? {} : { estimatedCostUsd }),
           }
         }
@@ -468,19 +485,7 @@ ${
           const saveLimits = (limits: ReturnType<typeof reportedPlanLimits>) => {
             this.store.update((workspace) => ({
               ...workspace,
-              planLimits: [
-                ...(workspace.planLimits ?? []).filter(
-                  (previous) =>
-                    !limits.some(
-                      (limit) =>
-                        limit.provider === previous.provider &&
-                        limit.window === previous.window &&
-                        (limit.account?.id === previous.account?.id ||
-                          (!!limit.account && !previous.account)),
-                    ),
-                ),
-                ...limits,
-              ],
+              planLimits: mergePlanLimits(workspace.planLimits ?? [], limits),
             }))
           }
           yield* runtimeOperation(() =>
@@ -618,7 +623,9 @@ ${
                   if (account) {
                     usageAccount = account
                     if (turnLimits.length)
-                      saveLimits(turnLimits.map((limit) => ({ ...limit, account })))
+                      saveLimits(
+                        turnLimits.map((limit) => ({ ...limit, account, agentId: agent.id })),
+                      )
                     this.store.updateTask(id, (task) => ({
                       ...task,
                       turns: task.turns?.map((turn) =>
@@ -656,13 +663,8 @@ ${
                       }),
                     )
                     if (limits.length) {
-                      turnLimits = [
-                        ...turnLimits.filter(
-                          (previous) => !limits.some((limit) => limit.window === previous.window),
-                        ),
-                        ...limits,
-                      ]
-                      saveLimits(limits)
+                      turnLimits = mergePlanLimits(turnLimits, limits)
+                      saveLimits(limits.map((limit) => ({ ...limit, agentId: agent.id })))
                     }
                   }
                   recordUsage(name, payload)

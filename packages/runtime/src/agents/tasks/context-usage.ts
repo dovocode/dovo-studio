@@ -94,12 +94,54 @@ export function turnTokenCounter(
   let codexLatestUsage: TurnTokenUsage | undefined
   let claudeUsage: TurnTokenUsage | undefined
   let claudeModel: string | undefined
+  let reportedModel: string | undefined
+  const opencodeUsage = new Map<string, TurnTokenUsage>()
+  const opencodeCost = new Map<string, number>()
+  let opencodeV2Usage: TurnTokenUsage | undefined
+  let opencodeV2Start: TurnTokenUsage | undefined
+  let opencodeV2StartCost = 0
+  let opencodeV2Cost: number | undefined
+  const claudeMessages = new Map<string, { model: string; usage: TurnTokenUsage; child: boolean }>()
   let claudeMixedModels = false
   const opencode = new Map<string, number>()
   let opencodeV2: number | undefined
+  let opencodeV2Unavailable = false
   return {
     accept(name: string, payload: unknown) {
       const event = record(payload)
+      if (provider === 'opencode' && name === 'dovo/usage/unavailable') opencodeV2Unavailable = true
+      if (provider === 'codex' && name === 'model/rerouted' && typeof event.toModel === 'string')
+        reportedModel = event.toModel
+      if (provider === 'claude' && event.type === 'assistant') {
+        const message = record(event.message),
+          usage = record(message.usage)
+        if (
+          typeof message.id === 'string' &&
+          typeof message.model === 'string' &&
+          count(usage.input_tokens) !== undefined
+        )
+          claudeMessages.set(message.id, {
+            model: message.model,
+            child: event.parent_tool_use_id != null,
+            usage: {
+              input: count(usage.input_tokens) ?? 0,
+              output: count(usage.output_tokens) ?? 0,
+              cacheRead: count(usage.cache_read_input_tokens) ?? 0,
+              cacheWrite: count(usage.cache_creation_input_tokens) ?? 0,
+            },
+          })
+      }
+      if (provider === 'opencode' && name === 'dovo/usage/baseline') {
+        const parts = record(event.tokens),
+          cache = record(parts.cache)
+        opencodeV2Start = {
+          input: count(parts.input) ?? 0,
+          output: (count(parts.output) ?? 0) + (count(parts.reasoning) ?? 0),
+          cacheRead: count(cache.read) ?? 0,
+          cacheWrite: count(cache.write) ?? 0,
+        }
+        opencodeV2StartCost = typeof event.cost === 'number' ? event.cost : 0
+      }
       if (provider === 'codex' && name === 'thread/tokenUsage/updated') {
         const thread = typeof event.threadId === 'string' ? event.threadId : undefined
         const main = mainThread()
@@ -139,11 +181,19 @@ export function turnTokenCounter(
       }
       if (provider === 'claude' && event.type === 'result') {
         const usage = record(event.usage)
-        const models = Object.entries(record(event.modelUsage)).sort(
-          (a, b) => (count(record(b[1]).inputTokens) ?? 0) - (count(record(a[1]).inputTokens) ?? 0),
-        )
+        const observed = [...claudeMessages.values()]
+        const models = [
+          ...new Set(
+            observed.some((message) => !message.child)
+              ? observed.map((message) => message.model)
+              : [
+                  ...Object.keys(record(event.modelUsage)),
+                  ...observed.map((message) => message.model),
+                ],
+          ),
+        ]
         claudeMixedModels = models.length > 1
-        claudeModel = models.length === 1 ? models[0]?.[0] : undefined
+        claudeModel = models.length === 1 ? models[0] : undefined
         claude = sum(
           usage.input_tokens,
           usage.output_tokens,
@@ -160,6 +210,20 @@ export function turnTokenCounter(
             cacheWrite: count(usage.cache_creation_input_tokens) ?? 0,
           }
       }
+      // The result's usage covers the main loop only. Child messages are per-request,
+      // while result.modelUsage is cumulative across a warm/resumed session.
+      if (provider === 'claude' && event.type === 'result' && claudeUsage) {
+        for (const message of claudeMessages.values())
+          if (message.child) {
+            claudeUsage = {
+              input: claudeUsage.input + message.usage.input,
+              output: claudeUsage.output + message.usage.output,
+              cacheRead: claudeUsage.cacheRead + message.usage.cacheRead,
+              cacheWrite: claudeUsage.cacheWrite + message.usage.cacheWrite,
+            }
+          }
+        claude = Object.values(claudeUsage).reduce((a, b) => a + b, 0)
+      }
       if (provider === 'opencode' && name === 'message.updated') {
         const info = record(record(event.properties).info)
         if (info.role !== 'assistant' || typeof info.id !== 'string') return
@@ -167,11 +231,39 @@ export function turnTokenCounter(
         const cache = record(tokens.cache)
         const used = sum(tokens.input, tokens.output, tokens.reasoning, cache.read, cache.write)
         if (used !== undefined) opencode.set(info.id, used)
+        opencodeUsage.set(info.id, {
+          input: count(tokens.input) ?? 0,
+          output: (count(tokens.output) ?? 0) + (count(tokens.reasoning) ?? 0),
+          cacheRead: count(cache.read) ?? 0,
+          cacheWrite: count(cache.write) ?? 0,
+        })
+        if (typeof info.cost === 'number' && Number.isFinite(info.cost) && info.cost > 0)
+          opencodeCost.set(info.id, info.cost)
+        if (typeof info.modelID === 'string')
+          reportedModel =
+            typeof info.providerID === 'string'
+              ? `${info.providerID}/${info.modelID}`
+              : info.modelID
       }
       if (provider === 'opencode' && name === 'session.usage.updated') {
         const tokens = record(record(event.data).tokens)
         const cache = record(tokens.cache)
-        opencodeV2 = sum(tokens.input, tokens.output, tokens.reasoning, cache.read, cache.write)
+        const current = {
+          input: count(tokens.input) ?? 0,
+          output: (count(tokens.output) ?? 0) + (count(tokens.reasoning) ?? 0),
+          cacheRead: count(cache.read) ?? 0,
+          cacheWrite: count(cache.write) ?? 0,
+        }
+        opencodeV2Usage = {
+          input: Math.max(0, current.input - (opencodeV2Start?.input ?? 0)),
+          output: Math.max(0, current.output - (opencodeV2Start?.output ?? 0)),
+          cacheRead: Math.max(0, current.cacheRead - (opencodeV2Start?.cacheRead ?? 0)),
+          cacheWrite: Math.max(0, current.cacheWrite - (opencodeV2Start?.cacheWrite ?? 0)),
+        }
+        opencodeV2 = Object.values(opencodeV2Usage).reduce((a, b) => a + b, 0)
+        const cost = record(event.data).cost
+        if (typeof cost === 'number' && Number.isFinite(cost) && cost > opencodeV2StartCost)
+          opencodeV2Cost = cost - opencodeV2StartCost
       }
     },
     total() {
@@ -182,11 +274,24 @@ export function turnTokenCounter(
       if (provider === 'claude') return claude
       if (provider === 'opencode' && opencode.size)
         return [...opencode.values()].reduce((total, value) => total + value, 0)
-      if (provider === 'opencode') return opencodeV2
+      if (provider === 'opencode') return opencodeV2Unavailable ? undefined : opencodeV2
       return undefined
     },
     usage(): TurnTokenUsage | undefined {
       if (provider === 'claude') return claudeUsage
+      if (provider === 'opencode' && opencodeV2Unavailable) return undefined
+      if (provider === 'opencode')
+        return opencodeUsage.size
+          ? [...opencodeUsage.values()].reduce(
+              (total, usage) => ({
+                input: total.input + usage.input,
+                output: total.output + usage.output,
+                cacheRead: total.cacheRead + usage.cacheRead,
+                cacheWrite: total.cacheWrite + usage.cacheWrite,
+              }),
+              { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            )
+          : opencodeV2Usage
       if (provider !== 'codex' || !codexStartUsage || !codexLatestUsage) return undefined
       const delta = {
         input: codexLatestUsage.input - codexStartUsage.input,
@@ -197,7 +302,14 @@ export function turnTokenCounter(
       return Object.values(delta).every((value) => value >= 0) ? delta : undefined
     },
     model() {
-      return claudeModel
+      return reportedModel ?? claudeModel
+    },
+    cost() {
+      return provider === 'opencode' && !opencodeV2Unavailable
+        ? opencodeCost.size === opencodeUsage.size && opencodeCost.size
+          ? [...opencodeCost.values()].reduce((a, b) => a + b, 0)
+          : opencodeV2Cost
+        : undefined
     },
     mixedModels() {
       return claudeMixedModels

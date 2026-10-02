@@ -36,8 +36,11 @@ const now=Date.now();
 const turn=(id,age)=>({id,assistantId:id,agentId:'agent',provider:'codex',model:'gpt-6.1-sol',status:'completed',startedAt:new Date(now-age*86400000).toISOString(),finishedAt:new Date(now-age*86400000+60000).toISOString(),usageAccount:{id:'account',label:'Personal',subscription:'Pro'}});
 const tasks=[{id:'task',title:'Improve composer',example:false,turns:[{...turn('recent',1),tokens:12000,estimatedCostUsd:.035},turn('partial',2),turn('older',20)]}];
 const reading={provider:'codex',updatedAt:new Date(now).toISOString(),usedPercent:92,window:'5-hour',resetsAt:Math.floor(now/1000)+3600,account:{id:'account',label:'Personal',subscription:'Pro'}};
-const runtimes=[{profile:{id:'mac',name:'Mac'},snapshot:{workspace:{tasks,planLimits:[reading,{...reading,window:'Weekly',usedPercent:40,resetsAt:Math.floor(now/1000)-10}]}}}];
-export const useWorkspace=()=>({runtimes});`,
+const runtimes=[{connected:true,profile:{id:'mac',name:'Mac',connection:{address:'http://runtime',token:'test-token'}},snapshot:{workspace:{tasks,planLimits:[reading,{...reading,window:'Weekly',usedPercent:40,resetsAt:Math.floor(now/1000)-10}]}}}];
+const cache={read:async()=>null,write:async()=>{}};
+window.usageProbes=0;window.usageWrites=[];
+const readRuntime=async(profile,path,input)=>{if(path==='/api/usage/limits/read'){window.usageProbes++;return {checkedAt:new Date().toISOString(),accounts:[{agentId:'agent',provider:'codex',status:'ok'}]}};if(path==='/api/usage/prices/write'){window.usageWrites.push(input);return {ok:true}};return {sourceId:'stable',records:[],notices:[]}};
+export const useWorkspace=()=>({runtimes,readRuntime,refreshRuntime:async()=>{},runtimeReadCache:()=>cache});`,
           resolveDir: root + 'packages/studio-shell',
           loader: 'js',
         }))
@@ -67,14 +70,24 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByText('Activity overview', { exact: true }).waitFor()
   await page.getByText('1 of 2 turns reported', { exact: true }).waitFor()
+  await page.getByRole('radio', { name: 'Limits', exact: true }).click()
   if ((await page.getByRole('progressbar').count()) !== 1)
     throw new Error('Expired limits appeared as a live progress bar')
+  await page.getByRole('radio', { name: 'Costs', exact: true }).click()
   await page.getByRole('radio', { name: 'Models', exact: true }).click()
   await page.getByText('Models by agent time', { exact: true }).waitFor()
   await page.getByRole('radio', { name: 'Threads', exact: true }).click()
   await page.getByText('Improve composer', { exact: true }).waitFor()
   await page.getByRole('radio', { name: 'Last 30 days', exact: true }).click()
   await page.getByText('1 of 3 turns reported', { exact: true }).waitFor()
+  await page.getByText('Custom API-equivalent prices', { exact: true }).click()
+  await page.getByRole('spinbutton', { name: 'Input', exact: true }).fill('2')
+  await page.getByRole('spinbutton', { name: 'Output', exact: true }).fill('10')
+  await page.getByRole('button', { name: 'Save prices', exact: true }).click()
+  await page.waitForFunction(() => window.usageWrites.length === 1)
+  const write = await page.evaluate(() => window.usageWrites[0])
+  if (write.model !== 'gpt-6.1-sol' || write.price.cacheRead !== 2)
+    throw new Error('Custom prices did not preserve the exact model ID and default cache rate')
   mkdirSync(root + 'work/usage-preview', { recursive: true })
   await page.screenshot({ path: root + 'work/usage-preview/desktop.png', fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })

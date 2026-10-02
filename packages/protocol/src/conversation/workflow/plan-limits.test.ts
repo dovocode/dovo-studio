@@ -15,7 +15,7 @@ describe('reportedPlanLimits', () => {
       },
     })
     expect(limits).toMatchObject([
-      { provider: 'codex', window: '5-hour', usedPercent: 38, resetsAt: 1_800_000_000 },
+      { provider: 'codex', window: 'Session', usedPercent: 38, resetsAt: 1_800_000_000 },
     ])
   })
 
@@ -24,7 +24,7 @@ describe('reportedPlanLimits', () => {
       reportedPlanLimits('claude', 'rate_limit_event', {
         rate_limit_info: { rateLimitType: 'five_hour', utilization: 0.62 },
       }),
-    ).toMatchObject([{ provider: 'claude', window: '5-hour', usedPercent: 62 }])
+    ).toMatchObject([{ provider: 'claude', window: 'Session', usedPercent: 62 }])
     expect(
       reportedPlanLimits('claude', 'rate_limit_event', {
         rate_limit_info: { rateLimitType: 'five_hour' },
@@ -77,4 +77,64 @@ it('never merges unidentified accounts just because their computers have the sam
       Date.parse('2026-09-30T12:00:00Z'),
     ),
   ).toHaveLength(2)
+})
+
+it('keeps named Codex buckets separate and preserves sparse window metadata', async () => {
+  const { mergePlanLimits } = await import('./plan-limits.js')
+  const primary = { usedPercent: 20, windowDurationMins: 300, resetsAt: 2_000_000_000 }
+  const limits = reportedPlanLimits('codex', 'account/rateLimits/read', {
+    rateLimitsByLimitId: {
+      codex: { primary },
+      spark: { limitName: 'Spark', primary: { ...primary, usedPercent: 80 } },
+    },
+  })
+  expect(limits).toHaveLength(2)
+  const sparse = reportedPlanLimits('codex', 'account/rateLimits/updated', {
+    rateLimits: { limitId: 'codex', primary: { usedPercent: 21 } },
+  })
+  const merged = mergePlanLimits(limits, sparse)
+  expect(merged).toHaveLength(2)
+  expect(merged.find((limit) => limit.bucketId === 'codex')).toMatchObject({
+    window: 'Session',
+    usedPercent: 21,
+    resetsAt: 2_000_000_000,
+    durationMins: 300,
+  })
+})
+it('isolates unknown host accounts by configuration and marks old readings stale', async () => {
+  const { quotaReadingState } = await import('./plan-limits.js')
+  const now = Date.parse('2026-10-02T12:00:00Z')
+  const limit = {
+    provider: 'codex' as const,
+    window: 'Session',
+    usedPercent: 30,
+    updatedAt: '2026-10-02T11:00:00Z',
+  }
+  const windows = accountPlanLimits(
+    [
+      {
+        computer: 'Mac',
+        sourceId: 'host',
+        limits: [
+          { ...limit, agentId: 'one' },
+          { ...limit, agentId: 'two' },
+        ],
+      },
+    ],
+    now,
+  )
+  expect(windows).toHaveLength(2)
+  expect(quotaReadingState(limit, true, now)).toBe('stale')
+  expect(quotaReadingState(limit, false, now)).toBe('offline')
+})
+it('accepts dynamically named Claude model windows', () => {
+  expect(
+    reportedPlanLimits('claude', 'account/usage/read', {
+      rate_limits: {
+        model_scoped: [
+          { display_name: 'New model', utilization: 45, resets_at: '2026-10-03T12:00:00Z' },
+        ],
+      },
+    }),
+  ).toMatchObject([{ window: 'Weekly · New model', usedPercent: 45, windowId: 'model:New model' }])
 })

@@ -1,3 +1,6 @@
+import { UsageTranscripts } from './usage-transcripts.js'
+import { UsagePricing } from './usage-pricing.js'
+import { UsageHistory } from './usage-history.js'
 import { resolveTaskDefaults } from '@dovo/protocol'
 import { RuntimeDefaults, validateDefaultHarness } from './runtime-defaults.js'
 import { McpSecrets } from './mcp-secrets.js'
@@ -78,12 +81,17 @@ export function loadStoredWorkspace(db: Database.Database, raw: string): Workspa
 export class WorkspaceStore {
   private readonly secrets: McpSecrets
   private workspace: Workspace
+  readonly usage: UsageHistory
+  readonly usagePricing: UsagePricing
+  readonly usageTranscripts = new UsageTranscripts()
   private revision = 0
   private projected?: { revision: number; workspace: Workspace }
   constructor(
     private readonly db: Database.Database,
     private onUpdate?: (before: Workspace, after: Workspace) => void,
   ) {
+    this.usage = new UsageHistory(db)
+    this.usagePricing = new UsagePricing(db)
     const keyRow = db.prepare('SELECT value FROM documents WHERE id = ?').get('mcp-projection-key')
     const key = keyRow ? decode(rowSchema, keyRow).value : newSecret()
     if (!keyRow) db.prepare('INSERT INTO documents VALUES (?, ?)').run('mcp-projection-key', key)
@@ -99,6 +107,7 @@ export class WorkspaceStore {
           automations: [],
           runtimeAddress: '',
         }
+    this.db.transaction(() => this.usage.record(this.workspace.tasks, new Map()))()
     this.update((w) => ({
       ...w,
       tasks: w.tasks
@@ -225,7 +234,10 @@ export class WorkspaceStore {
     if (this.projected?.revision !== this.revision)
       this.projected = {
         revision: this.revision,
-        workspace: decode(workspaceSchema, this.secrets.public(this.workspace)),
+        workspace: this.validateWorkspace(
+          this.secrets.public(this.workspace),
+          this.projected?.workspace,
+        ),
       }
     return this.projected.workspace
   }
@@ -234,6 +246,79 @@ export class WorkspaceStore {
   }
   version() {
     return this.revision
+  }
+  private validateTasks(items: unknown, old: Task[]): Task[] {
+    if (items === old) return old
+    const known = new Map(old.map((task) => [task.id, task]))
+    return decode(Schema.Array(Schema.Unknown), items).map((value) => {
+      if (!value || typeof value !== 'object' || !('id' in value) || typeof value.id !== 'string')
+        return decode(taskSchema, value)
+      const previous = known.get(value.id)
+      if (value === previous) return previous
+      if (!previous) return decode(taskSchema, value)
+      const candidate = decode(Schema.Record({ key: Schema.String, value: Schema.Unknown }), value)
+      const keys = Object.keys(taskSchema.fields)
+        .filter((key): key is keyof Task => Object.hasOwn(taskSchema.fields, key))
+        .filter((key) => candidate[key] !== previous[key])
+      const changed = decode(
+        taskSchema.pick(...keys),
+        Object.fromEntries(keys.map((key) => [key, candidate[key]])),
+      )
+      return { ...previous, ...changed }
+    })
+  }
+  /** Validate changed entities only; immutable, already validated histories remain shared. */
+  private validateWorkspace(value: unknown, previous = this.workspace): Workspace {
+    const candidate = decode(Schema.Record({ key: Schema.String, value: Schema.Unknown }), value)
+    const collection = <S extends Schema.Schema.AnyNoContext>(
+      schema: S,
+      items: unknown,
+      old: Schema.Schema.Type<S>[],
+    ): Schema.Schema.Type<S>[] => {
+      if (items === old) return old
+      const values = decode(Schema.Array(Schema.Unknown), items)
+      const known = new Map<unknown, Schema.Schema.Type<S>>(old.map((item) => [item, item]))
+      return values.map((item) => known.get(item) ?? decode(schema, item))
+    }
+    const shell = decode(workspaceSchema, {
+      ...candidate,
+      agents: [],
+      repositories: [],
+      tasks: [],
+      automations: [],
+      jiraSources: undefined,
+      jiraIssueLinks: undefined,
+      planLimits: undefined,
+    })
+    return {
+      ...shell,
+      agents: collection(agentSchema, candidate.agents, previous?.agents ?? []),
+      repositories: collection(
+        repositorySchema,
+        candidate.repositories,
+        previous?.repositories ?? [],
+      ),
+      tasks: this.validateTasks(candidate.tasks, previous?.tasks ?? []),
+      automations: collection(automationSchema, candidate.automations, previous?.automations ?? []),
+      jiraSources:
+        candidate.jiraSources === previous?.jiraSources
+          ? previous?.jiraSources
+          : candidate.jiraSources === undefined
+            ? undefined
+            : decode(workspaceSchema.fields.jiraSources.from, candidate.jiraSources),
+      jiraIssueLinks:
+        candidate.jiraIssueLinks === previous?.jiraIssueLinks
+          ? previous?.jiraIssueLinks
+          : candidate.jiraIssueLinks === undefined
+            ? undefined
+            : decode(workspaceSchema.fields.jiraIssueLinks.from, candidate.jiraIssueLinks),
+      planLimits:
+        candidate.planLimits === previous?.planLimits
+          ? previous?.planLimits
+          : candidate.planLimits === undefined
+            ? undefined
+            : decode(workspaceSchema.fields.planLimits.from, candidate.planLimits),
+    }
   }
   update(
     fn: (workspace: Workspace) => Workspace,
@@ -245,7 +330,7 @@ export class WorkspaceStore {
     },
   ) {
     const parsed = migrateJiraSources(
-      decode(workspaceSchema, this.restoreSecrets(fn(this.workspace))),
+      this.validateWorkspace(this.restoreSecrets(fn(this.workspace))),
     )
     // A business rule for edits only: a stored harness that a newer or older build no longer
     // supports must not keep the workspace from loading at startup.
@@ -298,7 +383,7 @@ export class WorkspaceStore {
                   ),
                 }
               : task
-          return providerLock
+          return providerLock && updated.providerLock !== providerLock
             ? {
                 ...updated,
                 providerLock,
@@ -308,6 +393,7 @@ export class WorkspaceStore {
     }
     const nextTaskIds = new Set(next.tasks.map((task) => task.id))
     this.db.transaction(() => {
+      this.usage.record(next.tasks, previousTasks)
       if (submission)
         this.db
           .prepare('INSERT INTO task_submissions VALUES (?, ?, ?)')
@@ -325,12 +411,27 @@ export class WorkspaceStore {
         .prepare(
           'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value',
         )
-        .run('workspace', JSON.stringify(next))
+        .run('workspace', this.serialize(next))
       this.onUpdate?.(this.workspace, next)
     })()
     this.workspace = next
     this.revision++
     return next
+  }
+  private readonly serializedTasks = new WeakMap<Task, string>()
+  private serialize(workspace: Workspace) {
+    const tasks = workspace.tasks
+      .map((task) => {
+        let value = this.serializedTasks.get(task)
+        if (value === undefined) {
+          value = JSON.stringify(task)
+          this.serializedTasks.set(task, value)
+        }
+        return value
+      })
+      .join(',')
+    const shell = JSON.stringify({ ...workspace, tasks: undefined })
+    return `${shell.slice(0, -1)},"tasks":[${tasks}]}`
   }
   taskDefaults(repositoryId?: string) {
     return resolveTaskDefaults(

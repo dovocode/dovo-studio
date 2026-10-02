@@ -191,3 +191,14 @@ export { LauncherWorkspaceProvider } from './workspace/launcher-provider'
 export { useRemoteBrowserProfiles } from './browser-profiles'
 
 export { useCachedTask } from './workspace/use-cached-task'
+
+export {
+  usageChartDays,
+  usageChartHours,
+  mergePlanLimits,
+  quotaReadingState,
+  usageLimitsReadSchema,
+  usageHistorySchema,
+  modelDisplayName,
+  type UsageHistoryResult,
+} from '@dovo/protocol'

@@ -175,11 +175,10 @@ app.on('browser-window-created', (_event, window) => {
       await capture('compact-review')
       await run(`
         qa.button('Chat').click();await qa.wait(()=>qa.button('Chat').getAttribute('aria-pressed')==='true');
-        qa.button('Overview').click();await qa.wait(()=>document.querySelector('[aria-label="All devices overview"]'));
-        qa.check('All devices exposes device filtering and refresh',!!qa.button('Overview device')&&!!qa.button('Refresh devices'));
-        qa.check('All devices fits minimum desktop width',qa.pageFits());
+        qa.check('Overview navigation is removed',!qa.button('Overview'));
+        qa.check('Tasks fit minimum desktop width',qa.pageFits());
       `)
-      await capture('overview')
+      await capture('tasks')
       await run(`
         qa.button('Walkthrough').click();await qa.wait(()=>document.body.innerText.includes('1 / 14 · Your workspace'));
         const scenes=['Tasks','Tasks','Tasks','Tasks','Tasks','Tasks','Tasks','Issues','Pull requests','Pipelines','Settings','Settings','Automations','Settings'];

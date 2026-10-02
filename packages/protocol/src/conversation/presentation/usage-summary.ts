@@ -1,7 +1,15 @@
+import { modelDisplayName } from '../../tasks/models.js'
+import type { UsageRecord } from './usage-history.js'
 import type { Task } from '../../workspace.js'
 
 export type UsageTask = Pick<Task, 'id' | 'title' | 'example' | 'turns'>
-export type UsageSource = { id?: string; computer: string; tasks: readonly UsageTask[] }
+export type UsageSource = {
+  id?: string
+  sourceId?: string
+  computer: string
+  tasks: readonly UsageTask[]
+  records?: readonly UsageRecord[]
+}
 
 export type UsageRow = {
   key: string
@@ -12,6 +20,10 @@ export type UsageRow = {
   durationMs: number
   /** Tokens from turns that reported them; `tokenTurns` says how many did. */
   tokens: number
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
   tokenTurns: number
   estimatedCostUsd: number
   pricedTurns: number
@@ -21,6 +33,8 @@ export type UsageSummary = {
   models: UsageRow[]
   accounts: UsageRow[]
   tasks: UsageRow[]
+  days: UsageRow[]
+  hours: UsageRow[]
 }
 
 const empty = (key: string, label: string, detail?: string): UsageRow => ({
@@ -31,6 +45,10 @@ const empty = (key: string, label: string, detail?: string): UsageRow => ({
   failed: 0,
   durationMs: 0,
   tokens: 0,
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
   tokenTurns: 0,
   estimatedCostUsd: 0,
   pricedTurns: 0,
@@ -47,12 +65,67 @@ export function usageSummary(
   const models = new Map<string, UsageRow>()
   const accounts = new Map<string, UsageRow>()
   const tasks = new Map<string, UsageRow>()
-  for (const source of sources)
+  const days = new Map<string, UsageRow>()
+  const hours = new Map<string, UsageRow>()
+  const seen = new Set<string>()
+  const knownSessions = new Set(
+    sources.flatMap((source) =>
+      (source.records ?? []).flatMap((record) =>
+        record.origin !== 'cli' && record.sessionId
+          ? [`${record.turn.provider}:${record.sessionId}`]
+          : [],
+      ),
+    ),
+  )
+  for (const source of sources) {
+    const saved = new Map<string, UsageTask>()
+    const externalIds = new Set<string>()
+    for (const record of source.records ?? []) {
+      if (record.origin === 'cli') {
+        if (record.sessionId && knownSessions.has(`${record.turn.provider}:${record.sessionId}`))
+          continue
+        externalIds.add(JSON.stringify([record.taskId, record.turn.id]))
+      }
+      const task = saved.get(record.taskId) ?? {
+        id: record.taskId,
+        title: record.title,
+        example: false,
+        turns: [],
+      }
+      const turns = task.turns ?? []
+      turns.push(record.turn)
+      saved.set(record.taskId, { ...task, turns })
+    }
     for (const task of source.tasks) {
+      const old = saved.get(task.id)
+      const turns = new Map((old?.turns ?? []).map((turn) => [turn.id, turn]))
+      for (const turn of task.turns ?? []) {
+        const stored = turns.get(turn.id)
+        // Prefer repriced durable records only when they describe this exact observation.
+        if (
+          !stored ||
+          stored.finishedAt !== turn.finishedAt ||
+          stored.tokens !== turn.tokens ||
+          stored.status !== turn.status
+        )
+          turns.set(turn.id, turn)
+      }
+      saved.set(task.id, { ...task, turns: [...turns.values()] })
+    }
+    for (const task of saved.values()) {
       if (task.example) continue
       for (const turn of task.turns ?? []) {
         const started = Date.parse(turn.startedAt)
-        if (!Number.isFinite(started) || started < since) continue
+        if (!Number.isFinite(started) || started < since || started > now) continue
+        const identity = externalIds.has(JSON.stringify([task.id, turn.id]))
+          ? JSON.stringify(['cli', turn.provider, turn.id])
+          : JSON.stringify([
+              turn.runtimeHost ?? source.sourceId ?? source.id ?? source.computer,
+              task.id,
+              turn.id,
+            ])
+        if (seen.has(identity)) continue
+        seen.add(identity)
         const finished = turn.finishedAt ? Date.parse(turn.finishedAt) : now
         const duration = Number.isFinite(finished) ? Math.max(0, finished - started) : 0
         const modelKey = `${turn.provider}\u0000${turn.model}`
@@ -61,7 +134,27 @@ export function usageSummary(
           turn.provider,
           turn.usageAccount?.id ?? `unknown:${source.id ?? source.computer}:${turn.agentId}`,
         ])
+        const date = new Date(started)
+        const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+        const dayRow = days.get(day) ?? empty(day, day)
+        days.set(day, dayRow)
+        const hour = new Date(Math.floor(started / 3600000) * 3600000)
+        const hourKey = hour.toISOString()
+        const hourRow =
+          hours.get(hourKey) ??
+          empty(
+            hourKey,
+            hour.toLocaleString(undefined, {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          )
+        hours.set(hourKey, hourRow)
         const rows = [
+          hourRow,
+          dayRow,
           accounts.get(accountKey) ??
             accounts
               .set(
@@ -76,7 +169,14 @@ export function usageSummary(
           total,
           models.get(modelKey) ??
             models
-              .set(modelKey, empty(modelKey, turn.model || 'Default model', turn.provider))
+              .set(
+                modelKey,
+                empty(
+                  modelKey,
+                  turn.model ? modelDisplayName(turn.model) : 'Default model',
+                  turn.provider,
+                ),
+              )
               .get(modelKey)!,
           tasks.get(taskKey) ??
             tasks.set(taskKey, empty(taskKey, task.title, source.computer)).get(taskKey)!,
@@ -88,6 +188,10 @@ export function usageSummary(
           if (turn.tokens !== undefined) {
             row.tokens += turn.tokens
             row.tokenTurns++
+            row.input += turn.tokenUsage?.input ?? 0
+            row.output += turn.tokenUsage?.output ?? 0
+            row.cacheRead += turn.tokenUsage?.cacheRead ?? 0
+            row.cacheWrite += turn.tokenUsage?.cacheWrite ?? 0
           }
           if (turn.estimatedCostUsd !== undefined) {
             row.estimatedCostUsd += turn.estimatedCostUsd
@@ -96,9 +200,12 @@ export function usageSummary(
         }
       }
     }
+  }
   const busiest = (a: UsageRow, b: UsageRow) => b.durationMs - a.durationMs || b.turns - a.turns
   return {
     total,
+    hours: [...hours.values()].sort((a, b) => a.key.localeCompare(b.key)),
+    days: [...days.values()].sort((a, b) => a.key.localeCompare(b.key)),
     accounts: [...accounts.values()].sort(busiest),
     models: [...models.values()].sort(busiest),
     tasks: [...tasks.values()].sort(busiest).slice(0, 10),
@@ -124,6 +231,7 @@ export function createUsageSummary() {
           turn.model === other.model &&
           turn.agentId === other.agentId &&
           turn.tokens === other.tokens &&
+          turn.tokenUsage === other.tokenUsage &&
           turn.estimatedCostUsd === other.estimatedCostUsd &&
           turn.usageAccount?.id === other.usageAccount?.id &&
           turn.usageAccount?.label === other.usageAccount?.label &&
@@ -142,6 +250,8 @@ export function createUsageSummary() {
           old &&
           source.id === old.id &&
           source.computer === old.computer &&
+          source.sourceId === old.sourceId &&
+          source.records === old.records &&
           source.tasks.length === old.tasks.length &&
           source.tasks.every(
             (task, i) =>
@@ -161,6 +271,8 @@ export function createUsageSummary() {
       summary,
       sources: sources.map((source) => ({
         id: source.id,
+        sourceId: source.sourceId,
+        records: source.records,
         computer: source.computer,
         tasks: source.tasks.map(({ id, title, example, turns }) => ({ id, title, example, turns })),
       })),
@@ -184,4 +296,44 @@ export function formatUsageTokens(tokens: number) {
 }
 export function formatUsageCost(usd: number) {
   return usd < 0.01 && usd > 0 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`
+}
+
+/** Calendar gaps stay visible instead of compressing quiet days out of the chart. */
+export function usageChartDays(rows: readonly UsageRow[], since: number, now = Date.now()) {
+  const byDay = new Map(rows.map((row) => [row.key, row]))
+  const date = new Date(Math.max(since, now - 90 * 86400000))
+  date.setHours(0, 0, 0, 0)
+  const result: UsageRow[] = []
+  while (date.getTime() <= now) {
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    result.push(byDay.get(key) ?? empty(key, key))
+    date.setDate(date.getDate() + 1)
+  }
+  return result
+}
+
+export function usageChartHours(rows: readonly UsageRow[], since: number, now = Date.now()) {
+  const byHour = new Map(rows.map((row) => [row.key, row]))
+  const result: UsageRow[] = []
+  for (
+    let time = Math.floor(Math.max(since, now - 86400000) / 3600000) * 3600000;
+    time <= now;
+    time += 3600000
+  ) {
+    const date = new Date(time),
+      key = date.toISOString()
+    result.push(
+      byHour.get(key) ??
+        empty(
+          key,
+          date.toLocaleString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        ),
+    )
+  }
+  return result
 }

@@ -152,3 +152,51 @@ it('keeps the billable token categories for a Codex turn and a Claude result', (
   expect(claude.usage()).toEqual({ input: 10, output: 20, cacheRead: 300, cacheWrite: 50 })
   expect(claude.model()).toBe('claude-sonnet-4-6')
 })
+
+it('counts only the new OpenCode v2 session usage after a baseline', () => {
+  const counter = turnTokenCounter('opencode', () => 's')
+  counter.accept('dovo/usage/baseline', {
+    tokens: { input: 100, output: 20, cache: { read: 50, write: 0 } },
+    cost: 1,
+  })
+  counter.accept('session.usage.updated', {
+    data: {
+      sessionID: 's',
+      tokens: { input: 150, output: 30, cache: { read: 70, write: 0 } },
+      cost: 1.25,
+    },
+  })
+  expect(counter.total()).toBe(80)
+  expect(counter.usage()).toEqual({ input: 50, output: 10, cacheRead: 20, cacheWrite: 0 })
+  expect(counter.cost()).toBe(0.25)
+})
+
+it('adds child request usage without counting cumulative Claude session models again', () => {
+  const counter = turnTokenCounter('claude', () => undefined)
+  counter.accept('assistant', {
+    type: 'assistant',
+    parent_tool_use_id: 'child',
+    message: {
+      id: 'child-response',
+      model: 'claude-sonnet-4-6',
+      usage: {
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 2,
+      },
+    },
+  })
+  counter.accept('result', {
+    type: 'result',
+    usage: {
+      input_tokens: 100,
+      output_tokens: 20,
+      cache_read_input_tokens: 50,
+      cache_creation_input_tokens: 0,
+    },
+    modelUsage: { 'claude-sonnet-4-6': { inputTokens: 999999 } },
+  })
+  expect(counter.total()).toBe(207)
+  expect(counter.usage()).toEqual({ input: 110, output: 25, cacheRead: 70, cacheWrite: 2 })
+})

@@ -236,6 +236,17 @@ export const turnSchema = mutableStruct({
   error: Schema.optional(Schema.String),
   /** Tokens this turn used, when the provider reports them. */
   tokens: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.nonNegative())),
+  tokenUsage: Schema.optional(
+    mutableStruct({
+      input: Schema.Number.pipe(Schema.finite(), Schema.nonNegative()),
+      output: Schema.Number.pipe(Schema.finite(), Schema.nonNegative()),
+      cacheRead: Schema.Number.pipe(Schema.finite(), Schema.nonNegative()),
+      cacheWrite: Schema.Number.pipe(Schema.finite(), Schema.nonNegative()),
+    }),
+  ),
+  mixedModels: Schema.optional(Schema.Boolean),
+  costSource: Schema.optional(Schema.Literal('provider', 'estimated')),
+  pricingVersion: Schema.optional(Schema.String),
   /** Local standard API price estimate, not an amount billed by a subscription. */
   estimatedCostUsd: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.nonNegative())),
 })
@@ -481,6 +492,10 @@ export const workspaceSchema = mutableStruct({
         provider: Schema.Literal('codex', 'claude'),
         account: Schema.optional(usageAccountSchema),
         sourceTaskId: Schema.optional(Schema.String),
+        agentId: Schema.optional(Schema.String),
+        bucketId: Schema.optional(Schema.String),
+        windowId: Schema.optional(Schema.String),
+        durationMins: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.positive())),
         window: Schema.String,
         usedPercent: Schema.Number.pipe(Schema.finite()),
         resetsAt: Schema.optional(Schema.Number.pipe(Schema.finite())),

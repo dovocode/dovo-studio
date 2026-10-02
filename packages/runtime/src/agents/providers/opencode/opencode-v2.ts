@@ -181,6 +181,15 @@ export const opencodeV2Adapter: AgentAdapter = {
         if (run.agent.model)
           await api.session.switchModel({ sessionID, model: modelOf(run) }, { signal: run.signal })
       }
+      if (run.sessionId && !run.compact) {
+        try {
+          const baseline = await api.session.get({ sessionID }, { signal: run.signal })
+          run.onEvent?.('dovo/usage/baseline', { tokens: baseline.tokens, cost: baseline.cost })
+        } catch (cause) {
+          console.warn('OpenCode turn usage baseline unavailable:', cause)
+          run.onEvent?.('dovo/usage/unavailable', {})
+        }
+      }
       run.onSession(sessionID)
       if (run.agent.instructions)
         await api.session.instructions.entry.put(

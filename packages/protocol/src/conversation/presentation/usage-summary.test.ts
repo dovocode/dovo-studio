@@ -62,7 +62,7 @@ it('sums recent turns per model and per task', () => {
   })
   expect(summary.models.map((row) => [row.label, row.turns])).toEqual([
     ['gpt-5', 2],
-    ['gpt-5-mini', 1],
+    ['GPT-5-Mini', 1],
   ])
   expect(summary.tasks.map((row) => [row.label, row.detail])).toEqual([
     ['auth', 'Mac'],
@@ -89,8 +89,24 @@ it('sums local turn usage by subscription across machines and keeps unknown turn
   const recent = turn('2026-09-29T00:00:00Z', 1, 'gpt-5', 100)
   const summary = usageSummary(
     [
-      { computer: 'Mac', tasks: [task('a', [{ ...recent, usageAccount: account }, recent])] },
-      { computer: 'Linux', tasks: [task('b', [{ ...recent, usageAccount: account }, recent])] },
+      {
+        computer: 'Mac',
+        tasks: [
+          task('a', [
+            { ...recent, usageAccount: account },
+            { ...recent, id: 'unknown' },
+          ]),
+        ],
+      },
+      {
+        computer: 'Linux',
+        tasks: [
+          task('b', [
+            { ...recent, usageAccount: account },
+            { ...recent, id: 'unknown' },
+          ]),
+        ],
+      },
     ],
     Date.parse('2026-09-28T00:00:00Z'),
   )
@@ -142,4 +158,66 @@ it('keeps equally named computers and identical thread ids separate', () => {
   expect(result.tasks).toHaveLength(2)
   expect(result.accounts).toHaveLength(2)
   expect(result.total.turns).toBe(2)
+})
+
+it('deduplicates aliases of the same runtime and includes durable deleted threads', () => {
+  const recent = turn('2026-10-01T00:00:00Z', 1, 'gpt-6.1-sol', 100)
+  const source = {
+    computer: 'Mac',
+    sourceId: 'stable-runtime',
+    tasks: [task('t', [recent])],
+    records: [{ taskId: 'deleted', title: 'Deleted thread', turn: { ...recent, id: 'other' } }],
+  }
+  const summary = usageSummary(
+    [
+      { ...source, id: 'alias-one' },
+      { ...source, id: 'alias-two' },
+    ],
+    0,
+  )
+  expect(summary.total.turns).toBe(2)
+  expect(summary.tasks.some((row) => row.label === 'Deleted thread')).toBe(true)
+  expect(summary.models[0]?.label).toBe('GPT-6.1-Sol')
+})
+it('excludes future observations and preserves cache breakdowns', () => {
+  const recent = {
+    ...turn('2026-10-01T00:00:00Z', 1, 'gpt-6.1-sol', 100),
+    tokenUsage: { input: 10, output: 20, cacheRead: 60, cacheWrite: 10 },
+  }
+  const summary = usageSummary(
+    [
+      {
+        computer: 'Mac',
+        tasks: [task('t', [recent, turn('2027-01-01T00:00:00Z', 1, 'gpt-6.1-sol', 100)])],
+      },
+    ],
+    0,
+    Date.parse('2026-10-02T00:00:00Z'),
+  )
+  expect(summary.total).toMatchObject({
+    turns: 1,
+    input: 10,
+    output: 20,
+    cacheRead: 60,
+    cacheWrite: 10,
+  })
+})
+
+it('counts copied CLI requests once across different hosts', () => {
+  const recent = turn('2026-10-01T00:00:00Z', 1, 'gpt-6.1-sol', 100)
+  const record = {
+    taskId: 'cli:session',
+    title: 'Codex CLI',
+    sessionId: 'session',
+    origin: 'cli' as const,
+    turn: recent,
+  }
+  const result = usageSummary(
+    [
+      { computer: 'Mac', sourceId: 'one', tasks: [], records: [record] },
+      { computer: 'Linux', sourceId: 'two', tasks: [], records: [record] },
+    ],
+    0,
+  )
+  expect(result.total).toMatchObject({ turns: 1, tokens: 100 })
 })

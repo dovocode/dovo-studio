@@ -19,6 +19,7 @@ provider setup, and feature manual. The guides below focus on particular workflo
 - [Issues, pipelines, and Jira](issues-pipelines-jira.md): connected issue and pipeline sources.
 - [Automations](automations.md): triggers, execution, reviews, and recovery.
 - [Chat interactions](chat-interactions.md): queues, steering, questions, and approvals.
+- [Usage and limits](usage.md): account windows, CLI history, pricing, refresh, and caching.
 - [Codex modes](codex-modes.md): supported Codex reasoning and speed choices.
 - [Orchestration](orchestration.md): task turn ownership and recovery behavior.
 - [Browser and device previews](design/browser-and-devices.md): setup and current preview

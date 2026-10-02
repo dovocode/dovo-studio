@@ -4,7 +4,6 @@ import {
   CircleDot,
   GitBranch,
   GitPullRequest,
-  LayoutDashboard,
   ListChecks,
   MonitorSmartphone,
   MessagesSquare,
@@ -90,9 +89,6 @@ export function ActivityBar({
       <span className="studio-navigation-heading" aria-hidden="true">
         Workspace
       </span>
-      {item('overview', 'Overview', LayoutDashboard, activeId === 'overview', () =>
-        onSelect('overview'),
-      )}
       {views
         .filter((view) => !view.navigationGroup)
         .map((view) =>

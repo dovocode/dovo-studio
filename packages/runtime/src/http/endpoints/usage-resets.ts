@@ -50,7 +50,8 @@ export const usageResets = (request: IncomingMessage, path: string) =>
     const s = yield* RuntimeServices
     const input = decode(
       mutableStruct({
-        taskId: text,
+        taskId: Schema.optional(text),
+        agentId: Schema.optional(text),
         accountId: text,
         creditId: Schema.optional(text),
         idempotencyKey: Schema.optional(
@@ -59,13 +60,19 @@ export const usageResets = (request: IncomingMessage, path: string) =>
       }),
       yield* serviceResult(body(request)),
     )
-    const task = s.store.task(input.taskId)
-    const agent = resolveTaskAgent(task, s.store.get().agents)
-    const account = [...(task.turns ?? [])]
-      .reverse()
-      .find((turn) => turn.usageAccount?.id === input.accountId)?.usageAccount
+    const workspace = s.store.get()
+    const task = input.taskId ? s.store.task(input.taskId) : undefined
+    const agent = task
+      ? resolveTaskAgent(task, workspace.agents)
+      : workspace.agents.find((agent) => agent.id === input.agentId)
+    const account = task
+      ? [...(task.turns ?? [])].reverse().find((turn) => turn.usageAccount?.id === input.accountId)
+          ?.usageAccount
+      : workspace.planLimits?.find(
+          (limit) => limit.agentId === input.agentId && limit.account?.id === input.accountId,
+        )?.account
     if (!agent || !account)
-      throw new HttpError(400, 'No verified provider account for this thread. Run a turn first.')
+      throw new HttpError(400, 'No verified provider account. Refresh account limits first.')
     if (path === '/api/usage/resets/read') {
       const read = yield* serviceResult(readResetCredits(agent, account))
       if (read.limits.length)
@@ -76,7 +83,12 @@ export const usageResets = (request: IncomingMessage, path: string) =>
               (previous) =>
                 !(previous.provider === agent.provider && previous.account?.id === account.id),
             ),
-            ...read.limits.map((limit) => ({ ...limit, account, sourceTaskId: task.id })),
+            ...read.limits.map((limit) => ({
+              ...limit,
+              account,
+              agentId: agent.id,
+              ...(task ? { sourceTaskId: task.id } : {}),
+            })),
           ],
         }))
       const pending = accountAttempts(s.db, account.id).get(account.id)

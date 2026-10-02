@@ -6,6 +6,8 @@ import { mcpAppRpcSchema } from '@dovo/protocol'
 import { mutableArray } from '@dovo/protocol'
 import { runtimeSnapshot } from './support/runtime-snapshot.js'
 import { SCRATCH_PROJECT_ID } from '@dovo/protocol'
+import { usageHistory } from './endpoints/usage-history.js'
+import { usageLimits } from './endpoints/usage-limits.js'
 import { usageResets } from './endpoints/usage-resets.js'
 import { PAIRING_PROTOCOL_VERSION } from '@dovo/protocol'
 import { routeProgram, serviceResult } from './support/effect.js'
@@ -669,6 +671,12 @@ export function route(
           ok: true,
         })
       }
+      if (
+        method === 'POST' &&
+        (path === '/api/usage/history/read' || path === '/api/usage/prices/write')
+      )
+        return yield* usageHistory(request, path)
+      if (method === 'POST' && path === '/api/usage/limits/read') return yield* usageLimits(request)
       if (
         method === 'POST' &&
         (path === '/api/usage/resets/read' || path === '/api/usage/resets/consume')
