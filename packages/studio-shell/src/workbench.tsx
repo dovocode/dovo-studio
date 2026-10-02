@@ -416,7 +416,7 @@ function WorkbenchContent({
             </div>
           </main>
         </div>
-        {taskLauncher && <TaskLauncher bridge={taskLauncher} onDispatched={openNotification} />}
+        {taskLauncher && <TaskLauncher bridge={taskLauncher} />}
         <CommandPalette
           open={palette}
           onOpenChange={setPalette}

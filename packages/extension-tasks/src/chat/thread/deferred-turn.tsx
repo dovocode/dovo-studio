@@ -1,22 +1,32 @@
+import { useConversationHistory } from '@dovo/studio-ui'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
-const listeners = new Map<Element, () => void>()
-let observer: IntersectionObserver | undefined
-function observe(element: Element, reveal: () => void) {
-  observer ??= new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) if (entry.isIntersecting) listeners.get(entry.target)?.()
-    },
-    { rootMargin: '800px 0px' },
-  )
+const observers = new WeakMap<
+  Element,
+  { observer: IntersectionObserver; listeners: Map<Element, () => void> }
+>()
+function observe(element: Element, root: Element, reveal: () => void) {
+  let shared = observers.get(root)
+  if (!shared) {
+    const listeners = new Map<Element, () => void>()
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) if (entry.isIntersecting) listeners.get(entry.target)?.()
+      },
+      { root, rootMargin: '800px 0px' },
+    )
+    shared = { observer, listeners }
+    observers.set(root, shared)
+  }
+  const { observer, listeners } = shared
   listeners.set(element, reveal)
   observer.observe(element)
   return () => {
     listeners.delete(element)
-    observer?.unobserve(element)
+    observer.unobserve(element)
     if (!listeners.size) {
-      observer?.disconnect()
-      observer = undefined
+      observer.disconnect()
+      observers.delete(root)
     }
   }
 }
@@ -29,6 +39,7 @@ export function DeferredTurn({
   immediate: boolean
   children: () => ReactNode
 }) {
+  const { ready, scrollRef } = useConversationHistory()
   const element = useRef<HTMLDivElement>(null)
   const [visited, setVisited] = useState(immediate)
   useEffect(() => {
@@ -36,13 +47,13 @@ export function DeferredTurn({
       setVisited(true)
       return
     }
-    if (visited || !element.current) return
+    if (visited || !ready || !element.current || !scrollRef.current) return
     if (typeof IntersectionObserver === 'undefined') {
       setVisited(true)
       return
     }
-    return observe(element.current, () => setVisited(true))
-  }, [visited, immediate])
+    return observe(element.current, scrollRef.current, () => setVisited(true))
+  }, [visited, immediate, ready, scrollRef])
   return (
     <div
       ref={element}

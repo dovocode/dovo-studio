@@ -1,3 +1,4 @@
+import { mcpAppRpcSchema } from '@dovo/protocol'
 import { runtimeSnapshot } from './support/runtime-snapshot.js'
 import { SCRATCH_PROJECT_ID } from '@dovo/protocol'
 import { usageResets } from './endpoints/usage-resets.js'
@@ -117,7 +118,33 @@ export function route(
           id: s.jobs.start(id, `webhook:${key}`, payload),
         })
       }
+      if (method === 'POST' && path === '/api/mcp-apps/proxy') {
+        const input = decode(
+          mutableStruct({ method: Schema.String, params: Schema.optional(Schema.Unknown) }),
+          yield* serviceResult(body(request, 256 * 1024)),
+        )
+        return yield* serviceResult(
+          s.mcpApps.proxy(token, input.method, input.params).then((result) => ({ result })),
+        )
+      }
       const device = s.devices.authenticate(token)
+      if (method === 'POST' && path === '/api/mcp-apps/read') {
+        const { taskId, id } = decode(
+          mutableStruct({ taskId: uuidSchema, id: uuidSchema }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        return yield* serviceResult({ app: s.mcpApps.read(taskId, id) })
+      }
+      if (method === 'POST' && path === '/api/mcp-apps/rpc') {
+        const input = decode(mcpAppRpcSchema, yield* serviceResult(body(request, 256 * 1024)))
+        return yield* serviceResult(
+          s.mcpApps
+            .action(input.taskId, input.id, input.requestId, input.method, input.params, () => {
+              s.devices.authenticate(token)
+            })
+            .then((result) => ({ result })),
+        )
+      }
       if (method === 'POST' && path === '/api/devices/revoke-self') {
         if (device.owner) throw new HttpError(403, 'The host credential cannot revoke itself')
         s.devices.revoke(device.id)
@@ -334,7 +361,16 @@ export function route(
         if (!device.owner) throw new HttpError(403, 'Only the runtime host can manage device trust')
       }
       if (method === 'POST' && path === '/api/sync/ticket')
-        return { ticket: s.tickets.issue(token, 'runtime-sync') }
+        return {
+          ticket: s.tickets.issue(
+            token,
+            url.searchParams.get('format') === '3'
+              ? 'runtime-sync-3'
+              : url.searchParams.get('format') === '2'
+                ? 'runtime-sync-2'
+                : 'runtime-sync',
+          ),
+        }
       if (method === 'GET' && path === '/api/snapshot') {
         return yield* runtimeSnapshot(s, device, url.searchParams.get('scope') === 'overview')
       }
@@ -467,7 +503,7 @@ export function route(
           if (!patch.create || Object.keys(patch.changes).length)
             throw new HttpError(400, 'The scratch workspace is managed by Dovo')
           yield* serviceResult(s.scratch.ensure())
-          return { revision: s.store.version() }
+          return { revision: s.store.version(), runtimeInstanceId: s.instanceId }
         }
         if (patch.collection === 'tasks') {
           const candidate =
@@ -498,6 +534,7 @@ export function route(
         s.store.patch(patch)
         return yield* serviceResult({
           revision: s.store.version(),
+          runtimeInstanceId: s.instanceId,
         })
       }
       if (method === 'POST' && path === '/api/pair/code') {

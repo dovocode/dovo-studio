@@ -1,9 +1,12 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { canChangeTaskCheckout } from '@dovo/protocol'
 import { writeFile, rm, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'
 import { startRuntime } from '../../index'
 import { listBranches, switchBranch } from './branches'
+import { WorkspaceStore } from '../../storage/workspace'
+import { openDatabase } from '../../storage/database'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -70,6 +73,71 @@ it('switches local and remote branches, creates branches, and clears only affect
     revision: (await listBranches(s, cwd)).revision,
   })
   expect((await s.git.inspect(cwd)).branch).toBe(first.current)
+})
+it('keeps unsent drafts checkout-editable after the project branch changes', async () => {
+  const { s, cwd } = await setup()
+  const task = s.tasks.create({
+    title: 'Unsent',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'main',
+    objective: '',
+  })
+  await switchBranch(s, cwd, task.id, {
+    action: 'create',
+    name: 'feature/unsent',
+    revision: (await listBranches(s, cwd)).revision,
+  })
+  expect(canChangeTaskCheckout(s.store.task(task.id))).toBe(true)
+  for (const execution of ['worktree', 'main'] as const) {
+    s.store.patch({
+      collection: 'tasks',
+      id: task.id,
+      changes: { execution: { before: s.store.task(task.id).execution, after: execution } },
+    })
+    expect(canChangeTaskCheckout(s.store.task(task.id))).toBe(true)
+  }
+  expect(s.store.task(task.id).execution).toBe('main')
+  expect(s.store.get().repositories.find((repo) => repo.id === 'repo')?.branch).toBe(
+    'feature/unsent',
+  )
+})
+it('recovers legacy branch metadata on untouched local drafts without unlocking prepared tasks', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const draft = {
+      id: 'draft',
+      title: 'Unsent',
+      repositoryId: 'repo',
+      agentId: '',
+      status: 'draft' as const,
+      execution: 'main' as const,
+      createdAt: '',
+      messages: [],
+      files: [],
+      draft: 'Keep my unsent input',
+      example: false,
+      checkoutBranch: 'feature/local',
+    }
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        draft,
+        { ...draft, id: 'worktree', execution: 'worktree' },
+        { ...draft, id: 'submitted', checkoutLocked: true },
+      ],
+    }))
+    const restored = new WorkspaceStore(db)
+    expect(canChangeTaskCheckout(restored.task('draft'))).toBe(true)
+    expect(restored.task('draft').draft).toBe(draft.draft)
+    expect(restored.task('draft').checkoutBranch).toBeUndefined()
+    expect(canChangeTaskCheckout(restored.task('worktree'))).toBe(false)
+    expect(canChangeTaskCheckout(restored.task('submitted'))).toBe(false)
+    expect(new WorkspaceStore(db).task('draft').checkoutBranch).toBeUndefined()
+  } finally {
+    db.close()
+  }
 })
 it('refuses dirty checkouts and running agents; task worktree changes leave the project untouched', async () => {
   const { s, cwd } = await setup()

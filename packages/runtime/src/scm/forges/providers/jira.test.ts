@@ -57,6 +57,21 @@ const raw = {
     updated: '2026-09-20T10:00:00Z',
   },
 }
+it('preserves Mermaid code blocks in Jira descriptions and comments', () => {
+  expect(
+    jiraMarkdown({
+      type: 'doc',
+      version: 1,
+      content: [
+        {
+          type: 'codeBlock',
+          attrs: { language: 'mermaid' },
+          content: [{ type: 'text', text: 'graph TD\nA-->B' }],
+        },
+      ],
+    }),
+  ).toBe('```mermaid\ngraph TD\nA-->B\n```\n')
+})
 it('renders ADF text and marks as Markdown with schema validation', () => {
   expect(jiraMarkdown(raw.fields.description)).toContain('**Hello**')
   expect(() =>

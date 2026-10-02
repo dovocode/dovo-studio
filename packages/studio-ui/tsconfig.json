@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {},
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "mcp-apps/**/*.ts", "mcp-apps/**/*.tsx"],
   "exclude": ["src/**/*.test.ts"]
 }

@@ -400,3 +400,23 @@ describe('incremental conversation projection', () => {
     expect(second[999]).not.toBe(first[999])
   })
 })
+
+it('keeps the list identity through repeated snapshots and unrelated draft edits', () => {
+  const project = createConversationMessages()
+  const initial = project(task, [])
+  const editing: Task = { ...task, draft: 'Typing a follow-up' }
+  expect(project(editing, [])).toBe(initial)
+  const updated = project(
+    {
+      ...task,
+      messages: task.messages.map((message) =>
+        message.id === 'a2' ? { ...message, text: 'New streamed text' } : message,
+      ),
+    },
+    [],
+  )
+  expect(updated).not.toBe(initial)
+  expect(updated[0]).toBe(initial[0])
+  expect(updated[1]).toBe(initial[1])
+  expect(updated[2]).not.toBe(initial[2])
+})

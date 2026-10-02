@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
 import { WebSocket } from 'ws'
 import {
   decode,
   snapshotDelta,
+  activityDelta,
   syncInputSchema,
   type RuntimeSnapshot,
   type SyncFrame,
@@ -25,6 +26,8 @@ type Client = {
   bufferLimit: number
 }
 type View = {
+  compact: boolean
+  fieldUpdates: boolean
   device: { id: string; owner: boolean }
   epoch: string
   expiry?: ReturnType<typeof setTimeout>
@@ -40,13 +43,19 @@ type View = {
   pending?: Promise<void>
 }
 const hubs = new WeakMap<Services, RuntimeSync>()
-export function attachRuntimeSync(socket: WebSocket, token: string, services: Services) {
+export function attachRuntimeSync(
+  socket: WebSocket,
+  token: string,
+  services: Services,
+  compact = false,
+  fieldUpdates = false,
+) {
   let hub = hubs.get(services)
   if (!hub) {
     hub = new RuntimeSync(services)
     hubs.set(services, hub)
   }
-  hub.attach(socket, token)
+  hub.attach(socket, token, compact, fieldUpdates)
 }
 export async function disposeRuntimeSync(services: Services) {
   const hub = hubs.get(services)
@@ -56,13 +65,13 @@ export async function disposeRuntimeSync(services: Services) {
 class RuntimeSync {
   private controller = new AbortController()
   private views = new Map<string, View>()
-  private timer?: ReturnType<typeof setInterval>
+  private timer?: Fiber.RuntimeFiber<never, never>
   private busy = false
   private projection?: { signature: string; checked: number; pending: Promise<RuntimeSnapshot> }
   constructor(private services: Services) {}
   async dispose() {
     this.controller.abort()
-    clearInterval(this.timer)
+    if (this.timer) await Effect.runPromise(Fiber.interrupt(this.timer))
     const pending: Promise<void>[] = []
     for (const view of this.views.values()) {
       clearTimeout(view.expiry)
@@ -77,12 +86,15 @@ class RuntimeSync {
     this.projection = undefined
     await Promise.allSettled(pending)
   }
-  attach(socket: WebSocket, token: string) {
+  attach(socket: WebSocket, token: string, compact: boolean, fieldUpdates: boolean) {
     const device = this.services.devices.authenticate(token)
-    let view = this.views.get(device.id)
+    const viewId = `${device.id}:${fieldUpdates ? 'fields' : compact ? 'lean' : 'legacy'}`
+    let view = this.views.get(viewId)
     if (!view || view.token !== token) {
       view = {
         device,
+        compact,
+        fieldUpdates,
         epoch: randomUUID(),
         token,
         clients: new Set(),
@@ -92,7 +104,7 @@ class RuntimeSync {
         history: [],
         bytes: 0,
       }
-      this.views.set(device.id, view)
+      this.views.set(viewId, view)
     }
     const current = view
     clearTimeout(current.expiry)
@@ -184,24 +196,23 @@ class RuntimeSync {
       if (!current.clients.size && !this.controller.signal.aborted) {
         current.expiry = setTimeout(
           () => {
-            if (!current.clients.size && this.views.get(device.id) === current)
-              this.views.delete(device.id)
+            if (!current.clients.size && this.views.get(viewId) === current)
+              this.views.delete(viewId)
           },
           5 * 60 * 1000,
         )
         current.expiry.unref()
       }
       if (![...this.views.values()].some((item) => item.clients.size)) {
-        clearInterval(this.timer)
+        if (this.timer) Effect.runFork(Fiber.interrupt(this.timer))
         this.timer = undefined
         this.projection = undefined
       }
     })
     if (!this.timer) {
-      this.timer = setInterval(() => {
-        void this.tick()
-      }, 200)
-      this.timer.unref()
+      this.timer = Effect.runFork(
+        Effect.forever(Effect.promise(() => this.tick()).pipe(Effect.zipRight(Effect.sleep(200)))),
+      )
     }
   }
   private send(client: Client, wire: string) {
@@ -214,17 +225,17 @@ class RuntimeSync {
     }
     client.socket.send(wire)
   }
-  private refresh(view: View): Promise<void> {
+  private refresh(view: View, signature?: string): Promise<void> {
     if (view.pending) return view.pending
-    const pending = this.build(view).finally(() => {
+    const pending = this.build(view, signature ?? this.signature()).finally(() => {
       if (view.pending === pending) view.pending = undefined
     })
     view.pending = pending
     return pending
   }
-  private async build(view: View) {
+  private signature() {
     const s = this.services
-    const signature = JSON.stringify([
+    return JSON.stringify([
       s.store.version(),
       s.approvals.list(),
       s.questions.list(),
@@ -235,6 +246,9 @@ class RuntimeSync {
       s.defaults.get(),
       s.acpInstallations.list(),
     ])
+  }
+  private async build(view: View, signature: string) {
+    const s = this.services
     if (signature === view.signature && Date.now() - view.checked < 15000) return
     // Share the expensive workspace projection/hash across desktop and phone, but filter
     // trust metadata before serializing each authenticated device's own view.
@@ -280,7 +294,7 @@ class RuntimeSync {
       sequence: view.sequence,
       base,
       tag,
-      delta: snapshotDelta(previous, next),
+      delta: snapshotDelta(previous, next, view.compact, view.fieldUpdates),
     } satisfies SyncFrame)
     view.history.push({ sequence: view.sequence, wire })
     view.bytes += wire.length * 2
@@ -292,6 +306,7 @@ class RuntimeSync {
     if (this.busy) return
     this.busy = true
     try {
+      const signature = this.signature()
       for (const view of this.views.values()) {
         if (!view.clients.size) continue
         try {
@@ -302,7 +317,7 @@ class RuntimeSync {
           continue
         }
         try {
-          await this.refresh(view)
+          await this.refresh(view, signature)
           if (this.controller.signal.aborted) return
           for (const client of view.clients) {
             if (!client.ready) continue
@@ -310,9 +325,17 @@ class RuntimeSync {
               for (const [scope, previous] of client.scopes) {
                 const events = this.services.activity.list('', 'task-activity', 0, scope).events
                 const old = new Map(previous.map((event) => [event.id, event]))
-                const changed = events.filter(
-                  (event) => JSON.stringify(event) !== JSON.stringify(old.get(event.id)),
-                )
+                const changed = events.filter((event) => {
+                  const previous = old.get(event.id)
+                  return (
+                    !previous ||
+                    event.payload !== previous.payload ||
+                    event.summary !== previous.summary ||
+                    event.time !== previous.time ||
+                    event.kind !== previous.kind ||
+                    event.scope !== previous.scope
+                  )
+                })
                 if (
                   client.activityRevision === -1 ||
                   changed.length ||
@@ -321,12 +344,20 @@ class RuntimeSync {
                 )
                   this.send(
                     client,
-                    JSON.stringify({
-                      type: 'activity',
-                      scope,
-                      order: events.map((event) => event.id),
-                      events: changed,
-                    } satisfies SyncFrame),
+                    JSON.stringify(
+                      view.compact && client.activityRevision !== -1
+                        ? ({
+                            type: 'activity-delta',
+                            scope,
+                            delta: activityDelta(previous, events),
+                          } satisfies SyncFrame)
+                        : ({
+                            type: 'activity',
+                            scope,
+                            order: events.map((event) => event.id),
+                            events: changed,
+                          } satisfies SyncFrame),
+                    ),
                   )
                 client.scopes.set(scope, events)
               }

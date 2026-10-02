@@ -212,12 +212,12 @@ HTTPS/WSS runtime endpoint, supplied by your local reverse proxy; browsers block
 
 ### Provider setup and execution limits
 
-| Integration | Host requirement                                                                                      |
-| ----------- | ----------------------------------------------------------------------------------------------------- |
-| Codex       | `codex` on PATH, or executable path in Agent settings; authenticated Codex login                      |
-| OpenCode    | `opencode serve` running; endpoint defaults to `http://127.0.0.1:4096`; models use `provider/model`   |
-| Claude      | User-installed Claude CLI on the runtime host; bundled Agent SDK; Claude login or `ANTHROPIC_API_KEY` |
-| ACP         | Install one or more agents from the official ACP Registry, or configure an executable and arguments   |
+| Integration | Host requirement                                                                                                                                          |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex       | `codex` on PATH, or executable path in Agent settings; authenticated Codex login                                                                          |
+| OpenCode    | Installed OpenCode CLI; a blank URL starts an authenticated local server automatically. Explicit URLs use an existing server; models use `provider/model` |
+| Claude      | User-installed Claude CLI on the runtime host; bundled Agent SDK; Claude login or `ANTHROPIC_API_KEY`                                                     |
+| ACP         | Install one or more agents from the official ACP Registry, or configure an executable and arguments                                                       |
 
 OpenCode server authentication uses `OPENCODE_SERVER_PASSWORD` and optional
 `OPENCODE_SERVER_USERNAME` on the runtime host. ACP read-only execution requires an advertised
@@ -358,10 +358,15 @@ visible thread activity. Updates are batched briefly and assistant text is sent 
 than repeated history. Reconnecting resumes from a bounded replay cursor; server restarts or gaps
 load a fresh snapshot. Mobile closes the stream in the background and resumes on return without
 stopping the agent. Older servers and connections that block WebSockets fall back to HTTP polling.
-Other computers retain their less frequent fleet refreshes. The runtime must stay running and both
-devices must be reachable within the private network. The native app allows HTTP for user-selected
-private runtimes, including LAN, Tailscale and NetBird hostnames. Use a VPN or HTTPS for encrypted
-remote transport. An HTTPS browser frontend requires HTTPS/WSS for its runtime.
+The current stream format omits unchanged metadata and ordering lists, and uses small string patches
+for growing tool/reasoning payloads. Older clients retain their compatible stream format. Workspace
+acknowledgements include the runtime instance and revision so a delayed stream frame cannot undo a
+newer draft save; a server restart establishes a new instance. Mobile reconciles saved send
+identities before hydrating draft text, preserving genuinely newer or unsent input. Other computers
+retain their less frequent fleet refreshes. The runtime must stay running and both devices must be
+reachable within the private network. The native app allows HTTP for user-selected private runtimes,
+including LAN, Tailscale and NetBird hostnames. Use a VPN or HTTPS for encrypted remote transport.
+An HTTPS browser frontend requires HTTPS/WSS for its runtime.
 
 Native folders and terminal HTML are generated. The checked-in Expo scene plugin reproduces iOS
 scene lifecycle support for Xcode 27. Explicit app keychain entitlements also keep simulator
@@ -1057,3 +1062,10 @@ repository name (optionally owner/name) and private or public visibility; privat
 The runtime uses its configured GitHub CLI account, initializes Git when necessary, and adds origin
 without staging or uploading files. Existing remotes are never replaced. After creation, add the
 project, review and stage its files, then commit and push.
+
+### Mermaid diagrams in threads
+
+Fenced `mermaid` blocks render as diagrams on desktop and mobile. Desktop diagrams offer copy,
+download, fullscreen and pan/zoom controls. Mobile renders completed fences offline; unfinished
+streaming fences stay as source. Invalid diagrams keep their readable source instead of breaking the
+message. Diagram rendering loads only when needed and uses Mermaid's strict security mode.

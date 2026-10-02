@@ -7,12 +7,11 @@ import { Schema } from 'effect'
 import { questionPromptSchema } from '@dovo/protocol'
 import { createOpencodeClient, type PermissionRuleset } from '@opencode-ai/sdk/v2'
 import type { AgentAdapter } from '../../execution/types.js'
+import { OpenCodeServers, opencodeHeaders } from './opencode-server.js'
 import { opencodeV2Adapter, isOpencodeV2 } from './opencode-v2.js'
 const clients = new Map<string, ReturnType<typeof createOpencodeClient>>()
-function client(address: string, cwd?: string) {
-  const authorization = process.env.OPENCODE_SERVER_PASSWORD
-    ? `Basic ${Buffer.from(`${process.env.OPENCODE_SERVER_USERNAME || 'opencode'}:${process.env.OPENCODE_SERVER_PASSWORD}`).toString('base64')}`
-    : undefined
+function client(address: string, cwd?: string, env?: Record<string, string>) {
+  const authorization = opencodeHeaders(env).Authorization
   const key = JSON.stringify([address, cwd, authorization])
   const existing = clients.get(key)
   if (existing) return existing
@@ -37,10 +36,10 @@ function untilAborted(approval: Promise<boolean>, signal: AbortSignal) {
       .finally(() => signal.removeEventListener('abort', abort))
   })
 }
-export const opencodeAdapter: AgentAdapter = {
+const remoteAdapter: AgentAdapter = {
   models: async (agent) => {
-    if (await isOpencodeV2(agent.endpoint)) return opencodeV2Adapter.models!(agent)
-    const { data } = await client(agent.endpoint).provider.list(
+    if (await isOpencodeV2(agent.endpoint, agent.env)) return opencodeV2Adapter.models!(agent)
+    const { data } = await client(agent.endpoint, undefined, agent.env).provider.list(
       {},
       {
         throwOnError: true,
@@ -65,8 +64,8 @@ export const opencodeAdapter: AgentAdapter = {
   },
   probe: async (agent) => {
     try {
-      if (await isOpencodeV2(agent.endpoint)) return opencodeV2Adapter.probe(agent)
-      await client(agent.endpoint).global.health({
+      if (await isOpencodeV2(agent.endpoint, agent.env)) return opencodeV2Adapter.probe(agent)
+      await client(agent.endpoint, undefined, agent.env).global.health({
         signal: AbortSignal.timeout(5000),
       })
       return {
@@ -84,8 +83,8 @@ export const opencodeAdapter: AgentAdapter = {
   },
   async run(run) {
     run.signal.throwIfAborted()
-    if (await isOpencodeV2(run.agent.endpoint)) return opencodeV2Adapter.run(run)
-    const api = client(run.agent.endpoint, run.cwd)
+    if (await isOpencodeV2(run.agent.endpoint, run.agent.env)) return opencodeV2Adapter.run(run)
+    const api = client(run.agent.endpoint, run.cwd, run.agent.env)
     const registered: string[] = []
     let ephemeralSessionId: string | undefined
     try {
@@ -479,3 +478,25 @@ export const opencodeAdapter: AgentAdapter = {
     }
   },
 }
+
+export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAdapter {
+  const resolve = async <T extends import('@dovo/protocol').AgentDiscovery>(agent: T) =>
+    servers.resolve(agent)
+  return {
+    models: async (agent) => remoteAdapter.models!(await resolve(agent)),
+    probe: async (agent) => {
+      try {
+        return await remoteAdapter.probe(await resolve(agent))
+      } catch (error) {
+        return {
+          provider: 'opencode',
+          available: false,
+          detail: error instanceof Error ? error.message : 'OpenCode could not start',
+        }
+      }
+    },
+    run: async (run) => remoteAdapter.run({ ...run, agent: await resolve(run.agent) }),
+    dispose: () => servers.dispose(),
+  }
+}
+export const opencodeAdapter = createOpenCodeAdapter()

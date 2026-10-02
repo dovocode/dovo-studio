@@ -26,6 +26,7 @@ release/
 apps/mobile/ios/
 apps/mobile/android/
 apps/mobile/assets/terminal.json
+apps/mobile/assets/mermaid.json
 
 # Generated shared canvas viewer
 packages/protocol/src/generated/browser-viewer.ts
@@ -52,3 +53,6 @@ packages/runtime/native/ios-device/target/
 # Push provider credentials are deployment secrets.
 apps/notification-relay/secrets/
 apps/mobile/google-services.json
+
+/packages/studio-ui/mcp-apps/host.json
+/packages/studio-ui/mcp-apps/sandbox.json

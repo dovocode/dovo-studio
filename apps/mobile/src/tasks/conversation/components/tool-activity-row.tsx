@@ -1,3 +1,8 @@
+import { mcpAppReferences } from '@dovo/protocol'
+import { lazy, Suspense } from 'react'
+const McpAppView = lazy(() =>
+  import('../../../ui/content/mcp-app').then((module) => ({ default: module.McpAppView })),
+)
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { ActivityIndicator, Pressable, View } from 'react-native'
 import { toolPresentation } from '@dovo/protocol'
@@ -82,6 +87,11 @@ export function ToolActivityRow({
         )}
         <Icon name={open ? 'down' : 'next'} size={10} color={colors.muted} />
       </Pressable>
+      {mcpAppReferences(event.payload).map((reference) => (
+        <Suspense key={reference.id} fallback={<Text>Loading app…</Text>}>
+          <McpAppView reference={reference} />
+        </Suspense>
+      ))}
       {open && (
         <View
           style={{

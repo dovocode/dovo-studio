@@ -12,7 +12,7 @@ const drafts = createDraftStorage(AsyncStorage)
 export function saveRuntimeDraft(runtimeId: string, taskId: string, text: string) {
   return drafts.write(`dovo.draft.${encodeURIComponent(runtimeId)}.${taskId}`, text)
 }
-export function useDraft(taskId: string, initial = '') {
+export function useDraft(taskId: string, initial = '', deliveredIds: readonly string[] = []) {
   const { activeId, legacyDraftRuntimeId } = useRuntime()
   const key = `dovo.draft.${encodeURIComponent(activeId ?? '')}.${taskId}`
   const migrateLegacy = !!activeId && activeId === legacyDraftRuntimeId
@@ -20,6 +20,8 @@ export function useDraft(taskId: string, initial = '') {
     [loadedKey, setLoadedKey] = useApplicationState<string | null>(null),
     [submission, setSubmission] = useApplicationState<DraftRecord['submission']>(undefined),
     [error, setError] = useApplicationState('')
+  const delivered = useRef(deliveredIds)
+  delivered.current = deliveredIds
   const initialText = useRef(initial)
   initialText.current = initial
   const activeKey = useRef<string | null>(null)
@@ -30,7 +32,8 @@ export function useDraft(taskId: string, initial = '') {
     activeKey.current = key
     setLoadedKey(null)
     setSubmission(undefined)
-    setText(initialText.current)
+    // Wait for the durable delivery record rather than flashing a server's stale pre-send draft.
+    setText('')
     setError('')
     const unsubscribe = drafts.subscribe(key, (value) => {
       edited = true
@@ -38,14 +41,20 @@ export function useDraft(taskId: string, initial = '') {
     })
     void commands.run(
       hydrateDraft(
-        drafts.readRecordEffect(key, migrateLegacy ? `dovo.draft.${taskId}` : undefined).pipe(
-          Effect.tap((record) =>
-            Effect.sync(() => {
-              if (!disposed) setSubmission(record?.submission)
-            }),
+        drafts
+          .readRecordEffect(
+            key,
+            migrateLegacy ? `dovo.draft.${taskId}` : undefined,
+            () => delivered.current,
+          )
+          .pipe(
+            Effect.tap((record) =>
+              Effect.sync(() => {
+                if (!disposed) setSubmission(record?.submission)
+              }),
+            ),
+            Effect.map((record) => record?.text ?? null),
           ),
-          Effect.map((record) => record?.text ?? null),
-        ),
         {
           initial: () => initialText.current,
           edited: () => edited,
@@ -58,6 +67,16 @@ export function useDraft(taskId: string, initial = '') {
             setLoadedKey(key)
             setError(hydration.error)
           }),
+        ),
+        Effect.zipRight(
+          drafts.flushEffect().pipe(
+            Effect.catchAll((error) =>
+              Effect.sync(() => {
+                if (activeKey.current === key)
+                  setError(`Could not save the recovered draft. ${String(error)}`)
+              }),
+            ),
+          ),
         ),
       ),
     )

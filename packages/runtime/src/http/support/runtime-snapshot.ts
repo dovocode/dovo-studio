@@ -13,6 +13,7 @@ export function runtimeSnapshot(
   overview = false,
 ) {
   return Effect.gen(function* () {
+    const revision = s.store.version()
     const storedWorkspace = s.store.publicWorkspace()
     const scratch = yield* serviceResult(s.scratch.available())
     const workspace =
@@ -21,6 +22,7 @@ export function runtimeSnapshot(
         : storedWorkspace
     return yield* serviceResult({
       protocolVersion: RUNTIME_PROTOCOL_VERSION,
+      runtimeInstanceId: s.instanceId,
       runtimeHost: hostname(),
       releaseVersion: process.env.DOVO_RELEASE_VERSION || undefined,
       desktopApp: desktopAppUpdateInfo(),
@@ -36,7 +38,7 @@ export function runtimeSnapshot(
           : canUpdateServer(),
       defaults: s.defaults.get(),
       acpInstallations: s.acpInstallations.list(),
-      revision: s.store.version(),
+      revision,
       workspace: {
         ...(overview ? overviewWorkspace(workspace) : workspace),
         repositories: yield* Effect.forEach(

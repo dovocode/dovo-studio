@@ -5,7 +5,7 @@ import { Pressable, View } from 'react-native'
 import { activitySchema, activitySummary, decodeResult, mutableStruct } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { useAuiState } from '@assistant-ui/react-native'
-import { useTaskConversation } from '../state/provider'
+import { useConversationTurn } from '../state/provider'
 import { Text } from '../../../ui/content/text'
 import { colors, styles } from '../../../ui/theme'
 import { Icon } from '../../../ui/controls/icon'
@@ -26,7 +26,6 @@ export function ConversationWorkGroup({
   startIndex: number
   endIndex: number
 }>) {
-  const { task } = useTaskConversation()
   const message = useAuiState((state) => state.message)
   const id = message.id
   const groupEvents = message.content.slice(startIndex, endIndex + 1).flatMap((part) => {
@@ -37,7 +36,7 @@ export function ConversationWorkGroup({
   const summary = [activitySummary(groupEvents), activityOutcome(groupEvents)]
     .filter(Boolean)
     .join(' · ')
-  const turn = task.turns?.find((item) => item.assistantId === id)
+  const turn = useConversationTurn(id)
   const workStatus =
     turn?.status === 'running' && message.status?.type !== 'running' ? 'interrupted' : turn?.status
   // Settings → General → Tool activity.

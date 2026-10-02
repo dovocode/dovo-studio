@@ -25,7 +25,11 @@ import { createSendAttempts, type SendAttempt } from '../../composer/send-attemp
 const sendAttempts = createSendAttempts(randomUUID)
 export function useConversationActions(task: Task) {
   const { call, connected, snapshot, activeId, readEffect, callEffect } = useRuntime(),
-    storedDraft = useDraft(task.id, task.draft),
+    storedDraft = useDraft(
+      task.id,
+      task.draft,
+      [...task.messages, ...(task.queue ?? [])].map((message) => message.id),
+    ),
     action = useAction(),
     cancellation = useAction()
   const [pendingMessage, setPendingMessage] = useApplicationState<MobilePendingSend | null>(null)

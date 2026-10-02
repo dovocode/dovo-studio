@@ -1,3 +1,4 @@
+import { McpApps } from './mcp-apps/bridge.js'
 import { ScratchWorkspaces } from './scm/repositories/scratch-workspaces.js'
 import { AcpInstallations } from './agents/configuration/acp-installations.js'
 import type { ExternalListener } from './http/external-listener.js'
@@ -105,6 +106,9 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       activity,
     ),
     jobs = new Jobs(db, store, tasks, activity)
+  const mcpApps = new McpApps(db, store, activity, approvals)
+  tasks.setMcpApps(mcpApps)
+  mcpApps.setSendMessage((taskId, messageId, text) => tasks.send(taskId, messageId, text))
   const liveActivities = new LiveActivities(
     db,
     store,
@@ -120,6 +124,8 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     return approval ? { id: approval.id, preview: approval.title } : undefined
   })
   return {
+    instanceId: randomUUID(),
+    mcpApps,
     scratch,
     pushNotifications,
     acpInstallations,
@@ -157,6 +163,8 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  mcpApps: McpApps
+  instanceId: string
   scratch: ScratchWorkspaces
   network?: ExternalListener
   acpInstallations: AcpInstallations

@@ -9,7 +9,7 @@ import { MessageActions } from './components/message-actions'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
-import { useCallback, useEffect, useRef, useMemo } from 'react'
+import { useCallback, useEffect, useRef, useMemo, memo } from 'react'
 import {
   ActivityIndicator,
   FlatList,
@@ -22,6 +22,7 @@ import { Text } from '../../ui/content/text'
 import { Schema } from 'effect'
 import { attachmentSchema, activitySchema, type TaskTurn } from '@dovo/protocol'
 import {
+  MessageByIndexProvider,
   MessagePrimitive,
   ThreadPrimitive,
   useAuiState,
@@ -29,7 +30,11 @@ import {
   type ToolCallMessagePartProps,
   type ThreadMessage,
 } from '@assistant-ui/react-native'
-import { usePendingConversationMessage, useTaskConversation } from './state/provider'
+import {
+  usePendingConversationMessage,
+  useConversationSelector,
+  useConversationTurn,
+} from './state/provider'
 import { Markdown } from '../../ui/content/markdown'
 import { MessageAttachments } from './components/message-attachments'
 import { colors, styles } from '../../ui/theme'
@@ -50,10 +55,8 @@ const checkpointSchema = mutableStruct({
   error: Schema.optional(Schema.String),
 })
 function AttachmentPart({ data }: DataMessagePartProps<unknown>) {
-  const { task } = useTaskConversation()
-  return (
-    <MessageAttachments taskId={task.id} files={decode(mutableArray(attachmentSchema), data)} />
-  )
+  const taskId = useConversationSelector((value) => value.task.id)
+  return <MessageAttachments taskId={taskId} files={decode(mutableArray(attachmentSchema), data)} />
 }
 function TurnSummaryPart({ data }: DataMessagePartProps<unknown>) {
   return <Text style={[styles.muted, { fontSize: 12 }]}>{decode(Schema.String, data)}</Text>
@@ -72,10 +75,15 @@ function CompactionPart({ data }: DataMessagePartProps<unknown>) {
 }
 function CheckpointPart({ data }: DataMessagePartProps<unknown>) {
   const checkpoint = decode(checkpointSchema, data)
-  const { openCheckpoint, task } = useTaskConversation()
+  const openCheckpoint = useConversationSelector((value) => value.openCheckpoint)
   const car = useCarMode()
+  const turn = useConversationSelector(
+    useCallback(
+      (value) => value.task.turns?.find((item) => item.id === checkpoint.turnId),
+      [checkpoint.turnId],
+    ),
+  )
   if (car) return null
-  const turn = task.turns?.find((item) => item.id === checkpoint.turnId)
   return <CheckpointRow checkpoint={checkpoint} openCheckpoint={openCheckpoint} turn={turn} />
 }
 function CheckpointRow({
@@ -234,9 +242,13 @@ const userParts = {
 }
 function AssistantParts({ footer = false }: { footer?: boolean }) {
   const message = useAuiState((state) => state.message)
-  const { task, collapsedTurns, toggleTurn } = useTaskConversation()
-  const turn = task.turns?.find((item) => item.assistantId === message.id)
-  const open = !(collapsedTurns[turn?.id ?? message.id] ?? turn?.status === 'completed')
+  const turn = useConversationTurn(message.id)
+  const turnId = turn?.id ?? message.id
+  const collapsed = useConversationSelector(
+    useCallback((value) => value.collapsedTurns[turnId], [turnId]),
+  )
+  const toggleTurn = useConversationSelector((value) => value.toggleTurn)
+  const open = !(collapsed ?? turn?.status === 'completed')
   const car = useCarMode()
   const { finalIndex, end } = turnPartBoundaries(message.content, turn?.status === 'running')
   if (footer)
@@ -377,16 +389,42 @@ function Message() {
     </MessagePrimitive.Root>
   )
 }
+const ConversationMessageCell = memo(function ConversationMessageCell({
+  index,
+}: {
+  index: number
+}) {
+  return (
+    <MessageByIndexProvider index={index}>
+      <Message />
+    </MessageByIndexProvider>
+  )
+})
+const renderConversationMessage = ({
+  item,
+}: {
+  item: { message: ThreadMessage; index: number }
+}) => <ConversationMessageCell index={item.index} />
+const messageKey = (item: { message: ThreadMessage; index: number }) => item.message.id
 export function Conversation() {
-  const { task, legacyEvents, activityError, followRequest } = useTaskConversation()
+  const task = useConversationSelector((value) => value.task)
+  const legacyEvents = useConversationSelector((value) => value.legacyEvents)
+  const activityError = useConversationSelector((value) => value.activityError)
+  const followRequest = useConversationSelector((value) => value.followRequest)
   const lastTurn = task.turns?.at(-1)
   const bookmarks = task.messages.flatMap((message, index) =>
     message.role === 'assistant' && message.bookmarked ? [{ message, index }] : [],
   )
   const car = useCarMode()
   const { activeId, connected } = useRuntime()
-  const list = useRef<FlatList<ThreadMessage>>(null)
-  const [scroll] = useApplicationState(createConversationScroll)
+  const messages = useAuiState((state) => state.thread.messages)
+  const messageCount = messages.length
+  const newestFirst = useMemo(
+    () => messages.map((message, index) => ({ message, index })).reverse(),
+    [messages],
+  )
+  const list = useRef<FlatList<{ message: ThreadMessage; index: number }>>(null)
+  const [scroll] = useApplicationState(() => createConversationScroll({ inverted: true }))
   const [following, setFollowing] = useApplicationState(true)
   const frame = useRef<number | null>(null)
   const pendingOffset = useRef<number | undefined>(undefined)
@@ -438,7 +476,11 @@ export function Conversation() {
                 cancelMove()
                 scroll.pause()
                 setFollowing(false)
-                list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 })
+                list.current?.scrollToIndex({
+                  index: messageCount - 1 - index,
+                  animated: true,
+                  viewPosition: 0.3,
+                })
               }}
               style={{
                 paddingHorizontal: 8,
@@ -452,9 +494,22 @@ export function Conversation() {
           ))}
         </View>
       )}
-      <ThreadPrimitive.MessagesFlatList
+      <FlatList
+        key={task.id}
+        data={newestFirst}
+        inverted
+        renderItem={renderConversationMessage}
+        keyExtractor={messageKey}
+        maintainVisibleContentPosition={following ? undefined : { minIndexForVisible: 0 }}
+        initialNumToRender={8}
+        maxToRenderPerBatch={6}
+        windowSize={7}
         ref={list}
         onScrollToIndexFailed={({ index, averageItemLength }) => {
+          if (scroll.following) {
+            latest()
+            return
+          }
           list.current?.scrollToOffset({ offset: index * averageItemLength, animated: false })
           setTimeout(
             () => list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 }),
@@ -462,12 +517,7 @@ export function Conversation() {
           )
         }}
         testID="Conversation messages"
-        // FlatList.scrollToEnd uses estimated cell frames. Native Markdown may finish
-        // measuring later, so follow the actual content extent with one scroll owner.
-        autoScroll={false}
-        scrollToBottomOnInitialize={false}
-        scrollToBottomOnRunStart={false}
-        scrollToBottomOnThreadSwitch={false}
+        // Offset zero is the latest reply, independent of older Markdown measurements.
         onContentSizeChange={(_width, height) => move(scroll.content(height))}
         onLayout={({ nativeEvent }) => move(scroll.viewport(nativeEvent.layout.height))}
         onScrollBeginDrag={() => {
@@ -492,10 +542,10 @@ export function Conversation() {
           styles.content,
           {
             gap: 10,
-            paddingTop: 12,
+            paddingTop: !connected || !following ? 44 : 8,
             paddingHorizontal: 20,
             // Reserve overlay space only when a status pill is actually shown.
-            paddingBottom: !connected || !following ? 44 : 8,
+            paddingBottom: 12,
           },
         ]}
         ListEmptyComponent={
@@ -524,7 +574,7 @@ export function Conversation() {
             </Text>
           </View>
         }
-        ListFooterComponent={
+        ListHeaderComponent={
           <View
             style={{
               gap: 10,
@@ -536,9 +586,7 @@ export function Conversation() {
             {!!task.error && <Text style={styles.error}>{task.error}</Text>}
           </View>
         }
-      >
-        {() => <Message />}
-      </ThreadPrimitive.MessagesFlatList>
+      />
       {/* Floating status stack just above the composer. */}
       <View
         pointerEvents="box-none"

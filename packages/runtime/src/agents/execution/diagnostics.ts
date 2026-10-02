@@ -1,3 +1,4 @@
+import { opencodeHeaders } from '../providers/opencode/opencode-server.js'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { readFile } from 'node:fs/promises'
@@ -184,14 +185,29 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
             : 'https://agentclientprotocol.com/overview/agents',
     })
   }
-  const addresses = new Set(
-    agents
-      .filter((agent) => agent.provider === 'opencode')
-      .map((agent) => agent.endpoint || 'http://127.0.0.1:4096'),
+  const openCodeAgents = agents.filter((agent) => agent.provider === 'opencode')
+  const local = openCodeAgents.filter((agent) => !agent.endpoint.trim())
+  if (!openCodeAgents.length) local.push({ provider: 'opencode', endpoint: '', model: '' })
+  const commands = new Set(local.map((agent) => agent.executablePath || 'opencode'))
+  for (const command of commands)
+    result.push({
+      id: `opencode-executable-${result.length}`,
+      name: `OpenCode executable (${command})`,
+      provider: 'opencode',
+      kind: 'executable',
+      packageName: 'opencode-ai',
+      inspect: executable(command),
+      guidance:
+        'Update OpenCode using its original installer. Dovo starts a local server automatically when no server URL is set; restart the Dovo runtime after upgrading the executable.',
+      documentationUrl: 'https://opencode.ai/docs/cli/#upgrade',
+    })
+  const addresses = new Map(
+    openCodeAgents
+      .filter((agent) => agent.endpoint.trim())
+      .map((agent) => [JSON.stringify([agent.endpoint, agent.env]), agent]),
   )
-  // Probe the default endpoint when no OpenCode agent has been configured yet.
-  if (!addresses.size) addresses.add('http://127.0.0.1:4096')
-  for (const address of addresses) {
+  for (const agent of addresses.values()) {
+    const address = agent.endpoint
     result.push({
       id: `opencode-server-${result.length}`,
       name: 'OpenCode server',
@@ -208,11 +224,8 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
         const base = `${url.href.replace(/\/$/, '')}/`
         const options: RequestInit = {
           signal: AbortSignal.timeout(5000),
-          headers: process.env.OPENCODE_SERVER_PASSWORD
-            ? {
-                Authorization: `Basic ${Buffer.from(`${process.env.OPENCODE_SERVER_USERNAME || 'opencode'}:${process.env.OPENCODE_SERVER_PASSWORD}`).toString('base64')}`,
-              }
-            : {},
+          headers: opencodeHeaders(agent.env),
+          redirect: 'error',
         }
         const infoResponse = await fetch(new URL('api/info', base), options)
         if (infoResponse.ok && !infoResponse.headers.get('content-type')?.includes('text/html')) {
@@ -310,7 +323,7 @@ export async function checkAdapterUpdates(
         try {
           base.latestVersion = await latest(
             check.provider === 'opencode' &&
-              check.kind === 'server' &&
+              check.kind !== 'sdk' &&
               base.installedVersion?.startsWith('2.')
               ? '@opencode/cli'
               : check.packageName,

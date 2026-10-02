@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './styles.css'
 import { ApplicationStateProvider } from '@dovo/studio-core/state'
 import { InputPreviewWindow } from './input-preview'
-import { Workbench } from '@dovo/studio-shell'
+import { Workbench, TaskLauncherWindow } from '@dovo/studio-shell'
 import { tasksExtension } from '@dovo/extension-tasks'
 import { scmExtension } from '@dovo/extension-scm'
 import { agentsExtension } from '@dovo/extension-agents'
@@ -18,6 +18,8 @@ createRoot(root).render(
       <ApplicationStateProvider>
         <InputPreviewWindow bridge={window.dovo.inputPreview} />
       </ApplicationStateProvider>
+    ) : window.location.hash === '#task-launcher' ? (
+      <TaskLauncherWindow bridge={window.dovo.taskLauncher} />
     ) : (
       <Workbench
         extensions={extensions}

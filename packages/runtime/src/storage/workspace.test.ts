@@ -725,3 +725,44 @@ it('does not delete a configuration used by an automation', () => {
     db.close()
   }
 })
+
+it('accepts the next draft after sending consumed its baseline, but protects competing unsent edits', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const task: Task = {
+      id: 'sent-draft',
+      title: 'Draft race',
+      agentId: '',
+      repositoryId: '',
+      status: 'review',
+      createdAt: '',
+      draft: '',
+      files: [],
+      example: false,
+      messages: [{ id: 'sent', role: 'user', text: 'Already sent' }],
+    }
+    store.update((w) => ({ ...w, tasks: [task] }))
+    const edit = (before: string, after: string) =>
+      store.patch({
+        collection: 'tasks',
+        id: task.id,
+        changes: { draft: { before, after } },
+      })
+    edit('  Already sent  ', 'Next message')
+    expect(store.task(task.id).draft).toBe('Next message')
+    expect(() => edit('Already sent', 'Competing edit')).toThrow('Another client changed draft')
+    edit('Next message', '')
+    expect(() => edit('Unsent elsewhere', 'Do not overwrite')).toThrow(
+      'Another client changed draft',
+    )
+    store.update((w) => ({
+      ...w,
+      tasks: [{ ...task, queue: [{ id: 'queued', role: 'user', text: 'Queued', createdAt: '' }] }],
+    }))
+    edit('Queued', 'Following queued message')
+    expect(store.task(task.id).draft).toBe('Following queued message')
+  } finally {
+    db.close()
+  }
+})

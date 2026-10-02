@@ -13,6 +13,7 @@ import {
   retainOverviewSnapshot,
   retainRuntimeSnapshot,
   shouldPublishOverview,
+  sameRuntimeConnection,
 } from './overview-state.js'
 
 const profile = runtimeProfile({
@@ -68,6 +69,63 @@ const overview = (value: RuntimeSnapshot, nextProfile = profile): RuntimeOvervie
   error: null,
   pulls: null,
   pullError: null,
+})
+it('rejects older workspace revisions only within the same runtime instance', () => {
+  const current = { ...snapshot, runtimeInstanceId: 'runtime-a', revision: 10 }
+  const late = { ...snapshot, runtimeInstanceId: 'runtime-a', revision: 8 }
+  expect(retainRuntimeSnapshot(current, profile.connection, late, profile.connection)).toBe(current)
+  const restarted = { ...late, runtimeInstanceId: 'runtime-b', revision: 0 }
+  expect(retainRuntimeSnapshot(current, profile.connection, restarted, profile.connection)).toBe(
+    restarted,
+  )
+  const metadata = { ...current, runtimeHost: 'Updated host' }
+  expect(retainRuntimeSnapshot(current, profile.connection, metadata, profile.connection)).toBe(
+    metadata,
+  )
+  const otherAddress = { ...profile.connection, address: 'http://other.local' }
+  expect(retainRuntimeSnapshot(current, profile.connection, late, otherAddress)).toBe(late)
+})
+it('matches responses to both the server address and device credential', () => {
+  expect(sameRuntimeConnection(profile.connection, { ...profile.connection })).toBe(true)
+  expect(
+    sameRuntimeConnection(profile.connection, {
+      ...profile.connection,
+      address: 'http://computer.local:8788',
+    }),
+  ).toBe(false)
+  expect(
+    sameRuntimeConnection(profile.connection, { ...profile.connection, token: 'replaced-token' }),
+  ).toBe(false)
+  expect(sameRuntimeConnection(null, profile.connection)).toBe(false)
+})
+it('keeps the latest HTTP snapshot cached when an older overlapping request finishes last', async () => {
+  let release: (response: Response) => void = () => {}
+  const delayed = new Promise<Response>((resolve) => {
+    release = resolve
+  })
+  const current = { ...snapshot, runtimeInstanceId: 'runtime-a', revision: 2 }
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockImplementationOnce(() => delayed)
+    .mockResolvedValueOnce(Response.json(current, { headers: { ETag: 'W/"new"' } }))
+    .mockResolvedValueOnce(new Response(null, { status: 304 }))
+  vi.stubGlobal('fetch', fetch)
+  const read = () =>
+    runtimeRequest(
+      profile.connection,
+      profile.connection.address,
+      '/api/snapshot',
+      undefined,
+      snapshotSchema,
+      'GET',
+    )
+  const older = read()
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+  await read()
+  release(Response.json({ ...current, revision: 1 }, { headers: { ETag: 'W/"old"' } }))
+  await older
+  expect((await read()).revision).toBe(2)
+  expect(new Headers(fetch.mock.calls[2]?.[1]?.headers).get('If-None-Match')).toBe('W/"new"')
 })
 
 afterEach(() => {

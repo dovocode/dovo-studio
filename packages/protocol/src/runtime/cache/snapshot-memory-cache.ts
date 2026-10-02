@@ -1,6 +1,7 @@
 import type { RuntimeConnection } from '../connection/runtime.js'
 
 type Entry = {
+  request: number
   origin: string
   token: string
   tag: string
@@ -13,6 +14,7 @@ const lifetime = 5 * 60 * 1000
 const maximumBytes = 32 * 1024 * 1024
 let expiryTimer: ReturnType<typeof setTimeout> | undefined
 let generation = 0
+let requestSequence = 0
 const keyFor = (origin: string, token: string, path: string) =>
   JSON.stringify([origin, token, path])
 
@@ -51,6 +53,7 @@ export function snapshotResponseCache(origin: string, token: string, path = '/ap
   expire()
   const key = keyFor(origin, token, path)
   const currentGeneration = generation
+  const request = ++requestSequence
   const cached = entries.get(key)
   if (cached) {
     entries.delete(key)
@@ -71,27 +74,25 @@ export function snapshotResponseCache(origin: string, token: string, path = '/ap
         : undefined
     },
     refresh(value: object) {
-      if (
-        cached &&
-        typeof WeakRef === 'function' &&
-        currentGeneration === generation &&
-        entries.get(key) === cached
-      )
-        cached.value = new WeakRef(value)
+      if (cached && currentGeneration === generation && entries.get(key) === cached) {
+        if (typeof WeakRef === 'function') cached.value = new WeakRef(value)
+        cached.request = Math.max(cached.request, request)
+      }
     },
     remove() {
-      if (currentGeneration !== generation) return
+      if (currentGeneration !== generation || (entries.get(key)?.request ?? -1) > request) return
       entries.delete(key)
       scheduleExpiry()
     },
     save(tag: string | null, body: string, value?: object) {
-      if (currentGeneration !== generation) return
+      if (currentGeneration !== generation || (entries.get(key)?.request ?? -1) > request) return
       entries.delete(key)
       // A large response is already held by the app. Keep a weak reference and its validator
       // without duplicating megabytes of JSON. If collected, a 304 retries without the tag.
       const weak = value && typeof WeakRef === 'function' ? new WeakRef(value) : undefined
       if (tag && tag.length <= 200 && (body.length * 2 <= maximumBytes || weak)) {
         entries.set(key, {
+          request,
           origin,
           token,
           tag,

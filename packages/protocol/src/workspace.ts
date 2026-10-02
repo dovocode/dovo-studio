@@ -438,6 +438,8 @@ export const nodeDataSchema = mutableStruct({
   timezone: Schema.String,
   objective: Schema.String,
   agentId: Schema.String,
+  harness: Schema.optional(taskHarnessSchema),
+  agentOverrides: taskSchema.fields.agentOverrides,
   repositoryId: Schema.String,
   execution: Schema.optional(executionSchema),
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test'
 import { createDraftStorage } from './storage'
+import { runClientEffect } from '@dovo/client-runtime'
 
 function gate() {
   let resolve = () => {}
@@ -258,4 +259,61 @@ it('retains an accepted clear in memory after a disk failure and flushes it on t
   fail = false
   await Effect.runPromise(drafts.flushEffect())
   expect(await createDraftStorage(storage).read('runtime.task')).toBe('')
+})
+
+it('reconciles a lost send acknowledgement before exposing its saved text', async () => {
+  const { Effect } = await import('effect')
+  const storage = memoryStorage()
+  const first = createDraftStorage(storage)
+  await first.write('runtime.task', submission.text)
+  await Effect.runPromise(first.stageEffect('runtime.task', submission, submission.text))
+  const reopened = createDraftStorage(storage)
+  const record = await Effect.runPromise(
+    reopened.readRecordEffect('runtime.task', undefined, [submission.id]),
+  )
+  expect(record?.text).toBe('')
+  expect(record?.submission?.accepted).toBe(true)
+  await Effect.runPromise(reopened.flushEffect())
+  expect(await createDraftStorage(storage).read('runtime.task')).toBe('')
+})
+it('keeps an intentional identical follow-up after a previously accepted send', async () => {
+  const { Effect } = await import('effect')
+  const storage = memoryStorage()
+  const drafts = createDraftStorage(storage)
+  await drafts.write('runtime.task', submission.text)
+  await Effect.runPromise(drafts.stageEffect('runtime.task', submission, submission.text))
+  await Effect.runPromise(drafts.confirmEffect('runtime.task', submission, true))
+  await drafts.write('runtime.task', submission.text)
+  const record = await Effect.runPromise(
+    createDraftStorage(storage).readRecordEffect('runtime.task', undefined, [submission.id]),
+  )
+  expect(record?.text).toBe(submission.text)
+  expect(record?.submission).toBeUndefined()
+})
+
+it('does not publish an old send clear over newer typing while disk writes are pending', async () => {
+  const values = new Map([['runtime.task', 'Sent message']])
+  const storage = memoryStorage(values)
+  const blocked = gate()
+  let block = false
+  const drafts = createDraftStorage({
+    ...storage,
+    setItem: async (key, value) => {
+      if (block) await blocked.promise
+      await storage.setItem(key, value)
+    },
+  })
+  const attempt = { id: 'sent', text: 'Sent message', attachmentIds: [], mode: 'queue' as const }
+  await runClientEffect(drafts.stageEffect('runtime.task', attempt, attempt.text))
+  const displayed: string[] = []
+  drafts.subscribe('runtime.task', (text) => displayed.push(text))
+  block = true
+  const saving = drafts.write('runtime.task', attempt.text)
+  const confirming = runClientEffect(drafts.confirmEffect('runtime.task', attempt, true))
+  const typing = drafts.write('runtime.task', 'Next message')
+  expect(displayed.at(-1)).toBe('Next message')
+  blocked.resolve()
+  await Promise.all([saving, confirming, typing])
+  expect(displayed).toEqual(['Sent message', 'Next message'])
+  expect(await drafts.read('runtime.task')).toBe('Next message')
 })

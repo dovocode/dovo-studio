@@ -3,6 +3,7 @@ import { decode, inputPreviewItemSchema, inputPreviewKey, type InputPreview } fr
 const f = vi.hoisted(() => ({
   handlers: new Map<string, (event: Electron.IpcMainInvokeEvent, value?: unknown) => unknown>(),
   windows: [] as Array<{
+    options?: Electron.BrowserWindowConstructorOptions
     focused: boolean
     visible: boolean
     callbacks: Map<string, () => void>
@@ -37,7 +38,7 @@ vi.mock('electron', () => ({
       setBackgroundThrottling: () => {},
       isLoadingMainFrame: () => false,
     }
-    constructor() {
+    constructor(readonly options?: Electron.BrowserWindowConstructorOptions) {
       f.windows.push(this)
     }
     static fromWebContents(sender: unknown) {
@@ -181,6 +182,28 @@ it('submits to the originating remote runtime once and advances to the next requ
     'http://remote.local/api/tasks/answer',
   ])
   expect(await invoke('current')).toMatchObject({ request: { value: { id: 'q2' } } })
+})
+it('answers in a non-activating macOS panel without opening the main window', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (input) => {
+      const url = input instanceof Request ? input.url : input.toString()
+      return Response.json(url.includes('/api/snapshot') ? snapshot : { ok: true })
+    }),
+  )
+  const { invoke } = await fixture()
+  expect(f.windows[1].options?.type).toBe(process.platform === 'darwin' ? 'panel' : undefined)
+  await invoke('answer', { key: inputPreviewKey(item), answer: { choice: ['yes'] } })
+  expect(f.windows[1].visible).toBe(false)
+  expect(f.windows[0].visible).toBe(false)
+  expect(f.windows[0].focused).toBe(false)
+})
+it('opens the full window only through Open thread', async () => {
+  const { invoke } = await fixture()
+  await invoke('open')
+  expect(f.windows[1].visible).toBe(false)
+  expect(f.windows[0].visible).toBe(true)
+  expect(f.windows[0].focused).toBe(true)
 })
 it('refuses a stale request answered on another device before making a mutation', async () => {
   const fetcher = vi.fn<typeof fetch>(async () => Response.json({ ...snapshot, questions: [] }))

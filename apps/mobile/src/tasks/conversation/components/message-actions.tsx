@@ -12,7 +12,7 @@ import {
   type CodeBlock,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
-import { useTaskConversation } from '../state/provider'
+import { useConversationSelector } from '../state/provider'
 import { router } from 'expo-router'
 import { Schema } from 'effect'
 import { modelCatalogSchema, mutableStruct, resolveTaskAgent } from '@dovo/protocol'
@@ -43,7 +43,8 @@ export function MessageActions({
       }),
     [blocks],
   )
-  const { task, openTerminal } = useTaskConversation()
+  const task = useConversationSelector((value) => value.task)
+  const openTerminal = useConversationSelector((value) => value.openTerminal)
   const { call, connected, activeId } = useRuntime()
   const bookmarked = task.messages.some((message) => message.id === messageId && message.bookmarked)
   // Fork from a finished agent turn: a new task with the conversation up to here.

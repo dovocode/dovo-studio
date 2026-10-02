@@ -1,3 +1,5 @@
+import { reconcileComposerDraft } from './draft-reconciliation'
+
 /** Own pending persistence independently of React renders and request completion. */
 export function createComposerDraft(
   initial: string,
@@ -37,10 +39,10 @@ export function createComposerDraft(
       return text
     },
     receive(value: string) {
-      if (value === observed) return text
-      observed = value
       // A late snapshot cannot restore a consumed message or replace unsaved typing.
-      if (!dirty && !consumed.has(value.trim())) text = value
+      if (!dirty && !consumed.has(value.trim()))
+        text = reconcileComposerDraft(text, text, value, null, observed)
+      observed = value
       return text
     },
     accept(submitted: string) {

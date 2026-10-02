@@ -70,6 +70,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         closeTitles,
         closeTasks,
         () => services.agents.dispose(),
+        () => services.mcpApps.dispose(),
         () => services.attachments.dispose(),
         () => services.liveActivities.dispose(),
         () => services.pushNotifications.dispose(),
@@ -158,6 +159,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         services.jobs.startScheduler()
         services.tasks.startScheduler()
         services.pullCache.start()
+        services.mcpApps.start()
         housekeeping.start()
         taskPulls.start()
       })

@@ -21,6 +21,7 @@ vi.mock('../../process.js', () => ({
   }),
 }))
 const settings = decode(commandsSchema, {})
+const remote = { provider: 'opencode' as const, endpoint: 'http://127.0.0.1:4096', model: '' }
 const request = vi.fn<typeof fetch>()
 function urlString(input: Parameters<typeof fetch>[0]) {
   return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
@@ -43,16 +44,17 @@ it('checks the installed adapters without contacting an update registry or runni
   )
   const diagnostics = await checkAdapterUpdates(settings)
   expect(run.mock.calls).toEqual(
-    ['codex', 'claude'].map((command) => [
+    ['codex', 'claude', 'opencode'].map((command) => [
       command,
       ['--version'],
       expect.objectContaining({ timeout: 5000, env: { PATH: '/bin' } }),
     ]),
   )
-  expect(request.mock.calls.map(([url]) => urlString(url))).toEqual([
-    'http://127.0.0.1:4096/api/info',
-    'http://127.0.0.1:4096/global/health',
-  ])
+  expect(request).not.toHaveBeenCalled()
+  expect(
+    diagnostics.find((item) => item.provider === 'opencode' && item.kind === 'executable')
+      ?.available,
+  ).toBe(true)
   expect(diagnostics.find((item) => item.id === 'claude-sdk')).toMatchObject({
     available: true,
     kind: 'sdk',
@@ -65,7 +67,7 @@ it('checks the installed adapters without contacting an update registry or runni
 })
 it('reads an OpenCode 2 server through its version endpoint', async () => {
   request.mockResolvedValue(Response.json({ version: '2.0.19' }))
-  const diagnostics = await checkAdapterUpdates(settings)
+  const diagnostics = await checkAdapterUpdates(settings, { agents: [remote] })
   expect(diagnostics.find((item) => item.kind === 'server')?.installedVersion).toBe('2.0.19')
   expect(request).toHaveBeenCalledOnce()
 })
@@ -85,6 +87,7 @@ it('compares stable, prerelease, and newer installed versions correctly', async 
     })
   })
   const diagnostics = await checkAdapterUpdates(settings, {
+    agents: [remote],
     checkUpdates: true,
   })
   expect(diagnostics.find((item) => item.id === 'codex')).toMatchObject({
@@ -112,6 +115,7 @@ it('retains useful results if an executable, server, or update registry is unava
     throw new Error('network offline')
   })
   const diagnostics = await checkAdapterUpdates(settings, {
+    agents: [remote],
     checkUpdates: true,
   })
   expect(diagnostics.find((item) => item.id === 'codex')).toMatchObject({
@@ -165,6 +169,7 @@ it('checks configured agent executables and deduplicates a shared installation',
     'codex',
     '/bin/claude',
     '/bin/custom-agent',
+    'opencode',
   ])
   expect(
     diagnostics.find((item) => item.provider === 'claude' && item.kind === 'executable'),
@@ -193,11 +198,19 @@ it('checks the actual configured OpenCode host and reuses its configured server 
         {
           provider: 'opencode',
           endpoint: 'https://code.example.test/api',
+          env: {
+            OPENCODE_SERVER_PASSWORD: 'test-server-password',
+            OPENCODE_SERVER_USERNAME: 'tester',
+          },
           model: '',
         },
         {
           provider: 'opencode',
           endpoint: 'https://code.example.test/api',
+          env: {
+            OPENCODE_SERVER_PASSWORD: 'test-server-password',
+            OPENCODE_SERVER_USERNAME: 'tester',
+          },
           model: '',
         },
       ],
@@ -230,6 +243,7 @@ it('rejects mismatched registry packages without claiming an update is available
           }),
   )
   const diagnostics = await checkAdapterUpdates(settings, {
+    agents: [remote],
     checkUpdates: true,
   })
   expect(diagnostics.every((item) => item.updateStatus === 'unknown')).toBe(true)
@@ -242,9 +256,34 @@ it('falls back to V1 health when server info returns the browser HTML', async ()
       ? new Response('<html>OpenCode</html>', { headers: { 'Content-Type': 'text/html' } })
       : Response.json({ healthy: true, version: '1.18.33' }),
   )
-  const diagnostics = await checkAdapterUpdates(settings)
+  const diagnostics = await checkAdapterUpdates(settings, { agents: [remote] })
   expect(diagnostics.find((item) => item.kind === 'server')).toMatchObject({
     available: true,
     installedVersion: '1.18.33',
   })
+})
+
+it('checks the V2 CLI release when the local executable is OpenCode 2', async () => {
+  run.mockImplementation(async (command) => ({
+    stdout: command === 'opencode' ? '2.0.19' : '0.155.1',
+  }))
+  request.mockImplementation(async (input) =>
+    Response.json({
+      name: decodeURIComponent(new URL(urlString(input)).pathname.split('/')[1]),
+      version: '2.0.20',
+    }),
+  )
+  const diagnostics = await checkAdapterUpdates(settings, { checkUpdates: true })
+  expect(
+    diagnostics.find((item) => item.provider === 'opencode' && item.kind === 'executable'),
+  ).toMatchObject({
+    installedVersion: '2.0.19',
+    latestVersion: '2.0.20',
+    updateStatus: 'update-available',
+  })
+  expect(
+    request.mock.calls.some(([input]) =>
+      urlString(input).includes(encodeURIComponent('@opencode/cli')),
+    ),
+  ).toBe(true)
 })

@@ -1,4 +1,5 @@
-import { ChoicePicker } from '@dovo/studio-ui'
+import { defaultTaskHarness, resolveTaskAgent, decode, taskHarnessSchema } from '@dovo/protocol'
+import { ChoicePicker, HarnessFields } from '@dovo/studio-ui'
 import type { AutomationData, AutomationNode, Workspace } from '@dovo/studio-core'
 import { Button, FormField, Input, Textarea } from '@dovo/studio-ui'
 export function NodeInspector({
@@ -62,20 +63,19 @@ export function NodeInspector({
       )}
       {data.kind === 'task' && (
         <>
-          <FormField label="Agent">
-            <ChoicePicker
-              aria-label="Agent"
-              className="h-9 w-full rounded-md border bg-background px-2"
-              value={data.agentId}
-              onValueChange={(selection) => field({ agentId: selection })}
-            >
-              {workspace.agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </ChoicePicker>
-          </FormField>
+          <HarnessFields
+            agents={workspace.agents}
+            selectedAgentId={data.harness ? undefined : data.agentId || undefined}
+            onSelectAgent={(agentId) =>
+              field({ agentId, harness: undefined, agentOverrides: undefined })
+            }
+            value={decode(
+              taskHarnessSchema,
+              resolveTaskAgent({ ...data, id: node.id }, workspace.agents) ??
+                defaultTaskHarness('codex'),
+            )}
+            onChange={(harness) => field({ agentId: '', agentOverrides: undefined, harness })}
+          />
           <FormField label="Repository">
             <ChoicePicker
               aria-label="Repository"

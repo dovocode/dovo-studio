@@ -1,6 +1,7 @@
 import { Data, Effect, Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
+  decodeResult,
   mutableArray,
   mutableStruct,
   minValue,
@@ -58,13 +59,24 @@ const sendPatch: Send = (connection, patch) =>
     connection.address,
     '/api/workspace',
     patch,
-    mutableStruct({ revision: Schema.Number.pipe(Schema.finite()) }),
+    mutableStruct({
+      revision: Schema.Number.pipe(Schema.finite()),
+      runtimeInstanceId: Schema.optional(Schema.String),
+    }),
     'PATCH',
   )
 
 /** Owns the durable outbox and serializes writes independently of network availability. */
 export class WorkspaceSynchronization {
   private connection: RuntimeConnection | null = null
+  private acknowledged?: { instanceId: string; revision: number }
+  acceptsRevision(revision: number, instanceId?: string) {
+    return (
+      !instanceId ||
+      this.acknowledged?.instanceId !== instanceId ||
+      revision >= this.acknowledged.revision
+    )
+  }
   private generation = 0
   private version = 0
   private pending: WorkspacePatch[] = []
@@ -82,6 +94,7 @@ export class WorkspaceSynchronization {
 
   bind(connection: RuntimeConnection | null, restored: WorkspaceOutbox | null = null) {
     this.generation++
+    this.acknowledged = undefined
     this.connection = connection
     this.pending = restored ? [...restored.patches] : []
     this.workspace = restored?.workspace ?? null
@@ -276,8 +289,25 @@ export class WorkspaceSynchronization {
             while (pending.length && generation === this.generation) {
               yield* this.durable
               if (generation !== this.generation) return
-              yield* attempt(() => this.send(target, pending[0]))
+              const response = yield* attempt(() => this.send(target, pending[0]))
               if (generation !== this.generation) return
+              const acknowledged = decodeResult(
+                mutableStruct({
+                  revision: Schema.Number.pipe(Schema.finite()),
+                  runtimeInstanceId: Schema.String,
+                }),
+                response,
+              )
+              if (acknowledged.success) {
+                const { runtimeInstanceId: instanceId, revision } = acknowledged.data
+                this.acknowledged = {
+                  instanceId,
+                  revision:
+                    this.acknowledged?.instanceId === instanceId
+                      ? Math.max(revision, this.acknowledged.revision)
+                      : revision,
+                }
+              }
               // Preserve an acknowledged patch until the durable queue commits.
               yield* this.save(target, pending.slice(1))
               pending.shift()

@@ -1,11 +1,112 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { startRuntimeSync, runtimeSyncOnline } from './live-sync.js'
 import type { RuntimeSnapshot } from './runtime.js'
+import { snapshotSchema } from './runtime.js'
+import { decode } from '../../shared/schema.js'
 const stopped: Array<() => void> = []
 afterEach(() => {
   for (const stop of stopped.splice(0)) stop()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   vi.useRealTimers()
+})
+async function stalledSocketFixture(address: string) {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
+  class Socket {
+    static instances: Socket[] = []
+    readyState = 0
+    sent: string[] = []
+    onopen?: () => void
+    onmessage?: (event: { data: string }) => void
+    onerror?: () => void
+    onclose?: () => void
+    constructor() {
+      Socket.instances.push(this)
+    }
+    send(value: string) {
+      this.sent.push(value)
+    }
+    // Native sockets can fail to deliver onclose after an app is suspended.
+    close() {
+      this.readyState = 3
+    }
+  }
+  vi.stubGlobal('WebSocket', Socket)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ ticket: 'ticket' })),
+  )
+  const receive = vi.fn<(value: RuntimeSnapshot) => void>()
+  const wake = vi.fn<() => void>()
+  const live = startRuntimeSync(
+    { address, token: 'stalled-socket-test-token' },
+    { onSnapshot: receive, onWake: wake },
+  )
+  stopped.push(live.stop)
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(1))
+  const baseline = decode(snapshotSchema, {
+    revision: 1,
+    workspace: {
+      version: 1,
+      runtimeAddress: '',
+      agents: [],
+      repositories: [],
+      tasks: [],
+      automations: [],
+    },
+    approvals: [],
+    questions: [],
+    terminals: [],
+    runs: [],
+    devices: [],
+    pendingDevices: [],
+    owner: false,
+  })
+  const frame = JSON.stringify({
+    type: 'snapshot',
+    epoch: 'stalled',
+    sequence: 1,
+    tag: 'baseline',
+    snapshot: baseline,
+  })
+  return { clock, Socket, receive, wake, live, frame }
+}
+it('replaces a stale socket immediately on refresh and ignores its late callbacks', async () => {
+  const { clock, Socket, receive, live, frame } = await stalledSocketFixture(
+    'http://stale-runtime.local',
+  )
+  const first = Socket.instances[0]!
+  first.readyState = 1
+  first.onopen?.()
+  first.onmessage?.({ data: frame })
+  expect(live.online()).toBe(true)
+  clock.mockReturnValue(20000)
+  live.refresh()
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(2))
+  const second = Socket.instances[1]!
+  second.readyState = 1
+  second.onopen?.()
+  second.onmessage?.({ data: frame })
+  first.onmessage?.({ data: frame })
+  first.onerror?.()
+  first.onclose?.()
+  expect(receive).toHaveBeenCalledTimes(2)
+  expect(live.online()).toBe(true)
+  expect(second.readyState).toBe(1)
+})
+it('recovers a stalled handshake even when the native socket never emits close', async () => {
+  const { clock, Socket, wake } = await stalledSocketFixture('http://handshake-runtime.local')
+  clock.mockReturnValue(12000)
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(2), { timeout: 4000 })
+  expect(wake).toHaveBeenCalledOnce()
+})
+it('does not create duplicate sockets when refreshed during a handshake', async () => {
+  const { Socket, live } = await stalledSocketFixture('http://opening-runtime.local')
+  live.refresh()
+  live.refresh()
+  live.refresh()
+  await new Promise<void>((resolve) => setTimeout(resolve, 20))
+  expect(Socket.instances).toHaveLength(1)
 })
 it('uses HTTP fallback without repeated socket attempts on older servers', async () => {
   const fetch = vi
@@ -119,6 +220,8 @@ it('discards a mismatched delta and requests a new baseline instead of guessing'
     }),
   })
   expect(live.online()).toBe(true)
+  first.onmessage?.({ data: JSON.stringify({ type: 'heartbeat', epoch: 'first', sequence: 1 }) })
+  expect(receive).toHaveBeenCalledOnce()
   first.onmessage?.({
     data: JSON.stringify({
       type: 'delta',

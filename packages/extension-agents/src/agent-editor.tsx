@@ -336,10 +336,21 @@ export function AgentEditor({
                   })
                 }
                 placeholder={
-                  agent.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Managed by runtime'
+                  agent.provider === 'opencode'
+                    ? 'Automatic local OpenCode server'
+                    : 'Managed by runtime'
                 }
               />
             </FormField>
+            {agent.provider === 'opencode' && !agent.endpoint.trim() && (
+              <FormField label="OpenCode executable path (optional)">
+                <Input
+                  value={agent.executablePath ?? ''}
+                  placeholder="opencode"
+                  onChange={(event) => setAgent({ ...agent, executablePath: event.target.value })}
+                />
+              </FormField>
+            )}
             {(agent.provider === 'codex' || agent.provider === 'claude') && (
               <FormField
                 label={
@@ -355,7 +366,7 @@ export function AgentEditor({
                 />
               </FormField>
             )}
-            {agent.provider !== 'opencode' && (
+            {(agent.provider !== 'opencode' || !agent.endpoint.trim()) && (
               <FormField label="Executable arguments (one per line)">
                 <Textarea
                   value={(agent.args ?? []).join('\n')}
@@ -369,17 +380,15 @@ export function AgentEditor({
                 />
               </FormField>
             )}
-            {agent.provider !== 'opencode' && (
-              <FormField label="Environment variables (NAME=value, one per line)">
-                <Textarea
-                  value={environment}
-                  onChange={(event) => setEnvironment(event.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Saved as readable configuration. Keep secrets in the server's environment.
-                </p>
-              </FormField>
-            )}
+            <FormField label="Environment variables (NAME=value, one per line)">
+              <Textarea
+                value={environment}
+                onChange={(event) => setEnvironment(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Saved as readable configuration. Keep secrets in the server's environment.
+              </p>
+            </FormField>
             <FormField label="Instructions">
               <Textarea
                 value={agent.instructions}

@@ -1,10 +1,15 @@
 import { decode } from '../../shared/schema.js'
-import { runtimeRequest, setRuntimeSnapshotTag } from '../../shared/client.js'
-import { applySnapshotDelta, syncFrameSchema, syncTicketSchema } from './sync.js'
+import { runtimeRequestEffect, setRuntimeSnapshotTag } from '../../shared/client.js'
+import {
+  applySnapshotDelta,
+  applyActivityDelta,
+  syncFrameSchema,
+  syncTicketSchema,
+} from './sync.js'
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
 import type { activitySchema } from '../../automation/activity.js'
 import { retainActivityEvents } from '../../automation/activity.js'
-import type { Schema } from 'effect'
+import { Effect, Fiber, type Schema } from 'effect'
 
 type Events = Schema.Schema.Type<typeof activitySchema>['events']
 type Listener = (events: Events) => void
@@ -75,8 +80,10 @@ export function startRuntimeSync(
   let sequence: number | undefined = cached?.sequence
   let snapshot: RuntimeSnapshot | undefined = cached?.snapshot
   let lastSeen = 0
+  let socketStarted = 0
   let failures = 0
-  let retry: ReturnType<typeof setTimeout> | undefined
+  let publishedAt = 0
+  let retry: Fiber.RuntimeFiber<void, never> | undefined
   let connecting = false
   let request: AbortController | undefined
   const activities = value.events
@@ -89,33 +96,47 @@ export function startRuntimeSync(
   const publish = () => {
     if (snapshot) options.onSnapshot(snapshot)
   }
+  // A suspended native socket may never emit close. Detach it first so late
+  // callbacks cannot update the cursor or prevent a replacement connection.
+  const closeSocket = () => {
+    const previous = socket
+    socket = undefined
+    online = false
+    previous?.close()
+  }
   const reconnect = () => {
     online = false
-    if (stopped) return
+    if (stopped || options.active?.() === false) return
     options.onWake?.()
     if (unsupported || retry || options.active?.() === false) return
-    retry = setTimeout(
-      () => {
-        retry = undefined
-        void connect()
-      },
-      Math.min(10000, 500 * 2 ** Math.min(failures++, 5)),
+    const delay = Math.min(30000, 500 * 2 ** Math.min(failures++, 6))
+    retry = Effect.runFork(
+      Effect.sleep(Math.round(delay * (0.8 + Math.random() * 0.4))).pipe(
+        Effect.zipRight(
+          Effect.sync(() => {
+            retry = undefined
+            void connect()
+          }),
+        ),
+      ),
     )
   }
   const connect = async () => {
-    if (stopped || unsupported || connecting || options.active?.() === false) return
+    if (stopped || unsupported || connecting || socket || options.active?.() === false) return
     connecting = true
     request = new AbortController()
     try {
-      const ticket = await runtimeRequest(
-        connection,
-        connection.address,
-        '/api/sync/ticket',
-        {},
-        syncTicketSchema,
-        'POST',
-        5000,
-        request.signal,
+      const ticket = await Effect.runPromise(
+        runtimeRequestEffect(
+          connection,
+          connection.address,
+          '/api/sync/ticket?format=3',
+          {},
+          syncTicketSchema,
+          'POST',
+          5000,
+        ),
+        { signal: request.signal },
       )
       if (stopped || options.active?.() === false) return
       const address = new URL('/ws/sync', connection.address)
@@ -123,7 +144,7 @@ export function startRuntimeSync(
       address.searchParams.set('ticket', ticket.ticket)
       const current = new WebSocket(address.href)
       socket = current
-      lastSeen = Date.now()
+      socketStarted = lastSeen = Date.now()
       current.onopen = () => {
         if (stopped || current !== socket) {
           current.close()
@@ -138,16 +159,19 @@ export function startRuntimeSync(
           if (typeof event.data !== 'string') throw new Error('Invalid sync frame')
           const frame = decode(syncFrameSchema, JSON.parse(event.data))
           lastSeen = Date.now()
-          if (frame.type === 'activity') {
+          if (frame.type === 'activity' || frame.type === 'activity-delta') {
             const old = activities.get(frame.scope) ?? []
             const byId = new Map(old.map((item) => [item.id, item]))
-            for (const item of frame.events) byId.set(item.id, item)
-            const next = frame.order.map((id) => {
-              const item = byId.get(id)
-              if (!item || item.scope !== frame.scope)
-                throw new Error('Activity baseline is missing')
-              return item
-            })
+            if (frame.type === 'activity') for (const item of frame.events) byId.set(item.id, item)
+            const next =
+              frame.type === 'activity-delta'
+                ? applyActivityDelta(old, frame.delta, frame.scope)
+                : frame.order.map((id) => {
+                    const item = byId.get(id)
+                    if (!item || item.scope !== frame.scope)
+                      throw new Error('Activity baseline is missing')
+                    return item
+                  })
             const events = retainActivityEvents(old, next)
             activities.set(frame.scope, events)
             for (const listener of value.scopes.get(frame.scope) ?? []) listener(events)
@@ -173,9 +197,13 @@ export function startRuntimeSync(
             throw new Error('Sync needs a fresh baseline')
           if (snapshot && epoch !== undefined && sequence !== undefined)
             value.cursor = { snapshot, epoch, sequence, time: Date.now() }
+          const becameOnline = !online
           online = true
           failures = 0
-          publish()
+          if (becameOnline || frame.type !== 'heartbeat' || Date.now() - publishedAt >= 30000) {
+            publishedAt = Date.now()
+            publish()
+          }
         } catch {
           // Never guess through a gap. Reopen with an empty cursor to request a complete baseline.
           snapshot = undefined
@@ -184,10 +212,15 @@ export function startRuntimeSync(
           value.cursor = undefined
           activities.clear()
           online = false
-          current.close(1000, 'Resync')
+          closeSocket()
+          reconnect()
         }
       }
-      current.onerror = () => current.close()
+      current.onerror = () => {
+        if (current !== socket || stopped) return
+        closeSocket()
+        reconnect()
+      }
       current.onclose = () => {
         if (current === socket) {
           socket = undefined
@@ -207,27 +240,38 @@ export function startRuntimeSync(
       connecting = false
     }
   }
-  const timer = setInterval(() => {
-    if (options.active?.() === false) {
-      request?.abort()
-      online = false
-      socket?.close()
-      return
-    }
-    if (socket && Date.now() - lastSeen > 45000) {
-      online = false
-      socket.close()
-      return
-    }
-    if (!socket && !retry) void connect()
-  }, 1000)
+  const timer = Effect.runFork(
+    Effect.forever(
+      Effect.sleep(1000).pipe(
+        Effect.zipRight(
+          Effect.sync(() => {
+            if (options.active?.() === false) {
+              request?.abort()
+              closeSocket()
+              return
+            }
+            if (
+              socket &&
+              ((!online && Date.now() - socketStarted >= 10000) || Date.now() - lastSeen >= 30000)
+            ) {
+              closeSocket()
+              reconnect()
+              return
+            }
+            if (!socket && !retry) void connect()
+          }),
+        ),
+      ),
+    ),
+  )
   void connect()
   return {
     online: () => online,
     refresh: () => {
+      if (socket && Date.now() - lastSeen >= 15000) closeSocket()
       if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'resume', epoch, sequence }))
       else if (!connecting) {
-        clearTimeout(retry)
+        if (retry) Effect.runFork(Fiber.interrupt(retry))
         retry = undefined
         void connect()
       }
@@ -236,9 +280,9 @@ export function startRuntimeSync(
       stopped = true
       request?.abort()
       online = false
-      clearInterval(timer)
-      clearTimeout(retry)
-      socket?.close()
+      Effect.runFork(Fiber.interrupt(timer))
+      if (retry) Effect.runFork(Fiber.interrupt(retry))
+      closeSocket()
       if (value.live === live) {
         value.live = undefined
         clearTimeout(value.expiry)

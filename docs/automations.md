@@ -8,7 +8,9 @@ execution; closing the phone or desktop client does not stop a run.
 Open **Automations**, select the computer, then **New automation**. Give it a name, choose a trigger
 and configure its ordered steps:
 
-- **Task:** instructions, project, saved agent and local checkout or new worktree.
+- **Task:** instructions, project, harness, model, thinking level, permissions and local checkout or
+  new worktree. Built-in providers and installed ACP agents work directly; a saved agent
+  configuration is optional.
 - **Review:** pause for approval before the next step. Open the preceding task to inspect its chat
   and changes, then approve or reject the run.
 - Reorder or remove steps in the editor. At least one task and one trigger are required.

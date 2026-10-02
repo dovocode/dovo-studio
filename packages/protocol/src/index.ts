@@ -95,6 +95,7 @@ export {
   retainRuntimeSnapshot,
   retainOverviewSnapshot,
   shouldPublishOverview,
+  sameRuntimeConnection,
 } from './runtime/cache/overview-state.js'
 export {
   visiblePendingMessage,
@@ -135,3 +136,5 @@ export {
   runtimeSyncOnline,
   watchRuntimeActivity,
 } from './runtime/connection/live-sync.js'
+export * from './conversation/mcp-apps.js'
+export * from './conversation/mcp-app-downloads.js'
