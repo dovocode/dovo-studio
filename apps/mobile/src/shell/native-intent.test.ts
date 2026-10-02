@@ -26,3 +26,11 @@ it('opens the launcher from cold and warm shortcuts and preserves an encoded pro
     expect(redirectSystemPath({ path: 'dovo://launcher', initial })).toBe('dovo://launcher')
   }
 })
+
+it('opens the normal workbench for cold and warm share-sheet launches', () => {
+  for (const initial of [true, false]) {
+    for (const path of ['dovo://expo-sharing', '/expo-sharing']) {
+      expect(redirectSystemPath({ path, initial })).toBe('/')
+    }
+  }
+})

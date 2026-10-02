@@ -56,7 +56,7 @@ function WorkbenchNotices() {
             },
           ]}
         >
-          Shortcut saved on this phone. Pair or reconnect to review it.
+          Shared input saved on this phone. Pair or reconnect to review it.
         </Text>
       )}
       {!!context?.error && (
@@ -250,7 +250,7 @@ export function Workbench() {
         const input = shortcuts.input
         if (!input) return
         return yield* mobileWorkflow(function* () {
-          if (runtimeId) {
+          if (runtimeId && input.source !== 'share') {
             const owner = runtime.profiles.find((entry) => entry.id === runtimeId)
             if (!owner) return yield* Effect.fail(new Error('This computer is no longer saved'))
             yield* nativeEffect(() =>
@@ -436,7 +436,11 @@ export function Workbench() {
             <CreationTarget
               alwaysChoose
               key={shortcuts.input.id}
-              title="New task from Shortcut"
+              title={
+                shortcuts.input.source === 'share'
+                  ? 'New thread from share'
+                  : 'New task from Shortcut'
+              }
               onClose={() => {
                 void finishShortcut()
               }}

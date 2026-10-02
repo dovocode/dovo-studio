@@ -4,7 +4,9 @@ import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { minValue, maxValue, decode, decodeResult } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
-import { Linking } from 'react-native'
+import { sharedMessage } from './shared-message'
+import { getSharedPayloads, clearSharedPayloads } from 'expo-sharing'
+import { AppState, Linking } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { randomUUID } from 'expo-crypto'
 import { Schema, Effect } from 'effect'
@@ -14,6 +16,7 @@ const item = mutableStruct({
   title: maxValue(Schema.String, 200),
   repositoryId: Schema.String,
   agentId: Schema.String,
+  source: Schema.optional(Schema.Literal('share')),
 })
 export type ShortcutInput = Schema.Schema.Type<typeof item>
 const storage = 'dovo.shortcut.inbox'
@@ -51,6 +54,34 @@ export function useShortcuts() {
       Effect.sync(() => {
         if (!stopped) setError(String(cause))
       })
+    const receiveShare = () => {
+      void commands.run(
+        inboxLock
+          .withPermits(1)(
+            mobileWorkflow(function* () {
+              if (stopped) return
+              const text = yield* nativeEffect(() => sharedMessage(getSharedPayloads()))
+              if (!text) return
+              const next = decode(item, {
+                id: randomUUID(),
+                text,
+                title: 'Shared content',
+                repositoryId: '',
+                agentId: '',
+                source: 'share',
+              })
+              const saved = yield* readInbox
+              const updated = [...saved, next]
+              yield* nativeEffect(() => AsyncStorage.setItem(storage, JSON.stringify(updated)))
+              // Clear native data only after the editable draft inbox is durable.
+              yield* nativeEffect(() => clearSharedPayloads())
+              if (!stopped) setError('')
+              if (!stopped) setQueue(updated)
+            }).pipe(Effect.uninterruptible),
+          )
+          .pipe(Effect.catchAll(report)),
+      )
+    }
     const receive = (url: string) => {
       void commands.run(
         inboxLock
@@ -102,11 +133,19 @@ export function useShortcuts() {
         Effect.catchAll(report),
       ),
     )
-    const listener = Linking.addEventListener('url', (event) => receive(event.url))
+    receiveShare()
+    const foreground = AppState.addEventListener('change', (state) => {
+      if (state === 'active') receiveShare()
+    })
+    const listener = Linking.addEventListener('url', (event) => {
+      receive(event.url)
+      receiveShare()
+    })
     return () => {
       stopped = true
       mounted.current = false
       listener.remove()
+      foreground.remove()
       void commands.stop()
     }
   }, [])

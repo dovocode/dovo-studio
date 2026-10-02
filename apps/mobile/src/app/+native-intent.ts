@@ -10,6 +10,7 @@ export function redirectSystemPath({ path }: { path: string; initial: boolean })
       return '/launch'
     }
   }
+  if (path === 'dovo://expo-sharing' || path === '/expo-sharing') return '/'
   if (path.startsWith('dovo://task') || path.startsWith('/task?')) return '/'
   if (path.startsWith('dovo://pair') || path.startsWith('/pair?')) {
     try {

@@ -56,7 +56,25 @@
         }
       ],
       "./plugins/with-scenes.ts",
-      "expo-sharing",
+      "./plugins/with-share-extension.ts",
+      [
+        "expo-sharing",
+        {
+          "ios": {
+            "enabled": true,
+            "appGroupId": "group.com.dovo.studio",
+            "activationRule": {
+              "supportsText": true,
+              "supportsWebUrlWithMaxCount": 10
+            }
+          },
+          "android": {
+            "enabled": true,
+            "singleShareMimeTypes": ["text/plain"],
+            "multipleShareMimeTypes": ["text/plain"]
+          }
+        }
+      ],
       "expo-router",
       "expo-status-bar",
       [
