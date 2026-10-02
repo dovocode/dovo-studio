@@ -1,6 +1,8 @@
 import { mutableStruct, mutableArray } from '../shared/schema.js'
 import { decodeResult } from '../shared/schema.js'
 import { Schema } from 'effect'
+import { toolPresentation } from '../conversation/presentation/tool-presentation.js'
+import { mcpAppReferences } from '../conversation/mcp-apps.js'
 export const activityEventSchema = mutableStruct({
   id: Schema.String,
   time: Schema.String,
@@ -143,4 +145,34 @@ export function recentTools(events: Event[]): Tool[] {
     }
   }
   return [...tools.values()]
+}
+
+/** Compact thread activity retains identity, status, commands and app references, never raw provider data. */
+export function compactActivityEvents(events: Event[]): Event[] {
+  return events.flatMap((event) => {
+    if (!['tool', 'reasoning', 'task-activity'].includes(event.kind)) return [event]
+    return splitCalls(event).map((call) => {
+      let metadata: unknown
+      try {
+        metadata = JSON.parse(call.payload)
+      } catch {
+        metadata = {}
+      }
+      const fields = decodeResult(toolPayload, metadata).data
+      const presentation = toolPresentation(call.payload, call.summary)
+      const apps = mcpAppReferences(call.payload)
+      return {
+        ...call,
+        payload: JSON.stringify({
+          ...fields,
+          presentation: {
+            ...presentation,
+            input: presentation.kind === 'command' ? presentation.input : '',
+            output: '',
+          },
+          ...(apps.length ? { mcpApps: apps } : {}),
+        }),
+      }
+    })
+  })
 }

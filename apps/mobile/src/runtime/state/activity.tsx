@@ -1,3 +1,4 @@
+import { useMobilePreferences } from '../preferences/app-preferences'
 import { startPolling } from '@dovo/client-runtime'
 import { useApplicationState } from './application-state'
 import { Effect, Schema } from 'effect'
@@ -11,6 +12,7 @@ import { Field } from '../../ui/controls/field'
 import { formatDateTime } from '../../ui/content/format-date'
 import { styles } from '../../ui/theme'
 export function ActivityLog() {
+  const { showToolDetails } = useMobilePreferences()
   const { readEffect, connected } = useRuntime(),
     [query, setQuery] = useApplicationState(''),
     [offset, setOffset] = useApplicationState(0),
@@ -28,7 +30,11 @@ export function ActivityLog() {
         yield* Effect.sleep(250)
       }
       if (!connected || AppState.currentState !== 'active') return
-      const value = yield* readEffect('/api/activity', { query, offset }, activitySchema)
+      const value = yield* readEffect(
+        '/api/activity',
+        { query, offset, includeDetails: showToolDetails },
+        activitySchema,
+      )
       if (!stopped) {
         setData(value)
         setError('')
@@ -48,7 +54,7 @@ export function ActivityLog() {
       subscription.remove()
       void polling.stop()
     }
-  }, [readEffect, connected, query, offset])
+  }, [readEffect, connected, query, offset, showToolDetails])
 
   return (
     <View

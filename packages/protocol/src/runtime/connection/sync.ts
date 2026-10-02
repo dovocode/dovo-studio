@@ -127,6 +127,9 @@ export const syncInputSchema = Schema.Union(
   mutableStruct({
     type: Schema.Literal('watch'),
     scopes: mutableArray(Schema.String.pipe(Schema.maxLength(200))).pipe(Schema.maxItems(8)),
+    detailScopes: Schema.optional(
+      mutableArray(Schema.String.pipe(Schema.maxLength(200))).pipe(Schema.maxItems(8)),
+    ),
   }),
 )
 export const syncTicketSchema = mutableStruct({

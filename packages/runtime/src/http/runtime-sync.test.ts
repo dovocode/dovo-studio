@@ -300,3 +300,97 @@ it('deduplicates authenticated HTTP mutations after lost acknowledgements withou
   expect(await retried.json()).toEqual(response)
   expect(runtime.services.store.task('task').title).toBe('Newer desktop edit')
 })
+
+it('omits tool output and raw events over HTTP and sync by default, and refreshes details on opt-in', async () => {
+  const { runtime, open, address } = await setup()
+  const payload = {
+    turnId: 'turn',
+    toolId: 'command',
+    status: 'completed',
+    event: {
+      item: {
+        command: 'pnpm test',
+        aggregatedOutput: 'secret-output'.repeat(1000),
+        raw: 'raw-provider-data',
+      },
+    },
+  }
+  runtime.services.activity.add('tool', 'task', 'Command', payload, 'command')
+  const call = async (includeDetails?: boolean) => {
+    const response = await fetch(`${address}/api/activity`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: 'task', kind: 'task-activity', includeDetails }),
+    })
+    expect(response.status).toBe(200)
+    return decode((await import('@dovo/protocol')).activitySchema, await response.json())
+  }
+  const compact = await call()
+  const full = await call(true)
+  expect(compact.events[0]!.payload).toContain('pnpm test')
+  expect(compact.events[0]!.payload).not.toContain('secret-output')
+  expect(compact.events[0]!.payload).not.toContain('raw-provider-data')
+  expect(full.events[0]!.payload).toContain('secret-output')
+  expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(full).length / 10)
+  const client = await open()
+  client.socket.send(JSON.stringify({ type: 'resume' }))
+  await client.wait('snapshot')
+  client.socket.send(JSON.stringify({ type: 'watch', scopes: ['task'] }))
+  expect((await client.wait('activity')).events[0]!.payload).not.toContain('secret-output')
+  client.frames.length = 0
+  client.socket.send(JSON.stringify({ type: 'watch', scopes: ['task'], detailScopes: ['task'] }))
+  expect((await client.wait('activity')).events[0]!.payload).toContain('secret-output')
+  client.frames.length = 0
+  client.socket.send(JSON.stringify({ type: 'watch', scopes: ['task'] }))
+  expect((await client.wait('activity')).events[0]!.payload).not.toContain('secret-output')
+  expect(
+    runtime.services.activity.list('', 'task-activity', 0, 'task').events[0]!.payload,
+  ).toContain('raw-provider-data')
+})
+it('updates a shared client activity subscription when detail visibility changes', async () => {
+  const { startRuntimeSync, watchRuntimeActivity } = await import('@dovo/protocol')
+  const { runtime, address } = await setup()
+  vi.stubGlobal('WebSocket', WebSocket)
+  cleanup.push(() => {
+    vi.unstubAllGlobals()
+  })
+  runtime.services.activity.add(
+    'tool',
+    'task',
+    'Command',
+    {
+      turnId: 'turn',
+      toolId: 'cmd',
+      status: 'completed',
+      event: { item: { command: 'pwd', aggregatedOutput: 'full-client-output' } },
+    },
+    'command',
+  )
+  const connection = { address, token }
+  let latest = ''
+  const sync = startRuntimeSync(connection, { onSnapshot: () => {} })
+  cleanup.push(sync.stop)
+  let stop = watchRuntimeActivity(connection, 'task', (events) => {
+    latest = events[0]?.payload ?? ''
+  })
+  await expect.poll(() => latest.includes('pwd')).toBe(true)
+  expect(latest).not.toContain('full-client-output')
+  stop()
+  stop = watchRuntimeActivity(
+    connection,
+    'task',
+    (events) => {
+      latest = events[0]?.payload ?? ''
+    },
+    true,
+  )
+  await expect.poll(() => latest.includes('full-client-output')).toBe(true)
+  stop()
+  stop = watchRuntimeActivity(connection, 'task', (events) => {
+    latest = events[0]?.payload ?? ''
+  })
+  cleanup.push(() => stop())
+  await expect
+    .poll(() => latest.includes('pwd') && !latest.includes('full-client-output'))
+    .toBe(true)
+})

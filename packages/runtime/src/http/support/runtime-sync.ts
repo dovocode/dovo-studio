@@ -3,6 +3,7 @@ import { Effect, Fiber } from 'effect'
 import { WebSocket } from 'ws'
 import {
   decode,
+  compactActivityEvents,
   snapshotDelta,
   activityDelta,
   syncInputSchema,
@@ -20,6 +21,7 @@ type ActivityEvent = Schema.Schema.Type<typeof activitySchema>['events'][number]
 type Client = {
   socket: WebSocket
   ready: boolean
+  detailScopes: Set<string>
   scopes: Map<string, ActivityEvent[]>
   activityRevision: number
   heartbeat: number
@@ -126,6 +128,7 @@ class RuntimeSync {
       socket,
       ready: false,
       scopes: new Map(),
+      detailScopes: new Set(),
       activityRevision: -1,
       heartbeat: Date.now(),
       resuming: false,
@@ -153,11 +156,18 @@ class RuntimeSync {
             : Buffer.from(raw)
         const input = decode(syncInputSchema, JSON.parse(buffer.toString('utf8')))
         if (input.type === 'watch') {
+          const details = new Set(input.detailScopes ?? [])
           const next = new Map<string, ActivityEvent[]>()
           for (const scope of input.scopes) {
             if (this.services.store.get().tasks.some((task) => task.id === scope))
-              next.set(scope, client.scopes.get(scope) ?? [])
+              next.set(
+                scope,
+                details.has(scope) === client.detailScopes.has(scope)
+                  ? (client.scopes.get(scope) ?? [])
+                  : [],
+              )
           }
+          client.detailScopes = details
           client.scopes = next
           client.activityRevision = -1
           return
@@ -344,7 +354,8 @@ class RuntimeSync {
             if (!client.ready) continue
             if (client.activityRevision !== this.services.activity.revision) {
               for (const [scope, previous] of client.scopes) {
-                const events = this.services.activity.list('', 'task-activity', 0, scope).events
+                const full = this.services.activity.list('', 'task-activity', 0, scope).events
+                const events = client.detailScopes.has(scope) ? full : compactActivityEvents(full)
                 const old = new Map(previous.map((event) => [event.id, event]))
                 const changed = events.filter((event) => {
                   const previous = old.get(event.id)

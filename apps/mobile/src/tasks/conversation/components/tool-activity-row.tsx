@@ -1,3 +1,4 @@
+import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { mcpAppReferences } from '@dovo/protocol'
 import { lazy, Suspense } from 'react'
 const McpAppView = lazy(() =>
@@ -39,7 +40,9 @@ export function ToolActivityRow({
   compact?: boolean
 }) {
   const [open, setOpen] = useApplicationState(false)
+  const { showToolDetails } = useMobilePreferences()
   const detail = toolPresentation(event.payload, event.summary, event.inputPayload)
+  const expandable = showToolDetails || (detail.kind === 'command' && !!detail.input)
   const running = pendingActivity(event.status)
   const status = activityStatus(event.status)
   return (
@@ -49,9 +52,10 @@ export function ToolActivityRow({
       }}
     >
       <Pressable
-        accessibilityRole="button"
+        disabled={!expandable}
+        accessibilityRole={expandable ? 'button' : 'text'}
         accessibilityState={{
-          expanded: open,
+          expanded: expandable ? open : undefined,
         }}
         accessibilityLabel={`${running ? 'Running · ' : ''}${detail.title}${status ? ` · ${status}` : ''}`}
         onPress={() => setOpen((value) => !value)}
@@ -85,14 +89,14 @@ export function ToolActivityRow({
             <Text style={status === 'Failed' ? styles.error : styles.muted}>{status}</Text>
           )
         )}
-        <Icon name={open ? 'down' : 'next'} size={10} color={colors.muted} />
+        {expandable && <Icon name={open ? 'down' : 'next'} size={10} color={colors.muted} />}
       </Pressable>
       {mcpAppReferences(event.payload).map((reference) => (
         <Suspense key={reference.id} fallback={<Text>Loading app…</Text>}>
           <McpAppView reference={reference} />
         </Suspense>
       ))}
-      {open && (
+      {open && expandable && (
         <View
           style={{
             marginLeft: 6,
@@ -103,7 +107,7 @@ export function ToolActivityRow({
             gap: 8,
           }}
         >
-          {!!detail.input && (
+          {!!detail.input && (showToolDetails || detail.kind === 'command') && (
             <Text
               selectable
               style={[
@@ -118,7 +122,8 @@ export function ToolActivityRow({
               {detail.input}
             </Text>
           )}
-          {!!detail.output &&
+          {showToolDetails &&
+            !!detail.output &&
             (detail.kind === 'reasoning' ? (
               <Markdown text={detail.output} variant="chat" />
             ) : (
@@ -136,7 +141,7 @@ export function ToolActivityRow({
                 {detail.output}
               </Text>
             ))}
-          {!detail.output && (
+          {showToolDetails && !detail.output && (
             <Text style={styles.muted}>
               {running ? 'In progress…' : status || 'No output recorded'}
             </Text>

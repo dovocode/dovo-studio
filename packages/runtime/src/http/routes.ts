@@ -1,3 +1,4 @@
+import { compactActivityEvents } from '@dovo/protocol'
 import { searchTaskMessages } from '@dovo/protocol'
 import { recoverableMutation } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -371,6 +372,7 @@ export function route(
       if (method === 'POST' && path === '/api/activity') {
         const input = decode(
           mutableStruct({
+            includeDetails: Schema.optionalWith(Schema.Boolean, { default: () => false }),
             query: Schema.optionalWith(maxValue(Schema.String, 500), {
               default: () => '',
             }),
@@ -395,8 +397,13 @@ export function route(
           }),
           yield* serviceResult(body(request)),
         )
+        const activity = s.activity.list(input.query, input.kind, input.offset, input.scope)
         return yield* serviceResult(
-          s.activity.list(input.query, input.kind, input.offset, input.scope),
+          input.includeDetails
+            ? activity
+            : {
+                events: compactActivityEvents(activity.events),
+              },
         )
       }
       if (method === 'POST' && path === '/api/shortcuts/received') {

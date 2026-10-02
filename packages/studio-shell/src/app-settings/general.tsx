@@ -192,6 +192,16 @@ export default function GeneralSettings() {
             onChange={(toolActivity) => updateAppPreferences({ toolActivity })}
           />
         </SettingRow>
+        <SettingRow
+          label="Show tool call details"
+          description="Show tool output, full inputs and raw events in threads. Commands stay visible when this is off."
+        >
+          <Toggle
+            label="Show tool call details"
+            checked={preferences.showToolDetails}
+            onChange={(showToolDetails) => updateAppPreferences({ showToolDetails })}
+          />
+        </SettingRow>
       </SettingsGroup>
       <SettingsGroup title="Confirmations">
         <SettingRow

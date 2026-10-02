@@ -40,7 +40,13 @@ import {
 } from './task-activity-state'
 export function useTaskActivity(taskId: string, running = false) {
   const { requestEffect: request, connected, connection, activeRuntimeId } = useWorkspace()
-  const identity = JSON.stringify([activeRuntimeId, clientScopeKey(connection), taskId])
+  const { showToolDetails } = useAppPreferences()
+  const identity = JSON.stringify([
+    activeRuntimeId,
+    clientScopeKey(connection),
+    taskId,
+    showToolDetails,
+  ])
   const [snapshot, setSnapshot] = useApplicationState<{
     identity: string
     events: Schema.Schema.Type<typeof activitySchema>['events']
@@ -56,24 +62,29 @@ export function useTaskActivity(taskId: string, running = false) {
       previous.identity === identity ? previous : { identity, events: [], error: '' },
     )
     const unwatch = connection
-      ? watchRuntimeActivity(connection, taskId, (events) => {
-          if (!stopped)
-            setSnapshot((previous) => ({
-              identity,
-              events: retainActivityEvents(
-                previous.identity === identity ? previous.events : [],
-                events,
-              ),
-              error: '',
-            }))
-        })
+      ? watchRuntimeActivity(
+          connection,
+          taskId,
+          (events) => {
+            if (!stopped)
+              setSnapshot((previous) => ({
+                identity,
+                events: retainActivityEvents(
+                  previous.identity === identity ? previous.events : [],
+                  events,
+                ),
+                error: '',
+              }))
+          },
+          showToolDetails,
+        )
       : () => {}
     const load = Effect.gen(function* () {
       if (runtimeSyncOnline(connection, taskId)) return
       if (!connected || document.visibilityState !== 'visible') return
       const result = yield* request(
         '/api/activity',
-        { scope: taskId, kind: 'task-activity' },
+        { scope: taskId, kind: 'task-activity', includeDetails: showToolDetails },
         activitySchema,
       )
       if (!stopped && !runtimeSyncOnline(connection, taskId))
@@ -103,7 +114,7 @@ export function useTaskActivity(taskId: string, running = false) {
       document.removeEventListener('visibilitychange', polling.refresh)
       void polling.stop()
     }
-  }, [request, connected, taskId, identity, running])
+  }, [request, connected, taskId, identity, running, showToolDetails])
 
   return {
     tools: useMemo(
@@ -145,7 +156,7 @@ export function TaskActivity({
 }) {
   // Settings → General → Conversation → Tool activity; Ctrl+O switches it from the task.
   const detailsId = useId()
-  const { toolActivity } = useAppPreferences()
+  const { toolActivity, showToolDetails } = useAppPreferences()
   const [expanded, setExpanded] = useApplicationState(
     () => readAppPreferences().toolActivity === 'expanded',
   )
@@ -220,9 +231,10 @@ export function TaskActivity({
                   tool={tool}
                   presentation={presentation}
                   state={state}
+                  showDetails={showToolDetails}
                 />
               ))}
-              {turn && (
+              {showToolDetails && turn && (
                 <details className="pt-1 text-[0.6875rem] text-muted-foreground/70">
                   <summary className="w-fit cursor-pointer py-1 hover:text-muted-foreground">
                     Run details
@@ -268,10 +280,12 @@ function ActivityEntry({
   tool,
   presentation,
   state,
+  showDetails,
 }: {
   tool: ActivityTool
   presentation: Presentation
   state: ActivityState
+  showDetails: boolean
 }) {
   const Icon = icons[presentation.kind]
   const title = state === 'running' ? activeTitle(presentation) : presentation.title
@@ -284,9 +298,14 @@ function ActivityEntry({
           ? 'Interrupted'
           : ''
   const reasoning = presentation.kind === 'reasoning'
+  const expandable = showDetails || (presentation.kind === 'command' && !!presentation.input)
+  const Container = expandable ? 'details' : 'div'
+  const Header = expandable ? 'summary' : 'div'
   return (
-    <details className="group/action min-w-0">
-      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 rounded px-1 py-1.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
+    <Container className="group/action min-w-0">
+      <Header
+        className={`flex min-w-0 list-none items-center gap-2 rounded px-1 py-1.5 text-muted-foreground ${expandable ? 'cursor-pointer transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary' : ''}`}
+      >
         <Icon
           aria-hidden
           className={`size-3.5 shrink-0 ${state === 'running' ? 'animate-pulse motion-reduce:animate-none' : ''}`}
@@ -301,51 +320,60 @@ function ActivityEntry({
             {status}
           </span>
         )}
-        <ChevronRight
-          aria-hidden
-          className="size-3 shrink-0 transition-transform group-open/action:rotate-90 motion-reduce:transition-none"
-        />
-      </summary>
-      <div className="mb-2 ml-2.5 space-y-3 border-l pl-4 text-[0.6875rem] leading-relaxed text-muted-foreground">
-        {!!presentation.input && (
-          <div>
-            <p className="mb-1 text-[0.625rem] text-muted-foreground/65">
-              {presentation.kind === 'command' ? 'Command' : 'Input'}
-            </p>
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-relaxed">
-              {presentation.input}
-            </pre>
-          </div>
+        {expandable && (
+          <ChevronRight
+            aria-hidden
+            className="size-3 shrink-0 transition-transform group-open/action:rotate-90 motion-reduce:transition-none"
+          />
         )}
-        {!!presentation.output &&
-          (reasoning ? (
-            <div className="text-xs">
-              <MessageResponse isStreaming={state === 'running'}>
-                {presentation.output}
-              </MessageResponse>
-            </div>
-          ) : (
+      </Header>
+      {expandable && (
+        <div className="mb-2 ml-2.5 space-y-3 border-l pl-4 text-[0.6875rem] leading-relaxed text-muted-foreground">
+          {!!presentation.input && (showDetails || presentation.kind === 'command') && (
             <div>
-              <p className="mb-1 text-[0.625rem] text-muted-foreground/65">Output</p>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-relaxed">
-                {presentation.output}
+              <p className="mb-1 text-[0.625rem] text-muted-foreground/65">
+                {presentation.kind === 'command' ? 'Command' : 'Input'}
+              </p>
+              <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-relaxed">
+                {presentation.input}
               </pre>
             </div>
-          ))}
-        {!presentation.input && !presentation.output && (
-          <p>{state === 'running' ? 'Waiting for output…' : 'No text output recorded.'}</p>
-        )}
-        <details className="text-[0.625rem] text-muted-foreground/60">
-          <summary className="w-fit cursor-pointer py-1 hover:text-muted-foreground">
-            Raw event ·{' '}
-            <time dateTime={tool.time}>{formatDateTime(tool.time, { timeStyle: 'medium' })}</time>
-          </summary>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.625rem]">
-            {tool.payload.slice(0, 24000)}
-          </pre>
-          {tool.payload.length > 24000 && <p>Raw preview limited to 24,000 characters.</p>}
-        </details>
-      </div>
-    </details>
+          )}
+          {showDetails &&
+            !!presentation.output &&
+            (reasoning ? (
+              <div className="text-xs">
+                <MessageResponse isStreaming={state === 'running'}>
+                  {presentation.output}
+                </MessageResponse>
+              </div>
+            ) : (
+              <div>
+                <p className="mb-1 text-[0.625rem] text-muted-foreground/65">Output</p>
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-relaxed">
+                  {presentation.output}
+                </pre>
+              </div>
+            ))}
+          {showDetails && !presentation.input && !presentation.output && (
+            <p>{state === 'running' ? 'Waiting for output…' : 'No text output recorded.'}</p>
+          )}
+          {showDetails && (
+            <details className="text-[0.625rem] text-muted-foreground/60">
+              <summary className="w-fit cursor-pointer py-1 hover:text-muted-foreground">
+                Raw event ·{' '}
+                <time dateTime={tool.time}>
+                  {formatDateTime(tool.time, { timeStyle: 'medium' })}
+                </time>
+              </summary>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.625rem]">
+                {tool.payload.slice(0, 24000)}
+              </pre>
+              {tool.payload.length > 24000 && <p>Raw preview limited to 24,000 characters.</p>}
+            </details>
+          )}
+        </div>
+      )}
+    </Container>
   )
 }

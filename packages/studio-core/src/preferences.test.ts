@@ -94,8 +94,10 @@ it('persists browser profiles, per-thread selections and opt-in agent access', a
 it('keeps the changed-files expansion preference across reopening', async () => {
   vi.stubGlobal('localStorage', storage())
   const { updateAppPreferences } = await import('./preferences')
-  updateAppPreferences({ collapseChangedFiles: false })
+  expect((await import('./preferences')).readAppPreferences().showToolDetails).toBe(false)
+  updateAppPreferences({ collapseChangedFiles: false, showToolDetails: true })
   vi.resetModules()
   const { readAppPreferences } = await import('./preferences')
   expect(readAppPreferences().collapseChangedFiles).toBe(false)
+  expect(readAppPreferences().showToolDetails).toBe(true)
 })

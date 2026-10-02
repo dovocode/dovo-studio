@@ -1,3 +1,4 @@
+import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { useEffect } from 'react'
 import { AppState } from 'react-native'
 import { Effect } from 'effect'
@@ -16,7 +17,8 @@ import type { ToolEvents } from './tool-events'
 export function useToolActivity(taskId: string, visible: boolean, running = false) {
   const { focused } = useNavigation()
   const { readEffect, connected, connection } = useRuntime()
-  const identity = `${clientScopeKey(connection)}:${taskId}`
+  const { showToolDetails } = useMobilePreferences()
+  const identity = JSON.stringify([clientScopeKey(connection), taskId, showToolDetails])
   const [state, setState] = useApplicationState<{
     identity: string
     events: ToolEvents
@@ -26,23 +28,28 @@ export function useToolActivity(taskId: string, visible: boolean, running = fals
     if (!visible || !focused || !connected) return
     let stopped = false
     const unwatch = connection
-      ? watchRuntimeActivity(connection, taskId, (incoming) => {
-          if (!stopped)
-            setState((previous) => ({
-              identity,
-              events: retainActivityEvents(
-                previous.identity === identity ? previous.events : [],
-                incoming,
-              ),
-              error: '',
-            }))
-        })
+      ? watchRuntimeActivity(
+          connection,
+          taskId,
+          (incoming) => {
+            if (!stopped)
+              setState((previous) => ({
+                identity,
+                events: retainActivityEvents(
+                  previous.identity === identity ? previous.events : [],
+                  incoming,
+                ),
+                error: '',
+              }))
+          },
+          showToolDetails,
+        )
       : () => {}
     const load = Effect.gen(function* () {
       if (runtimeSyncOnline(connection, taskId) || AppState.currentState !== 'active') return
       const data = yield* readEffect(
         '/api/activity',
-        { scope: taskId, kind: 'task-activity' },
+        { scope: taskId, kind: 'task-activity', includeDetails: showToolDetails },
         activitySchema,
       )
       if (!stopped && !runtimeSyncOnline(connection, taskId))
@@ -77,7 +84,7 @@ export function useToolActivity(taskId: string, visible: boolean, running = fals
       resume.remove()
       void polling.stop()
     }
-  }, [readEffect, connected, taskId, identity, visible, focused, running])
+  }, [readEffect, connected, taskId, identity, visible, focused, running, showToolDetails])
   // Render never exposes a previous computer or task while the new request is pending.
   return state.identity === identity
     ? { events: state.events, error: state.error }

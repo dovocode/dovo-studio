@@ -101,6 +101,25 @@ function computePresentation(
       kind: 'tool',
     }
   const envelope = object(parsed)
+  const compact = decodeResult(
+    mutableStruct({
+      title: Schema.String,
+      input: Schema.String,
+      output: Schema.String,
+      kind: Schema.Literal('computer', 'command', 'web', 'file', 'tool', 'reasoning'),
+    }),
+    envelope.presentation,
+  ).data
+  if (compact) {
+    if (!inputPayload || inputPayload === payload) return compact
+    const start = toolPresentation(inputPayload, summary)
+    return {
+      ...compact,
+      title: ['Tool result', 'Tool update'].includes(compact.title) ? start.title : compact.title,
+      kind: compact.kind === 'tool' ? start.kind : compact.kind,
+      input: compact.input || start.input,
+    }
+  }
   const reasoning = object(envelope.reasoning)
   if (typeof reasoning.text === 'string')
     return {

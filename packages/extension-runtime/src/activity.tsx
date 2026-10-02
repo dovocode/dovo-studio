@@ -1,9 +1,16 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Effect, Schema } from 'effect'
 import { useEffect, useState } from 'react'
-import { activitySchema, useWorkspace, startPolling, formatDateTime } from '@dovo/studio-core'
+import {
+  activitySchema,
+  useWorkspace,
+  startPolling,
+  formatDateTime,
+  useAppPreferences,
+} from '@dovo/studio-core'
 import { Button, Input } from '@dovo/studio-ui'
 export function ActivityLog() {
+  const { showToolDetails } = useAppPreferences()
   const { requestEffect: request, connected } = useWorkspace(),
     [query, setQuery] = useApplicationState(''),
     [offset, setOffset] = useApplicationState(0),
@@ -26,7 +33,11 @@ export function ActivityLog() {
         yield* Effect.sleep(200)
       }
       if (!connected || document.visibilityState !== 'visible') return
-      const value = yield* request('/api/activity', { query: search, offset }, activitySchema)
+      const value = yield* request(
+        '/api/activity',
+        { query: search, offset, includeDetails: showToolDetails },
+        activitySchema,
+      )
       if (!stopped) {
         setData(value)
         setError('')
@@ -44,7 +55,7 @@ export function ActivityLog() {
       document.removeEventListener('visibilitychange', polling.refresh)
       void polling.stop()
     }
-  }, [request, connected, search, offset])
+  }, [request, connected, search, offset, showToolDetails])
 
   return (
     <section className="space-y-2">

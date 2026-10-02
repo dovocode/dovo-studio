@@ -187,7 +187,7 @@ export default function GeneralScreen() {
         </SettingsGroup>
         <SettingsGroup
           title="Conversation"
-          footer="Whether commands, edits and searches in each turn start open or folded. The screen stays on only while you have a running task open."
+          footer="Whether commands, edits and searches in each turn start open or folded. Tool call details show output and full inputs only when enabled. The screen stays on only while you have a running task open."
         >
           <SwitchRow
             first
@@ -212,6 +212,11 @@ export default function GeneralScreen() {
               }
             />
           </View>
+          <SwitchRow
+            label="Show tool call details"
+            value={preferences.showToolDetails}
+            onValueChange={(showToolDetails) => updateMobilePreferences({ showToolDetails })}
+          />
           <SwitchRow
             label="Keep the screen on while a task runs"
             value={preferences.keepScreenOn}

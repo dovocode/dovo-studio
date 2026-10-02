@@ -8,7 +8,7 @@ import {
 } from './sync.js'
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
 import type { activitySchema } from '../../automation/activity.js'
-import { retainActivityEvents } from '../../automation/activity.js'
+import { retainActivityEvents, compactActivityEvents } from '../../automation/activity.js'
 import { Effect, Fiber, type Schema } from 'effect'
 
 type Events = Schema.Schema.Type<typeof activitySchema>['events']
@@ -26,6 +26,7 @@ type Registration = {
   }
 
   live?: { online: () => boolean; watch: () => void }
+  details: Set<Listener>
   scopes: Map<string, Set<Listener>>
 }
 const registrations = new Map<string, Registration>()
@@ -35,7 +36,7 @@ const registration = (connection: RuntimeConnection) => {
   const id = key(connection)
   let value = registrations.get(id)
   if (!value) {
-    value = { tasks: new Map(), scopes: new Map(), events: new Map() }
+    value = { tasks: new Map(), scopes: new Map(), events: new Map(), details: new Set() }
     registrations.set(id, value)
   }
   return value
@@ -75,16 +76,19 @@ export function watchRuntimeActivity(
   connection: RuntimeConnection,
   scope: string,
   listener: Listener,
+  includeDetails = false,
 ) {
   const value = registration(connection)
   const listeners = value.scopes.get(scope) ?? new Set<Listener>()
   const cached = value.events.get(scope)
-  if (cached) listener(cached)
+  if (includeDetails) value.details.add(listener)
+  if (cached) listener(includeDetails ? cached : compactActivityEvents(cached))
   listeners.add(listener)
   value.scopes.set(scope, listeners)
   value.live?.watch()
   return () => {
     listeners.delete(listener)
+    value.details.delete(listener)
     if (!listeners.size) {
       value.scopes.delete(scope)
       value.events.delete(scope)
@@ -142,7 +146,18 @@ export function startRuntimeSync(
       return
     }
     if (socket?.readyState === 1)
-      socket.send(JSON.stringify({ type: 'watch', scopes: [...value.scopes.keys()].slice(0, 8) }))
+      socket.send(
+        JSON.stringify({
+          type: 'watch',
+          scopes: [...value.scopes.keys()].slice(0, 8),
+          detailScopes: [...value.scopes.entries()]
+            .filter(([, listeners]) =>
+              [...listeners].some((listener) => value.details.has(listener)),
+            )
+            .map(([scope]) => scope)
+            .slice(0, 8),
+        }),
+      )
   }
   const live = { online: () => online, watch }
   value.live = live
@@ -230,7 +245,8 @@ export function startRuntimeSync(
                   })
             const events = retainActivityEvents(old, next)
             activities.set(frame.scope, events)
-            for (const listener of value.scopes.get(frame.scope) ?? []) listener(events)
+            for (const listener of value.scopes.get(frame.scope) ?? [])
+              listener(value.details.has(listener) ? events : compactActivityEvents(events))
             return
           }
           if (frame.type === 'snapshot') {
