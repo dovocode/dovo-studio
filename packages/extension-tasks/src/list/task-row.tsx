@@ -2,6 +2,7 @@ import { taskPullLinks } from '../detail/task-pull-links'
 import { AgentAvatar, ProjectIcon } from '@dovo/studio-ui'
 import { acpHarnessName, resolveTaskAgent, formatDateTime } from '@dovo/studio-core'
 import { TaskLifecycleActions } from '../detail/task-lifecycle-actions'
+import { hasUnviewedTaskCompletion } from '@dovo/protocol'
 import { isSnoozed } from './task-priority'
 import { taskPresentation } from './task-presentation'
 import {
@@ -82,11 +83,13 @@ function TaskRowView({
   const queue = task.queue?.length ?? 0
   const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
   const presentation = taskPresentation(task, !!needsInput, now)
+  const unread = hasUnviewedTaskCompletion(task)
   const status = !source.online && source.runtimeId ? 'Offline · Cached' : presentation.label
   const offline = !source.online && !!source.runtimeId
   const compactStatus = offline ? 'Offline' : presentation.compactLabel
   const StatusIcon = offline ? CloudOff : (statusIcons[presentation.state] ?? CircleDashed)
-  const showingTime = !offline && presentation.compactLabel !== presentation.state
+  const showingTime =
+    !offline && presentation.state !== 'Working' && presentation.compactLabel !== presentation.state
   const statusDetail = [
     status,
     Number.isFinite(finished) ? `Finished ${formatDateTime(finished)}` : '',
@@ -148,6 +151,7 @@ function TaskRowView({
             <span
               className={cn(
                 'block w-full truncate text-sm font-medium leading-5',
+                unread ? 'text-foreground' : 'text-foreground/75',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}

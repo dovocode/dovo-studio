@@ -127,7 +127,7 @@ export function TaskListRow({
                 numberOfLines={1}
                 style={{
                   flex: 1,
-                  color: colors.text,
+                  color: actions.unread ? colors.text : '#b8bac2',
                   fontSize: 17,
                   lineHeight: 22,
                   fontWeight: '500',
