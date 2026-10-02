@@ -1,7 +1,10 @@
+import { flushSync } from 'react-dom'
+import { selectTaskKeys } from './task-selection'
 import { useStudioHost } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   readAppPreferences,
+  latestCompletedTaskTurn,
   resolveTaskAgent,
   updateAppPreferences,
   useAppPreferences,
@@ -19,7 +22,7 @@ import {
   Layers2,
 } from 'lucide-react'
 import { useEffect, useCallback, useDeferredValue, useMemo, useRef } from 'react'
-import { Button, Input } from '@dovo/studio-ui'
+import { Button, Input, ContextMenu } from '@dovo/studio-ui'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { TaskRow } from './task-row'
 import { TaskContextMenu } from '../detail/task-context-menu'
@@ -65,14 +68,24 @@ export function TaskList({
   const store = useWorkspace()
   const [selecting, setSelecting] = useApplicationState(false)
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
+  const selectionAnchor = useRef<string | null>(null)
+  const bulkLock = useRef(false)
   const [bulkBusy, setBulkBusy] = useApplicationState(false)
   const entries = useMemo(() => collectTasks(sources), [sources])
   const [now, setNow] = useApplicationState(Date.now())
-  const running = entries.some(({ task }) => task.status === 'running')
+  const showSeconds = entries.some(({ task }) => {
+    const started = Date.parse(task.turns?.at(-1)?.startedAt ?? '')
+    return (
+      task.status === 'running' &&
+      task.runPhase !== 'finalizing' &&
+      Number.isFinite(started) &&
+      now - started < 60000
+    )
+  })
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), running ? 1000 : 60000)
+    const timer = setInterval(() => setNow(Date.now()), showSeconds ? 1000 : 60000)
     return () => clearInterval(timer)
-  }, [running])
+  }, [showSeconds])
   const needsInput = useMemo(
     () => new Set(entries.filter((entry) => entry.needsInput).map((entry) => entry.key)),
     [entries],
@@ -142,13 +155,22 @@ export function TaskList({
       )
   }, [entries, projectId, filter, deferredQuery, sort, needsInput, projects, now])
   const selectedEntries = entries.filter((entry) => selected.has(entry.key))
-  const bulk = async (action: 'archive' | 'snooze' | 'pin' | 'delete') => {
-    if (!selectedEntries.length || bulkBusy) return
+  const bulk = async (action: 'archive' | 'reopen' | 'snooze' | 'delete' | 'read' | 'unread') => {
+    if (!selectedEntries.length || bulkLock.current) return
     if (
       action === 'delete' &&
       !window.confirm(`Delete ${selectedEntries.length} selected threads? This cannot be undone.`)
     )
       return
+    if (
+      action === 'archive' &&
+      readAppPreferences().confirmArchive &&
+      !window.confirm(
+        `Archive ${selectedEntries.length} selected threads? You can restore them later.`,
+      )
+    )
+      return
+    bulkLock.current = true
     setBulkBusy(true)
     setActionError('')
     try {
@@ -156,13 +178,38 @@ export function TaskList({
         const client = taskActionClient(store, entry.source)
         if (action === 'archive' || action === 'delete')
           await client.request('/api/tasks/lifecycle', { id: entry.task.id, action }, responses.ok)
-        else
-          await client.patch(
-            entry.task,
-            action === 'pin'
-              ? { pinned: true }
-              : { snoozedUntil: new Date(Date.now() + 24 * 3600000).toISOString() },
+        else if (action === 'read' || action === 'unread') {
+          const turn = latestCompletedTaskTurn(entry.task)
+          if (!turn) throw new Error('This thread has no completed turn to mark.')
+          if (action === 'unread' && entry.key === selectedId) flushSync(onDeselect)
+          await client.request(
+            '/api/tasks/viewed',
+            {
+              id: entry.task.id,
+              turnId: turn.id,
+              viewed: action === 'read',
+              expectedRevision: entry.task.viewedRevision ?? 0,
+            },
+            responses.ok,
           )
+        } else if (action === 'reopen') {
+          if (entry.task.archivedAt)
+            await client.request(
+              '/api/tasks/lifecycle',
+              { id: entry.task.id, action: 'restore' },
+              responses.ok,
+            )
+          else await client.patch(entry.task, { archived: false, snoozedUntil: null })
+        } else
+          await client.patch(entry.task, {
+            snoozedUntil: new Date(Date.now() + 24 * 3600000).toISOString(),
+          })
+        if ((action === 'archive' || action === 'delete') && entry.key === selectedId) onDeselect()
+        setSelected((current) => {
+          const remaining = new Set(current)
+          remaining.delete(entry.key)
+          return remaining
+        })
       }
       setSelected(new Set())
       setSelecting(false)
@@ -171,6 +218,7 @@ export function TaskList({
       setActionError(cause instanceof Error ? cause.message : String(cause))
       await store.refreshRuntimes().catch(() => undefined)
     } finally {
+      bulkLock.current = false
       setBulkBusy(false)
     }
   }
@@ -288,6 +336,44 @@ export function TaskList({
     handlers.current.set(entry.key, created)
     return created
   }, [])
+  const selectionActions = [
+    { id: 'archive', label: 'Archive' },
+    { id: 'reopen', label: 'Reopen' },
+    { id: 'snooze', label: 'Snooze for 1 day' },
+    { id: 'read', label: 'Mark as read' },
+    { id: 'unread', label: 'Mark as unread' },
+    { id: 'delete', label: 'Delete' },
+  ] as const
+  const blockedAction = (action: (typeof selectionActions)[number]['id']) =>
+    busy ||
+    bulkBusy ||
+    !selectedEntries.length ||
+    selectedEntries.some(
+      ({ task, source }) =>
+        !source.online ||
+        ((action === 'archive' || action === 'delete' || action === 'reopen') &&
+          task.status === 'running') ||
+        ((action === 'read' || action === 'unread') &&
+          (!latestCompletedTaskTurn(task) || task.archived || !!task.archivedAt)) ||
+        (action === 'snooze' && (task.archived || !!task.archivedAt)),
+    )
+  const selectionMenu = (
+    <>
+      <ContextMenu.Label className="px-2.5 py-1.5 text-xs text-muted-foreground">
+        {selectedEntries.length} threads selected
+      </ContextMenu.Label>
+      {selectionActions.map(({ id, label }) => (
+        <ContextMenu.Item
+          key={id}
+          className={`flex cursor-default rounded-lg px-2.5 py-2 text-xs outline-none data-[highlighted]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 ${id === 'delete' ? 'text-destructive' : ''}`}
+          disabled={blockedAction(id)}
+          onSelect={() => void bulk(id)}
+        >
+          {label}
+        </ContextMenu.Item>
+      ))}
+    </>
+  )
   return (
     <aside
       className="flex h-full w-full min-w-0 flex-col border-r bg-sidebar"
@@ -308,16 +394,16 @@ export function TaskList({
         {selecting && (
           <div className="flex flex-wrap items-center gap-1 text-xs">
             <span className="mr-1">{selected.size} selected</span>
-            {(['archive', 'snooze', 'pin', 'delete'] as const).map((action) => (
+            {selectionActions.map(({ id: action, label }) => (
               <Button
                 key={action}
                 size="sm"
                 variant={action === 'delete' ? 'destructive' : 'outline'}
                 className="h-7 px-2 text-xs"
-                disabled={!selected.size || bulkBusy}
+                disabled={blockedAction(action)}
                 onClick={() => void bulk(action)}
               >
-                {action[0].toUpperCase() + action.slice(1)}
+                {label}
               </Button>
             ))}
           </div>
@@ -447,7 +533,43 @@ export function TaskList({
           const rows = group.tasks.map((entry) => {
             const handlers = entryHandlers(entry)
             return (
-              <div key={entry.key} className="flex items-center">
+              <div
+                key={entry.key}
+                className="flex items-center"
+                onClickCapture={(event) => {
+                  if (bulkBusy || busy) return
+                  if (
+                    !(event.target instanceof Element) ||
+                    event.target.closest('button') !== event.currentTarget.querySelector('button')
+                  )
+                    return
+                  if (!selecting && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+                    selectionAnchor.current = entry.key
+                    return
+                  }
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const order = groups
+                    .filter((group) => group.open)
+                    .flatMap((group) => group.tasks.map((item) => item.key))
+                  setSelected((current) =>
+                    selectTaskKeys(
+                      current.size || selecting || !selectedId ? current : new Set([selectedId]),
+                      entry.key,
+                      order,
+                      selectionAnchor.current,
+                      event.shiftKey,
+                      !event.shiftKey || event.metaKey || event.ctrlKey,
+                    ),
+                  )
+                  if (!event.shiftKey) selectionAnchor.current = entry.key
+                  setSelecting(true)
+                }}
+                onContextMenuCapture={() => {
+                  if (selecting && !selected.has(entry.key) && !bulkBusy)
+                    setSelected(new Set([entry.key]))
+                }}
+              >
                 {selecting && (
                   <input
                     type="checkbox"
@@ -467,6 +589,7 @@ export function TaskList({
                 )}
                 <TaskContextMenu
                   entry={entry}
+                  selectionMenu={selecting ? selectionMenu : undefined}
                   selected={entry.key === selectedId}
                   busy={busy}
                   onOpen={handlers.open}
@@ -481,10 +604,13 @@ export function TaskList({
                     task={entry.task}
                     now={now}
                     selected={entry.key === selectedId}
+                    multiSelected={selected.has(entry.key)}
                     source={entry.source}
                     editable={entry.source.runtimeId === activeRuntimeId && !busy}
                     disabled={
-                      busy || (!entry.source.online && entry.source.runtimeId !== activeRuntimeId)
+                      busy ||
+                      bulkBusy ||
+                      (!entry.source.online && entry.source.runtimeId !== activeRuntimeId)
                     }
                     onSelect={handlers.open}
                   />

@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import {
+  createUsageSummary,
   formatUsageCost,
   formatUsageDuration,
   formatUsageTokens,
@@ -98,4 +99,47 @@ it('sums local turn usage by subscription across machines and keeps unknown turn
     turns: 2,
     tokens: 200,
   })
+})
+
+it('reuses usage totals when only task messages or tool metadata change', () => {
+  const project = createUsageSummary()
+  const recent = turn('2026-09-29T00:00:00Z', 1, 'gpt-6-sol', 100)
+  const work = task('work', [recent])
+  const sources = [{ id: 'mac', computer: 'Mac', tasks: [work] }]
+  const now = Date.parse('2026-09-29T01:00:00Z')
+  const first = project(sources, 0, now)
+  const updatedTask = { ...work, draft: 'new text', turns: [{ ...recent }] }
+  expect(project([{ ...sources[0], tasks: [updatedTask] }], 0, now)).toBe(first)
+  expect(
+    project([{ ...sources[0], tasks: [task('work', [{ ...recent, tokens: 200 }])] }], 0, now).total
+      .tokens,
+  ).toBe(200)
+})
+it('updates live elapsed time and period boundaries without a new snapshot', () => {
+  const project = createUsageSummary()
+  const started = '2026-09-29T00:00:00Z'
+  const running = {
+    ...turn(started, 1, 'gpt-6-sol'),
+    finishedAt: undefined,
+    status: 'running' as const,
+  }
+  const work = { ...task('work', []), turns: [running] }
+  const sources = [{ computer: 'Mac', tasks: [work] }]
+  const start = Date.parse(started)
+  expect(project(sources, start, start + 60000).total.durationMs).toBe(60000)
+  expect(project(sources, start, start + 120000).total.durationMs).toBe(120000)
+  expect(project(sources, start + 1, start + 120000).total.turns).toBe(0)
+})
+it('keeps equally named computers and identical thread ids separate', () => {
+  const work = task('same-id', [turn('2026-09-29T00:00:00Z', 1, 'gpt-6-sol')])
+  const result = usageSummary(
+    [
+      { id: 'first', computer: 'Mac', tasks: [work] },
+      { id: 'second', computer: 'Mac', tasks: [work] },
+    ],
+    0,
+  )
+  expect(result.tasks).toHaveLength(2)
+  expect(result.accounts).toHaveLength(2)
+  expect(result.total.turns).toBe(2)
 })

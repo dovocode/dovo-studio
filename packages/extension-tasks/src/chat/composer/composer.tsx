@@ -12,7 +12,8 @@ import { useAttachments } from './use-attachments'
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { useComposerDraft } from './use-composer-draft'
 import { ComposerCommandDialog } from './composer-command-dialog'
-import { useFileMentions, type ComposerCommandId } from './file-mentions'
+import type { ComposerCommandId } from './file-mentions'
+import { ComposerEditor } from './composer-editor'
 import { SavedPromptsDialog } from '../../dialogs/saved-prompts-dialog'
 import { REVIEW_PROMPT, contextMeter, taskResources } from '@dovo/protocol'
 import { ContextMeter } from '../thread/context-meter'
@@ -29,7 +30,6 @@ import {
   Button,
   IconButton,
   PromptInput,
-  PromptInputTextarea,
   PromptInputFooter,
   PromptInputTools,
   PromptInputSubmit,
@@ -64,11 +64,8 @@ export function Composer({
   const sendingRequest = useRef(false)
   const attachments = useAttachments(task)
   const composerDraft = useComposerDraft(task)
-  const draft = composerDraft.text
   const setDraft = composerDraft.update
   const [submittedText, setSubmittedText] = useState<string | null>(null)
-  const visibleDraft =
-    submitBusy && submittedText !== null && draft.trim() === submittedText ? '' : draft
   const input = useRef<HTMLTextAreaElement>(null)
   const insertedReference = useRef<string | null>(null)
   const insertedAnswer = useRef<string | null>(null)
@@ -157,24 +154,11 @@ export function Composer({
       workspace.repositories,
     ],
   )
-  const mentions = useFileMentions({
-    taskId: task.id,
-    draft,
-    setDraft,
-    input,
-    resources,
-    // A draft has no agent session or turns yet, so commands start with the second message.
-    onCommand:
-      task.messages.length || task.queue?.length || task.turns?.length ? runCommand : undefined,
-    prompts: workspace.repositories.find((repository) => repository.id === task.repositoryId)
-      ?.prompts,
-    onManagePrompts: task.repositoryId ? () => setManagingPrompts(true) : undefined,
-  })
   const [managingPrompts, setManagingPrompts] = useState(false)
   const pendingQuestion = !!snapshot?.questions.some(
     (question) => question.taskId === task.id && question.prompt.blocking !== false,
   )
-  const hasInput = !!draft.trim() || attachments.files.length > 0
+  const hasInput = composerDraft.hasText || attachments.files.length > 0
   const attempt = useRef<{
     id: string
     text: string
@@ -224,7 +208,7 @@ export function Composer({
     }
   }
   const send = async (mode: 'queue' | 'steer' = 'queue') => {
-    const text = draft.trim()
+    const text = composerDraft.controller.text.trim()
     const attachmentIds = attachments.files.map((f) => f.id)
     if (
       (!text && !attachmentIds.length) ||
@@ -374,24 +358,26 @@ export function Composer({
             ))}
           </div>
         )}
-        {!submitBusy && mentions.menu}
-        <PromptInputTextarea
-          ref={input}
+        <ComposerEditor
+          controller={composerDraft.controller}
+          taskId={task.id}
+          input={input}
+          resources={resources}
+          prompts={
+            workspace.repositories.find((repository) => repository.id === task.repositoryId)
+              ?.prompts
+          }
+          onCommand={
+            task.messages.length || task.queue?.length || task.turns?.length
+              ? runCommand
+              : undefined
+          }
+          onManagePrompts={task.repositoryId ? () => setManagingPrompts(true) : undefined}
           autoFocus={firstMessage}
-          aria-label="Message task"
-          data-task-id={task.id}
-          aria-autocomplete="list"
-          aria-expanded={mentions.open && !submitBusy}
-          className={cn('min-h-24 max-h-64 px-4 pt-4 pb-2', pendingQuestion && 'hidden')}
-          value={visibleDraft}
-          disabled={machineMoving || task.archived || pendingQuestion}
-          readOnly={submitBusy}
-          onKeyDown={mentions.onKeyDown}
-          onSelect={mentions.track}
-          onChange={(e) => {
-            setDraft(e.target.value)
-            mentions.track()
-          }}
+          hidden={pendingQuestion}
+          disabled={machineMoving || !!task.archived || pendingQuestion}
+          submitBusy={submitBusy}
+          submittedText={submittedText}
           placeholder={
             task.archived
               ? 'Reopen this task to continue'
@@ -453,7 +439,7 @@ export function Composer({
                     stopping ||
                     attachments.busy ||
                     task.archived ||
-                    (!draft.trim() && !attachments.files.length)
+                    (!composerDraft.hasText && !attachments.files.length)
                   }
                   onClick={() => void send(other)}
                 >
@@ -494,7 +480,7 @@ export function Composer({
                         : 'Save message to task'
                 }
                 disabled={
-                  (!draft.trim() && !attachments.files.length) ||
+                  (!composerDraft.hasText && !attachments.files.length) ||
                   sending ||
                   stopping ||
                   attachments.busy ||

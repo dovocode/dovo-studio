@@ -64,7 +64,9 @@ export function TaskContextMenu({
   onTemplate,
   onDeselect,
   onError,
+  selectionMenu,
 }: {
+  selectionMenu?: ReactNode
   entry: TaskEntry
   selected: boolean
   busy: boolean
@@ -134,29 +136,43 @@ export function TaskContextMenu({
       }}
     />
   )
+  const trigger = (
+    <ContextMenu.Trigger asChild>
+      <div
+        className="min-w-0 flex-1"
+        tabIndex={!source.online ? 0 : undefined}
+        onKeyDown={(event) => {
+          if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+          event.preventDefault()
+          const rect = event.currentTarget.getBoundingClientRect()
+          event.currentTarget.dispatchEvent(
+            new MouseEvent('contextmenu', {
+              bubbles: true,
+              clientX: rect.left + 20,
+              clientY: rect.top + 20,
+            }),
+          )
+        }}
+      >
+        {children}
+      </div>
+    </ContextMenu.Trigger>
+  )
+  if (selectionMenu)
+    return (
+      <ContextMenu.Root>
+        {trigger}
+        <ContextMenu.Portal>
+          <ContextMenu.Content className={menuClass} collisionPadding={8}>
+            {selectionMenu}
+          </ContextMenu.Content>
+        </ContextMenu.Portal>
+      </ContextMenu.Root>
+    )
   return (
     <>
       <ContextMenu.Root>
-        <ContextMenu.Trigger asChild>
-          <div
-            className="min-w-0 flex-1"
-            tabIndex={!source.online ? 0 : undefined}
-            onKeyDown={(event) => {
-              if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
-              event.preventDefault()
-              const rect = event.currentTarget.getBoundingClientRect()
-              event.currentTarget.dispatchEvent(
-                new MouseEvent('contextmenu', {
-                  bubbles: true,
-                  clientX: rect.left + 20,
-                  clientY: rect.top + 20,
-                }),
-              )
-            }}
-          >
-            {children}
-          </div>
-        </ContextMenu.Trigger>
+        {trigger}
         <ContextMenu.Portal>
           <ContextMenu.Content
             className={menuClass}

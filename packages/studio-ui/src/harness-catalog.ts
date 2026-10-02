@@ -1,3 +1,4 @@
+import { createModelLabels } from './model-labels'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import {
@@ -6,6 +7,13 @@ import {
   type TaskHarness,
   type ModelCatalog,
 } from '@dovo/studio-core'
+const modelLabels = (() => {
+  try {
+    return createModelLabels(localStorage)
+  } catch {
+    return createModelLabels()
+  }
+})()
 const cachedCatalogs = new Map<string, { value: ModelCatalog; expires: number }>()
 export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
   const { request, connected, connection } = useWorkspace()
@@ -58,6 +66,7 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
     )
       .then((value) => {
         if (!stopped) {
+          modelLabels.save(connection?.address, harness, value)
           cachedCatalogs.delete(key)
           cachedCatalogs.set(key, { value, expires: Date.now() + 5 * 60_000 })
           if (cachedCatalogs.size > 64) {
@@ -93,7 +102,11 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
     key,
   ])
   return {
-    catalog: catalog?.key === key ? catalog.value : null,
+    catalog: catalog?.key === key ? catalog.value : (cachedCatalogs.get(key)?.value ?? null),
+    modelName:
+      (catalog?.key === key ? catalog.value : cachedCatalogs.get(key)?.value)?.models.find(
+        (item) => item.id === model,
+      )?.name ?? modelLabels.get(connection?.address, harness),
     error,
     loading,
   }

@@ -1,3 +1,4 @@
+import { formatTurnDuration } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import type { TaskTurn } from '@dovo/studio-core'
@@ -23,7 +24,7 @@ export function TurnLabel({ turn }: { turn: TaskTurn }) {
           : turn.status === 'cancelled'
             ? 'Stopped after'
             : 'Worked for'}{' '}
-      {seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`}
+      {formatTurnDuration(seconds * 1000, turn.status === 'running')}
     </span>
   )
 }

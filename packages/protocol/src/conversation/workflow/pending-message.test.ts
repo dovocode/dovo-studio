@@ -5,6 +5,7 @@ import {
   visiblePendingMessage,
   pendingMessageDestination,
   pendingMessageQueue,
+  startingConversationMessage,
   type PendingMessage,
 } from './pending-message'
 
@@ -60,4 +61,28 @@ it('routes active follow-ups directly into the queue and preserves acknowledgeme
   expect(pendingMessageQueue({ ...task, queue: preview }, pending)).toEqual(preview)
   expect(pendingMessageQueue({ ...task, messages: [pending.message] }, pending)).toEqual([first])
   expect(pendingMessageQueue(task, { ...pending, destination: 'thread' })).toEqual([first])
+})
+
+it('presents the first accepted message in the thread throughout startup', () => {
+  const first = { id: 'first', role: 'user' as const, text: 'Build it', createdAt: 'now' }
+  const task = { messages: [], turns: [], queue: [first], status: 'draft' as const }
+  expect(startingConversationMessage(task)).toBe(first)
+  expect(startingConversationMessage({ ...task, status: 'running', runPhase: 'preparing' })).toBe(
+    first,
+  )
+  expect(startingConversationMessage({ ...task, messages: [first], queue: [] })).toBeUndefined()
+})
+it('keeps paused, failed and follow-up inputs in the queue', () => {
+  const first = { id: 'first', role: 'user' as const, text: 'Build it', createdAt: 'now' }
+  const task = {
+    messages: [],
+    queue: [first],
+    status: 'running' as const,
+    runPhase: 'preparing' as const,
+  }
+  expect(startingConversationMessage({ ...task, queuePaused: true })).toBeUndefined()
+  expect(startingConversationMessage({ ...task, status: 'failed' })).toBeUndefined()
+  expect(
+    startingConversationMessage({ ...task, messages: [{ ...first, id: 'previous' }] }),
+  ).toBeUndefined()
 })

@@ -70,3 +70,16 @@ test('failed clear persistence still consumes text and cleanup retries the empty
   draft.flush()
   expect(write).toHaveBeenLastCalledWith('')
 })
+
+test('subscriptions publish edits, accepted clears and external changes, and detach on cleanup', () => {
+  vi.useFakeTimers()
+  const draft = createComposerDraft('', vi.fn<(text: string) => void>())
+  const seen: string[] = []
+  const detach = draft.subscribe(() => seen.push(draft.text))
+  draft.update('Send this')
+  draft.accept('Send this')
+  draft.receive('External draft')
+  detach()
+  draft.update('After cleanup')
+  expect(seen).toEqual(['Send this', '', 'External draft'])
+})

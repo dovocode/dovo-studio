@@ -38,3 +38,17 @@ export function pendingMessageQueue(
     { ...visible.message, role: 'user', createdAt: visible.message.createdAt ?? '' },
   ]
 }
+
+/** The first accepted input is the conversation starter while its checkout is prepared. */
+export function startingConversationMessage(
+  task: Pick<Task, 'messages' | 'turns' | 'queue' | 'queuePaused' | 'status' | 'runPhase'>,
+) {
+  if (
+    task.messages.length ||
+    task.turns?.length ||
+    task.queuePaused ||
+    (task.status !== 'draft' && !(task.status === 'running' && task.runPhase === 'preparing'))
+  )
+    return undefined
+  return task.queue?.[0]
+}

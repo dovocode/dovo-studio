@@ -48,3 +48,11 @@ it('clears the visible submitted text immediately while retaining it for failure
   expect(sendingDraft('Another follow-up', pending)).toBe('Another follow-up')
   expect(visibleMobileSend({ ...task, id: 'another-thread' }, pending)).toBeNull()
 })
+
+it('keeps the first accepted input out of the visible queue during preparation', () => {
+  const starting = { ...task, runPhase: 'preparing' as const, queue: [pending.message] }
+  expect(pendingQueue(starting, pending)).toEqual([])
+  expect(pendingQueue({ ...starting, queuePaused: true }, pending)).toEqual([pending.message])
+  const next = { ...pending.message, id: 'next', text: 'Follow up' }
+  expect(pendingQueue({ ...starting, queue: [pending.message, next] }, null)).toEqual([next])
+})

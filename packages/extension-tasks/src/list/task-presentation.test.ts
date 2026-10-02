@@ -90,7 +90,7 @@ it('keeps input, failure, active work, stopped, snoozed and settled states ahead
       false,
       now,
     ).compactLabel,
-  ).toBe('Working 10m 0s')
+  ).toBe('Working 10m')
   expect(
     taskPresentation(
       {
@@ -139,8 +139,8 @@ it('does not invent unread completion for legacy done tasks without a completed 
   })
 })
 it('shows active duration and input state without replacing either', () => {
-  expect(taskPresentation(task('running'), false, now).label).toBe('Working · 10m 0s')
-  expect(taskPresentation(task('running'), true, now).label).toBe('Needs input · 10m 0s')
+  expect(taskPresentation(task('running'), false, now).label).toBe('Working · 10m')
+  expect(taskPresentation(task('running'), true, now).label).toBe('Needs input · 10m')
 })
 it('retains settled and snoozed states and handles drafts without turn timestamps', () => {
   expect(
@@ -182,4 +182,19 @@ it('shows change capture separately from provider work', () => {
     state: 'Saving changes',
     compactLabel: 'Saving changes',
   })
+})
+
+it('shows seconds only below one minute and rounds down thereafter', () => {
+  const running = task('running')
+  const start = Date.parse(running.turns![0]!.startedAt)
+  for (const [seconds, time] of [
+    [0, '0s'],
+    [59, '59s'],
+    [60, '1m'],
+    [119, '1m'],
+    [3599, '59m'],
+    [3600, '1h 0m'],
+    [3661, '1h 1m'],
+  ] as const)
+    expect(taskPresentation(running, false, start + seconds * 1000).time).toBe(time)
 })

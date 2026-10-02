@@ -6,6 +6,7 @@ import {
   taskPreparation,
   visiblePendingMessage,
   pendingMessageQueue,
+  startingConversationMessage,
   type PendingMessage,
 } from '@dovo/protocol'
 import { MessageQueue } from '../chat/thread/message-queue'
@@ -54,17 +55,27 @@ export function TaskConversation({
     [id, messages, queue, pending],
   )
   const threadPending = visiblePending?.destination === 'queue' ? null : visiblePending
-  const queueTask = { ...task, queue: pendingMessageQueue(task, pending) }
+  const startingMessage = startingConversationMessage(task)
+  const queueTask = {
+    ...task,
+    queue: pendingMessageQueue(task, pending).filter(
+      (message) => message.id !== startingMessage?.id,
+    ),
+  }
   const displayedTask = useMemo(
     () => ({
       id,
-      messages: threadPending ? [...messages, threadPending.message] : messages,
+      messages: startingMessage
+        ? [...messages, startingMessage]
+        : threadPending
+          ? [...messages, threadPending.message]
+          : messages,
       queue,
       turns,
       status,
       compactions,
     }),
-    [id, messages, queue, turns, status, compactions, threadPending],
+    [id, messages, queue, turns, status, compactions, threadPending, startingMessage],
   )
   const viewed = useTaskViewed(task, visible)
   const preparation = taskPreparation(task)

@@ -6,6 +6,8 @@ export function createComposerDraft(
   write: (text: string) => void,
   onError: (cause: unknown) => void = () => {},
 ) {
+  const listeners = new Set<() => void>()
+  const publish = () => listeners.forEach((listener) => listener())
   let text = initial
   let observed = initial
   let dirty = false
@@ -22,12 +24,19 @@ export function createComposerDraft(
     dirty = false
   }
   return {
+    subscribe: (listener: () => void) => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
     get text() {
       return text
     },
     update(value: string) {
       text = value
       dirty = true
+      publish()
       cancel()
       timer = setTimeout(() => {
         try {
@@ -43,12 +52,14 @@ export function createComposerDraft(
       if (!dirty && !consumed.has(value.trim()))
         text = reconcileComposerDraft(text, text, value, null, observed)
       observed = value
+      publish()
       return text
     },
     accept(submitted: string) {
       consumed.add(submitted.trim())
       cancel()
       if (text.trim() === submitted.trim()) text = ''
+      publish()
       dirty = true
       flush()
       return text

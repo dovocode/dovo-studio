@@ -1,3 +1,4 @@
+import { formatTurnDuration } from '@dovo/protocol'
 import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { useEffect, type PropsWithChildren } from 'react'
@@ -55,11 +56,7 @@ export function ConversationWorkGroup({
         ),
       )
     : 0
-  const duration = turn?.finishedAt
-    ? seconds >= 60
-      ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-      : `${seconds}s`
-    : undefined
+  const duration = turn?.finishedAt ? formatTurnDuration(seconds * 1000) : undefined
   const count = endIndex - startIndex + 1
   return (
     <View>

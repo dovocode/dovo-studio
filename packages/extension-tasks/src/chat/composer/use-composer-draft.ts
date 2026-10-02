@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type SetStateAction } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore, type SetStateAction } from 'react'
 import { updateTask, useWorkspace, type Task } from '@dovo/studio-core'
 import { createComposerDraft } from './composer-draft'
 
@@ -20,7 +20,11 @@ export function useComposerDraft(task: Task) {
       report,
     ),
   )
-  const [text, setText] = useState(controller.text)
+  const hasText = useSyncExternalStore(
+    controller.subscribe,
+    () => !!controller.text.trim(),
+    () => !!controller.text.trim(),
+  )
   const flush = () => {
     try {
       controller.flush()
@@ -31,7 +35,7 @@ export function useComposerDraft(task: Task) {
     }
   }
   useEffect(() => {
-    setText(controller.receive(task.draft))
+    controller.receive(task.draft)
   }, [controller, task.draft])
   useEffect(
     () => () => {
@@ -46,7 +50,7 @@ export function useComposerDraft(task: Task) {
   const update = useCallback(
     (value: SetStateAction<string>) => {
       const next = typeof value === 'function' ? value(controller.text) : value
-      setText(controller.update(next))
+      controller.update(next)
     },
     [controller],
   )
@@ -57,15 +61,13 @@ export function useComposerDraft(task: Task) {
         setError('')
       } catch (cause) {
         report(cause)
-      } finally {
-        // Delivery succeeded even if persisting the cleared draft must be retried.
-        setText(controller.text)
       }
     },
     [controller, report],
   )
   return {
-    text,
+    controller,
+    hasText,
     error,
     update,
     accept,

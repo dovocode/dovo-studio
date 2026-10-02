@@ -5,7 +5,19 @@ import { TaskLifecycleActions } from '../detail/task-lifecycle-actions'
 import { isSnoozed } from './task-priority'
 import { taskPresentation } from './task-presentation'
 import {
+  Archive,
   Bot,
+  Clock,
+  CloudOff,
+  CircleX,
+  CircleStop,
+  Eye,
+  FilePenLine,
+  GitFork,
+  MessageCircleQuestion,
+  Moon,
+  Save,
+  type LucideIcon,
   CircleCheck,
   CircleDashed,
   FolderGit2,
@@ -18,9 +30,24 @@ import { memo } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
 import { Button, cn, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
 import type { TaskSource } from './task-collection'
+const statusIcons: Record<string, LucideIcon> = {
+  Working: CircleDashed,
+  Done: CircleCheck,
+  Finished: CircleCheck,
+  Failed: CircleX,
+  Stopped: CircleStop,
+  Snoozed: Moon,
+  Settled: CircleCheck,
+  Archived: Archive,
+  Draft: FilePenLine,
+  Review: Eye,
+  'Needs input': MessageCircleQuestion,
+  'Saving changes': Save,
+}
 function TaskRowView({
   task,
   selected,
+  multiSelected = false,
   onSelect,
   now,
   source,
@@ -29,6 +56,7 @@ function TaskRowView({
 }: {
   task: Task
   selected: boolean
+  multiSelected?: boolean
   onSelect: () => void
   now: number
   source: TaskSource
@@ -55,7 +83,10 @@ function TaskRowView({
   const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
   const presentation = taskPresentation(task, !!needsInput, now)
   const status = !source.online && source.runtimeId ? 'Offline · Cached' : presentation.label
-  const compactStatus = !source.online && source.runtimeId ? 'Offline' : presentation.compactLabel
+  const offline = !source.online && !!source.runtimeId
+  const compactStatus = offline ? 'Offline' : presentation.compactLabel
+  const StatusIcon = offline ? CloudOff : (statusIcons[presentation.state] ?? CircleDashed)
+  const showingTime = !offline && presentation.compactLabel !== presentation.state
   const statusDetail = [
     status,
     Number.isFinite(finished) ? `Finished ${formatDateTime(finished)}` : '',
@@ -79,7 +110,7 @@ function TaskRowView({
             aria-current={selected ? 'true' : undefined}
             className={cn(
               'mb-1 h-auto min-h-[72px] w-full min-w-0 flex-col items-stretch gap-1 whitespace-normal rounded-xl border border-transparent px-2.5 py-2 text-left font-normal',
-              selected
+              selected || multiSelected
                 ? 'border-border/50 bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
                 : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
             )}
@@ -97,22 +128,22 @@ function TaskRowView({
               <span className="min-w-0 flex-1 truncate" title={`${statusDetail} · ${agentDetail}`}>
                 {repository?.name ?? 'No project'}
               </span>
+              {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
+              {task.execution === 'worktree' && (
+                <GitFork className="size-3 shrink-0" aria-label="Worktree checkout" />
+              )}
               <span
                 className={cn(
                   'flex shrink-0 items-center gap-1 text-xs',
-                  presentation.state === 'Working' && 'text-sky-400',
-                  presentation.state === 'Done' && 'text-emerald-400',
-                  presentation.state === 'Failed' && 'text-destructive',
+                  !offline && presentation.state === 'Working' && 'text-sky-400',
+                  !offline && presentation.state === 'Done' && 'text-emerald-400',
+                  !offline && presentation.state === 'Failed' && 'text-destructive',
                 )}
               >
-                {presentation.state === 'Working' && <CircleDashed className="size-3.5" />}
-                {presentation.state === 'Done' && <CircleCheck className="size-3.5" />}
+                <StatusIcon className="size-3.5" aria-hidden="true" />
+                {showingTime && <Clock className="size-3" aria-hidden="true" />}
                 {compactStatus}
               </span>
-              {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-              {task.execution === 'worktree' && (
-                <GitBranch className="size-3 shrink-0" aria-label="Worktree checkout" />
-              )}
             </span>
             <span
               className={cn(
@@ -185,7 +216,10 @@ function TaskRowView({
               </p>
             ))}
             {isSnoozed(task, now) && (
-              <p>Snoozed until {formatDateTime(task.snoozedUntil ?? now)}</p>
+              <p className="flex items-center gap-2">
+                <Moon className="size-3 shrink-0" aria-hidden="true" />
+                Snoozed until {formatDateTime(task.snoozedUntil ?? now)}
+              </p>
             )}
             <p>
               {terminals} terminal {terminals === 1 ? 'session' : 'sessions'} running

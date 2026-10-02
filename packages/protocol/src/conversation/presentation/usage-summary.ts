@@ -1,5 +1,8 @@
 import type { Task } from '../../workspace.js'
 
+export type UsageTask = Pick<Task, 'id' | 'title' | 'example' | 'turns'>
+export type UsageSource = { id?: string; computer: string; tasks: readonly UsageTask[] }
+
 export type UsageRow = {
   key: string
   label: string
@@ -36,7 +39,7 @@ const empty = (key: string, label: string, detail?: string): UsageRow => ({
 /** Time, turns and tokens of agent turns that started since `since`, across computers, per
  * model and per task (busiest first). */
 export function usageSummary(
-  sources: readonly { computer: string; tasks: readonly Task[] }[],
+  sources: readonly UsageSource[],
   since: number,
   now = Date.now(),
 ): UsageSummary {
@@ -53,10 +56,10 @@ export function usageSummary(
         const finished = turn.finishedAt ? Date.parse(turn.finishedAt) : now
         const duration = Number.isFinite(finished) ? Math.max(0, finished - started) : 0
         const modelKey = `${turn.provider}\u0000${turn.model}`
-        const taskKey = `${source.computer}\u0000${task.id}`
+        const taskKey = `${source.id ?? source.computer}\u0000${task.id}`
         const accountKey = JSON.stringify([
           turn.provider,
-          turn.usageAccount?.id ?? `unknown:${source.computer}:${turn.agentId}`,
+          turn.usageAccount?.id ?? `unknown:${source.id ?? source.computer}:${turn.agentId}`,
         ])
         const rows = [
           accounts.get(accountKey) ??
@@ -99,6 +102,70 @@ export function usageSummary(
     accounts: [...accounts.values()].sort(busiest),
     models: [...models.values()].sort(busiest),
     tasks: [...tasks.values()].sort(busiest).slice(0, 10),
+  }
+}
+
+/** Reuse totals when streaming changes messages or tools, but not usage inputs. */
+export function createUsageSummary() {
+  let previous:
+    | { sources: UsageSource[]; since: number; now: number; summary: UsageSummary }
+    | undefined
+  const sameTurns = (a: UsageTask['turns'], b: UsageTask['turns']) =>
+    a === b ||
+    (a?.length === b?.length &&
+      (a ?? []).every((turn, index) => {
+        const other = b?.[index]
+        return (
+          other !== undefined &&
+          turn.startedAt === other.startedAt &&
+          turn.finishedAt === other.finishedAt &&
+          turn.status === other.status &&
+          turn.provider === other.provider &&
+          turn.model === other.model &&
+          turn.agentId === other.agentId &&
+          turn.tokens === other.tokens &&
+          turn.estimatedCostUsd === other.estimatedCostUsd &&
+          turn.usageAccount?.id === other.usageAccount?.id &&
+          turn.usageAccount?.label === other.usageAccount?.label &&
+          turn.usageAccount?.subscription === other.usageAccount?.subscription
+        )
+      }))
+  return (sources: readonly UsageSource[], since: number, now = Date.now()) => {
+    if (
+      previous &&
+      previous.since === since &&
+      previous.now === now &&
+      sources.length === previous.sources.length &&
+      sources.every((source, index) => {
+        const old = previous?.sources[index]
+        return (
+          old &&
+          source.id === old.id &&
+          source.computer === old.computer &&
+          source.tasks.length === old.tasks.length &&
+          source.tasks.every(
+            (task, i) =>
+              task.id === old.tasks[i]?.id &&
+              task.title === old.tasks[i]?.title &&
+              task.example === old.tasks[i]?.example &&
+              sameTurns(task.turns, old.tasks[i]?.turns),
+          )
+        )
+      })
+    )
+      return previous.summary
+    const summary = usageSummary(sources, since, now)
+    previous = {
+      since,
+      now,
+      summary,
+      sources: sources.map((source) => ({
+        id: source.id,
+        computer: source.computer,
+        tasks: source.tasks.map(({ id, title, example, turns }) => ({ id, title, example, turns })),
+      })),
+    }
+    return summary
   }
 }
 

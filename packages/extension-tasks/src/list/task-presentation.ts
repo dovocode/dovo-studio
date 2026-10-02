@@ -1,3 +1,4 @@
+import { formatTurnDuration } from '@dovo/protocol'
 import { hasUnviewedTaskCompletion, type Task } from '@dovo/studio-core'
 import { isSnoozed } from './task-priority'
 export function taskPresentation(task: Task, needsInput: boolean, now: number) {
@@ -11,11 +12,7 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
   const time = !Number.isFinite(date)
     ? ''
     : elapsed
-      ? seconds < 60
-        ? `${seconds}s`
-        : seconds < 3600
-          ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-          : `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
+      ? formatTurnDuration(seconds * 1000)
       : seconds < 60
         ? 'just now'
         : seconds < 3600

@@ -14,7 +14,7 @@ import { RegistryContext, useAtomValue } from '@effect-atom/atom-react'
 import { applicationState } from '@dovo/client-runtime'
 import { AssistantRuntimeProvider } from '@assistant-ui/react-native'
 import { useExternalStoreRuntime } from '@assistant-ui/core/react'
-import { type PendingMessage, type Task } from '@dovo/protocol'
+import { startingConversationMessage, type PendingMessage, type Task } from '@dovo/protocol'
 import { useConversationActions } from './use-actions'
 import { useToolActivity } from './use-tool-activity'
 import { createConversationMessages, convertConversationMessage } from './messages'
@@ -151,6 +151,7 @@ export function ConversationProvider({
   }, [task.id, task.messages, task.queue, actions.pendingMessage])
   const projectMessages = useMemo(() => createConversationMessages(), [])
   const { id, status, turns, compactions, messages: taskMessages } = task
+  const startingMessage = startingConversationMessage(task)
   const messages = useMemo(() => {
     return projectMessages(
       {
@@ -158,7 +159,11 @@ export function ConversationProvider({
         status,
         turns,
         compactions,
-        messages: pendingMessage ? [...taskMessages, pendingMessage.message] : taskMessages,
+        messages: startingMessage
+          ? [...taskMessages, startingMessage]
+          : pendingMessage
+            ? [...taskMessages, pendingMessage.message]
+            : taskMessages,
       },
       activity.events,
     )
@@ -169,6 +174,7 @@ export function ConversationProvider({
     turns,
     compactions,
     taskMessages,
+    startingMessage,
     activity.events,
     pendingMessage,
   ])

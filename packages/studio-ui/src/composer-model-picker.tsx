@@ -118,6 +118,7 @@ export function ComposerModelPicker({
           }
         : { ...defaultTaskHarness(activeProvider), permission: value.permission }
   const { catalog, loading, error } = useHarnessCatalog(selectedHarness, open && mode === 'models')
+  const selectedCatalog = useHarnessCatalog(value, true)
   const listId = useId()
   const items: PickerItem[] = !open
     ? []
@@ -266,9 +267,7 @@ export function ComposerModelPicker({
           />
           <span className="truncate">
             {selectedAgent && `${selectedAgent.name} · `}
-            {(activeProvider === value.provider
-              ? catalog?.models.find((model) => model.id === value.model)?.name
-              : undefined) ||
+            {selectedCatalog.modelName ||
               value.model ||
               acpHarnessName(value, installations) ||
               providers[value.provider].short}

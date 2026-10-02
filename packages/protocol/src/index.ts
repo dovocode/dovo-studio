@@ -100,6 +100,7 @@ export {
 export {
   visiblePendingMessage,
   pendingMessageDestination,
+  startingConversationMessage,
   pendingMessageQueue,
   type PendingMessage,
 } from './conversation/workflow/pending-message.js'
@@ -138,3 +139,5 @@ export {
 } from './runtime/connection/live-sync.js'
 export * from './conversation/mcp-apps.js'
 export * from './conversation/mcp-app-downloads.js'
+
+export * from './conversation/presentation/turn-duration.js'

@@ -1,3 +1,4 @@
+import { formatTurnDuration } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
 import { CheckpointFiles } from './components/checkpoint-files'
 import {
@@ -203,7 +204,7 @@ function WorkingIndicator({ turn }: { turn: TaskTurn }) {
     return () => clearInterval(timer)
   }, [])
   const seconds = Math.max(0, Math.floor((now - Date.parse(turn.startedAt)) / 1000))
-  const duration = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+  const duration = formatTurnDuration(seconds * 1000, true)
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
       <ActivityIndicator size="small" color={colors.muted} />
@@ -294,7 +295,7 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
     0,
     Math.round((Date.parse(turn.finishedAt ?? turn.startedAt) - Date.parse(turn.startedAt)) / 1000),
   )
-  const duration = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+  const duration = formatTurnDuration(seconds * 1000)
   const label =
     turn.status === 'running'
       ? 'Turn in progress'
