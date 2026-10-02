@@ -1,3 +1,5 @@
+import { useCachedTask } from '@dovo/studio-core'
+import { watchRuntimeTask } from '@dovo/protocol'
 import type { Task } from '@dovo/protocol'
 import { PullDetail } from '@dovo/extension-scm/pull-detail'
 import { threadPullPreview } from './detail/thread-pull-preview'
@@ -73,13 +75,14 @@ export default function TasksView({ entityId }: StudioViewProps) {
       '',
   )
   const [deselected, setDeselected] = useApplicationState(false)
-  const task = deselected
+  const selectedTask = deselected
     ? undefined
     : (localTasks.find((t) => t.id === selectedId) ??
       (entityId
         ? undefined
         : (localTasks.find((t) => !t.archived && !t.archivedAt) ??
           localTasks.find((t) => !t.archivedAt))))
+  const { task, loaded: historyLoaded, error: historyError } = useCachedTask(selectedTask)
   const hasDiff =
     !!task &&
     (task.files.length > 0 ||
@@ -101,10 +104,23 @@ export default function TasksView({ entityId }: StudioViewProps) {
 
   // Split view: a second task from the connected computer, next to the selected one.
   const [splitId, setSplitId] = useApplicationState('')
-  const splitTask =
+  const splitSummary =
     !compact && splitId && splitId !== task?.id
       ? localTasks.find((item) => item.id === splitId && !item.archivedAt)
       : undefined
+  const {
+    task: splitTask,
+    loaded: splitHistoryLoaded,
+    error: splitHistoryError,
+  } = useCachedTask(splitSummary)
+  useEffect(() => {
+    const connection = store.connection
+    if (!connection) return
+    const stops = [task?.id, splitTask?.id]
+      .filter((id): id is string => !!id)
+      .map((id) => watchRuntimeTask(connection, id))
+    return () => stops.forEach((stop) => stop())
+  }, [store.connection, task?.id, splitTask?.id])
   const [listOpen, setListOpen] = useApplicationState(false)
   const [sidebar, setSidebar] = useApplicationState(true)
   const [toolsVisible, setToolsVisible] = useApplicationState(true)
@@ -738,6 +754,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         minSize={30}
                       >
                         <TaskConversation
+                          historyLoaded={historyLoaded}
+                          historyError={historyError}
                           key={taskCollectionKey(activeRuntimeId, task.id)}
                           task={task}
                           revealMessage={revealMessage}
@@ -1039,6 +1057,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   </header>
                   <div className="min-h-0 flex-1">
                     <TaskConversation
+                      historyLoaded={splitHistoryLoaded}
+                      historyError={splitHistoryError}
                       onPullLink={(url) => openPullPreview(splitTask, url)}
                       key={`split:${splitTask.id}`}
                       task={splitTask}

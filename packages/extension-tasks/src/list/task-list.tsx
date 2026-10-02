@@ -1,3 +1,4 @@
+import { useTaskSearch } from './use-task-search'
 import { flushSync } from 'react-dom'
 import { selectTaskKeys } from './task-selection'
 import { useStudioHost } from '@dovo/studio-core'
@@ -104,6 +105,8 @@ export function TaskList({
     [entries],
   )
   const deferredQuery = useDeferredValue(query)
+  const search = useTaskSearch(entries, deferredQuery)
+  const searchIdentity = JSON.stringify([...search.keys].sort())
   const tasks = useMemo(() => {
     const needle = deferredQuery.toLowerCase()
     return entries
@@ -134,6 +137,7 @@ export function TaskList({
               source.name,
               projectName,
             ].some((text) => text.toLowerCase().includes(needle)) ||
+            search.keys.has(key) ||
             t.messages.some((message) => message.text.toLowerCase().includes(needle))),
       )
       .sort((a, b) =>
@@ -153,7 +157,8 @@ export function TaskList({
           projects,
         ),
       )
-  }, [entries, projectId, filter, deferredQuery, sort, needsInput, projects, now])
+  }, [entries, projectId, filter, deferredQuery, sort, needsInput, projects, now, searchIdentity])
+  const searchError = search.error
   const selectedEntries = entries.filter((entry) => selected.has(entry.key))
   const bulk = async (action: 'archive' | 'reopen' | 'snooze' | 'delete' | 'read' | 'unread') => {
     if (!selectedEntries.length || bulkLock.current) return
@@ -523,9 +528,9 @@ export function TaskList({
           </ChoicePicker>
         </div>
       </details>
-      {(error || actionError) && (
+      {(error || actionError || searchError) && (
         <p role="alert" className="px-3 pb-2 text-xs text-destructive">
-          {error || actionError}
+          {error || actionError || searchError}
         </p>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5" aria-busy={busy}>

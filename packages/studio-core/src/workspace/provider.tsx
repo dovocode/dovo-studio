@@ -1,3 +1,7 @@
+import { writeRuntimeSnapshotCache } from '@dovo/protocol'
+import { RuntimeMutations } from '@dovo/protocol'
+import { browserMutationStorage } from './read-cache'
+import { runtimeSnapshotPath } from '@dovo/protocol'
 import { startRuntimeSync, runtimeSyncOnline } from '@dovo/protocol'
 import { retainWorkspace } from '@dovo/protocol'
 import { recentSnapshot } from '../runtime/recent-snapshot'
@@ -215,6 +219,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const bootstrapped = useRef(false),
     connecting = useRef(0)
   const changingConnection = useRef(false)
+  const [mutationVersion, setMutationVersion] = useApplicationState(0)
+  const [mutations] = useApplicationState(
+    () =>
+      new RuntimeMutations(browserMutationStorage, () =>
+        setMutationVersion((version) => version + 1),
+      ),
+  )
   const [storageLock] = useApplicationState(() => Effect.runSync(Effect.makeSemaphore(1)))
   const [synchronization] = useState(
     () => new WorkspaceSynchronization(setSyncError, undefined, writeWorkspaceOutbox),
@@ -367,7 +378,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               now - previous.writtenAt < 60000
             )
               return
-            yield* cacheFor(entry.profile).writeEffect('snapshot', {
+            yield* writeRuntimeSnapshotCache(cacheFor(entry.profile), {
               snapshot: entry.snapshot,
               lastSeen: entry.lastSeen,
               pulls: entry.pulls,
@@ -519,7 +530,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               (yield* runtimeRequestEffect(
                 profile.connection,
                 profile.connection.address,
-                '/api/snapshot',
+                runtimeSnapshotPath(profile.connection),
                 undefined,
                 snapshotSchema,
                 'GET',
@@ -751,9 +762,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           yield* synchronization.flushEffect()
           yield* check
         }
-        const value = yield* runtimeRequestEffect(
+        const value = yield* mutations.requestEffect(
           profile.connection,
-          profile.connection.address,
           path,
           input,
           schema,
@@ -762,7 +772,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         yield* check
         return value
       }),
-    [assertProfile, synchronization],
+    [assertProfile, synchronization, mutations],
   )
   const readRuntime = useCallback<WorkspaceContextValue['readRuntime']>(
     (profile, path, input, schema, method) =>
@@ -791,18 +801,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (!target) return yield* Effect.fail(new Error('Connect to a runtime first'))
         yield* synchronization.flushEffect()
         yield* check
-        const value = yield* runtimeRequestEffect(
-          target,
-          target.address,
-          path,
-          input,
-          schema,
-          method,
-        )
+        const value = yield* mutations.requestEffect(target, path, input, schema, method)
         yield* check
         return value
       }),
-    [connection, synchronization],
+    [connection, synchronization, mutations],
   )
   const request = useCallback<WorkspaceRequest>(
     (path, input, schema, method) => runClientEffect(requestEffect(path, input, schema, method)),
@@ -818,7 +821,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const value = await runtimeRequest(
       target,
       target.address,
-      '/api/snapshot',
+      runtimeSnapshotPath(target),
       undefined,
       snapshotSchema,
       'GET',
@@ -845,6 +848,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       synchronization.checkpoint().version !== checkpoint.version
     )
       throw new Error('The workspace changed while backing up. Review changes before reloading.')
+    await runClientEffect(mutations.discardEffect(target))
     await synchronization.discard(checkpoint)
     if (target !== connectionRef.current || attempt !== connecting.current)
       throw new Error('Runtime connection changed while reloading.')
@@ -857,7 +861,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       lastSeen: new Date().toISOString(),
       error: null,
     })
-  }, [adopt, connection, synchronization, updateOverview])
+  }, [adopt, connection, synchronization, updateOverview, mutations])
   const refreshRuntime = useCallback(
     async (profile: RuntimeProfile) => {
       assertProfile(profile)
@@ -866,7 +870,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       snapshotOrder.current.set(profile.id, order)
       let value: RuntimeSnapshot
       try {
-        value = await readRuntime(profile, '/api/snapshot', undefined, snapshotSchema, 'GET')
+        value = await readRuntime(
+          profile,
+          runtimeSnapshotPath(profile.connection),
+          undefined,
+          snapshotSchema,
+          'GET',
+        )
       } catch (error) {
         assertProfile(profile)
         if (snapshotOrder.current.get(profile.id) === order) {
@@ -899,11 +909,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (registryRef.current.activeId === profile.id && synchronization.isCurrent(checkpoint)) {
         setSnapshot(value, profile.connection)
         setConnected(true)
+        void runClientEffect(mutations.recoverEffect(profile.connection)).catch(() => undefined)
         synchronization.clearNetworkError()
         if (synchronization.accepts(checkpoint)) installSnapshot(profile.connection, value)
       }
     },
-    [assertProfile, readRuntime, synchronization, updateOverview, installSnapshot],
+    [assertProfile, readRuntime, synchronization, updateOverview, installSnapshot, mutations],
   )
   const refreshRuntimesEffect = useCallback(
     () =>
@@ -977,13 +988,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     () => runClientEffect(refreshRuntimesEffect()),
     [refreshRuntimesEffect],
   )
+  useEffect(() => {
+    if (!ready) return
+    for (const profile of runtimeRegistry.profiles)
+      void runClientEffect(mutations.recoverEffect(profile.connection)).catch(() => undefined)
+  }, [ready, runtimeRegistry.profiles, mutations])
   const retrySync = useCallback(async () => {
     if (connection !== connectionRef.current) throw new Error('Runtime connection changed')
     failedPresetRequests.current.clear()
     setPresetSyncError(null)
+    if (connection) await runClientEffect(mutations.recoverEffect(connection, true))
     await synchronization.retry()
     await refreshRuntimes()
-  }, [connection, synchronization, refreshRuntimes])
+  }, [connection, synchronization, refreshRuntimes, mutations])
   useEffect(() => {
     if (bootstrapped.current) return
     bootstrapped.current = true
@@ -1145,7 +1162,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             const initial = yield* runtimeRequestEffect(
               localConnection,
               localConnection.address,
-              '/api/snapshot',
+              runtimeSnapshotPath(localConnection),
               undefined,
               snapshotSchema,
               'GET',
@@ -1251,6 +1268,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         snapshotOrder.current.set(id, (snapshotOrder.current.get(id) ?? 0) + 1)
         setSnapshot(value, connection)
         setConnected(true)
+        void runClientEffect(mutations.recoverEffect(connection)).catch(() => undefined)
         synchronization.clearNetworkError()
         if (synchronization.accepts(checkpoint)) installSnapshot(connection, value)
         const profile = registryRef.current.profiles.find(
@@ -1283,7 +1301,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           runtimeRequestEffect(
             connection,
             connection.address,
-            '/api/snapshot',
+            runtimeSnapshotPath(connection),
             undefined,
             snapshotSchema,
             'GET',
@@ -1299,6 +1317,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             return
           setSnapshot(value, connection)
           setConnected(true)
+          void runClientEffect(mutations.recoverEffect(connection)).catch(() => undefined)
           synchronization.clearNetworkError()
           if (synchronization.accepts(checkpoint)) installSnapshot(connection, value)
           const profile = registryRef.current.profiles.find(
@@ -1395,7 +1414,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', wake)
       void polling.stop()
     }
-  }, [connection, connect, installSnapshot, synchronization, updateOverview, inputPreview])
+  }, [
+    connection,
+    connect,
+    installSnapshot,
+    synchronization,
+    updateOverview,
+    inputPreview,
+    mutations,
+  ])
   useEffect(() => {
     if (!ready) return
     const polling = startPolling(
@@ -1522,7 +1549,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       connection,
       snapshot,
       connected,
-      syncError: presetSyncError || syncError,
+      syncError:
+        presetSyncError || syncError || (connection ? mutations.status(connection).error : null),
       connect,
       cancelPairing,
       disconnect,
@@ -1538,13 +1566,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refreshRuntime,
       retrySync,
       discardAndReload,
-      pendingSync: synchronization.hasPending(),
+      pendingSync:
+        synchronization.hasPending() || !!(connection && mutations.status(connection).pending),
       readCache,
       readRuntime,
       readRuntimeEffect,
       runtimeReadCache,
     }),
     [
+      mutationVersion,
+      mutations,
       previewTask,
       visibleWorkspace,
       setWorkspace,

@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vite-plus/test'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,6 +25,7 @@ async function fixture() {
   return directory
 }
 afterEach(async () => {
+  vi.unstubAllEnvs()
   for (const directory of directories.splice(0)) {
     await stopServer(directory)
     rmSync(directory, { recursive: true, force: true })
@@ -32,6 +33,7 @@ afterEach(async () => {
 })
 
 it('starts independently, reuses a healthy runtime, and preserves pairing through restart without printing credentials', async () => {
+  vi.stubEnv('DOVO_DESKTOP_DUAL_LISTENER', '1')
   const directory = await fixture()
   const initial = await startServer(directory, entrypoint)
   expect(initial.running).toBe(true)

@@ -72,6 +72,8 @@ export const providerStatusSchema = mutableStruct({
   detail: Schema.String,
 })
 export const snapshotSchema = mutableStruct({
+  /** Present on scoped replicas; only these threads contain authoritative history. */
+  detailTaskIds: Schema.optional(mutableArray(Schema.String)),
   runtimeInstanceId: Schema.optional(Schema.String),
   protocolVersion: Schema.optional(Schema.Number.pipe(Schema.int())),
   runtimeHost: Schema.optional(Schema.String),

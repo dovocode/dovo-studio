@@ -13,6 +13,7 @@ import {
 import type { Schema } from 'effect'
 import type { Services } from '../../services.js'
 import { runtimeSnapshot } from './runtime-snapshot.js'
+import { scopedWorkspace } from './snapshot-overview.js'
 import { snapshotTag } from './body.js'
 
 type ActivityEvent = Schema.Schema.Type<typeof activitySchema>['events'][number]
@@ -26,6 +27,7 @@ type Client = {
   bufferLimit: number
 }
 type View = {
+  taskIds?: readonly string[]
   compact: boolean
   fieldUpdates: boolean
   device: { id: string; owner: boolean }
@@ -49,13 +51,14 @@ export function attachRuntimeSync(
   services: Services,
   compact = false,
   fieldUpdates = false,
+  taskIds?: readonly string[],
 ) {
   let hub = hubs.get(services)
   if (!hub) {
     hub = new RuntimeSync(services)
     hubs.set(services, hub)
   }
-  hub.attach(socket, token, compact, fieldUpdates)
+  hub.attach(socket, token, compact, fieldUpdates, taskIds)
 }
 export async function disposeRuntimeSync(services: Services) {
   const hub = hubs.get(services)
@@ -86,13 +89,24 @@ class RuntimeSync {
     this.projection = undefined
     await Promise.allSettled(pending)
   }
-  attach(socket: WebSocket, token: string, compact: boolean, fieldUpdates: boolean) {
+  attach(
+    socket: WebSocket,
+    token: string,
+    compact: boolean,
+    fieldUpdates: boolean,
+    taskIds?: readonly string[],
+  ) {
     const device = this.services.devices.authenticate(token)
-    const viewId = `${device.id}:${fieldUpdates ? 'fields' : compact ? 'lean' : 'legacy'}`
+    const viewId = JSON.stringify([
+      device.id,
+      fieldUpdates ? 'fields' : compact ? 'lean' : 'legacy',
+      taskIds ? [...taskIds].sort() : null,
+    ])
     let view = this.views.get(viewId)
     if (!view || view.token !== token) {
       view = {
         device,
+        taskIds,
         compact,
         fieldUpdates,
         epoch: randomUUID(),
@@ -269,7 +283,14 @@ class RuntimeSync {
         if (this.projection === projection) this.projection = undefined
       })
     }
-    const common = await this.projection.pending
+    const prepared = await this.projection.pending
+    const common = view.taskIds
+      ? {
+          ...prepared,
+          detailTaskIds: [...view.taskIds],
+          workspace: scopedWorkspace(prepared.workspace, view.taskIds),
+        }
+      : prepared
     const next = view.device.owner
       ? common
       : {

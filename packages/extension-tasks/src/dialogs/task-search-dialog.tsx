@@ -1,8 +1,9 @@
+import { useTaskSearch } from '../list/use-task-search'
 import { useEffect, useMemo, useState } from 'react'
 import { MessageSquare, Search } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle, Input, cn } from '@dovo/studio-ui'
 import type { TaskEntry } from '../list/task-collection'
-import { messageResults, switcherResults } from '../list/task-search'
+import { switcherResults } from '../list/task-search'
 
 export type TaskSearchMode = 'tasks' | 'messages'
 
@@ -27,10 +28,11 @@ export function TaskSearchDialog({
   useEffect(() => {
     if (!mode) setQuery('')
   }, [mode])
+  const search = useTaskSearch(entries, mode === 'messages' ? query : '')
   const results = useMemo(
     () =>
       mode === 'messages'
-        ? messageResults(entries, query).map((hit) => ({
+        ? search.hits.map((hit) => ({
             key: `${hit.entry.key}:${hit.messageId}`,
             entry: hit.entry,
             messageId: hit.messageId,
@@ -44,7 +46,7 @@ export function TaskSearchDialog({
             title: entry.task.title,
             detail: `${entry.projectName} · ${entry.source.name}${entry.task.archivedAt ? ' · Archived' : ''}`,
           })),
-    [entries, query, mode],
+    [entries, query, mode, search.hits],
   )
   const open = (index: number) => {
     const result = results[index]
@@ -62,6 +64,11 @@ export function TaskSearchDialog({
           Type to search, use the arrow keys to choose, and Enter to open. Tab switches between
           tasks and messages.
         </DialogDescription>
+        {(search.error || search.loading) && (
+          <p role="status" className="px-2 text-xs text-muted-foreground">
+            {search.error || 'Searching conversations…'}
+          </p>
+        )}
         <div className="flex items-center gap-2 px-2">
           {mode === 'messages' ? (
             <MessageSquare className="size-4 text-muted-foreground" aria-hidden />

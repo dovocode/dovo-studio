@@ -134,6 +134,8 @@ export * from './runtime/connection/sync.js'
 
 export {
   startRuntimeSync,
+  watchRuntimeTask,
+  runtimeSnapshotPath,
   runtimeSyncOnline,
   watchRuntimeActivity,
 } from './runtime/connection/live-sync.js'
@@ -143,3 +145,9 @@ export * from './conversation/mcp-app-downloads.js'
 export * from './conversation/presentation/turn-duration.js'
 
 export * from './runtime/previews/browser-profiles.js'
+
+export * from './runtime/connection/mutations.js'
+
+export * from './tasks/task-search.js'
+
+export * from './runtime/cache/thread-cache.js'

@@ -24,6 +24,8 @@ import { useTaskViewed } from '../chat/thread/use-task-viewed'
 import { Button } from '@dovo/studio-ui'
 export function TaskConversation({
   task,
+  historyLoaded,
+  historyError,
   onReview,
   onTerminal,
   onBrowser,
@@ -36,6 +38,8 @@ export function TaskConversation({
   onComposerInsertApplied,
 }: {
   task: Task
+  historyLoaded?: boolean
+  historyError?: string
   onReview: () => void
   onTerminal?: (terminalId: string) => void
   onBrowser?: (url: string) => void
@@ -77,7 +81,10 @@ export function TaskConversation({
     }),
     [id, messages, queue, turns, status, compactions, threadPending, startingMessage],
   )
-  const viewed = useTaskViewed(task, visible)
+  const { snapshot } = useWorkspace()
+  const loaded =
+    historyLoaded ?? (!snapshot?.detailTaskIds || snapshot.detailTaskIds.includes(task.id))
+  const viewed = useTaskViewed(task, visible && loaded)
   const preparation = taskPreparation(task)
   const budget = taskBudgetUsage(task)
   const { request, connected } = useWorkspace()
@@ -93,6 +100,19 @@ export function TaskConversation({
       )
       .finally(() => setRetrying(false))
   }
+  if (!loaded)
+    return (
+      <div
+        role="status"
+        className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"
+      >
+        <LoaderCircle className="size-4 animate-spin" />
+        {historyError ||
+          (connected
+            ? 'Loading conversation…'
+            : 'This conversation is not cached. Connect its computer to load it.')}
+      </div>
+    )
   return (
     <div data-task-conversation={task.id} className="flex h-full min-h-0 flex-col">
       <ChatThread

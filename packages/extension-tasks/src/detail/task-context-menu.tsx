@@ -84,7 +84,7 @@ export function TaskContextMenu({
   const store = useWorkspace()
   const { task, source } = entry
   const client = taskActionClient(store, source)
-  const { repository, branch, titlePrompt } = taskRowValues(task, source)
+  const { repository, branch } = taskRowValues(task, source)
   const [pending, setPending] = useApplicationState(false)
   const pendingRef = useRef(false)
   const [error, setError] = useApplicationState('')
@@ -337,13 +337,13 @@ export function TaskContextMenu({
             </ContextMenu.Item>
             <ContextMenu.Item
               className={itemClass}
-              disabled={!canEdit || !titlePrompt || task.status === 'running'}
+              disabled={!canEdit || task.status === 'running'}
               onSelect={() =>
                 void run(async () => {
                   const generated = await client.request(
                     '/api/tasks/title',
                     {
-                      text: titlePrompt,
+                      taskId: task.id,
                     },
                     generatedTitleSchema,
                   )

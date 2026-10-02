@@ -4,6 +4,23 @@ A Dovo runtime owns projects, tasks, Git operations, agent sessions, terminals, 
 SQLite persistence. Desktop, web, and mobile are clients of that runtime. A phone connects directly
 to the host over LAN, Tailscale, NetBird, or an HTTPS reverse proxy; Dovo provides no cloud relay.
 
+The thread list syncs status and editable drafts; opening a conversation subscribes to its history.
+Split panes subscribe to both conversations. Search runs on each connected runtime, so it can find
+messages in threads that have not been opened. Previously opened history stays available in the
+local cache while offline; an uncached thread waits for its host instead of appearing empty.
+
+Desktop and mobile save supported actions before sending them, separately from the read cache.
+Reconnect delivers them in order using persistent action IDs. A lost response returns the runtime's
+saved result instead of repeating an action. If a runtime interruption leaves an action uncertain,
+review the host's current state and discard that saved action before issuing it again. Connection
+status exposes pending actions with retry and discard controls. Older runtimes still accept new
+actions, but must be updated before saved actions can be recovered safely.
+
+Sync uses bounded cursor replay during brief disconnects and a scoped baseline after a restart or
+expired cursor. `node scripts/check-runtime-sync.mjs` (after building the runtime) verifies both
+paths and reports payload sizes. Connections remain direct over HTTP or optional HTTPS, with pairing
+codes and device tokens; no relay or account is required.
+
 Use the background server when work should stay available after closing the desktop app or shell. It
 survives those applications closing, but this command does **not** install a boot service, prevent
 computer sleep, or automatically restart a crashed process.

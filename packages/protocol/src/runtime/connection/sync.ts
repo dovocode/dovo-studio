@@ -129,7 +129,10 @@ export const syncInputSchema = Schema.Union(
     scopes: mutableArray(Schema.String.pipe(Schema.maxLength(200))).pipe(Schema.maxItems(8)),
   }),
 )
-export const syncTicketSchema = mutableStruct({ ticket: Schema.String })
+export const syncTicketSchema = mutableStruct({
+  ticket: Schema.String,
+  format: Schema.optional(Schema.Number),
+})
 export type SyncFrame = Schema.Schema.Type<typeof syncFrameSchema>
 export type SnapshotDelta = Schema.Schema.Type<typeof snapshotDeltaSchema>
 const taskMetadata = ({ messages: _messages, updatedAt: _updatedAt, ...metadata }: Task) => metadata

@@ -95,11 +95,15 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
+      # The macos-15 image defaults to Xcode 16.4; Icon Composer requires 26+.
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
       DOVO_RELEASE_VERSION: ${{ needs.draft.outputs.version }}
       DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-build
+      - name: Verify native macOS icon toolchain
+        run: node scripts/packaging/mac-icon-toolchain.mjs
       - name: Verify Apple signing secrets
         env:
           MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}

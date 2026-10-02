@@ -1,6 +1,6 @@
 import { useApplicationState } from '../state/application-state'
 import { useEffect, type ReactNode } from 'react'
-import { View } from 'react-native'
+import { Alert, View } from 'react-native'
 import { router } from 'expo-router'
 import { runtimeReachability } from '@dovo/protocol'
 import { Text } from '../../ui/content/text'
@@ -25,7 +25,9 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
     : runtime.overviews
   // Only hosts whose requests failed count; a computer still connecting is not offline.
   const unavailable = scoped.filter((entry) => runtimeReachability(entry) === 'offline')
-  const offline = runtime.ready && !!unavailable.length
+  const saved = scoped.filter((entry) => runtime.mutationStatus(entry.profile).pending > 0)
+  const hasSaved = !!saved.length
+  const offline = runtime.ready && (!!unavailable.length || hasSaved)
   const revoked = unavailable.filter((entry) => entry.unauthorized)
   useEffect(() => {
     if (!offline) {
@@ -44,11 +46,13 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
   // Reconnecting cannot fix a revoked pairing; say what will.
   const label = busy
     ? 'Reconnecting…'
-    : revoked.length
-      ? 'Pairing expired · Pair again'
-      : attempted
-        ? `Still ${subject.toLowerCase()}`
-        : `${subject} · Reconnect`
+    : hasSaved && !unavailable.length
+      ? 'Saved actions · Review'
+      : revoked.length
+        ? 'Pairing expired · Pair again'
+        : attempted
+          ? `Still ${subject.toLowerCase()}`
+          : `${subject} · Reconnect`
   const reconnect = () =>
     act(async () => {
       await runtime.refreshAll()
@@ -66,7 +70,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
             ? 'Shows connection details'
             : 'Reconnects. Touch and hold for details'
         }
-        onPress={() => (attempted || revoked.length ? setDetails(true) : reconnect())}
+        onPress={() => (attempted || revoked.length || hasSaved ? setDetails(true) : reconnect())}
         onLongPress={() => setDetails(true)}
       />
       {details && (
@@ -76,6 +80,44 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
               ? 'This phone is no longer paired with a computer below. It was removed on that computer, or the runtime was reset. Pair it again from Devices in Settings.'
               : 'Saved work stays available. Reconnect a computer to send messages or run commands there.'}
           </Text>
+          {saved.map((entry) => {
+            const status = runtime.mutationStatus(entry.profile)
+            return (
+              <View key={`saved:${entry.profile.id}`} style={{ gap: 6 }}>
+                <Text style={styles.title}>
+                  {entry.profile.name} · {status.pending} saved actions
+                </Text>
+                {!!status.error && (
+                  <Text selectable style={styles.error}>
+                    {status.error}
+                  </Text>
+                )}
+                <Action
+                  label="Retry saved actions"
+                  disabled={busy || !entry.connected}
+                  onPress={() => act(() => runtime.retryMutations(entry.profile))}
+                />
+                <Action
+                  label="Discard saved actions"
+                  disabled={busy}
+                  onPress={() =>
+                    Alert.alert(
+                      'Discard saved actions?',
+                      'Actions already applied on the computer will remain applied. Unsent actions will be removed from this phone.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Discard',
+                          style: 'destructive',
+                          onPress: () => act(() => runtime.discardMutations(entry.profile)),
+                        },
+                      ],
+                    )
+                  }
+                />
+              </View>
+            )
+          })}
           {unavailable.map((entry) => (
             <View key={entry.profile.id} style={{ gap: 6 }}>
               <Text style={styles.title}>{entry.profile.name}</Text>

@@ -1,3 +1,4 @@
+import { cachedThread, runtimeSnapshotCacheSchema, watchRuntimeTask } from '@dovo/protocol'
 import {
   canChangeTaskCheckout,
   REVIEW_PROMPT,
@@ -29,7 +30,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Text } from '../../ui/content/text'
 import { type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -52,6 +53,65 @@ import { ProjectInstructions } from './project-instructions'
 import { ReviewFindings } from '../conversation/components/review-findings'
 import { randomUUID } from 'expo-crypto'
 export function TaskDetail({ task, onBack }: { task: Task; onBack: () => void }) {
+  const { profile, snapshot, connected, refresh, readCache } = useRuntime()
+  const { focused } = useNavigation()
+  useEffect(() => {
+    if (profile && focused) return watchRuntimeTask(profile.connection, task.id)
+  }, [profile?.connection, task.id, focused])
+  const loaded = !snapshot?.detailTaskIds || snapshot.detailTaskIds.includes(task.id)
+  const [cacheError, setCacheError] = useState<{
+    cache: typeof readCache
+    id: string
+    error: string
+  } | null>(null)
+  const [cached, setCached] = useState<{ cache: typeof readCache; task: Task } | null>(null)
+  useEffect(() => {
+    if (loaded || !readCache) return
+    let stopped = false
+    void readCache
+      .read('snapshot', runtimeSnapshotCacheSchema)
+      .then((entry) => {
+        const value = entry?.value.snapshot
+        const saved = value?.workspace.tasks.find((item) => item.id === task.id)
+        if (!stopped && saved && (!value?.detailTaskIds || value.detailTaskIds.includes(task.id)))
+          setCached({ cache: readCache, task: saved })
+      })
+      .catch((error: unknown) => {
+        if (!stopped)
+          setCacheError({
+            cache: readCache,
+            id: task.id,
+            error: error instanceof Error ? error.message : String(error),
+          })
+      })
+    return () => {
+      stopped = true
+    }
+  }, [loaded, readCache, task.id])
+  const available = cached?.cache === readCache && cached?.task.id === task.id
+  if (!loaded && !available)
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', gap: 12, padding: 20 }}>
+        <ScreenHeader title={task.title} onBack={onBack} />
+        <ActivityIndicator />
+        <Text style={styles.muted}>
+          {cacheError?.cache === readCache && cacheError.id === task.id
+            ? cacheError.error
+            : connected
+              ? 'Loading conversation…'
+              : 'This conversation is not cached. Connect its computer to load it.'}
+        </Text>
+        <Action label="Retry" onPress={refresh} />
+      </View>
+    )
+  return (
+    <TaskDetailContent
+      task={!loaded && available ? cachedThread(task, cached.task) : task}
+      onBack={onBack}
+    />
+  )
+}
+function TaskDetailContent({ task, onBack }: { task: Task; onBack: () => void }) {
   const { focused, navigate } = useNavigation()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()

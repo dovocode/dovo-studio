@@ -14,9 +14,16 @@ import { Effect, Fiber, type Schema } from 'effect'
 type Events = Schema.Schema.Type<typeof activitySchema>['events']
 type Listener = (events: Events) => void
 type Registration = {
+  tasks: Map<string, number>
   events: Map<string, Events>
   expiry?: ReturnType<typeof setTimeout>
-  cursor?: { snapshot: RuntimeSnapshot; epoch: string; sequence: number; time: number }
+  cursor?: {
+    snapshot: RuntimeSnapshot
+    epoch: string
+    sequence: number
+    time: number
+    tasks: string
+  }
 
   live?: { online: () => boolean; watch: () => void }
   scopes: Map<string, Set<Listener>>
@@ -28,11 +35,38 @@ const registration = (connection: RuntimeConnection) => {
   const id = key(connection)
   let value = registrations.get(id)
   if (!value) {
-    value = { scopes: new Map(), events: new Map() }
+    value = { tasks: new Map(), scopes: new Map(), events: new Map() }
     registrations.set(id, value)
   }
   return value
 }
+/** Reference counted so split panes can share one subscription without dropping each other. */
+export function watchRuntimeTask(connection: RuntimeConnection, taskId: string) {
+  const value = registration(connection)
+  if (!value.tasks.has(taskId) && value.tasks.size >= 8)
+    throw new Error('Open at most eight threads per computer.')
+  value.tasks.set(taskId, (value.tasks.get(taskId) ?? 0) + 1)
+  value.live?.watch()
+  let watching = true
+  return () => {
+    if (!watching) return
+    watching = false
+    const count = value.tasks.get(taskId) ?? 0
+    if (count > 1) value.tasks.set(taskId, count - 1)
+    else value.tasks.delete(taskId)
+    value.live?.watch()
+    if (!value.live && !value.scopes.size && !value.tasks.size && !value.cursor)
+      registrations.delete(key(connection))
+  }
+}
+export function runtimeSnapshotPath(connection: RuntimeConnection | null) {
+  const query = new URLSearchParams({ scope: 'threads' })
+  if (connection)
+    for (const id of registrations.get(key(connection))?.tasks.keys() ?? [])
+      query.append('task', id)
+  return `/api/snapshot?${query}`
+}
+
 export function runtimeSyncOnline(connection: RuntimeConnection | null, scope?: string) {
   const value = connection ? registrations.get(key(connection)) : undefined
   return !!value?.live?.online() && (!scope || [...value.scopes.keys()].slice(0, 8).includes(scope))
@@ -56,7 +90,8 @@ export function watchRuntimeActivity(
       value.events.delete(scope)
     }
     value.live?.watch()
-    if (!value.live && !value.scopes.size && !value.cursor) registrations.delete(key(connection))
+    if (!value.live && !value.scopes.size && !value.tasks.size && !value.cursor)
+      registrations.delete(key(connection))
   }
 }
 /** One stream owned by the selected runtime; existing HTTP mutation/outbox semantics stay intact. */
@@ -74,8 +109,13 @@ export function startRuntimeSync(
   let stopped = false
   let online = false
   let unsupported = false
+  let taskIdentity = JSON.stringify([...value.tasks.keys()].sort())
   const cached =
-    value.cursor && Date.now() - value.cursor.time < 5 * 60 * 1000 ? value.cursor : undefined
+    value.cursor &&
+    value.cursor.tasks === taskIdentity &&
+    Date.now() - value.cursor.time < 5 * 60 * 1000
+      ? value.cursor
+      : undefined
   let epoch: string | undefined = cached?.epoch
   let sequence: number | undefined = cached?.sequence
   let snapshot: RuntimeSnapshot | undefined = cached?.snapshot
@@ -88,6 +128,19 @@ export function startRuntimeSync(
   let request: AbortController | undefined
   const activities = value.events
   const watch = () => {
+    const next = JSON.stringify([...value.tasks.keys()].sort())
+    if (next !== taskIdentity) {
+      taskIdentity = next
+      value.cursor = undefined
+      snapshot = undefined
+      epoch = undefined
+      sequence = undefined
+      request?.abort()
+      closeSocket()
+      options.onWake?.()
+      if (!connecting) void connect()
+      return
+    }
     if (socket?.readyState === 1)
       socket.send(JSON.stringify({ type: 'watch', scopes: [...value.scopes.keys()].slice(0, 8) }))
   }
@@ -126,11 +179,14 @@ export function startRuntimeSync(
     connecting = true
     request = new AbortController()
     try {
+      const requestedTasks = taskIdentity
+      const query = new URLSearchParams({ format: '4' })
+      for (const id of value.tasks.keys()) query.append('task', id)
       const ticket = await Effect.runPromise(
         runtimeRequestEffect(
           connection,
           connection.address,
-          '/api/sync/ticket?format=3',
+          `/api/sync/ticket?${query}`,
           {},
           syncTicketSchema,
           'POST',
@@ -138,7 +194,7 @@ export function startRuntimeSync(
         ),
         { signal: request.signal },
       )
-      if (stopped || options.active?.() === false) return
+      if (stopped || requestedTasks !== taskIdentity || options.active?.() === false) return
       const address = new URL('/ws/sync', connection.address)
       address.protocol = address.protocol === 'https:' ? 'wss:' : 'ws:'
       address.searchParams.set('ticket', ticket.ticket)
@@ -196,7 +252,7 @@ export function startRuntimeSync(
           } else if (!snapshot || epoch !== frame.epoch || sequence !== frame.sequence)
             throw new Error('Sync needs a fresh baseline')
           if (snapshot && epoch !== undefined && sequence !== undefined)
-            value.cursor = { snapshot, epoch, sequence, time: Date.now() }
+            value.cursor = { snapshot, epoch, sequence, time: Date.now(), tasks: taskIdentity }
           const becameOnline = !online
           online = true
           failures = 0
@@ -290,7 +346,11 @@ export function startRuntimeSync(
           () => {
             if (value.live) return
             value.cursor = undefined
-            if (!value.scopes.size && registrations.get(key(connection)) === value)
+            if (
+              !value.scopes.size &&
+              !value.tasks.size &&
+              registrations.get(key(connection)) === value
+            )
               registrations.delete(key(connection))
           },
           5 * 60 * 1000,
@@ -304,11 +364,13 @@ export function startRuntimeSync(
         )
           timer.unref()
       }
-      if (!value.scopes.size && !value.cursor) registrations.delete(key(connection))
+      if (!value.scopes.size && !value.tasks.size && !value.cursor)
+        registrations.delete(key(connection))
       for (const [id, entry] of registrations) {
         if (
           !entry.live &&
           !entry.scopes.size &&
+          !entry.tasks.size &&
           (registrations.size > 8 ||
             !entry.cursor ||
             Date.now() - entry.cursor.time > 5 * 60 * 1000)

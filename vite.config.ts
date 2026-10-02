@@ -51,6 +51,7 @@ export default defineConfig({
     ],
   },
   test: {
+    setupFiles: ['./scripts/test-runtime-environment.ts'],
     include: [
       'packages/**/*.test.ts',
       'apps/mobile/src/**/*.test.ts',

@@ -4,6 +4,7 @@ import { gzip } from 'node:zlib'
 import { createHash } from 'node:crypto'
 import { HttpError } from '../../errors.js'
 const compress = promisify(gzip)
+const cachedBodies = new WeakMap<IncomingMessage, { size: number; value: unknown }>()
 const observers = new WeakMap<IncomingMessage, (value: unknown) => void>()
 const workspaceFingerprints = new WeakMap<object, string>()
 export function snapshotTag(data: unknown) {
@@ -33,6 +34,12 @@ export function observeBody(request: IncomingMessage, callback: (value: unknown)
   observers.set(request, callback)
 }
 export async function body(request: IncomingMessage, limit = 8 * 1024 * 1024): Promise<unknown> {
+  const cached = cachedBodies.get(request)
+  if (cached) {
+    if (cached.size > limit) throw new HttpError(413, 'Request is too large')
+    observers.get(request)?.(cached.value)
+    return cached.value
+  }
   let size = 0
   const chunks: Buffer[] = []
   for await (const chunk of request) {
@@ -47,6 +54,7 @@ export async function body(request: IncomingMessage, limit = 8 * 1024 * 1024): P
   } catch {
     throw new HttpError(400, 'Invalid JSON')
   }
+  cachedBodies.set(request, { size, value })
   observers.get(request)?.(value)
   return value
 }

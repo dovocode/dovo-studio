@@ -1,5 +1,10 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { startRuntimeSync, runtimeSyncOnline } from './live-sync.js'
+import {
+  startRuntimeSync,
+  runtimeSyncOnline,
+  watchRuntimeTask,
+  runtimeSnapshotPath,
+} from './live-sync.js'
 import type { RuntimeSnapshot } from './runtime.js'
 import { snapshotSchema } from './runtime.js'
 import { decode } from '../../shared/schema.js'
@@ -239,4 +244,31 @@ it('discards a mismatched delta and requests a new baseline instead of guessing'
   const second = Socket.instances[1]!
   second.onopen?.()
   expect(JSON.parse(second.sent[0]!)).toEqual({ type: 'resume' })
+})
+
+it('reference counts thread subscriptions and drops the old cursor when the scope changes', async () => {
+  const address = 'http://scoped-runtime.local'
+  const connection = { address, token: 'stalled-socket-test-token' }
+  const { Socket, live, frame } = await stalledSocketFixture(address)
+  const first = Socket.instances[0]!
+  first.readyState = 1
+  first.onopen?.()
+  first.onmessage?.({ data: frame })
+  const a = watchRuntimeTask(connection, 'thread-a')
+  const shared = watchRuntimeTask(connection, 'thread-a')
+  stopped.push(a, shared)
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(2))
+  const second = Socket.instances[1]!
+  second.readyState = 1
+  second.onopen?.()
+  expect(JSON.parse(second.sent[0]!)).toEqual({ type: 'resume' })
+  expect(runtimeSnapshotPath(connection)).toBe('/api/snapshot?scope=threads&task=thread-a')
+  a()
+  expect(second.readyState).toBe(1)
+  expect(runtimeSnapshotPath(connection)).toContain('task=thread-a')
+  // Stopping a stream must preserve subscriptions owned by its mounted views.
+  live.stop()
+  expect(runtimeSnapshotPath(connection)).toContain('task=thread-a')
+  shared()
+  expect(runtimeSnapshotPath(connection)).toBe('/api/snapshot?scope=threads')
 })

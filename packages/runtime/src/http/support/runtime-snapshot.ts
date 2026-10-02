@@ -3,7 +3,7 @@ import { Effect } from 'effect'
 import { RUNTIME_PROTOCOL_VERSION, type RuntimeSnapshot } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { serviceResult } from './effect.js'
-import { overviewWorkspace } from './snapshot-overview.js'
+import { overviewWorkspace, scopedWorkspace } from './snapshot-overview.js'
 import { discoverProjectIcon } from '../../scm/repositories/project-icon.js'
 import { desktopAppUpdateInfo, canUpdateDesktop } from '../desktop-updates.js'
 import { canUpdateServer } from '../server-updates.js'
@@ -11,6 +11,7 @@ export function runtimeSnapshot(
   s: Services,
   device: { id: string; owner: boolean },
   overview = false,
+  taskIds?: readonly string[],
 ) {
   return Effect.gen(function* () {
     const revision = s.store.version()
@@ -21,6 +22,7 @@ export function runtimeSnapshot(
         ? { ...storedWorkspace, repositories: [...storedWorkspace.repositories, scratch] }
         : storedWorkspace
     return yield* serviceResult({
+      ...(taskIds ? { detailTaskIds: [...taskIds] } : {}),
       protocolVersion: RUNTIME_PROTOCOL_VERSION,
       runtimeInstanceId: s.instanceId,
       runtimeHost: hostname(),
@@ -40,7 +42,11 @@ export function runtimeSnapshot(
       acpInstallations: s.acpInstallations.list(),
       revision,
       workspace: {
-        ...(overview ? overviewWorkspace(workspace) : workspace),
+        ...(taskIds
+          ? scopedWorkspace(workspace, taskIds)
+          : overview
+            ? overviewWorkspace(workspace)
+            : workspace),
         repositories: yield* Effect.forEach(
           workspace.repositories,
           (repo) =>

@@ -40,7 +40,7 @@ export function createRuntimeServer(services: Services, internal = false) {
     response.setHeader('Access-Control-Allow-Origin', '*')
     response.setHeader(
       'Access-Control-Allow-Headers',
-      'Authorization, Content-Type, X-Idempotency-Key, If-None-Match',
+      'Authorization, Content-Type, X-Idempotency-Key, X-Dovo-Mutation-Id, If-None-Match',
     )
     response.setHeader('Access-Control-Expose-Headers', 'ETag')
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
@@ -162,7 +162,11 @@ export function createRuntimeServer(services: Services, internal = false) {
       const url = new URL(request.url ?? '/', 'http://runtime.local')
       if (url.pathname === '/ws/sync') {
         const ticket = services.tickets.consume(url.searchParams.get('ticket') ?? '')
-        if (!['runtime-sync', 'runtime-sync-2', 'runtime-sync-3'].includes(ticket.resourceId))
+        if (
+          !['runtime-sync', 'runtime-sync-2', 'runtime-sync-3', 'runtime-sync-4'].includes(
+            ticket.resourceId,
+          )
+        )
           throw new HttpError(401, 'Invalid sync ticket')
         services.devices.authenticate(ticket.token)
         syncSockets.handleUpgrade(request, socket, head, (client) => {
@@ -172,7 +176,8 @@ export function createRuntimeServer(services: Services, internal = false) {
             ticket.token,
             services,
             ticket.resourceId !== 'runtime-sync',
-            ticket.resourceId === 'runtime-sync-3',
+            ['runtime-sync-3', 'runtime-sync-4'].includes(ticket.resourceId),
+            ticket.syncTasks,
           )
         })
         return

@@ -1,3 +1,7 @@
+import { writeRuntimeSnapshotCache } from '@dovo/protocol'
+import { RuntimeMutations } from '@dovo/protocol'
+import { mobileMutationStorage } from './mutation-storage'
+import { runtimeSnapshotPath } from '@dovo/protocol'
 import { startRuntimeSync } from '@dovo/protocol'
 import { useMobilePreferences } from '../preferences/app-preferences'
 import { pendingAgentPresets } from '@dovo/protocol'
@@ -138,6 +142,9 @@ type Runtime = {
   readEffect: CallEffect
   readRuntimeEffect: RuntimeReadEffect
   refreshRuntimeEffect: (profile: RuntimeProfile) => Effect.Effect<void, Error>
+  mutationStatus: (profile: RuntimeProfile) => { pending: number; error: string | null }
+  retryMutations: (profile: RuntimeProfile) => Promise<void>
+  discardMutations: (profile: RuntimeProfile) => Promise<void>
   read: Call
   readRuntime: RuntimeRead
   cacheForRuntime: (profile: RuntimeProfile) => RuntimeReadCache
@@ -191,6 +198,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         request,
       ),
     [],
+  )
+  const [, setMutationVersion] = useApplicationState(0)
+  const [mutations] = useApplicationState(
+    () =>
+      new RuntimeMutations(mobileMutationStorage, () =>
+        setMutationVersion((version) => version + 1),
+      ),
   )
   const [storageLock] = useApplicationState(() => Effect.runSync(Effect.makeSemaphore(1)))
   const sequence = useRef(new Map<string, number>())
@@ -289,7 +303,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         const entry = entryRef.current[id]
         if (!entry?.snapshot || !current.current.profiles.some((item) => item.id === id)) return
         const cache = cacheFor(entry.profile)
-        yield* cache.writeEffect('snapshot', {
+        yield* writeRuntimeSnapshotCache(cache, {
           snapshot: entry.snapshot,
           lastSeen: entry.lastSeen,
           pulls: entry.pulls,
@@ -395,7 +409,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         return runtimeRequestEffect(
           profile.connection,
           profile.connection.address,
-          '/api/snapshot',
+          runtimeSnapshotPath(profile.connection),
           undefined,
           snapshotSchema,
           'GET',
@@ -425,10 +439,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
                 }))
             }),
           ),
+          Effect.tap(() =>
+            mutations.recoverEffect(profile.connection).pipe(Effect.catchAll(() => Effect.void)),
+          ),
           Effect.asVoid,
         )
       }),
-    [updateEntry],
+    [updateEntry, mutations],
   )
   const refreshProfile = useCallback(
     (profile: RuntimeProfile) => runClientEffect(refreshProfileEffect(profile)),
@@ -636,18 +653,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             message: 'The selected computer changed. Try the action again.',
           })
         if (!valid()) return Effect.fail(changed())
-        return runtimeRequestEffect(
-          profile.connection,
-          profile.connection.address,
-          path,
-          input,
-          schema,
-          method,
-        ).pipe(
-          Effect.flatMap((result) => (valid() ? Effect.succeed(result) : Effect.fail(changed()))),
-        )
+        return mutations
+          .requestEffect(profile.connection, path, input, schema, method)
+          .pipe(
+            Effect.flatMap((result) => (valid() ? Effect.succeed(result) : Effect.fail(changed()))),
+          )
       }),
-    [profile],
+    [profile, mutations],
   )
   const read = useCallback<Call>((...args) => runClientEffect(readEffect(...args)), [readEffect])
   // Collection operations retain their owner even when the selected computer changes.
@@ -666,18 +678,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             message: 'This computer connection changed. Refresh the collection.',
           })
         if (!valid()) return Effect.fail(changed())
-        return runtimeRequestEffect(
-          owner.connection,
-          owner.connection.address,
-          path,
-          input,
-          schema,
-          method,
-        ).pipe(
-          Effect.flatMap((result) => (valid() ? Effect.succeed(result) : Effect.fail(changed()))),
-        )
+        return mutations
+          .requestEffect(owner.connection, path, input, schema, method)
+          .pipe(
+            Effect.flatMap((result) => (valid() ? Effect.succeed(result) : Effect.fail(changed()))),
+          )
       }),
-    [],
+    [mutations],
   )
   const readRuntime = useCallback<RuntimeRead>(
     (...args) => runClientEffect(readRuntimeEffect(...args)),
@@ -706,6 +713,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       ),
     [readEffect, profile, refreshProfileEffect, persistEntryEffect],
   )
+  useEffect(() => {
+    if (!ready || !appActive) return
+    for (const profile of registry.profiles)
+      void runClientEffect(mutations.recoverEffect(profile.connection)).catch(() => undefined)
+  }, [ready, appActive, registry.profiles, mutations])
   const call = useCallback<Call>((...args) => runClientEffect(callEffect(...args)), [callEffect])
   useEffect(() => {
     let disposed = false
@@ -808,6 +820,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       onWake: () => wakeFallback(),
       onSnapshot: (snapshot) => {
         if (stopped) return
+        void runClientEffect(mutations.recoverEffect(profile.connection)).catch(() => undefined)
         sequence.current.set(profile.id, (sequence.current.get(profile.id) ?? 0) + 1)
         updateEntry(profile, (previous) => ({
           ...previous,
@@ -844,7 +857,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       live.stop()
       void polling.stop()
     }
-  }, [ready, profile, appActive, refreshProfileEffect, updateEntry])
+  }, [ready, profile, appActive, refreshProfileEffect, updateEntry, mutations])
   useEffect(() => {
     if (!ready) return
     const polling = startPolling(
@@ -1010,6 +1023,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         readRuntime,
         readRuntimeEffect,
         refreshRuntimeEffect: refreshProfileEffect,
+        mutationStatus: (profile) => mutations.status(profile.connection),
+        retryMutations: (profile) =>
+          runClientEffect(mutations.recoverEffect(profile.connection, true)),
+        discardMutations: (profile) => runClientEffect(mutations.discardEffect(profile.connection)),
         cacheForRuntime: cacheFor,
         readCache: profile ? cacheFor(profile) : null,
         refreshEffect,

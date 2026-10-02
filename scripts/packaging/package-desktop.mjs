@@ -1,3 +1,4 @@
+import { verifyMacIconToolchain } from './mac-icon-toolchain.mjs'
 import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
 import { stageWorkspace } from './stage-workspace.mjs'
@@ -30,6 +31,7 @@ if (
   throw new Error('Build natively on macOS arm64, Windows x64/arm64 or Linux x64/arm64.')
 if (Number(process.versions.node.split('.')[0]) !== 24)
   throw new Error('Package with Node 24, matching the runtime native modules.')
+if (process.platform === 'darwin') verifyMacIconToolchain()
 const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
 // A stable signing identity keeps macOS Keychain access consistent across local installs.
 const macSigningIdentity =

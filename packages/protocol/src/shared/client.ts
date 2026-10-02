@@ -77,6 +77,7 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
   schema: T,
   method = 'POST',
   timeoutMs?: number,
+  options?: { mutationId?: string },
 ): Effect.Effect<Schema.Schema.Type<T>, RuntimeRequestError | ValidationError> {
   return Effect.gen(function* () {
     const target = yield* Effect.try({
@@ -140,6 +141,7 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
                 method,
                 headers: {
                   'Content-Type': 'application/json',
+                  ...(options?.mutationId ? { 'X-Dovo-Mutation-Id': options.mutationId } : {}),
                   ...(connection ? { Authorization: `Bearer ${connection.token}` } : {}),
                   ...(tag ? { 'If-None-Match': tag } : {}),
                 },
@@ -231,7 +233,9 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
       }),
     ).pipe(
       (request) =>
-        method === 'GET' || idempotentPaths.has(path) ? Effect.retry(request, readRetry) : request,
+        method === 'GET' || !!options?.mutationId || idempotentPaths.has(path)
+          ? Effect.retry(request, readRetry)
+          : request,
       Effect.timeoutFail({
         duration: timeoutMs ?? requestTimeout(path),
         onTimeout: () =>

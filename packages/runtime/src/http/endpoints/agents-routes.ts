@@ -1,3 +1,4 @@
+import { decodeResult } from '@dovo/protocol'
 import { checkAdapterUpdates } from '../../agents/execution/diagnostics.js'
 import { modelPreferencesSchema, agentPresetSchema, mutableArray } from '@dovo/protocol'
 import { canChangeTaskCheckout, taskSchema } from '@dovo/protocol'
@@ -390,8 +391,19 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           ok: true,
         })
       }
-      if (method === 'POST' && path === '/api/tasks/title')
-        return yield* s.titles.generateEffect(yield* serviceResult(body(request)))
+      if (method === 'POST' && path === '/api/tasks/title') {
+        const input = yield* serviceResult(body(request))
+        const taskInput = decodeResult(mutableStruct({ taskId: idSchema }), input)
+        const value = taskInput.success
+          ? {
+              text:
+                s.store
+                  .task(taskInput.data.taskId)
+                  .messages.find((message) => message.role === 'user')?.text ?? '',
+            }
+          : input
+        return yield* s.titles.generateEffect(value)
+      }
       if (method === 'POST' && path === '/api/tasks/side-chat/save')
         return yield* serviceResult(s.titles.saveSideChat(yield* serviceResult(body(request))))
       if (method === 'POST' && path === '/api/tasks/side-chat/ask')

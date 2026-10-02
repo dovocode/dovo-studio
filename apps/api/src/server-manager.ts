@@ -129,6 +129,8 @@ export async function startServer(directory: string, entrypoint: string) {
     PORT: String(config.port),
   }
   delete env.ELECTRON_RUN_AS_NODE
+  // A standalone server binds to its saved configuration even when launched from Dovo.
+  delete env.DOVO_DESKTOP_DUAL_LISTENER
   const child = spawn(process.execPath, [entrypoint], {
     detached: true,
     stdio: ['ignore', log, log],

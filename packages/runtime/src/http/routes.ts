@@ -1,4 +1,8 @@
+import { searchTaskMessages } from '@dovo/protocol'
+import { recoverableMutation } from '@dovo/protocol'
+import { runClientEffect } from '@dovo/client-runtime'
 import { mcpAppRpcSchema } from '@dovo/protocol'
+import { mutableArray } from '@dovo/protocol'
 import { runtimeSnapshot } from './support/runtime-snapshot.js'
 import { SCRATCH_PROJECT_ID } from '@dovo/protocol'
 import { usageResets } from './endpoints/usage-resets.js'
@@ -27,7 +31,7 @@ import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
 import { patchSchema, workspaceSchema } from '@dovo/protocol'
 import { RuntimeServices } from '../services.js'
-import { HttpError } from '../errors.js'
+import { HttpError, type RuntimeFailure } from '../errors.js'
 import { body } from './support/body.js'
 import { hashSecret, equalSecret } from '../auth/devices.js'
 import { validateAutomation } from '../jobs/validation.js'
@@ -41,7 +45,8 @@ export function route(
   url: URL,
   addresses: () => { name: string; address: string }[] = () => [],
   internal = false,
-) {
+  receipted = false,
+): Effect.Effect<unknown, RuntimeFailure, RuntimeServices> {
   return routeProgram(
     Effect.gen(function* () {
       const s = yield* RuntimeServices
@@ -135,6 +140,27 @@ export function route(
           yield* serviceResult(body(request, 4096)),
         )
         return yield* serviceResult({ app: s.mcpApps.read(taskId, id) })
+      }
+      if (method === 'GET' && path === '/api/mutations/status') return { version: 1 }
+      if (!receipted && request.headers['x-dovo-mutation-id'] !== undefined) {
+        if (!recoverableMutation(path, method))
+          throw new HttpError(400, 'This action does not support mutation recovery.')
+        const id = decode(idSchema, request.headers['x-dovo-mutation-id'])
+        const input = yield* serviceResult(body(request))
+        return yield* serviceResult(
+          s.mutations.execute(
+            device.id,
+            id,
+            { method, path, input },
+            () =>
+              runClientEffect(
+                route(request, url, addresses, internal, true).pipe(
+                  Effect.provideService(RuntimeServices, s),
+                ),
+              ),
+            ['/api/tasks/message', '/api/tasks/steer'].includes(path),
+          ),
+        )
       }
       if (method === 'POST' && path === '/api/mcp-apps/rpc') {
         const input = decode(mcpAppRpcSchema, yield* serviceResult(body(request, 256 * 1024)))
@@ -396,19 +422,39 @@ export function route(
       const owner = () => {
         if (!device.owner) throw new HttpError(403, 'Only the runtime host can manage device trust')
       }
-      if (method === 'POST' && path === '/api/sync/ticket')
+      if (method === 'POST' && path === '/api/sync/ticket') {
+        const format = url.searchParams.get('format')
+        const tasks = format === '4' ? syncTasks(url) : undefined
         return {
           ticket: s.tickets.issue(
             token,
-            url.searchParams.get('format') === '3'
-              ? 'runtime-sync-3'
-              : url.searchParams.get('format') === '2'
-                ? 'runtime-sync-2'
-                : 'runtime-sync',
+            format === '4'
+              ? 'runtime-sync-4'
+              : format === '3'
+                ? 'runtime-sync-3'
+                : format === '2'
+                  ? 'runtime-sync-2'
+                  : 'runtime-sync',
+            undefined,
+            tasks,
           ),
+          ...(format === '4' ? { format: 4 } : {}),
         }
+      }
+      if (method === 'POST' && path === '/api/tasks/search') {
+        const { query } = decode(
+          mutableStruct({ query: maxValue(Schema.String, 500) }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        return searchTaskMessages(s.store.publicWorkspace().tasks, query)
+      }
       if (method === 'GET' && path === '/api/snapshot') {
-        return yield* runtimeSnapshot(s, device, url.searchParams.get('scope') === 'overview')
+        return yield* runtimeSnapshot(
+          s,
+          device,
+          url.searchParams.get('scope') === 'overview',
+          url.searchParams.get('scope') === 'threads' ? syncTasks(url) : undefined,
+        )
       }
       if (method === 'POST' && path === '/api/runtime/prepare-restart') {
         owner()
@@ -634,4 +680,8 @@ export function route(
       throw new HttpError(404, 'Endpoint not found')
     }),
   )
+}
+
+function syncTasks(url: URL) {
+  return decode(mutableArray(idSchema).pipe(Schema.maxItems(8)), url.searchParams.getAll('task'))
 }

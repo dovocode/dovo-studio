@@ -29,8 +29,10 @@ async function setup() {
     ],
   }))
   const address = `http://127.0.0.1:${runtime.port}`
-  const open = async (credential = token, format = 1) => {
-    const response = await fetch(`${address}/api/sync/ticket?format=${format}`, {
+  const open = async (credential = token, format = 1, taskIds: string[] = []) => {
+    const query = new URLSearchParams({ format: String(format) })
+    for (const id of taskIds) query.append('task', id)
+    const response = await fetch(`${address}/api/sync/ticket?${query}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${credential}` },
     })
@@ -220,4 +222,81 @@ it('keeps a snapshot revision paired with the workspace captured before asynchro
   const snapshot = await pending
   expect(snapshot.revision).toBe(revision)
   expect(snapshot.workspace.tasks[0]!.title).toBe('Task')
+})
+
+it('sends lightweight shells and only subscribed history, with safe replay per subscription', async () => {
+  const { runtime, open } = await setup()
+  runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      workspace.tasks[0]!,
+      {
+        ...workspace.tasks[0]!,
+        id: 'other',
+        draft: 'Unsent draft',
+        messages: [
+          { id: 'other-reply', role: 'assistant', text: 'Other secret history '.repeat(10000) },
+        ],
+      },
+    ],
+  }))
+  const shell = await open(token, 4)
+  shell.socket.send(JSON.stringify({ type: 'resume' }))
+  const lightweight = await shell.wait('snapshot')
+  expect(lightweight.snapshot.detailTaskIds).toEqual([])
+  expect(lightweight.snapshot.workspace.tasks.every((task) => !task.messages.length)).toBe(true)
+  expect(lightweight.snapshot.workspace.tasks[1]?.draft).toBe('Unsent draft')
+  const detail = await open(token, 4, ['task'])
+  detail.socket.send(
+    JSON.stringify({ type: 'resume', epoch: lightweight.epoch, sequence: lightweight.sequence }),
+  )
+  const baseline = await detail.wait('snapshot')
+  expect(baseline.epoch).not.toBe(lightweight.epoch)
+  expect(baseline.snapshot.workspace.tasks[0]?.messages).toHaveLength(1)
+  expect(baseline.snapshot.workspace.tasks[1]?.messages).toEqual([])
+  runtime.services.store.updateTask('task', (task) => ({
+    ...task,
+    messages: task.messages.map((message) => ({ ...message, text: message.text + 'New output' })),
+  }))
+  const delta = await detail.wait('delta')
+  expect(JSON.stringify(delta)).not.toContain('Other secret history')
+  expect(
+    applySnapshotDelta(baseline.snapshot, delta.delta).workspace.tasks[0]?.messages[0]?.text,
+  ).toMatch(/New output$/)
+  detail.socket.close()
+  await once(detail.socket, 'close')
+  const resumed = await open(token, 4, ['task'])
+  resumed.socket.send(
+    JSON.stringify({ type: 'resume', epoch: baseline.epoch, sequence: baseline.sequence }),
+  )
+  await resumed.wait('delta')
+  await resumed.wait('heartbeat')
+  expect(resumed.frames.some((frame) => frame.type === 'snapshot')).toBe(false)
+})
+it('deduplicates authenticated HTTP mutations after lost acknowledgements without overwriting newer edits', async () => {
+  const { runtime } = await setup()
+  const address = `http://127.0.0.1:${runtime.port}`
+  const patch = {
+    collection: 'tasks',
+    id: 'task',
+    changes: { title: { before: 'Task', after: 'Edited from phone' } },
+  }
+  const request = () =>
+    fetch(`${address}/api/workspace`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-Dovo-Mutation-Id': 'action',
+      },
+      body: JSON.stringify(patch),
+    })
+  const first = await request()
+  expect(first.status).toBe(200)
+  const response = await first.json()
+  runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Newer desktop edit' }))
+  const retried = await request()
+  expect(retried.status).toBe(200)
+  expect(await retried.json()).toEqual(response)
+  expect(runtime.services.store.task('task').title).toBe('Newer desktop edit')
 })

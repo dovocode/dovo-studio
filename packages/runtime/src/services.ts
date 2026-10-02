@@ -1,3 +1,4 @@
+import { MutationReceipts } from './storage/mutation-receipts.js'
 import { McpApps } from './mcp-apps/bridge.js'
 import { ScratchWorkspaces } from './scm/repositories/scratch-workspaces.js'
 import { AcpInstallations } from './agents/configuration/acp-installations.js'
@@ -124,6 +125,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     return approval ? { id: approval.id, preview: approval.title } : undefined
   })
   return {
+    mutations: new MutationReceipts(db),
     instanceId: randomUUID(),
     mcpApps,
     scratch,
@@ -165,6 +167,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  mutations: MutationReceipts
   mcpApps: McpApps
   instanceId: string
   scratch: ScratchWorkspaces

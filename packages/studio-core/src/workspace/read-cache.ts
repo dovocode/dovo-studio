@@ -1,3 +1,4 @@
+import { mutationOutboxSchema, type MutationStorage } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { createRuntimeReadCache, type CacheStorage, type RuntimeConnection } from '@dovo/protocol'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -101,3 +102,18 @@ export const browserReadCache = (connection: RuntimeConnection) =>
     // WebCrypto is unavailable on ordinary HTTP LAN origins used by the web client.
     return bytesToHex(sha256(utf8ToBytes(value)))
   })
+
+export const browserMutationStorage: MutationStorage = {
+  id: () => bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
+  async read(connection) {
+    const raw = await storage.getItem(
+      outboxKey(connection).replace('workspace-outbox', 'mutation-outbox'),
+    )
+    return raw === null ? [] : decode(mutationOutboxSchema, JSON.parse(raw))
+  },
+  async write(connection, pending) {
+    const key = outboxKey(connection).replace('workspace-outbox', 'mutation-outbox')
+    if (pending.length) await storage.setItem(key, JSON.stringify(pending))
+    else await storage.removeItem(key)
+  },
+}
