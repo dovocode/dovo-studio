@@ -280,3 +280,98 @@ it('shares upstream requests across worktrees for the same repository and accoun
   await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(3))
   expect((await cache.list('/other-account', 'open', 1)).stale).toBe(false)
 })
+it('detects stacks across cached pages, decorates overviews, and clears dependencies after retargeting', async () => {
+  const { cache, pulls } = setup()
+  const summary = (number: number, head: string, base: string) => ({
+    number,
+    head,
+    base,
+    title: `PR ${number}`,
+    url: `https://github.com/a/b/pull/${number}`,
+    state: 'open' as const,
+    draft: false,
+    author: 'dev',
+    updatedAt: '2026-10-02',
+    labels: [],
+  })
+  const parent = summary(1, 'first', 'main'),
+    child = summary(2, 'second', 'first')
+  const list = vi.spyOn(pulls, 'list').mockImplementation(async (_cwd, _state, page) => ({
+    pulls: page === 1 ? [child] : [parent],
+    page,
+    hasMore: page === 1,
+  }))
+  const page = await Effect.runPromise(cache.overviewEffect('/repo', 'open', 1))
+  expect(page.pulls[0]?.stack).toMatchObject({
+    position: 2,
+    size: 2,
+    parentNumber: 1,
+    complete: true,
+  })
+  expect(list).toHaveBeenCalledTimes(2)
+  const stack = await cache.stack('/repo', 2)
+  expect(stack.stack?.members.map((pull) => pull.number)).toEqual([1, 2])
+  const all = await Effect.runPromise(cache.overviewEffect('/repo', 'all', 1))
+  expect(all.pulls[0]?.stack?.parentNumber).toBe(1)
+  expect(list).toHaveBeenCalledTimes(3)
+  const detail: PullDetail = {
+    pull: {
+      ...child,
+      repositoryUrl: 'https://github.com/a/b',
+      headSha: 'a'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      body: '',
+      additions: 0,
+      deletions: 0,
+      changedFiles: 0,
+      mergeable: true,
+      reviewers: [],
+      assignees: [],
+    },
+    files: [],
+    comments: [],
+    checks: [],
+    warnings: [],
+  }
+  const loadDetail = vi.spyOn(pulls, 'detail').mockResolvedValue(detail)
+  expect(
+    (await Effect.runPromise(cache.detailWithStackEffect('/repo', 2))).stack?.parentNumber,
+  ).toBe(1)
+  loadDetail.mockResolvedValue({ ...detail, pull: { ...detail.pull, state: 'merged' } })
+  const closed = await Effect.runPromise(cache.detailWithStackEffect('/repo', 2, true))
+  expect(closed.stack).toBeUndefined()
+  expect(closed.pull.stack).toBeUndefined()
+  expect(list).toHaveBeenCalledTimes(3)
+  list.mockImplementation(async (_cwd, _state, page) => ({
+    pulls: page === 1 ? [{ ...child, base: 'main' }, parent] : [],
+    page,
+    hasMore: false,
+  }))
+  const refreshed = await Effect.runPromise(cache.overviewEffect('/repo', 'open', 1, true))
+  expect(refreshed.pulls.every((pull) => !pull.stack)).toBe(true)
+})
+it('marks stack data partial when a later page fails instead of claiming a complete stack', async () => {
+  const { cache, pulls } = setup()
+  vi.spyOn(pulls, 'list').mockImplementation(async (_cwd, _state, page) => {
+    if (page > 1) throw new Error('Forge unavailable')
+    return {
+      page,
+      hasMore: true,
+      pulls: [1, 2].map((number) => ({
+        number,
+        head: `branch-${number}`,
+        base: number === 1 ? 'main' : 'branch-1',
+        title: 'PR',
+        url: `https://github.com/a/b/pull/${number}`,
+        state: 'open' as const,
+        draft: false,
+        author: 'dev',
+        updatedAt: '2026-10-02',
+        labels: [],
+      })),
+    }
+  })
+  const { stack, warning } = await cache.stack('/repo', 2)
+  expect(stack?.complete).toBe(false)
+  expect(warning).toContain('Forge unavailable')
+})

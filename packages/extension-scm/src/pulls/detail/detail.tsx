@@ -1,3 +1,5 @@
+import { PullStack } from './stack'
+import { CreatePull } from '../list/create'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { usePullDetail } from './use-pull-detail'
 import {
@@ -19,25 +21,46 @@ import { StartPullTask } from '../list/start-task'
 import { ReviewBadge } from './review-badge'
 import { PullActions } from '../list/actions'
 import { PullPipelineRuns } from './pipeline-runs'
-export function PullDetail({
-  repositoryId,
-  number,
-  onBack,
-  onChanged,
-  embedded = false,
-}: {
+type PullDetailProps = {
   embedded?: boolean
   repositoryId: string
   number: number
   onBack: () => void
   onChanged: () => void
-}) {
+  onSelect?: (number: number) => void
+}
+export function PullDetail(props: PullDetailProps) {
+  return <PullDetailSelection key={JSON.stringify([props.repositoryId, props.number])} {...props} />
+}
+function PullDetailSelection(props: PullDetailProps) {
+  const [selectedNumber, setSelectedNumber] = useApplicationState(props.number)
+  const number = props.onSelect ? props.number : selectedNumber
+  return (
+    <PullDetailContent
+      key={JSON.stringify([props.repositoryId, number])}
+      {...props}
+      number={number}
+      onSelect={props.onSelect ?? setSelectedNumber}
+    />
+  )
+}
+function PullDetailContent({
+  repositoryId,
+  number,
+  onBack,
+  onChanged,
+  onSelect,
+  embedded = false,
+}: PullDetailProps) {
   const { connected, workspace } = useWorkspace()
   const { detail, error, busy, refresh, invalidate } = usePullDetail(repositoryId, number)
   const changed = () => {
     invalidate()
     onChanged()
   }
+  const [stackAction, setStackAction] = useApplicationState<'update' | undefined>(undefined)
+  const [creatingStack, setCreatingStack] = useApplicationState(false)
+  const selectPull = (next: number) => onSelect?.(next)
   const [starting, setStarting] = useApplicationState(false)
   const [tab, setTab] = useApplicationState<'overview' | 'changes' | 'discussion' | 'checks'>(
     'overview',
@@ -130,6 +153,16 @@ export function PullDetail({
               <Signal signal={pullDetailReviews(detail)} />
               <Signal signal={pullMergeability(detail.pull)} />
             </div>
+            <PullStack
+              detail={detail}
+              connected={connected}
+              onSelect={selectPull}
+              onCreate={() => setCreatingStack(true)}
+              onUpdate={() => {
+                setStackAction('update')
+                setStarting(true)
+              }}
+            />
             <dl className="grid grid-cols-2 gap-3 rounded-md border bg-card px-3 py-3 text-xs @2xl:grid-cols-4">
               <div>
                 <dt className="text-muted-foreground">Changes</dt>
@@ -397,12 +430,27 @@ export function PullDetail({
               )}
             </section>
           </div>
+          {creatingStack && (
+            <CreatePull
+              initialRepositoryId={repositoryId}
+              initialParent={detail.pull}
+              onClose={() => setCreatingStack(false)}
+              onCreated={(_repo, next) => {
+                changed()
+                selectPull(next)
+              }}
+            />
+          )}
           {starting && (
             <StartPullTask
               initialObjective={objective}
+              stackAction={stackAction}
               repositoryId={repositoryId}
               pull={detail.pull}
-              onClose={() => setStarting(false)}
+              onClose={() => {
+                setStarting(false)
+                setStackAction(undefined)
+              }}
             />
           )}
         </>

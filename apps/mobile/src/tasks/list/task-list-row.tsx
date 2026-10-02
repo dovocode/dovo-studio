@@ -1,3 +1,5 @@
+import { pullStackLabel } from '@dovo/protocol'
+import { Icon } from '../../ui/controls/icon'
 import { Image, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import {
@@ -146,6 +148,14 @@ export function TaskListRow({
               )}
               {row.reachability === 'offline' && (
                 <Text style={[styles.muted, { fontSize: 13 }]}>Offline</Text>
+              )}
+              {task.pullStatus?.stack && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Icon name="stack" size={12} color={colors.accent} />
+                  <Text style={{ color: colors.accent, fontSize: 12 }}>
+                    {pullStackLabel(task.pullStatus.stack)}
+                  </Text>
+                </View>
               )}
               {!!agent && <Text style={[styles.muted, { fontSize: 12 }]}>{providerName}</Text>}
             </View>

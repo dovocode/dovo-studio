@@ -12,10 +12,12 @@ export function StartPullTask({
   repositoryId,
   pull,
   onBack,
+  stackAction,
 }: {
   repositoryId: string
   pull: PullDetail['pull']
   onBack: () => void
+  stackAction?: 'update'
 }) {
   const { connected, callEffect } = useRuntime(),
     { navigate } = useNavigation(),
@@ -29,9 +31,11 @@ export function StartPullTask({
             repositoryId,
             number: pull.number,
             headSha: pull.headSha,
-            objective:
-              'Review this PR for correctness, regressions, and missing tests. Report concrete findings without changing files.',
+            objective: stackAction
+              ? 'Update the stack, restack branches and update PRs.'
+              : 'Review this PR for correctness, regressions, and missing tests. Report concrete findings without changing files.',
             run: false,
+            stackAction,
           },
           pullTaskResponse,
         )
@@ -41,7 +45,11 @@ export function StartPullTask({
     )
   }
   return (
-    <Sheet title={`Task from PR #${pull.number}`} onClose={onBack} busy={busy}>
+    <Sheet
+      title={stackAction ? 'Update PR stack' : `Task from PR #${pull.number}`}
+      onClose={onBack}
+      busy={busy}
+    >
       <Text
         style={[
           styles.text,
@@ -53,8 +61,10 @@ export function StartPullTask({
         {pull.title}
       </Text>
       <Text style={styles.muted}>
-        The draft includes the PR description and review feedback, with a worktree prepared from
-        commit {pull.headSha.slice(0, 8)} when you send it.
+        {stackAction
+          ? 'The draft includes fresh stack dependencies and instructions to restack branches and update PRs.'
+          : 'The draft includes the PR description and review feedback.'}{' '}
+        A worktree is prepared from commit {pull.headSha.slice(0, 8)} when you send it.
       </Text>
       <Text style={styles.muted}>
         Choose an agent and model, then edit and send the first message in chat.

@@ -2,7 +2,13 @@ import { useApplicationState } from '../../runtime/state/application-state'
 import { openAppLink } from '../../ui/content/open-link'
 import { Pressable, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
-import { fixChecksPrompt, pullStatusLabel, responses, type Task } from '@dovo/protocol'
+import {
+  fixChecksPrompt,
+  pullStatusLabel,
+  pullStackLabel,
+  responses,
+  type Task,
+} from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 import { Icon } from '../../ui/controls/icon'
@@ -39,9 +45,10 @@ function PrimaryPullStatus({ task }: { task: Task }) {
             opacity: pressed ? 0.55 : 1,
           })}
         >
-          <Icon name="pulls" size={14} color={color} />
+          <Icon name={status.stack ? 'stack' : 'pulls'} size={14} color={color} />
           <Text numberOfLines={1} style={{ color, fontSize: 13, flexShrink: 1 }}>
             {pullStatusLabel(status)}
+            {status.stack ? ` · ${pullStackLabel(status.stack)}` : ''}
           </Text>
         </Pressable>
         {failing && task.status !== 'running' && (

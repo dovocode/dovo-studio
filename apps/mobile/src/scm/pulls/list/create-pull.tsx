@@ -1,3 +1,10 @@
+import {
+  pullPageSchema,
+  pullDetailSchema,
+  pullHeadBranch,
+  type PullDetail,
+  type PullSummary,
+} from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect, Schema } from 'effect'
@@ -19,9 +26,11 @@ import { Text } from '../../../ui/content/text'
 import { styles } from '../../../ui/theme'
 export function CreatePull({
   repositoryId: initial,
+  initialParent,
   onClose,
   onCreated,
 }: {
+  initialParent?: PullDetail['pull']
   repositoryId: string
   onClose: () => void
   onCreated: (repositoryId: string, number: number) => void
@@ -32,9 +41,14 @@ export function CreatePull({
   const [title, setTitle] = useApplicationState(''),
     [body, setBody] = useApplicationState(''),
     [head, setHead] = useApplicationState(''),
-    [base, setBase] = useApplicationState(''),
+    [base, setBase] = useApplicationState(
+      initialParent ? (pullHeadBranch(initialParent) ?? '') : '',
+    ),
     // Settings → General → Create pull requests as drafts.
     [draft, setDraft] = useApplicationState(() => readMobilePreferences().pullDraft)
+  const [parent, setParent] = useApplicationState<PullDetail['pull'] | undefined>(initialParent)
+  const [parents, setParents] = useApplicationState<PullSummary[]>([])
+  const [parentBusy, setParentBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
@@ -76,10 +90,63 @@ export function CreatePull({
       active = false
     }
   }, [call, repositoryId])
+  useEffect(() => {
+    if (!connected || !repositoryId) return
+    let stopped = false
+    setParents([])
+    void (async () => {
+      const loaded: PullSummary[] = []
+      for (let page = 1; page <= 10 && !stopped; page++) {
+        const result = await call(
+          '/api/scm/pulls/overview',
+          { repositoryId, state: 'open', page },
+          pullPageSchema,
+        )
+        if (stopped) return
+        loaded.push(...result.pulls.filter((pull) => !!pullHeadBranch(pull)))
+        setParents([...loaded])
+        if (!result.hasMore || !result.pulls.length) return
+      }
+      if (!stopped)
+        setError(
+          'Showing the first 10 pages. Open another parent PR and choose Stack a PR to use it.',
+        )
+    })().catch((error: unknown) => {
+      if (!stopped) setError(error instanceof Error ? error.message : String(error))
+    })
+    return () => {
+      stopped = true
+    }
+  }, [repositoryId, connected, call])
+  const chooseParent = async (value: string) => {
+    setError('')
+    if (!value) {
+      setParent(undefined)
+      setBase('')
+      return
+    }
+    setParentBusy(true)
+    try {
+      const detail = await call(
+        '/api/scm/pulls/detail',
+        { repositoryId, number: Number(value), refresh: true },
+        pullDetailSchema,
+      )
+      const branch = pullHeadBranch(detail.pull)
+      if (!branch || detail.pull.state !== 'open')
+        throw new Error('Choose an open PR from this project.')
+      setParent(detail.pull)
+      setBase(branch)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setParentBusy(false)
+    }
+  }
   const submit = () => {
     return runClientEffect(
       mobileWorkflow(function* () {
-        if (pending.current) return
+        if (pending.current || parentBusy) return
         pending.current = true
         setBusy(true)
         setError('')
@@ -90,6 +157,7 @@ export function CreatePull({
             head,
             base,
             draft,
+            ...(parent ? { parentNumber: parent.number, parentHeadSha: parent.headSha } : {}),
           })
           const result = yield* callEffect(
             '/api/scm/pulls/create',
@@ -124,8 +192,10 @@ export function CreatePull({
         onChange={(id) => {
           setRepository(id)
           setSourceTask('')
+          setParent(undefined)
+          setBase('')
         }}
-        disabled={busy}
+        disabled={busy || parentBusy}
         items={repos.map((repo) => ({
           id: repo.id,
           name: repo.name,
@@ -185,6 +255,24 @@ export function CreatePull({
           }}
         />
       )}
+      <Text style={styles.muted}>Stack on a PR (optional)</Text>
+      <Choice
+        value={String(parent?.number ?? '')}
+        disabled={busy || parentBusy}
+        onChange={(value) => void chooseParent(value)}
+        label="Parent pull request"
+        items={[
+          { id: '', name: 'Independent PR' },
+          ...[
+            ...new Map(
+              [...(parent ? [parent] : []), ...parents].map((pull) => [pull.number, pull]),
+            ).values(),
+          ].map((pull) => ({ id: String(pull.number), name: `#${pull.number} · ${pull.title}` })),
+        ]}
+      />
+      <Text style={styles.muted}>
+        The next PR targets the parent’s branch, keeping its changes separate.
+      </Text>
       <Field
         label="Source branch"
         value={head}
@@ -195,7 +283,10 @@ export function CreatePull({
       <Field
         label="Target branch"
         value={base}
-        onChangeText={setBase}
+        onChangeText={(value) => {
+          setParent(undefined)
+          setBase(value)
+        }}
         editable={!busy}
         placeholder="main"
       />
@@ -238,7 +329,7 @@ export function CreatePull({
       )}
       <Action
         label={busy ? 'Creating…' : 'Create pull request'}
-        disabled={busy || !connected || !repositoryId}
+        disabled={busy || parentBusy || !connected || !repositoryId}
         onPress={() => void submit()}
       />
     </Sheet>

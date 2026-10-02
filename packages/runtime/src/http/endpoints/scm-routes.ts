@@ -1,3 +1,4 @@
+import { pullHeadBranch } from '@dovo/protocol'
 import { gitActionState } from '../../scm/git/action-state.js'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
 import {
@@ -358,7 +359,27 @@ export function scmRoute(request: IncomingMessage, path: string) {
           return yield* s.titles.pullDescriptionEffect({ taskId: task, ...changes })
         }
         if (path === '/api/scm/pulls/create') {
-          const result = yield* serviceResult(s.pulls.create(cwd, decode(pullCreateSchema, input)))
+          const create = decode(pullCreateSchema, input)
+          if (create.parentNumber !== undefined) {
+            if (!create.parentHeadSha)
+              throw new HttpError(400, 'Refresh the parent PR before creating a stacked PR.')
+            const { pull: parent } = yield* serviceResult(s.pulls.detail(cwd, create.parentNumber))
+            if (
+              parent.state !== 'open' ||
+              parent.headSha !== create.parentHeadSha ||
+              pullHeadBranch(parent) !== create.base
+            )
+              throw new HttpError(
+                409,
+                'The parent PR changed. Refresh it before creating a stacked PR.',
+              )
+            if (create.head === create.base)
+              throw new HttpError(400, 'Choose a different source branch for the next PR.')
+            create.body =
+              `${create.body.trimEnd()}\n\nStack parent: [#${parent.number}](${parent.url})`.trim()
+            decode(pullCreateSchema, create)
+          }
+          const result = yield* serviceResult(s.pulls.create(cwd, create))
           s.pullCache.invalidate(cwd)
           return yield* serviceResult(result)
         }
@@ -395,7 +416,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
         if (path === '/api/scm/pulls/task')
           return yield* createPullTaskEffect(s, repo.id, cwd, input)
         if (path === '/api/scm/pulls/overview')
-          return yield* s.pullCache.listEffect(
+          return yield* s.pullCache.overviewEffect(
             cwd,
             decode(
               withDefault(Schema.Literal('open', 'closed', 'all'), () => 'open' as const),
@@ -423,7 +444,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
             ),
           )
         if (path === '/api/scm/pulls/detail')
-          return yield* s.pullCache.detailEffect(
+          return yield* s.pullCache.detailWithStackEffect(
             cwd,
             decode(
               Schema.Number.pipe(Schema.finite())

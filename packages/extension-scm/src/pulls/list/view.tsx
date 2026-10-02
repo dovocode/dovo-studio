@@ -319,6 +319,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
             number={selected.number}
             onBack={() => setSelected(null)}
             onChanged={refresh}
+            onSelect={(next) => void open(selectedSource, next)}
           />
         ) : selected ? (
           <div className="p-5 text-sm">

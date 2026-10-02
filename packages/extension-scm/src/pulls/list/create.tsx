@@ -1,3 +1,10 @@
+import {
+  pullPageSchema,
+  pullDetailSchema,
+  pullHeadBranch,
+  type PullDetail,
+  type PullSummary,
+} from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Sparkles } from 'lucide-react'
 import { mutableStruct } from '@dovo/protocol'
@@ -25,9 +32,11 @@ import {
 const describedSchema = mutableStruct({ title: Schema.String, body: Schema.String })
 export function CreatePull({
   initialRepositoryId,
+  initialParent,
   onClose,
   onCreated,
 }: {
+  initialParent?: PullDetail['pull']
   initialRepositoryId: string
   onClose: () => void
   onCreated: (repositoryId: string, number: number) => void
@@ -39,7 +48,13 @@ export function CreatePull({
   const [head, setHead] = useApplicationState(
     workspace.repositories.find((repo) => repo.id === repositoryId)?.branch ?? '',
   )
-  const [base, setBase] = useApplicationState('')
+  const [base, setBase] = useApplicationState(
+    initialParent ? (pullHeadBranch(initialParent) ?? '') : '',
+  )
+  const [parent, setParent] = useApplicationState<PullDetail['pull'] | undefined>(initialParent)
+  const [parents, setParents] = useApplicationState<PullSummary[]>([])
+  const [parentError, setParentError] = useApplicationState('')
+  const [parentBusy, setParentBusy] = useApplicationState(false)
   const [title, setTitle] = useApplicationState('')
   const [body, setBody] = useApplicationState('')
   const [describing, setDescribing] = useApplicationState(false)
@@ -79,11 +94,65 @@ export function CreatePull({
       stopped = true
     }
   }, [connected, repositoryId, request])
+  useEffect(() => {
+    if (!connected || !repositoryId) return
+    let stopped = false
+    setParents([])
+    void (async () => {
+      const loaded: PullSummary[] = []
+      for (let page = 1; page <= 10 && !stopped; page++) {
+        const result = await request(
+          '/api/scm/pulls/overview',
+          { repositoryId, state: 'open', page },
+          pullPageSchema,
+        )
+        if (stopped) return
+        loaded.push(...result.pulls.filter((pull) => !!pullHeadBranch(pull)))
+        setParents([...loaded])
+        if (!result.hasMore || !result.pulls.length) return
+      }
+      if (!stopped)
+        setParentError(
+          'Showing the first 10 pages. Open another parent PR and choose Stack a PR to use it.',
+        )
+    })().catch((error: unknown) => {
+      if (!stopped) setParentError(error instanceof Error ? error.message : String(error))
+    })
+    return () => {
+      stopped = true
+    }
+  }, [repositoryId, connected, request])
+  const chooseParent = async (value: string) => {
+    setParentError('')
+    if (!value) {
+      setParent(undefined)
+      setBase('')
+      return
+    }
+    setParentBusy(true)
+    try {
+      const detail = await request(
+        '/api/scm/pulls/detail',
+        { repositoryId, number: Number(value), refresh: true },
+        pullDetailSchema,
+      )
+      const branch = pullHeadBranch(detail.pull)
+      if (!branch || detail.pull.state !== 'open')
+        throw new Error('Choose an open PR from this project.')
+      setParent(detail.pull)
+      setBase(branch)
+    } catch (error) {
+      setParentError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setParentBusy(false)
+    }
+  }
   const submit = async () => {
     if (
       pending.current ||
       !connected ||
       !options ||
+      parentBusy ||
       !repositoryId ||
       !title.trim() ||
       !head.trim() ||
@@ -103,6 +172,7 @@ export function CreatePull({
           head,
           base,
           draft: !!options.draft && draft,
+          ...(parent ? { parentNumber: parent.number, parentHeadSha: parent.headSha } : {}),
         },
         pullActionResultSchema,
       )
@@ -140,10 +210,12 @@ export function CreatePull({
             <ChoicePicker
               aria-label="Create PR project"
               value={repositoryId}
-              disabled={busy}
+              disabled={busy || parentBusy}
               onValueChange={(value) => {
                 setRepository(value)
                 setSourceTask('')
+                setParent(undefined)
+                setBase('')
                 setHead(workspace.repositories.find((repo) => repo.id === value)?.branch ?? '')
               }}
             >
@@ -181,6 +253,33 @@ export function CreatePull({
               </p>
             </FormField>
           )}
+          <FormField label="Stack on a PR (optional)">
+            <ChoicePicker
+              aria-label="Parent pull request"
+              value={String(parent?.number ?? '')}
+              disabled={busy || parentBusy}
+              onValueChange={(value) => void chooseParent(value)}
+            >
+              <option value="">Independent PR</option>
+              {[
+                ...new Map(
+                  [...(parent ? [parent] : []), ...parents].map((pull) => [pull.number, pull]),
+                ).values(),
+              ].map((pull) => (
+                <option key={pull.number} value={pull.number}>
+                  #{pull.number} · {pull.title}
+                </option>
+              ))}
+            </ChoicePicker>
+            <p className="text-xs text-muted-foreground">
+              The next PR targets the parent’s branch, keeping its changes separate.
+            </p>
+            {parentError && (
+              <p role="alert" className="text-xs text-destructive">
+                {parentError}
+              </p>
+            )}
+          </FormField>
           <FormField label="Title">
             <div className="flex gap-2">
               <Input
@@ -235,7 +334,10 @@ export function CreatePull({
                 placeholder="main"
                 value={base}
                 disabled={busy}
-                onChange={(e) => setBase(e.target.value)}
+                onChange={(e) => {
+                  setParent(undefined)
+                  setBase(e.target.value)
+                }}
               />
             </FormField>
           </div>
@@ -278,6 +380,7 @@ export function CreatePull({
               type="submit"
               disabled={
                 busy ||
+                parentBusy ||
                 !options ||
                 !connected ||
                 !repositoryId ||

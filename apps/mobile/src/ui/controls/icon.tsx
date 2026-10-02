@@ -23,6 +23,7 @@ export const symbols = {
   search: ['magnifyingglass', '⌕', 'search'],
   tasks: ['checklist', '☑', 'checklist'],
   pulls: ['arrow.triangle.pull', '⑂', 'merge'],
+  stack: ['square.stack.3d.up', '▱', 'layers'],
   jobs: ['square.stack.3d.up', '▱', 'layers'],
   settings: ['gearshape', '⚙', 'settings'],
   send: ['arrow.up', '↑', 'arrow_upward'],

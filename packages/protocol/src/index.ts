@@ -18,6 +18,7 @@ export * from './tasks/acp-harness.js'
 export * from './shared/commands.js'
 
 export * from './scm/pulls/pulls.js'
+export * from './scm/pulls/pull-stack.js'
 
 export * from './automation/activity.js'
 export * from './conversation/workflow/questions.js'

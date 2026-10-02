@@ -1,3 +1,4 @@
+import { pullStacks, stackSummary } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import { checkOutcome, pullReferencesInText, verifyPullUrl, type Task } from '@dovo/protocol'
@@ -24,7 +25,8 @@ const same = (a: PullStatus | undefined, b: PullStatus) =>
   a.number === b.number &&
   a.state === b.state &&
   a.checks === b.checks &&
-  JSON.stringify(a.failedChecks ?? []) === JSON.stringify(b.failedChecks ?? [])
+  JSON.stringify(a.failedChecks ?? []) === JSON.stringify(b.failedChecks ?? []) &&
+  JSON.stringify(a.stack) === JSON.stringify(b.stack)
 /** GitHub REST uses owner:branch labels, unlike the checkout's plain branch name. */
 function matchesBranch(pull: { head: string; url: string }, branch: string | undefined) {
   if (!branch) return false
@@ -256,6 +258,11 @@ export class TaskPullWatcher {
             checkedAt: new Date().toISOString(),
           }
         }
+        const stack = pullStacks(
+          open.pulls,
+          !open.hasMore && !open.stale && !open.refreshError,
+        ).get(number)
+        status.stack = stack ? stackSummary(stack) : undefined
         if (summary) this.attach(task, summary)
         const current = this.s.store.get().tasks.find((item) => item.id === task.id)
         if (

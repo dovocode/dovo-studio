@@ -1,3 +1,4 @@
+import { pullStackLabel } from '@dovo/protocol'
 import { openAppLink } from '../ui/content/open-link'
 import { nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -314,7 +315,11 @@ function PullsContent({
                 },
               ]}
             >
-              <Icon name="pulls" size={14} color={pullSignalColor(pullState(p))} />
+              <Icon
+                name={p.stack ? 'stack' : 'pulls'}
+                size={14}
+                color={pullSignalColor(pullState(p))}
+              />
               <Text
                 numberOfLines={1}
                 style={[
@@ -325,7 +330,8 @@ function PullsContent({
                   },
                 ]}
               >
-                {p.repositoryName} · #{p.number} · {p.runtimeName}
+                {p.repositoryName} · #{p.number}
+                {p.stack ? ` · ${pullStackLabel(p.stack)}` : ''} · {p.runtimeName}
                 {!p.online ? ' · Offline' : ''}
               </Text>
               <Text style={styles.muted}>{formatShortDate(p.updatedAt)}</Text>

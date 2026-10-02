@@ -11,9 +11,11 @@ import {
 export function StartPullTask({
   repositoryId,
   initialObjective,
+  stackAction,
   pull,
   onClose,
 }: {
+  stackAction?: 'update'
   initialObjective?: string
   repositoryId: string
   pull: PullDetail['pull']
@@ -22,7 +24,7 @@ export function StartPullTask({
   const { request, connected } = useWorkspace(),
     host = useStudioHost()
   const objective =
-    initialObjective ??
+    (stackAction ? 'Update the stack, restack branches and update PRs.' : initialObjective) ??
     'Review this PR for correctness, regressions, and missing tests. Report concrete findings without changing files.'
   const [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
@@ -38,6 +40,7 @@ export function StartPullTask({
           number: pull.number,
           headSha: pull.headSha,
           objective,
+          stackAction,
           run: false,
         },
         pullTaskResponse,
@@ -62,10 +65,14 @@ export function StartPullTask({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Task from PR #{pull.number}</DialogTitle>
+          <DialogTitle>
+            {stackAction ? 'Update PR stack' : `Task from PR #${pull.number}`}
+          </DialogTitle>
           <DialogDescription>
-            Open a draft with the PR description and review feedback. Choose a model or custom agent
-            and edit the message in chat before sending.
+            {stackAction
+              ? 'Open a draft with fresh stack dependencies and instructions to restack branches and update PRs.'
+              : 'Open a draft with the PR description and review feedback.'}{' '}
+            Choose a model or custom agent and edit the message in chat before sending.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-1 rounded-lg border border-border/60 bg-muted/20 p-3">

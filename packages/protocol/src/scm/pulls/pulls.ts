@@ -1,3 +1,4 @@
+import { pullStackSchema, pullStackSummarySchema } from './pull-stack.js'
 import { mutableArray, mutableStruct } from '../../shared/schema.js'
 import { urlSchema, maxValue, minValue, refine } from '../../shared/schema.js'
 import { Schema } from 'effect'
@@ -7,6 +8,7 @@ const link = urlSchema({
   protocol: /^https?$/,
 })
 export const pullSummarySchema = mutableStruct({
+  stack: Schema.optional(pullStackSummarySchema),
   provider: Schema.optional(forgeProviderSchema),
   number: Schema.Number.pipe(Schema.finite())
     .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
@@ -53,6 +55,7 @@ export const pullCommentSchema = mutableStruct({
   diff: Schema.optional(Schema.String),
 })
 export const pullDetailSchema = mutableStruct({
+  stack: Schema.optional(pullStackSchema),
   capabilities: Schema.optional(forgeCapabilitiesSchema),
   fileBaseUrl: Schema.optional(link),
   cachedAt: Schema.optional(Schema.String),
@@ -122,6 +125,7 @@ export const pullTaskInputSchema = refine(
       default: () => '',
     }),
     harness: Schema.optional(taskHarnessSchema),
+    stackAction: Schema.optional(Schema.Literal('update')),
     objective: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 12000),
     headSha: taskPullSchema.fields.headSha,
     run: Schema.optionalWith(Schema.Boolean, {

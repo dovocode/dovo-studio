@@ -241,3 +241,45 @@ it('accepts a built-in harness directly and rejects missing or ambiguous saved a
   ).rejects.toThrow('either a saved agent or a built-in harness')
   expect(s.store.get().tasks).toHaveLength(1)
 })
+it('creates an editable stack-update draft from fresh dependencies and rejects a disappeared stack', async () => {
+  const { f, s } = await setup()
+  const sha = 'a'.repeat(40),
+    base = 'b'.repeat(40)
+  vi.spyOn(s.pulls, 'detail').mockResolvedValue(detail(sha, base))
+  vi.spyOn(s.pulls, 'identity').mockResolvedValue('test-repo-account')
+  const parent = {
+    ...detail(sha, base).pull,
+    number: 6,
+    url: 'https://github.com/test/repo/pull/6',
+    head: 'test:parent',
+  }
+  vi.spyOn(s.pulls, 'list').mockResolvedValue({
+    pulls: [parent, { ...detail(sha, base).pull, base: 'test:parent' }],
+    hasMore: false,
+    page: 1,
+  })
+  const result = await createPullTask(s, 'repo', f.directory, {
+    number: 7,
+    headSha: sha,
+    objective: 'Update stack',
+    stackAction: 'update',
+    run: false,
+  })
+  expect(s.store.task(result.id)).toMatchObject({
+    status: 'draft',
+    title: 'Update stack from PR #6',
+    messages: [],
+  })
+  expect(s.store.task(result.id).draft).toContain('--force-with-lease=<ref>:<expected-tip>')
+  expect(s.store.task(result.id).draft).toContain('https://github.com/test/repo/pull/6')
+  vi.spyOn(s.pulls, 'list').mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+  await expect(
+    createPullTask(s, 'repo', f.directory, {
+      number: 7,
+      headSha: sha,
+      objective: 'Update stack',
+      stackAction: 'update',
+      run: false,
+    }),
+  ).rejects.toThrow('no longer part')
+})

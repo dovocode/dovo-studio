@@ -1,3 +1,4 @@
+import { pullStackLabel } from '@dovo/protocol'
 import { taskPullLinks } from '../detail/task-pull-links'
 import { AgentAvatar, ProjectIcon } from '@dovo/studio-ui'
 import { acpHarnessName, resolveTaskAgent, formatDateTime } from '@dovo/studio-core'
@@ -23,6 +24,7 @@ import {
   FolderGit2,
   GitBranch,
   GitPullRequest,
+  Layers,
   Monitor,
   Pin,
 } from 'lucide-react'
@@ -74,7 +76,10 @@ function TaskRowView({
   const branch =
     task.checkoutBranch ?? (task.execution === 'worktree' ? latest?.branch : repository?.branch)
   const host = latest?.runtimeHost ?? source.name
-  const linkedPulls = taskPullLinks(task)
+  const linkedPulls = taskPullLinks(task).sort(
+    (a, b) => Number(b.url === task.pullStatus?.url) - Number(a.url === task.pullStatus?.url),
+  )
+  const stack = linkedPulls[0]?.url === task.pullStatus?.url ? task.pullStatus?.stack : undefined
   const needsInput =
     snapshot?.questions.some((q) => q.taskId === task.id) ||
     snapshot?.approvals.some((a) => a.taskId === task.id)
@@ -169,8 +174,17 @@ function TaskRowView({
                   aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
                   title={linkedPulls.map((pull) => `#${pull.number} · ${pull.title}`).join(' · ')}
                 >
-                  <GitPullRequest className="size-3" />
+                  {stack ? (
+                    <Layers className="size-3" aria-label={pullStackLabel(stack)} />
+                  ) : (
+                    <GitPullRequest className="size-3" />
+                  )}
                   {linkedPulls[0]!.number}
+                  {stack && (
+                    <span className="text-[0.625rem]">
+                      {stack.complete ? `${stack.position}/${stack.size}` : 'Stack'}
+                    </span>
+                  )}
                   {linkedPulls.length > 1 && (
                     <span className="text-[0.625rem]">+{linkedPulls.length - 1}</span>
                   )}

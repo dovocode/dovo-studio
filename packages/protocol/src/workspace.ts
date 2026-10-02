@@ -1,3 +1,4 @@
+import { pullStackSummarySchema } from './scm/pulls/pull-stack.js'
 import { mutableArray, mutableStruct } from './shared/schema.js'
 import { minValue, maxValue, refine, urlSchema, isoDateTime } from './shared/schema.js'
 import { subagentSchema } from './conversation/workflow/subagents.js'
@@ -340,6 +341,7 @@ export const taskSchema = mutableStruct({
   // Strings, not literals, so a new forge state never breaks an older client's snapshot.
   pullStatus: Schema.optional(
     mutableStruct({
+      stack: Schema.optional(pullStackSummarySchema),
       number: Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.positive()),
       url: maxValue(Schema.String, 2000),
       state: maxValue(Schema.String, 40),

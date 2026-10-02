@@ -1,3 +1,4 @@
+import { pullStacks, stackSummary, type PullSummary } from '@dovo/protocol'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode, decodeResult } from '@dovo/protocol'
 import { retainUnavailableSections } from './cached-detail.js'
@@ -168,6 +169,82 @@ export class PullCache {
         () => this.pulls.list(cwd, state, page),
         force,
       )
+    })
+  }
+  /** Reuse bounded, credential-scoped list caches instead of loading every PR detail. */
+  stackCatalogEffect(cwd: string, force = false, seed?: typeof pullPageSchema.Type) {
+    return Effect.gen(this, function* () {
+      const pulls: PullSummary[] = []
+      let complete = false
+      let warning: string | undefined
+      for (let page = 1; page <= 10; page++) {
+        const result = yield* Effect.either(
+          page === 1 && seed?.page === 1
+            ? Effect.succeed(seed)
+            : this.listEffect(cwd, 'open', page, force),
+        )
+        if (result._tag === 'Left') {
+          warning = errorMessage(result.left)
+          break
+        }
+        const value = result.right
+        pulls.push(...value.pulls)
+        if (value.stale || value.refreshError)
+          warning = value.refreshError ?? 'Stack information is cached.'
+        if (!value.hasMore) {
+          complete = !warning
+          break
+        }
+        if (!value.pulls.length) break
+      }
+      if (!complete && !warning)
+        warning = 'Stack information is partial. Only the first 10 pages of open PRs were checked.'
+      return { pulls, complete, warning }
+    })
+  }
+  overviewEffect(cwd: string, state: 'open' | 'closed' | 'all', page: number, force = false) {
+    return Effect.gen(this, function* () {
+      const result = yield* this.listEffect(cwd, state, page, force)
+      if (state === 'closed') return result
+      const catalog = yield* this.stackCatalogEffect(
+        cwd,
+        force,
+        state === 'open' && page === 1 ? result : undefined,
+      )
+      const stacks = pullStacks(catalog.pulls, catalog.complete)
+      return {
+        ...result,
+        pulls: result.pulls.map((pull) => {
+          const stack = pull.state === 'open' ? stacks.get(pull.number) : undefined
+          return { ...pull, stack: stack ? stackSummary(stack) : undefined }
+        }),
+      }
+    })
+  }
+  stackEffect(cwd: string, number: number, force = false) {
+    return Effect.gen(this, function* () {
+      const catalog = yield* this.stackCatalogEffect(cwd, force)
+      return {
+        stack: pullStacks(catalog.pulls, catalog.complete).get(number),
+        warning: catalog.warning,
+      }
+    })
+  }
+  stack(cwd: string, number: number, force = false) {
+    return runClientEffect(this.stackEffect(cwd, number, force))
+  }
+  detailWithStackEffect(cwd: string, number: number, force = false) {
+    return Effect.gen(this, function* () {
+      const detail = yield* this.detailEffect(cwd, number, force)
+      if (detail.pull.state !== 'open')
+        return { ...detail, stack: undefined, pull: { ...detail.pull, stack: undefined } }
+      const { stack, warning } = yield* this.stackEffect(cwd, number, force)
+      return {
+        ...detail,
+        stack,
+        pull: { ...detail.pull, stack: stack ? stackSummary(stack) : undefined },
+        warnings: [...detail.warnings, ...(warning ? [warning] : [])],
+      }
     })
   }
   list(cwd: string, state: 'open' | 'closed' | 'all', page: number, force = false) {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { GitPullRequest, Wrench } from 'lucide-react'
-import { fixChecksPrompt, pullStatusLabel } from '@dovo/protocol'
+import { GitPullRequest, Layers, Wrench } from 'lucide-react'
+import { fixChecksPrompt, pullStatusLabel, pullStackLabel } from '@dovo/protocol'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button, cn } from '@dovo/studio-ui'
 
@@ -52,8 +52,15 @@ export function TaskPullStatus({
         }
         className={cn('inline-flex min-w-0 items-center gap-1 truncate hover:underline', tone)}
       >
-        <GitPullRequest size={10} className="shrink-0" />
-        <span className="truncate">{pullStatusLabel(status)}</span>
+        {status.stack ? (
+          <Layers size={12} className="shrink-0" />
+        ) : (
+          <GitPullRequest size={10} className="shrink-0" />
+        )}
+        <span className="truncate">
+          {pullStatusLabel(status)}
+          {status.stack ? ` · ${pullStackLabel(status.stack)}` : ''}
+        </span>
       </a>
       {failing && task.status !== 'running' && (
         <Button

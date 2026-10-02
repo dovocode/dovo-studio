@@ -34,3 +34,22 @@ increasing backoff. Refresh cannot bypass this pause. A primary-limit failure ma
 to learn the reset time, with a conservative fallback if unavailable. Other applications and Dovo
 servers using the same GitHub account share GitHub's quota; the local limiter does not coordinate
 different machines.
+
+## Stacked pull requests
+
+Desktop and mobile show a stack icon and position when an open PR targets the head branch of a
+unique open parent PR in the same repository. PR details show the dependency tree and let you open
+other members. Fork-qualified branches remain distinct; ambiguous parents and cycles are excluded.
+The overview and detail views reuse up to ten pages of cached open PRs. Incomplete or stale catalogs
+are explicitly marked as partial. Thread indicators use the background watcher's available catalog.
+
+**Stack a PR** opens creation with the parent branch selected. You can also choose a parent in the
+creation form. Submission verifies that the parent is still open and its head commit and branch have
+not changed, then adds a parent link to the new PR description. The source branch must already
+exist; this action does not create commits or branches.
+
+**Ask agent to update stack** refreshes dependencies and opens an editable thread draft. After you
+choose an agent and send it, the agent is instructed to restack parent-first, retarget children of
+merged parents, run checks and update PRs. The instructions preserve local work, stop on conflicts,
+require explicit remote-tip leases for rewritten branches and prohibit merging or closing PRs. Dovo
+does not automatically rewrite branches when the button is clicked.

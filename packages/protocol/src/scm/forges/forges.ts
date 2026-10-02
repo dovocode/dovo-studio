@@ -288,6 +288,8 @@ export const pullActionSchema = Schema.Union(
 )
 export type PullAction = Schema.Schema.Type<typeof pullActionSchema>
 export const pullCreateSchema = mutableStruct({
+  parentNumber: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
+  parentHeadSha: Schema.optional(Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/))),
   title: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 300),
   body: Schema.optionalWith(maxValue(Schema.String, 60000), {
     default: () => '',

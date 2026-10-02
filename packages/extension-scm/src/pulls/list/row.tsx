@@ -1,8 +1,9 @@
+import { pullStackLabel } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import type { PullSummary } from '@dovo/studio-core'
 import { Badge, ContextMenu } from '@dovo/studio-ui'
 import { pullChecks, pullReview, pullState, pullNextStep, formatDateTime } from '@dovo/studio-core'
-import { GitPullRequest, GitMerge } from 'lucide-react'
+import { GitPullRequest, GitMerge, Layers } from 'lucide-react'
 import { Signal } from '../detail/status'
 export function PullRow({
   pull,
@@ -64,6 +65,19 @@ export function PullRow({
                 <div className="flex items-center gap-2 text-[0.6875rem] text-muted-foreground">
                   <span className="truncate">{repository}</span>
                   <span className="shrink-0">#{pull.number}</span>
+                  {pull.stack && (
+                    <span
+                      className="inline-flex shrink-0 items-center gap-1 text-violet-400"
+                      title={
+                        pull.stack.parentNumber
+                          ? `Depends on PR #${pull.stack.parentNumber}`
+                          : 'Base of this PR stack'
+                      }
+                    >
+                      <Layers className="size-3" aria-hidden />
+                      {pullStackLabel(pull.stack)}
+                    </span>
+                  )}
                   <Badge variant="outline" className="ml-auto text-[0.625rem]">
                     {pullState(pull).label}
                   </Badge>

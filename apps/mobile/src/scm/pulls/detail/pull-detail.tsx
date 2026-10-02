@@ -1,3 +1,6 @@
+import { CreatePull } from '../list/create-pull'
+import { pullHeadBranch, pullStackLabel } from '@dovo/protocol'
+import { pullHref } from '../../../shell/source-route'
 import { openAppLink } from '../../../ui/content/open-link'
 import { formatTime } from '../../../runtime/preferences/app-preferences'
 import { nativeEffect } from '../../../runtime/state/native-effect'
@@ -53,6 +56,8 @@ export function PullDetail({
     invalidate()
     invalidatePullList(readCache, repositoryId)
   }
+  const [stackAction, setStackAction] = useApplicationState<'update' | undefined>(undefined)
+  const [creatingStack, setCreatingStack] = useApplicationState(false)
   const [starting, setStarting] = useApplicationState(false),
     [tab, setTab] = useApplicationState('overview'),
     [changesOpened, setChangesOpened] = useApplicationState(false),
@@ -222,6 +227,61 @@ export function PullDetail({
                 <Text selectable style={styles.muted}>
                   {detail.pull.head} → {detail.pull.base}
                 </Text>
+                {(detail.stack || detail.pull.state === 'open') && (
+                  <View style={[styles.card, { gap: 10 }]}>
+                    <View style={styles.row}>
+                      <Icon name="stack" size={16} color={colors.accent} />
+                      <Text style={styles.text}>
+                        {detail.stack ? pullStackLabel(detail.stack) : 'Build a stack'}
+                      </Text>
+                    </View>
+                    {detail.stack?.members.map((pull) => (
+                      <Pressable
+                        key={pull.number}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open PR #${pull.number}: ${pull.title}`}
+                        disabled={pull.number === number || !profile}
+                        onPress={() => {
+                          if (profile) router.push(pullHref(profile.id, repositoryId, pull.number))
+                        }}
+                        style={{ paddingVertical: 8, paddingLeft: pull.depth * 12 }}
+                      >
+                        <Text
+                          style={{ color: pull.number === number ? colors.text : colors.accent }}
+                        >
+                          #{pull.number} · {pull.title}
+                        </Text>
+                        <Text style={styles.muted}>
+                          {pull.parentNumber ? `Depends on #${pull.parentNumber}` : 'Base PR'}
+                        </Text>
+                      </Pressable>
+                    ))}
+                    {detail.stack && !detail.stack.complete && (
+                      <Text style={styles.muted}>
+                        Partial stack. Refresh and verify dependencies before updating.
+                      </Text>
+                    )}
+                    <Action
+                      secondary
+                      label="Stack a PR"
+                      disabled={
+                        !connected || detail.pull.state !== 'open' || !pullHeadBranch(detail.pull)
+                      }
+                      onPress={() => setCreatingStack(true)}
+                    />
+                    {detail.stack && (
+                      <Action
+                        secondary
+                        label="Ask agent to update stack"
+                        disabled={!connected || detail.stale}
+                        onPress={() => {
+                          setStackAction('update')
+                          setStarting(true)
+                        }}
+                      />
+                    )}
+                  </View>
+                )}
                 <View
                   style={{
                     gap: 5,
@@ -386,11 +446,27 @@ export function PullDetail({
           />
         </>
       )}
+      {creatingStack && detail && (
+        <CreatePull
+          repositoryId={repositoryId}
+          initialParent={detail.pull}
+          onClose={() => setCreatingStack(false)}
+          onCreated={(repo, next) => {
+            onPosted()
+            setCreatingStack(false)
+            if (profile) router.push(pullHref(profile.id, repo, next))
+          }}
+        />
+      )}
       {starting && detail && (
         <StartPullTask
           repositoryId={repositoryId}
           pull={detail.pull}
-          onBack={() => setStarting(false)}
+          stackAction={stackAction}
+          onBack={() => {
+            setStarting(false)
+            setStackAction(undefined)
+          }}
         />
       )}
       {action && detail && (
