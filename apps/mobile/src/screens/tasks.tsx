@@ -295,7 +295,7 @@ export default function TasksScreen() {
             : [
                 {
                   label: 'Projects',
-                  icon: 'folder' as const,
+                  icon: 'projects' as const,
                   onPress: () => {
                     retainPosition()
                     navigate('scm')
@@ -320,7 +320,7 @@ export default function TasksScreen() {
           },
           {
             label: 'No project task',
-            icon: 'add',
+            icon: 'newChat',
             disabled: !overviews.some((entry) => entry.connected) || busy,
             onPress: () => {
               retainPosition()

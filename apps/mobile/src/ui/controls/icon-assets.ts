@@ -39,6 +39,7 @@ export const iconAssets = {
   attach: require('../../../assets/icons/attach.png'),
   keyboard: require('../../../assets/icons/keyboard.png'),
   folder: require('../../../assets/icons/folder.png'),
+  projects: require('../../../assets/icons/projects.png'),
   home: require('../../../assets/icons/home.png'),
   microphone: require('../../../assets/icons/microphone.png'),
   waveform: require('../../../assets/icons/waveform.png'),

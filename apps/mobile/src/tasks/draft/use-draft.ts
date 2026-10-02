@@ -1,7 +1,7 @@
 import { Effect } from 'effect'
 import { clientTaskScope, runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useRuntime } from '../../runtime/connection/provider'
 import { AppState } from 'react-native'
@@ -99,18 +99,21 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
     })
     return () => subscription.remove()
   }, [key])
-  const update = (value: string) => {
-    if (activeKey.current === key) setText(value)
-    void runClientEffect(
-      drafts.writeEffect(key, value).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            if (activeKey.current === key) setError(String(error))
-          }),
+  const update = useCallback(
+    (value: string) => {
+      if (activeKey.current === key) setText(value)
+      void runClientEffect(
+        drafts.writeEffect(key, value).pipe(
+          Effect.catchAll((error) =>
+            Effect.sync(() => {
+              if (activeKey.current === key) setError(String(error))
+            }),
+          ),
         ),
-      ),
-    )
-  }
+      )
+    },
+    [key, setText, setError],
+  )
   return {
     text: loadedKey === key ? text : '',
     update,

@@ -7,7 +7,7 @@ import { Glass } from '../../ui/layout/glass'
 import { MessageAttachments } from '../conversation/components/message-attachments'
 import { ActivityIndicator, Alert, Keyboard, Linking, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import {
   REVIEW_PROMPT,
   contextMeter,
@@ -20,7 +20,7 @@ import {
 import { Effect } from 'effect'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
-import { Field } from '../../ui/controls/field'
+import { ComposerField } from './composer-field'
 import { Sheet } from '../../ui/layout/sheet'
 import { colors, styles } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
@@ -65,6 +65,15 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
     [checkout, setCheckout] = useApplicationState(false)
   const selection = useRef<DraftSelection | undefined>(undefined)
   const [caret, setCaret] = useApplicationState(0)
+  const focus = useCallback(() => setFocused(true), [setFocused])
+  const blur = useCallback(() => setFocused(false), [setFocused])
+  const select = useCallback(
+    (value: DraftSelection) => {
+      selection.current = value
+      setCaret(value.end)
+    },
+    [setCaret],
+  )
   const meter = contextMeter(task)
   const { callEffect: commandCall } = useRuntime()
   const commandAction = useAction()
@@ -255,16 +264,10 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                 minWidth: 0,
               }}
             >
-              <Field
-                label="Message"
-                hideLabel
-                autoCorrect={false}
-                onFocus={() => setFocused(true)}
-                onBlur={() => setFocused(false)}
-                onSelectionChange={({ nativeEvent }) => {
-                  selection.current = nativeEvent.selection
-                  setCaret(nativeEvent.selection.end)
-                }}
+              <ComposerField
+                onFocus={focus}
+                onBlur={blur}
+                onSelectionChange={select}
                 placeholder={
                   dictation.isRecording
                     ? 'Listening…'
@@ -276,26 +279,8 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                 }
                 value={draft.text}
                 onChangeText={draft.update}
-                multiline
-                autoCapitalize="sentences"
                 editable={draft.ready && !busy && !dictation.active && !task.archived}
-                style={[
-                  styles.input,
-                  styles.chatText,
-                  {
-                    maxHeight: 144,
-                    minHeight: 44,
-                    borderWidth: 0,
-                    paddingLeft: showOptions ? 12 : 44,
-                    paddingRight: showOptions ? 12 : 88,
-                    // iOS adds extra line height above multiline text; keep 17pt text on a
-                    // 22pt line so one line sits centered in the 44pt row.
-                    lineHeight: 22,
-                    paddingTop: 11,
-                    paddingBottom: 11,
-                    backgroundColor: 'transparent',
-                  },
-                ]}
+                showOptions={showOptions}
               />
             </View>
             {focused && (
