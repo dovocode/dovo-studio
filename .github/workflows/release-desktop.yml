@@ -92,10 +92,10 @@ jobs:
   mac:
     needs: draft
     if: ${{ needs.draft.outputs.build == 'true' }}
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     env:
-      # The macos-15 image defaults to Xcode 16.4; Icon Composer requires 26+.
+      # Compile Tahoe icons on Tahoe: Xcode 26.2 asset runtime crashes on macOS 15.
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
       DOVO_RELEASE_VERSION: ${{ needs.draft.outputs.version }}
       DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
