@@ -19,6 +19,7 @@ const recordSchema = mutableStruct({
         attachmentIds: mutableArray(Schema.String),
         mode: Schema.Literal('queue', 'steer'),
         title: Schema.optional(Schema.String),
+        runId: Schema.optional(Schema.String),
       }),
       accepted: Schema.Boolean,
     }),

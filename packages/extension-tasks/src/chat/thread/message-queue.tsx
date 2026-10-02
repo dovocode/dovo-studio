@@ -35,6 +35,7 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
         {
           id: task.id,
           action,
+          runId: action === 'steer' ? task.activeRunId : undefined,
           messageId,
           ...edit,
         },

@@ -31,6 +31,7 @@ export function TaskConversation({
   onBrowser,
   onPullLink,
   revealMessage,
+  onRevealHandled,
   onAside,
   visible,
   codeReference,
@@ -45,6 +46,7 @@ export function TaskConversation({
   onBrowser?: (url: string) => void
   onPullLink?: (url: string) => boolean
   revealMessage?: string
+  onRevealHandled?: () => void
   /** Opens the side question dialog. */
   onAside?: () => void
   visible: boolean
@@ -121,6 +123,7 @@ export function TaskConversation({
         onBrowser={onBrowser}
         onPullLink={onPullLink}
         revealMessage={revealMessage}
+        onRevealHandled={onRevealHandled}
         pending={threadPending}
       />
       {(budget.tokenExceeded || budget.timeExceeded) && (

@@ -95,6 +95,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const hasDiff =
     !!task &&
     (task.files.length > 0 ||
+      task.historyTotals?.hasChanges ||
       (task.turns ?? []).some(
         (turn) =>
           !!turn.checkpoint && turn.checkpoint.files.length + turn.checkpoint.omitted.length > 0,
@@ -512,23 +513,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const [searching, setSearching] = useApplicationState<TaskSearchMode | null>(null)
   // After opening a search result, scroll its message into view once the thread renders.
   const [revealMessage, setRevealMessage] = useApplicationState('')
-  useEffect(() => {
-    if (!revealMessage) return
-    let attempts = 0
-    let frame = 0
-    const reveal = () => {
-      const element = document.getElementById(revealMessage)
-      if (element) {
-        element.scrollIntoView({ block: 'center' })
-        element.classList.add('studio-search-hit')
-        setTimeout(() => element.classList.remove('studio-search-hit'), 1600)
-        setRevealMessage('')
-      } else if (attempts++ < 30) frame = requestAnimationFrame(reveal)
-      else setRevealMessage('')
-    }
-    frame = requestAnimationFrame(reveal)
-    return () => cancelAnimationFrame(frame)
-  }, [revealMessage])
+  const revealHandled = useCallback(() => setRevealMessage(''), [setRevealMessage])
   const allEntries = useMemo(() => collectTasks(sources), [sources])
   useEffect(() => {
     if (!transcriptNotice) return
@@ -547,7 +532,11 @@ export default function TasksView({ entityId }: StudioViewProps) {
     stop: () => {
       if (task?.status !== 'running' || !connected) return
       setStopError('')
-      void request('/api/tasks/cancel', { id: task.id }, responses.ok).catch((error: unknown) =>
+      void request(
+        '/api/tasks/cancel',
+        { id: task.id, runId: task.activeRunId },
+        responses.ok,
+      ).catch((error: unknown) =>
         setStopError(error instanceof Error ? error.message : String(error)),
       )
     },
@@ -774,6 +763,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                           key={taskCollectionKey(activeRuntimeId, task.id)}
                           task={task}
                           revealMessage={revealMessage}
+                          onRevealHandled={revealHandled}
                           codeReference={codeReference?.taskId === task.id ? codeReference : null}
                           visible={!listOpen && (!compact || surface === 'chat')}
                           onReview={() => selectSurface(hasDiff ? 'changes' : 'files')}

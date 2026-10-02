@@ -159,3 +159,5 @@ export * from './tasks/harness-icon-data.js'
 export * from './conversation/presentation/usage-history.js'
 
 export * from './conversation/presentation/usage-refresh.js'
+
+export * from './conversation/history.js'

@@ -1,3 +1,4 @@
+import { conversationPage } from '@dovo/protocol'
 import { compactActivityEvents } from '@dovo/protocol'
 import { searchTaskMessages } from '@dovo/protocol'
 import { recoverableMutation } from '@dovo/protocol'
@@ -446,16 +447,27 @@ export function route(
                   : 'runtime-sync',
             undefined,
             tasks,
+            url.searchParams.get('history') === 'paged',
           ),
           ...(format === '4' ? { format: 4 } : {}),
         }
       }
-      if (method === 'POST' && path === '/api/tasks/search') {
-        const { query } = decode(
-          mutableStruct({ query: maxValue(Schema.String, 500) }),
+      if (method === 'POST' && path === '/api/tasks/history') {
+        const input = decode(
+          mutableStruct({ id: idSchema, before: Schema.optional(idSchema) }),
           yield* serviceResult(body(request, 4096)),
         )
-        return searchTaskMessages(s.store.publicWorkspace().tasks, query)
+        const task = s.store.task(input.id)
+        if (input.before && !task.messages.some((message) => message.id === input.before))
+          throw new HttpError(409, 'Reload this conversation before loading older messages')
+        return conversationPage(task, input.before)
+      }
+      if (method === 'POST' && path === '/api/tasks/search') {
+        const { query, id } = decode(
+          mutableStruct({ query: maxValue(Schema.String, 500), id: Schema.optional(idSchema) }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        return searchTaskMessages(id ? [s.store.task(id)] : s.store.publicWorkspace().tasks, query)
       }
       if (method === 'GET' && path === '/api/snapshot') {
         return yield* runtimeSnapshot(
@@ -463,6 +475,7 @@ export function route(
           device,
           url.searchParams.get('scope') === 'overview',
           url.searchParams.get('scope') === 'threads' ? syncTasks(url) : undefined,
+          url.searchParams.get('history') === 'paged',
         )
       }
       if (method === 'POST' && path === '/api/runtime/prepare-restart') {
@@ -572,6 +585,11 @@ export function route(
         )
           throw new HttpError(409, 'Runtime already has workspace data')
         const workspace = decode(workspaceSchema, yield* serviceResult(body(request)))
+        if (workspace.tasks.some((task) => task.historyBefore || task.historyTotals))
+          throw new HttpError(
+            400,
+            'A paged client snapshot is not a backup. Export the full workspace from its runtime before importing.',
+          )
         const scratch = workspace.repositories.some((repo) => repo.id === SCRATCH_PROJECT_ID)
           ? yield* serviceResult(s.scratch.available())
           : undefined

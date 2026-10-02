@@ -1,8 +1,9 @@
+import { useConversationHistory } from './use-conversation-history'
 import { ChatMessage } from './chat-message'
 import { DeferredTurn } from './deferred-turn'
 import { type PendingMessage } from '@dovo/protocol'
 import { conversationTurns, conversationTurnLabel } from './conversation-turns'
-import { searchThread } from './thread-search'
+import { useThreadSearch } from './use-thread-search'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { TaskActivity, useTaskActivity } from './task-activity'
 import { TurnLabel } from './turn-label'
@@ -21,21 +22,28 @@ import { useWorkspace, useStudioHost } from '@dovo/studio-core'
 const emptyTools: ReturnType<typeof useTaskActivity>['tools'] = []
 const emptyCompactions: NonNullable<Task['compactions']> = []
 export function ChatThread({
-  task,
+  task: liveTask,
   onTerminal,
   pending,
   onBrowser,
   onPullLink,
   revealMessage,
+  onRevealHandled,
 }: {
-  task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'>
+  task: Pick<
+    Task,
+    'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions' | 'historyBefore'
+  >
   /** Shows the terminal after a chat command ran in it. */
   onTerminal?: (terminalId: string) => void
   pending?: PendingMessage | null
   onBrowser?: (url: string) => void
   onPullLink?: (url: string) => boolean
   revealMessage?: string
+  onRevealHandled?: () => void
 }) {
+  const history = useConversationHistory(liveTask)
+  const task = history.task
   const { chooseLink } = useStudioHost()
   const [linkError, setLinkError] = useState('')
   const { request, connected } = useWorkspace()
@@ -67,17 +75,48 @@ export function ChatThread({
   const [query, setQuery] = useState('')
   const [matchIndex, setMatchIndex] = useState(0)
   const filter = useDeferredValue(searchOpen ? query : '')
-  const matches = useMemo(() => searchThread(task.messages, filter), [task.messages, filter])
+  const search = useThreadSearch(task, filter)
+  const matches = search.matches
   const selectedMatch = matches[Math.min(matchIndex, Math.max(0, matches.length - 1))]
+  const revealPrefix = `message-${task.id}-`
+  const revealId = revealMessage?.startsWith(revealPrefix)
+    ? revealMessage.slice(revealPrefix.length)
+    : undefined
+  const target = selectedMatch?.id ?? revealId
+  const targetVisible = !!target && task.messages.some((message) => message.id === target)
   useEffect(() => {
-    if (!selectedMatch) return
-    const frame = requestAnimationFrame(() =>
-      document
-        .getElementById(`message-${task.id}-${selectedMatch.id}`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+    if (
+      target &&
+      !task.messages.some((message) => message.id === target) &&
+      history.hasMore &&
+      !history.busy &&
+      !history.error &&
+      connected
     )
-    return () => cancelAnimationFrame(frame)
-  }, [selectedMatch?.id, task.id, filter])
+      void history.load()
+  }, [target, task.messages, history.hasMore, history.busy, history.error, history.load, connected])
+  useEffect(() => {
+    if (!target || !targetVisible) return
+    let highlight: ReturnType<typeof setTimeout> | undefined
+    let highlighted: HTMLElement | null = null
+    const frame = requestAnimationFrame(() => {
+      const element = document.getElementById(`message-${task.id}-${target}`)
+      element?.scrollIntoView({ behavior: revealId ? 'instant' : 'smooth', block: 'center' })
+      if (element && target === revealId) {
+        highlighted = element
+        element.classList.add('studio-search-hit')
+        highlight = setTimeout(() => {
+          element.classList.remove('studio-search-hit')
+          onRevealHandled?.()
+        }, 1600)
+      }
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      if (highlight) clearTimeout(highlight)
+      highlighted?.classList.remove('studio-search-hit')
+    }
+  }, [target, targetVisible, task.id, filter, revealId, onRevealHandled])
   const lastTurn = task.turns?.at(-1)
   const bookmarks = useMemo(
     () => task.messages.filter((message) => message.role === 'assistant' && message.bookmarked),
@@ -249,6 +288,25 @@ export function ChatThread({
       >
         <ConversationHistory>
           <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-12 md:pr-5">
+            {history.hasMore && (
+              <Button
+                variant="ghost"
+                disabled={history.busy || !connected}
+                onClick={() => void history.load()}
+              >
+                {history.busy ? 'Loading earlier messages…' : 'Load earlier messages'}
+              </Button>
+            )}
+            {search.error && (
+              <p role="alert" className="text-xs text-destructive">
+                Could not search older history: {search.error}
+              </p>
+            )}
+            {history.error && (
+              <p role="alert" className="text-xs text-destructive">
+                {history.error}
+              </p>
+            )}
             {!!bookmarks.length && (
               <nav
                 aria-label="Bookmarked replies"
@@ -334,6 +392,7 @@ export function ChatThread({
                           connected={connected}
                           request={request}
                           onTerminal={onTerminal}
+                          onBookmark={history.setBookmark}
                         />
                       )
                     })

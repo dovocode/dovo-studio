@@ -1,3 +1,5 @@
+import { journalProvider } from './journal-provider.js'
+import { ProgressBuffer } from './progress-buffer.js'
 import { reportedUsageAccount } from '../tasks/usage-account.js'
 import { browserCdpInstructions } from './browser-cdp.js'
 import { runWithHooks } from './agent-hooks.js'
@@ -91,6 +93,14 @@ export class TaskTurnRunner {
       }
       if (!turn || turn.status === 'running' || !turn.finishedAt || !turn.checkpoint)
         throw new HttpError(409, 'No completed provider turn is awaiting change capture')
+      const action = {
+        id: `checkpoint:${turn.id}`,
+        taskId: id,
+        attemptId: turn.id,
+        kind: 'checkpoint' as const,
+        state: 'dispatched' as const,
+      }
+      this.store.updateTask(id, (task) => task, undefined, action)
       const before = turn.checkpoint.before
       const after =
         turn.checkpoint.after ??
@@ -99,21 +109,26 @@ export class TaskTurnRunner {
         ))
       const changes = yield* runtimeOperation(() => this.git.checkpointChanges(cwd, before, after))
       const files = yield* runtimeOperation(() => this.git.changes(cwd))
-      this.store.updateTask(id, (task) => ({
-        ...task,
-        status: turn.status === 'completed' ? 'review' : turn.status,
-        runPhase: undefined,
-        runAttempt: undefined,
-        restartRecovery: undefined,
-        activity: undefined,
-        error: turn.error,
-        files,
-        turns: task.turns?.map((current) =>
-          current.id === turn.id
-            ? { ...current, checkpoint: { before, after, ...changes } }
-            : current,
-        ),
-      }))
+      this.store.updateTask(
+        id,
+        (task) => ({
+          ...task,
+          status: turn.status === 'completed' ? 'review' : turn.status,
+          runPhase: undefined,
+          runAttempt: undefined,
+          restartRecovery: undefined,
+          activity: undefined,
+          error: turn.error,
+          files,
+          turns: task.turns?.map((current) =>
+            current.id === turn.id
+              ? { ...current, checkpoint: { before, after, ...changes } }
+              : current,
+          ),
+        }),
+        undefined,
+        { ...action, state: 'completed' },
+      )
     })
   }
   runEffect(
@@ -196,7 +211,7 @@ ${
           ? (yield* runtimeOperation(() => this.git.inspect(cwd))).branch
           : undefined
         let assistantId = randomUUID()
-        const turnId = randomUUID(),
+        const turnId = task.activeRunId ?? randomUUID(),
           fingerprint = createHash('sha256')
             .update(
               JSON.stringify({
@@ -256,38 +271,48 @@ ${
             )
           : ''
         controller.signal.throwIfAborted()
-        this.store.updateTask(id, (t) => ({
-          ...t,
-          status: 'running',
-          runPhase: 'provider',
-          preparation: undefined,
-          // A new session starts with an empty context.
-          ...(sessionId ? {} : { contextUsage: undefined }),
-          runAttempt: { inputMessageIds: currentMessages.map((m) => m.id), promptAccepted: false },
-          checkoutBranch: branch,
-          error: undefined,
-          consumedMessageIds,
-          turns: [
-            ...(t.turns ?? []),
-            {
-              runtimeHost: hostname(),
-              id: turnId,
-              assistantId,
-              checkpoint: hasGit ? { before, files: [], omitted: [] } : undefined,
-              agentId: agent.id,
-              provider: agent.provider,
-              branch,
-              model: agent.model,
-              reasoning: agent.reasoning,
-              startedAt: new Date().toISOString(),
-              status: 'running',
+        this.store.updateTask(
+          id,
+          (t) => ({
+            ...t,
+            status: 'running',
+            runPhase: 'provider',
+            preparation: undefined,
+            // A new session starts with an empty context.
+            ...(sessionId ? {} : { contextUsage: undefined }),
+            runAttempt: {
+              ...t.runAttempt,
+              inputMessageIds: currentMessages.map((m) => m.id),
+              promptAccepted: false,
             },
-          ],
-          messages: [
-            ...t.messages,
-            { id: assistantId, role: 'assistant', text: '', createdAt: new Date().toISOString() },
-          ],
-        }))
+            checkoutBranch: branch,
+            error: undefined,
+            consumedMessageIds,
+            turns: [
+              ...(t.turns ?? []),
+              {
+                runtimeHost: hostname(),
+                id: turnId,
+                runId: t.runAttempt?.runId ?? turnId,
+                assistantId,
+                checkpoint: hasGit ? { before, files: [], omitted: [] } : undefined,
+                agentId: agent.id,
+                provider: agent.provider,
+                branch,
+                model: agent.model,
+                reasoning: agent.reasoning,
+                startedAt: new Date().toISOString(),
+                status: 'running',
+              },
+            ],
+            messages: [
+              ...t.messages,
+              { id: assistantId, role: 'assistant', text: '', createdAt: new Date().toISOString() },
+            ],
+          }),
+          undefined,
+          { id: `start:${turnId}`, taskId: id, attemptId: turnId, kind: 'start', state: 'pending' },
+        )
         const checkpoint = () => {
           if (!hasGit)
             return Effect.succeed({
@@ -299,17 +324,27 @@ ${
             })
           let after: string | undefined
           return Effect.gen(this, function* () {
+            const action = {
+              id: `checkpoint:${turnId}`,
+              taskId: id,
+              attemptId: turnId,
+              kind: 'checkpoint' as const,
+              state: 'dispatched' as const,
+            }
+            this.store.updateTask(id, (task) => task, undefined, action)
             const capturedAfter = yield* runtimeOperation(() =>
               this.git.snapshot(cwd, `refs/dovo/checkpoints/${turnId}/after`),
             )
             after = capturedAfter
+            const changes = yield* runtimeOperation(() =>
+              this.git.checkpointChanges(cwd, before, capturedAfter),
+            )
+            this.store.providerActions.transition(`checkpoint:${turnId}`, 'completed')
             return {
               before,
               after,
               error: undefined,
-              ...(yield* runtimeOperation(() =>
-                this.git.checkpointChanges(cwd, before, capturedAfter),
-              )),
+              ...changes,
             }
           }).pipe(
             Effect.catchAll((error) =>
@@ -325,6 +360,11 @@ ${
         }
         let buffer = '',
           timer: ReturnType<typeof setTimeout> | undefined
+        const progress = new ProgressBuffer((error) => {
+          flushError = error
+          controller.abort(new TurnStoreFailure(error))
+        })
+        const seenTools = new Set<string>()
         const textOffset = () =>
           (this.store.task(id).messages.find((message) => message.id === assistantId)?.text
             .length ?? 0) + buffer.length
@@ -346,17 +386,32 @@ ${
         let promptAccepted = false
         const acceptPrompt = () => {
           if (!acceptsProviderEvents() || promptAccepted) return
-          this.store.updateTask(id, (t) => ({
-            ...t,
-            runAttempt: { inputMessageIds: currentMessages.map((m) => m.id), promptAccepted: true },
-            consumedMessageIds: [
-              ...new Set([
-                ...(t.consumedMessageIds ?? []),
-                ...currentMessages.map((m) => m.id),
-                assistantId,
-              ]),
-            ],
-          }))
+          this.store.updateTask(
+            id,
+            (t) => ({
+              ...t,
+              runAttempt: {
+                ...t.runAttempt,
+                inputMessageIds: currentMessages.map((m) => m.id),
+                promptAccepted: true,
+              },
+              consumedMessageIds: [
+                ...new Set([
+                  ...(t.consumedMessageIds ?? []),
+                  ...currentMessages.map((m) => m.id),
+                  assistantId,
+                ]),
+              ],
+            }),
+            undefined,
+            {
+              id: `start:${turnId}`,
+              taskId: id,
+              attemptId: turnId,
+              kind: 'start',
+              state: 'acknowledged',
+            },
+          )
           promptAccepted = true
         }
         const acceptsProviderEvents = () => providerOpen && !controller.signal.aborted
@@ -488,9 +543,16 @@ ${
               planLimits: mergePlanLimits(workspace.planLimits ?? [], limits),
             }))
           }
+          const journaledAdapter = journalProvider(
+            adapter,
+            this.store,
+            id,
+            turnId,
+            acceptsProviderEvents,
+          )
           yield* runtimeOperation(() =>
             runWithHooks(
-              adapter,
+              journaledAdapter,
               {
                 taskId: id,
                 agent: {
@@ -535,6 +597,14 @@ ${
                       ),
                     )
                     controller.signal.throwIfAborted()
+                    const action = {
+                      id: `steer:${turnId}:${messageId}`,
+                      taskId: id,
+                      attemptId: turnId,
+                      kind: 'steer' as const,
+                      state: 'dispatched' as const,
+                    }
+                    this.store.updateTask(id, (task) => task, undefined, action)
                     await send({
                       id: messageId,
                       prompt: [message.text, attachmentPrompt(files)].filter(Boolean).join('\n\n'),
@@ -545,26 +615,31 @@ ${
                     acceptedIds.add(assistantId)
                     const nextAssistantId = randomUUID()
                     acceptedIds.add(nextAssistantId)
-                    this.store.updateTask(id, (t) => ({
-                      ...t,
-                      queue: t.queue?.filter((m) => m.id !== messageId),
-                      messages: [
-                        ...t.messages,
-                        message,
-                        {
-                          id: nextAssistantId,
-                          role: 'assistant',
-                          text: '',
-                          createdAt: new Date().toISOString(),
-                        },
-                      ],
-                      consumedMessageIds: [
-                        ...new Set([...(t.consumedMessageIds ?? []), ...acceptedIds]),
-                      ],
-                      turns: t.turns?.map((turn) =>
-                        turn.id === turnId ? { ...turn, assistantId: nextAssistantId } : turn,
-                      ),
-                    }))
+                    this.store.updateTask(
+                      id,
+                      (t) => ({
+                        ...t,
+                        queue: t.queue?.filter((m) => m.id !== messageId),
+                        messages: [
+                          ...t.messages,
+                          message,
+                          {
+                            id: nextAssistantId,
+                            role: 'assistant',
+                            text: '',
+                            createdAt: new Date().toISOString(),
+                          },
+                        ],
+                        consumedMessageIds: [
+                          ...new Set([...(t.consumedMessageIds ?? []), ...acceptedIds]),
+                        ],
+                        turns: t.turns?.map((turn) =>
+                          turn.id === turnId ? { ...turn, assistantId: nextAssistantId } : turn,
+                        ),
+                      }),
+                      undefined,
+                      { ...action, state: 'completed' },
+                    )
                     assistantId = nextAssistantId
                   }
                   onSteer?.((messageId) => {
@@ -683,17 +758,30 @@ ${
                   const tool = toolEvent(agent.provider, name, payload)
                   if (tool && buffer) flush()
                   if (reasoningOnly && !tool) return
-                  this.activity?.add(
-                    tool ? 'tool' : 'agent-event',
-                    id,
-                    tool?.title || `${agent.provider} · ${name}`,
-                    {
-                      turnId,
-                      ...tool,
-                      textOffset: textOffset(),
-                      event: safeReasoningEvent(payload),
-                    },
+                  const offset = textOffset()
+                  const write = () =>
+                    this.activity?.add(
+                      tool ? 'tool' : 'agent-event',
+                      id,
+                      tool?.title || `${agent.provider} · ${name}`,
+                      {
+                        turnId,
+                        ...tool,
+                        textOffset: offset,
+                        event: safeReasoningEvent(payload),
+                      },
+                    )
+                  if (
+                    tool &&
+                    ['running', 'pending', 'in_progress'].includes(tool.status) &&
+                    seenTools.has(tool.toolId)
                   )
+                    progress.put(tool.toolId, JSON.stringify(payload).length * 3, write)
+                  else {
+                    progress.flush()
+                    if (tool) seenTools.add(tool.toolId)
+                    write()
+                  }
                 },
                 onActivity: (text) => {
                   if (!acceptsProviderEvents()) return
@@ -711,6 +799,14 @@ ${
                         prompt,
                         signal ? AbortSignal.any([questionSignal, signal]) : questionSignal,
                         validate,
+                        (_answers, receipt) =>
+                          this.store.acceptQuestionResponse(id, receipt, {
+                            id: `answer:${turnId}:${receipt.id}`,
+                            taskId: id,
+                            attemptId: turnId,
+                            kind: 'answer',
+                            state: 'dispatched',
+                          }),
                       )
                     : Promise.resolve(null),
               },
@@ -767,17 +863,31 @@ ${
           const finishedAt = new Date().toISOString()
           providerFinishedAt = finishedAt
           flush()
-          this.store.updateTask(id, (t) => ({
-            ...t,
-            runPhase: 'finalizing',
-            activity: 'Saving changes',
-            consumedMessageIds: [
-              ...new Set([...currentMessages.map((m) => m.id), assistantId, ...acceptedIds]),
-            ],
-            turns: t.turns?.map((turn) =>
-              turn.id === turnId ? { ...turn, status: 'completed', finishedAt } : turn,
-            ),
-          }))
+          this.store.updateTask(
+            id,
+            (t) => ({
+              ...t,
+              runPhase: 'finalizing',
+              activity: 'Saving changes',
+              consumedMessageIds: [
+                ...new Set([...currentMessages.map((m) => m.id), assistantId, ...acceptedIds]),
+              ],
+              turns: t.turns?.map((turn) =>
+                turn.id === turnId ? { ...turn, status: 'completed', finishedAt } : turn,
+              ),
+            }),
+            undefined,
+            {
+              id: `start:${turnId}`,
+              taskId: id,
+              attemptId: turnId,
+              kind: 'start',
+              state: 'completed',
+            },
+          )
+          for (const action of this.store.providerActions.list(id, turnId))
+            if (action.attemptId === turnId && action.kind === 'answer')
+              this.store.providerActions.transition(action.id, 'completed')
           const captured = yield* checkpoint()
           const review = yield* (
             hasGit ? runtimeOperation(() => this.git.changes(cwd)) : Effect.succeed([])
@@ -908,6 +1018,7 @@ ${
             Effect.sync(() => {
               flush()
               reasoning.finish()
+              progress.flush()
             }),
           ),
         )

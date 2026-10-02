@@ -3,9 +3,22 @@ import { HttpError } from '../../errors.js'
 export class SocketTickets {
   private tickets = new Map<
     string,
-    { token: string; resourceId: string; expires: number; taskId?: string; syncTasks?: string[] }
+    {
+      token: string
+      resourceId: string
+      expires: number
+      taskId?: string
+      syncTasks?: string[]
+      pagedHistory?: boolean
+    }
   >()
-  issue(token: string, resourceId: string, taskId?: string, syncTasks?: string[]) {
+  issue(
+    token: string,
+    resourceId: string,
+    taskId?: string,
+    syncTasks?: string[],
+    pagedHistory = false,
+  ) {
     for (const [key, value] of this.tickets)
       if (value.expires < Date.now()) this.tickets.delete(key)
     const ticket = newSecret()
@@ -14,6 +27,7 @@ export class SocketTickets {
       resourceId,
       taskId,
       syncTasks,
+      pagedHistory,
       expires: Date.now() + 30000,
     })
     return ticket

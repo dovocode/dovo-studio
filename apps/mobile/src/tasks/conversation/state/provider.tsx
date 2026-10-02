@@ -1,3 +1,4 @@
+import { useConversationHistory } from './use-conversation-history'
 import { visibleMobileSend } from '../../composer/pending-send'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import {
@@ -26,6 +27,7 @@ import { useRef } from 'react'
 import { taskToolEvents, type ToolEvents } from './tool-events'
 type Conversation = {
   visible: boolean
+  history: ReturnType<typeof useConversationHistory<Task>>
   task: Task
   actions: ReturnType<typeof useConversationActions>
   send: (mode?: 'queue' | 'steer') => void
@@ -63,7 +65,7 @@ export function usePendingConversationMessage() {
   return useContext(PendingContext)
 }
 export function ConversationProvider({
-  task,
+  task: liveTask,
   visible,
   openCheckpoint,
   openTerminal,
@@ -75,6 +77,8 @@ export function ConversationProvider({
   openTerminal: (terminalId: string) => void
   children: ReactNode
 }) {
+  const history = useConversationHistory(liveTask)
+  const task = history.task
   const { carMode, readRepliesAloud, speechLanguage, speechVoice, speechRate } =
     useMobilePreferences()
   const speechAvailable =
@@ -231,6 +235,7 @@ export function ConversationProvider({
   )
   const value: Conversation = {
     task,
+    history,
     visible,
     actions,
     openCheckpoint: showCheckpoint,

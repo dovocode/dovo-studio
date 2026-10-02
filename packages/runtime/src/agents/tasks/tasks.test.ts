@@ -1536,13 +1536,13 @@ it('keeps provider success when finalization storage fails and retries capture w
   })
   const update = s.store.updateTask.bind(s.store)
   let fail = true
-  vi.spyOn(s.store, 'updateTask').mockImplementation((id, fn, receipt) => {
+  vi.spyOn(s.store, 'updateTask').mockImplementation((id, fn, receipt, action) => {
     const next = fn(s.store.task(id))
     if (fail && next.status === 'review') {
       fail = false
       throw new Error('SQLite finalization failure')
     }
-    return update(id, fn, receipt)
+    return update(id, fn, receipt, action)
   })
   await (
     await s.tasks.start(task.id)

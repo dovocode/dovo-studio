@@ -46,6 +46,7 @@ export function MessageActions({
     [blocks],
   )
   const task = useConversationSelector((value) => value.task)
+  const setBookmark = useConversationSelector((value) => value.history.setBookmark)
   const openTerminal = useConversationSelector((value) => value.openTerminal)
   const { call, connected, activeId, profile, readRuntime } = useRuntime()
   const bookmarked = task.messages.some((message) => message.id === messageId && message.bookmarked)
@@ -237,7 +238,11 @@ export function MessageActions({
                 bookmarked: !bookmarked,
               },
               responses.ok,
-            ).catch((error: unknown) => Alert.alert('Could not update bookmark', String(error)))
+            )
+              .then(() => {
+                if (messageId) setBookmark(messageId, !bookmarked)
+              })
+              .catch((error: unknown) => Alert.alert('Could not update bookmark', String(error)))
           }
           style={({ pressed }) => ({
             width: 36,

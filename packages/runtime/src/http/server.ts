@@ -178,6 +178,7 @@ export function createRuntimeServer(services: Services, internal = false) {
             ticket.resourceId !== 'runtime-sync',
             ['runtime-sync-3', 'runtime-sync-4'].includes(ticket.resourceId),
             ticket.syncTasks,
+            ticket.pagedHistory,
           )
         })
         return

@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from 'vitest'
 import { startRuntime } from '../index'
 import { WorkspaceStore } from '../storage/workspace'
-import type { Task } from '@dovo/protocol'
+import { decode, conversationPageSchema, snapshotSchema, type Task } from '@dovo/protocol'
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const close of cleanup.splice(0)) await close()
@@ -32,7 +32,7 @@ async function setup() {
       headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: task.id, action }),
     })
-  return { ...runtime.services, action }
+  return { ...runtime.services, action, address: `http://127.0.0.1:${runtime.port}` }
 }
 it('archives separately from settle, persists and restores without losing the conversation', async () => {
   const { store, db, action } = await setup()
@@ -111,4 +111,48 @@ it('keeps a visible thread when its terminal is still running', async () => {
     terminals.close(session.id)
   }
   expect((await action('archive')).status).toBe(200)
+})
+
+it('pages all authenticated history with stable cursors while preserving legacy snapshots', async () => {
+  const { store, address } = await setup()
+  store.updateTask(task.id, (t) => ({
+    ...t,
+    messages: Array.from({ length: 80 }, (_, index) => ({
+      id: `m${index}`,
+      role: index % 2 ? 'assistant' : 'user',
+      text: `message ${index}`,
+    })),
+  }))
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  const history = (before?: string, credential = token) =>
+    fetch(`${address}/api/tasks/history`, {
+      method: 'POST',
+      headers: { ...headers, Authorization: `Bearer ${credential}` },
+      body: JSON.stringify({ id: task.id, before }),
+    })
+  expect((await history(undefined, 'invalid')).status).toBe(401)
+  expect((await history('removed')).status).toBe(409)
+  const collected: string[] = []
+  let before: string | undefined
+  do {
+    const response = await history(before)
+    expect(response.status).toBe(200)
+    const page = decode(conversationPageSchema, await response.json())
+    collected.unshift(...page.messages.map((message) => message.id))
+    before = page.before
+  } while (before)
+  expect(collected).toEqual(store.task(task.id).messages.map((message) => message.id))
+  const paged = decode(
+    snapshotSchema,
+    await (
+      await fetch(`${address}/api/snapshot?scope=threads&task=thread&history=paged`, { headers })
+    ).json(),
+  )
+  expect(paged.workspace.tasks[0]?.messages).toHaveLength(20)
+  expect(paged.workspace.tasks[0]?.historyBefore).toBe('m60')
+  const legacy = decode(
+    snapshotSchema,
+    await (await fetch(`${address}/api/snapshot?scope=threads&task=thread`, { headers })).json(),
+  )
+  expect(legacy.workspace.tasks[0]?.messages).toHaveLength(80)
 })

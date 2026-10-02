@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { templateFromTask } from '@dovo/protocol'
-import { taskTranscript } from '@dovo/protocol'
+import { conversationPageSchema, taskTranscript, type ConversationPage } from '@dovo/protocol'
 import { useRef, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import {
@@ -115,6 +115,26 @@ export function TaskContextMenu({
       pendingRef.current = false
       setPending(false)
     }
+  }
+  const copyConversation = async () => {
+    if (!source.online || (!task.historyBefore && task.messages.length)) {
+      await navigator.clipboard.writeText(taskTranscript(task))
+      return
+    }
+    const pages: ConversationPage[] = []
+    let before: string | undefined
+    do {
+      const page = await client.request(
+        '/api/tasks/history',
+        { id: task.id, before },
+        conversationPageSchema,
+      )
+      pages.unshift(page)
+      before = page.before
+    } while (before)
+    await navigator.clipboard.writeText(
+      taskTranscript({ title: task.title, messages: pages.flatMap((page) => page.messages) }),
+    )
   }
   const patch = (updates: TaskRowChanges) => client.patch(task, updates)
 
@@ -396,13 +416,18 @@ export function TaskContextMenu({
               </ContextMenu.SubTrigger>
               <ContextMenu.Portal>
                 <ContextMenu.SubContent className={menuClass} collisionPadding={8}>
+                  <ContextMenu.Item
+                    className={itemClass}
+                    disabled={
+                      blocked || (!source.online && (!task.messages.length || !!task.historyBefore))
+                    }
+                    onSelect={() => void run(copyConversation)}
+                  >
+                    Conversation as Markdown
+                  </ContextMenu.Item>
                   {(
                     [
                       ['Title', task.title],
-                      [
-                        'Conversation as Markdown',
-                        task.messages.length ? taskTranscript(task) : '',
-                      ],
                       ['Branch', branch],
                       ['Project path', repository?.path ?? ''],
                       ['Task ID', task.id],

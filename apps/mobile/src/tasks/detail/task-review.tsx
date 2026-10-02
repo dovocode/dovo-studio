@@ -1,3 +1,4 @@
+import { useConversationSelector } from '../conversation/state/provider'
 import { SavedFilePreview } from '../files/saved-file-preview'
 import { checkpointFiles, filePreviewLabel } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
@@ -18,14 +19,13 @@ import { styles } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import { DiffView } from '../preview/diff-view'
 export function TaskReview({
-  task,
   initialCheckpoint = '',
   initialPath = '',
 }: {
-  task: Task
   initialCheckpoint?: string
   initialPath?: string
 }) {
+  const task = useConversationSelector((value) => value.task)
   const { call, connected, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
   const [checkpoint, setCheckpoint] = useApplicationState(initialCheckpoint)

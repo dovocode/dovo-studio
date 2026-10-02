@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { Approvals } from '../agents/execution/approvals'
 import { Activity, redact } from './activity'
 import { openDatabase } from './database'
@@ -205,6 +205,54 @@ it('filters scoped activity without losing tool kinds, search matches, or pagina
     expect(log.list('', 'tool', 0, 'thread').events.map((item) => item.id)).toEqual(['a'])
     expect(log.list('', '', 0, 'thread').events).toHaveLength(4)
     expect(log.list('', '', 0).events).toHaveLength(5)
+  } finally {
+    db.close()
+  }
+})
+
+it('never serializes unchanged historical messages during metadata and streaming updates', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const log = new Activity(db),
+      store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'task',
+          title: 'Task',
+          repositoryId: 'repo',
+          agentId: 'agent',
+          createdAt: '2026-10-01T00:00:00Z',
+          status: 'draft',
+          draft: '',
+          files: [],
+          messages: [
+            { id: 'old', role: 'user', text: 'Large history' },
+            { id: 'current', role: 'assistant', text: 'First' },
+          ],
+          example: false,
+        },
+      ],
+    }))
+    const before = store.get(),
+      task = before.tasks[0]!
+    const serialize = vi.fn<() => never>(() => {
+      throw new Error('Unchanged history was serialized')
+    })
+    Object.defineProperty(task.messages[0], 'toJSON', { value: serialize })
+    log.workspace(before, {
+      ...before,
+      tasks: [{ ...task, activity: 'Working', messages: [...task.messages] }],
+    })
+    log.workspace(before, {
+      ...before,
+      tasks: [
+        { ...task, messages: [task.messages[0]!, { ...task.messages[1]!, text: 'Streamed' }] },
+      ],
+    })
+    expect(serialize).not.toHaveBeenCalled()
+    expect(log.list('', 'message', 0).events).toHaveLength(1)
   } finally {
     db.close()
   }

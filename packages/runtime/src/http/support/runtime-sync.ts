@@ -30,6 +30,7 @@ type Client = {
 }
 type View = {
   taskIds?: readonly string[]
+  pagedHistory: boolean
   compact: boolean
   fieldUpdates: boolean
   device: { id: string; owner: boolean }
@@ -54,13 +55,14 @@ export function attachRuntimeSync(
   compact = false,
   fieldUpdates = false,
   taskIds?: readonly string[],
+  pagedHistory = false,
 ) {
   let hub = hubs.get(services)
   if (!hub) {
     hub = new RuntimeSync(services)
     hubs.set(services, hub)
   }
-  hub.attach(socket, token, compact, fieldUpdates, taskIds)
+  hub.attach(socket, token, compact, fieldUpdates, taskIds, pagedHistory)
 }
 export async function disposeRuntimeSync(services: Services) {
   const hub = hubs.get(services)
@@ -97,18 +99,21 @@ class RuntimeSync {
     compact: boolean,
     fieldUpdates: boolean,
     taskIds?: readonly string[],
+    pagedHistory = false,
   ) {
     const device = this.services.devices.authenticate(token)
     const viewId = JSON.stringify([
       device.id,
       fieldUpdates ? 'fields' : compact ? 'lean' : 'legacy',
       taskIds ? [...taskIds].sort() : null,
+      pagedHistory,
     ])
     let view = this.views.get(viewId)
     if (!view || view.token !== token) {
       view = {
         device,
         taskIds,
+        pagedHistory,
         compact,
         fieldUpdates,
         epoch: randomUUID(),
@@ -298,7 +303,7 @@ class RuntimeSync {
       ? {
           ...prepared,
           detailTaskIds: [...view.taskIds],
-          workspace: scopedWorkspace(prepared.workspace, view.taskIds),
+          workspace: scopedWorkspace(prepared.workspace, view.taskIds, view.pagedHistory),
         }
       : prepared
     const next = view.device.owner

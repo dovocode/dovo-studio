@@ -61,7 +61,7 @@ export function watchRuntimeTask(connection: RuntimeConnection, taskId: string) 
   }
 }
 export function runtimeSnapshotPath(connection: RuntimeConnection | null) {
-  const query = new URLSearchParams({ scope: 'threads' })
+  const query = new URLSearchParams({ scope: 'threads', history: 'paged' })
   if (connection)
     for (const id of registrations.get(key(connection))?.tasks.keys() ?? [])
       query.append('task', id)
@@ -195,7 +195,7 @@ export function startRuntimeSync(
     request = new AbortController()
     try {
       const requestedTasks = taskIdentity
-      const query = new URLSearchParams({ format: '4' })
+      const query = new URLSearchParams({ format: '4', history: 'paged' })
       for (const id of value.tasks.keys()) query.append('task', id)
       const ticket = await Effect.runPromise(
         runtimeRequestEffect(

@@ -27,6 +27,7 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
       requests.push({ path, body })
       response.setHeader('Content-Type', 'application/json')
       if (path === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
+      if (path === '/api/session/active') return response.end(JSON.stringify({ data: {} }))
       if (path.endsWith('/session') && request.method === 'POST') {
         return response.end(JSON.stringify({ data: { id: 'session' } }))
       }
@@ -43,6 +44,8 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
           stream?.write(
             `data: ${JSON.stringify({ id: type, created: Date.now(), type, data })}\n\n`,
           )
+        emit('session.execution.succeeded', { sessionID: 'session' })
+        emit('session.execution.started', { sessionID: 'session' })
         emit('session.text.delta', {
           sessionID: 'other',
           assistantMessageID: 'a',
@@ -134,6 +137,7 @@ it('waits for OpenCode 2 manual compaction to finish', async () => {
     }
     response.setHeader('Content-Type', 'application/json')
     if (path === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
+    if (path === '/api/session/active') return response.end(JSON.stringify({ data: {} }))
     if (request.method === 'PATCH' || path.endsWith('/model')) {
       response.statusCode = 204
       return response.end()

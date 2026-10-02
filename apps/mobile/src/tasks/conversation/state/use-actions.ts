@@ -188,6 +188,7 @@ export function useConversationActions(task: Task) {
         text,
         attachmentIds,
         mode,
+        runId: mode === 'steer' ? task.activeRunId : undefined,
       })
       submittedId = attempt.id
       setPendingMessage({
@@ -238,6 +239,7 @@ export function useConversationActions(task: Task) {
             {
               id: task.id,
               messageId: attempt.id,
+              runId: attempt.runId,
               text,
               attachmentIds,
             },
@@ -277,12 +279,14 @@ export function useConversationActions(task: Task) {
     call,
     stopping: cancellation.busy,
     stop: () => {
+      const runId = task.activeRunId
       const run = () =>
         cancellation.run(() =>
           callEffect(
             '/api/tasks/cancel',
             {
               id: task.id,
+              runId,
             },
             responses.ok,
           ),

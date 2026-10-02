@@ -107,6 +107,15 @@ export function createCodexAdapter(): AgentAdapter {
       const questionItems = new Set<string>()
       let threadId = run.sessionId
       let turnFinished = false
+      let submitted = false
+      let awaitingTurn = false
+      let activeTurnId: string | undefined
+      const pendingNotifications: { method: string; params: unknown }[] = []
+      let pendingBytes = 0
+      let admitTurn: () => void = () => {}
+      const admission = new Promise<void>((resolve) => {
+        admitTurn = resolve
+      })
       let compacted = false
       let compactStarted = false
       let resolveTurn: () => void = () => {},
@@ -143,6 +152,23 @@ export function createCodexAdapter(): AgentAdapter {
           ])
         })
       const requests = rpc.onRequest(async (method, params: unknown, token) => {
+        if (!run.compact) {
+          const scope = decodeResult(object, params).data
+          const root =
+            !threadId || typeof scope?.threadId !== 'string' || scope.threadId === threadId
+          const execution = method.startsWith('item/')
+          if (root && execution && awaitingTurn) await Promise.race([admission, completed])
+          if (
+            turnFinished ||
+            run.signal.aborted ||
+            (root && execution && !submitted) ||
+            (root &&
+              activeTurnId &&
+              typeof scope?.turnId === 'string' &&
+              scope.turnId !== activeTurnId)
+          )
+            throw new Error('This Codex request belongs to a retired turn')
+        }
         run.onEvent?.(method, params)
         if (
           method === 'item/commandExecution/requestApproval' ||
@@ -203,10 +229,36 @@ export function createCodexAdapter(): AgentAdapter {
         }
         throw new Error(`Unsupported Codex request: ${method}`)
       })
-      const notifications = rpc.onNotification((method, params: unknown) => {
-        run.onEvent?.(method, params)
+      const consumeNotification = (method: string, params: unknown) => {
+        const execution = method.startsWith('turn/') || method.startsWith('item/')
+        if (!run.compact && execution) {
+          if (!submitted || turnFinished) return
+          if (awaitingTurn) {
+            pendingBytes += JSON.stringify(params)?.length ?? 0
+            if (pendingNotifications.length >= 256 || pendingBytes > 1024 * 1024) {
+              rejectTurn(
+                new Error('Codex did not identify its turn before sending excessive events'),
+              )
+              return
+            }
+            pendingNotifications.push({ method, params })
+            return
+          }
+        }
         const value = decodeResult(object, params)
         if (!value.success) return
+        const nestedTurn = decodeResult(object, value.data.turn).data
+        const nativeTurn =
+          typeof value.data.turnId === 'string'
+            ? value.data.turnId
+            : typeof nestedTurn?.id === 'string'
+              ? nestedTurn.id
+              : undefined
+        const root =
+          !threadId || typeof value.data.threadId !== 'string' || value.data.threadId === threadId
+        if (!run.compact && root && activeTurnId && nativeTurn && nativeTurn !== activeTurnId)
+          return
+        run.onEvent?.(method, params)
         // Child notifications feed the Agents panel, never the parent transcript or completion.
         if (threadId && typeof value.data.threadId === 'string' && value.data.threadId !== threadId)
           return
@@ -258,7 +310,8 @@ export function createCodexAdapter(): AgentAdapter {
             if (!run.compact || (compacted && compactStarted)) resolveTurn()
           } else rejectTurn(new Error(turn.data.error?.message ?? `Turn ${turn.data.status}`))
         }
-      })
+      }
+      const notifications = rpc.onNotification(consumeNotification)
       const abort = () => {
         void stopOwnedChild(child)
         rejectTurn(new Error('Task cancelled'))
@@ -425,6 +478,8 @@ export function createCodexAdapter(): AgentAdapter {
           succeeded = true
           return
         }
+        submitted = true
+        awaitingTurn = true
         const started = await request('turn/start', {
           threadId: thread.id,
           ...(run.agent.reasoning
@@ -450,6 +505,15 @@ export function createCodexAdapter(): AgentAdapter {
           }),
           started,
         )
+        activeTurnId = turn.success ? turn.data.turn.id : undefined
+        awaitingTurn = false
+        admitTurn()
+        // Admit requests received before the start acknowledgement before replaying terminal events.
+        // Cancelled questions still return their protocol-level empty answer below.
+        await Promise.resolve()
+        for (const event of pendingNotifications.splice(0))
+          consumeNotification(event.method, event.params)
+        pendingBytes = 0
         if (!turnFinished && turn.success && turn.data.turn.status === 'inProgress') {
           const expectedTurnId = turn.data.turn.id
           run.onSteer?.(async (input) => {

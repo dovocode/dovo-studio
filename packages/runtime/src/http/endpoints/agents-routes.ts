@@ -486,18 +486,26 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               default: () => [],
             }),
             review: Schema.optional(Schema.Boolean),
+            runId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
         )
         if (!input.text && !input.attachmentIds.length)
           throw new HttpError(400, 'Add a message or attachment')
-        if (path === '/api/tasks/steer')
+        if (path === '/api/tasks/steer') {
+          if (!input.runId)
+            throw new HttpError(
+              409,
+              'Update Dovo or refresh this thread before steering its current run',
+            )
           return yield* s.tasks.steerEffect(
             input.id,
             input.messageId,
             input.text,
             input.attachmentIds,
+            input.runId,
           )
+        }
         return yield* s.tasks.sendEffect(
           input.id,
           input.messageId,
@@ -524,6 +532,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             messageId: Schema.optional(idSchema),
             text: Schema.optional(maxValue(Schema.String, 120000)),
             expectedText: Schema.optional(maxValue(Schema.String, 120000)),
+            runId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
         )
@@ -535,6 +544,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             )
           s.tasks.queue.edit(input.id, input.messageId, input.text, input.expectedText)
         } else if (input.action === 'steer') {
+          if (!input.runId)
+            throw new HttpError(
+              409,
+              'Update Dovo or refresh this thread before steering its current run',
+            )
           const queued = s.store
             .task(input.id)
             .queue?.find((message) => message.id === input.messageId)
@@ -544,6 +558,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             randomUUID(),
             queued.text,
             queued.attachments?.map((file) => file.id) ?? [],
+            input.runId,
           )
           s.tasks.queue.change(input.id, 'remove', queued.id)
         } else if (input.action === 'resume') {
@@ -873,14 +888,16 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         })
       }
       if (method === 'POST' && path === '/api/tasks/cancel') {
-        s.tasks.cancel(
-          decode(
-            mutableStruct({
-              id: idSchema,
-            }),
-            yield* serviceResult(body(request)),
-          ).id,
+        const input = decode(
+          mutableStruct({ id: idSchema, runId: Schema.optional(idSchema) }),
+          yield* serviceResult(body(request)),
         )
+        if (!input.runId)
+          throw new HttpError(
+            409,
+            'Update Dovo or refresh this thread before stopping its current run',
+          )
+        s.tasks.cancel(input.id, input.runId)
         return yield* serviceResult({
           ok: true,
         })

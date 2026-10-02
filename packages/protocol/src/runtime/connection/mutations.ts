@@ -6,6 +6,7 @@ import type { RuntimeConnection } from './runtime.js'
 const mutations = new Set([
   '/api/tasks/message',
   '/api/tasks/steer',
+  '/api/tasks/cancel',
   '/api/tasks/lifecycle',
   '/api/tasks/viewed',
   '/api/runtime/preferences/save',

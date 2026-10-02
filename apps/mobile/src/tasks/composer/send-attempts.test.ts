@@ -13,6 +13,19 @@ function store() {
 }
 
 describe('conversation send attempts across navigation', () => {
+  it('freezes the steering run through a lost response and only targets a new run after an edit', () => {
+    const attempts = store()
+    const first = attempts.begin(scope, { ...input, mode: 'steer', runId: 'old-run' })
+    const retry = attempts.begin(scope, { ...input, mode: 'steer', runId: 'new-run' })
+    expect(retry).toBe(first)
+    expect(retry.runId).toBe('old-run')
+    attempts.textChanged(scope, 'New direction')
+    expect(
+      attempts.begin(scope, { ...input, text: 'New direction', mode: 'steer', runId: 'new-run' })
+        .runId,
+    ).toBe('new-run')
+  })
+
   it('reuses the message identity and title after a lost response and reopening the thread', async () => {
     const attempts = store()
     const accepted = new Map<string, string>()

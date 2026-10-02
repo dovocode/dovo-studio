@@ -1,3 +1,4 @@
+import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
 import { createHash } from 'node:crypto'
 import { OpenCode } from '@opencode/client'
 import { opencodeHeaders } from './opencode-server.js'
@@ -177,6 +178,14 @@ export const opencodeV2Adapter: AgentAdapter = {
         ).id
       if (run.ephemeral && !run.sessionId) ephemeralSessionId = sessionID
       if (run.sessionId) {
+        const active = await api.session.active({ signal: run.signal })
+        if (active[sessionID]) {
+          await api.session.interrupt({ sessionID }, { signal: run.signal })
+          await api.session.wait(
+            { sessionID },
+            { signal: AbortSignal.any([run.signal, AbortSignal.timeout(10000)]) },
+          )
+        }
         await api.session.update({ sessionID, permissions }, { signal: run.signal })
         if (run.agent.model)
           await api.session.switchModel({ sessionID, model: modelOf(run) }, { signal: run.signal })
@@ -197,11 +206,15 @@ export const opencodeV2Adapter: AgentAdapter = {
           { signal: run.signal },
         )
       const streamController = new AbortController()
+      let interruption: Promise<void> | undefined
       const abort = () => {
         streamController.abort()
-        void api.session
-          .interrupt({ sessionID }, { signal: AbortSignal.timeout(5000) })
-          .catch((error) => run.onActivity(`Could not interrupt OpenCode: ${String(error)}`))
+        interruption = (async () => {
+          await api.session.interrupt({ sessionID }, { signal: AbortSignal.timeout(5000) })
+          await api.session.wait({ sessionID }, { signal: AbortSignal.timeout(5000) })
+        })()
+        // The cleanup below owns the rejection, including failures before it is awaited.
+        void interruption.catch(() => undefined)
       }
       run.signal.addEventListener('abort', abort, { once: true })
       if (run.signal.aborted) abort()
@@ -223,6 +236,8 @@ export const opencodeV2Adapter: AgentAdapter = {
       run.signal.addEventListener('abort', cancelDone, { once: true })
       if (run.signal.aborted) cancelDone()
       let accepted = false
+      let awaitingStart = !run.compact
+      let submitted = false
       const emitTool = (id: string, status: 'running' | 'completed' | 'error', output?: string) => {
         run.onEvent?.('message.part.updated', {
           properties: {
@@ -256,7 +271,13 @@ export const opencodeV2Adapter: AgentAdapter = {
               : event.type === 'form.created'
                 ? event.data.form.sessionID
                 : undefined
-          if (eventSession !== sessionID) continue
+          if (eventSession !== sessionID || !submitted) continue
+          // Session-only terminal events can belong to a retired execution. Admission
+          // starts at the new execution's start, never at the HTTP acknowledgement.
+          if (awaitingStart) {
+            if (event.type !== 'session.execution.started') continue
+            awaitingStart = false
+          }
           if (
             !accepted &&
             (event.type === 'session.text.delta' ||
@@ -403,8 +424,12 @@ export const opencodeV2Adapter: AgentAdapter = {
         if (!streamController.signal.aborted)
           rejectDone(new Error('OpenCode event stream closed before the turn completed'))
       })()
+      void consume.catch((cause: unknown) =>
+        rejectDone(cause instanceof Error ? cause : new Error(String(cause))),
+      )
       try {
         await Promise.race([connected, done])
+        submitted = true
         const task = run.compact
           ? api.session.compact({ sessionID }, { signal: run.signal })
           : api.session.prompt(
@@ -425,9 +450,17 @@ export const opencodeV2Adapter: AgentAdapter = {
         streamController.abort()
         run.signal.removeEventListener('abort', abort)
         run.signal.removeEventListener('abort', cancelDone)
-        await consume.catch((error) => {
+        const drained = consume.catch((error) => {
           if (!streamController.signal.aborted) throw error
         })
+        if (interruption)
+          await Promise.all([drained, interruption]).catch((cause: unknown) => {
+            throw new OwnedProcessShutdownError(
+              'OpenCode shutdown was not confirmed. Review its session before continuing.',
+              { cause },
+            )
+          })
+        await drained
       }
     } finally {
       const results = await Promise.allSettled(

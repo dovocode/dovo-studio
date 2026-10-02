@@ -12,6 +12,7 @@ export function runtimeSnapshot(
   device: { id: string; owner: boolean },
   overview = false,
   taskIds?: readonly string[],
+  pagedHistory = false,
 ) {
   return Effect.gen(function* () {
     const revision = s.store.version()
@@ -43,7 +44,7 @@ export function runtimeSnapshot(
       revision,
       workspace: {
         ...(taskIds
-          ? scopedWorkspace(workspace, taskIds)
+          ? scopedWorkspace(workspace, taskIds, pagedHistory)
           : overview
             ? overviewWorkspace(workspace)
             : workspace),

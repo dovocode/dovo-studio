@@ -262,7 +262,9 @@ it('reference counts thread subscriptions and drops the old cursor when the scop
   second.readyState = 1
   second.onopen?.()
   expect(JSON.parse(second.sent[0]!)).toEqual({ type: 'resume' })
-  expect(runtimeSnapshotPath(connection)).toBe('/api/snapshot?scope=threads&task=thread-a')
+  expect(runtimeSnapshotPath(connection)).toBe(
+    '/api/snapshot?scope=threads&history=paged&task=thread-a',
+  )
   a()
   expect(second.readyState).toBe(1)
   expect(runtimeSnapshotPath(connection)).toContain('task=thread-a')
@@ -270,5 +272,5 @@ it('reference counts thread subscriptions and drops the old cursor when the scop
   live.stop()
   expect(runtimeSnapshotPath(connection)).toContain('task=thread-a')
   shared()
-  expect(runtimeSnapshotPath(connection)).toBe('/api/snapshot?scope=threads')
+  expect(runtimeSnapshotPath(connection)).toBe('/api/snapshot?scope=threads&history=paged')
 })

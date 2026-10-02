@@ -12,7 +12,7 @@ afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close()
   vi.restoreAllMocks()
 })
-async function seed(enabled: boolean, changes: Partial<Task> = {}) {
+async function seed(enabled: boolean, changes: Partial<Task> = {}, uncertain = false) {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const options = {
@@ -36,6 +36,14 @@ async function seed(enabled: boolean, changes: Partial<Task> = {}) {
     queuePaused: false,
     ...changes,
   }))
+  if (uncertain)
+    runtime.services.store.providerActions.record({
+      id: 'unconfirmed',
+      taskId: task.id,
+      attemptId: changes.activeRunId ?? 'attempt',
+      kind: 'steer',
+      state: 'dispatched',
+    })
   await runtime.close()
   return { options, id: task.id }
 }
@@ -416,3 +424,22 @@ it.each([false, true])(
     )
   },
 )
+
+it('holds an unconfirmed provider action for manual review even when automatic recovery is enabled', async () => {
+  const { options, id } = await seed(
+    true,
+    { activeRunId: 'attempt', runAttempt: { inputMessageIds: [], promptAccepted: true } },
+    true,
+  )
+  const run = vi.fn<AgentAdapter['run']>(async () => {})
+  adapter(run)
+  const runtime = await startRuntime(options)
+  cleanups.push(runtime.close)
+  await waitForRecovery(() =>
+    expect(runtime.services.store.task(id).restartRecovery?.automatic).toBe(false),
+  )
+  expect(run).not.toHaveBeenCalled()
+  expect(runtime.services.store.providerActions.list(id)[0]?.state).toBe('uncertain')
+  expect(runtime.services.store.task(id).error).toContain('not confirmed')
+  expect(runtime.services.store.task(id).activeRunId).toBeUndefined()
+})

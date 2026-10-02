@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useState } from 'react'
 import {
   formatDateTime,
   responses,
@@ -32,6 +32,7 @@ export const ChatMessage = memo(function ChatMessage({
   connected,
   request,
   onTerminal,
+  onBookmark,
 }: {
   taskId: string
   message: Task['messages'][number]
@@ -45,7 +46,9 @@ export const ChatMessage = memo(function ChatMessage({
   connected: boolean
   request: ReturnType<typeof useWorkspace>['request']
   onTerminal?: (terminalId: string) => void
+  onBookmark?: (messageId: string, bookmarked: boolean) => void
 }) {
+  const [bookmarkError, setBookmarkError] = useState('')
   const hasTurn = !!turn
   const timeline = useMemo(
     () =>
@@ -69,6 +72,11 @@ export const ChatMessage = memo(function ChatMessage({
           : undefined
       }
     >
+      {!!bookmarkError && (
+        <p role="alert" className="text-xs text-destructive">
+          {bookmarkError}
+        </p>
+      )}
       <div className="group/message flex min-w-0 flex-col gap-2">
         {timeline && turn ? (
           <>
@@ -196,6 +204,13 @@ export const ChatMessage = memo(function ChatMessage({
                     },
                     responses.ok,
                   )
+                    .then(() => {
+                      onBookmark?.(message.id, !message.bookmarked)
+                      setBookmarkError('')
+                    })
+                    .catch((cause: unknown) =>
+                      setBookmarkError(cause instanceof Error ? cause.message : String(cause)),
+                    )
                 }
               >
                 <Star className={`size-3.5 ${message.bookmarked ? 'fill-current' : ''}`} />

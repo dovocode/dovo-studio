@@ -220,6 +220,8 @@ export const usageAccountSchema = mutableStruct({
   subscription: Schema.optional(Schema.String),
 })
 export const turnSchema = mutableStruct({
+  /** One user-visible run can contain replacement provider attempts. */
+  runId: Schema.optional(Schema.String),
   usageAccount: Schema.optional(usageAccountSchema),
   runtimeHost: Schema.optional(Schema.String),
   branch: Schema.optional(Schema.String),
@@ -290,9 +292,25 @@ export const taskSchema = mutableStruct({
     }),
   ),
   runPhase: Schema.optional(Schema.Literal('preparing', 'provider', 'finalizing')),
+  /** Control token for the current attempt, allocated before checkout preparation. */
+  activeRunId: Schema.optional(Schema.String),
+  historyBefore: Schema.optional(Schema.String),
+  /** Derived metadata for turns outside a paged conversation. Never persisted by clients. */
+  historyTotals: Schema.optional(
+    mutableStruct({
+      tokens: Schema.optional(Schema.Number),
+      milliseconds: Schema.Number,
+      hasChanges: Schema.Boolean,
+      undoableTurnId: Schema.optional(Schema.String),
+    }),
+  ),
   // Admission is durable before checkout preparation; a session alone proves no delivery.
   runAttempt: Schema.optional(
-    mutableStruct({ inputMessageIds: mutableArray(Schema.String), promptAccepted: Schema.Boolean }),
+    mutableStruct({
+      runId: Schema.optional(Schema.String),
+      inputMessageIds: mutableArray(Schema.String),
+      promptAccepted: Schema.Boolean,
+    }),
   ),
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
   worktreeSetupComplete: Schema.optional(Schema.Boolean),

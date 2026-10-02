@@ -105,3 +105,40 @@ component and its private helpers. Prefer descriptive names over numbered parts 
 helpers. Keep an entrypoint stable when splitting internals; avoid barrels that make sibling modules
 import back through their own parent and create cycles. A line count is a signal to inspect
 responsibilities, not a reason to create another layer.
+
+## Provider ownership and history
+
+Each logical run has a stable `runId`; physical execution attempts have distinct IDs. The
+`activeRunId` exposed to clients is the current attempt's control token. Stop and Steer freeze that
+token when submitted, including mobile retries, and reject a retired or missing token. Fallback
+steering continues the logical run while retiring the old attempt's callbacks. Provider adapters
+also correlate native execution IDs. OpenCode v2 reconciles an existing execution before submission,
+waits for its new start event, and awaits interrupt cleanup.
+
+SQLite `provider_actions` records compact intent and dispatch state for start, steering, interrupt,
+answer and checkpoint operations. Submission/answer receipts and their initial intent commit with
+workspace changes. On restart an unacknowledged dispatched provider operation becomes uncertain and
+prevents automatic resubmission; it requires reviewing the provider session. This does not promise
+exactly-once execution across an external process. Local checkpoint capture can retry separately
+after a successful provider outcome.
+
+History is stored incrementally in `conversation_items`, with task metadata and a count manifest in
+the version 2 workspace storage envelope. Migration preserves the original full document as
+`workspace-before-history-v2` in the same transaction. Missing history rows fail closed instead of
+rewriting an incomplete conversation. Older binaries cannot read the new envelope; use a full
+database backup when downgrading. Runtime exports still contain complete conversations.
+
+Clients negotiate `history=paged` for selected-task snapshots and sync tickets. Recent history is
+bounded by ten user requests, 75 messages and an approximate byte budget. Whole oversized messages
+remain accessible; files are never removed to fit a page. Authenticated `POST /api/tasks/history`
+loads earlier pages with stable message-ID cursors. Loaded history is separate from live workspace
+and draft state, and live versions win on overlap. Budget totals, search, bookmarks, copy and
+checkpoint review retain access to older history. Legacy clients receive full history until they opt
+in.
+
+Auditing and history persistence skip unchanged task and message objects. Replaceable tool progress
+is coalesced for 50 ms with bounded buffering; terminal and boundary events flush it. Raw transport
+replay tests exercise Codex JSON-RPC and OpenCode SSE through real task ownership, queues, SQLite,
+receipts, restart recovery and Git checkpoints. These boundaries align with
+[T3's orchestrator v2](https://github.com/pingdotgg/t3code/pull/2829) without replacing Dovo's
+runtime or requiring a relay, account service or HTTPS on LAN/VPN connections.

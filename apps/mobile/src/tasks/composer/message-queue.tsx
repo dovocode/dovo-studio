@@ -50,6 +50,7 @@ export function MessageQueue({ task }: { task: Task }) {
         {
           id: task.id,
           action,
+          runId: action === 'steer' ? task.activeRunId : undefined,
           messageId,
         },
         responses.ok,

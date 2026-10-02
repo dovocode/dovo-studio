@@ -10,8 +10,21 @@ export type ConversationTurn = {
 export function conversationTurns(task: Pick<Task, 'messages' | 'turns'>): ConversationTurn[] {
   const turns = new Map(task.turns?.map((turn) => [turn.assistantId, turn]))
   const groups: ConversationTurn[] = []
+  const runs = new Map<string, string>()
+  let nextRun: string | undefined
+  for (const message of [...task.messages].reverse()) {
+    const turn = turns.get(message.id)
+    if (turn) nextRun = turn.runId ?? turn.id
+    if (message.role === 'user') {
+      if (nextRun) runs.set(message.id, nextRun)
+      nextRun = undefined
+    }
+  }
+  let currentRun: string | undefined
   for (const message of task.messages) {
-    if (message.role === 'user' || !groups.length) {
+    const run = runs.get(message.id)
+    if (!groups.length || (message.role === 'user' && (!run || run !== currentRun))) {
+      currentRun = run
       groups.push({ id: message.id, messages: [], status: 'waiting' })
     }
     const group = groups[groups.length - 1]!

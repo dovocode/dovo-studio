@@ -2,7 +2,7 @@ import type { Attachment } from '@dovo/protocol'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { Activity } from '../../storage/activity.js'
 import { HttpError } from '../../errors.js'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 const fingerprint = (text: string, attachments: Attachment[]) =>
   createHash('sha256')
     .update(
@@ -96,17 +96,29 @@ export class TaskQueue {
     }))
     this.activity?.add('queue', id, 'Queued message edited', { messageId })
   }
-  take(id: string) {
-    this.store.updateTask(id, (t) => {
-      const [message, ...queue] = t.queue ?? []
-      return {
-        ...t,
-        status: 'running',
-        runPhase: 'preparing',
-        runAttempt: { inputMessageIds: message ? [message.id] : [], promptAccepted: false },
-        ...(message ? { queue, messages: [...t.messages, message] } : {}),
-      }
-    })
+  take(id: string, runId: string = randomUUID(), attemptId?: string) {
+    this.store.updateTask(
+      id,
+      (t) => {
+        const [message, ...queue] = t.queue ?? []
+        return {
+          ...t,
+          status: 'running',
+          runPhase: 'preparing',
+          ...(attemptId ? { activeRunId: attemptId } : {}),
+          runAttempt: {
+            runId,
+            inputMessageIds: message ? [message.id] : [],
+            promptAccepted: false,
+          },
+          ...(message ? { queue, messages: [...t.messages, message] } : {}),
+        }
+      },
+      undefined,
+      attemptId
+        ? { id: `start:${attemptId}`, taskId: id, attemptId, kind: 'start', state: 'pending' }
+        : undefined,
+    )
   }
   change(id: string, action: 'remove' | 'restore' | 'up' | 'down' | 'pause', messageId?: string) {
     const task = this.store.task(id)

@@ -1,3 +1,5 @@
+import { Conversations } from './conversations.js'
+import { ProviderActions, type ProviderAction } from './provider-actions.js'
 import { UsageTranscripts } from './usage-transcripts.js'
 import { UsagePricing } from './usage-pricing.js'
 import { UsageHistory } from './usage-history.js'
@@ -11,6 +13,8 @@ import { migrateJiraSources } from './jira-migration.js'
 import type Database from 'better-sqlite3'
 import { Schema } from 'effect'
 import {
+  messageSchema,
+  turnSchema,
   agentSchema,
   automationSchema,
   canChangeTaskCheckout,
@@ -41,6 +45,17 @@ const collectionSchemas = {
   jiraSources: jiraSourceSchema,
   jiraIssueLinks: jiraIssueLinkSchema,
 } as const
+function validatedItems<S extends Schema.Schema.AnyNoContext>(
+  schema: S,
+  items: unknown,
+  old: Schema.Schema.Type<S>[],
+): Schema.Schema.Type<S>[] {
+  if (items === old) return old
+  const known = new Map<unknown, Schema.Schema.Type<S>>(old.map((item) => [item, item]))
+  return decode(Schema.Array(Schema.Unknown), items).map(
+    (item) => known.get(item) ?? decode(schema, item),
+  )
+}
 /** Loads the stored workspace. A document written by another version, or one that a tightened
  * limit now rejects, must not stop the runtime: keep a full copy, then load every entry that
  * still validates. Entries left out stay recoverable from that copy. */
@@ -51,8 +66,34 @@ export function loadStoredWorkspace(db: Database.Database, raw: string): Workspa
   } catch {
     throw new Error('The stored workspace is not valid JSON. Restore it from a runtime backup.')
   }
+  const envelope = decodeResult(
+    mutableStruct({
+      storageVersion: Schema.Number,
+      workspace: Schema.Unknown,
+      historyCounts: Schema.Record({
+        key: Schema.String,
+        value: mutableStruct({
+          messages: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+          turns: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+        }),
+      }),
+    }),
+    parsed,
+  )
+  if (envelope.success && envelope.data.storageVersion !== 2)
+    throw new Error('This workspace uses a newer storage format. Update Dovo before opening it.')
+  const storageMarker = decodeResult(mutableStruct({ storageVersion: Schema.Number }), parsed)
+  if (storageMarker.success && !envelope.success)
+    throw new Error(
+      'The workspace history manifest is invalid. Restore the runtime database from a backup.',
+    )
+  if (envelope.success) parsed = envelope.data.workspace
+  const hydrate = (workspace: Workspace) =>
+    envelope.success
+      ? new Conversations(db).hydrate(workspace, envelope.data.historyCounts)
+      : workspace
   const strict = decodeResult(workspaceSchema, parsed)
-  if (strict.success) return strict.data
+  if (strict.success) return hydrate(strict.data)
   const backupId = `workspace-backup:${new Date().toISOString()}`
   db.prepare('INSERT OR REPLACE INTO documents VALUES (?, ?)').run(backupId, raw)
   const source = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
@@ -76,11 +117,14 @@ export function loadStoredWorkspace(db: Database.Database, raw: string): Workspa
   console.error(
     `Loaded the workspace without ${omitted.length} unreadable ${omitted.length === 1 ? 'entry' : 'entries'} (${omitted.join(', ')}). The original is kept as ${backupId}.`,
   )
-  return recovered.data
+  return hydrate(recovered.data)
 }
 export class WorkspaceStore {
   private readonly secrets: McpSecrets
   private workspace: Workspace
+  private readonly conversations: Conversations
+  private seedHistory = true
+  readonly providerActions: ProviderActions
   readonly usage: UsageHistory
   readonly usagePricing: UsagePricing
   readonly usageTranscripts = new UsageTranscripts()
@@ -90,6 +134,9 @@ export class WorkspaceStore {
     private readonly db: Database.Database,
     private onUpdate?: (before: Workspace, after: Workspace) => void,
   ) {
+    this.conversations = new Conversations(db)
+    this.providerActions = new ProviderActions(db)
+    this.providerActions.recover()
     this.usage = new UsageHistory(db)
     this.usagePricing = new UsagePricing(db)
     const keyRow = db.prepare('SELECT value FROM documents WHERE id = ?').get('mcp-projection-key')
@@ -107,6 +154,11 @@ export class WorkspaceStore {
           automations: [],
           runtimeAddress: '',
         }
+    if (row)
+      this.seedHistory = !decodeResult(
+        mutableStruct({ storageVersion: Schema.Literal(2) }),
+        JSON.parse(decode(rowSchema, row).value),
+      ).success
     this.db.transaction(() => this.usage.record(this.workspace.tasks, new Map()))()
     this.update((w) => ({
       ...w,
@@ -134,6 +186,7 @@ export class WorkspaceStore {
                       ? 'cancelled'
                       : 'failed',
                 runPhase: 'finalizing',
+                activeRunId: undefined,
                 activity: undefined,
                 queuePaused: true,
                 restartRecovery: { kind: 'turn', automatic: !task.queuePaused },
@@ -155,6 +208,7 @@ export class WorkspaceStore {
               ? {
                   ...task,
                   status: 'failed',
+                  activeRunId: undefined,
                   runPhase: undefined,
                   preparation: undefined,
                   activity: undefined,
@@ -165,7 +219,8 @@ export class WorkspaceStore {
                         : 'turn',
                     automatic:
                       !(task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length) &&
-                      !task.queuePaused,
+                      !task.queuePaused &&
+                      !this.providerActions.uncertain(task.id, task.activeRunId),
                   },
                   queuePaused: true,
                   turns: task.turns?.map((turn) =>
@@ -184,7 +239,9 @@ export class WorkspaceStore {
                         }
                       : turn,
                   ),
-                  error: 'Runtime stopped while this task was running. Resume to continue.',
+                  error: this.providerActions.uncertain(task.id, task.activeRunId)
+                    ? 'A provider action was not confirmed before the runtime stopped. Review the provider session before resuming.'
+                    : 'Runtime stopped while this task was running. Resume to continue.',
                 }
               : task.queue?.length
                 ? {
@@ -197,6 +254,18 @@ export class WorkspaceStore {
                 : task,
         ),
     }))
+  }
+  acceptQuestionResponse(
+    taskId: string,
+    response: { id: string; fingerprint: string },
+    action: ProviderAction,
+  ) {
+    this.db.transaction(() => {
+      this.db
+        .prepare('INSERT INTO question_responses VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING')
+        .run(response.id, taskId, response.fingerprint)
+      this.providerActions.record(action)
+    })()
   }
   get() {
     return this.workspace
@@ -261,10 +330,28 @@ export class WorkspaceStore {
         .filter((key): key is keyof Task => Object.hasOwn(taskSchema.fields, key))
         .filter((key) => candidate[key] !== previous[key])
       const changed = decode(
-        taskSchema.pick(...keys),
-        Object.fromEntries(keys.map((key) => [key, candidate[key]])),
+        taskSchema.pick(...keys.filter((key) => key !== 'messages' && key !== 'turns')),
+        Object.fromEntries(
+          keys
+            .filter((key) => key !== 'messages' && key !== 'turns')
+            .map((key) => [key, candidate[key]]),
+        ),
       )
-      return { ...previous, ...changed }
+      return {
+        ...previous,
+        ...changed,
+        ...(keys.includes('messages')
+          ? { messages: validatedItems(messageSchema, candidate.messages, previous.messages) }
+          : {}),
+        ...(keys.includes('turns')
+          ? {
+              turns:
+                candidate.turns === undefined
+                  ? undefined
+                  : validatedItems(turnSchema, candidate.turns, previous.turns ?? []),
+            }
+          : {}),
+      }
     })
   }
   /** Validate changed entities only; immutable, already validated histories remain shared. */
@@ -275,10 +362,7 @@ export class WorkspaceStore {
       items: unknown,
       old: Schema.Schema.Type<S>[],
     ): Schema.Schema.Type<S>[] => {
-      if (items === old) return old
-      const values = decode(Schema.Array(Schema.Unknown), items)
-      const known = new Map<unknown, Schema.Schema.Type<S>>(old.map((item) => [item, item]))
-      return values.map((item) => known.get(item) ?? decode(schema, item))
+      return validatedItems(schema, items, old)
     }
     const shell = decode(workspaceSchema, {
       ...candidate,
@@ -328,6 +412,7 @@ export class WorkspaceStore {
       fingerprint: string
       response?: { id: string; fingerprint: string }
     },
+    action?: ProviderAction,
   ) {
     const parsed = migrateJiraSources(
       this.validateWorkspace(this.restoreSecrets(fn(this.workspace))),
@@ -393,6 +478,15 @@ export class WorkspaceStore {
     }
     const nextTaskIds = new Set(next.tasks.map((task) => task.id))
     this.db.transaction(() => {
+      if (this.seedHistory) {
+        const old = this.db.prepare('SELECT value FROM documents WHERE id = ?').get('workspace')
+        if (old)
+          this.db
+            .prepare('INSERT OR IGNORE INTO documents VALUES (?, ?)')
+            .run('workspace-before-history-v2', decode(rowSchema, old).value)
+      }
+      this.conversations.record(next.tasks, previousTasks, this.seedHistory)
+      if (action) this.providerActions.record(action)
       this.usage.record(next.tasks, previousTasks)
       if (submission)
         this.db
@@ -404,6 +498,7 @@ export class WorkspaceStore {
           .run(submission.response.id, submission.taskId, submission.response.fingerprint)
       for (const id of previousTasks.keys())
         if (!nextTaskIds.has(id)) {
+          this.providerActions.remove(id)
           this.db.prepare('DELETE FROM task_submissions WHERE task_id = ?').run(id)
           this.db.prepare('DELETE FROM question_responses WHERE task_id = ?').run(id)
         }
@@ -414,6 +509,7 @@ export class WorkspaceStore {
         .run('workspace', this.serialize(next))
       this.onUpdate?.(this.workspace, next)
     })()
+    this.seedHistory = false
     this.workspace = next
     this.revision++
     return next
@@ -424,14 +520,26 @@ export class WorkspaceStore {
       .map((task) => {
         let value = this.serializedTasks.get(task)
         if (value === undefined) {
-          value = JSON.stringify(task)
+          value = JSON.stringify({
+            ...task,
+            messages: [],
+            ...(task.turns !== undefined ? { turns: [] } : {}),
+          })
           this.serializedTasks.set(task, value)
         }
         return value
       })
       .join(',')
     const shell = JSON.stringify({ ...workspace, tasks: undefined })
-    return `${shell.slice(0, -1)},"tasks":[${tasks}]}`
+    const counts = JSON.stringify(
+      Object.fromEntries(
+        workspace.tasks.map((task) => [
+          task.id,
+          { messages: task.messages.length, turns: task.turns?.length ?? 0 },
+        ]),
+      ),
+    )
+    return `{"storageVersion":2,"historyCounts":${counts},"workspace":${shell.slice(0, -1)},"tasks":[${tasks}]}}`
   }
   taskDefaults(repositoryId?: string) {
     return resolveTaskDefaults(
@@ -466,6 +574,7 @@ export class WorkspaceStore {
       fingerprint: string
       response?: { id: string; fingerprint: string }
     },
+    action?: ProviderAction,
   ) {
     this.update(
       (w) => ({
@@ -480,6 +589,7 @@ export class WorkspaceStore {
         ),
       }),
       submission ? { ...submission, taskId: id } : undefined,
+      action,
     )
   }
   markTaskViewed(id: string, turnId: string, expectedRevision: number, viewed = true) {
@@ -568,6 +678,9 @@ export class WorkspaceStore {
           record.archivedAt !== undefined ||
           record.queue !== undefined ||
           record.runPhase !== undefined ||
+          record.activeRunId !== undefined ||
+          record.historyBefore !== undefined ||
+          record.historyTotals !== undefined ||
           record.runAttempt !== undefined ||
           record.preparation !== undefined ||
           record.pullStatus !== undefined ||

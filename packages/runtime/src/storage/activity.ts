@@ -90,8 +90,11 @@ export class Activity {
     this.revision++
   }
   workspace(before: Workspace, after: Workspace) {
+    if (before.tasks === after.tasks) return
+    const previousTasks = new Map(before.tasks.map((task) => [task.id, task]))
     for (const task of after.tasks) {
-      const previous = before.tasks.find((t) => t.id === task.id)
+      const previous = previousTasks.get(task.id)
+      if (previous === task) continue
       if (
         previous?.status !== task.status ||
         previous?.activity !== task.activity ||
@@ -101,11 +104,12 @@ export class Activity {
           activity: task.activity,
           error: task.error,
         })
-      for (const message of task.messages)
-        if (
-          JSON.stringify(previous?.messages.find((m) => m.id === message.id)) !==
-          JSON.stringify(message)
-        )
+      if (previous?.messages === task.messages) continue
+      const previousMessages = new Map(previous?.messages.map((message) => [message.id, message]))
+      for (const message of task.messages) {
+        const old = previousMessages.get(message.id)
+        if (old === message) continue
+        if (JSON.stringify(old) !== JSON.stringify(message))
           this.add(
             'message',
             task.id,
@@ -113,6 +117,7 @@ export class Activity {
             message,
             `message:${task.id}:${message.id}`,
           )
+      }
     }
   }
   /** Deletes up to `limit` entries older than `before`, oldest first; returns how many. Small

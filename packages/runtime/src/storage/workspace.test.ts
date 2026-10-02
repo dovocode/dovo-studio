@@ -583,7 +583,7 @@ it('loads the valid entries of a stored workspace that no longer validates and k
           .value,
       ),
     )
-    stored.agents.push({ id: 'broken', name: '', provider: 'not-a-provider' })
+    stored.workspace.agents.push({ id: 'broken', name: '', provider: 'not-a-provider' })
     const raw = JSON.stringify(stored)
     db.prepare("UPDATE documents SET value=? WHERE id='workspace'").run(raw)
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})

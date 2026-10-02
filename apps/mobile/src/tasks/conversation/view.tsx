@@ -405,6 +405,7 @@ const renderConversationMessage = ({
 }) => <ConversationMessageCell index={item.index} />
 const messageKey = (item: { message: ThreadMessage; index: number }) => item.message.id
 export function Conversation() {
+  const history = useConversationSelector((value) => value.history)
   const task = useConversationSelector((value) => value.task)
   const legacyEvents = useConversationSelector((value) => value.legacyEvents)
   const activityError = useConversationSelector((value) => value.activityError)
@@ -570,6 +571,22 @@ export function Conversation() {
             >
               Describe a change or ask a question.
             </Text>
+          </View>
+        }
+        ListFooterComponent={
+          <View style={{ padding: 12 }}>
+            {history.hasMore && (
+              <Pressable
+                accessibilityRole="button"
+                disabled={history.busy || !connected}
+                onPress={() => void history.load()}
+              >
+                <Text style={{ color: colors.accent, textAlign: 'center' }}>
+                  {history.busy ? 'Loading earlier messages…' : 'Load earlier messages'}
+                </Text>
+              </Pressable>
+            )}
+            {!!history.error && <Text style={styles.error}>{history.error}</Text>}
           </View>
         }
         ListHeaderComponent={

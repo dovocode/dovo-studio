@@ -1,3 +1,8 @@
+import {
+  conversationPageSchema,
+  mergeConversationHistory,
+  type ConversationPage,
+} from '@dovo/protocol'
 import { cachedThread, runtimeSnapshotCacheSchema, watchRuntimeTask } from '@dovo/protocol'
 import {
   canChangeTaskCheckout,
@@ -132,7 +137,7 @@ function TaskDetailContent({
   const { focused, navigate } = useNavigation()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const { snapshot, connected, profiles, callEffect } = useRuntime()
+  const { snapshot, connected, profiles, callEffect, read } = useRuntime()
   const worktreeThread = useAction()
   const worktreeActions: HeaderAction[] =
     task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
@@ -202,6 +207,10 @@ function TaskDetailContent({
           ]),
       }))
     : []
+  const copyConversation = useAction()
+  useEffect(() => {
+    if (copyConversation.error) Alert.alert('Could not copy conversation', copyConversation.error)
+  }, [copyConversation.error])
   const copied = (value: string) =>
     void copyText(value).then(
       (result) => {
@@ -240,7 +249,23 @@ function TaskDetailContent({
           label: 'Copy conversation',
           icon: 'copy',
           overflow: true,
-          onPress: () => copied(taskTranscript(task)),
+          disabled: copyConversation.busy || (!!task.historyBefore && !connected),
+          onPress: () =>
+            copyConversation.act(async () => {
+              const pages: ConversationPage[] = []
+              let before = task.historyBefore
+              while (before) {
+                const page = await read(
+                  '/api/tasks/history',
+                  { id: task.id, before },
+                  conversationPageSchema,
+                )
+                pages.unshift(page)
+                before = page.before
+              }
+              const result = await copyText(taskTranscript(mergeConversationHistory(task, pages)))
+              if (result === 'copied') AccessibilityInfo.announceForAccessibility('Copied')
+            }),
         },
       ]
     : []
@@ -348,6 +373,7 @@ function TaskDetailContent({
   >('chat')
   const hasDiff =
     task.files.length > 0 ||
+    task.historyTotals?.hasChanges ||
     (task.turns ?? []).some(
       (turn) =>
         !!turn.checkpoint && turn.checkpoint.files.length + turn.checkpoint.omitted.length > 0,
@@ -640,7 +666,7 @@ function TaskDetailContent({
           <DevicesPane taskId={task.id} expanded={expandedPreview} onExpand={setExpandedPreview} />
         )}
         {pane === 'diff' && (
-          <TaskReview task={task} initialCheckpoint={checkpoint} initialPath={checkpointPath} />
+          <TaskReview initialCheckpoint={checkpoint} initialPath={checkpointPath} />
         )}
         {pane === 'terminal' && (
           <TerminalPane task={task} selected={terminalId} onSelect={setTerminalId} />

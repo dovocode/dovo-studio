@@ -111,6 +111,7 @@ export function Composer({
         !turn.checkpoint.undone &&
         turn.checkpoint.files.length + turn.checkpoint.omitted.length > 0,
     )
+  const undoableId = undoable?.id ?? task.historyTotals?.undoableTurnId
   const runCommand = (id: ComposerCommandId) => {
     setCommandError('')
     if (id === 'review')
@@ -129,10 +130,10 @@ export function Composer({
     const work =
       command === 'new-session'
         ? request('/api/tasks/new-session', { id: task.id }, responses.ok)
-        : undoable
+        : undoableId
           ? request(
               '/api/tasks/turn/restore',
-              { id: task.id, turnId: undoable.id, direction: 'undo' },
+              { id: task.id, turnId: undoableId, direction: 'undo' },
               responses.ok,
             )
           : Promise.reject(new Error('There is no turn with file changes to undo.'))
@@ -167,6 +168,7 @@ export function Composer({
     mode: 'queue' | 'steer'
     title?: string
     accepted?: boolean
+    runId?: string
   } | null>(null)
   const pendingSubmission = useRef<string | null>(null)
   const acceptDraft = composerDraft.accept
@@ -188,6 +190,7 @@ export function Composer({
   const steerFirst = useAppPreferences().followUp === 'steer' && task.status === 'running'
   const other = steerFirst ? 'queue' : 'steer'
   const stop = async () => {
+    const runId = task.activeRunId
     // Settings → General → Confirm before stopping a running task.
     if (
       readAppPreferences().confirmStop &&
@@ -203,6 +206,7 @@ export function Composer({
         '/api/tasks/cancel',
         {
           id: task.id,
+          runId,
         },
         responses.ok,
       )
@@ -240,6 +244,7 @@ export function Composer({
         text,
         attachmentIds,
         mode,
+        runId: mode === 'steer' ? task.activeRunId : undefined,
       }
     const pending: PendingMessage = {
       taskId: task.id,
@@ -285,6 +290,7 @@ export function Composer({
           {
             id: task.id,
             messageId: attempt.current.id,
+            runId: attempt.current.runId,
             text,
             attachmentIds,
           },
@@ -543,7 +549,7 @@ export function Composer({
       <ComposerCommandDialog
         command={command}
         commandBusy={commandBusy}
-        canUndo={!!undoable}
+        canUndo={!!undoableId}
         connected={connected}
         running={task.status === 'running'}
         error={commandError}
