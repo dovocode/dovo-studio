@@ -221,6 +221,7 @@ export class PushNotifications {
                 runtimeId: registration.value.runtimeId,
                 taskId: task.id,
                 kind,
+                ...(current.turn ? { turnId: current.turn } : {}),
                 ...(kind === 'input'
                   ? {
                       inputId: input?.id,
@@ -278,7 +279,12 @@ export class PushNotifications {
         continue
       }
       const value = decode(relayNotificationSchema, JSON.parse(entry.value))
-      if (!this.store.get().tasks.some((task) => task.id === value.data.taskId)) {
+      const task = this.store.get().tasks.find((task) => task.id === value.data.taskId)
+      const staleTurn = value.data.turnId && task?.turns?.at(-1)?.id !== value.data.turnId
+      const staleCompletion =
+        (value.data.kind === 'done' || value.data.kind === 'failed') &&
+        (task?.status === 'running' || task?.turns?.at(-1)?.status === 'cancelled')
+      if (!task || task.archived || task.example || staleTurn || staleCompletion) {
         this.db.prepare('DELETE FROM push_outbox WHERE id=?').run(entry.id)
         continue
       }
@@ -291,8 +297,10 @@ export class PushNotifications {
           pushRegistrationSchema,
           JSON.parse(decode(mutableStruct({ value: Schema.String }), registration).value),
         ).token !== value.token
-      )
+      ) {
+        this.db.prepare('DELETE FROM push_outbox WHERE id=?').run(entry.id)
         continue
+      }
       if (
         value.data.kind === 'input' &&
         (!this.inputs(value.data.taskId).length ||

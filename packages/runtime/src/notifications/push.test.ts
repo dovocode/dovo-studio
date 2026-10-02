@@ -232,3 +232,71 @@ it('delivers questions already pending on the first capture without replaying th
     inputType: 'question',
   })
 })
+
+it('discards notifications for archived threads and completion notifications superseded by another run', async () => {
+  const f = setup()
+  await f.service.flush()
+  f.send.mockRejectedValueOnce(new Error('Relay offline'))
+  f.input({ id: 'question', preview: 'Needs input' })
+  await f.service.flush()
+  f.store.updateTask('task', (task) => ({ ...task, archived: true }))
+  const reopened = new PushNotifications(
+    f.db,
+    f.store,
+    f.devices,
+    () => ({ id: 'question', preview: 'Needs input' }),
+    { send: f.send },
+  )
+  f.db.prepare('UPDATE push_outbox SET next=0').run()
+  await reopened.flush()
+  expect(f.send).toHaveBeenCalledOnce()
+  expect(f.db.prepare('SELECT id FROM push_outbox').all()).toEqual([])
+  await reopened.dispose()
+  f.store.updateTask('task', (task) => ({ ...task, archived: false, status: 'review' }))
+  f.input(undefined)
+  const completion = new PushNotifications(f.db, f.store, f.devices, () => undefined, {
+    send: f.send,
+  })
+  f.send.mockRejectedValueOnce(new Error('Relay offline'))
+  await completion.flush()
+  f.store.updateTask('task', (task) => ({ ...task, status: 'running' }))
+  const latest = new PushNotifications(f.db, f.store, f.devices, () => undefined, { send: f.send })
+  f.db.prepare('UPDATE push_outbox SET next=0').run()
+  await latest.flush()
+  expect(f.send).toHaveBeenCalledTimes(2)
+  expect(f.db.prepare('SELECT id FROM push_outbox').all()).toEqual([])
+  await latest.dispose()
+  await completion.dispose()
+})
+
+it('discards an old-turn input even if its question has not been cleared yet', async () => {
+  const f = setup()
+  const turn = {
+    id: 'old',
+    assistantId: 'reply',
+    agentId: '',
+    provider: 'codex' as const,
+    model: '',
+    status: 'running' as const,
+    startedAt: '',
+  }
+  f.store.updateTask('task', (task) => ({ ...task, turns: [turn] }))
+  await f.service.flush()
+  f.send.mockRejectedValueOnce(new Error('Relay offline'))
+  f.input({ id: 'old-question', preview: 'Old run' })
+  await f.service.flush()
+  expect(f.send.mock.calls[0][0].data.turnId).toBe('old')
+  f.store.updateTask('task', (task) => ({ ...task, turns: [turn, { ...turn, id: 'new' }] }))
+  const reopened = new PushNotifications(
+    f.db,
+    f.store,
+    f.devices,
+    () => ({ id: 'old-question', preview: 'Old run' }),
+    { send: f.send },
+  )
+  f.db.prepare('UPDATE push_outbox SET next=0').run()
+  await reopened.flush()
+  expect(f.send).toHaveBeenCalledOnce()
+  expect(f.db.prepare('SELECT id FROM push_outbox').all()).toEqual([])
+  await reopened.dispose()
+})

@@ -1,6 +1,6 @@
 import { runClientEffect } from '@dovo/client-runtime'
-import { Effect } from 'effect'
-import { decode } from '@dovo/protocol'
+import { Effect, Schema } from 'effect'
+import { decode, mutableStruct } from '@dovo/protocol'
 import { beforeEach, expect, it, vi } from 'vite-plus/test'
 import { runtimeProfile, snapshotSchema, taskSchema, type RuntimeOverview } from '@dovo/protocol'
 import type { useRuntime } from '../runtime/connection/provider'
@@ -297,5 +297,107 @@ it('does not block foreground progress behind a slow token registration', async 
     expect.objectContaining({ activity: 'Still updating' }),
     expect.any(Date),
   )
+  await controller.dispose()
+})
+
+it('uses the current connection and reader after a token listener survives reconnecting', async () => {
+  let push = (_event: { pushToken: string }) => {}
+  native.instance.addPushTokenListener.mockImplementationOnce((listener) => {
+    push = listener
+    return { remove() {} }
+  })
+  const controller = await runClientEffect(createActivityController(vi.fn()))
+  const overview = source()
+  await runClientEffect(controller.sync([overview], read, true))
+  const fresh = {
+    ...overview,
+    profile: {
+      ...overview.profile,
+      connection: {
+        ...overview.profile.connection,
+        address: 'http://new-host:51464',
+        token: 'new-device-token',
+      },
+    },
+  }
+  const calls = vi.fn<(address: string, token: string) => void>()
+  const reader: ReturnType<typeof useRuntime>['readRuntimeEffect'] = (
+    profile,
+    _path,
+    _input,
+    schema,
+  ) =>
+    Effect.sync(() => {
+      calls(profile.connection.address, profile.connection.token)
+      return decode(schema, { configured: true, environment: 'sandbox', error: null })
+    })
+  await runClientEffect(controller.sync([fresh], reader, true))
+  push({ pushToken: 'rotated' })
+  await vi.waitFor(() =>
+    expect(calls).toHaveBeenCalledWith('http://new-host:51464', 'new-device-token'),
+  )
+  await controller.dispose()
+})
+it('does not rewrite unchanged activity persistence on every foreground update', async () => {
+  const overview = source()
+  const controller = await runClientEffect(createActivityController(vi.fn()))
+  await runClientEffect(controller.sync([overview], read, true))
+  const storage = await import('@react-native-async-storage/async-storage')
+  const writes = vi.spyOn(storage.default, 'setItem')
+  overview.snapshot!.workspace.tasks[0].activity = 'Another action'
+  await runClientEffect(controller.sync([overview], read, true))
+  expect(writes).not.toHaveBeenCalled()
+  writes.mockRestore()
+  await controller.dispose()
+})
+
+it('allows re-enabling activities for the same running turn after disabling them explicitly', async () => {
+  const controller = await runClientEffect(createActivityController(vi.fn()))
+  const overview = source()
+  await runClientEffect(controller.sync([overview], read, true))
+  await runClientEffect(controller.sync([overview], read, false))
+  await runClientEffect(controller.sync([overview], read, true))
+  expect(native.start).toHaveBeenCalledTimes(2)
+  await controller.dispose()
+})
+
+it('orders token rotation and removal behind in-flight registration without blocking local updates', async () => {
+  let push = (_event: { pushToken: string }) => {}
+  native.instance.addPushTokenListener.mockImplementationOnce((listener) => {
+    push = listener
+    return { remove() {} }
+  })
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const calls: string[] = []
+  const reader: ReturnType<typeof useRuntime>['readRuntimeEffect'] = (
+    _profile,
+    path,
+    input,
+    schema,
+  ) =>
+    Effect.gen(function* () {
+      const token = path.endsWith('/remove')
+        ? 'remove'
+        : decode(mutableStruct({ pushToken: Schema.String }), input).pushToken
+      calls.push(token)
+      if (token === 'old') yield* Effect.promise(() => gate)
+      return decode(schema, { configured: true, environment: 'sandbox', error: null, ok: true })
+    })
+  const controller = await runClientEffect(createActivityController(vi.fn()))
+  const overview = source()
+  await runClientEffect(controller.sync([overview], reader, true))
+  push({ pushToken: 'old' })
+  await vi.waitFor(() => expect(calls).toEqual(['old']))
+  push({ pushToken: 'new' })
+  overview.snapshot!.workspace.tasks[0].activity = 'Progress while registering'
+  await runClientEffect(controller.sync([overview], reader, true))
+  expect(calls).toEqual(['old'])
+  release()
+  await vi.waitFor(() => expect(calls).toEqual(['old', 'new']))
+  await runClientEffect(controller.sync([overview], reader, false))
+  await vi.waitFor(() => expect(calls).toEqual(['old', 'new', 'remove']))
   await controller.dispose()
 })

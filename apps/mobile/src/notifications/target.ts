@@ -10,7 +10,8 @@ const targetSchema = mutableStruct({
 })
 export function notificationTarget(data: unknown) {
   const result = decodeResult(targetSchema, data)
-  return result.success ? result.data : null
+  if (!result.success || (result.data.inputType === 'question' && !result.data.inputId)) return null
+  return result.data
 }
 export type NotificationTarget = NonNullable<ReturnType<typeof notificationTarget>>
 export function notificationHref(target: NotificationTarget) {

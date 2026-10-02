@@ -61,8 +61,9 @@ paired device stops future delivery. Delivery records survive runtime restarts a
 relay failures with bounded backoff for up to one hour. Invalid device tokens are removed and the
 phone registers a replacement on its next connection. Each pending request carries its own identity.
 Pending input notifications are discarded if the exact request has already been answered or
-replaced. Notification delivery is best effort: provider outages, OS settings, and relay restarts
-can affect timing. The relay's retry cache is in memory; runtime records are durable.
+replaced. Notifications for archived threads and superseded runs are also discarded before delivery.
+Notification delivery is best effort: provider outages, OS settings, and relay restarts can affect
+timing. The relay's retry cache is in memory; runtime records are durable.
 
 ## Build and enable the mobile app
 
@@ -90,7 +91,10 @@ including all choices and fields, alongside its thread, computer, and project. A
 is shown as no longer pending instead of silently opening another question. Permission is opt-in;
 input requests show foreground banners and sound, while other task events remain quiet in the
 foreground. Turning the setting off unregisters it from reachable runtimes; disconnected runtimes
-can only unregister when they reconnect. Revoking the device on the runtime also stops delivery.
+can only unregister when they reconnect. Changes during registration are applied after the in-flight
+request finishes. Revoking system notification permission unregisters reachable runtimes on the next
+foreground sync; restoring permission registers them again if Task notifications remain enabled.
+Revoking the device on the runtime also stops delivery.
 
 Push-capable iOS builds enable Live Activity push tokens and frequent updates by default. Set
 `DOVO_LIVE_ACTIVITY_PUSH=0` to opt out, or `DOVO_PUSH_NOTIFICATIONS=0` for a local-only build.

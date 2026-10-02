@@ -26,6 +26,9 @@ it('opens the exact question on its owning computer, keeping legacy task notific
   ).not.toHaveProperty('questionId')
 })
 it('rejects malformed or incomplete notification identities', () => {
+  expect(
+    notificationTarget({ runtimeId: 'host', taskId: 'task', inputType: 'question' }),
+  ).toBeNull()
   for (const data of [
     undefined,
     {},

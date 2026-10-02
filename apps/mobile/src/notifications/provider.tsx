@@ -26,9 +26,8 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
     const target = deferredTarget.current
     if (!target || !runtime.ready) return
     deferredTarget.current = null
-    if (runtime.profiles.some((profile) => profile.id === target.runtimeId))
-      router.push(notificationHref(target))
-  }, [runtime.ready, runtime.profiles])
+    router.push(notificationHref(target))
+  }, [runtime.ready])
   const latest = useRef(runtime)
   latest.current = runtime
   const [enabled, updateEnabled, enabledRef] = useApplicationState(false)
@@ -44,9 +43,11 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
     if (!supported) return
     let disposed = false
     let syncPending: Promise<void> | undefined
+    let syncAgain = false
     let nativeToken: string | undefined
     let managed = false
-    const registered = new Map<string, number>()
+    let toggling = false
+    const registered = new Map<string, { key: string; at: number }>()
     const subscriptions: Array<{ remove: () => void }> = []
     const initialize = async () => {
       const Notifications = await import('expo-notifications')
@@ -67,6 +68,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
           shouldShowList: true,
         }),
       })
+      subscriptions.push({ remove: () => Notifications.setNotificationHandler(null) })
       const open = (data: unknown) => {
         const target = notificationTarget(data)
         if (!target) return
@@ -74,7 +76,6 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
           deferredTarget.current = target
           return
         }
-        if (!latest.current.profiles.some((profile) => profile.id === target.runtimeId)) return
         router.push(notificationHref(target))
       }
       let lastOpened: string | undefined
@@ -88,9 +89,13 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       }
       subscriptions.push(Notifications.addNotificationResponseReceivedListener(handleResponse))
       const response = await Notifications.getLastNotificationResponseAsync()
+      if (disposed) return
       if (response) handleResponse(response)
       const sync = () => {
-        if (syncPending) return syncPending
+        if (syncPending) {
+          syncAgain = true
+          return syncPending
+        }
         syncPending = (async () => {
           if (
             disposed ||
@@ -99,35 +104,45 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
             (!enabledRef.current && !managed)
           )
             return
-          if (enabledRef.current && !nativeToken) {
+          const errors: string[] = []
+          const permission = enabledRef.current
+            ? await Notifications.getPermissionsAsync()
+            : undefined
+          const permitted = permission?.granted !== false
+          if (!permitted) errors.push('Notifications are disabled in system settings.')
+          if (enabledRef.current && permitted && !nativeToken) {
             if (Platform.OS === 'android')
               await Notifications.setNotificationChannelAsync('dovo-tasks', {
                 name: 'Dovo tasks',
                 importance: Notifications.AndroidImportance.HIGH,
               })
-            const permission = await Notifications.getPermissionsAsync()
-            if (!permission.granted) {
-              if (!disposed) setError('Notifications are disabled in system settings.')
-              return
-            }
             const result = await Notifications.getDevicePushTokenAsync()
             if (typeof result.data !== 'string')
               throw new Error('Native push tokens are unavailable on this device')
             nativeToken = result.data
           }
+          const enabled = enabledRef.current && permitted
+          const token = nativeToken
           for (const entry of latest.current.overviews) {
             if (!entry.connected || disposed) continue
-            const key = `${entry.profile.id}:${enabledRef.current}:${nativeToken ?? ''}`
-            if (Date.now() - (registered.get(key) ?? 0) < 300_000) continue
+            const key = JSON.stringify([
+              entry.profile.id,
+              entry.profile.connection.address,
+              entry.profile.connection.token,
+              enabled,
+              token,
+            ])
+            const previous = registered.get(entry.profile.id)
+            if (previous?.key === key && Date.now() - previous.at < 300_000) continue
             try {
-              if (enabledRef.current && nativeToken) {
+              if (enabled && token) {
                 const status = await latest.current.readRuntime(
                   entry.profile,
                   '/api/notifications/register',
                   {
                     runtimeId: entry.profile.id,
                     platform: Platform.OS,
-                    token: nativeToken,
+                    token,
                     environment:
                       Constants.expoConfig?.extra?.pushEnvironment === 'production'
                         ? 'production'
@@ -135,7 +150,12 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
                   },
                   pushStatusSchema,
                 )
-                if (status.error && !disposed) setError(`${entry.profile.name}: ${status.error}`)
+                if (!status.configured || !status.registered || status.error) {
+                  errors.push(
+                    `${entry.profile.name}: ${status.error ?? 'Push registration is not ready.'}`,
+                  )
+                  continue
+                }
               } else
                 await latest.current.readRuntime(
                   entry.profile,
@@ -143,21 +163,26 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
                   {},
                   responses.ok,
                 )
-              registered.set(key, Date.now())
+              registered.set(entry.profile.id, { key, at: Date.now() })
             } catch {
-              if (!disposed)
-                setError(
-                  `${entry.profile.name}: configure the push relay and update this runtime to enable notifications.`,
-                )
+              errors.push(
+                `${entry.profile.name}: configure the push relay and update this runtime to enable notifications.`,
+              )
             }
           }
-        })().finally(() => {
+          if (!disposed && !syncAgain) setError(errors.join('\n'))
+        })().finally(async () => {
           syncPending = undefined
+          if (syncAgain && !disposed) {
+            syncAgain = false
+            await sync()
+          }
         })
         return syncPending
       }
       toggle.current = async (value) => {
-        if (disposed) return
+        if (disposed || toggling) return
+        toggling = true
         setBusy(true)
         setError('')
         try {
@@ -168,10 +193,12 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
                 importance: Notifications.AndroidImportance.HIGH,
               })
             const permissions = await Notifications.requestPermissionsAsync()
+            if (disposed) return
             if (!permissions.granted)
               throw new Error('Allow notifications in system settings first')
           }
           await AsyncStorage.setItem(preferenceKey, String(value))
+          if (disposed) return
           managed = true
           updateEnabled(value)
           registered.clear()
@@ -182,6 +209,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
               error instanceof Error ? error.message : 'Could not configure push notifications',
             )
         } finally {
+          toggling = false
           if (!disposed) setBusy(false)
         }
       }

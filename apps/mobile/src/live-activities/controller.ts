@@ -34,12 +34,16 @@ export function createActivityController(onError: (message: string) => void) {
     const restored = decodeResult(savedSchema, parsed)
     if (!restored.success) yield* nativeEffect(() => AsyncStorage.removeItem(storageKey))
     const saved = restored.success ? restored.data : { records: [], seen: [] }
+    let current: { overviews: RuntimeOverview[]; read: Read; enabled: boolean } | undefined
+    let lastSaved = raw
     const seen = new Set(saved.seen)
     const records = new Map(saved.records.map((record) => [record.key, record]))
     const fingerprints = new Map<string, string>()
     const registered = new Map<string, string>()
     const registering = new Map<string, string>()
-    const retryAt = new Map<string, number>()
+    const registrationLocks = new Map<string, Effect.Semaphore>()
+    const tokens = new Map<string, string>()
+    const retryAt = new Map<string, { key: string; at: number }>()
     const listeners = new Map<
       string,
       {
@@ -49,46 +53,48 @@ export function createActivityController(onError: (message: string) => void) {
     let disposed = false
     const commands = clientTaskScope()
     const permit = yield* Effect.makeSemaphore(1)
-    const persist = () =>
-      AsyncStorage.setItem(
-        storageKey,
-        JSON.stringify({
-          records: [...records.values()],
-          seen: [...seen].slice(-200),
-        }),
-      )
+    const persist = async () => {
+      const value = JSON.stringify({ records: [...records.values()], seen: [...seen].slice(-200) })
+      if (value === lastSaved) return
+      await AsyncStorage.setItem(storageKey, value)
+      lastSaved = value
+    }
     function sync(overviews: RuntimeOverview[], read: Read, enabled: boolean) {
       return mobileWorkflow(function* () {
         if (disposed) return
+        current = { overviews, read, enabled }
         const instances = new Map(
           TaskActivity.getInstances().map((instance) => [instance.getId(), instance]),
         )
         const remove = (record: Record) => {
           return Effect.sync(() => {
             const source = overviews.find((entry) => entry.profile.id === record.runtimeId)
-            if (source?.connected)
-              void commands.run(
-                read(
-                  source.profile,
-                  '/api/live-activities/remove',
-                  { activityId: record.id },
-                  mutableStruct({ ok: Schema.Boolean }),
-                ).pipe(
-                  Effect.catchAll(() =>
-                    Effect.sync(() => {
-                      if (!disposed)
-                        onError(
-                          'Could not remove the background registration. Local Live Activity updates remain available.',
-                        )
-                    }),
-                  ),
+            if (source?.connected) {
+              const request = read(
+                source.profile,
+                '/api/live-activities/remove',
+                { activityId: record.id },
+                mutableStruct({ ok: Schema.Boolean }),
+              ).pipe(
+                Effect.catchAll(() =>
+                  Effect.sync(() => {
+                    if (!disposed)
+                      onError(
+                        'Could not remove the background registration. Local Live Activity updates remain available.',
+                      )
+                  }),
                 ),
               )
+              const lock = registrationLocks.get(record.id)
+              void commands.run(lock ? lock.withPermits(1)(request) : request)
+            }
             listeners.get(record.id)?.remove()
             listeners.delete(record.id)
             records.delete(record.key)
             registered.delete(record.id)
             registering.delete(record.id)
+            registrationLocks.delete(record.id)
+            tokens.delete(record.id)
             fingerprints.delete(record.id)
             retryAt.delete(record.id)
           })
@@ -101,6 +107,7 @@ export function createActivityController(onError: (message: string) => void) {
             continue
           }
           if (!enabled || !source) {
+            if (!enabled) seen.delete(record.key)
             yield* nativeEffect(() => instance.end('immediate'))
             yield* remove(record)
             continue
@@ -182,18 +189,35 @@ export function createActivityController(onError: (message: string) => void) {
                 fingerprints.set(record.id, fingerprint)
               }
               const id = record.id
+              let lock = registrationLocks.get(id)
+              if (!lock) {
+                lock = yield* Effect.makeSemaphore(1)
+                registrationLocks.set(id, lock)
+              }
+              const registrationLock = lock
               const register = (token: string) => {
                 return mobileWorkflow(function* () {
+                  const source = current?.overviews.find(
+                    (entry) => entry.profile.id === record?.runtimeId,
+                  )
+                  if (!current?.enabled || !source?.connected) return
+                  const registrationKey = JSON.stringify([
+                    source.profile.connection.address,
+                    source.profile.connection.token,
+                    token,
+                  ])
+                  const retry = retryAt.get(id)
                   if (
                     disposed ||
                     !records.has(key) ||
-                    registered.get(id) === token ||
-                    (retryAt.get(id) ?? 0) > Date.now()
+                    tokens.get(id) !== token ||
+                    registered.get(id) === registrationKey ||
+                    (retry?.key === registrationKey && retry.at > Date.now())
                   )
                     return
-                  registering.set(id, token)
-                  retryAt.set(id, Date.now() + 60_000)
-                  const status = yield* read(
+                  registering.set(id, registrationKey)
+                  retryAt.set(id, { key: registrationKey, at: Date.now() + 60_000 })
+                  const status = yield* current.read(
                     source.profile,
                     '/api/live-activities/register',
                     {
@@ -204,8 +228,9 @@ export function createActivityController(onError: (message: string) => void) {
                     },
                     liveActivityStatusSchema,
                   )
-                  if (disposed || !records.has(key) || registering.get(id) !== token) return
-                  if (status.configured && !status.error) registered.set(id, token)
+                  if (disposed || !records.has(key) || registering.get(id) !== registrationKey)
+                    return
+                  if (status.configured && !status.error) registered.set(id, registrationKey)
                   if (!status.configured)
                     onError(
                       'Background Live Activities need APNs setup on the task’s computer. See docs/releases-and-updates.md.',
@@ -214,17 +239,20 @@ export function createActivityController(onError: (message: string) => void) {
                 })
               }
               const scheduleRegistration = (token: string) => {
+                tokens.set(id, token)
                 void commands.run(
-                  register(token).pipe(
-                    Effect.catchAll(() =>
-                      Effect.sync(() => {
-                        if (!disposed)
-                          onError(
-                            'Could not register background updates. Reconnect to the task’s computer.',
-                          )
-                      }),
+                  registrationLock
+                    .withPermits(1)(register(token))
+                    .pipe(
+                      Effect.catchAll(() =>
+                        Effect.sync(() => {
+                          if (!disposed)
+                            onError(
+                              'Could not register background updates. Reconnect to the task’s computer.',
+                            )
+                        }),
+                      ),
                     ),
-                  ),
                 )
               }
               if (!listeners.has(id))
