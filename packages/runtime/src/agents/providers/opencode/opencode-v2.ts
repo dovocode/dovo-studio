@@ -69,6 +69,7 @@ export const opencodeV2Adapter: AgentAdapter = {
       signal: AbortSignal.timeout(15000),
     })
     return {
+      harness: { name: 'OpenCode v2', generation: 'v2' },
       models: data
         .filter((model) => model.enabled)
         .map((model) => ({
@@ -82,7 +83,7 @@ export const opencodeV2Adapter: AgentAdapter = {
   probe: async (agent) => {
     try {
       await client(agent.endpoint, agent.env).server.info({ signal: AbortSignal.timeout(5000) })
-      return { provider: 'opencode', available: true, detail: 'OpenCode 2 Serve is reachable.' }
+      return { provider: 'opencode', available: true, detail: 'OpenCode v2 Serve is reachable.' }
     } catch {
       return {
         provider: 'opencode',

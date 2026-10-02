@@ -1,5 +1,6 @@
 import { decode } from '@dovo/protocol'
 import {
+  modelDisplayName,
   acpHarnessChoiceId,
   acpHarnessName,
   acpInstallationHarness,
@@ -131,10 +132,17 @@ export function taskHarnessLabel(
   task: Task,
   agent: Agent | undefined,
   installations: readonly AcpInstallation[] = [],
+  modelName?: string,
+  harnessName?: string,
 ) {
   if (!agent) return 'Choose agent'
   const name = task.harness
     ? (acpHarnessName(agent, installations) ?? harnessNames[agent.provider])
     : agent.name
-  return task.harness ? agent.model || name : [name, agent.model].filter(Boolean).join(' · ')
+  const model = modelDisplayName(agent.model, modelName)
+  if (agent.provider === 'opencode' && harnessName)
+    return [task.harness ? harnessName : `${name} · ${harnessName}`, model]
+      .filter(Boolean)
+      .join(' · ')
+  return task.harness ? model || name : [name, model].filter(Boolean).join(' · ')
 }

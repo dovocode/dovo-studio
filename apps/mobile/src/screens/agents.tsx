@@ -1,3 +1,4 @@
+import { HarnessLabel, ModelLabel } from '../agents/model-label'
 import { HarnessUpdates } from '../agents/harness-updates'
 import {
   useMobilePreferences,
@@ -211,7 +212,7 @@ function ComputerAgents({ name }: { name: string }) {
                 : 'This server'}
             </Text>
             <Text style={styles.muted}>
-              {agent.provider} · {agent.model || 'Provider default'}
+              <HarnessLabel agent={agent} /> · <ModelLabel agent={agent} />
               {agent.reasoning ? ` · ${agent.reasoning}` : ''} · {accessLabel(agent.permission)}
             </Text>
             <View style={[styles.row, { flexWrap: 'wrap' }]}>

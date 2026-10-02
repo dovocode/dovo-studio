@@ -1,3 +1,4 @@
+import { loadMobileModelCatalog } from '../../../agents/use-model-catalog'
 import { useEffect, useMemo, useState } from 'react'
 import { AccessibilityInfo, ActionSheetIOS, Alert, Platform, Pressable, View } from 'react-native'
 import { Icon } from '../../../ui/controls/icon'
@@ -5,6 +6,7 @@ import { Text } from '../../../ui/content/text'
 import { colors } from '../../../ui/theme'
 import { copyText, shareText } from '../../../ui/content/clipboard'
 import {
+  modelDisplayName,
   codeBlockLabel,
   fencedCodeBlocks,
   responses,
@@ -45,7 +47,7 @@ export function MessageActions({
   )
   const task = useConversationSelector((value) => value.task)
   const openTerminal = useConversationSelector((value) => value.openTerminal)
-  const { call, connected, activeId } = useRuntime()
+  const { call, connected, activeId, profile, readRuntime } = useRuntime()
   const bookmarked = task.messages.some((message) => message.id === messageId && message.bookmarked)
   // Fork from a finished agent turn: a new task with the conversation up to here.
   const turn = user ? undefined : task.turns?.find((item) => item.assistantId === messageId)
@@ -69,26 +71,16 @@ export function MessageActions({
   // Same model, or another model of the task's provider (its models load on demand).
   const chooseRetry = () => {
     const agent = resolveTaskAgent(task, snapshot?.workspace.agents ?? [])
-    if (!agent || !turn) return
-    const same = `Try again${agent.model ? ` with ${agent.model}` : ''}`
+    if (!agent || !turn || !profile) return
+    const same = `Try again${agent.model ? ` with ${modelDisplayName(agent.model)}` : ''}`
     if (Platform.OS !== 'ios')
       return Alert.alert('Try again?', 'This turn’s file changes are undone first.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Try again', onPress: () => retry() },
       ])
     setRetrying(true)
-    void call(
-      '/api/agents/models',
-      {
-        provider: agent.provider,
-        endpoint: agent.endpoint,
-        args: agent.args ?? [],
-        model: agent.provider === 'acp' ? agent.model : '',
-        acpInstallationId: agent.acpInstallationId,
-        acpMode: agent.acpMode,
-        acpConfig: agent.acpConfig,
-      },
-      modelCatalogSchema,
+    void loadMobileModelCatalog(profile, agent, (input) =>
+      readRuntime(profile, '/api/agents/models', input, modelCatalogSchema),
     )
       .then((catalog) =>
         catalog.models.filter((model) => !model.hidden && model.id !== agent.model),
@@ -97,7 +89,11 @@ export function MessageActions({
       .then((models) => {
         setRetrying(false)
         const choices = models.slice(0, 8)
-        const options = [same, ...choices.map((model) => model.name || model.id), 'Cancel']
+        const options = [
+          same,
+          ...choices.map((model) => modelDisplayName(model.id, model.name)),
+          'Cancel',
+        ]
         ActionSheetIOS.showActionSheetWithOptions(
           {
             title: 'Try again',

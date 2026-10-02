@@ -224,9 +224,65 @@ it('recognizes V1 servers that return the browser app for unknown API routes', a
   }
   try {
     expect((await opencodeAdapter.probe(agent)).available).toBe(true)
-    expect((await opencodeAdapter.models!(agent)).models).toEqual([
+    const catalog = await opencodeAdapter.models!(agent)
+    expect(catalog.harness).toEqual({ name: 'OpenCode v1', generation: 'v1' })
+    expect(catalog.models).toEqual([
       { id: 'test/model', name: 'Test provider / Test model', reasoning: [] },
     ])
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+it('loads enabled v2 models and variants exclusively from the configured OpenCode host', async () => {
+  const paths: string[] = []
+  const server = createServer((request, response) => {
+    paths.push(request.url ?? '')
+    response.setHeader('Content-Type', 'application/json')
+    if (request.url === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
+    if (request.url === '/api/model')
+      return response.end(
+        JSON.stringify({
+          location: {},
+          data: [
+            {
+              enabled: true,
+              providerID: 'host',
+              modelID: 'custom',
+              name: 'Host Custom Model',
+              variants: [{ id: 'high' }],
+            },
+            {
+              enabled: false,
+              providerID: 'host',
+              modelID: 'disabled',
+              name: 'Disabled',
+              variants: [],
+            },
+          ],
+        }),
+      )
+    response.writeHead(404).end()
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing test address')
+  try {
+    const catalog = await opencodeAdapter.models!({
+      provider: 'opencode',
+      endpoint: `http://127.0.0.1:${address.port}`,
+      model: '',
+    })
+    expect(catalog).toEqual({
+      harness: { name: 'OpenCode v2', generation: 'v2' },
+      models: [
+        { id: 'host/custom', name: 'Host Custom Model', reasoning: [{ id: 'high', name: 'high' }] },
+      ],
+      reasoning: [],
+    })
+    expect(paths).toEqual(['/api/info', '/api/model'])
   } finally {
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))

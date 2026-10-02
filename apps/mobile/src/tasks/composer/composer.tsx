@@ -1,3 +1,4 @@
+import { useModelCatalog } from '../../agents/use-model-catalog'
 import { CheckoutChoice } from '../creation/checkout-choice'
 import { TaskMachineSelector } from '../creation/task-machine-selector'
 import { WorktreeBasePicker } from '../creation/worktree-base-picker'
@@ -56,6 +57,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
     canSend,
     patch,
   } = actions
+  const { modelName, catalog: modelCatalog } = useModelCatalog(agent)
   const [machineMoving, setMachineMoving] = useApplicationState(false)
   const busy = actionBusy || machineMoving
   const [focused, setFocused] = useApplicationState(false),
@@ -344,7 +346,13 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                   accessibilityRole="button"
                   accessibilityLabel="Agent & model"
                   accessibilityValue={{
-                    text: taskHarnessLabel(task, agent, snapshot?.acpInstallations),
+                    text: taskHarnessLabel(
+                      task,
+                      agent,
+                      snapshot?.acpInstallations,
+                      modelName,
+                      modelCatalog?.harness?.name,
+                    ),
                   }}
                   accessibilityState={{
                     disabled: busy || task.status === 'running' || !!task.archived,
@@ -376,7 +384,13 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                       },
                     ]}
                   >
-                    {taskHarnessLabel(task, agent, snapshot?.acpInstallations)}
+                    {taskHarnessLabel(
+                      task,
+                      agent,
+                      snapshot?.acpInstallations,
+                      modelName,
+                      modelCatalog?.harness?.name,
+                    )}
                   </Text>
                   <Icon name="down" size={10} color={colors.muted} />
                 </Pressable>

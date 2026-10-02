@@ -18,6 +18,12 @@ const choiceSchema = mutableStruct({
   name: Schema.String,
 })
 export const modelCatalogSchema = mutableStruct({
+  harness: Schema.optional(
+    mutableStruct({
+      name: Schema.String,
+      generation: Schema.Literal('v1', 'v2'),
+    }),
+  ),
   models: mutableArray(
     mutableStruct({
       ...choiceSchema.fields,
@@ -72,6 +78,51 @@ export const modelCatalogSchema = mutableStruct({
 })
 export type AgentDiscovery = Schema.Schema.Type<typeof agentDiscoverySchema>
 export type ModelCatalog = Schema.Schema.Type<typeof modelCatalogSchema>
+
+/** Catalogue names are authoritative; only prettify a recognizable raw GPT identifier. */
+export function modelDisplayName(id: string, name?: string) {
+  if (name && name !== id) return name
+  return id.replace(
+    /(^|\/)gpt-(\d[^/]+)/i,
+    (_match, prefix: string, suffix: string) =>
+      `${prefix}GPT-${suffix.replace(/(^|-)([a-z])/g, (_match, separator: string, letter: string) => `${separator}${letter.toUpperCase()}`)}`,
+  )
+}
+
+export function modelCatalogChoices(models: ModelCatalog['models']) {
+  const names = models.map((model) => modelDisplayName(model.id, model.name))
+  const counts = new Map<string, number>()
+  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1)
+  return models.map((model, index) => ({
+    ...model,
+    name:
+      (counts.get(names[index]) ?? 0) > 1
+        ? `${names[index]} · ${model.id.includes('/') ? model.id.slice(0, model.id.indexOf('/')) : model.id}`
+        : names[index],
+  }))
+}
+
+/** Model lists depend on launch settings and account, not the selected non-ACP model. */
+export function modelDiscoveryInput(agent: AgentDiscovery): AgentDiscovery {
+  const sorted = (values: Record<string, string> | undefined) =>
+    Object.fromEntries(Object.entries(values ?? {}).sort(([a], [b]) => a.localeCompare(b)))
+  return {
+    provider: agent.provider,
+    endpoint: agent.endpoint,
+    executablePath: agent.executablePath,
+    configDirectory: agent.configDirectory,
+    args: agent.args ?? [],
+    env: sorted(agent.env),
+    model: agent.provider === 'acp' ? agent.model : '',
+    ...(agent.provider === 'acp'
+      ? {
+          acpInstallationId: agent.acpInstallationId,
+          acpMode: agent.acpMode,
+          acpConfig: sorted(agent.acpConfig),
+        }
+      : {}),
+  }
+}
 
 /** The empty legacy value represented Standard. Send an explicit tier to clear sticky Fast. */
 export function serviceTierValue(value: string | undefined) {

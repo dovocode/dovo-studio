@@ -3,6 +3,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useSyncExternalStore } from 'react'
 import {
   modelCatalogSchema,
+  modelDiscoveryInput,
   useWorkspace,
   type TaskHarness,
   type ModelCatalog,
@@ -32,20 +33,9 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
   } | null>(null)
   const [error, setError] = useApplicationState('')
   const [loading, setLoading] = useApplicationState(false)
-  const { provider, endpoint, args, model, acpInstallationId, acpMode, acpConfig } = harness
-  const argsKey = JSON.stringify(args ?? [])
-  const discoveryModel = provider === 'acp' ? model : ''
-  const key = JSON.stringify([
-    connection?.address,
-    connection?.token,
-    provider,
-    endpoint,
-    argsKey,
-    discoveryModel,
-    acpInstallationId,
-    acpMode,
-    acpConfig,
-  ])
+  const input = modelDiscoveryInput(harness)
+  const model = harness.model
+  const key = JSON.stringify([connection?.address, connection?.token, input])
   useEffect(() => {
     if (!active) return
     let stopped = false
@@ -60,19 +50,7 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
     setError('')
     setLoading(connected)
     if (!connected) return
-    void request(
-      '/api/agents/models',
-      {
-        provider,
-        endpoint,
-        args: JSON.parse(argsKey),
-        model: discoveryModel,
-        acpInstallationId,
-        acpMode,
-        acpConfig,
-      },
-      modelCatalogSchema,
-    )
+    void request('/api/agents/models', input, modelCatalogSchema)
       .then((value) => {
         if (!stopped) {
           modelLabels.save(connection?.address, harness, value)
@@ -97,19 +75,7 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
     return () => {
       stopped = true
     }
-  }, [
-    active,
-    provider,
-    endpoint,
-    argsKey,
-    discoveryModel,
-    acpInstallationId,
-    acpMode,
-    acpConfig,
-    connected,
-    request,
-    key,
-  ])
+  }, [active, connected, request, key])
   return {
     catalog: catalog?.key === key ? catalog.value : (cachedCatalogs.get(key)?.value ?? null),
     modelName:

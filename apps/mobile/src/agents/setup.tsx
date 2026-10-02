@@ -1,3 +1,4 @@
+import { HarnessLabel, ModelLabel } from './model-label'
 import { harnessNames } from '../tasks/creation/harness-choices'
 import { useEffect } from 'react'
 import { View } from 'react-native'
@@ -7,7 +8,6 @@ import {
   defaultTaskHarness,
   acpInstallationHarness,
   acpHarnessChoiceId,
-  acpHarnessName,
   providerSchema,
   resolveTitleHarness,
   runtimeSetupSchema,
@@ -39,9 +39,13 @@ export function Setup() {
         {defaults?.configured ? 'Your defaults' : 'Set up your workspace'}
       </Text>
       <Text style={styles.muted}>
-        {defaults?.configured
-          ? `${acpHarnessName(defaults.harness, snapshot?.acpInstallations ?? []) ?? harnessNames[defaults.harness.provider]} · ${defaults.harness.model || 'Provider default model'}`
-          : 'Choose your everyday model and a separate model for titles and dictation.'}
+        {defaults?.configured ? (
+          <>
+            <HarnessLabel agent={defaults.harness} /> · <ModelLabel agent={defaults.harness} />
+          </>
+        ) : (
+          'Choose your everyday model and a separate model for titles and dictation.'
+        )}
       </Text>
       <Text style={styles.muted}>
         Shared with devices paired to this computer. Existing tasks keep their settings.
@@ -203,12 +207,11 @@ function SetupForm({ onClose }: { onClose: () => void }) {
       {step === 1 && (
         <View style={styles.card}>
           <Text style={styles.muted}>
-            New tasks: {harnessNames[settings.defaults.harness.provider]} ·{' '}
-            {settings.defaults.harness.model || 'Provider default model'}
+            New tasks: <HarnessLabel agent={settings.defaults.harness} /> ·{' '}
+            <ModelLabel agent={settings.defaults.harness} />
           </Text>
           <Text style={styles.muted}>
-            Titles & dictation: {harnessNames[agent.provider]} ·{' '}
-            {agent.model || 'Provider default model'}
+            Titles & dictation: <HarnessLabel agent={agent} /> · <ModelLabel agent={agent} />
           </Text>
         </View>
       )}

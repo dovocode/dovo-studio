@@ -1,13 +1,12 @@
+import { mobileModelCatalogKey } from './model-catalog-cache'
+import { useModelCatalog } from './use-model-catalog'
 import {
   useMobilePreferences,
   updateMobilePreferences,
 } from '../runtime/preferences/app-preferences'
-import { nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
-import { useEffect } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
@@ -17,9 +16,9 @@ import {
   daybreakChoices,
   modelServiceTiers,
   selectedCatalogModel,
+  modelDisplayName,
+  modelCatalogChoices,
   serviceTierValue,
-  modelCatalogSchema,
-  type ModelCatalog,
   type Agent,
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
@@ -38,67 +37,12 @@ export function ModelSettings({
   disabled?: boolean
   onChange: (agent: Agent) => void
 }) {
-  const { connected, callEffect, snapshot, refresh: refreshRuntime } = useRuntime()
-  const [catalog, setCatalog] = useApplicationState<ModelCatalog | null>(null),
-    [error, setError] = useApplicationState(''),
-    [loading, setLoading] = useApplicationState(false),
-    [refresh, setRefresh] = useApplicationState(0),
-    [custom, setCustom] = useApplicationState(false)
-  const key = JSON.stringify({
-    provider: agent.provider,
-    endpoint: agent.endpoint,
-    args: agent.args,
-    env: agent.env,
-    executablePath: agent.executablePath,
-    configDirectory: agent.configDirectory,
-    model: agent.provider === 'acp' ? agent.model : '',
-    acpInstallationId: agent.provider === 'acp' ? agent.acpInstallationId : undefined,
-    acpMode: agent.provider === 'acp' ? agent.acpMode : undefined,
-    acpConfig: agent.provider === 'acp' ? agent.acpConfig : undefined,
-  })
-  const canDiscover =
-    connected &&
-    (agent.provider !== 'acp' ||
-      !!agent.acpInstallationId ||
-      !!agent.endpoint.trim() ||
-      refresh > 0)
-  useEffect(() => {
-    let stopped = false
-    setCatalog(null)
-    setError('')
-    setLoading(canDiscover)
-    if (!canDiscover) return
-    const timer = setTimeout(() => {
-      void runClientEffect(
-        callEffect('/api/agents/models', JSON.parse(key), modelCatalogSchema)
-          .pipe(
-            Effect.flatMap((value) =>
-              nativeEffect(() => {
-                if (!stopped) setCatalog(value)
-              }),
-            ),
-          )
-          .pipe(
-            Effect.catchAll((error) =>
-              nativeEffect(() => {
-                if (!stopped) setError(String(error))
-              }),
-            ),
-          )
-          .pipe(
-            Effect.ensuring(
-              nativeEffect(() => {
-                if (!stopped) setLoading(false)
-              }).pipe(Effect.orDie),
-            ),
-          ),
-      )
-    }, 400)
-    return () => {
-      stopped = true
-      clearTimeout(timer)
-    }
-  }, [key, canDiscover, callEffect, refresh])
+  const { connected, callEffect, snapshot, profile, refresh: refreshRuntime } = useRuntime()
+  const { catalog, error: discoveryError, loading, canDiscover, refresh } = useModelCatalog(agent)
+  const [error, setError] = useApplicationState('')
+  const [customSelection, setCustom] = useApplicationState('')
+  const customKey = mobileModelCatalogKey(profile ?? undefined, { ...agent, model: '' })
+  const custom = customSelection === customKey
   const [manage, setManage] = useApplicationState(false)
   const [saving, setSaving] = useApplicationState(false)
   const [scope, setScope] = useApplicationState('server')
@@ -111,7 +55,9 @@ export function ModelSettings({
     scope === 'global' ? globalPreferences : (snapshot?.defaults?.modelPreferences ?? {})
   const preferenceKey = (model: string) =>
     modelPreferenceKey(agent.provider, model, agent.acpInstallationId)
-  const allModels = catalog?.models ?? []
+  const allModels = modelCatalogChoices(catalog?.models ?? []).filter(
+    (model) => !model.hidden || model.id === agent.model,
+  )
   const models = allModels
       .filter(
         (model) => !preferences[preferenceKey(model.id)]?.disabled || model.id === agent.model,
@@ -141,6 +87,9 @@ export function ModelSettings({
         gap: 12,
       }}
     >
+      {!!catalog?.harness && (
+        <Text style={styles.muted}>{catalog.harness.name} · Models from this computer</Text>
+      )}
       <Action
         secondary
         label={manage ? 'Done managing models' : 'Model visibility & favorites'}
@@ -253,7 +202,7 @@ export function ModelSettings({
             ? [
                 {
                   id: agent.model,
-                  name: `${agent.model} (saved/custom)`,
+                  name: `${modelDisplayName(agent.model)} (saved/custom)`,
                 },
               ]
             : []),
@@ -263,7 +212,7 @@ export function ModelSettings({
           },
         ]}
         onChange={(value) => {
-          setCustom(value === '__custom__')
+          setCustom(value === '__custom__' ? customKey : '')
           changeModel(value === '__custom__' ? '' : value)
         }}
       />
@@ -427,9 +376,13 @@ export function ModelSettings({
         secondary
         label="Refresh models"
         disabled={disabled || !connected || loading}
-        onPress={() => setRefresh((value) => value + 1)}
+        onPress={refresh}
       />
-      {!!error && <Text style={styles.error}>{error} Custom model entry is still available.</Text>}
+      {!!(error || discoveryError) && (
+        <Text style={styles.error}>
+          {error || discoveryError} Custom model entry is still available.
+        </Text>
+      )}
     </View>
   )
 }

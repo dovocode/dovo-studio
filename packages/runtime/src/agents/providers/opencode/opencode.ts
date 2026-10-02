@@ -47,6 +47,7 @@ const remoteAdapter: AgentAdapter = {
       },
     )
     return {
+      harness: { name: 'OpenCode v1', generation: 'v1' },
       models: data.all
         .filter((provider) => data.connected.includes(provider.id))
         .flatMap((provider) =>
@@ -71,7 +72,7 @@ const remoteAdapter: AgentAdapter = {
       return {
         provider: 'opencode',
         available: true,
-        detail: 'OpenCode Serve is reachable.',
+        detail: 'OpenCode v1 Serve is reachable.',
       }
     } catch {
       return {

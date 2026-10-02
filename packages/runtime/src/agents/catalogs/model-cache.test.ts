@@ -27,3 +27,13 @@ it('retries failed discovery instead of caching its error', async () => {
   await expect(cache.get('provider', load)).resolves.toEqual({ models: [], reasoning: [] })
   expect(load).toHaveBeenCalledTimes(2)
 })
+
+it('refreshes an unexpired entry and coalesces concurrent refresh requests', async () => {
+  const cache = new ModelCatalogCache()
+  const load = vi.fn<() => Promise<ModelCatalog>>(async () => ({ models: [], reasoning: [] }))
+  await cache.get('host', load)
+  await Promise.all([cache.get('host', load, true), cache.get('host', load, true)])
+  expect(load).toHaveBeenCalledTimes(2)
+  await cache.get('host', load)
+  expect(load).toHaveBeenCalledTimes(2)
+})

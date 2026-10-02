@@ -2,12 +2,50 @@ import { decode } from '../shared/schema.js'
 import { expect, it } from 'vitest'
 import {
   daybreakChoices,
+  modelDisplayName,
+  modelCatalogChoices,
+  modelDiscoveryInput,
   modelCatalogSchema,
   modelServiceTiers,
   selectedCatalogModel,
   serviceTierValue,
 } from './models'
-import { agentSchema, resolveTaskAgent, taskModelSchema } from '../workspace'
+import { agentSchema, resolveTaskAgent, taskModelSchema, defaultTaskHarness } from '../workspace'
+
+it('uses host display names, formats raw versioned GPT IDs and keeps custom identifiers intact', () => {
+  expect(modelDisplayName('gpt-5.1-sol')).toBe('GPT-5.1-Sol')
+  expect(modelDisplayName('openai/gpt-6.1-sol')).toBe('openai/GPT-6.1-Sol')
+  expect(modelDisplayName('gpt-6.1-sol', 'GPT-6.1 Sol')).toBe('GPT-6.1 Sol')
+  expect(modelDisplayName('gpt-test')).toBe('gpt-test')
+  expect(modelDisplayName('my-custom-name')).toBe('my-custom-name')
+  expect(
+    modelCatalogChoices([
+      { id: 'openai/gpt-5.1-sol', name: 'GPT-5.1-Sol' },
+      { id: 'azure/gpt-5.1-sol', name: 'GPT-5.1-Sol' },
+    ]).map((model) => model.name),
+  ).toEqual(['GPT-5.1-Sol · openai', 'GPT-5.1-Sol · azure'])
+})
+
+it('canonicalizes discovery settings without losing environment or ACP configuration', () => {
+  const agent = { ...defaultTaskHarness('codex'), env: { Z: 'last', A: 'first' }, model: 'one' }
+  expect(JSON.stringify(modelDiscoveryInput(agent))).toBe(
+    JSON.stringify(modelDiscoveryInput({ ...agent, env: { A: 'first', Z: 'last' }, model: 'two' })),
+  )
+  expect(
+    modelDiscoveryInput({
+      ...agent,
+      provider: 'acp',
+      acpInstallationId: 'installed',
+      acpMode: 'plan',
+      acpConfig: { option: 'value' },
+    }),
+  ).toMatchObject({
+    model: 'one',
+    acpInstallationId: 'installed',
+    acpMode: 'plan',
+    acpConfig: { option: 'value' },
+  })
+})
 it('discovers Fast for the default model without assuming priority and preserves saved tiers', () => {
   const catalog = decode(modelCatalogSchema, {
     models: [

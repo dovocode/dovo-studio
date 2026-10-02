@@ -1,3 +1,5 @@
+import { useCachedModelCatalog } from '../../agents/use-model-catalog'
+import { harnessNames } from '../creation/harness-choices'
 import { pullStackLabel } from '@dovo/protocol'
 import { Icon } from '../../ui/controls/icon'
 import { Image, Pressable, View } from 'react-native'
@@ -44,10 +46,13 @@ export function TaskListRow({
     agent = resolveTaskAgent(task, runtime?.snapshot?.workspace.agents ?? []),
     turn = task.turns?.at(-1)
   const executionDevice = turn ? (turn.runtimeHost ?? 'Unknown device') : row.runtimeName
+  const { modelName, catalog } = useCachedModelCatalog(agent, runtime?.profile)
   const providerName = agent
     ? ((task.harness
         ? acpHarnessName(agent, runtime?.snapshot?.acpInstallations ?? [])
-        : undefined) ?? agent.provider)
+        : undefined) ??
+      catalog?.harness?.name ??
+      harnessNames[agent.provider])
     : ''
   const actions = useTaskLifecycle(task, row.runtimeId)
   const car = useCarMode()
@@ -79,7 +84,7 @@ export function TaskListRow({
         <Pressable
           testID={testID}
           accessibilityRole="button"
-          accessibilityLabel={`${task.pinned ? 'Pinned, ' : ''}${row.projectName}, ${task.title}, ${status}, ${worktree ? 'Worktree' : 'Local checkout'}, ${executionDevice}${row.online ? '' : ', Offline'}${agent ? `, ${providerName}${agent.model ? ` · ${agent.model}` : ''}` : ''}`}
+          accessibilityLabel={`${task.pinned ? 'Pinned, ' : ''}${row.projectName}, ${task.title}, ${status}, ${worktree ? 'Worktree' : 'Local checkout'}, ${executionDevice}${row.online ? '' : ', Offline'}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}`}
           accessibilityHint="Open conversation. Touch and hold for task actions."
           disabled={disabled}
           onPress={onOpen}

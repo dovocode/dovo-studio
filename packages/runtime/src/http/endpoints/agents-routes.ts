@@ -21,7 +21,12 @@ import { ModelCatalogCache } from '../../agents/catalogs/model-cache.js'
 import { searchSkills, installCatalogSkill } from '../../agents/catalogs/skills.js'
 import { importSkill, testMcpServer } from '../../agents/configuration/resources.js'
 import { attachmentIdsSchema } from '@dovo/protocol'
-import { agentDiscoverySchema, modelCatalogSchema, questionReplySchema } from '@dovo/protocol'
+import {
+  agentDiscoverySchema,
+  modelDiscoveryInput,
+  modelCatalogSchema,
+  questionReplySchema,
+} from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
 import { RuntimeServices } from '../../services.js'
@@ -420,7 +425,14 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         })
       }
       if (method === 'POST' && path === '/api/agents/models') {
-        const agent = decode(agentDiscoverySchema, yield* serviceResult(body(request)))
+        const input = decode(
+          mutableStruct({
+            ...agentDiscoverySchema.fields,
+            refresh: Schema.optional(Schema.Boolean),
+          }),
+          yield* serviceResult(body(request)),
+        )
+        const agent = modelDiscoveryInput(s.agents.configure(input))
         const adapter = yield* serviceResult(s.agents.get(agent.provider))
         const models = adapter.models
         if (!models) throw new HttpError(400, 'This integration does not advertise models')
@@ -430,8 +442,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           modelCaches.set(s.db, cache)
         }
         return yield* serviceResult(
-          cache.get(JSON.stringify(agent), async () =>
-            decode(modelCatalogSchema, await models(agent)),
+          cache.get(
+            JSON.stringify([agent, s.agents.launch(agent)]),
+            async () => decode(modelCatalogSchema, await models(agent)),
+            input.refresh,
           ),
         )
       }

@@ -7,9 +7,9 @@ export class ModelCatalogCache {
   private entries = new Map<string, { expires: number; value: ModelCatalog }>()
   private pending = new Map<string, Promise<ModelCatalog>>()
 
-  get(key: string, load: () => Promise<ModelCatalog>): Promise<ModelCatalog> {
+  get(key: string, load: () => Promise<ModelCatalog>, refresh = false): Promise<ModelCatalog> {
     const cached = this.entries.get(key)
-    if (cached && cached.expires > Date.now()) return Promise.resolve(cached.value)
+    if (!refresh && cached && cached.expires > Date.now()) return Promise.resolve(cached.value)
     const running = this.pending.get(key)
     if (running) return running
     const request = load()
