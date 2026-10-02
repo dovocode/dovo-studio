@@ -50,6 +50,7 @@ overrides:
 
 patchedDependencies:
   '@expo/ui@57.0.18': patches/@expo__ui@57.0.18.patch
+  app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
   decode-uri-component@0.2.2: patches/decode-uri-component@0.2.2.patch
   react-native-diffs@1.0.3: patches/react-native-diffs@1.0.3.patch
   react-native-enriched-markdown@1.0.2: patches/react-native-enriched-markdown@1.0.2.patch

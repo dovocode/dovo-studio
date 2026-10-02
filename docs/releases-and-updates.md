@@ -71,6 +71,13 @@ tools. Only macOS publishing with `--publish` requires a Developer ID identity a
 credentials. The workflow uses native GitHub-hosted ARM runners; repository/plan eligibility must
 allow those runner labels. Unsigned Windows installers may show SmartScreen prompts.
 
+The signed macOS job uses macOS 26 and Xcode 26.2 for the Icon Composer asset. Its preflight
+compiles the real icon and verifies both `Assets.car` and the legacy `.icns` output; checking the
+compiler version alone does not detect incompatible host frameworks. The pnpm patch for
+`app-builder-lib@26.15.3` fixes its signing keychain permissions command to use the generated
+keychain password rather than the certificate-export password. Keep the signing regression test when
+replacing the patch with an upstream fix.
+
 On macOS, local packaging uses an available Developer ID Application identity so updates keep the
 same Keychain identity. Set `CSC_NAME` to select a specific identity. Without one, local builds fall
 back to ad hoc signing and macOS may ask for Keychain access again after an update.

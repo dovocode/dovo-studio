@@ -120,6 +120,7 @@ overrides:
   uuid@<11.1.1: 11.1.1
 
 patchedDependencies:
+  app-builder-lib@26.15.3: 4688f96749e3d76cf27bc535d874470bf264610a331db13644df7715d699acf1
   '@expo/ui@57.0.18': 019742b3e6e843a7f1bad8aa5bd30588fe2cc9b4d1683bfa5d79b4c5567a44f8
   decode-uri-component@0.2.2: e231f71fc619a04192ab399e3c4bc6f2935a1a346617895db275cb001afe0d2c
   react-native-diffs@1.0.3: 3af6deeb51afb3c84a029d698c27493d85c9d8870d20a46a17433acb1a1ce799
