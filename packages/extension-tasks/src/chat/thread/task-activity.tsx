@@ -6,12 +6,13 @@ const McpAppView = lazy(() =>
 import { runtimeSyncOnline, watchRuntimeActivity } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Effect, Schema } from 'effect'
-import { useEffect, useId, useMemo } from 'react'
+import { memo, useEffect, useId, useMemo } from 'react'
 import {
   activitySchema,
   startPolling,
   clientScopeKey,
   recentTools,
+  createRecentTools,
   retainActivityEvents,
   activitySummary,
   toolPresentation,
@@ -40,6 +41,7 @@ import {
 } from './task-activity-state'
 export function useTaskActivity(taskId: string, running = false) {
   const { requestEffect: request, connected, connection, activeRuntimeId } = useWorkspace()
+  const projectTools = useMemo(createRecentTools, [])
   const { showToolDetails } = useAppPreferences()
   const identity = JSON.stringify([
     activeRuntimeId,
@@ -118,8 +120,8 @@ export function useTaskActivity(taskId: string, running = false) {
 
   return {
     tools: useMemo(
-      () => recentTools(snapshot.identity === identity ? snapshot.events : []),
-      [snapshot.identity, snapshot.events, identity],
+      () => projectTools(snapshot.identity === identity ? snapshot.events : []),
+      [snapshot.identity, snapshot.events, identity, projectTools],
     ),
     error: snapshot.identity === identity ? snapshot.error : '',
   }
@@ -276,7 +278,7 @@ export function TaskActivity({
     </section>
   )
 }
-function ActivityEntry({
+const ActivityEntry = memo(function ActivityEntry({
   tool,
   presentation,
   state,
@@ -376,4 +378,4 @@ function ActivityEntry({
       )}
     </Container>
   )
-}
+})

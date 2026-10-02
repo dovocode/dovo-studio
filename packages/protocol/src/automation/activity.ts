@@ -176,3 +176,33 @@ export function compactActivityEvents(events: Event[]): Event[] {
     })
   })
 }
+
+/** Reuse unchanged tool records across text streaming and incremental activity updates. */
+export function createRecentTools() {
+  let input: Event[] | undefined
+  let previous: Tool[] = []
+  return (events: Event[]): Tool[] => {
+    if (input === events) return previous
+    input = events
+    const retained = new Map(
+      previous.map((tool) => [JSON.stringify([tool.scope, tool.turnId, tool.id]), tool]),
+    )
+    const next = recentTools(events).map((tool) => {
+      const old = retained.get(JSON.stringify([tool.scope, tool.turnId, tool.id]))
+      return old &&
+        old.time === tool.time &&
+        old.kind === tool.kind &&
+        old.summary === tool.summary &&
+        old.payload === tool.payload &&
+        old.startedAt === tool.startedAt &&
+        old.status === tool.status &&
+        old.inputPayload === tool.inputPayload &&
+        old.textOffset === tool.textOffset
+        ? old
+        : tool
+    })
+    if (next.length !== previous.length || next.some((tool, index) => tool !== previous[index]))
+      previous = next
+    return previous
+  }
+}

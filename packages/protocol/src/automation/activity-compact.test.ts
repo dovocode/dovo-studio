@@ -110,3 +110,24 @@ it('keeps the original command after a provider sends a separate result event', 
     output: '',
   })
 })
+it('retains settled tool records while a live tool changes and does not reuse removed records', async () => {
+  const { createRecentTools } = await import('./activity')
+  const project = createRecentTools()
+  const old = { ...event({ turnId: 'older', toolId: 'old', status: 'completed' }), id: 'older' }
+  const live = event({ turnId: 'turn', toolId: 'command', status: 'running' })
+  const input = [old, live]
+  const before = project(input)
+  expect(project(input)).toBe(before)
+  const after = project([
+    old,
+    {
+      ...live,
+      payload: JSON.stringify({ turnId: 'turn', toolId: 'command', status: 'completed' }),
+    },
+  ])
+  expect(after[0]).toBe(before[0])
+  expect(after[1]).not.toBe(before[1])
+  expect(after[1]!.status).toBe('completed')
+  expect(project([])).toEqual([])
+  expect(project([old])[0]).not.toBe(before[0])
+})

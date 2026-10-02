@@ -25,6 +25,17 @@ import { createConversationMessages, convertConversationMessage } from '../../ap
 const initial = {
   id:'large-thread', status:'running', messages:Array.from({length:500},(_,index)=>({id:String(index),role:index%2?'assistant':'user',text:'Message '+index})), turns:[], compactions:[],
 };
+window.measureProjection=()=>{
+ const history={...initial,turns:initial.messages.filter(message=>message.role==='assistant').map((message,index)=>({id:'turn-'+index,assistantId:message.id,status:index===249?'running':'completed'}))};
+ const events=history.turns.map((turn,index)=>({id:'event-'+index,kind:'tool',scope:initial.id,summary:'Command',time:'2026-10-02T12:00:00Z',payload:JSON.stringify({turnId:turn.id,toolId:'tool-'+index,status:turn.status,event:{item:{command:'echo '+index}}})}));
+ const project=createConversationMessages();project(history,events);
+ const stringify=JSON.stringify,parse=JSON.parse;let serializations=0,parses=0;
+ JSON.stringify=(...args)=>{serializations++;return stringify(...args)};
+ JSON.parse=(...args)=>{parses++;return parse(...args)};
+ const started=performance.now();
+ try {for(let index=0;index<20;index++)project({...history,messages:history.messages.map((message,at)=>at===499?{...message,text:message.text+index}:message)},events)}finally{JSON.stringify=stringify;JSON.parse=parse}
+ return {serializations,parses,elapsedMs:performance.now()-started};
+};
 window.messageRenders = Array(500).fill(0);
 function Message() {
   const message = useAuiState(state=>state.message);
@@ -97,6 +108,12 @@ try {
   const rerenders = await page.evaluate(() => window.messageRenders)
   if (rerenders.slice(0, 499).some((count) => count !== 1) || rerenders[499] !== 2)
     throw new Error('Streaming rerendered unrelated message cells')
+  const projection = await page.evaluate(() => window.measureProjection())
+  if (projection.serializations > 40 || projection.parses > 20)
+    throw new Error(
+      'Streaming reserialized historical message metadata: ' + JSON.stringify(projection),
+    )
+  console.log('Native projection over 20 streamed updates:', projection)
   console.log(
     '500-message runtime: 20 draft edits rerendered no message cells; streaming rerendered only the latest reply.',
   )

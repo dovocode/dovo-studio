@@ -3,16 +3,33 @@ import { decodeResult } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { ThreadMessageLike } from '@assistant-ui/react-native'
 import { toolPresentation, turnSummary, type Task } from '@dovo/protocol'
-import { taskToolEvents, pendingActivity, type ToolEvents } from './tool-events'
+import {
+  taskToolEvents,
+  createTaskToolEvents,
+  pendingActivity,
+  type ToolEvents,
+} from './tool-events'
 export const convertConversationMessage = (message: ThreadMessageLike) => message
 export type { ToolEvents } from './tool-events'
 type ConversationTask = Pick<Task, 'id' | 'status' | 'messages' | 'turns' | 'compactions'>
 
 /** Keep native list entries stable and avoid reparsing unchanged historical tool payloads. */
 export function createConversationMessages() {
+  const projectTools = createTaskToolEvents()
   const cache = new Map<
     string,
-    { input: string; text: string; tools: string[]; output: ThreadMessageLike }
+    {
+      input: string
+      text: string
+      tools: string[]
+      output: ThreadMessageLike
+      message: Task['messages'][number]
+      turn: NonNullable<Task['turns']>[number] | undefined
+      events: ReturnType<typeof taskToolEvents>
+      compactions: NonNullable<Task['compactions']>
+      active: string | undefined
+      status: Task['status'] | undefined
+    }
   >()
   let taskId: string | undefined
   let previousMessages: ThreadMessageLike[] = []
@@ -25,6 +42,20 @@ export function createConversationMessages() {
       task,
       events,
       (message, turn, tools, compactions, activeTurnId, build) => {
+        const previous = cache.get(message.id)
+        const status = turn?.status === 'running' ? task.status : undefined
+        const active = turn?.status === 'running' ? activeTurnId : undefined
+        if (
+          previous?.message === message &&
+          previous.turn === turn &&
+          previous.active === active &&
+          previous.status === status &&
+          previous.events.length === tools.length &&
+          previous.events.every((tool, index) => tool === tools[index]) &&
+          previous.compactions.length === compactions.length &&
+          previous.compactions.every((event, index) => event === compactions[index])
+        )
+          return previous.output
         // Compare large text and payload strings directly; serialize only small metadata.
         const { text, ...metadata } = message
         const input = JSON.stringify([
@@ -46,18 +77,39 @@ export function createConversationMessages() {
           inputPayload ?? '',
           JSON.stringify(metadata),
         ])
-        const previous = cache.get(message.id)
         if (
           previous?.input === input &&
           previous.text === text &&
           previous.tools.length === toolKeys.length &&
           previous.tools.every((key, index) => key === toolKeys[index])
-        )
+        ) {
+          cache.set(message.id, {
+            ...previous,
+            message,
+            turn,
+            events: tools,
+            compactions,
+            active,
+            status,
+          })
           return previous.output
+        }
         const output = build()
-        cache.set(message.id, { input, text, tools: toolKeys, output })
+        cache.set(message.id, {
+          input,
+          text,
+          tools: toolKeys,
+          output,
+          message,
+          turn,
+          events: tools,
+          compactions,
+          active,
+          status,
+        })
         return output
       },
+      projectTools(task, events),
     )
     if (
       next.length === previousMessages.length &&
@@ -89,8 +141,8 @@ function projectMessages(
     activeTurnId: string | undefined,
     build: () => ThreadMessageLike,
   ) => ThreadMessageLike,
+  tools = taskToolEvents(task, events),
 ): ThreadMessageLike[] {
-  const tools = taskToolEvents(task, events)
   const turnsByAssistant = new Map(task.turns?.map((turn) => [turn.assistantId, turn]))
   const toolsByTurn = new Map<string, typeof tools>()
   for (const tool of tools) {

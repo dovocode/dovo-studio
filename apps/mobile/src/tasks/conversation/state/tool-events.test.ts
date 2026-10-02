@@ -98,3 +98,49 @@ describe('mobile task activity ownership and lifecycle', () => {
     ).toEqual(['interrupted', 'running'])
   })
 })
+
+it('cached projection retains settled events but updates cancellation and thread scope', async () => {
+  const { createTaskToolEvents, taskToolEvents } = await import('./tool-events')
+  const project = createTaskToolEvents()
+  const thread = { id: 'one', status: 'running' as const, turns: [] }
+  const events = [
+    {
+      id: 'tool',
+      time: '2026-10-02T12:00:00Z',
+      scope: 'one',
+      kind: 'tool',
+      summary: 'Command',
+      payload: JSON.stringify({ turnId: 'turn', toolId: 'tool', status: 'running' }),
+    },
+    {
+      id: 'other',
+      time: '2026-10-02T12:00:00Z',
+      scope: 'two',
+      kind: 'tool',
+      summary: 'Other command',
+      payload: JSON.stringify({ turnId: 'turn', toolId: 'tool', status: 'completed' }),
+    },
+  ]
+  const first = project(thread, events)
+  expect(first).toEqual(taskToolEvents(thread, events))
+  expect(first[0]!.status).toBe('interrupted')
+  expect(project(thread, events)[0]).toBe(first[0])
+  expect(project({ ...thread, id: 'two' }, events)).toEqual(
+    taskToolEvents({ ...thread, id: 'two' }, events),
+  )
+  expect(project({ ...thread, id: 'two' }, events)[0]!.summary).toBe('Other command')
+  const running = {
+    ...task,
+    id: 'one',
+    turns: task.turns?.map((turn) => ({ ...turn, id: 'turn' })),
+  }
+  expect(project(running, events)[0]!.status).toBe('running')
+  const cancelled = {
+    ...running,
+    status: 'cancelled' as const,
+    turns: running.turns?.map((turn) => ({ ...turn, status: 'cancelled' as const })),
+  }
+  const stopped = project(cancelled, events)
+  expect(stopped[0]!.status).toBe('cancelled')
+  expect(project(cancelled, events)[0]).toBe(stopped[0])
+})

@@ -167,14 +167,18 @@ export function Composer({
     title?: string
     accepted?: boolean
   } | null>(null)
+  const pendingSubmission = useRef<string | null>(null)
   const acceptDraft = composerDraft.accept
   useEffect(() => {
-    const submitted = attempt.current
-    if (!submitted || submitted.accepted) return
-    if (![...task.messages, ...(task.queue ?? [])].some((message) => message.id === submitted.id))
+    const id = pendingSubmission.current
+    if (!id || ![...task.messages, ...(task.queue ?? [])].some((message) => message.id === id))
       return
-    submitted.accepted = true
-    acceptDraft(submitted.text)
+    const submitted = attempt.current
+    if (submitted?.id === id && !submitted.accepted) {
+      submitted.accepted = true
+      acceptDraft(submitted.text)
+    }
+    pendingSubmission.current = null
     onPending(null)
   }, [task.messages, task.queue, acceptDraft, onPending])
   const firstMessage = task.messages.length === 0 && !task.queue?.length && !task.turns?.length
@@ -248,6 +252,7 @@ export function Composer({
         attachments: attachments.files,
       },
     }
+    pendingSubmission.current = pending.message.id
     onPending(pending)
     try {
       composerDraft.flush()
