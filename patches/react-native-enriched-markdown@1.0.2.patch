@@ -78,3 +78,77 @@ diff --git a/ios/renderer/CodeRenderer.m b/ios/renderer/CodeRenderer.m
  
    NSString *codeFontFamily = _config.codeFontFamily;
    UIFont *codeFont;
+diff --git a/ios/utils/ENRMAsyncRenderCoordinator.m b/ios/utils/ENRMAsyncRenderCoordinator.m
+index ab16e69..b0afa16 100644
+--- a/ios/utils/ENRMAsyncRenderCoordinator.m
++++ b/ios/utils/ENRMAsyncRenderCoordinator.m
+@@ -5 +5,5 @@
++  NSLock *_lock;
+   NSUInteger _currentRenderId;
++  BOOL _draining;
++  BOOL (^_pendingRender)(void);
++  dispatch_block_t _pendingApply;
+@@ -11,0 +16 @@
++    _lock = [[NSLock alloc] init];
+@@ -20,10 +25,46 @@
+-  NSUInteger renderId = ++_currentRenderId;
+-  dispatch_async(_queue, ^{
+-    if (!renderBlock())
+-      return;
+-    dispatch_async(dispatch_get_main_queue(), ^{
+-      if (renderId == self->_currentRenderId) {
+-        applyBlock();
++  [_lock lock];
++  ++_currentRenderId;
++  // Streaming replaces the pending work instead of retaining every full reply.
++  _pendingRender = [renderBlock copy];
++  _pendingApply = [applyBlock copy];
++  BOOL startDrain = !_draining;
++  _draining = YES;
++  [_lock unlock];
++  if (startDrain) {
++    dispatch_async(_queue, ^{ [self drain]; });
++  }
++}
++
++- (void)drain
++{
++  while (YES) {
++    @autoreleasepool {
++      [_lock lock];
++      BOOL (^renderBlock)(void) = _pendingRender;
++      dispatch_block_t applyBlock = _pendingApply;
++      NSUInteger renderId = _currentRenderId;
++      _pendingRender = nil;
++      _pendingApply = nil;
++      if (!renderBlock) {
++        _draining = NO;
++        [_lock unlock];
++        return;
+       }
+-    });
+-  });
++      [_lock unlock];
++      if (!renderBlock())
++        continue;
++      [_lock lock];
++      BOOL current = renderId == _currentRenderId;
++      [_lock unlock];
++      if (current) {
++        dispatch_async(dispatch_get_main_queue(), ^{
++          [self->_lock lock];
++          BOOL stillCurrent = renderId == self->_currentRenderId;
++          [self->_lock unlock];
++          if (stillCurrent && !self.blockAsyncRender) {
++            applyBlock();
++          }
++        });
++      }
++    }
++  }
+@@ -34 +75,5 @@
++  [_lock lock];
+   ++_currentRenderId;
++  _pendingRender = nil;
++  _pendingApply = nil;
++  [_lock unlock];

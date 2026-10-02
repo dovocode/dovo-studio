@@ -2,6 +2,12 @@ import { retainWorkspace } from './retain-workspace.js'
 import { getRuntimeSnapshotTag, copyRuntimeSnapshotTag } from '../../shared/client.js'
 import type { RuntimeOverview } from '../connection/runtime-fleet.js'
 import type { RuntimeConnection, RuntimeSnapshot } from '../connection/runtime.js'
+export function sameRuntimeConnection(
+  previous: RuntimeConnection | null | undefined,
+  next: RuntimeConnection | null | undefined,
+) {
+  return !!previous && !!next && previous.address === next.address && previous.token === next.token
+}
 
 export function retainRuntimeSnapshot(
   previous: RuntimeSnapshot | null,
@@ -9,15 +15,14 @@ export function retainRuntimeSnapshot(
   next: RuntimeSnapshot | null,
   nextConnection: RuntimeConnection | null,
 ): RuntimeSnapshot | null {
+  if (!previous || !next || !sameRuntimeConnection(previousConnection, nextConnection)) return next
+  // Revisions restart with the process; compare them only within the same instance.
   if (
-    !previous ||
-    !next ||
-    !previousConnection ||
-    !nextConnection ||
-    previousConnection.address !== nextConnection.address ||
-    previousConnection.token !== nextConnection.token
+    previous.runtimeInstanceId &&
+    previous.runtimeInstanceId === next.runtimeInstanceId &&
+    next.revision < previous.revision
   )
-    return next
+    return previous
   const tag = getRuntimeSnapshotTag(next)
   const previousTag = getRuntimeSnapshotTag(previous)
   if (!tag || !previousTag) return next

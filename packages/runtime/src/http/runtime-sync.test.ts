@@ -29,8 +29,8 @@ async function setup() {
     ],
   }))
   const address = `http://127.0.0.1:${runtime.port}`
-  const open = async (credential = token) => {
-    const response = await fetch(`${address}/api/sync/ticket`, {
+  const open = async (credential = token, format = 1) => {
+    const response = await fetch(`${address}/api/sync/ticket?format=${format}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${credential}` },
     })
@@ -81,6 +81,44 @@ it('pushes small deltas and replays updates after reconnect without a second bas
     JSON.stringify({ type: 'resume', epoch: 'old-server', sequence: baseline.sequence }),
   )
   expect((await second.wait('snapshot')).sequence).toBe(delta.sequence)
+})
+it('negotiates field deltas while keeping legacy clients on complete task metadata', async () => {
+  const { runtime, open } = await setup()
+  runtime.services.store.updateTask('task', (task) => ({
+    ...task,
+    error: 'Previous failure',
+    files: [
+      {
+        path: 'large.txt',
+        before: 'Before '.repeat(10000),
+        after: 'After '.repeat(10000),
+        viewed: false,
+      },
+    ],
+  }))
+  const legacy = await open(token, 2)
+  const current = await open(token, 3)
+  legacy.socket.send(JSON.stringify({ type: 'resume' }))
+  current.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await current.wait('snapshot')
+  await legacy.wait('snapshot')
+  runtime.services.store.updateTask('task', (task) => ({
+    ...task,
+    draft: 'Next input',
+    error: undefined,
+  }))
+  const next = await current.wait('delta')
+  const old = await legacy.wait('delta')
+  expect(next.delta.workspace.tasks?.changes[0]?.fields).toBeUndefined()
+  expect(next.delta.workspace.tasks?.changes[0]?.fieldDelta?.values.draft).toBe('Next input')
+  expect(next.delta.workspace.tasks?.changes[0]?.fieldDelta?.removed).toContain('error')
+  expect(old.delta.workspace.tasks?.changes[0]?.fields?.draft).toBe('Next input')
+  expect(old.delta.workspace.tasks?.changes[0]?.fieldDelta).toBeUndefined()
+  expect(JSON.stringify(next).length).toBeLessThan(JSON.stringify(old).length / 100)
+  const restored = applySnapshotDelta(baseline.snapshot, next.delta)
+  expect(restored.workspace.tasks[0]?.draft).toBe('Next input')
+  expect(restored.workspace.tasks[0]?.error).toBeUndefined()
+  expect(restored.workspace.tasks[0]?.files).toBe(baseline.snapshot.workspace.tasks[0]?.files)
 })
 it('streams scoped activity and rejects reused tickets and revoked devices', async () => {
   const { runtime, open, address } = await setup()

@@ -103,6 +103,15 @@ export class WorkspaceStore {
       ...w,
       tasks: w.tasks
         .filter((task) => !task.example)
+        // Older branch switching wrote checkoutBranch to untouched local drafts.
+        // That metadata is not a prepared checkout and must not lock the picker.
+        .map((task) =>
+          task.execution !== 'worktree' &&
+          task.checkoutBranch &&
+          canChangeTaskCheckout({ ...task, checkoutBranch: undefined })
+            ? { ...task, checkoutBranch: undefined }
+            : task,
+        )
         .map((task) =>
           task.runPhase === 'finalizing' &&
           task.turns?.at(-1)?.finishedAt &&

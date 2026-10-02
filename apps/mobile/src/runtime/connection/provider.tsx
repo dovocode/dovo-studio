@@ -39,6 +39,7 @@ import {
   removeRuntime,
   loadRuntimeOverviewEffect,
   isUnauthorizedRuntimeError,
+  sameRuntimeConnection,
   type RuntimeConnection,
   type RuntimeSnapshot,
   type RuntimeRegistry,
@@ -250,11 +251,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const updateEntry = useCallback(
     (profile: RuntimeProfile, update: (entry: RuntimeOverview) => RuntimeOverview) => {
       const saved = current.current.profiles.find((item) => item.id === profile.id)
-      if (!saved || saved.connection.token !== profile.connection.token) return
-      const previous =
-        entryRef.current[profile.id]?.profile.connection.token === profile.connection.token
-          ? entryRef.current[profile.id]
-          : initialOverview(profile)
+      if (!saved || !sameRuntimeConnection(saved.connection, profile.connection)) return
+      const previous = sameRuntimeConnection(
+        entryRef.current[profile.id]?.profile.connection,
+        profile.connection,
+      )
+        ? entryRef.current[profile.id]
+        : initialOverview(profile)
       const entry = retainOverviewSnapshot(previous, {
         ...update(previous),
         profile: saved,

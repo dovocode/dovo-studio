@@ -27,6 +27,7 @@ type Client = {
 }
 type View = {
   compact: boolean
+  fieldUpdates: boolean
   device: { id: string; owner: boolean }
   epoch: string
   expiry?: ReturnType<typeof setTimeout>
@@ -47,13 +48,14 @@ export function attachRuntimeSync(
   token: string,
   services: Services,
   compact = false,
+  fieldUpdates = false,
 ) {
   let hub = hubs.get(services)
   if (!hub) {
     hub = new RuntimeSync(services)
     hubs.set(services, hub)
   }
-  hub.attach(socket, token, compact)
+  hub.attach(socket, token, compact, fieldUpdates)
 }
 export async function disposeRuntimeSync(services: Services) {
   const hub = hubs.get(services)
@@ -84,14 +86,15 @@ class RuntimeSync {
     this.projection = undefined
     await Promise.allSettled(pending)
   }
-  attach(socket: WebSocket, token: string, compact: boolean) {
+  attach(socket: WebSocket, token: string, compact: boolean, fieldUpdates: boolean) {
     const device = this.services.devices.authenticate(token)
-    const viewId = `${device.id}:${compact ? 'lean' : 'legacy'}`
+    const viewId = `${device.id}:${fieldUpdates ? 'fields' : compact ? 'lean' : 'legacy'}`
     let view = this.views.get(viewId)
     if (!view || view.token !== token) {
       view = {
         device,
         compact,
+        fieldUpdates,
         epoch: randomUUID(),
         token,
         clients: new Set(),
@@ -222,17 +225,17 @@ class RuntimeSync {
     }
     client.socket.send(wire)
   }
-  private refresh(view: View): Promise<void> {
+  private refresh(view: View, signature?: string): Promise<void> {
     if (view.pending) return view.pending
-    const pending = this.build(view).finally(() => {
+    const pending = this.build(view, signature ?? this.signature()).finally(() => {
       if (view.pending === pending) view.pending = undefined
     })
     view.pending = pending
     return pending
   }
-  private async build(view: View) {
+  private signature() {
     const s = this.services
-    const signature = JSON.stringify([
+    return JSON.stringify([
       s.store.version(),
       s.approvals.list(),
       s.questions.list(),
@@ -243,6 +246,9 @@ class RuntimeSync {
       s.defaults.get(),
       s.acpInstallations.list(),
     ])
+  }
+  private async build(view: View, signature: string) {
+    const s = this.services
     if (signature === view.signature && Date.now() - view.checked < 15000) return
     // Share the expensive workspace projection/hash across desktop and phone, but filter
     // trust metadata before serializing each authenticated device's own view.
@@ -288,7 +294,7 @@ class RuntimeSync {
       sequence: view.sequence,
       base,
       tag,
-      delta: snapshotDelta(previous, next, view.compact),
+      delta: snapshotDelta(previous, next, view.compact, view.fieldUpdates),
     } satisfies SyncFrame)
     view.history.push({ sequence: view.sequence, wire })
     view.bytes += wire.length * 2
@@ -300,6 +306,7 @@ class RuntimeSync {
     if (this.busy) return
     this.busy = true
     try {
+      const signature = this.signature()
       for (const view of this.views.values()) {
         if (!view.clients.size) continue
         try {
@@ -310,7 +317,7 @@ class RuntimeSync {
           continue
         }
         try {
-          await this.refresh(view)
+          await this.refresh(view, signature)
           if (this.controller.signal.aborted) return
           for (const client of view.clients) {
             if (!client.ready) continue

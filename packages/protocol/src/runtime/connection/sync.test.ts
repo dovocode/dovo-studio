@@ -119,6 +119,49 @@ it('does not retransmit turn history when only text and the task timestamp chang
   expect(applySnapshotDelta(previous, decode(snapshotDeltaSchema, delta))).toEqual(next)
 })
 
+it('patches task fields without repeating unchanged file history and removes optional values', () => {
+  const previous = snapshot()
+  const task = previous.workspace.tasks[0]!
+  task.error = 'Old error'
+  task.files = [
+    {
+      path: 'large.txt',
+      before: 'Before '.repeat(10000),
+      after: 'After '.repeat(10000),
+      viewed: false,
+    },
+  ]
+  const next = {
+    ...previous,
+    revision: 2,
+    workspace: {
+      ...previous.workspace,
+      tasks: previous.workspace.tasks.map((task, index) =>
+        index === 0 ? { ...task, draft: 'New draft', error: undefined } : task,
+      ),
+    },
+  }
+  const legacy = snapshotDelta(previous, next, true)
+  const delta = decode(
+    snapshotDeltaSchema,
+    JSON.parse(JSON.stringify(snapshotDelta(previous, next, true, true))),
+  )
+  expect(delta.workspace.tasks?.changes[0]?.fields).toBeUndefined()
+  expect(delta.workspace.tasks?.changes[0]?.fieldDelta).toEqual({
+    values: { draft: 'New draft' },
+    removed: ['error'],
+  })
+  expect(JSON.stringify(delta).length).toBeLessThan(JSON.stringify(legacy).length / 100)
+  const restored = applySnapshotDelta(previous, delta)
+  expect(restored).toEqual(next)
+  expect(restored.workspace.tasks[1]).toBe(previous.workspace.tasks[1])
+  expect(restored.workspace.tasks[0]?.files).toBe(task.files)
+  expect(task.error).toBe('Old error')
+  expect(() =>
+    applySnapshotDelta({ ...previous, workspace: { ...previous.workspace, tasks: [] } }, delta),
+  ).toThrow('baseline')
+})
+
 it('sends a small splice for streamed tool or reasoning JSON instead of repeating its payload', () => {
   const before = [
     {

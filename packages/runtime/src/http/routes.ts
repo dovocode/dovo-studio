@@ -364,7 +364,11 @@ export function route(
         return {
           ticket: s.tickets.issue(
             token,
-            url.searchParams.get('format') === '2' ? 'runtime-sync-2' : 'runtime-sync',
+            url.searchParams.get('format') === '3'
+              ? 'runtime-sync-3'
+              : url.searchParams.get('format') === '2'
+                ? 'runtime-sync-2'
+                : 'runtime-sync',
           ),
         }
       if (method === 'GET' && path === '/api/snapshot') {

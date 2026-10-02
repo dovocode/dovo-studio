@@ -48,6 +48,7 @@ import {
   clearRuntimeRequestCache,
   getRuntimeSnapshotTag,
   retainRuntimeSnapshot,
+  sameRuntimeConnection,
   retainOverviewSnapshot,
   shouldPublishOverview,
   type RuntimeConnection,
@@ -227,8 +228,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setState(retainWorkspace(current.current, next))
   }, [])
   const installSnapshot = useCallback(
-    (target: RuntimeConnection, value: RuntimeSnapshot) => {
-      if (!synchronization.acceptsRevision(value.revision, value.runtimeInstanceId)) return
+    (target: RuntimeConnection, received: RuntimeSnapshot) => {
+      if (!synchronization.acceptsRevision(received.revision, received.runtimeInstanceId)) return
+      const value = retainRuntimeSnapshot(
+        snapshotRef.current,
+        snapshotConnection.current,
+        received,
+        target,
+      )
+      if (!value) return
       const tag = getRuntimeSnapshotTag(value)
       const previous = installedSnapshot.current
       if (
@@ -315,7 +323,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return
     const profile = registryRef.current.profiles.find(
       (entry) =>
-        entry.id === value.profile.id && entry.connection.token === value.profile.connection.token,
+        entry.id === value.profile.id &&
+        sameRuntimeConnection(entry.connection, value.profile.connection),
     )
     if (!profile) return
     const next = {

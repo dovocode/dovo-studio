@@ -95,6 +95,7 @@ export {
   retainRuntimeSnapshot,
   retainOverviewSnapshot,
   shouldPublishOverview,
+  sameRuntimeConnection,
 } from './runtime/cache/overview-state.js'
 export {
   visiblePendingMessage,

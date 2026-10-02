@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { decode } from '@dovo/protocol'
+import { canChangeTaskCheckout, decode } from '@dovo/protocol'
 import { branchesSchema, switchBranchSchema } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { HttpError, runtimeOperation, runtimeProgram } from '../../errors.js'
@@ -161,7 +161,7 @@ export function switchBranchEffect(
                       sessionId: undefined,
                       sessionAgentId: undefined,
                       consumedMessageIds: undefined,
-                      checkoutBranch: after.current,
+                      checkoutBranch: canChangeTaskCheckout(t) ? undefined : after.current,
                       restartRecovery: undefined,
                       queuePaused: !!t.queue?.length,
                       activity: undefined,

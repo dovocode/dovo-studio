@@ -80,6 +80,7 @@ export function startRuntimeSync(
   let sequence: number | undefined = cached?.sequence
   let snapshot: RuntimeSnapshot | undefined = cached?.snapshot
   let lastSeen = 0
+  let socketStarted = 0
   let failures = 0
   let publishedAt = 0
   let retry: Fiber.RuntimeFiber<void, never> | undefined
@@ -95,9 +96,17 @@ export function startRuntimeSync(
   const publish = () => {
     if (snapshot) options.onSnapshot(snapshot)
   }
+  // A suspended native socket may never emit close. Detach it first so late
+  // callbacks cannot update the cursor or prevent a replacement connection.
+  const closeSocket = () => {
+    const previous = socket
+    socket = undefined
+    online = false
+    previous?.close()
+  }
   const reconnect = () => {
     online = false
-    if (stopped) return
+    if (stopped || options.active?.() === false) return
     options.onWake?.()
     if (unsupported || retry || options.active?.() === false) return
     const delay = Math.min(30000, 500 * 2 ** Math.min(failures++, 6))
@@ -113,7 +122,7 @@ export function startRuntimeSync(
     )
   }
   const connect = async () => {
-    if (stopped || unsupported || connecting || options.active?.() === false) return
+    if (stopped || unsupported || connecting || socket || options.active?.() === false) return
     connecting = true
     request = new AbortController()
     try {
@@ -121,7 +130,7 @@ export function startRuntimeSync(
         runtimeRequestEffect(
           connection,
           connection.address,
-          '/api/sync/ticket?format=2',
+          '/api/sync/ticket?format=3',
           {},
           syncTicketSchema,
           'POST',
@@ -135,7 +144,7 @@ export function startRuntimeSync(
       address.searchParams.set('ticket', ticket.ticket)
       const current = new WebSocket(address.href)
       socket = current
-      lastSeen = Date.now()
+      socketStarted = lastSeen = Date.now()
       current.onopen = () => {
         if (stopped || current !== socket) {
           current.close()
@@ -203,10 +212,15 @@ export function startRuntimeSync(
           value.cursor = undefined
           activities.clear()
           online = false
-          current.close(1000, 'Resync')
+          closeSocket()
+          reconnect()
         }
       }
-      current.onerror = () => current.close()
+      current.onerror = () => {
+        if (current !== socket || stopped) return
+        closeSocket()
+        reconnect()
+      }
       current.onclose = () => {
         if (current === socket) {
           socket = undefined
@@ -233,13 +247,15 @@ export function startRuntimeSync(
           Effect.sync(() => {
             if (options.active?.() === false) {
               request?.abort()
-              online = false
-              socket?.close()
+              closeSocket()
               return
             }
-            if (socket && Date.now() - lastSeen > 45000) {
-              online = false
-              socket.close()
+            if (
+              socket &&
+              ((!online && Date.now() - socketStarted >= 10000) || Date.now() - lastSeen >= 30000)
+            ) {
+              closeSocket()
+              reconnect()
               return
             }
             if (!socket && !retry) void connect()
@@ -252,6 +268,7 @@ export function startRuntimeSync(
   return {
     online: () => online,
     refresh: () => {
+      if (socket && Date.now() - lastSeen >= 15000) closeSocket()
       if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'resume', epoch, sequence }))
       else if (!connecting) {
         if (retry) Effect.runFork(Fiber.interrupt(retry))
@@ -265,7 +282,7 @@ export function startRuntimeSync(
       online = false
       Effect.runFork(Fiber.interrupt(timer))
       if (retry) Effect.runFork(Fiber.interrupt(retry))
-      socket?.close()
+      closeSocket()
       if (value.live === live) {
         value.live = undefined
         clearTimeout(value.expiry)
