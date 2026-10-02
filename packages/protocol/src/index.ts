@@ -3,6 +3,7 @@ export * from './tasks/task-budget.js'
 export * from './conversation/workflow/turn-summary.js'
 export * from './conversation/workflow/plan-limits.js'
 export * from './runtime/connection/runtime.js'
+export * from './runtime/connection/windows-runtime.js'
 export * from './runtime/connection/server-update.js'
 export {
   runtimeRequest,

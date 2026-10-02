@@ -70,6 +70,19 @@ contextBridge.exposeInMainWorld('dovo', {
   pickDirectory: (runtimeAddress: string): Promise<string | null> =>
     ipcRenderer.invoke('repositories:pick-directory', runtimeAddress),
   runtimeConnection: () => ipcRenderer.invoke('runtime:connection'),
+  windowsRuntime:
+    process.platform === 'win32'
+      ? {
+          read: (): Promise<import('@dovo/protocol').WindowsRuntimeStatus> =>
+            ipcRenderer.invoke('runtime:windows-read'),
+          connection: (): Promise<{ address: string; token: string }> =>
+            ipcRenderer.invoke('runtime:windows-connection'),
+          save: (
+            choice: import('@dovo/protocol').WindowsRuntimeChoice,
+          ): Promise<{ address: string; token: string }> =>
+            ipcRenderer.invoke('runtime:windows-save', choice),
+        }
+      : undefined,
   runtimeNetwork: (address: string, enabled?: boolean, port?: number): Promise<unknown> =>
     ipcRenderer.invoke('runtime:network', address, enabled, port),
   readRuntimeRegistry: (): Promise<string | null> => ipcRenderer.invoke('runtime:registry-read'),

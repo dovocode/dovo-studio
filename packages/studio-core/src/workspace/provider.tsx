@@ -1079,6 +1079,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       )
       if (desktop.success) {
         const connection = yield* native(() => desktop.data.dovo.runtimeConnection())
+        const selection = decode(
+          mutableStruct({ activate: Schema.optional(Schema.Boolean) }),
+          connection,
+        )
         const local = yield* Effect.try({
           try: () => runtimeProfile(decode(connectionSchema, connection)),
           catch: connectionError,
@@ -1091,7 +1095,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         registry = upsertRuntime(
           registry,
           previousLocal ? { ...local, id: previousLocal.id, name: previousLocal.name } : local,
-          firstConnection || registry.activeId === previousLocal?.id,
+          selection.activate === true || firstConnection || registry.activeId === previousLocal?.id,
         )
         if (firstConnection) firstLocalConnection = local.connection
       }

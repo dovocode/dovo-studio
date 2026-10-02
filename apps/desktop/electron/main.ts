@@ -1,4 +1,11 @@
 import { registerInputPreview } from './input-preview.js'
+import { decode, windowsRuntimeChoiceSchema } from '@dovo/protocol'
+import {
+  windowsRuntimeStatus,
+  readWindowsRuntimeChoice,
+  writeWindowsRuntimeChoice,
+  prepareWslRuntime,
+} from './windows-runtime.js'
 import { registerTaskLauncher } from './task-launcher.js'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { registerUpdates } from './updates.js'
@@ -11,6 +18,7 @@ import {
   prepareLocalRuntimeUpdate,
   localRuntimeNetwork,
   setLocalRuntimeNetwork,
+  pauseLocalRuntime,
 } from './local-runtime.js'
 import { registerConnectionStorage } from './connection-storage.js'
 import {
@@ -188,9 +196,64 @@ ipcMain.handle('links:choose', async (event, url: unknown) => {
   return offerLink(window, url, () => {})
 })
 
-ipcMain.handle('runtime:connection', (event) => {
+let activateSelectedRuntime = false
+ipcMain.handle('runtime:connection', async (event) => {
   requireTrustedRenderer(event, rendererPath)
+  const connection = await startLocalRuntime(__dirname)
+  if (!activateSelectedRuntime) return connection
+  activateSelectedRuntime = false
+  return { ...connection, activate: true }
+})
+ipcMain.handle('runtime:windows-connection', (event) => {
+  requireTrustedRenderer(event, rendererPath)
+  if (process.platform !== 'win32')
+    throw new Error('Windows runtime selection is only available on Windows')
   return startLocalRuntime(__dirname)
+})
+
+ipcMain.handle('runtime:windows-read', (event) => {
+  requireTrustedRenderer(event, rendererPath)
+  if (process.platform !== 'win32')
+    throw new Error('Windows runtime selection is only available on Windows')
+  return windowsRuntimeStatus()
+})
+let switchingRuntime = false
+ipcMain.handle('runtime:windows-save', async (event, value: unknown) => {
+  requireTrustedRenderer(event, rendererPath)
+  if (process.platform !== 'win32')
+    throw new Error('Windows runtime selection is only available on Windows')
+  if (switchingRuntime) throw new Error('A runtime switch is already in progress')
+  const choice = decode(windowsRuntimeChoiceSchema, value)
+  switchingRuntime = true
+  try {
+    if (choice.mode === 'wsl') await prepareWslRuntime(choice.distribution)
+    const previous = readWindowsRuntimeChoice()
+    // Accepting the existing native environment is setup, not a runtime restart.
+    if (choice.mode === 'native' && previous?.mode !== 'wsl') {
+      const connection = await startLocalRuntime(__dirname)
+      writeWindowsRuntimeChoice(choice)
+      activateSelectedRuntime = true
+      return connection
+    }
+    await pauseLocalRuntime()
+    try {
+      writeWindowsRuntimeChoice(choice)
+      const connection = await startLocalRuntime(__dirname)
+      activateSelectedRuntime = true
+      return connection
+    } catch (cause) {
+      await pauseLocalRuntime()
+      writeWindowsRuntimeChoice(previous)
+      try {
+        await startLocalRuntime(__dirname)
+      } catch (recovery) {
+        throw new AggregateError([cause, recovery], 'Runtime switch and recovery failed')
+      }
+      throw cause
+    }
+  } finally {
+    switchingRuntime = false
+  }
 })
 
 ipcMain.handle('runtime:network', (event, address: unknown, enabled?: unknown, port?: unknown) => {
@@ -218,6 +281,10 @@ ipcMain.handle('repositories:pick-directory', (event, runtimeAddress: unknown) =
         if (runtimeAddress !== local.address)
           throw new Error(
             'The system dialog selects folders on this computer. Use Browse in Add project to select a folder on the connected runtime.',
+          )
+        if (process.platform === 'win32' && readWindowsRuntimeChoice()?.mode === 'wsl')
+          throw new Error(
+            'Use Browse to select a Linux folder inside the selected WSL distribution.',
           )
         const result = await dialog.showOpenDialog(window, {
           title: 'Select repository or clone parent folder',

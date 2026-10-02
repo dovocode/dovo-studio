@@ -1,4 +1,6 @@
 import { expect, it, vi } from 'vite-plus/test'
+import { pathToFileURL, fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 
 const fixture = vi.hoisted(() => ({
   windows: 0,
@@ -6,6 +8,11 @@ const fixture = vi.hoisted(() => ({
     (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void
   >(),
   quit: vi.fn<() => void>(),
+  choice: undefined as import('@dovo/protocol').WindowsRuntimeChoice | undefined,
+  start: vi.fn<() => Promise<{ address: string; token: string }>>(() =>
+    Promise.reject(new Error('Runtime protocol is incompatible')),
+  ),
+  pause: vi.fn<() => Promise<void>>(() => Promise.resolve()),
   updates: vi.fn<(...args: unknown[]) => unknown>(() =>
     Object.assign(async () => {}, {
       state: () => ({ status: 'idle' }),
@@ -59,9 +66,20 @@ vi.mock('./connection-storage.js', () => ({
   registerConnectionStorage: vi.fn<(...args: unknown[]) => void>(),
 }))
 vi.mock('./local-runtime.js', () => ({
-  startLocalRuntime: () => Promise.reject(new Error('Runtime protocol is incompatible')),
+  startLocalRuntime: fixture.start,
+  pauseLocalRuntime: fixture.pause,
   stopLocalRuntime: () => Promise.resolve(),
   prepareLocalRuntimeUpdate: vi.fn<typeof import('./local-runtime').prepareLocalRuntimeUpdate>(),
+}))
+vi.mock('./windows-runtime.js', () => ({
+  readWindowsRuntimeChoice: () => fixture.choice,
+  writeWindowsRuntimeChoice: (
+    choice: import('@dovo/protocol').WindowsRuntimeChoice | undefined,
+  ) => {
+    fixture.choice = choice
+  },
+  prepareWslRuntime: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+  windowsRuntimeStatus: vi.fn<() => Promise<unknown>>(() => Promise.resolve({})),
 }))
 
 it('opens the recovery UI and registers updates when the installed runtime is incompatible', async () => {
@@ -83,11 +101,73 @@ it('opens the recovery UI and registers updates when the installed runtime is in
 
 it('rejects untrusted senders before returning runtime credentials or activating extensions', async () => {
   await import('./main')
-  for (const channel of ['runtime:connection', 'runtime:list-extensions', 'runtime:activate']) {
+  for (const channel of [
+    'runtime:connection',
+    'runtime:list-extensions',
+    'runtime:activate',
+    'runtime:windows-read',
+    'runtime:windows-save',
+    'runtime:windows-connection',
+  ]) {
     const handler = fixture.ipc.mock.calls.find(([name]) => name === channel)?.[1]
     if (!handler) throw new Error(`Missing IPC handler ${channel}`)
     await expect(
       Promise.resolve().then(() => handler({ senderFrame: null }, 'extension')),
     ).rejects.toThrow('Untrusted desktop request')
+  }
+})
+
+const trustedEvent = () => {
+  const frame = {
+    url: pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '../dist/index.html')).href,
+  }
+  return { senderFrame: frame, sender: { mainFrame: frame } }
+}
+it('accepts Native Windows setup without restarting active work', async () => {
+  await import('./main')
+  const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+  const connection = {
+    address: 'http://127.0.0.1:54321',
+    token: 'native-owned-token-at-least-thirty-two-characters',
+  }
+  fixture.start.mockResolvedValue(connection)
+  fixture.choice = undefined
+  fixture.pause.mockClear()
+  const save = fixture.ipc.mock.calls.find(([name]) => name === 'runtime:windows-save')?.[1]
+  if (!save) throw new Error('Missing environment save handler')
+  try {
+    expect(await save(trustedEvent(), { mode: 'native' })).toEqual(connection)
+    expect(fixture.choice).toEqual({ mode: 'native' })
+    expect(fixture.pause).not.toHaveBeenCalled()
+  } finally {
+    platform.mockRestore()
+    fixture.start.mockReset()
+    fixture.start.mockRejectedValue(new Error('Runtime protocol is incompatible'))
+  }
+})
+it('restores the previous environment when WSL startup fails', async () => {
+  await import('./main')
+  const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+  fixture.choice = { mode: 'native' }
+  fixture.pause.mockClear()
+  fixture.start.mockImplementation(async () => {
+    if (fixture.choice?.mode === 'wsl') throw new Error('WSL startup failed')
+    return {
+      address: 'http://127.0.0.1:54321',
+      token: 'native-owned-token-at-least-thirty-two-characters',
+    }
+  })
+  const save = fixture.ipc.mock.calls.find(([name]) => name === 'runtime:windows-save')?.[1]
+  if (!save) throw new Error('Missing environment save handler')
+  try {
+    await expect(save(trustedEvent(), { mode: 'wsl', distribution: 'Ubuntu' })).rejects.toThrow(
+      'WSL startup failed',
+    )
+    expect(fixture.choice).toEqual({ mode: 'native' })
+    expect(fixture.pause).toHaveBeenCalledTimes(2)
+  } finally {
+    platform.mockRestore()
+    fixture.start.mockReset()
+    fixture.start.mockRejectedValue(new Error('Runtime protocol is incompatible'))
   }
 })

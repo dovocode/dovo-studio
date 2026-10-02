@@ -8,6 +8,13 @@ import { app } from 'electron'
 import { Effect, Exit, Scope, Schema } from 'effect'
 import { readConnection } from '../../api/src/connection.js'
 import { runtimeOwnerToken } from '../../api/src/owner-token.js'
+import {
+  readWindowsRuntimeChoice,
+  startWslRuntime,
+  stopWslRuntime,
+  wslRuntimeOwned,
+  wslRuntimeConnection,
+} from './windows-runtime.js'
 type Connection = {
   address: string
   token: string
@@ -405,6 +412,14 @@ export function startLocalRuntime(
               'Runtime update is in progress. Wait for installation or recovery to finish.',
             ),
           )
+        if (process.platform === 'win32') {
+          const choice = readWindowsRuntimeChoice()
+          if (choice?.mode === 'wsl')
+            return yield* Effect.tryPromise({
+              try: () => startWslRuntime(choice.distribution),
+              catch: failure,
+            })
+        }
         if (owned && !exited(owned.child)) return owned.connection
         if (owned) {
           owned.stopping = true
@@ -466,6 +481,7 @@ export function stopLocalRuntime() {
   return Effect.runPromise(
     lifecycle.withPermits(1)(
       Effect.gen(function* () {
+        yield* Effect.tryPromise({ try: stopWslRuntime, catch: failure })
         if (!owned) return
         owned.stopping = true
         yield* Scope.close(owned.scope, Exit.void)
@@ -485,6 +501,10 @@ export async function prepareLocalRuntimeUpdate(directory: string) {
           if (updateOwner)
             return yield* Effect.fail(new Error('A runtime update is already in progress'))
           updateOwner = owner
+          if (wslRuntimeOwned()) {
+            yield* Effect.tryPromise({ try: stopWslRuntime, catch: failure })
+            return
+          }
           if (owned) {
             owned.stopping = true
             yield* Scope.close(owned.scope, Exit.void)
@@ -560,8 +580,29 @@ export async function localRuntimeNetwork(directory: string, address: string) {
     canChange:
       !process.env.DOVO_HOST &&
       (!process.env.DOVO_PORT || process.env.DOVO_PORT === '0') &&
-      (!!owned || (app.isPackaged && process.platform === 'darwin')),
+      (!!owned || wslRuntimeOwned() || (app.isPackaged && process.platform === 'darwin')),
   }
+}
+
+/** Switching environments stops only runtimes owned by this desktop. External servers stay intact. */
+export async function pauseLocalRuntime() {
+  const connection = owned?.connection ?? wslRuntimeConnection()
+  if (connection) {
+    const state = await runtimeRequest(
+      connection,
+      connection.address,
+      '/api/snapshot',
+      {},
+      mutableStruct({
+        workspace: mutableStruct({ tasks: Schema.Array(mutableStruct({ status: Schema.String })) }),
+      }),
+      'GET',
+    )
+    if (state.workspace.tasks.some((task) => task.status === 'running'))
+      throw new Error('Finish or stop active runs before switching execution environments.')
+  }
+  await stopLocalRuntime()
+  quitting = false
 }
 export async function setLocalRuntimeNetwork(
   directory: string,
@@ -591,6 +632,9 @@ export async function setLocalRuntimeNetwork(
     { enabled, host: '0.0.0.0', port: port ?? previous.port },
     externalStatusSchema,
   )
+  // WSL persists its listener beside its Linux database. Never overwrite native Windows settings.
+  if (process.platform === 'win32' && readWindowsRuntimeChoice()?.mode === 'wsl')
+    return localRuntimeNetwork(directory, address)
   const path = join(app.getPath('userData'), 'runtime-listen.json')
   try {
     writeFileSync(

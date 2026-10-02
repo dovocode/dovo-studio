@@ -1,4 +1,5 @@
 import { defineStudioExtension } from '@dovo/studio-core'
+export { WindowsRuntimeGate } from './windows-runtime'
 export const runtimeExtension = defineStudioExtension(
   {
     id: 'dovo.runtime',

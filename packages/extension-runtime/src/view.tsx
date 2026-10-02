@@ -12,6 +12,7 @@ import {
 } from '@dovo/studio-ui'
 import { PairingClient } from './pairing-client'
 import { DeviceManager } from './device-manager'
+import { WindowsRuntimeSettings } from './windows-runtime'
 export default function RuntimeView() {
   const sources = useRuntimeSources()
   const studio = useStudioHost()
@@ -33,6 +34,7 @@ export default function RuntimeView() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-4xl space-y-4">
+          <WindowsRuntimeSettings />
           {host && (
             <article className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/5 p-4">
               <div className="min-w-0">

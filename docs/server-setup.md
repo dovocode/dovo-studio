@@ -584,3 +584,41 @@ lives in `%USERPROFILE%\.dovo` unless you pass `--data-dir`. Before updating, ru
 `dovo-server stop`, extract the new release to a new folder, update PATH, and run
 `dovo-server start` with the same data directory. Keep the entire archive together. Windows server
 archives are unsigned. The generated mise configuration includes both Windows architectures.
+
+### Native Windows or WSL in the desktop app
+
+On Windows, desktop setup offers **Native Windows (recommended)** and **WSL 2**. Change the
+selection later in **Settings → Computers → Devices & runtime**. Applying a change reopens the
+workspace in the selected environment. Finish or stop active runs first; Dovo refuses to switch
+while its owned runtime has running tasks. External servers are never stopped by this choice.
+
+Native mode uses the bundled Windows runtime and your Windows Git, agent installations and logins.
+WSL mode lists installed WSL 2 distributions, including distributions with spaces in their names.
+Install WSL and a distribution separately with `wsl --install`, then use Refresh. WSL 1 and
+musl-based distributions are unsupported; use a glibc distribution such as Ubuntu or Debian.
+
+Dovo downloads the exact desktop version’s Linux x64 or ARM64 server archive into the selected WSL
+distribution and verifies the published SHA-256 before extracting it. This requires a published
+matching release, internet access, `curl`, `tar`, `sha256sum` and `getconf` in the distribution.
+Failed installation leaves the current environment selected. Failed runtime startup restores the
+previous selection. No Windows Node modules or credentials are copied into Linux.
+
+WSL installations live under `~/.local/share/dovo/desktop/<stable|nightly>/versions/<version>`;
+workspace data lives under the corresponding `data` directory. Native workspace data stays in the
+existing Windows desktop directory. Switching back restores that environment’s threads and projects;
+it does not move them. Agent CLI installations, authentication, Git, setup scripts, terminals,
+browser executables and user settings are resolved inside the selected distribution. Install/sign in
+to agents there and keep Linux repositories under `/home` for better filesystem performance. Use
+Dovo’s Browse picker for Linux folders; the Windows system folder dialog is blocked in WSL mode.
+
+The desktop connects over authenticated HTTP on WSL’s localhost forwarding. It checks owner access
+and protocol compatibility before using the connection. Quitting closes the desktop-owned WSL
+runtime gracefully. Changing distributions does not shut down the distribution or unrelated Linux
+processes. Phone access remains opt-in through LAN/VPN settings, with pairing codes and device
+tokens required. WSL NAT networking may need forwarding; mirrored networking and Windows/Hyper-V
+firewall configuration may be needed for LAN, Tailscale or NetBird connectivity. Dovo never silently
+changes those OS settings. If a distribution is removed or startup fails, the setup chooser offers a
+return to Native Windows.
+
+The chooser and supervisor have automated tests. Full provisioning, Windows/WSL networking and
+actual agent runs still require verification on a Windows machine.

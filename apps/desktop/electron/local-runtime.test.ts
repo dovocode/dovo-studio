@@ -23,7 +23,10 @@ vi.mock('./background-runtime.js', () => ({
   ensureBackgroundRuntime:
     vi.fn<typeof import('./background-runtime.js').ensureBackgroundRuntime>(),
 }))
-vi.mock('node:child_process', () => ({ spawn: vi.fn<typeof import('node:child_process').spawn>() }))
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  spawn: vi.fn<typeof import('node:child_process').spawn>(),
+}))
 afterEach(() => {
   fixture.packaged = false
   vi.useRealTimers()
@@ -458,4 +461,21 @@ it('keeps the desktop connection available while external access changes', async
     token: f.connection.token,
   })
   expect(f.stopBackgroundRuntimeForUpdate).not.toHaveBeenCalled()
+})
+
+it('refuses an environment switch while owned tasks are running', async () => {
+  const f = await childFixture()
+  const starting = f.startLocalRuntime('/unused')
+  await vi.waitFor(() => expect(f.child.listenerCount('message')).toBe(1))
+  f.child.emit('message', { type: 'ready', port: 8787 })
+  await starting
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () =>
+      Response.json({ workspace: { tasks: [{ status: 'running' }] } }),
+    ),
+  )
+  await expect(f.pauseLocalRuntime()).rejects.toThrow('Finish or stop active runs')
+  expect(f.kill).not.toHaveBeenCalled()
+  await f.stopLocalRuntime()
 })
