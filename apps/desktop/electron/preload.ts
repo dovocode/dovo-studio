@@ -2,6 +2,11 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('dovo', {
   taskLauncher: {
+    sync: (registry: import('@dovo/protocol').RuntimeRegistry) =>
+      ipcRenderer.invoke('task-launcher:sync', registry),
+    current: () => ipcRenderer.invoke('task-launcher:current'),
+    open: () => ipcRenderer.invoke('task-launcher:open'),
+    dismiss: () => ipcRenderer.invoke('task-launcher:dismiss'),
     configure: (shortcut: import('@dovo/protocol').TaskLauncherShortcut) =>
       ipcRenderer.invoke('task-launcher:configure', shortcut),
     subscribe: (listener: () => void) => {

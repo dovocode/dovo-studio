@@ -53,6 +53,10 @@ export function registerInputPreview(rendererPath: string, preload: string) {
         x: display.x + Math.max(0, display.width - 500),
         y: display.y + Math.max(0, display.height - 580),
         title: 'Dovo · Needs your input',
+        // A normal macOS window activates the app while answering, bringing the
+        // main window forward when the preview hides. Panels take keyboard focus
+        // without activating the app; opening the thread remains explicit.
+        ...(process.platform === 'darwin' ? { type: 'panel' as const } : {}),
         alwaysOnTop: true,
         frame: false,
         show: false,

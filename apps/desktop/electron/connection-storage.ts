@@ -4,10 +4,14 @@ import { app, ipcMain, safeStorage, type IpcMainEvent, type IpcMainInvokeEvent }
 import { pathToFileURL } from 'node:url'
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 export function registerConnectionStorage(rendererPath: string) {
-  const trustedFrame = (event: IpcMainEvent | IpcMainInvokeEvent) => {
+  const trustedFrame = (event: IpcMainEvent | IpcMainInvokeEvent, allowLauncher = false) => {
     if (event.senderFrame !== event.sender.mainFrame)
       throw new Error('Untrusted connection storage request')
     const source = new URL(event.senderFrame.url)
+    // The standalone launcher may read appearance settings; other popup frames
+    // retain their existing storage restrictions.
+    if (allowLauncher && source.hash === '#task-launcher') source.hash = ''
+    if (source.hash) throw new Error('Untrusted connection storage request')
     if (
       process.env.VITE_DEV_SERVER_URL
         ? source.origin !== new URL(process.env.VITE_DEV_SERVER_URL).origin
@@ -26,7 +30,7 @@ export function registerConnectionStorage(rendererPath: string) {
   const path = () => join(app.getPath('userData'), 'runtime-connections.enc')
   ipcMain.on('app:settings-read', (event) => {
     try {
-      trustedFrame(event)
+      trustedFrame(event, true)
       event.returnValue = { value: readLocalSettingsSection('app') ?? null }
     } catch (error) {
       event.returnValue = { error: String(error) }

@@ -179,3 +179,5 @@ export {
   useResolvedTheme,
   type AppPreferences,
 } from './preferences'
+
+export { LauncherWorkspaceProvider } from './workspace/launcher-provider'

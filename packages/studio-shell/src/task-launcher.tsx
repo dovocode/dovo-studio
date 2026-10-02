@@ -19,26 +19,42 @@ import {
   type LauncherAttempt,
 } from '@dovo/protocol'
 
-export function TaskLauncher({
-  bridge,
-  onDispatched,
-}: {
-  bridge: TaskLauncherBridge
-  onDispatched: (target: { viewId: 'tasks'; entityId: string; runtimeId: string }) => void
-}) {
-  const { runtimeRegistry, activeRuntimeId, readRuntime, refreshRuntime } = useWorkspace()
+export function TaskLauncher({ bridge }: { bridge: TaskLauncherBridge }) {
+  const { runtimeRegistry } = useWorkspace()
   const { registerCommand } = useStudioHost()
+  const { taskLauncherShortcut } = useAppPreferences()
   useEffect(
     () =>
       registerCommand({
         id: 'studio.task-launcher',
         title: 'Start task · global launcher',
-        run: () => setOpen(true),
+        run: () => {
+          void bridge
+            .open()
+            .catch((error: unknown) => console.error('Could not open quick task:', error))
+        },
       }),
-    [registerCommand],
+    [registerCommand, bridge],
   )
-  const { taskLauncherShortcut } = useAppPreferences()
-  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    void bridge
+      .sync(runtimeRegistry)
+      .catch((error: unknown) => console.error('Could not update quick task computers:', error))
+  }, [bridge, runtimeRegistry])
+  useEffect(() => {
+    void bridge
+      .configure(taskLauncherShortcut)
+      .then((result) => {
+        if (result.error) console.error(result.error)
+      })
+      .catch((error: unknown) => console.error('Could not configure quick task:', error))
+  }, [bridge, taskLauncherShortcut])
+  return null
+}
+
+export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
+  const { runtimeRegistry, activeRuntimeId, readRuntime } = useWorkspace()
+  const [open, setOpen] = useState(true)
   const [runtimeId, setRuntimeId] = useState(activeRuntimeId ?? '')
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null)
   const [repositoryId, setRepositoryId] = useState('')
@@ -46,27 +62,16 @@ export function TaskLauncher({
   const [loadedRuntimeId, setLoadedRuntimeId] = useState('')
   const [text, setText] = useState('')
   const [error, setError] = useState('')
-  const [shortcutError, setShortcutError] = useState('')
   const [loading, setLoading] = useState(false)
   const [refresh, setRefresh] = useState(0)
   const [busy, setBusy] = useState(false)
   const attempt = useRef<LauncherAttempt | null>(null)
   const submitting = useRef(false)
   useEffect(() => bridge.subscribe(() => setOpen(true)), [bridge])
-  useEffect(() => {
-    let current = true
-    void bridge.configure(taskLauncherShortcut).then(
-      (result) => {
-        if (current) setShortcutError(result.error ?? '')
-      },
-      (cause: unknown) => {
-        if (current) setShortcutError(String(cause))
-      },
-    )
-    return () => {
-      current = false
-    }
-  }, [bridge, taskLauncherShortcut])
+  const close = () => {
+    setOpen(false)
+    void bridge.dismiss().catch((error: unknown) => setError(String(error)))
+  }
   useEffect(() => {
     if (!open || runtimeId) return
     setRuntimeId(activeRuntimeId ?? runtimeRegistry.profiles[0]?.id ?? '')
@@ -90,7 +95,6 @@ export function TaskLauncher({
               : (next.workspace.repositories[0]?.id ?? ''),
           )
           setLoadedRuntimeId(runtimeId)
-          void refreshRuntime(profile).catch((cause: unknown) => setError(String(cause)))
         },
         (cause: unknown) => {
           if (current) setError(cause instanceof Error ? cause.message : String(cause))
@@ -102,7 +106,7 @@ export function TaskLauncher({
     return () => {
       current = false
     }
-  }, [open, runtimeId, runtimeRegistry.profiles, readRuntime, refreshRuntime, refresh])
+  }, [open, runtimeId, runtimeRegistry.profiles, readRuntime, refresh])
   useEffect(() => {
     if (attempt.current) return
     const repository = snapshot?.workspace.repositories.find((entry) => entry.id === repositoryId)
@@ -132,11 +136,9 @@ export function TaskLauncher({
       const current = attempt.current
       if (!current) return
       await dispatchLauncherTask(current, readRuntime)
-      onDispatched({ runtimeId: current.profile.id, viewId: 'tasks', entityId: current.task.id })
-      void refreshRuntime(current.profile).catch((cause: unknown) => setError(String(cause)))
       attempt.current = null
       setText('')
-      setOpen(false)
+      close()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -151,16 +153,19 @@ export function TaskLauncher({
     <Dialog
       open={open}
       onOpenChange={(value) => {
-        if (!busy) setOpen(value)
+        if (!busy) {
+          if (value) setOpen(true)
+          else close()
+        }
       }}
     >
       <DialogContent
-        className="max-w-xl gap-5 rounded-2xl p-6"
+        className="max-w-[calc(100vw-24px)] max-h-[calc(100vh-24px)] overflow-y-auto gap-5 rounded-2xl p-6"
         onEscapeKeyDown={(event) => {
           if (busy) event.preventDefault()
         }}
       >
-        <DialogHeader>
+        <DialogHeader className="input-preview-drag">
           <DialogTitle>Start a task</DialogTitle>
           <DialogDescription>
             Choose an agent and model, then send an idea to any of your computers.
@@ -235,9 +240,9 @@ export function TaskLauncher({
               }
             }}
           />
-          {(error || shortcutError) && (
+          {error && (
             <p role="alert" className="text-xs text-destructive">
-              {error || shortcutError}
+              {error}
             </p>
           )}
           {error && !attempt.current && !loading && (
