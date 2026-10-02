@@ -1,3 +1,4 @@
+import { ResizableSidebar } from './detail/resizable-sidebar'
 import { useCachedTask } from '@dovo/studio-core'
 import { watchRuntimeTask } from '@dovo/protocol'
 import type { Task } from '@dovo/protocol'
@@ -641,42 +642,48 @@ export default function TasksView({ entityId }: StudioViewProps) {
   return (
     <>
       <div className="flex min-h-0 min-w-0 flex-1">
-        <ResizablePanelGroup direction="horizontal" className="min-w-0">
+        <ResizableSidebar
+          as="div"
+          preference="threadSidebarWidth"
+          side="left"
+          label="thread sidebar"
+          maxFraction={0.45}
+          maxWidth={640}
+          resizable={(sidebar || !task) && !compact}
+          className={cn('min-h-0', (!(sidebar || !task) || compact) && 'hidden')}
+        >
           {(sidebar || !task) && !compact && (
-            <>
-              <ResizablePanel id="task-list" order={1} defaultSize={22} minSize={15} maxSize={45}>
-                <div className="h-full min-w-0">
-                  <TaskList
-                    titleHeader
-                    projectId={projectId}
-                    onProjectChange={setProjectId}
-                    selectedId={selectedKey}
-                    sources={sources}
-                    activeRuntimeId={activeRuntimeId}
-                    busy={busy}
-                    error={error}
-                    onSelect={(entry) => void selectTask(entry)}
-                    onCreate={(project) => void startTask(project)}
-                    onCreateNoProject={() => {
-                      setNoProject(true)
-                      setProjectQuery('')
-                      setError('')
-                      setChoosingProject(true)
-                    }}
-                    onDeselect={deselectTask}
-                    onOrderChange={reportOrder}
-                    onSplit={(entry) => {
-                      if (entry.source.runtimeId === activeRuntimeId) setSplitId(entry.task.id)
-                    }}
-                    onTemplate={(entry, templateId) =>
-                      void startTask(entry.projectKey, true, templateId)
-                    }
-                  />
-                </div>
-              </ResizablePanel>
-              <ResizableHandle />
-            </>
+            <div className="h-full min-w-0">
+              <TaskList
+                titleHeader
+                projectId={projectId}
+                onProjectChange={setProjectId}
+                selectedId={selectedKey}
+                sources={sources}
+                activeRuntimeId={activeRuntimeId}
+                busy={busy}
+                error={error}
+                onSelect={(entry) => void selectTask(entry)}
+                onCreate={(project) => void startTask(project)}
+                onCreateNoProject={() => {
+                  setNoProject(true)
+                  setProjectQuery('')
+                  setError('')
+                  setChoosingProject(true)
+                }}
+                onDeselect={deselectTask}
+                onOrderChange={reportOrder}
+                onSplit={(entry) => {
+                  if (entry.source.runtimeId === activeRuntimeId) setSplitId(entry.task.id)
+                }}
+                onTemplate={(entry, templateId) =>
+                  void startTask(entry.projectKey, true, templateId)
+                }
+              />
+            </div>
           )}
+        </ResizableSidebar>
+        <ResizablePanelGroup direction="horizontal" className="min-w-0 flex-1">
           <ResizablePanel id="conversation" order={2} minSize={30}>
             {task ? (
               <div
@@ -803,7 +810,15 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       )}
                     </ResizablePanelGroup>
                   </div>
-                  <aside
+                  <ResizableSidebar
+                    key={fileViewer ? 'viewer' : 'tools'}
+                    preference={fileViewer ? 'viewerSidebarWidth' : 'toolsSidebarWidth'}
+                    side="right"
+                    label="tools sidebar"
+                    maxFraction={fileViewer && !viewerDocked ? 1 : fileViewer ? 0.5 : 0.48}
+                    maxWidth={fileViewer && !viewerDocked ? 640 : 960}
+                    reservedWidth={fileViewer && !viewerDocked ? 72 : 0}
+                    resizable={!compact && surface !== 'chat' && !(fileViewer && viewerExpanded)}
                     aria-label="Workspace tools"
                     className={cn(
                       'min-h-0 min-w-0 flex-col bg-background',
@@ -812,14 +827,15 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         ? viewerExpanded
                           ? 'flex-1 border-l'
                           : viewerDocked && !compact
-                            ? 'w-[560px] max-w-[50%] shrink-0 border-l'
+                            ? 'shrink-0 border-l'
                             : cn(
-                                'absolute inset-y-2 z-30 w-[min(640px,calc(100%-72px))] rounded-lg border shadow-2xl overflow-hidden',
+                                'absolute inset-y-2 z-30 rounded-lg border shadow-2xl overflow-hidden',
                                 !compact && toolsVisible ? 'right-14' : 'right-2',
+                                compact && 'w-[min(640px,calc(100%-72px))]',
                               )
                         : compact
                           ? 'flex-1'
-                          : 'w-[380px] max-w-[48%] shrink-0 border-l',
+                          : 'shrink-0 border-l',
                     )}
                   >
                     {fileViewer && (
@@ -981,7 +997,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         />
                       )}
                     </div>
-                  </aside>
+                  </ResizableSidebar>
                   {!compact && toolsVisible && (
                     <TaskTools
                       surface={surface}

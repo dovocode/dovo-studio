@@ -17,12 +17,21 @@ const storage = (initial: Record<string, string> = {}) => {
 it('keeps valid saved choices, fills in new defaults and ignores invalid values', async () => {
   vi.stubGlobal(
     'localStorage',
-    storage({ 'dovo.app-preferences.v1': JSON.stringify({ theme: 'light', sendWith: 'bogus' }) }),
+    storage({
+      'dovo.app-preferences.v1': JSON.stringify({
+        theme: 'light',
+        sendWith: 'bogus',
+        threadSidebarWidth: -10,
+        toolsSidebarWidth: 420,
+      }),
+    }),
   )
   const { readAppPreferences } = await import('./preferences')
   // The invalid field falls back alone; the valid saved theme survives.
   expect(readAppPreferences()).toMatchObject({
     theme: 'light',
+    threadSidebarWidth: 280,
+    toolsSidebarWidth: 420,
     sendWith: 'enter',
     textSize: 'default',
     collapseChangedFiles: true,
