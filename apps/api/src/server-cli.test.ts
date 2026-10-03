@@ -1,4 +1,4 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { setupServer, writePrivateJson } from './server-config'
+// Launching the bundled runtime imports native SDKs, especially on Windows runners.
+vi.setConfig({ testTimeout: 30_000 })
 it('runs doctor in the selected release so bundled SDK diagnostics do not use checkout versions', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'dovo-release-doctor-'))
   try {

@@ -29,5 +29,11 @@ export async function fixture() {
     tasks: [],
     automations: [],
   }
-  return { directory, workspace, cleanup: () => rm(directory, { recursive: true, force: true }) }
+  return {
+    directory,
+    workspace,
+    // Windows can retain ConPTY working-directory handles briefly after onExit.
+    // Use the same bounded filesystem cleanup as the server integration fixtures.
+    cleanup: () => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }),
+  }
 }
