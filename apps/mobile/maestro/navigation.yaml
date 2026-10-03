@@ -172,6 +172,7 @@ appId: com.dovo.studio
 - assertVisible: Review this change from your phone.
 - assertNotVisible:
     id: Tab PRs
+- runFlow: header-menu.yaml
 - tapOn:
     id: Message
 - inputText: Preserved through native back

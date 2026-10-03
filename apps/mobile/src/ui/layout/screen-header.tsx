@@ -8,7 +8,6 @@ import { Icon } from '../controls/icon'
 import { useApplicationState } from '../../runtime/state/application-state'
 import type { IconName } from '../controls/icon'
 import { iconAssets } from '../controls/icon-assets'
-import { NativeActionMenu } from '../controls/native-action-menu'
 import { IconButton } from '../controls/icon-button'
 import { Text } from '../content/text'
 import { colors } from '../theme'
@@ -108,12 +107,27 @@ export function ScreenHeader({
               </Stack.Toolbar.Button>
             ))}
           {buttons?.some((button) => button.overflow) && (
-            <Stack.Toolbar.View>
-              <NativeActionMenu
-                label="Task tools"
-                actions={buttons.filter((button) => button.overflow)}
-              />
-            </Stack.Toolbar.View>
+            <Stack.Toolbar.Menu
+              icon={iconAssets.more}
+              iconRenderingMode="template"
+              accessibilityLabel="Task tools"
+              tintColor={colors.text}
+            >
+              {buttons
+                .filter((button) => button.overflow)
+                .map((button) => (
+                  <Stack.Toolbar.MenuAction
+                    key={button.label}
+                    icon={iconAssets[button.icon]}
+                    iconRenderingMode="template"
+                    disabled={button.disabled}
+                    isOn={button.selected}
+                    onPress={button.onPress}
+                  >
+                    {button.label}
+                  </Stack.Toolbar.MenuAction>
+                ))}
+            </Stack.Toolbar.Menu>
           )}
           {!!actions && (
             <Stack.Toolbar.View>

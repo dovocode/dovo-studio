@@ -1,0 +1,26 @@
+appId: com.dovo.studio
+---
+# Touch the padding around the icon, not only its center. Reopen after selecting an action.
+- repeat:
+    times: 3
+    commands:
+      - tapOn:
+          text: Task tools
+          point: 50%,10%
+      - assertVisible: Rename thread
+      - tapOn: Chat
+      - tapOn:
+          text: Task tools
+          point: 10%,50%
+      - assertVisible: Rename thread
+      - tapOn: Chat
+      - tapOn:
+          text: Task tools
+          point: 90%,50%
+      - assertVisible: Rename thread
+      - tapOn: Chat
+      - tapOn:
+          text: Task tools
+          point: 50%,90%
+      - assertVisible: Rename thread
+      - tapOn: Chat
