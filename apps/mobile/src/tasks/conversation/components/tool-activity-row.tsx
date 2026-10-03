@@ -12,7 +12,7 @@ import { ActivityIndicator, Pressable, View } from 'react-native'
 import { toolPresentation } from '@dovo/protocol'
 import { Text } from '../../../ui/content/text'
 import { Icon, type IconName } from '../../../ui/controls/icon'
-import { Markdown } from '../../../ui/content/markdown'
+import { ThreadMarkdown } from './thread-markdown'
 import { colors, styles } from '../../../ui/theme'
 import { activityIdentity, pendingActivity, type TaskToolEvent } from '../state/tool-events'
 export const activityIcon = (kind: ReturnType<typeof toolPresentation>['kind']): IconName =>
@@ -136,7 +136,7 @@ export function ToolActivityRow({
           {showToolDetails &&
             !!detail.output &&
             (detail.kind === 'reasoning' ? (
-              <Markdown text={detail.output} variant="chat" />
+              <ThreadMarkdown text={detail.output} variant="chat" />
             ) : (
               <Text
                 selectable
@@ -215,7 +215,7 @@ export function ReasoningActivity({ events }: { events: TaskToolEvent[] }) {
           {events.map((event) => {
             const detail = toolPresentation(event.payload, event.summary, event.inputPayload)
             return (
-              <Markdown
+              <ThreadMarkdown
                 key={activityIdentity(event)}
                 text={detail.output || detail.input || detail.title}
                 variant="chat"

@@ -9,6 +9,7 @@ import {
   compactActivityEvents,
   decode,
   artifactResponseSchema,
+  artifactListSchema,
   artifactWriteResponseSchema,
 } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
@@ -94,6 +95,51 @@ it('creates, lists and versions artifacts without embedding bodies in activity; 
     tasks: workspace.tasks.filter((task) => task.id !== f.taskId),
   }))
   expect(f.runtime.services.db.prepare('SELECT id FROM artifacts').all()).toEqual([])
+})
+it('collects hosted links from full thread history and all tool results, preserving thread scope', async () => {
+  const f = await fixture()
+  f.runtime.services.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    messages: Array.from({ length: 350 }, (_, index) => ({
+      id: `message-${index}`,
+      role: 'assistant' as const,
+      text: index === 0 ? '[Original design](https://claude.ai/code/artifact/old-id)' : 'History',
+    })),
+  }))
+  const activity = f.runtime.services.activity
+  activity.add('tool', f.taskId, 'Sites result', {
+    content: [
+      {
+        text: JSON.stringify({
+          id: 'site-id',
+          slug: 'dashboard',
+          title: 'Dashboard',
+          latest_version_number: 1,
+          current_live_url: 'https://dashboard.example.com/',
+        }),
+      },
+    ],
+  })
+  for (let index = 0; index < 120; index++) activity.add('tool', f.taskId, 'Other tool', {})
+  activity.add('tool', f.taskId, 'Repeated artifact', {
+    url: 'https://claude.ai/code/artifact/old-id#comment',
+  })
+  activity.add('tool', f.otherId, 'Unrelated thread', { url: 'https://unrelated.chatgpt.site/' })
+  const result = await f.post('list', { taskId: f.taskId })
+  expect(result.status).toBe(200)
+  expect(decode(artifactListSchema, result.value)).toEqual({
+    artifacts: [],
+    links: [
+      {
+        provider: 'claude',
+        title: 'Original design',
+        url: 'https://claude.ai/code/artifact/old-id',
+      },
+      { provider: 'chatgpt', title: 'Dashboard', url: 'https://dashboard.example.com/' },
+    ],
+  })
+  expect((await f.post('list', { taskId: 'missing' })).status).toBe(404)
+  expect((await f.post('list', { taskId: f.taskId }, 'invalid')).status).toBe(401)
 })
 it('authenticates requests and prevents paired devices and read-only agents from writing artifacts', async () => {
   const f = await fixture()

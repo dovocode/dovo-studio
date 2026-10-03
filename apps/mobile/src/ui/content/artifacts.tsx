@@ -8,12 +8,14 @@ import * as Crypto from 'expo-crypto'
 import {
   artifactFile,
   artifactListSchema,
+  artifactLinkLabel,
   artifactPreviewHtml,
   artifactResponseSchema,
   artifactVersionsSchema,
   type Artifact,
   type ArtifactMetadata,
   type ArtifactReference,
+  type ArtifactLink,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from './text'
@@ -22,6 +24,7 @@ import { Action } from '../controls/action'
 import { Icon, type IconName } from '../controls/icon'
 import { IconButton } from '../controls/icon-button'
 import { colors, styles } from '../theme'
+import { openAppLink } from './open-link'
 
 export const ArtifactCard = memo(function ArtifactCard({
   reference,
@@ -118,7 +121,9 @@ export function ArtifactBrowser({
 }) {
   const { read, connected } = useRuntime()
   const [items, setItems] = useState<ArtifactMetadata[]>()
+  const [links, setLinks] = useState<ArtifactLink[]>([])
   const [id, setId] = useState(initialId)
+  const link = links.find((item) => item.url === id)
   const [revision, setRevision] = useState<number>()
   const [versions, setVersions] = useState<ArtifactMetadata[]>([])
   const [reload, setReload] = useState(0)
@@ -139,10 +144,16 @@ export function ArtifactBrowser({
       return
     }
     void read('/api/artifacts/list', { taskId }, artifactListSchema)
-      .then(({ artifacts }) => {
+      .then(({ artifacts, links = [] }) => {
         if (!disposed) {
           setItems(artifacts)
-          setId((previous) => previous || artifacts[0]?.id || '')
+          setLinks(links)
+          setId((previous) =>
+            artifacts.some((item) => item.id === previous) ||
+            links.some((item) => item.url === previous)
+              ? previous
+              : artifacts[0]?.id || links[0]?.url || '',
+          )
         }
       })
       .catch((cause: unknown) => {
@@ -155,8 +166,8 @@ export function ArtifactBrowser({
   useEffect(() => {
     let disposed = false
     setVersions([])
-    if (!id || !connected) return
     setPreviewError('')
+    if (!id || link || !connected) return
     void Promise.all([
       read('/api/artifacts/read', { taskId, id, revision }, artifactResponseSchema),
       read('/api/artifacts/versions', { taskId, id }, artifactVersionsSchema),
@@ -173,7 +184,7 @@ export function ArtifactBrowser({
     return () => {
       disposed = true
     }
-  }, [read, taskId, id, revision, connected, reload, selection])
+  }, [read, taskId, id, link?.url, revision, connected, reload, selection])
   const share = async () => {
     if (!artifact || sharing) return
     setSharing(true)
@@ -202,7 +213,7 @@ export function ArtifactBrowser({
               label="Choose artifact"
               selected={picker === 'artifacts'}
               onPress={() => setPicker('artifacts')}
-              disabled={!items?.length}
+              disabled={!items?.length && !links.length}
             />
             <ArtifactAction
               icon="history"
@@ -245,13 +256,13 @@ export function ArtifactBrowser({
             />
           </View>
           <Text numberOfLines={2} style={{ fontSize: 18, fontWeight: '600' }}>
-            {artifact?.title ?? 'Thread artifacts'}
+            {link?.title ?? artifact?.title ?? 'Thread artifacts'}
           </Text>
           {!!error && <Text style={styles.error}>{error}</Text>}
-          {!error && (!items || (!!id && !artifact)) && <ActivityIndicator />}
-          {items?.length === 0 && (
+          {!error && (!items || (!!id && !link && !artifact)) && <ActivityIndicator />}
+          {items?.length === 0 && links.length === 0 && (
             <Text style={styles.muted}>
-              No artifacts yet. Ask the agent to create a document, diagram or interactive preview.
+              No artifacts yet. Create an artifact or share a Claude artifact or ChatGPT Site link.
             </Text>
           )}
         </View>
@@ -288,6 +299,41 @@ export function ArtifactBrowser({
                 </Text>
               </Pressable>
             ))}
+            {picker === 'artifacts' &&
+              links.map((item) => (
+                <Pressable
+                  key={item.url}
+                  accessibilityRole="button"
+                  style={{
+                    padding: 16,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    borderRadius: 8,
+                  }}
+                  onPress={() => {
+                    setId(item.url)
+                    setRevision(undefined)
+                    setSource(false)
+                    setPicker(undefined)
+                  }}
+                >
+                  <Text>{item.title}</Text>
+                  <Text style={styles.muted}>{artifactLinkLabel(item.provider)}</Text>
+                </Pressable>
+              ))}
+          </ScrollView>
+        ) : link ? (
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+            <Text style={styles.muted}>{artifactLinkLabel(link.provider)}</Text>
+            <Text selectable>{link.url}</Text>
+            <Action
+              label={`Open ${artifactLinkLabel(link.provider)}`}
+              onPress={() => {
+                void openAppLink(link.url).catch((cause: unknown) =>
+                  Alert.alert('Could not open link', String(cause)),
+                )
+              }}
+            />
           </ScrollView>
         ) : (
           artifact &&

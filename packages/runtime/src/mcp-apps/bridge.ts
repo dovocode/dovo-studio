@@ -6,13 +6,19 @@ import { existsSync } from 'node:fs'
 import type Database from 'better-sqlite3'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import {
+  StreamableHTTPClientTransport,
+  StreamableHTTPError,
+} from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { mcpHttpOptions } from './http-transport.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import {
   McpError,
   ErrorCode,
   CallToolResultSchema,
+  CallToolRequestSchema,
+  GetPromptRequestSchema,
   ToolListChangedNotificationSchema,
   ResourceListChangedNotificationSchema,
   PromptListChangedNotificationSchema,
@@ -219,9 +225,10 @@ export class McpApps {
               cwd: scope.cwd,
               stderr: 'pipe',
             })
-          : new StreamableHTTPClientTransport(new URL(config.url), {
-              requestInit: { headers: mcpHeaders(config), redirect: 'error' },
-            })
+          : new StreamableHTTPClientTransport(
+              new URL(config.url),
+              mcpHttpOptions(mcpHeaders(config)),
+            )
       if (transport instanceof StdioClientTransport) transport.stderr?.on('data', () => {})
       const timeout = AbortSignal.any([this.controller.signal, AbortSignal.timeout(30_000)])
       try {
@@ -230,10 +237,16 @@ export class McpApps {
         } catch (error) {
           // Older MCP servers expose SSE, not Streamable HTTP. Do not retry auth failures.
           await transport.close()
-          if (config.transport !== 'http' || !String(error).match(/404|405|406/)) throw error
-          transport = new SSEClientTransport(new URL(config.url), {
-            requestInit: { headers: mcpHeaders(config), redirect: 'error' },
-          })
+          if (
+            config.transport !== 'http' ||
+            !(error instanceof StreamableHTTPError) ||
+            ![404, 405, 406].includes(error.code ?? 0)
+          )
+            throw error
+          transport = new SSEClientTransport(
+            new URL(config.url),
+            mcpHttpOptions(mcpHeaders(config)),
+          )
           await client.connect(transport, { signal: timeout })
         }
         const tools: Tool[] = []
@@ -355,8 +368,13 @@ export class McpApps {
     if (method === 'tools/list')
       return { tools: session.tools.filter((tool) => visibleTo(tool, ui ? 'app' : 'model')) }
     if (method === 'tools/call') {
+      const request = CallToolRequestSchema.safeParse({ method, params })
+      if (!request.success) throw new HttpError(400, 'Invalid MCP tools/call parameters')
+      const input = request.data.params
+      if (input.task)
+        throw new HttpError(400, 'Task-augmented MCP calls are not supported by this bridge')
       const tool = session.tools.find(
-        (tool) => tool.name === value.name && visibleTo(tool, ui ? 'app' : 'model'),
+        (tool) => tool.name === input.name && visibleTo(tool, ui ? 'app' : 'model'),
       )
       if (!tool) throw new HttpError(403, 'Tool is not available in this MCP scope')
       if (ui) {
@@ -368,7 +386,7 @@ export class McpApps {
         const allowed = await this.approvals.request(
           scope.taskId,
           `MCP App · ${tool.name}`,
-          JSON.stringify(value.arguments ?? {}),
+          JSON.stringify(input.arguments ?? {}),
           signal,
         )
         if (!allowed) throw new HttpError(403, 'MCP App tool call was declined')
@@ -383,12 +401,12 @@ export class McpApps {
       signal.throwIfAborted()
       const result = CallToolResultSchema.parse(
         await session.client.callTool(
-          { name: tool.name, arguments: object(value.arguments) },
+          { name: tool.name, arguments: input.arguments ?? {}, _meta: input._meta },
           undefined,
           options,
         ),
       )
-      if (!ui) await this.capture(scope, session, tool, object(value.arguments), result)
+      if (!ui) await this.capture(scope, session, tool, input.arguments ?? {}, result)
       // UI content is out-of-band, not model tokens or repeated sync payloads.
       const embeddedApps = new Set(legacyResources(result))
       const content = result.content.filter(
@@ -410,18 +428,14 @@ export class McpApps {
     if (method === 'resources/read' && typeof value.uri === 'string')
       return session.client.readResource({ uri: value.uri }, options)
     if (method === 'prompts/list') return session.client.listPrompts(pagination, options)
-    if (method === 'prompts/get' && typeof value.name === 'string')
+    if (method === 'prompts/get') {
+      const request = GetPromptRequestSchema.safeParse({ method, params })
+      if (!request.success) throw new HttpError(400, 'Invalid MCP prompts/get parameters')
       return session.client.getPrompt(
-        {
-          name: value.name,
-          arguments: Object.fromEntries(
-            Object.entries(object(value.arguments)).filter(
-              (entry): entry is [string, string] => typeof entry[1] === 'string',
-            ),
-          ),
-        },
+        { ...request.data.params, arguments: request.data.params.arguments ?? {} },
         options,
       )
+    }
     throw new HttpError(400, 'Unsupported MCP bridge method')
   }
   private async resource(session: Session, uri: string) {

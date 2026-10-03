@@ -15,7 +15,12 @@ const tool = (id: string, textOffset?: number) =>
   ])[0]!
 
 it('keeps assistant output and tool calls in their original order', () => {
-  const blocks = threadTimeline('BeforeBetweenAfter', [tool('first', 6), tool('second', 13)])
+  const blocks = threadTimeline(
+    'BeforeBetweenAfter',
+    [tool('first', 6), tool('second', 13)],
+    [],
+    [6, 13],
+  )
   expect(
     blocks.map((block) =>
       block.kind === 'text'
@@ -24,11 +29,11 @@ it('keeps assistant output and tool calls in their original order', () => {
           ? block.tools.map((item) => item.summary)
           : 'compaction',
     ),
-  ).toEqual([[], 'Before', ['first'], 'Between', ['second'], 'After'])
+  ).toEqual(['Before', ['first'], 'Between', ['second'], 'After'])
 })
 
 it('groups tools at the same position and keeps older activity above legacy text', () => {
-  const blocks = threadTimeline('Reply', [tool('legacy'), tool('one', 0), tool('two', 0)])
+  const blocks = threadTimeline('Reply', [tool('legacy', 0), tool('one', 0), tool('two', 0)])
   expect(blocks).toHaveLength(2)
   expect(blocks[0]?.kind === 'activity' && blocks[0].tools.map((item) => item.summary)).toEqual([
     'legacy',
@@ -52,15 +57,10 @@ it('places compaction between the text and tools surrounding it', () => {
         textOffset: 6,
       },
     ],
+    [6],
   )
-  expect(blocks.map((block) => block.kind)).toEqual([
-    'activity',
-    'text',
-    'activity',
-    'compaction',
-    'text',
-  ])
-  expect(blocks[3]).toMatchObject({ kind: 'compaction', offset: 6 })
+  expect(blocks.map((block) => block.kind)).toEqual(['text', 'activity', 'compaction', 'text'])
+  expect(blocks[2]).toMatchObject({ kind: 'compaction', offset: 6 })
 })
 
 it('does not split a streamed sentence in the middle of a word', () => {
@@ -68,10 +68,8 @@ it('does not split a streamed sentence in the middle of a word', () => {
   const offset = text.indexOf('checkout') + 2
   const blocks = threadTimeline(text, [tool('first', offset)])
   expect(blocks.map((block) => (block.kind === 'text' ? block.text : 'tool'))).toEqual([
+    text,
     'tool',
-    'The two tasks must not write to the same checkout at once.',
-    'tool',
-    ' I will inspect it.',
   ])
 })
 
@@ -138,11 +136,11 @@ it('keeps a tool in its original group when it finishes after compaction', () =>
 })
 
 it('folds intermediate work without hiding the completed answer', () => {
-  const blocks = threadTimeline('Before. Answer.', [tool('check', 8)])
+  const blocks = threadTimeline('Before. Answer.', [tool('check', 8)], [], [8])
   const index = finalReplyIndex(blocks, false)
   expect(blocks[index]).toMatchObject({ kind: 'text', text: 'Answer.' })
   expect(finalReplyIndex(blocks, true)).toBe(-1)
-  expect(finalReplyIndex(threadTimeline('Legacy answer', [tool('legacy')]), false)).toBe(1)
+  expect(finalReplyIndex(threadTimeline('Legacy answer', [tool('legacy')]), false)).toBe(0)
   expect(finalReplyIndex(threadTimeline('', [tool('only')]), false)).toBe(-1)
 })
 
@@ -168,5 +166,5 @@ it('keeps tool events at exact provider boundaries rather than shifting them int
           ? block.tools.map((item) => item.summary)
           : 'compaction',
     ),
-  ).toEqual([[], 'First', ['command'], 'Second sentence.'])
+  ).toEqual(['First', ['command'], 'Second sentence.'])
 })

@@ -2,7 +2,11 @@ import { useId, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef
 import { defaultAppPreferences, readAppPreferences, updateAppPreferences } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { cn } from '@dovo/studio-ui'
-type WidthPreference = 'threadSidebarWidth' | 'toolsSidebarWidth' | 'viewerSidebarWidth'
+type WidthPreference =
+  | 'threadSidebarWidth'
+  | 'toolsSidebarWidth'
+  | 'viewerSidebarWidth'
+  | 'diffFilesSidebarWidth'
 export function ResizableSidebar({
   preference,
   side,

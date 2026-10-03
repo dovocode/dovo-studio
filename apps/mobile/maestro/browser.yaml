@@ -126,10 +126,10 @@
 - takeScreenshot: dovo-mobile-walkthrough-terminal
 - tapOn: Task tools
 - tapOn: Chat
-- tapOn:
-    id: Task settings
-- assertVisible: Task settings
-- takeScreenshot: dovo-mobile-walkthrough-task-settings
+- tapOn: Task tools
+- tapOn: Linked projects
+- assertVisible: Save linked projects
+- takeScreenshot: dovo-mobile-walkthrough-linked-projects
 - tapOn: Close
 - tapOn: Back
 - tapOn:

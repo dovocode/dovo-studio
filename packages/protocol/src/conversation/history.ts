@@ -28,29 +28,33 @@ export function conversationPage(
       ? task.messages.length
       : task.messages.findIndex((message) => message.id === before)
   if (end < 0) throw new Error('This history cursor no longer exists. Reload the conversation.')
-  const turnsByMessage = new Map<string, number>()
-  for (const turn of task.turns ?? [])
-    turnsByMessage.set(
-      turn.assistantId,
-      (turnsByMessage.get(turn.assistantId) ?? 0) + encodedSize(turn),
-    )
+  const turnsById = new Map(task.turns?.map((turn) => [turn.id, turn]))
+  const turnsByMessage = new Map(task.turns?.map((turn) => [turn.assistantId, turn]))
+  const includedTurns = new Set<string>()
   let start = end,
     requests = 0,
     bytes = 0
   while (start > 0 && end - start < 75 && requests < 10) {
     const message = task.messages[start - 1]!
-    const size = encodedSize(message) + (turnsByMessage.get(message.id) ?? 0)
+    const turn =
+      (message.turnId ? turnsById.get(message.turnId) : undefined) ?? turnsByMessage.get(message.id)
+    const size =
+      encodedSize(message) + (turn && !includedTurns.has(turn.id) ? encodedSize(turn) : 0)
     // A large individual message remains intact and accessible.
     if (start < end && bytes + size > 1024 * 1024) break
     bytes += size
+    if (turn) includedTurns.add(turn.id)
     start--
     if (message.role === 'user') requests++
   }
   const messages = task.messages.slice(start, end)
   const ids = new Set(messages.map((message) => message.id))
+  const ownedTurns = new Set(
+    messages.flatMap((message) => (message.turnId ? [message.turnId] : [])),
+  )
   return {
     messages,
-    turns: task.turns?.filter((turn) => ids.has(turn.assistantId)) ?? [],
+    turns: task.turns?.filter((turn) => ids.has(turn.assistantId) || ownedTurns.has(turn.id)) ?? [],
     ...(task.historyRevision !== undefined ? { historyRevision: task.historyRevision } : {}),
     ...(start > 0 ? { before: messages[0]!.id } : {}),
   }
@@ -84,7 +88,11 @@ export function mergeConversationHistory<
     for (const message of cached.slice(boundary)) messages.delete(message.id)
   }
   const turns = new Map(pages.flatMap((page) => page.turns.map((turn) => [turn.id, turn] as const)))
-  for (const [id, turn] of turns) if (!messages.has(turn.assistantId)) turns.delete(id)
+  const ownedTurns = new Set(
+    [...messages.values()].flatMap((message) => (message.turnId ? [message.turnId] : [])),
+  )
+  for (const [id, turn] of turns)
+    if (!messages.has(turn.assistantId) && !ownedTurns.has(id)) turns.delete(id)
   for (const message of live.messages) messages.set(message.id, message)
   for (const turn of live.turns ?? []) turns.set(turn.id, turn)
   const liveTurns = new Set(live.turns?.map((turn) => turn.id))

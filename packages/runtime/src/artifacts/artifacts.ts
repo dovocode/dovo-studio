@@ -15,6 +15,7 @@ import {
   type ArtifactLibraryEntry,
   runtimePreferencesSchema,
   artifactDeletionAt,
+  externalArtifactLinks,
 } from '@dovo/protocol'
 import type { WorkspaceStore } from '../storage/workspace.js'
 import type { Activity } from '../storage/activity.js'
@@ -185,6 +186,21 @@ export class Artifacts {
       )
       .all(taskId)
       .map((row) => decode(artifactMetadataSchema, JSON.parse(decode(stored, row).value)))
+  }
+  links(taskId: string) {
+    const task = this.store.task(taskId)
+    const activity = this.activity
+    return externalArtifactLinks(
+      (function* () {
+        for (const message of task.messages) yield message.text
+        for (const chat of task.sideChats ?? [])
+          for (const message of chat.messages) {
+            yield message.question
+            yield message.answer
+          }
+        yield* activity.toolPayloads(taskId)
+      })(),
+    )
   }
   read(taskId: string, id: string, revision?: number) {
     this.store.task(taskId)

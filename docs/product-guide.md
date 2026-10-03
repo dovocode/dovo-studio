@@ -238,8 +238,11 @@ capabilities, supports agent and interactive terminal authentication, logout whe
 new/load/resume sessions, session listing/deletion, cancellation, modes, select/boolean
 configuration, model and reasoning discovery, form elicitation, permissions, filesystem callbacks,
 and terminal lifecycle. Session replay is suppressed when resuming an existing Dovo conversation.
-Experimental protocol extensions, including session forking and ACP v2, are not enabled. Optional
-client capabilities without a corresponding Dovo workflow are not advertised.
+The adapter uses the SDK’s typed client/method API. Incoming ACP messages are limited to 32 MiB; a
+closed or oversized input stream terminates pending work and releases the owned launcher. Each
+completed prompt records a response boundary for conversation grouping. Experimental protocol
+extensions, including session forking and ACP v2, are not enabled. Optional client capabilities
+without a corresponding Dovo workflow are not advertised.
 
 Registry packages run as local software on the runtime host. Installation uses the registry's pinned
 version and distribution metadata; binary checksums are verified when supplied. Package-based agents

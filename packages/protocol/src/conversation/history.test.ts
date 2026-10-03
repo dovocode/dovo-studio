@@ -1,6 +1,30 @@
 import { taskBudgetUsage } from '../tasks/task-budget'
 import { expect, it } from 'vitest'
 import { conversationPage, mergeConversationHistory } from './history'
+it('retains ownership records when one execution spans multiple history pages', () => {
+  const turn = {
+    id: 'turn',
+    assistantId: 'a99',
+    agentId: 'agent',
+    provider: 'codex' as const,
+    model: '',
+    startedAt: '',
+    status: 'completed' as const,
+  }
+  const task = {
+    messages: Array.from({ length: 100 }, (_, index) => ({
+      id: `a${index}`,
+      turnId: 'turn',
+      role: 'assistant' as const,
+      text: 'Message',
+    })),
+    turns: [turn],
+  }
+  const page = conversationPage(task, 'a25')
+  expect(page.turns).toEqual([turn])
+  const live = { ...task, messages: task.messages.slice(25), historyBefore: 'a25' }
+  expect(mergeConversationHistory(live, [page]).turns).toEqual([turn])
+})
 const history = (requests: number) => ({
   messages: Array.from({ length: requests * 2 }, (_, index) => ({
     id: `m${index}`,

@@ -10,6 +10,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { managedSkillSchema, mcpServerSchema, mcpTestResultSchema } from '@dovo/protocol'
 import { processEnvironment } from '../../process.js'
+import { mcpHttpOptions } from '../../mcp-apps/http-transport.js'
 import { mcpServerEnvironment, mcpHeaders } from './mcp-settings.js'
 export async function importSkill(input: unknown) {
   const { path } = decode(
@@ -81,12 +82,7 @@ export async function testMcpServer(input: unknown) {
           },
           stderr: 'ignore',
         })
-      : new StreamableHTTPClientTransport(new URL(server.url), {
-          requestInit: {
-            redirect: 'error',
-            headers: mcpHeaders(server),
-          },
-        })
+      : new StreamableHTTPClientTransport(new URL(server.url), mcpHttpOptions(mcpHeaders(server)))
   const signal = AbortSignal.timeout(15000)
   try {
     await client.connect(transport, {

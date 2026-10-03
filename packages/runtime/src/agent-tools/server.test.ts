@@ -68,6 +68,17 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
     })
     await client.connect(transport)
     expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('terminal_run')
+    expect((await client.callTool({ name: 'devices' })).isError).not.toBe(true)
+    const invalid = await client.callTool({ name: 'device', arguments: { id: 3, action: 'boot' } })
+    expect(invalid.isError).toBe(true)
+    expect(action).not.toHaveBeenCalled()
+    const oversized = await client.callTool({
+      name: 'devices',
+      arguments: { values: Array.from({ length: 10_001 }, () => 0) },
+    })
+    expect(oversized.isError).toBe(true)
+    expect(decodeToolText(oversized)).toContain('10000 elements')
+    expect((await client.callTool({ name: 'devices' })).isError).not.toBe(true)
     const scopedChildren = await client.callTool({
       name: 'subagent_list',
       arguments: { taskId: 'another-thread' },

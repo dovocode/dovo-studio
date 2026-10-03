@@ -227,4 +227,10 @@ export class Activity {
       ),
     }
   }
+  *toolPayloads(scope: string) {
+    for (const row of this.db
+      .prepare("SELECT payload FROM activity WHERE scope=? AND kind='tool' ORDER BY time,id")
+      .iterate(scope))
+      yield decode(mutableStruct({ payload: Schema.String }), row).payload
+  }
 }

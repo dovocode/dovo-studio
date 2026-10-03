@@ -1,15 +1,18 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { decode } from '@dovo/protocol'
+import { decode, resolveScopedAgents } from '@dovo/protocol'
+import { useCallback } from 'react'
 import {
   defaultTaskHarness,
   lockedTaskProvider,
   lockedAcpInstallationId,
-  providers,
   resolveTaskAgent,
   taskHarnessSchema,
   updateTask,
+  selectableAccessModes,
+  modelCatalogSchema,
   supportsAccess,
   useWorkspace,
+  type AgentDiscovery,
   type Task,
 } from '@dovo/studio-core'
 import {
@@ -19,20 +22,34 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  ModelSettings,
+  FormField,
+  ChoicePicker,
 } from '@dovo/studio-ui'
 import { HarnessFields } from '../harness-fields'
+import { changeTaskHarness } from '../chat/composer/task-harness-selection'
 export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => void }) {
-  const { workspace, setWorkspace, flush } = useWorkspace()
-  const providerLock = lockedTaskProvider(task, workspace.agents)
-  const installationLock = lockedAcpInstallationId(task, workspace.agents)
+  const { workspace, setWorkspace, flush, request, connected, snapshot } = useWorkspace()
+  const agents = resolveScopedAgents(
+    snapshot?.defaults,
+    workspace.repositories.find((repo) => repo.id === task.repositoryId),
+    workspace.agents,
+  )
+  const customAgent = agents.find((agent) => agent.id === task.agentId)
+  const providerLock = lockedTaskProvider(task, agents)
+  const installationLock = lockedAcpInstallationId(task, agents)
   const [value, setValue] = useApplicationState(() => {
-    const agent = resolveTaskAgent(task, workspace.agents)
+    const agent = resolveTaskAgent(task, agents)
     return agent ? decode(taskHarnessSchema, agent) : defaultTaskHarness(providerLock ?? 'codex')
   })
   const [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
+  const loadModels = useCallback(
+    (input: AgentDiscovery) => request('/api/agents/models', input, modelCatalogSchema),
+    [request],
+  )
   const save = async () => {
-    if (busy || task.status === 'running') return
+    if (busy || !connected || task.status === 'running') return
     setBusy(true)
     setError('')
     try {
@@ -40,23 +57,15 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
         updateTask(workspace, task.id, (current) => {
           if (current.status === 'running')
             throw new Error('Stop the current turn before changing its model.')
-          const provider = lockedTaskProvider(current, workspace.agents)
-          if (provider && value.provider !== provider)
-            throw new Error(
-              `This conversation uses ${providers[provider].short}. Start a new task to use another provider.`,
-            )
-          const currentInstallation = lockedAcpInstallationId(current, workspace.agents)
-          if (
-            currentInstallation !== undefined &&
-            (value.acpInstallationId ?? '') !== currentInstallation
+          return changeTaskHarness(
+            current,
+            resolveScopedAgents(
+              snapshot?.defaults,
+              workspace.repositories.find((repo) => repo.id === current.repositoryId),
+              workspace.agents,
+            ),
+            value,
           )
-            throw new Error('Start a new task to use another ACP installation.')
-          return {
-            ...current,
-            harness: value,
-            agentId: '',
-            agentOverrides: undefined,
-          }
         }),
       )
       await flush()
@@ -81,13 +90,50 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
             Model, reasoning and access for this task. Saved agents stay unchanged.
           </DialogDescription>
         </DialogHeader>
-        <fieldset className="grid gap-3" disabled={busy || task.status === 'running'}>
-          <HarnessFields
-            value={value}
-            onChange={setValue}
-            lockedProvider={providerLock}
-            lockedInstallationId={installationLock}
-          />
+        <fieldset className="grid gap-3" disabled={!connected || busy || task.status === 'running'}>
+          {customAgent ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {customAgent.name} uses its saved instructions, skills and MCP servers.
+              </p>
+              <ModelSettings
+                preferences={snapshot?.defaults?.modelPreferences}
+                agent={{ ...customAgent, ...value }}
+                connected={connected}
+                loadModels={loadModels}
+                onChange={(next) => setValue(decode(taskHarnessSchema, next))}
+              />
+              <FormField label="Access">
+                <ChoicePicker
+                  aria-label="Harness access"
+                  value={value.permission}
+                  onValueChange={(permission) =>
+                    setValue({
+                      ...value,
+                      permission: decode(taskHarnessSchema.fields.permission, permission),
+                    })
+                  }
+                >
+                  {selectableAccessModes(value.permission).map((mode) => (
+                    <option
+                      key={mode.id}
+                      value={mode.id}
+                      disabled={!supportsAccess(value.provider, mode.id)}
+                    >
+                      {mode.name}
+                    </option>
+                  ))}
+                </ChoicePicker>
+              </FormField>
+            </>
+          ) : (
+            <HarnessFields
+              value={value}
+              onChange={setValue}
+              lockedProvider={providerLock}
+              lockedInstallationId={installationLock}
+            />
+          )}
           <Button
             disabled={
               !supportsAccess(value.provider, value.permission) ||

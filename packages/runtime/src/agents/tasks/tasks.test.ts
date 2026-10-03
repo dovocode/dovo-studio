@@ -1,5 +1,11 @@
 import { runtimeIntegration, waitForRuntime as waitForTask } from '../../testing/integration'
-import { decode, questionPromptSchema } from '@dovo/protocol'
+import {
+  decode,
+  questionPromptSchema,
+  conversationTurns,
+  recentTools,
+  conversationToolsByMessage,
+} from '@dovo/protocol'
 import type { AgentAdapter } from '../execution/types'
 import { afterEach, expect, it, vi } from 'vitest'
 import { startRuntime } from '../../index'
@@ -811,11 +817,29 @@ it.each([false, true])(
         run.onSession('native-session')
         if (runs.length === 1) {
           run.onText('Before steering')
+          run.onTextBoundary?.()
+          run.onEvent?.('item/started', {
+            item: {
+              type: 'commandExecution',
+              id: 'ownership-command',
+              command: 'echo before',
+              status: 'inProgress',
+            },
+          })
           run.onSteer?.(steer)
           await completed
           run.onSteer?.(undefined)
         }
         run.onText('After steering')
+        run.onEvent?.('item/completed', {
+          item: {
+            type: 'commandExecution',
+            id: 'ownership-command',
+            command: 'echo before',
+            status: 'completed',
+            aggregatedOutput: 'before',
+          },
+        })
       },
     })
     const task = s.tasks.create({
@@ -843,6 +867,10 @@ it.each([false, true])(
         .messages.slice(-3)
         .map((m) => m.text),
     ).toEqual(['Before steering', 'New direction', ''])
+    const live = s.store.task(task.id)
+    expect(conversationTurns(live)).toHaveLength(1)
+    expect(live.messages.every((message) => message.turnId === live.turns?.[0]?.id)).toBe(true)
+    expect(live.messages[1]?.textBreaks).toEqual([15])
     release()
     await execution.done
     expect(runs).toHaveLength(paused ? 1 : 2)
@@ -851,6 +879,14 @@ it.each([false, true])(
     expect(s.store.task(task.id).consumedMessageIds).toContain('live')
     expect(runs[1]?.prompt).toBe(paused ? undefined : 'user: Do this later')
     expect(runs[1]?.sessionId).toBe(paused ? undefined : 'native-session')
+    {
+      const finished = s.store.task(task.id)
+      const tools = recentTools(s.activity.list('', 'tool', 0, task.id).events)
+      expect(
+        conversationToolsByMessage(finished, tools).get(finished.messages[1]!.id),
+      ).toHaveLength(1)
+      expect(conversationToolsByMessage(finished, tools).has(finished.messages[3]!.id)).toBe(false)
+    }
   },
 )
 it('retains unconfirmed native steering in a paused queue and does not automatically replay it', async () => {

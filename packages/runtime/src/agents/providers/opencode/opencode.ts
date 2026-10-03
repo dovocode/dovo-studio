@@ -314,6 +314,13 @@ const remoteAdapter: AgentAdapter = {
             streamed = true
             run.onText(event.properties.delta)
           }
+          if (
+            event.type === 'message.part.updated' &&
+            event.properties.sessionID === sessionID &&
+            event.properties.part.type === 'text' &&
+            event.properties.part.time?.end !== undefined
+          )
+            run.onTextBoundary?.()
           if (event.type === 'permission.asked' && event.properties.sessionID === sessionID) {
             const allow =
               run.agent.permission !== 'read-only' &&
@@ -455,7 +462,11 @@ const remoteAdapter: AgentAdapter = {
         run.onEvent?.('prompt.result', response.data)
         if (response.data.info.error) throw new Error(JSON.stringify(response.data.info.error))
         if (!streamed)
-          for (const part of response.data.parts) if (part.type === 'text') run.onText(part.text)
+          for (const part of response.data.parts)
+            if (part.type === 'text') {
+              run.onText(part.text)
+              run.onTextBoundary?.()
+            }
       } catch (error) {
         abort()
         throw error

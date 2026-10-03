@@ -15,6 +15,7 @@ export const activityEventSchema = mutableStruct({
 export const activitySchema = mutableStruct({ events: mutableArray(activityEventSchema) })
 const toolPayload = mutableStruct({
   turnId: Schema.String,
+  messageId: Schema.optional(Schema.String),
   toolId: Schema.String,
   status: Schema.String,
   textOffset: Schema.optional(
@@ -55,6 +56,7 @@ type Tool = Event & {
   startedAt?: string
   status: string
   turnId?: string
+  messageId?: string
   inputPayload?: string
   textOffset?: number
 }
@@ -113,6 +115,7 @@ export function recentTools(events: Event[]): Tool[] {
           tool.success && tool.data.toolId ? `${tool.data.turnId}:${tool.data.toolId}` : event.id,
         status: tool.success ? tool.data.status : 'recorded',
         turnId: tool.success ? tool.data.turnId : undefined,
+        messageId: tool.success ? tool.data.messageId : undefined,
         textOffset: tool.success ? tool.data.textOffset : undefined,
       }
     })
@@ -142,6 +145,9 @@ export function recentTools(events: Event[]): Tool[] {
         textOffset: pending(event.status)
           ? (event.textOffset ?? previous.textOffset)
           : previous.textOffset,
+        messageId: pending(event.status)
+          ? (event.messageId ?? previous.messageId)
+          : previous.messageId,
       })
     }
   }
@@ -200,7 +206,8 @@ export function createRecentTools() {
         old.startedAt === tool.startedAt &&
         old.status === tool.status &&
         old.inputPayload === tool.inputPayload &&
-        old.textOffset === tool.textOffset
+        old.textOffset === tool.textOffset &&
+        old.messageId === tool.messageId
         ? old
         : tool
     })

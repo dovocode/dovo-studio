@@ -357,8 +357,18 @@ ${
               },
             ],
             messages: [
-              ...t.messages,
-              { id: assistantId, role: 'assistant', text: '', createdAt: new Date().toISOString() },
+              ...t.messages.map((message, index) =>
+                index > lastAssistant && message.role === 'user' && !message.turnId
+                  ? { ...message, turnId }
+                  : message,
+              ),
+              {
+                id: assistantId,
+                turnId,
+                role: 'assistant',
+                text: '',
+                createdAt: new Date().toISOString(),
+              },
             ],
           }),
           undefined,
@@ -428,15 +438,18 @@ ${
         const textOffset = () =>
           (this.store.task(id).messages.find((message) => message.id === assistantId)?.text
             .length ?? 0) + buffer.length
-        const reasoningOffsets = new Map<string, number>()
+        const reasoningOffsets = new Map<string, { offset: number; messageId: string }>()
         const reasoning = new ReasoningEvents(agent.provider, (row) => {
-          const offset = reasoningOffsets.get(row.toolId) ?? textOffset()
-          reasoningOffsets.set(row.toolId, offset)
+          const position = reasoningOffsets.get(row.toolId) ?? {
+            offset: textOffset(),
+            messageId: assistantId,
+          }
+          reasoningOffsets.set(row.toolId, position)
           this.activity?.add(
             'reasoning',
             id,
             'Reasoning',
-            { turnId, textOffset: offset, ...row },
+            { turnId, messageId: position.messageId, textOffset: position.offset, ...row },
             `reasoning:${id}:${turnId}:${row.toolId}`,
           )
         })
@@ -703,9 +716,10 @@ ${
                         queue: t.queue?.filter((m) => m.id !== messageId),
                         messages: [
                           ...t.messages,
-                          message,
+                          { ...message, turnId },
                           {
                             id: nextAssistantId,
+                            turnId,
                             role: 'assistant',
                             text: '',
                             createdAt: new Date().toISOString(),
@@ -802,6 +816,7 @@ ${
                         {
                           at,
                           turnId,
+                          messageId: assistantId,
                           textOffset: textOffset(),
                           sessionId: currentSession,
                           provider: agent.provider,
@@ -840,6 +855,7 @@ ${
                   if (tool && buffer) flush()
                   if (reasoningOnly && !tool) return
                   const offset = textOffset()
+                  const messageId = assistantId
                   const write = () =>
                     this.activity?.add(
                       tool ? 'tool' : 'agent-event',
@@ -847,6 +863,7 @@ ${
                       tool?.title || `${agent.provider} · ${name}`,
                       {
                         turnId,
+                        messageId,
                         ...tool,
                         textOffset: offset,
                         event: safeReasoningEvent(payload),
@@ -896,6 +913,7 @@ ${
                 flush()
                 this.activity?.add('tool', id, `Hook · ${result.hook.name}`, {
                   turnId,
+                  messageId: assistantId,
                   textOffset: textOffset(),
                   toolId: randomUUID(),
                   category: 'command',
@@ -916,6 +934,7 @@ ${
                     ...task.messages,
                     {
                       id: nextAssistantId,
+                      turnId,
                       role: 'assistant',
                       text: '',
                       createdAt: new Date().toISOString(),

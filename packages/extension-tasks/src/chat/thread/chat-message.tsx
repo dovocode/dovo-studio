@@ -9,7 +9,6 @@ import {
 import { turnSummary, type PendingMessage, type recentTools } from '@dovo/protocol'
 import { Message, MessageContent, MessageResponse, Button } from '@dovo/studio-ui'
 import { Star } from 'lucide-react'
-import { TurnWork } from './turn-work'
 import { threadTimeline, finalReplyIndex } from './thread-timeline'
 import { TurnCheckpoint } from './turn-checkpoint'
 import { MessageAttachments } from '../composer/message-attachments'
@@ -24,6 +23,7 @@ export const ChatMessage = memo(function ChatMessage({
   message,
   turn,
   tools,
+  summaryTools = tools,
   compactions,
   highlighted,
   pending,
@@ -33,11 +33,15 @@ export const ChatMessage = memo(function ChatMessage({
   request,
   onTerminal,
   onBookmark,
+  workOpen = true,
+  final = true,
+  footer = true,
 }: {
   taskId: string
   message: Task['messages'][number]
   turn?: TaskTurn
   tools: ReturnType<typeof recentTools>
+  summaryTools?: ReturnType<typeof recentTools>
   compactions: NonNullable<Task['compactions']>
   highlighted: boolean
   pending: PendingMessage | null
@@ -47,16 +51,21 @@ export const ChatMessage = memo(function ChatMessage({
   request: ReturnType<typeof useWorkspace>['request']
   onTerminal?: (terminalId: string) => void
   onBookmark?: (messageId: string, bookmarked: boolean) => void
+  workOpen?: boolean
+  final?: boolean
+  footer?: boolean
 }) {
   const [bookmarkError, setBookmarkError] = useState('')
-  const hasTurn = !!turn
   const timeline = useMemo(
     () =>
-      hasTurn && message.role === 'assistant'
+      message.role === 'assistant'
         ? threadTimeline(message.text, tools, compactions, message.textBreaks)
         : null,
-    [hasTurn, message.role, message.text, message.textBreaks, tools, compactions],
+    [message.role, message.text, message.textBreaks, tools, compactions],
   )
+  const finalIndex = timeline ? finalReplyIndex(timeline, !final || turn?.status === 'running') : -1
+  if (message.role === 'assistant' && !workOpen && !final && !footer) return null
+  const ownsFooter = turn?.assistantId === message.id && (workOpen || footer)
   const showContent =
     !!message.text ||
     !!message.file ||
@@ -78,7 +87,7 @@ export const ChatMessage = memo(function ChatMessage({
         </p>
       )}
       <div className="group/message flex min-w-0 flex-col gap-2">
-        {timeline && turn ? (
+        {timeline ? (
           <>
             {(message.file || message.attachments?.length || message.review || message.plan) && (
               <MessageContent>
@@ -100,40 +109,33 @@ export const ChatMessage = memo(function ChatMessage({
                 )}
               </MessageContent>
             )}
-            <TurnWork
-              turn={turn}
-              reveal={highlighted}
-              finalIndex={finalReplyIndex(timeline, turn.status === 'running')}
-            >
-              {timeline.map((block, index) =>
-                block.kind === 'activity' ? (
-                  <TaskActivity
-                    key={block.key}
-                    turn={index === 0 ? turn : undefined}
-                    status={turn.status}
-                    tools={block.tools}
-                  />
-                ) : block.kind === 'compaction' ? (
-                  <p
-                    key={`compaction-${block.event.at}`}
-                    role="status"
-                    className="text-[0.6875rem] text-muted-foreground"
+            {timeline.map((block, index) =>
+              !workOpen && index !== finalIndex ? null : block.kind === 'activity' ? (
+                <TaskActivity key={block.key} status={turn?.status} tools={block.tools} />
+              ) : block.kind === 'compaction' ? (
+                <p
+                  key={`compaction-${block.event.at}`}
+                  role="status"
+                  className="text-[0.6875rem] text-muted-foreground"
+                >
+                  Context compacted {new Date(block.event.at).toLocaleString()} ·{' '}
+                  {block.event.trigger === 'auto' ? 'Automatic' : 'Manual'}
+                </p>
+              ) : (
+                <MessageContent key={`text-${block.offset}`}>
+                  <MessageResponse
+                    isStreaming={
+                      turn?.status === 'running' &&
+                      turn.assistantId === message.id &&
+                      index === timeline.length - 1
+                    }
                   >
-                    Context compacted {new Date(block.event.at).toLocaleString()} ·{' '}
-                    {block.event.trigger === 'auto' ? 'Automatic' : 'Manual'}
-                  </p>
-                ) : (
-                  <MessageContent key={`text-${block.offset}`}>
-                    <MessageResponse
-                      isStreaming={turn.status === 'running' && index === timeline.length - 1}
-                    >
-                      {block.text}
-                    </MessageResponse>
-                  </MessageContent>
-                ),
-              )}
-            </TurnWork>
-            {!message.text && turn.status !== 'running' && !compactions.length && (
+                    {block.text}
+                  </MessageResponse>
+                </MessageContent>
+              ),
+            )}
+            {workOpen && !message.text && turn?.status !== 'running' && !compactions.length && (
               <MessageContent>
                 <span className="text-xs text-muted-foreground">
                   {message.attachments?.length ? '' : 'No response text'}
@@ -219,32 +221,39 @@ export const ChatMessage = memo(function ChatMessage({
             {message.role === 'assistant' && turn?.status !== 'running' && onTerminal && (
               <RunInTerminal taskId={taskId} text={message.text} onRan={onTerminal} />
             )}
-            {turn && turn.status !== 'running' && <ForkTurn taskId={taskId} turnId={turn.id} />}
-            {turn && turn.status !== 'running' && !taskRunning && latestTurnId === turn.id && (
-              <RetryTurn taskId={taskId} turnId={turn.id} />
+            {ownsFooter && turn && turn.status !== 'running' && (
+              <ForkTurn taskId={taskId} turnId={turn.id} />
             )}
+            {ownsFooter &&
+              turn &&
+              turn.status !== 'running' &&
+              !taskRunning &&
+              latestTurnId === turn.id && <RetryTurn taskId={taskId} turnId={turn.id} />}
           </div>
         )}
       </div>
-      {turn?.error && (
+      {ownsFooter && turn?.error && (
         <p role="alert" className="text-xs text-destructive">
           {turn.error}
         </p>
       )}
-      {turn && <TurnCheckpoint turn={turn} taskId={taskId} taskRunning={taskRunning} />}
-      {turn?.checkpoint?.linked?.map((linked) => (
-        <TurnCheckpoint
-          key={linked.checkoutId}
-          turn={{ ...turn, checkpoint: linked }}
-          taskId={taskId}
-          taskRunning={taskRunning}
-          checkoutId={linked.checkoutId}
-          projectName={`${linked.repositoryName ?? linked.repositoryId} · ${linked.branch ?? 'Linked checkout'}`}
-        />
-      ))}
-      {turn && turn.status !== 'running' && (
+      {ownsFooter && turn && (
+        <TurnCheckpoint turn={turn} taskId={taskId} taskRunning={taskRunning} />
+      )}
+      {ownsFooter &&
+        turn?.checkpoint?.linked?.map((linked) => (
+          <TurnCheckpoint
+            key={linked.checkoutId}
+            turn={{ ...turn, checkpoint: linked }}
+            taskId={taskId}
+            taskRunning={taskRunning}
+            checkoutId={linked.checkoutId}
+            projectName={`${linked.repositoryName ?? linked.repositoryId} · ${linked.branch ?? 'Linked checkout'}`}
+          />
+        ))}
+      {ownsFooter && turn && turn.status !== 'running' && (
         <p className="text-[0.6875rem] text-muted-foreground" aria-label="Turn summary">
-          {turnSummary(turn, tools, false)}
+          {turnSummary(turn, summaryTools, false)}
         </p>
       )}
     </Message>

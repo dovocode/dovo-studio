@@ -13,7 +13,7 @@ const built = await build({
 })
 const mocks = {
   '@dovo/studio-core': `import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
-  '@dovo/studio-ui': `import React from 'react';export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Input=({className,...props})=><input {...props}/>;export const Dialog=({children})=><section>{children}</section>;export const DialogContent=Dialog;export const DialogDescription=({children})=><p>{children}</p>;export const DialogTitle=({children})=><h1>{children}</h1>;export const MessageResponse=({children})=><p>{children}</p>;`,
+  '@dovo/studio-ui': `import React from 'react';export const Button=({children,onClick,disabled,size,variant,...props})=><button onClick={onClick} disabled={disabled} {...props}>{children}</button>;export const cn=(...values)=>values.filter(Boolean).join(' ');export const Tooltip=({children})=><>{children}</>;export const TooltipTrigger=({children})=>children;export const TooltipContent=()=>null;export const Input=({className,...props})=><input {...props}/>;export const Dialog=({children})=><section>{children}</section>;export const DialogContent=Dialog;export const DialogDescription=({children})=><p>{children}</p>;export const DialogTitle=({children})=><h1>{children}</h1>;export const MessageResponse=({children})=><p>{children}</p>;`,
   '../../runtime/connection/provider': `export const useRuntime=()=>({read:window.artifactRequest,connected:true,activeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});`,
   'react-native': `import React from 'react';export const View=({children,style})=>{const value=Object.assign({},...(Array.isArray(style)?style:[style]));return <div style={{...value,display:value.flexDirection?'flex':undefined}}>{children}</div>};export const ScrollView=View;export const Modal=View;export const ActivityIndicator=()=> <p>Loading</p>;export const Pressable=({children,onPress,accessibilityLabel})=><button onClick={onPress} aria-label={accessibilityLabel}>{children}</button>;export const Alert={alert:()=>{}};export const StyleSheet={create:x=>x};export const Platform={OS:'ios'};`,
   'react-native-safe-area-context': `export {View as SafeAreaView,View as SafeAreaProvider} from 'react-native';`,
@@ -23,6 +23,7 @@ const mocks = {
   'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
   './text': `import React from 'react';export const Text=({children})=><span>{children}</span>;`,
   './markdown': `import React from 'react';export const Markdown=({text})=><p>{text}</p>;`,
+  './open-link': `export const openAppLink=async url=>{window.openedArtifactLinks.push(url)};`,
   '../controls/action': `import React from 'react';export const Action=({label,onPress,disabled})=><button onClick={onPress} disabled={disabled}>{label}</button>;`,
   '../controls/icon': `export const Icon=()=>null;`,
   '../controls/icon-button': `import React from 'react';export const IconButton=({label,icon,onPress,disabled})=><button aria-label={label} data-icon={icon} disabled={disabled} onClick={onPress} style={{width:44,height:44}}><span aria-hidden="true">◇</span></button>;`,
@@ -33,7 +34,7 @@ const interfaces = await Promise.all(
       platform === 'library'
         ? `import {createRoot} from 'react-dom/client';import {useState} from 'react';import ArtifactsView from './src/artifacts-view.tsx';function App(){const[tick,setTick]=useState(0);window.updateLibrary=()=>setTick(x=>x+1);return <ArtifactsView/>}createRoot(document.getElementById('app')).render(<App/>);`
         : platform === 'desktop'
-          ? `import {createRoot} from 'react-dom/client';import {ArtifactLibrary} from './src/chat/artifacts.tsx';createRoot(document.getElementById('app')).render(<ArtifactLibrary taskId="thread"/>);`
+          ? `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {ThreadArtifacts} from './src/chat/artifacts.tsx';import {TaskTools} from './src/detail/task-tools.tsx';function App(){const[surface,setSurface]=useState('chat'),[taskId,setTaskId]=useState('thread');window.switchArtifactThread=setTaskId;return <><TaskTools surface={surface} onSelect={setSurface} hasDiff={false} artifactsEnabled={window.artifactsEnabled}/>{surface==='artifacts'&&<ThreadArtifacts key={taskId} taskId={taskId}/>}</>}createRoot(document.getElementById('app')).render(<App/>);`
           : `import {createRoot} from 'react-dom/client';import {ArtifactCard} from './src/ui/content/artifacts.tsx';createRoot(document.getElementById('app')).render(<ArtifactCard reference={{id:'notes',taskId:'thread',title:'Notes',format:'markdown',revision:2}}/>);`
     const result = await build({
       stdin: {
@@ -129,6 +130,8 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     await view.evaluate(() => {
       window.artifactsEnabled = true
       window.artifactCalls = []
+      window.openedArtifactLinks = []
+      window.artifactLinksOnly = false
       const notes = {
         id: 'notes',
         taskId: 'thread',
@@ -147,8 +150,28 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       }
       window.artifactRequest = async (path, input) => {
         window.artifactCalls.push({ path, input })
-        if (path.endsWith('/list')) return { artifacts: [notes, interactive] }
-        const metadata = input.id === 'notes' ? notes : interactive
+        if (path.endsWith('/list'))
+          return {
+            artifacts: window.artifactLinksOnly ? [] : [notes, interactive],
+            links:
+              input.taskId === 'thread'
+                ? [
+                    {
+                      provider: 'claude',
+                      title: 'Claude design',
+                      url: 'https://claude.ai/code/artifact/design-id',
+                    },
+                    {
+                      provider: 'chatgpt',
+                      title: 'Sales dashboard',
+                      url: 'https://sales.example.chatgpt.site/',
+                    },
+                  ]
+                : [],
+          }
+        if (input.id.startsWith('http'))
+          throw Error('Hosted links must not read Dovo artifact bodies')
+        const metadata = { ...(input.id === 'notes' ? notes : interactive), taskId: input.taskId }
         if (path.endsWith('/versions'))
           return {
             versions: metadata.id === 'notes' ? [notes, { ...notes, revision: 1 }] : [interactive],
@@ -161,7 +184,9 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
               metadata.id === 'notes'
                 ? input.revision === 1
                   ? 'Earlier notes'
-                  : 'Current notes'
+                  : input.taskId === 'other-thread'
+                    ? 'Other thread notes'
+                    : 'Current notes'
                 : '<button id="interactive">Interactive artifact</button>',
           },
         }
@@ -186,6 +211,16 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       })
       .click()
     await view.getByText('Current notes', { exact: true }).waitFor()
+    if (ui.platform === 'desktop') {
+      assert.equal(await view.getByRole('region', { name: 'Thread artifacts' }).count(), 1)
+      assert.equal(await view.getByRole('dialog').count(), 0)
+      assert.ok(
+        (await view.evaluate(() => window.artifactCalls)).every(
+          (call) => call.input.taskId === 'thread',
+        ),
+      )
+    }
+
     if (ui.platform === 'mobile') {
       await view.setViewportSize({ width: 320, height: 700 })
       const boxes = await Promise.all(
@@ -236,6 +271,86 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     await view
       .getByText('<button id="interactive">Interactive artifact</button>', { exact: true })
       .waitFor()
+
+    const chooseLink = async (title, url) => {
+      if (ui.platform === 'desktop')
+        await view.getByLabel('Artifact', { exact: true }).selectOption(url)
+      else {
+        await view.getByRole('button', { name: 'Choose artifact', exact: true }).click()
+        await view.getByText(title, { exact: true }).click()
+      }
+    }
+    await chooseLink('Claude design', 'https://claude.ai/code/artifact/design-id')
+    const openClaude = view.getByRole(ui.platform === 'desktop' ? 'link' : 'button', {
+      name: 'Open Claude artifact',
+      exact: true,
+    })
+    await openClaude.waitFor()
+    if (ui.platform === 'desktop') {
+      assert.equal(
+        await openClaude.getAttribute('href'),
+        'https://claude.ai/code/artifact/design-id',
+      )
+      assert.equal(await view.getByLabel('Artifact version').count(), 0)
+      assert.equal(await view.getByRole('button', { name: 'Download', exact: true }).count(), 0)
+    } else {
+      assert.equal(
+        await view
+          .getByRole('button', { name: 'View artifact source code', exact: true })
+          .isDisabled(),
+        true,
+      )
+      await openClaude.click()
+      assert.deepEqual(await view.evaluate(() => window.openedArtifactLinks), [
+        'https://claude.ai/code/artifact/design-id',
+      ])
+    }
+    await chooseLink('Sales dashboard', 'https://sales.example.chatgpt.site/')
+    await view
+      .getByRole(ui.platform === 'desktop' ? 'link' : 'button', {
+        name: 'Open ChatGPT Site',
+        exact: true,
+      })
+      .waitFor()
+    assert.ok(
+      !(await view.evaluate(() => window.artifactCalls)).some((call) =>
+        call.input.id?.startsWith('http'),
+      ),
+    )
+    await view.evaluate(() => (window.artifactLinksOnly = true))
+    await view
+      .getByRole('button', {
+        name: ui.platform === 'desktop' ? 'Refresh' : 'Refresh artifact',
+        exact: true,
+      })
+      .click()
+    await view
+      .getByRole(ui.platform === 'desktop' ? 'link' : 'button', {
+        name: 'Open ChatGPT Site',
+        exact: true,
+      })
+      .waitFor()
+    assert.equal(await view.getByText(/No artifacts yet/).count(), 0)
+    await view.evaluate(() => (window.artifactLinksOnly = false))
+
+    if (ui.platform === 'desktop') {
+      await view.evaluate(() => {
+        window.artifactCalls = []
+        window.switchArtifactThread('other-thread')
+      })
+      await view.getByText('Other thread notes', { exact: true }).waitFor()
+      assert.ok(
+        (await view.evaluate(() => window.artifactCalls)).every(
+          (call) => call.input.taskId === 'other-thread',
+        ),
+      )
+      assert.equal(await view.getByLabel('Artifact', { exact: true }).inputValue(), 'notes')
+      assert.equal(await view.getByLabel('Artifact version').inputValue(), '')
+      assert.equal(
+        await view.getByRole('link', { name: 'Open ChatGPT Site', exact: true }).count(),
+        0,
+      )
+    }
     await view.close()
     const disabled = await browser.newPage()
     await disabled.setContent('<div id="app"></div>')
@@ -246,7 +361,12 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       }
     })
     await disabled.addScriptTag({ content: ui.code })
-    assert.equal(await disabled.getByRole('button').count(), 0)
+    assert.equal(
+      await disabled
+        .getByRole('button', ui.platform === 'desktop' ? { name: 'Artifacts', exact: true } : {})
+        .count(),
+      0,
+    )
     await disabled.close()
   }
   const library = await browser.newPage()
@@ -285,7 +405,11 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     }
     window.artifactRequest = async (path, input, host) => {
       window.previewHosts.push(host)
-      const artifact = { ...metadata, id: input.id, content: 'Content from Host ' + host }
+      const artifact = {
+        ...metadata,
+        id: input.id ?? 'shared-' + host,
+        content: 'Content from Host ' + host,
+      }
       return path.endsWith('/versions')
         ? { versions: [artifact] }
         : path.endsWith('/list')
@@ -312,7 +436,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
   )
   await library.close()
   console.log(
-    'Artifact preview: interactive HTML, SVG, desktop/mobile isolation, blocked external requests, lazy loading, version selection and source views passed.',
+    'Artifacts: hosted Claude/Sites links on desktop and mobile, links-only threads, thread isolation, interactive HTML/SVG, blocked external requests, lazy loading, versions and source views passed.',
   )
 } finally {
   await browser.close()

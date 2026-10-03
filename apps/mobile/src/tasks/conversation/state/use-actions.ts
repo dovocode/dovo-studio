@@ -24,7 +24,7 @@ import { useComposerDictation } from '../../composer/use-composer-dictation'
 import { createSendAttempts, type SendAttempt } from '../../composer/send-attempts'
 const sendAttempts = createSendAttempts(randomUUID)
 export function useConversationActions(task: Task) {
-  const { call, connected, snapshot, activeId, readEffect, callEffect } = useRuntime(),
+  const { call, connected, snapshot, activeId, profile, readEffect, callEffect } = useRuntime(),
     storedDraft = useDraft(
       task.id,
       task.draft,
@@ -269,6 +269,7 @@ export function useConversationActions(task: Task) {
     )
   }
   return {
+    threadScope: JSON.stringify([profile?.connection.address, profile?.connection.token, task.id]),
     pendingMessage,
     draftAttachments:
       pendingMessage?.taskId === task.id && pendingMessage.state === 'sending'

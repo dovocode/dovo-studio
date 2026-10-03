@@ -81,6 +81,29 @@ export function githubPullTarget(input: string) {
   }
 }
 
+/** Build a thread link from a full PR URL, including GitHub's detail tabs. */
+export function threadPullLink(
+  input: string,
+): NonNullable<Task['linkedPullRequests']>[number] | null {
+  const github = githubPullTarget(input)
+  try {
+    const reference = pullReference(github?.url ?? input)
+    if (!reference.url) return null
+    return {
+      number: reference.number,
+      url: reference.url,
+      title: `PR #${reference.number}`,
+      ...(github ? { provider: 'github' as const } : {}),
+      repositoryUrl: reference.url.replace(
+        /\/(?:-\/)?(?:pull|pulls|pull-requests|pullrequest|merge_requests)\/\d+$/i,
+        '',
+      ),
+    }
+  } catch {
+    return null
+  }
+}
+
 export function addTaskPullLinks(task: Task, pulls: NonNullable<Task['linkedPullRequests']>): Task {
   const links = new Map((task.linkedPullRequests ?? []).map((pull) => [pull.url, pull]))
   for (const pull of pulls) if (task.pullRequest?.url !== pull.url) links.set(pull.url, pull)

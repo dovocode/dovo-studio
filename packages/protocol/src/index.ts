@@ -1,6 +1,7 @@
 export * from './workspace.js'
 export * from './tasks/task-budget.js'
 export * from './conversation/workflow/turn-summary.js'
+export * from './conversation/timeline.js'
 export * from './conversation/workflow/plan-limits.js'
 export * from './runtime/connection/runtime.js'
 export * from './runtime/connection/windows-runtime.js'
@@ -144,6 +145,7 @@ export {
 } from './runtime/connection/live-sync.js'
 export * from './conversation/mcp-apps.js'
 export * from './conversation/artifacts.js'
+export * from './conversation/artifact-links.js'
 export * from './conversation/mcp-app-downloads.js'
 
 export * from './conversation/presentation/turn-duration.js'

@@ -70,7 +70,16 @@ export const artifactReadSchema = mutableStruct({
   id: uuidSchema,
   revision: Schema.optional(revisionSchema),
 })
-export const artifactListSchema = mutableStruct({ artifacts: mutableArray(artifactMetadataSchema) })
+export const artifactLinkSchema = mutableStruct({
+  url: Schema.String,
+  title: titleSchema,
+  provider: Schema.Literal('claude', 'chatgpt'),
+})
+export type ArtifactLink = Schema.Schema.Type<typeof artifactLinkSchema>
+export const artifactListSchema = mutableStruct({
+  artifacts: mutableArray(artifactMetadataSchema),
+  links: Schema.optional(mutableArray(artifactLinkSchema)),
+})
 export const artifactLibraryEntrySchema = mutableStruct({
   ...artifactMetadataSchema.fields,
   threadTitle: Schema.String,

@@ -15,7 +15,12 @@ import { RegistryContext, useAtomValue } from '@effect-atom/atom-react'
 import { applicationState } from '@dovo/client-runtime'
 import { AssistantRuntimeProvider } from '@assistant-ui/react-native'
 import { useExternalStoreRuntime } from '@assistant-ui/core/react'
-import { startingConversationMessage, type PendingMessage, type Task } from '@dovo/protocol'
+import {
+  startingConversationMessage,
+  conversationPresentation,
+  type PendingMessage,
+  type Task,
+} from '@dovo/protocol'
 import { useConversationActions } from './use-actions'
 import { useToolActivity } from './use-tool-activity'
 import { createConversationMessages, convertConversationMessage } from './messages'
@@ -29,6 +34,7 @@ type Conversation = {
   visible: boolean
   history: ReturnType<typeof useConversationHistory<Task>>
   task: Task
+  presentation: ReturnType<typeof conversationPresentation>
   actions: ReturnType<typeof useConversationActions>
   send: (mode?: 'queue' | 'steer') => void
   stop: () => void
@@ -52,10 +58,12 @@ export function useConversationSelector<A>(selector: (value: Conversation) => A)
 }
 export function useConversationTurn(assistantId: string) {
   return useConversationSelector(
-    useCallback(
-      (value: Conversation) => value.task.turns?.find((turn) => turn.assistantId === assistantId),
-      [assistantId],
-    ),
+    useCallback((value: Conversation) => value.presentation.get(assistantId)?.turn, [assistantId]),
+  )
+}
+export function useConversationPresentation(messageId: string) {
+  return useConversationSelector(
+    useCallback((value: Conversation) => value.presentation.get(messageId), [messageId]),
   )
 }
 export function useTaskConversation() {
@@ -79,6 +87,33 @@ export function ConversationProvider({
 }) {
   const history = useConversationHistory(liveTask)
   const task = history.task
+  const retainPresentation = useMemo(() => {
+    let previous: ReturnType<typeof conversationPresentation> = new Map()
+    return (next: ReturnType<typeof conversationPresentation>) => {
+      for (const [id, item] of next) {
+        const old = previous.get(id)
+        if (
+          old &&
+          old.groupId === item.groupId &&
+          old.header === item.header &&
+          old.final === item.final &&
+          old.footer === item.footer &&
+          old.turn === item.turn &&
+          old.groupTurn?.id === item.groupTurn?.id &&
+          old.groupTurn?.startedAt === item.groupTurn?.startedAt &&
+          old.groupTurn?.finishedAt === item.groupTurn?.finishedAt &&
+          old.groupTurn?.status === item.groupTurn?.status
+        )
+          next.set(id, old)
+      }
+      previous = next
+      return next
+    }
+  }, [])
+  const presentation = useMemo(
+    () => retainPresentation(conversationPresentation(task)),
+    [task.messages, task.turns, retainPresentation],
+  )
   const { carMode, readRepliesAloud, speechLanguage, speechVoice, speechRate } =
     useMobilePreferences()
   const speechAvailable =
@@ -183,14 +218,13 @@ export function ConversationProvider({
     pendingMessage,
   ])
   const legacyEvents = useMemo(() => {
-    const messageIds = new Set(task.messages.map((message) => message.id))
     const visibleTurns = new Set(
-      task.turns?.filter((turn) => messageIds.has(turn.assistantId)).map((turn) => turn.id),
+      [...presentation.values()].flatMap((item) => (item.turn ? [item.turn.id] : [])),
     )
     return taskToolEvents(task, activity.events).filter(
       (event) => !event.turnId || !visibleTurns.has(event.turnId),
     )
-  }, [activity.events, task.id, task.status, task.turns, task.messages])
+  }, [activity.events, task.id, task.status, task.turns, presentation])
   const runtime = useExternalStoreRuntime({
     messages,
     convertMessage: convertConversationMessage,
@@ -228,13 +262,16 @@ export function ConversationProvider({
         ...previous,
         [turnId]: !(
           previous[turnId] ??
-          currentTask.current.turns?.find((turn) => turn.id === turnId)?.status === 'completed'
+          [...conversationPresentation(currentTask.current).values()].find(
+            (item) => item.groupId === turnId,
+          )?.groupTurn?.status === 'completed'
         ),
       })),
     [setCollapsedTurns],
   )
   const value: Conversation = {
     task,
+    presentation,
     history,
     visible,
     actions,

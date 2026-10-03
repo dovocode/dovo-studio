@@ -4,6 +4,7 @@ import { FileIcon, DiffAmounts } from '../files/presentation'
 import { Check, ChevronDown } from 'lucide-react'
 import type { ChangedFile } from '@dovo/studio-core'
 import { Button, cn } from '@dovo/studio-ui'
+import { ResizableSidebar } from '../detail/resizable-sidebar'
 
 type Folder = { name: string; folders: Map<string, Folder>; files: ChangedFile[] }
 type DiffStat = { path: string; additions: number; deletions: number }
@@ -133,8 +134,13 @@ export function FileTree({
     [files, filter],
   )
   return (
-    <aside
-      className="flex w-64 max-w-[40%] shrink-0 flex-col border-l bg-sidebar"
+    <ResizableSidebar
+      preference="diffFilesSidebarWidth"
+      side="right"
+      label="diff files pane"
+      maxFraction={0.4}
+      maxWidth={640}
+      className="flex min-h-0 flex-col border-l bg-sidebar"
       aria-label="Changed files"
     >
       <div className="flex h-10 shrink-0 items-center justify-between border-b px-3 text-xs font-medium">
@@ -159,6 +165,6 @@ export function FileTree({
           onSelect={onSelect}
         />
       </div>
-    </aside>
+    </ResizableSidebar>
   )
 }

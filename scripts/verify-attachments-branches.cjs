@@ -41,12 +41,11 @@ app.on('browser-window-created', (_event, window) =>
         option.click(); await wait(()=>!document.querySelector('[role="listbox"]'));
       };
         const fill=(el,value)=>{Object.getOwnPropertyDescriptor(el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}))};
-        button('Tasks').click();await wait(()=>button('Task actions'));button('Task actions').click();await wait(()=>button('Task settings'));
-        button('Task settings').click();await wait(()=>button('Branches'));button('Branches').click();await wait(()=>button('Target branch')&&!button('Target branch').disabled&&button('Create branch'));
+        button('Tasks').click();await wait(()=>button('Git actions and pull requests'));button('Git actions and pull requests').click();await wait(()=>document.querySelector('[role="menuitem"]'));[...document.querySelectorAll('[role="menuitem"]')].find(el=>el.innerText==='Advanced Git actions…').click();await wait(()=>button('Branches'));button('Branches').click();await wait(()=>button('Target branch')&&!button('Target branch').disabled&&button('Create branch'));
         const initial=await call('/api/scm/branches',{repositoryId:'repo'});
         fill(document.querySelector('[aria-label="New branch name"]'),'feature/attachments');await wait(()=>!button('Create branch').disabled);button('Create branch').click();
         await wait(async()=>(await snapshot()).workspace.repositories.find(r=>r.id==='repo').branch==='feature/attachments');
-        button('Save task settings').click();await wait(()=>!document.querySelector('[role="dialog"]'));
+        button('Close').click();await wait(()=>!document.querySelector('[role="dialog"]'));
         const picker=document.querySelector('[aria-label="Choose attachments"]');const chosen=new DataTransfer();chosen.items.add(new File(['Attachment fixture context'],'context.txt',{type:'text/plain'}));picker.files=chosen.files;picker.dispatchEvent(new Event('change',{bubbles:true}));
         await wait(()=>button('Preview context.txt')&&!button('Attach files').disabled);
         const pasted=new DataTransfer();pasted.items.add(new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1kAAAAASUVORK5CYII='),c=>c.charCodeAt(0))],'picture.png',{type:'image/png'}));
@@ -59,9 +58,9 @@ app.on('browser-window-created', (_event, window) =>
         fill(document.querySelector('[aria-label="Message task"]'),'Attachment verification with image');await wait(()=>button('Send to agent')&&!button('Send to agent').disabled);button('Send to agent').click();
         await wait(()=>document.body.innerText.includes('Attachment inputs verified.'));await wait(async()=>(await snapshot()).workspace.tasks.find(t=>t.id==='attachment-task').status==='review');
         const task=(await snapshot()).workspace.tasks.find(t=>t.id==='attachment-task');if(task.messages.find(m=>m.role==='user').attachments.length!==2||task.draftAttachments.length)throw new Error('Attachments were lost or draft was not cleared');
-        button('Task actions').click();await wait(()=>button('Task settings'));button('Task settings').click();await wait(()=>button('Branches'));button('Branches').click();await wait(()=>button('Target branch')&&!button('Target branch').disabled);
+        button('Git actions and pull requests').click();await wait(()=>document.querySelector('[role="menuitem"]'));[...document.querySelectorAll('[role="menuitem"]')].find(el=>el.innerText==='Advanced Git actions…').click();await wait(()=>button('Branches'));button('Branches').click();await wait(()=>button('Target branch')&&!button('Target branch').disabled);
         await pick('Target branch','refs/heads/'+initial.current);await wait(()=>!button('Switch').disabled);button('Switch').click();
-        await wait(async()=>(await snapshot()).workspace.repositories.find(r=>r.id==='repo').branch===initial.current);button('Save task settings').click();await wait(()=>!document.querySelector('[role="dialog"]'));
+        await wait(async()=>(await snapshot()).workspace.repositories.find(r=>r.id==='repo').branch===initial.current);button('Close').click();await wait(()=>!document.querySelector('[role="dialog"]'));
         const switched=(await snapshot()).workspace.tasks.find(t=>t.id==='attachment-task');if(switched.sessionId||switched.messages.length!==2)throw new Error('Branch switch retained provider context or lost chat');
         await wait(()=>button('Send to agent')&&document.querySelector('h1')?.closest('header')?.innerText.includes('Attachment project')&&document.querySelector('h1')?.closest('header')?.innerText.includes(initial.current));
         return {filePicker:true,pastedImage:true,dropAndRemove:true,textAndImagePreviews:true,providerAttachmentInput:true,createAndSwitchBranch:true,conversationPreserved:true};

@@ -19,16 +19,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "1.4.0",
-    "@anthropic-ai/claude-agent-sdk": "0.3.278",
+    "@agentclientprotocol/sdk": "1.7.0",
+    "@anthropic-ai/claude-agent-sdk": "0.3.288",
     "@dovo/client-runtime": "workspace:*",
     "@dovo/protocol": "workspace:*",
     "@dovo/push": "workspace:*",
     "@fastify/busboy": "3.2.2",
     "@grpc/grpc-js": "^1.14.5",
-    "@modelcontextprotocol/sdk": "1.30.0",
-    "@opencode-ai/sdk": "1.18.31",
-    "@opencode/client": "2.0.19",
+    "@modelcontextprotocol/sdk": "1.32.0",
+    "@opencode-ai/sdk": "1.18.34",
+    "@opencode/client": "2.0.22",
     "ajv": "^8.20.0",
     "ajv-draft-04": "^1.0.0",
     "ajv-formats": "^3.0.1",
@@ -53,7 +53,8 @@
     "unzipper": "0.12.5",
     "vscode-jsonrpc": "^9.0.2",
     "ws": "^8.21.3",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",

@@ -26,7 +26,7 @@ const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
-async function setup(resourceCsp = true) {
+async function setup(resourceCsp = true, failureStatus?: number) {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const runtime = await startRuntime({
@@ -35,6 +35,7 @@ async function setup(resourceCsp = true) {
     ownerToken: 'test-owner-token-with-at-least-32-characters',
   })
   cleanups.push(() => runtime.close())
+  const parameters: unknown[] = []
   let calls = 0,
     resources = 0
   const upstream = new Server(
@@ -55,6 +56,7 @@ async function setup(resourceCsp = true) {
   }))
   upstream.setRequestHandler(CallToolRequestSchema, async (request) => {
     calls++
+    parameters.push(request.params)
     return request.params.name === 'legacy'
       ? {
           content: [
@@ -86,7 +88,14 @@ async function setup(resourceCsp = true) {
     }
   })
   await upstream.connect(transport)
+  const requestMethods: Array<string | undefined> = []
   const http = createServer((request, response) => {
+    requestMethods.push(request.method)
+    if (failureStatus) {
+      request.resume()
+      response.writeHead(failureStatus).end('Server request failed; configuration 404')
+      return
+    }
     void transport.handleRequest(request, response)
   })
   await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
@@ -122,6 +131,8 @@ async function setup(resourceCsp = true) {
     proxy,
     token: proxy.envValues?.DOVO_MCP_BRIDGE_TOKEN ?? '',
     calls: () => calls,
+    parameters,
+    requestMethods,
     resources: () => resources,
     notify: () => upstream.sendToolListChanged(),
   }
@@ -354,3 +365,43 @@ it('hosts read-only UI resources when the server has no resources/list method', 
   expect(refs).toHaveLength(1)
   expect(s.runtime.services.mcpApps.read(s.task.id, refs[0].id).format).toBe('apps')
 })
+
+it('validates MCP request boundaries, accepts omitted arguments and preserves tool metadata', async () => {
+  const s = await setup()
+  const bridge = s.runtime.services.mcpApps
+  await expect(
+    bridge.proxy(s.token, 'tools/call', { name: 'chart', arguments: [] }),
+  ).rejects.toThrow('Invalid MCP tools/call parameters')
+  await expect(
+    bridge.proxy(s.token, 'tools/call', { name: 'chart', arguments: null }),
+  ).rejects.toThrow('Invalid MCP tools/call parameters')
+  await expect(bridge.proxy(s.token, 'tools/call', { name: 'chart', task: {} })).rejects.toThrow(
+    'Task-augmented MCP calls',
+  )
+  await expect(
+    bridge.proxy(s.token, 'prompts/get', { name: 'prompt', arguments: { value: 1 } }),
+  ).rejects.toThrow('Invalid MCP prompts/get parameters')
+  expect(s.calls()).toBe(0)
+  await bridge.proxy(s.token, 'tools/call', {
+    name: 'chart',
+    _meta: { 'test/context': 'retained' },
+  })
+  expect(s.parameters).toEqual([
+    expect.objectContaining({
+      name: 'chart',
+      arguments: {},
+      _meta: { 'test/context': 'retained' },
+    }),
+  ])
+})
+
+it.each([401, 403, 405])(
+  'uses the HTTP status, not error text, to decide SSE fallback for %s',
+  async (status) => {
+    const s = await setup(true, status)
+    await expect(s.runtime.services.mcpApps.proxy(s.token, 'tools/list', {})).rejects.toThrow(
+      /configuration 404|status code/i,
+    )
+    expect(s.requestMethods).toEqual(status === 405 ? ['POST', 'GET'] : ['POST'])
+  },
+)

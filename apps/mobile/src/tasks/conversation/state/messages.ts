@@ -2,7 +2,14 @@ import { mutableStruct } from '@dovo/protocol'
 import { decodeResult } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { ThreadMessageLike } from '@assistant-ui/react-native'
-import { toolPresentation, turnSummary, type Task } from '@dovo/protocol'
+import {
+  toolPresentation,
+  turnSummary,
+  conversationMessageTurns,
+  conversationToolsByMessage,
+  threadTimeline,
+  type Task,
+} from '@dovo/protocol'
 import {
   taskToolEvents,
   createTaskToolEvents,
@@ -149,19 +156,23 @@ function projectMessages(
   ) => ThreadMessageLike,
   tools = taskToolEvents(task, events),
 ): ThreadMessageLike[] {
-  const turnsByAssistant = new Map(task.turns?.map((turn) => [turn.assistantId, turn]))
+  const turnsByAssistant = conversationMessageTurns(task)
+  const toolsByMessage = conversationToolsByMessage(task, tools)
   const toolsByTurn = new Map<string, typeof tools>()
   for (const tool of tools) {
     if (!tool.turnId) continue
-    const turnTools = toolsByTurn.get(tool.turnId) ?? []
-    turnTools.push(tool)
-    toolsByTurn.set(tool.turnId, turnTools)
+    const events = toolsByTurn.get(tool.turnId) ?? []
+    events.push(tool)
+    toolsByTurn.set(tool.turnId, events)
   }
-  const compactionsByTurn = new Map<string, NonNullable<Task['compactions']>>()
+  const compactionsByMessage = new Map<string, NonNullable<Task['compactions']>>()
   for (const event of task.compactions ?? []) {
-    const entries = compactionsByTurn.get(event.turnId) ?? []
+    const messageId =
+      event.messageId ?? task.turns?.find((turn) => turn.id === event.turnId)?.assistantId
+    if (!messageId) continue
+    const entries = compactionsByMessage.get(messageId) ?? []
     entries.push(event)
-    compactionsByTurn.set(event.turnId, entries)
+    compactionsByMessage.set(messageId, entries)
   }
   const activeTurnId =
     task.status === 'running'
@@ -169,9 +180,11 @@ function projectMessages(
       : undefined
   return task.messages.map((message) => {
     const turn = turnsByAssistant.get(message.id)
-    const turnEvents = [...(turn ? (toolsByTurn.get(turn.id) ?? []) : [])].reverse()
-    const compactions = turn ? (compactionsByTurn.get(turn.id) ?? []) : []
-    return project(message, turn, turnEvents, compactions, activeTurnId, () => {
+    const turnEvents = toolsByMessage.get(message.id) ?? []
+    const compactions = compactionsByMessage.get(message.id) ?? []
+    const summaryTools = turn ? (toolsByTurn.get(turn.id) ?? []) : []
+    const cacheTools = turn?.assistantId === message.id ? summaryTools : turnEvents
+    return project(message, turn, cacheTools, compactions, activeTurnId, () => {
       const content: Exclude<ThreadMessageLike['content'], string>[number][] = []
       if (message.attachments?.length)
         content.push({
@@ -179,88 +192,52 @@ function projectMessages(
           name: 'dovo.attachments',
           data: message.attachments,
         })
-      if (turn) {
-        const at = new Map<
-          number,
-          Array<
-            | { kind: 'tool'; tool: (typeof turnEvents)[number] }
-            | { kind: 'compaction'; event: NonNullable<Task['compactions']>[number] }
-          >
-        >()
-        for (const tool of turnEvents) {
-          // Older activity events have no offset; keep them after the reply text.
-          const offset = Math.min(
-            message.text.length,
-            Math.max(0, tool.textOffset ?? message.text.length),
-          )
-          const group = at.get(offset) ?? []
-          group.push({ kind: 'tool', tool })
-          at.set(offset, group)
-        }
-        for (const event of compactions) {
-          const offset = Math.min(
-            message.text.length,
-            Math.max(0, event.textOffset ?? message.text.length),
-          )
-          const group = at.get(offset) ?? []
-          group.push({ kind: 'compaction', event })
-          at.set(offset, group)
-        }
-        for (const boundary of message.textBreaks ?? []) {
-          const offset = Math.max(0, Math.min(message.text.length, boundary))
-          if (!at.has(offset)) at.set(offset, [])
-        }
-        let cursor = 0
-        for (const offset of [...at.keys()].sort((a, b) => a - b)) {
-          if (offset > cursor)
-            content.push({ type: 'text', text: message.text.slice(cursor, offset) })
-          const reasoning: typeof turnEvents = []
-          const flushReasoning = () => {
-            if (reasoning.length)
-              content.push({ type: 'data', name: 'dovo.reasoning', data: reasoning.splice(0) })
-          }
-          const entries = at.get(offset)!.sort((left, right) => {
-            const a = left.kind === 'tool' ? (left.tool.startedAt ?? left.tool.time) : left.event.at
-            const b =
-              right.kind === 'tool' ? (right.tool.startedAt ?? right.tool.time) : right.event.at
-            return a.localeCompare(b)
-          })
-          for (const entry of entries) {
-            if (entry.kind === 'compaction') {
-              flushReasoning()
-              content.push({ type: 'data', name: 'dovo.compaction', data: entry.event })
-              continue
+      if (message.role === 'assistant') {
+        for (const block of threadTimeline(
+          message.text,
+          turnEvents,
+          compactions,
+          message.textBreaks,
+        )) {
+          if (block.kind === 'text') content.push({ type: 'text', text: block.text })
+          else if (block.kind === 'compaction')
+            content.push({ type: 'data', name: 'dovo.compaction', data: block.event })
+          else {
+            const reasoning: typeof turnEvents = []
+            const flushReasoning = () => {
+              if (reasoning.length)
+                content.push({ type: 'data', name: 'dovo.reasoning', data: reasoning.splice(0) })
             }
-            const tool = entry.tool
-            if (
-              tool.kind === 'reasoning' ||
-              toolPresentation(tool.payload, tool.summary, tool.inputPayload).kind === 'reasoning'
-            ) {
-              reasoning.push(tool)
-              continue
+            for (const tool of block.tools) {
+              if (
+                tool.kind === 'reasoning' ||
+                toolPresentation(tool.payload, tool.summary, tool.inputPayload).kind === 'reasoning'
+              ) {
+                reasoning.push(tool)
+                continue
+              }
+              flushReasoning()
+              const status = tool.status
+              content.push({
+                type: 'tool-call',
+                toolCallId: `${tool.turnId ?? ''}:${toolIdentity(tool.payload) || tool.id}`,
+                toolName: tool.summary,
+                args: {},
+                argsText: '',
+                artifact: { ...tool, status },
+                ...(!pendingActivity(status)
+                  ? {
+                      result: tool.payload,
+                      isError: ['failed', 'error', 'cancelled', 'interrupted'].includes(status),
+                    }
+                  : {}),
+              })
             }
             flushReasoning()
-            const status = tool.status
-            content.push({
-              type: 'tool-call',
-              toolCallId: `${turn.id}:${toolIdentity(tool.payload) || tool.id}`,
-              toolName: tool.summary,
-              args: {},
-              argsText: '',
-              artifact: { ...tool, status },
-              ...(!pendingActivity(status)
-                ? {
-                    result: tool.payload,
-                    isError: ['failed', 'error', 'cancelled', 'interrupted'].includes(status),
-                  }
-                : {}),
-            })
           }
-          flushReasoning()
-          cursor = offset
         }
-        if (cursor < message.text.length)
-          content.push({ type: 'text', text: message.text.slice(cursor) })
+      }
+      if (turn?.assistantId === message.id) {
         if (
           turn.checkpoint &&
           (turn.checkpoint.files.length ||
@@ -293,9 +270,11 @@ function projectMessages(
           content.push({
             type: 'data',
             name: 'dovo.turn-summary',
-            data: turnSummary(turn, turnEvents, false),
+            data: turnSummary(turn, summaryTools, false),
           })
-      } else if (message.text) content.push({ type: 'text', text: message.text })
+      }
+      if (message.role === 'user' && message.text)
+        content.push({ type: 'text', text: message.text })
       if (!content.length)
         content.push({
           type: 'text',
@@ -316,7 +295,7 @@ function projectMessages(
         ...(message.role === 'assistant'
           ? {
               status:
-                turn?.status === 'running'
+                turn?.status === 'running' && turn.assistantId === message.id
                   ? turn.id === activeTurnId
                     ? {
                         type: 'running' as const,

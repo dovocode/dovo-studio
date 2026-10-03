@@ -30,7 +30,6 @@ import {
 } from '@dovo/studio-core'
 import { Button, DropdownMenu } from '@dovo/studio-ui'
 import { HarnessDialog } from '../../dialogs/harness-dialog'
-import { TaskSettings } from '../../detail/task-settings'
 import { changeTaskHarness, chooseTaskAgent } from './task-harness-selection'
 import { ComposerModelPicker } from './composer-model-picker'
 import { useHarnessCatalog } from './harness-catalog'
@@ -410,12 +409,7 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
           {error}
         </p>
       )}
-      {connection &&
-        (customAgent ? (
-          <TaskSettings task={task} open onOpenChange={setConnection} />
-        ) : (
-          <HarnessDialog task={task} onClose={() => setConnection(false)} />
-        ))}
+      {connection && <HarnessDialog task={task} onClose={() => setConnection(false)} />}
     </>
   )
 })

@@ -121,9 +121,13 @@ it('uses an advertised ACP compact command and reports completion', async () => 
 
 it('uses the installed launch, session mode and typed config values', async () => {
   const { cwd, record, launch } = await fixture()
-  const input = run(cwd, launch)
+  const boundaries: number[] = []
+  const input = run(cwd, launch, {
+    onTextBoundary: () => boundaries.push(input.output.join('').length),
+  })
   await acpAdapter.run(input.run)
   expect(input.output).toEqual(['new'])
+  expect(boundaries).toEqual([3])
   expect(input.sessions).toEqual(['session'])
   const messages = JSON.parse(await readFile(record, 'utf8'))
   expect(

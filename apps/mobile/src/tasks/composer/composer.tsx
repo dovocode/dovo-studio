@@ -13,7 +13,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   REVIEW_PROMPT,
   contextMeter,
-  composerPlanLimit,
   responses,
   taskResources,
   worktreeChoicesSchema,
@@ -79,8 +78,16 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
   )
   const meter = contextMeter(task)
   const { callEffect: commandCall } = useRuntime()
-  const quota = composerPlanLimit(task, snapshot?.workspace.planLimits ?? [], connected)
   const commandAction = useAction()
+  const compactDisabled =
+    !connected ||
+    busy ||
+    commandAction.busy ||
+    task.status === 'running' ||
+    !!task.archived ||
+    !!task.archivedAt ||
+    !task.sessionId ||
+    !!task.queue?.length
   const hasGit = !snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
     ?.kind
   const worktreeAction = useAction()
@@ -203,9 +210,42 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
       ]}
     >
       {meter && meter.level !== 'ok' && (
-        <Text accessibilityRole="text" style={{ color: colors.warning, fontSize: 12 }}>
-          Context {meter.short} used · Compact suggested
-        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={commandAction.busy ? 'Compacting context' : 'Compact context'}
+          accessibilityHint={meter.label}
+          accessibilityState={{ disabled: compactDisabled }}
+          disabled={compactDisabled}
+          style={({ pressed }) => ({
+            alignSelf: 'flex-end',
+            minHeight: 44,
+            justifyContent: 'center',
+            opacity: compactDisabled ? 0.4 : pressed ? 0.6 : 1,
+          })}
+          onPress={() => runCommand('compact')}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 10,
+              paddingVertical: 5,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
+            {commandAction.busy ? (
+              <ActivityIndicator size="small" color={colors.muted} />
+            ) : (
+              <Icon name="collapse" size={12} color={colors.muted} />
+            )}
+            <Text style={{ color: colors.muted, fontSize: 12 }}>
+              {commandAction.busy ? 'Compacting…' : 'Compact context'}
+            </Text>
+          </View>
+        </Pressable>
       )}
       <Glass
         style={{
@@ -380,23 +420,6 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                   </Text>
                   <Icon name="down" size={10} color={colors.muted} />
                 </Pressable>
-              )}
-              {showOptions && !dictation.active && quota && (
-                <Text
-                  accessibilityLabel={quota.label}
-                  style={{
-                    fontSize: 11,
-                    color:
-                      quota.state === 'fresh' && quota.remaining <= 10
-                        ? colors.warning
-                        : colors.muted,
-                    fontVariant: ['tabular-nums'],
-                  }}
-                >
-                  {quota.state === 'fresh'
-                    ? `${quota.remaining}% quota`
-                    : `Quota ${quota.state === 'awaiting' ? 'pending' : quota.state}`}
-                </Text>
               )}
               {showOptions &&
                 !dictation.active &&

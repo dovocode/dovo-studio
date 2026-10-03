@@ -26,13 +26,14 @@ import { ConversationProvider } from '../conversation/state/provider'
 import { useNavigation } from '../../shell/navigation'
 import { MessageQueue } from '../composer/message-queue'
 import { TaskQuestions } from './task-questions'
-import { TaskSettings } from './task-settings'
+import { LinkedProjects } from './linked-projects'
+import { RenameThread } from './rename-thread'
+import { useTaskLifecycle } from './use-task-lifecycle'
 import {
   AccessibilityInfo,
   ActivityIndicator,
   Alert,
   Keyboard,
-  Pressable,
   View,
   useWindowDimensions,
 } from 'react-native'
@@ -382,10 +383,16 @@ function TaskDetailContent({
     if (pane === 'diff' && !hasDiff) setPane('chat')
   }, [pane, hasDiff])
   const [expandedPreview, setExpandedPreview] = useApplicationState(false)
-  const [settings, setSettings] = useApplicationState(false)
+  const [linkingProjects, setLinkingProjects] = useApplicationState(false)
+  const [renaming, setRenaming] = useApplicationState(false)
   const [artifactsOpen, setArtifactsOpen] = useState(false)
-  const [settingsBusy, setSettingsBusy] = useApplicationState(false)
-  const viewed = useTaskViewed(task, pane === 'chat' && !settings)
+  const lifecycle = useTaskLifecycle(task, undefined, onBack)
+  const newSession = useAction()
+  useEffect(() => {
+    const error = lifecycle.error || newSession.error
+    if (error) Alert.alert('Could not update thread', error)
+  }, [lifecycle.error, newSession.error])
+  const viewed = useTaskViewed(task, pane === 'chat' && !linkingProjects && !renaming)
   return (
     <View
       style={[
@@ -400,19 +407,14 @@ function TaskDetailContent({
       <ScreenHeader
         title={task.title}
         titleContent={
-          <Pressable
-            testID="Task settings"
-            accessibilityRole="button"
+          <View
             accessibilityLabel={[task.title, subtitle, status].join('. ')}
-            accessibilityHint="Open task settings."
-            onPress={() => setSettings(true)}
-            style={({ pressed }) => ({
+            style={{
               minHeight: 44,
               justifyContent: 'center',
               width: Math.max(80, width - 244),
               minWidth: 0,
-              opacity: pressed ? 0.6 : 1,
-            })}
+            }}
           >
             <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>
               {task.title}
@@ -425,7 +427,7 @@ function TaskDetailContent({
             >
               {subtitle} · {status}
             </Text>
-          </Pressable>
+          </View>
         }
         hidden={(pane === 'browser' || pane === 'devices') && expandedPreview}
         gestureEnabled={pane !== 'browser' && pane !== 'devices'}
@@ -493,6 +495,64 @@ function TaskDetailContent({
                   ]
                 : []),
               {
+                label: 'Linked projects',
+                icon: 'projects',
+                overflow: true,
+                onPress: () => {
+                  Keyboard.dismiss()
+                  setLinkingProjects(true)
+                },
+              },
+              {
+                label: 'Rename thread',
+                icon: 'edit',
+                overflow: true,
+                disabled: !connected,
+                onPress: () => setRenaming(true),
+              },
+              {
+                label: task.pinned ? 'Unpin task' : 'Pin task',
+                icon: task.pinned ? 'unpin' : 'pin',
+                overflow: true,
+                disabled: !lifecycle.enabled || lifecycle.busy,
+                onPress: lifecycle.togglePinned,
+              },
+              {
+                label: task.archived ? 'Reopen task' : 'Settle task',
+                icon: 'check',
+                overflow: true,
+                disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
+                onPress: lifecycle.toggleSettled,
+              },
+              {
+                label: task.archivedAt ? 'Restore thread' : 'Archive thread',
+                icon: 'archive',
+                overflow: true,
+                disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
+                onPress: lifecycle.toggleArchived,
+              },
+              {
+                label: 'Delete thread…',
+                icon: 'trash',
+                overflow: true,
+                disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
+                onPress: lifecycle.deleteThread,
+              },
+              ...(task.sessionId
+                ? [
+                    {
+                      label: 'New session',
+                      icon: 'newChat' as const,
+                      overflow: true,
+                      disabled: !connected || newSession.busy || task.status === 'running',
+                      onPress: () =>
+                        newSession.act(() =>
+                          callEffect('/api/tasks/new-session', { id: task.id }, responses.ok),
+                        ),
+                    },
+                  ]
+                : []),
+              {
                 label: 'Edit project instructions',
                 icon: 'settings',
                 overflow: true,
@@ -540,7 +600,7 @@ function TaskDetailContent({
       <ConversationProvider
         key={task.id}
         task={task}
-        visible={focused && pane === 'chat' && !settings}
+        visible={focused && pane === 'chat' && !linkingProjects && !renaming}
         openTerminal={(id) => {
           setTerminalId(id)
           setPane('terminal')
@@ -690,17 +750,12 @@ function TaskDetailContent({
           onClose={() => setArtifactsOpen(false)}
         />
       )}
-      {settings && (
-        <Sheet title="Task settings" busy={settingsBusy} onClose={() => setSettings(false)}>
-          <TaskSettings
-            key={task.id}
-            task={task}
-            onBack={() => setSettings(false)}
-            onDeleted={onBack}
-            onBusyChange={setSettingsBusy}
-          />
+      {linkingProjects && (
+        <Sheet title="Linked projects" onClose={() => setLinkingProjects(false)}>
+          <LinkedProjects key={task.id} task={task} />
         </Sheet>
       )}
+      {renaming && <RenameThread task={task} onClose={() => setRenaming(false)} />}
       {editingInstructions && task.repositoryId && (
         <ProjectInstructions
           repositoryId={task.repositoryId}

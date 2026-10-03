@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
-import type { SessionConfigOption } from '@agentclientprotocol/sdk'
+import { methods, type SessionConfigOption } from '@agentclientprotocol/sdk'
 import type { AcpLaunch } from '../execution/types.js'
 import {
   acpControl,
@@ -49,7 +49,7 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
     canClose = !!initialization.agentCapabilities?.sessionCapabilities?.close
     const session = await acpControl(
       connection,
-      connection.rpc.newSession({ cwd: homedir(), mcpServers: [] }),
+      connection.rpc.request(methods.agent.session.new, { cwd: homedir(), mcpServers: [] }),
       'model discovery',
     )
     closeSessionId = session.sessionId
@@ -59,7 +59,7 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
         throw new Error('This ACP agent does not advertise the selected mode')
       await acpControl(
         connection,
-        connection.rpc.setSessionMode({
+        connection.rpc.request(methods.agent.session.setMode, {
           sessionId: session.sessionId,
           modeId: agent.acpMode,
         }),
@@ -73,7 +73,7 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
       config = (
         await acpControl(
           connection,
-          connection.rpc.setSessionConfigOption({
+          connection.rpc.request(methods.agent.session.setConfigOption, {
             sessionId: session.sessionId,
             configId: modelOption.id,
             value: agent.model,
@@ -91,7 +91,7 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
         config = (
           await acpControl(
             connection,
-            connection.rpc.setSessionConfigOption({
+            connection.rpc.request(methods.agent.session.setConfigOption, {
               sessionId: session.sessionId,
               configId,
               type: 'boolean',
@@ -109,7 +109,7 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
         config = (
           await acpControl(
             connection,
-            connection.rpc.setSessionConfigOption({
+            connection.rpc.request(methods.agent.session.setConfigOption, {
               sessionId: session.sessionId,
               configId,
               value,
@@ -147,10 +147,10 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
     return catalog
   } finally {
     try {
-      if (succeeded && canClose && closeSessionId && !connection.rpc.signal.aborted)
+      if (succeeded && canClose && closeSessionId && !connection.signal.aborted)
         await acpControl(
           connection,
-          connection.rpc.closeSession({ sessionId: closeSessionId }),
+          connection.rpc.request(methods.agent.session.close, { sessionId: closeSessionId }),
           'session close',
         )
     } finally {

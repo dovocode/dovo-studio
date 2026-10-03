@@ -29,7 +29,7 @@ export function LinkedProjects({ task }: { task: Task }) {
     }
   }
   return (
-    <div className="space-y-3 border-t pt-3">
+    <div className="space-y-3">
       <LinkedCheckoutEditor value={links} onChange={setLinks} disabled={disabled} />
       <p className="text-xs text-muted-foreground">
         Removing a link keeps its worktree and saved history. Read-only links are reference context;

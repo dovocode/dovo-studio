@@ -312,6 +312,9 @@ export const opencodeV2Adapter: AgentAdapter = {
             case 'session.text.delta':
               run.onText(event.data.delta)
               break
+            case 'session.text.ended':
+              run.onTextBoundary?.()
+              break
             case 'session.reasoning.delta': {
               const id = `${event.data.assistantMessageID}:${event.data.ordinal}`
               const value = (reasoning.get(id) ?? '') + event.data.delta

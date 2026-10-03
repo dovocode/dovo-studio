@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
 const mocks = {
-  '@dovo/studio-core': `export * from '@dovo/protocol'; const store={connected:true,request:async()=>({ok:true})}; export const useWorkspace=()=>store; export const useStudioHost=()=>({}); export const formatDateTime=()=>'';`,
+  './pull-link-actions': `export const PullLinkActions=()=>null;`,
+  '@dovo/studio-core': `export * from '@dovo/protocol'; const store={workspace:{tasks:[]},connected:true,request:async()=>({ok:true})}; export const useWorkspace=()=>store; export const useStudioHost=()=>({}); export const formatDateTime=()=>'';`,
   '@dovo/studio-ui': `import React from 'react';export const Conversation=({children,...props})=><div {...props}>{children}</div>;export const ConversationContent=Conversation;export const ConversationHistory=Conversation;export const Message=({children,id})=><div id={id}>{children}</div>;export const MessageContent=Conversation;export const MessageResponse=({children})=>{window.markdownRenders++;return <p>{children}</p>};export const ConversationRail=()=>null;export const ConversationScrollButton=()=>null;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=Button;`,
   './deferred-turn': `export const DeferredTurn=({children})=>children();`,
   './task-activity': `import {useSyncExternalStore} from 'react';import {createRecentTools} from '@dovo/protocol';const project=createRecentTools();const listeners=new Set();let tools=[];window.updateTools=next=>{tools=project(next);for(const listener of listeners)listener()};const subscribe=listener=>{listeners.add(listener);return()=>listeners.delete(listener)};export const useTaskActivity=()=>({tools:useSyncExternalStore(subscribe,()=>tools),error:''});export const TaskActivity=()=>null;`,
@@ -53,10 +54,10 @@ createRoot(document.getElementById('app')).render(<App/>);
           resolveDir: fileURLToPath(new URL('../packages/studio-ui/', import.meta.url)),
           loader: 'tsx',
         }))
-        builder.onLoad({ filter: /thread-timeline\.ts$/ }, async ({ path }) => ({
+        builder.onLoad({ filter: /conversation\/timeline\.ts$/ }, async ({ path }) => ({
           contents: (await readFile(path, 'utf8')).replace(
-            '  const explicitBreaks =',
-            '  window.timelineCalls++;\n  const explicitBreaks =',
+            '  const boundaries =',
+            '  window.timelineCalls++;\n  const boundaries =',
           ),
           loader: 'ts',
         }))
@@ -64,6 +65,9 @@ createRoot(document.getElementById('app')).render(<App/>);
     },
   ],
   bundle: true,
+  alias: {
+    '@dovo/protocol': fileURLToPath(new URL('../packages/protocol/src/index.ts', import.meta.url)),
+  },
   write: false,
   format: 'iife',
   platform: 'browser',

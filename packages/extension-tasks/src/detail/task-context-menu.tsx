@@ -10,7 +10,6 @@ import {
   latestCompletedTaskTurn,
   responses,
   useWorkspace,
-  WorkspaceScope,
   readAppPreferences,
 } from '@dovo/studio-core'
 import {
@@ -40,12 +39,10 @@ import {
   Pin,
   PinOff,
   Plus,
-  Settings2,
   Sparkles,
   Undo2,
 } from 'lucide-react'
 import type { TaskEntry } from '../list/task-collection'
-import { TaskSettings } from './task-settings'
 import { taskActionClient, taskRowValues, type TaskRowChanges } from '../list/task-row-actions'
 const menuClass =
   'z-50 max-h-[var(--radix-context-menu-content-available-height)] min-w-56 max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border bg-popover p-1 text-popover-foreground shadow-xl'
@@ -88,9 +85,7 @@ export function TaskContextMenu({
   const [pending, setPending] = useApplicationState(false)
   const pendingRef = useRef(false)
   const [error, setError] = useApplicationState('')
-  const [dialog, setDialog] = useApplicationState<
-    'rename' | 'settings' | 'delete' | 'template' | null
-  >(null)
+  const [dialog, setDialog] = useApplicationState<'rename' | 'delete' | 'template' | null>(null)
   const [templateName, setTemplateName] = useApplicationState(task.title)
   const templates = repository?.templates ?? []
   const local = source.runtimeId === store.activeRuntimeId
@@ -138,24 +133,6 @@ export function TaskContextMenu({
   }
   const patch = (updates: TaskRowChanges) => client.patch(task, updates)
 
-  const settings = dialog === 'settings' && (
-    <TaskSettings
-      task={task}
-      open
-      onOpenChange={(open) => {
-        if (!open) setDialog(null)
-      }}
-      onSave={async (changes) => {
-        onError('')
-        try {
-          await patch(changes)
-        } catch (failure) {
-          onError(failure instanceof Error ? failure.message : String(failure))
-          throw failure
-        }
-      }}
-    />
-  )
   const trigger = (
     <ContextMenu.Trigger asChild>
       <div
@@ -450,18 +427,6 @@ export function TaskContextMenu({
               className={itemClass}
               disabled={!canEdit || task.status === 'running'}
               onSelect={() => {
-                setError('')
-                setDialog('settings')
-              }}
-            >
-              <Settings2 />
-              Task settings…
-            </ContextMenu.Item>
-            <ContextMenu.Separator className={separatorClass} />
-            <ContextMenu.Item
-              className={itemClass}
-              disabled={!canEdit || task.status === 'running'}
-              onSelect={() => {
                 // Settings → General → Confirm before archiving.
                 if (
                   !task.archivedAt &&
@@ -677,12 +642,6 @@ export function TaskContextMenu({
           </div>
         </DialogContent>
       </Dialog>
-      {settings &&
-        (client.profile ? (
-          <WorkspaceScope profile={client.profile}>{settings}</WorkspaceScope>
-        ) : (
-          settings
-        ))}
     </>
   )
 }

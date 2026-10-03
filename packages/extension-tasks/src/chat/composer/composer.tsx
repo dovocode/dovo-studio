@@ -18,7 +18,6 @@ import type { ComposerCommandId } from './file-mentions'
 import { ComposerEditor } from './composer-editor'
 import { SavedPromptsDialog } from '../../dialogs/saved-prompts-dialog'
 import { REVIEW_PROMPT, contextMeter, taskResources } from '@dovo/protocol'
-import { PlanLimit } from '../thread/plan-limit'
 import { ContextMeter } from '../thread/context-meter'
 import {
   ArrowUp,
@@ -27,6 +26,7 @@ import {
   MessageCircleQuestion,
   Square,
   CornerUpRight,
+  Minimize2,
 } from 'lucide-react'
 import { useWorkspace, updateTask, responses, type Task } from '@dovo/studio-core'
 import {
@@ -94,6 +94,15 @@ export function Composer({
   const [commandError, setCommandError] = useState('')
   const [compactBusy, setCompactBusy] = useState(false)
   const meter = contextMeter(task)
+  const compactDisabled =
+    !connected ||
+    sending ||
+    compactBusy ||
+    task.status === 'running' ||
+    !!task.archived ||
+    !!task.archivedAt ||
+    !task.sessionId ||
+    !!task.queue?.length
   const compact = () => {
     if (compactBusy) return
     setCompactBusy(true)
@@ -315,6 +324,25 @@ export function Composer({
   }
   return (
     <div className="shrink-0 px-3 pb-2 pt-1">
+      {meter && meter.level !== 'ok' && !pendingQuestion && (
+        <div className="mx-auto mb-1 flex max-w-[var(--chat-max)] justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-7 gap-1.5 rounded-full border border-border/60 px-2.5 text-[0.6875rem] font-normal text-muted-foreground"
+            title={meter.label}
+            disabled={compactDisabled}
+            onClick={compact}
+          >
+            {compactBusy ? (
+              <LoaderCircle className="size-3 animate-spin" />
+            ) : (
+              <Minimize2 className="size-3" />
+            )}
+            {compactBusy ? 'Compacting…' : 'Compact context'}
+          </Button>
+        </div>
+      )}
       <PromptInput
         className="studio-composer relative z-10 mx-auto max-w-[var(--chat-max)] rounded-2xl border-border/70 bg-card shadow-none"
         onDragOver={(event) => {
@@ -406,13 +434,7 @@ export function Composer({
             </span>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <PlanLimit task={task} />
             <ContextMeter task={task} />
-            {meter && meter.level !== 'ok' && (
-              <span role="status" className="text-[0.625rem] text-amber-400">
-                Compact suggested
-              </span>
-            )}
             {onAside && !firstMessage && (
               <IconButton
                 label="Ask a side question (⌘/Ctrl+;)"

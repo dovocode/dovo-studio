@@ -67,7 +67,7 @@ app.on('browser-window-created', (_event, window) => {
         await wait(()=>document.querySelector('h1')?.textContent==='Terminal smoke task');
         for(const value of ['activity','newest','oldest','title','project','priority']){button('Thread sort').click();await wait(()=>document.querySelector('[role="listbox"]'));const option=[...document.querySelectorAll('[role="option"]')].find(el=>el.dataset.value===value);if(!option)throw new Error('Missing thread sort '+value);option.click();await wait(()=>!document.querySelector('[role="listbox"]'));if(button('Thread sort').dataset.value!==value)throw new Error('Thread sort not applied');}
 
-        if(button('Task settings'))throw new Error('Task settings should be in the actions menu');button('Task actions').click();await wait(()=>button('Task settings'));button('Task actions').click();await wait(()=>!button('Task settings'));
+        button('Task actions').click();await wait(()=>button('Pin task'));if(button('Task settings'))throw new Error('Thread settings should be removed');button('Task actions').click();await wait(()=>!button('Pin task'));if(!button('Linked projects'))throw new Error('Project linking is missing from the thread tools');
         if(!['Smoke repository','Worktree'].every(text=>document.querySelector('h1').closest('header').innerText.includes(text))) throw new Error('Selected checkout is not visible');
         document.querySelector('button[aria-label="Terminal"]').click();
         await wait(()=>[...document.querySelectorAll('button')].find(b=>b.innerText==='Open terminal'));

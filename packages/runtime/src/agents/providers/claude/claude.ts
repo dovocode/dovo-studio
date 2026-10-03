@@ -146,6 +146,8 @@ function handleMessage(run: AgentRun, message: SDKMessage, compacted: () => void
     message.event.delta.type === 'text_delta'
   )
     run.onText(message.event.delta.text)
+  if (message.type === 'stream_event' && message.event.type === 'message_stop')
+    run.onTextBoundary?.()
   if (message.type === 'assistant')
     for (const block of message.message.content)
       if (block.type === 'tool_use') run.onActivity(block.name)

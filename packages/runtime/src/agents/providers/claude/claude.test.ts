@@ -97,6 +97,7 @@ it('keeps a streaming Claude connection across turns', async () => {
   const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
   mocks.query.mockClear()
   const prompts: string[] = []
+  const output: string[] = []
   const setMcpServers = vi
     .fn<
       (
@@ -115,6 +116,11 @@ it('keeps a streaming Claude connection across turns', async () => {
             ? content
             : (content.find((block) => block.type === 'text')?.text ?? ''),
         )
+        yield {
+          type: 'stream_event',
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Reply' } },
+        }
+        yield { type: 'stream_event', event: { type: 'message_stop' } }
         yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
       }
     },
@@ -136,7 +142,8 @@ it('keeps a streaming Claude connection across turns', async () => {
     prompt: 'first',
     signal: new AbortController().signal,
     onSession: () => {},
-    onText: () => {},
+    onText: (text) => output.push(text),
+    onTextBoundary: () => output.push('boundary'),
     onActivity: () => {},
     approve: async () => false,
     ask: async () => null,
@@ -163,6 +170,7 @@ it('keeps a streaming Claude connection across turns', async () => {
       }),
     )
     expect(prompts).toEqual(['first', 'second'])
+    expect(output).toEqual(['Reply', 'boundary', 'Reply', 'boundary'])
     expect(mocks.query).toHaveBeenCalledTimes(1)
     expect(mocks.query).toHaveBeenCalledWith(
       expect.objectContaining({

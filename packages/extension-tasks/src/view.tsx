@@ -10,6 +10,8 @@ import { threadPullPreview } from './detail/thread-pull-preview'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskTools } from './detail/task-tools'
 import { TaskAgents } from './detail/task-agents'
+import { LinkedProjects } from './detail/linked-projects'
+import { ThreadArtifacts } from './chat/artifacts'
 import { BrowserPane, DevicesPane } from './browser/browser-pane'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { X, Maximize2, Minimize2 } from 'lucide-react'
@@ -136,7 +138,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
   }, [store.connection, task?.id, splitTask?.id])
   const [listOpen, setListOpen] = useApplicationState(false)
   const [sidebar, setSidebar] = useApplicationState(true)
-  const [toolsVisible, setToolsVisible] = useApplicationState(true)
   const [codeReference, setCodeReference] = useState<CodeReference | null>(null)
   const [composerInsert, setComposerInsert] = useState<{
     taskId: string
@@ -146,6 +147,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const threadKey = taskCollectionKey(activeRuntimeId, task?.id ?? selectedId)
   const [threadSurfaces, setThreadSurfaces] = useApplicationState<Record<string, TaskSurface>>({})
   const surface = threadSurfaces[threadKey] ?? 'chat'
+  const toolsExpanded = surface !== 'chat' && surface !== 'terminal'
   const fileViewer = surface === 'files' || surface === 'changes'
   useEffect(() => {
     const element = workspacePane.current
@@ -200,6 +202,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
     browser: null,
     devices: null,
     agents: null,
+    projects: null,
+    artifacts: null,
     'side-chats': null,
   })
   const lastFocus = useRef<Partial<Record<TaskSurface, HTMLElement>>>({})
@@ -215,6 +219,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
         'browser',
         'devices',
         'agents',
+        'projects',
+        'artifacts',
         'side-chats',
       ] as const) {
         const focused = document.activeElement
@@ -233,7 +239,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
       }
       if (next !== 'chat' && next !== 'terminal') {
         lastToolSurface.current = next
-        setToolsVisible(true)
       }
       setSurface(next)
       if (next === 'terminal') {
@@ -259,7 +264,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
       setSelectedId(target.id)
       setSplitId(task?.id ?? '')
       setThreadSurfaces((current) => ({ ...current, [key]: 'pull-preview' }))
-      setToolsVisible(true)
     } else selectSurface('pull-preview')
     return true
   }
@@ -713,13 +717,11 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   onSidebar={() => (compact ? setListOpen(true) : setSidebar((value) => !value))}
                   onTerminal={showTerminal}
                   hasDiff={hasDiff}
-                  toolsVisible={toolsVisible}
+                  toolsExpanded={toolsExpanded}
                   onTools={() => {
-                    if (toolsVisible) {
-                      if (surface !== 'chat' && surface !== 'terminal')
-                        lastToolSurface.current = surface
+                    if (toolsExpanded) {
+                      lastToolSurface.current = surface
                       selectSurface('chat', true)
-                      setToolsVisible(false)
                     } else {
                       selectSurface(lastToolSurface.current)
                     }
@@ -841,7 +843,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                             ? 'shrink-0 border-l'
                             : cn(
                                 'absolute inset-y-2 z-30 rounded-lg border shadow-2xl overflow-hidden',
-                                !compact && toolsVisible ? 'right-14' : 'right-2',
+                                compact ? 'right-2' : 'right-14',
                                 compact && 'w-[min(640px,calc(100%-72px))]',
                               )
                         : compact
@@ -923,6 +925,28 @@ export default function TasksView({ entityId }: StudioViewProps) {
                             selectSurface('chat', true)
                           }}
                         />
+                      </div>
+                    )}
+                    {surface === 'artifacts' && (
+                      <div
+                        ref={(element) => {
+                          panes.current.artifacts = element
+                        }}
+                        tabIndex={-1}
+                        className="min-h-0 min-w-0 flex-1 overflow-y-auto"
+                      >
+                        <ThreadArtifacts key={threadKey} taskId={task.id} />
+                      </div>
+                    )}
+                    {surface === 'projects' && (
+                      <div
+                        ref={(element) => {
+                          panes.current.projects = element
+                        }}
+                        tabIndex={-1}
+                        className="min-h-0 flex-1 overflow-y-auto p-4"
+                      >
+                        <LinkedProjects key={threadKey} task={task} />
                       </div>
                     )}
                     {surface === 'agents' && (
@@ -1009,11 +1033,12 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       )}
                     </div>
                   </ResizableSidebar>
-                  {!compact && toolsVisible && (
+                  {!compact && (
                     <TaskTools
                       surface={surface}
                       onSelect={(next) => selectSurface(next === surface ? 'chat' : next)}
                       hasDiff={hasDiff}
+                      artifactsEnabled={!!snapshot?.artifactsEnabled}
                     />
                   )}
                 </div>
@@ -1098,7 +1123,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
                         }))
                         setSelectedId(splitTask.id)
                         setSplitId(task?.id ?? '')
-                        setToolsVisible(true)
                       }}
                       onReview={() => {
                         setSelectedId(splitTask.id)

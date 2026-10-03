@@ -32,6 +32,7 @@ import {
   PanelBottom,
   Terminal,
   FolderOpen,
+  FolderSymlink,
   ChevronDown,
   Download,
 } from 'lucide-react'
@@ -51,7 +52,6 @@ import { taskPresentation } from '../list/task-presentation'
 import { TaskBranchMenu } from './task-branch-menu'
 import { TaskPullStatus } from './task-pull-status'
 import { TaskProjectActions } from './task-project-actions'
-import { ArtifactLibrary } from '../chat/artifacts'
 export type TaskSurface =
   | 'pull-preview'
   | 'chat'
@@ -62,6 +62,8 @@ export type TaskSurface =
   | 'devices'
   | 'agents'
   | 'side-chats'
+  | 'projects'
+  | 'artifacts'
 export function TaskHeader({
   task,
   onSidebar,
@@ -72,7 +74,7 @@ export function TaskHeader({
   sidebarVisible,
   onTerminal,
   hasDiff,
-  toolsVisible,
+  toolsExpanded,
   onTools,
   bottomTerminalOpen,
   onBottomTerminal,
@@ -87,7 +89,7 @@ export function TaskHeader({
   /** Shows the terminal after a project action ran in it. */
   onTerminal?: (terminalId: string) => void
   hasDiff: boolean
-  toolsVisible: boolean
+  toolsExpanded: boolean
   onTools: () => void
   bottomTerminalOpen: boolean
   onBottomTerminal: () => void
@@ -393,7 +395,6 @@ export function TaskHeader({
           {openError}
         </span>
       )}
-      <ArtifactLibrary key={`artifacts:${task.id}`} taskId={task.id} />
       <TaskActions
         key={task.id}
         task={task}
@@ -433,8 +434,8 @@ export function TaskHeader({
               <PanelBottom size={15} />
             </IconButton>
             <IconButton
-              label={toolsVisible ? 'Hide right sidebar' : 'Show right sidebar'}
-              aria-pressed={toolsVisible}
+              label={toolsExpanded ? 'Collapse tools pane' : 'Expand tools pane'}
+              aria-pressed={toolsExpanded}
               className="size-7"
               onClick={onTools}
             >
@@ -556,6 +557,10 @@ export function TaskHeader({
                 [
                   ['chat', 'Chat', MessageSquare, 0],
                   ['files', 'Files', Files, 0],
+                  ['projects', 'Linked projects', FolderSymlink, task.linkedCheckouts?.length ?? 0],
+                  ...(snapshot?.artifactsEnabled
+                    ? [['artifacts', 'Artifacts', FileCode2, 0] as const]
+                    : []),
                   ...(hasDiff ? [['changes', 'Diff', FileCode2, task.files.length] as const] : []),
                   ['agents', 'Agents', Bot, task.subagents?.length ?? 0],
                   ['terminal', 'Terminal', Terminal, terminals],

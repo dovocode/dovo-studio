@@ -1,7 +1,12 @@
 import { expect, it } from 'vitest'
 import { decode } from '../../shared/schema'
 import { taskSchema } from '../../workspace'
-import { githubPullTarget, addTaskPullLinks, pullReferencesInText } from './pull-links'
+import {
+  githubPullTarget,
+  addTaskPullLinks,
+  pullReferencesInText,
+  threadPullLink,
+} from './pull-links'
 it('extracts normalized PR links from Markdown and prose across supported forge URL shapes', () => {
   expect(
     pullReferencesInText(
@@ -75,4 +80,25 @@ it('adds foreign-project PR links idempotently without changing checkout, launch
       })),
     ),
   ).toThrow('at most 20')
+})
+
+it('builds thread links from full PR URLs and normalizes GitHub detail tabs', () => {
+  expect(threadPullLink('https://github.com/team/project/pull/42/files#note')).toEqual({
+    number: 42,
+    url: 'https://github.com/team/project/pull/42',
+    title: 'PR #42',
+    provider: 'github',
+    repositoryUrl: 'https://github.com/team/project',
+  })
+  expect(threadPullLink('http://forge.local/team/project/pulls/7?tab=checks')).toMatchObject({
+    number: 7,
+    url: 'http://forge.local/team/project/pulls/7',
+    repositoryUrl: 'http://forge.local/team/project',
+  })
+  for (const input of [
+    '#42',
+    'https://github.com/team/project/issues/42',
+    'https://user@host/pull/42',
+  ])
+    expect(threadPullLink(input)).toBeNull()
 })

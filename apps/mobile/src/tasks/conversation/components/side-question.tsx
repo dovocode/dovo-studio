@@ -6,7 +6,7 @@ import { useRuntime } from '../../../runtime/connection/provider'
 import { useAction } from '../../../ui/controls/use-action'
 import { Action } from '../../../ui/controls/action'
 import { Field } from '../../../ui/controls/field'
-import { Markdown } from '../../../ui/content/markdown'
+import { ThreadMarkdown } from './thread-markdown'
 import { Sheet } from '../../../ui/layout/sheet'
 import { Text } from '../../../ui/content/text'
 import { styles } from '../../../ui/theme'
@@ -61,7 +61,7 @@ export function SideQuestion({ task, onClose }: { task: Task; onClose: () => voi
           <Action secondary label="Add question to composer" onPress={() => add(entry.question)} />
           {entry.answer && (
             <>
-              <Markdown text={entry.answer} variant="chat" />
+              <ThreadMarkdown text={entry.answer} variant="chat" />
               <Action
                 secondary
                 label="Add answer to composer"

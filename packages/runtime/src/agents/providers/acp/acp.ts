@@ -5,7 +5,14 @@ import { isImageAttachment } from '@dovo/protocol'
 import { acpModels } from '../../catalogs/acp.js'
 import { formQuestions } from '../shared/form-questions.js'
 import { Schema } from 'effect'
-import type { Client } from '@agentclientprotocol/sdk'
+import {
+  methods,
+  type Client,
+  type NewSessionResponse,
+  type ResumeSessionResponse,
+  type LoadSessionResponse,
+  type PromptRequest,
+} from '@agentclientprotocol/sdk'
 import type { AgentAdapter } from '../../execution/types.js'
 import { executableAvailable } from '../../../process.js'
 import {
@@ -18,10 +25,7 @@ import {
 import { acpClientTools } from './acp-client-tools.js'
 import { releaseIdleProvider } from '../../execution/warm-processes.js'
 type AcpConnection = ReturnType<typeof openAcpConnection>
-type AcpSession =
-  | Awaited<ReturnType<AcpConnection['rpc']['newSession']>>
-  | Awaited<ReturnType<AcpConnection['rpc']['resumeSession']>>
-  | Awaited<ReturnType<AcpConnection['rpc']['loadSession']>>
+type AcpSession = NewSessionResponse | ResumeSessionResponse | LoadSessionResponse
 type WarmAcp = {
   connection: AcpConnection
   client: Client
@@ -63,7 +67,7 @@ export function createAcpAdapter(): AgentAdapter {
         previous.sessionId === run.sessionId &&
         previous.cwd === run.cwd &&
         previous.launchKey === launchKey &&
-        !previous.connection.rpc.signal.aborted
+        !previous.connection.signal.aborted
           ? previous
           : undefined
       if (previous && !reusable) await close(previous)
@@ -154,6 +158,7 @@ export function createAcpAdapter(): AgentAdapter {
             ].includes(params.update.sessionUpdate)
           )
             run.onPromptAccepted?.()
+          if (params.update.sessionUpdate === 'tool_call') run.onTextBoundary?.()
           run.onEvent?.(params.update.sessionUpdate, params)
           const update = params.update
           if (update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text')
@@ -183,7 +188,7 @@ export function createAcpAdapter(): AgentAdapter {
           setTimeout(() => {
             void connection.close()
           }, 1500).unref()
-          void rpc.cancel({ sessionId }).catch(() => {})
+          void rpc.notify(methods.agent.session.cancel, { sessionId }).catch(() => {})
         } else void connection.close()
       }
       run.signal.addEventListener('abort', abort, {
@@ -219,17 +224,17 @@ export function createAcpAdapter(): AgentAdapter {
               connection,
               run.sessionId
                 ? initialization.agentCapabilities?.sessionCapabilities?.resume
-                  ? rpc.resumeSession({
+                  ? rpc.request(methods.agent.session.resume, {
                       sessionId: run.sessionId,
                       cwd: run.cwd,
                       mcpServers,
                     })
-                  : rpc.loadSession({
+                  : rpc.request(methods.agent.session.load, {
                       sessionId: run.sessionId,
                       cwd: run.cwd,
                       mcpServers,
                     })
-                : rpc.newSession({
+                : rpc.request(methods.agent.session.new, {
                     cwd: run.cwd,
                     mcpServers,
                   }),
@@ -272,7 +277,7 @@ export function createAcpAdapter(): AgentAdapter {
               )
             await acpControl(
               connection,
-              rpc.setSessionMode({
+              rpc.request(methods.agent.session.setMode, {
                 sessionId: id,
                 modeId: mode.id,
               }),
@@ -285,7 +290,7 @@ export function createAcpAdapter(): AgentAdapter {
             if (!model) throw new Error('ACP agent does not advertise model configuration')
             const updated = await acpControl(
               connection,
-              rpc.setSessionConfigOption({
+              rpc.request(methods.agent.session.setConfigOption, {
                 sessionId: id,
                 configId: model.id,
                 value: run.agent.model,
@@ -303,7 +308,7 @@ export function createAcpAdapter(): AgentAdapter {
             configOptions = (
               await acpControl(
                 connection,
-                rpc.setSessionConfigOption({
+                rpc.request(methods.agent.session.setConfigOption, {
                   sessionId: id,
                   configId: option.id,
                   value: run.agent.reasoning,
@@ -323,7 +328,7 @@ export function createAcpAdapter(): AgentAdapter {
               configOptions = (
                 await acpControl(
                   connection,
-                  rpc.setSessionConfigOption({
+                  rpc.request(methods.agent.session.setConfigOption, {
                     sessionId: id,
                     configId,
                     type: 'boolean',
@@ -341,7 +346,11 @@ export function createAcpAdapter(): AgentAdapter {
               configOptions = (
                 await acpControl(
                   connection,
-                  rpc.setSessionConfigOption({ sessionId: id, configId, value }),
+                  rpc.request(methods.agent.session.setConfigOption, {
+                    sessionId: id,
+                    configId,
+                    value,
+                  }),
                   'configuration',
                 )
               ).configOptions
@@ -359,27 +368,29 @@ export function createAcpAdapter(): AgentAdapter {
             'This ACP agent does not accept image input; images are available as attached files only.',
           )
         prompting = true
+        const prompt: PromptRequest = {
+          sessionId: id,
+          prompt: [
+            ...(initialization.agentCapabilities?.promptCapabilities?.image
+              ? (run.attachments ?? []).filter(isImageAttachment).map((file) => ({
+                  type: 'image' as const,
+                  data: file.data,
+                  mimeType: file.mime,
+                }))
+              : []),
+            {
+              type: 'text',
+              text: run.compact
+                ? '/compact'
+                : [run.agent.instructions, run.prompt].filter(Boolean).join('\n\n'),
+            },
+          ],
+        }
         const result = await Promise.race([
-          rpc.prompt({
-            sessionId: id,
-            prompt: [
-              ...(initialization.agentCapabilities?.promptCapabilities?.image
-                ? (run.attachments ?? []).filter(isImageAttachment).map((file) => ({
-                    type: 'image' as const,
-                    data: file.data,
-                    mimeType: file.mime,
-                  }))
-                : []),
-              {
-                type: 'text',
-                text: run.compact
-                  ? '/compact'
-                  : [run.agent.instructions, run.prompt].filter(Boolean).join('\n\n'),
-              },
-            ],
-          }),
+          rpc.request(methods.agent.session.prompt, prompt),
           exited,
         ])
+        run.onTextBoundary?.()
         run.onPromptAccepted?.()
         if (result.stopReason !== 'end_turn' && !(cancelling && result.stopReason === 'cancelled'))
           throw new Error(`ACP stopped: ${result.stopReason}`)
@@ -414,11 +425,15 @@ export function createAcpAdapter(): AgentAdapter {
           (!succeeded || !run.taskId || run.tools === 'none' || run.signal.aborted) &&
           sessionId &&
           !run.signal.aborted &&
-          !rpc.signal.aborted &&
+          !connection.signal.aborted &&
           canCloseSession
         ) {
           try {
-            await acpControl(connection, rpc.closeSession({ sessionId }), 'session close')
+            await acpControl(
+              connection,
+              rpc.request(methods.agent.session.close, { sessionId }),
+              'session close',
+            )
           } catch (error) {
             run.onActivity(
               `ACP session cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -430,10 +445,14 @@ export function createAcpAdapter(): AgentAdapter {
           !run.sessionId &&
           sessionId &&
           canDeleteSession &&
-          !rpc.signal.aborted
+          !connection.signal.aborted
         ) {
           try {
-            await acpControl(connection, rpc.deleteSession({ sessionId }), 'session deletion')
+            await acpControl(
+              connection,
+              rpc.request(methods.agent.session.delete, { sessionId }),
+              'session deletion',
+            )
           } catch (error) {
             cleanupError = error
             console.error('Could not delete ephemeral ACP session:', error)

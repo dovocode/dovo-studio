@@ -192,6 +192,8 @@ export const messageSchema = mutableStruct({
   id: Schema.String,
   role: Schema.Literal('user', 'assistant'),
   text: Schema.String,
+  /** Physical execution owning this input or response; steering retains the same execution. */
+  turnId: Schema.optional(Schema.String),
   /** Exact completed provider-message offsets within accumulated assistant text. */
   textBreaks: Schema.optional(mutableArray(Schema.Number.pipe(Schema.int(), Schema.nonNegative()))),
   bookmarked: Schema.optional(Schema.Boolean),
@@ -419,6 +421,7 @@ export const taskSchema = mutableStruct({
       mutableStruct({
         at: Schema.String,
         turnId: Schema.String,
+        messageId: Schema.optional(Schema.String),
         textOffset: Schema.optional(
           Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative()),
         ),

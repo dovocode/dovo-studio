@@ -35,9 +35,9 @@ import {
 import {
   usePendingConversationMessage,
   useConversationSelector,
-  useConversationTurn,
+  useConversationPresentation,
 } from './state/provider'
-import { Markdown } from '../../ui/content/markdown'
+import { ThreadMarkdown } from './components/thread-markdown'
 import { MessageAttachments } from './components/message-attachments'
 import { colors, styles } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
@@ -206,7 +206,7 @@ function ReasoningPart({ data }: DataMessagePartProps<unknown>) {
   return <ReasoningActivity events={decode(mutableArray(toolSchema), data)} />
 }
 function AssistantText({ text }: { text: string }) {
-  return <Markdown text={text} variant="chat" />
+  return <ThreadMarkdown text={text} variant="chat" />
 }
 /** Car mode hides each turn's commands, edits and searches; only what the agent says stays. */
 function WorkGroup(props: Parameters<typeof ConversationWorkGroup>[0]) {
@@ -243,11 +243,7 @@ const parts = {
   },
 }
 function UserText({ text }: { text: string }) {
-  return (
-    <Text selectable style={styles.chatText}>
-      {text}
-    </Text>
-  )
+  return <ThreadMarkdown text={text} plainText />
 }
 const userParts = {
   ...parts,
@@ -255,19 +251,23 @@ const userParts = {
 }
 function AssistantParts({ footer = false }: { footer?: boolean }) {
   const message = useAuiState((state) => state.message)
-  const turn = useConversationTurn(message.id)
-  const turnId = turn?.id ?? message.id
+  const presentation = useConversationPresentation(message.id)
+  const turn = presentation?.groupTurn
+  const turnId = presentation?.groupId ?? message.id
   const collapsed = useConversationSelector(
     useCallback((value) => value.collapsedTurns[turnId], [turnId]),
   )
   const toggleTurn = useConversationSelector((value) => value.toggleTurn)
   const open = !(collapsed ?? turn?.status === 'completed')
   const car = useCarMode()
-  const { finalIndex, end } = turnPartBoundaries(message.content, turn?.status === 'running')
+  const { finalIndex, end } = turnPartBoundaries(
+    message.content,
+    turn?.status === 'running' || !presentation?.final,
+  )
   if (footer)
     return (
       <>
-        {message.content.slice(end).map((_, index) => (
+        {(open || presentation?.footer ? message.content.slice(end) : []).map((_, index) => (
           <MessagePrimitive.PartByIndex key={end + index} index={end + index} components={parts} />
         ))}
       </>
@@ -310,7 +310,7 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
   const duration = formatTurnDuration(seconds * 1000)
   const label =
     turn.status === 'running'
-      ? 'Turn in progress'
+      ? 'Working…'
       : turn.status === 'completed'
         ? `Worked for ${duration}`
         : turn.status === 'failed'
@@ -318,18 +318,23 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
           : 'Turn stopped'
   return (
     <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        accessibilityState={{ expanded: open }}
-        onPress={() => toggleTurn(turn.id)}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 }}
-      >
-        <Icon name={open ? 'down' : 'next'} size={14} color={colors.muted} />
-        <Text style={[styles.muted, { fontSize: 13 }]}>{label}</Text>
-      </Pressable>
-      {open && renderRange(0, finalIndex >= 0 ? finalIndex : end)}
-      {finalIndex >= 0 && renderRange(finalIndex, end)}
+      {presentation?.header && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityState={{ expanded: open }}
+          onPress={() => toggleTurn(turnId)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 }}
+        >
+          <Icon name={open ? 'down' : 'next'} size={14} color={colors.muted} />
+          {turn.status === 'running' ? (
+            <WorkingIndicator turn={turn} />
+          ) : (
+            <Text style={[styles.muted, { fontSize: 13 }]}>{label}</Text>
+          )}
+        </Pressable>
+      )}
+      {open ? renderRange(0, end) : finalIndex >= 0 && renderRange(finalIndex, finalIndex + 1)}
     </>
   )
 }
@@ -339,16 +344,31 @@ function Message() {
   const user = useAuiState((state) => state.message.role === 'user')
   const createdAt = useAuiState((state) => state.message.createdAt)
   const streaming = useAuiState((state) => state.message.status?.type === 'running')
+  const presentation = useConversationPresentation(id)
+  const collapsed = useConversationSelector(
+    useCallback(
+      (value) => (presentation ? value.collapsedTurns[presentation.groupId] : undefined),
+      [presentation?.groupId],
+    ),
+  )
+  const showContent =
+    user ||
+    !presentation?.groupTurn ||
+    !(collapsed ?? presentation.groupTurn.status === 'completed') ||
+    presentation.final ||
+    presentation.footer
   const text = useAuiState((state) =>
     state.message.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n\n'),
   )
   const car = useCarMode()
   const [showActions, setShowActions] = useApplicationState(false)
   const time = createdAt && formatTime(createdAt, { hour: '2-digit', minute: '2-digit' })
+  if (!showContent && !presentation?.header) return null
   return (
     <MessagePrimitive.Root
       style={{
         gap: 4,
+        marginBottom: 10,
         alignItems: user ? 'flex-end' : 'stretch',
       }}
     >
@@ -383,7 +403,7 @@ function Message() {
             : 'Sending…'}
         </Text>
       )}
-      {showActions && !car && (user || !streaming) && (
+      {showContent && showActions && !car && (user || !streaming) && (
         <View
           style={{
             flexDirection: 'row',
@@ -425,7 +445,6 @@ export function Conversation() {
   const legacyEvents = useConversationSelector((value) => value.legacyEvents)
   const activityError = useConversationSelector((value) => value.activityError)
   const followRequest = useConversationSelector((value) => value.followRequest)
-  const lastTurn = task.turns?.at(-1)
   const bookmarks = task.messages.flatMap((message, index) =>
     message.role === 'assistant' && message.bookmarked ? [{ message, index }] : [],
   )
@@ -555,7 +574,6 @@ export function Conversation() {
         contentContainerStyle={[
           styles.content,
           {
-            gap: 10,
             paddingTop: !connected || !following ? 44 : 8,
             paddingHorizontal: 20,
             // Reserve overlay space only when a status pill is actually shown.
@@ -610,7 +628,6 @@ export function Conversation() {
             }}
           >
             {!car && <TaskActivity task={task} events={legacyEvents} error={activityError} />}
-            {lastTurn?.status === 'running' && <WorkingIndicator turn={lastTurn} />}
             <TaskApprovals taskId={task.id} />
             {!!task.error && <Text style={styles.error}>{task.error}</Text>}
           </View>

@@ -57,13 +57,13 @@ app.on('browser-window-created', (_event, window) =>
       await wait(()=>document.querySelector('[aria-label="Task tool activity"]'));
       document.querySelector('[aria-label="Task tool activity"] summary').click();await wait(()=>document.body.innerText.includes('git status --short'));
       await click('Task actions');await wait(()=>button('Pin task'));await click('Pin task');await wait(()=>document.querySelector('[aria-label="Task sidebar"]').innerText.includes('Pinned'));
-      await wait(()=>button('Task settings'));await click('Task settings');await wait(()=>button('Model')&&!document.body.innerText.includes('Loading provider models'));
+      await click('Task actions');await click('Choose agent and model');await wait(()=>button('Agent configuration'));await click('Agent configuration');await wait(()=>button('Model')&&!document.body.innerText.includes('Loading provider models'));
       await click('Model');await wait(()=>document.querySelector('[role="combobox"]'));
       const search=document.querySelector('[role="combobox"]');fill(search,'fixture');await wait(()=>document.querySelectorAll('[role="option"]').length===1);
       search.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));
       search.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await wait(()=>!document.querySelector('[role="listbox"]'));
-      if(button('Model').dataset.value!=='fixture/model')throw new Error('Keyboard model selection failed'); await pick('Reasoning level','high'); await pick('Task permissions','workspace-write');
-      await click('Save task settings');await wait(()=>!document.querySelector('[role="dialog"]'));
+      if(button('Model').dataset.value!=='fixture/model')throw new Error('Keyboard model selection failed'); await pick('Reasoning level','high'); await pick('Harness access','workspace-write');
+      await click('Save harness');await wait(()=>!document.querySelector('[role="dialog"]'));
       const dailyTitle=(await snapshot()).workspace.tasks[0].title;
       const configured=(await snapshot()).workspace;if(configured.agents[0].model!==''||configured.agents[0].permission!=='ask'||configured.tasks[0].agentOverrides.permission!=='workspace-write'||configured.tasks[0].agentOverrides.model!=='fixture/model')throw new Error('Task override leaked into agent');
       button('Snooze task').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));

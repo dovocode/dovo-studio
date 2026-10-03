@@ -1,5 +1,13 @@
 import { Fragment } from 'react'
-import { Bot, MessageCircleQuestion, Files, FileCode2, Globe, Smartphone } from 'lucide-react'
+import {
+  Bot,
+  MessageCircleQuestion,
+  Files,
+  FileCode2,
+  Globe,
+  Smartphone,
+  FolderSymlink,
+} from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from '@dovo/studio-ui'
 import type { TaskSurface } from './task-header'
 
@@ -7,10 +15,12 @@ export function TaskTools({
   surface,
   onSelect,
   hasDiff,
+  artifactsEnabled = false,
 }: {
   surface: TaskSurface
   onSelect: (surface: TaskSurface) => void
   hasDiff: boolean
+  artifactsEnabled?: boolean
 }) {
   return (
     <nav className="studio-navigation studio-tools-navigation" aria-label="Thread tools">
@@ -20,6 +30,8 @@ export function TaskTools({
       {(
         [
           ['files', 'Files', Files],
+          ['projects', 'Linked projects', FolderSymlink],
+          ...(artifactsEnabled ? [['artifacts', 'Artifacts', FileCode2] as const] : []),
           ...(hasDiff ? [['changes', 'Diff', FileCode2] as const] : []),
           ['agents', 'Agents', Bot],
           ['side-chats', 'Side chats', MessageCircleQuestion],

@@ -65,7 +65,7 @@ export const useStudioHost=()=>({browser});
 export const useAppPreferences=()=>({browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{}});
 export const useRemoteBrowserProfiles=()=>({profiles:[{id:'default',name:'Remote Default'},{id:'remote-work',name:'Remote Work'},{id:'remote-personal',name:'Remote Personal'}],error:'',loading:false});
 export const readAppPreferences=()=>({browserViewport:'fill'});
-export const updateAppPreferences=()=>{};export const startPolling=()=>({stop:async()=>{}});
+window.preferences=[];export const updateAppPreferences=change=>window.preferences.push(change);export const startPolling=()=>({stop:async()=>{}});
 `,
         }))
       },
@@ -88,23 +88,61 @@ try {
     }),
   )
   await page.goto('http://localhost/')
-  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+  for (const file of readdirSync(root + 'apps/web/dist/client/assets').filter((file) =>
     file.endsWith('.css'),
   ))
     await page.addStyleTag({
-      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+      content: readFileSync(root + 'apps/web/dist/client/assets/' + file, 'utf8'),
     })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  mkdirSync(root + 'work/browser-tabs', { recursive: true })
+  await page.setViewportSize({ width: 380, height: 700 })
+  if (await page.getByRole('tablist').count()) throw new Error('Single-tab browser has a tab strip')
+  if (await page.getByRole('combobox', { name: 'Profile for this tab' }).isVisible())
+    throw new Error('Profile picker is outside options')
+  const toolbar = page.getByRole('form', { name: 'Browser navigation' })
+  const toolbarBox = await toolbar.boundingBox()
+  if (!toolbarBox || toolbarBox.height > 45) throw new Error('Browser toolbar is not compact')
+  const input = page.getByRole('textbox', { name: 'Preview URL' })
+  if (await input.inputValue()) throw new Error('New tab should have an empty address')
+  const inputBox = await input.boundingBox()
+  if (!inputBox || inputBox.width < 160) throw new Error('Address bar is squeezed by controls')
+  await page.screenshot({ path: root + 'work/browser-tabs/compact-browser.png' })
+  await input.fill('http://localhost:3000')
+  await page.getByLabel('Browser options', { exact: true }).click()
+  await page.getByRole('button', { name: 'Agent browser access', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Viewport', exact: true }).selectOption('phone')
+  if ((await page.evaluate(() => window.calls)).some((call) => call.action === 'show'))
+    throw new Error('Browser options submitted the address form')
+  if (!(await page.evaluate(() => window.preferences.length)))
+    throw new Error('Agent browser access control stopped working')
+  await page.getByLabel('Browser options', { exact: true }).click()
+  await input.press('Enter')
+  await page.waitForFunction(() => window.calls.some((call) => call.action === 'show'))
+  const shown = await page.evaluate(() => window.calls.find((call) => call.action === 'show'))
+  if (shown.url !== 'http://runtime.local:3000/')
+    throw new Error('HTTP LAN navigation changed: ' + shown.url)
+  if (shown.viewport?.width !== 390) throw new Error('Responsive viewport stopped working')
+  await page.getByRole('button', { name: 'Reload preview', exact: true }).click()
+  await page.waitForFunction(() => window.calls.some((call) => call.action === 'reload'))
+  await page.getByLabel('Browser options', { exact: true }).click()
+  await page.getByRole('button', { name: 'Hard reload', exact: true }).click()
+  await page.getByRole('button', { name: 'Open DevTools', exact: true }).click()
+  await page.getByRole('button', { name: 'Open in default browser', exact: true }).click()
+  const browserActions = await page.evaluate(() => window.calls.map((call) => call.action))
+  if (!['hard-reload', 'devtools', 'external'].every((action) => browserActions.includes(action)))
+    throw new Error('Advanced browser actions stopped working')
+  await page.getByRole('button', { name: 'Close current tab', exact: true }).click()
+  await page.getByLabel('Browser options', { exact: true }).click()
+  await page.waitForFunction(() => window.calls.some((call) => call.action === 'close'))
   await page.getByRole('button', { name: 'New browser tab', exact: true }).click()
-  await page.getByRole('menuitem', { name: /^New remote tab/ }).hover()
-  await page.getByRole('menuitem', { name: 'Remote Work', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'New remote tab · Remote Work', exact: true }).click()
   await page.getByRole('tab', { name: /Page/ }).waitFor()
   if (await page.getByText('Choose a device', { exact: true }).count())
     throw new Error('Device panel leaked into remote browser')
   const first = await page.getByRole('tab', { name: /Page/ }).textContent()
   await page.getByRole('button', { name: 'New browser tab', exact: true }).click()
-  await page.getByRole('menuitem', { name: /^New remote tab/ }).hover()
-  await page.getByRole('menuitem', { name: 'Remote Default', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'New remote tab · Remote Default', exact: true }).click()
   await page.waitForFunction(
     () => window.calls.filter((c) => c.path === '/api/previews/browser/open').length === 2,
   )
@@ -117,22 +155,25 @@ try {
     throw new Error('Remote tab not selected')
   if ((await page.getByLabel('Remote tab', { exact: true }).count()) !== 2)
     throw new Error('Missing remote indicators')
+  await page.getByLabel('Browser options', { exact: true }).click()
   const picker = page.getByRole('combobox', { name: 'Profile for this tab' })
   if ((await picker.inputValue()) !== 'remote-work')
     throw new Error('Tab lost its selected remote profile')
   if (await picker.getByRole('option', { name: 'Local Work' }).count())
     throw new Error('Local profiles appeared in a remote tab')
   await picker.selectOption('remote-personal')
+  await page.getByLabel('Browser options', { exact: true }).click()
   await page.waitForFunction(
     () => window.calls.filter((c) => c.path === '/api/previews/browser/open').length === 3,
   )
   await page.getByRole('button', { name: 'New browser tab', exact: true }).click()
-  await page.getByRole('menuitem', { name: /^New tab/ }).hover()
-  await page.getByRole('menuitem', { name: 'Local Work', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'New local tab · Local Work', exact: true }).click()
+  await page.getByLabel('Browser options', { exact: true }).click()
   if ((await picker.inputValue()) !== 'local-work')
     throw new Error('New local tab did not use its selected profile')
   if (await picker.getByRole('option', { name: 'Remote Work' }).count())
     throw new Error('Remote profiles appeared in a local tab')
+  await page.getByLabel('Browser options', { exact: true }).click()
   if (await page.getByRole('button', { name: 'Profiles', exact: true }).count())
     throw new Error('Profile settings stayed in the thread')
 
@@ -158,7 +199,7 @@ try {
   )
     throw new Error(JSON.stringify({ calls, errors }))
   console.log(
-    'Plus menu, mixed tab strip, remote indicators, title updates, retained sessions, per-tab local/remote profile choices, profile switching, and scoped close passed.',
+    'Compact toolbar, hidden single-tab strip, Enter navigation, HTTP LAN addresses, browser options, plus menu, mixed tab strip, remote indicators, title updates, retained sessions, per-tab local/remote profile choices, profile switching, and scoped close passed.',
   )
 } finally {
   await browser.close()

@@ -73,6 +73,8 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
           ordinal: 0,
           delta: 'Hello',
         })
+        emit('session.text.ended', { sessionID: 'other', assistantMessageID: 'a', ordinal: 0 })
+        emit('session.text.ended', { sessionID: 'session', assistantMessageID: 'a', ordinal: 0 })
         emit('session.tool.input.started', {
           sessionID: 'session',
           assistantMessageID: 'a',
@@ -134,6 +136,7 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
       signal: AbortSignal.timeout(5000),
       onSession: () => {},
       onText: (part) => text.push(part),
+      onTextBoundary: () => text.push('boundary'),
       onEvent: (name) => eventNames.push(name),
       onActivity: () => {},
       approve: async () => false,
@@ -141,7 +144,7 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
     })
     expect(mcpReads).toBe(2)
     expect(requests.filter(({ path }) => path.endsWith('/prompt'))).toHaveLength(1)
-    expect(text).toEqual(['Hello'])
+    expect(text).toEqual(['Hello', 'boundary'])
     expect(eventNames.filter((name) => name === 'message.part.updated')).toHaveLength(3)
     expect(requests.map((request) => request.path)).toContain('/api/session/session/prompt')
     expect(requests.map((request) => request.path)).toContain('/api/session/session')

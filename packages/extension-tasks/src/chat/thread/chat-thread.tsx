@@ -1,12 +1,26 @@
 import { useConversationHistory } from './use-conversation-history'
 import { ChatMessage } from './chat-message'
 import { DeferredTurn } from './deferred-turn'
-import { type PendingMessage } from '@dovo/protocol'
+import {
+  threadPullLink,
+  conversationMessageTurns,
+  conversationToolsByMessage,
+  type PendingMessage,
+} from '@dovo/protocol'
+import { TurnWork } from './turn-work'
+import { PullLinkActions } from './pull-link-actions'
 import { conversationTurns, conversationTurnLabel } from './conversation-turns'
 import { useThreadSearch } from './use-thread-search'
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { TaskActivity, useTaskActivity } from './task-activity'
-import { TurnLabel } from './turn-label'
 import { Star, ChevronUp, ChevronDown, X } from 'lucide-react'
 import {
   Conversation,
@@ -46,7 +60,16 @@ export function ChatThread({
   const task = history.task
   const { chooseLink, openPullLink } = useStudioHost()
   const [linkError, setLinkError] = useState('')
-  const { request, connected } = useWorkspace()
+  const { request, connected, workspace, connection } = useWorkspace()
+  const linkScope = JSON.stringify([connection?.address, connection?.token, liveTask.id])
+  const [selectedPull, setSelectedPull] = useState<{ scope: string; url: string } | null>(null)
+  const pull = selectedPull?.scope === linkScope ? threadPullLink(selectedPull.url) : null
+  const fullTask = workspace.tasks.find((item) => item.id === liveTask.id)
+  const selectPull = (url: string) => {
+    if (!fullTask || !threadPullLink(url)) return false
+    setSelectedPull({ scope: linkScope, url })
+    return true
+  }
   const [bookmarkJump, setBookmarkJump] = useState('')
   useEffect(() => {
     if (!bookmarkJump) return
@@ -123,18 +146,23 @@ export function ChatThread({
     [task.messages],
   )
   const activity = useTaskActivity(task.id, task.status === 'running')
-  const turns = useMemo(
-    () => new Map(task.turns?.map((turn) => [turn.assistantId, turn])),
-    [task.turns],
-  )
+  const turns = useMemo(() => conversationMessageTurns(task), [task.turns, task.messages])
   const retainActivityGroups = useMemo(() => {
-    let previous = new Map<string, typeof emptyTools>()
-    return (next: Map<string, typeof emptyTools>) => {
-      for (const [id, tools] of next) {
-        const old = previous.get(id)
-        if (old && old.length === tools.length && old.every((tool, index) => tool === tools[index]))
-          next.set(id, old)
-      }
+    let previous = {
+      byMessage: new Map<string, typeof emptyTools>(),
+      byTurn: new Map<string, typeof emptyTools>(),
+    }
+    return (next: typeof previous) => {
+      for (const kind of ['byMessage', 'byTurn'] as const)
+        for (const [id, tools] of next[kind]) {
+          const old = previous[kind].get(id)
+          if (
+            old &&
+            old.length === tools.length &&
+            old.every((tool, index) => tool === tools[index])
+          )
+            next[kind].set(id, old)
+        }
       previous = next
       return next
     }
@@ -146,28 +174,31 @@ export function ChatThread({
         return turn ? [turn.id] : []
       }),
     )
-    const byTurn = new Map<string, typeof activity.tools>()
-    const unassigned: typeof activity.tools = []
+    const byMessage = conversationToolsByMessage(task, activity.tools)
+    const byTurn = new Map<string, typeof emptyTools>()
     for (const tool of activity.tools) {
-      if (!tool.turnId || !visibleTurns.has(tool.turnId)) {
-        unassigned.push(tool)
-        continue
-      }
-      const events = byTurn.get(tool.turnId) ?? []
-      events.push(tool)
-      byTurn.set(tool.turnId, events)
+      if (!tool.turnId) continue
+      const tools = byTurn.get(tool.turnId) ?? []
+      tools.push(tool)
+      byTurn.set(tool.turnId, tools)
     }
-    return { byTurn: retainActivityGroups(byTurn), unassigned }
+    const unassigned = activity.tools.filter(
+      (tool) => !tool.turnId || !visibleTurns.has(tool.turnId),
+    )
+    return { ...retainActivityGroups({ byMessage, byTurn }), unassigned }
   }, [activity.tools, task.messages, turns, retainActivityGroups])
-  const compactionsByTurn = useMemo(() => {
+  const compactionsByMessage = useMemo(() => {
     const byTurn = new Map<string, NonNullable<Task['compactions']>>()
     for (const event of task.compactions ?? []) {
-      const events = byTurn.get(event.turnId) ?? []
+      const messageId =
+        event.messageId ?? task.turns?.find((turn) => turn.id === event.turnId)?.assistantId
+      if (!messageId) continue
+      const events = byTurn.get(messageId) ?? []
       events.push(event)
-      byTurn.set(event.turnId, events)
+      byTurn.set(messageId, events)
     }
     return byTurn
-  }, [task.compactions])
+  }, [task.compactions, task.turns])
   const groups = useMemo(() => conversationTurns(task), [task.messages, task.turns])
   const markers = useMemo(
     () =>
@@ -259,6 +290,13 @@ export function ChatThread({
       )}
       <Conversation
         key={task.id}
+        onContextMenuCapture={(event) => {
+          const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
+          if (anchor instanceof HTMLAnchorElement && selectPull(anchor.href)) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+        }}
         onClickCapture={(event) => {
           if (
             event.button !== 0 ||
@@ -376,35 +414,70 @@ export function ChatThread({
                     )
                   }
                 >
-                  {() =>
-                    group.messages.map((message) => {
-                      const turn = turns.get(message.id)
-                      return (
-                        <ChatMessage
-                          key={message.id}
-                          taskId={task.id}
-                          message={message}
-                          turn={turn}
-                          tools={
-                            turn ? (activityGroups.byTurn.get(turn.id) ?? emptyTools) : emptyTools
-                          }
-                          compactions={
-                            turn
-                              ? (compactionsByTurn.get(turn.id) ?? emptyCompactions)
-                              : emptyCompactions
-                          }
-                          highlighted={selectedMatch?.id === message.id}
-                          pending={pending?.message.id === message.id ? pending : null}
-                          taskRunning={task.status === 'running'}
-                          latestTurnId={lastTurn?.id}
-                          connected={connected}
-                          request={request}
-                          onTerminal={onTerminal}
-                          onBookmark={history.setBookmark}
-                        />
-                      )
-                    })
-                  }
+                  {() => {
+                    const firstAssistant = group.messages.find(
+                      (message) => message.role === 'assistant',
+                    )
+                    const finalAssistant =
+                      group.messages
+                        .filter((message) => message.role === 'assistant' && message.text.trim())
+                        .at(-1) ??
+                      group.messages.filter((message) => message.role === 'assistant').at(-1)
+                    const render = (open: boolean, header?: ReactNode) =>
+                      group.messages.map((message) => {
+                        const turn = turns.get(message.id)
+                        return (
+                          <Fragment key={message.id}>
+                            {message.id === firstAssistant?.id && header}
+                            <ChatMessage
+                              workOpen={open}
+                              footer={
+                                message.id ===
+                                group.messages
+                                  .filter((message) => message.role === 'assistant')
+                                  .at(-1)?.id
+                              }
+                              final={
+                                group.status !== 'running' && message.id === finalAssistant?.id
+                              }
+                              taskId={task.id}
+                              message={message}
+                              turn={turn}
+                              tools={activityGroups.byMessage.get(message.id) ?? emptyTools}
+                              summaryTools={
+                                turn
+                                  ? (activityGroups.byTurn.get(turn.id) ?? emptyTools)
+                                  : emptyTools
+                              }
+                              compactions={compactionsByMessage.get(message.id) ?? emptyCompactions}
+                              highlighted={selectedMatch?.id === message.id}
+                              pending={pending?.message.id === message.id ? pending : null}
+                              taskRunning={task.status === 'running'}
+                              latestTurnId={lastTurn?.id}
+                              connected={connected}
+                              request={request}
+                              onTerminal={onTerminal}
+                              onBookmark={history.setBookmark}
+                            />
+                          </Fragment>
+                        )
+                      })
+                    return group.turn ? (
+                      <TurnWork
+                        turn={group.turn}
+                        reveal={group.messages.some(
+                          (message) =>
+                            message.id === selectedMatch?.id ||
+                            `message-${task.id}-${message.id}` === revealMessage ||
+                            `message-${task.id}-${message.id}` === bookmarkJump,
+                        )}
+                      >
+                        {render}
+                      </TurnWork>
+                    ) : (
+                      render(true)
+                    )
+                  }}
                 </DeferredTurn>
               </section>
             ))}
@@ -421,17 +494,20 @@ export function ChatThread({
               }
               error={activity.error}
             />
-            {lastTurn?.status === 'running' && (
-              <p role="status" className="flex items-center gap-2 py-1">
-                <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
-                <TurnLabel turn={lastTurn} />
-              </p>
-            )}
           </ConversationContent>
         </ConversationHistory>
         <ConversationRail items={markers} />
         <ConversationScrollButton />
       </Conversation>
+      {pull && fullTask && (
+        <PullLinkActions
+          key={`${linkScope}:${pull.url}`}
+          task={fullTask}
+          pull={pull}
+          onOpen={(url) => onPullLink?.(url) || openPullLink?.(url) || false}
+          onClose={() => setSelectedPull(null)}
+        />
+      )}
     </>
   )
 }

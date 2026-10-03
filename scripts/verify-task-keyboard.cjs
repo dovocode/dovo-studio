@@ -55,12 +55,12 @@ app.on('browser-window-created', (_event, window) => {
         qa.button('Hide terminal pane').focus();qa.button('Hide terminal pane').click();
         await qa.wait(()=>qa.button('Chat').getAttribute('aria-pressed')==='true');
         qa.check('Hide terminal returns to the preserved composer',document.activeElement===qa.composer);
-        qa.button('Task actions').click();await qa.wait(()=>qa.button('Task settings'));
-        qa.button('Task settings').click();await qa.wait(()=>document.querySelector('[role="dialog"] input'));
-        document.querySelector('[role="dialog"] input').focus();
+        qa.button('Choose agent and model').click();await qa.wait(()=>qa.button('Agent configuration'));
+        qa.button('Agent configuration').click();await qa.wait(()=>document.querySelector('[role="dialog"] button'));
+        document.querySelector('[role="dialog"] button').focus();
         qa.key(String.fromCharCode(96),{ctrlKey:true});qa.key('k',{metaKey:true});
         await new Promise(r=>setTimeout(r,100));
-        qa.check('Task settings keeps shortcuts scoped to its dialog',qa.button('Chat').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('[role="dialog"]').length===1&&!document.querySelector('input[aria-label="Search commands"]'));
+        qa.check('Agent configuration keeps shortcuts scoped to its dialog',qa.button('Chat').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('[role="dialog"]').length===1&&!document.querySelector('input[aria-label="Search commands"]'));
         qa.button('Close').click();await qa.wait(()=>!document.querySelector('[role="dialog"]'));
         qa.composer.focus();qa.key('k',{metaKey:true});await qa.wait(()=>document.querySelector('input[aria-label="Search commands"]'));
         qa.check('Command shortcut opens from composer',document.activeElement===document.querySelector('input[aria-label="Search commands"]'));

@@ -193,7 +193,10 @@ export function route(
         }
         if (path === '/api/artifacts/list') {
           const { taskId } = decode(artifactScopeSchema, yield* serviceResult(body(request, 4096)))
-          return yield* serviceResult({ artifacts: s.artifacts.list(taskId) })
+          return yield* serviceResult({
+            artifacts: s.artifacts.list(taskId),
+            links: s.artifacts.links(taskId),
+          })
         }
         if (path === '/api/artifacts/read' || path === '/api/artifacts/versions') {
           const { taskId, id, revision } = decode(

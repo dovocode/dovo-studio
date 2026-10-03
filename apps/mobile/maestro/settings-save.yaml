@@ -56,9 +56,7 @@ appId: com.dovo.studio
     id: Message
 - inputText: Keep this draft through a failed settings save
 - tapOn: Dismiss keyboard
-- tapOn:
-    id: Task settings
-- tapOn: Model & access
+- tapOn: Agent & model
 - extendedWaitUntil:
     notVisible: Loading provider models…
     timeout: 15000
@@ -85,26 +83,18 @@ appId: com.dovo.studio
     id: Choose Daybreak Blue
 - scrollUntilVisible:
     element:
-      id: Save model & access
+      id: Save agent & model
     direction: DOWN
     centerElement: false
 - tapOn:
-    id: Save model & access
+    id: Save agent & model
 # The fixture holds this request until all guard assertions have completed.
 - assertVisible: Saving model settings…
 - assertVisible:
-    id: Save model & access
+    id: Save agent & model
     enabled: false
 - assertVisible:
     id: Close
-    enabled: false
-- scrollUntilVisible:
-    element:
-      text: Back
-    direction: UP
-    centerElement: false
-- assertVisible:
-    text: Back
     enabled: false
 - assertVisible:
     id: Model
@@ -129,20 +119,12 @@ appId: com.dovo.studio
 - assertVisible: Fixture save failed. Your changes are still here.
 - assertNotVisible: Saving model settings…
 - assertVisible:
-    id: Save model & access
+    id: Save agent & model
     enabled: true
 - assertVisible:
     id: Close
     enabled: true
 - takeScreenshot: dovo-mobile-settings-save-failure
-- scrollUntilVisible:
-    element:
-      text: Back
-    direction: UP
-    centerElement: false
-- assertVisible:
-    text: Back
-    enabled: true
 - assertVisible:
     id: Model
     enabled: true
@@ -152,17 +134,11 @@ appId: com.dovo.studio
 - assertVisible: Daybreak Blue
 - scrollUntilVisible:
     element:
-      id: Save model & access
+      id: Save agent & model
     direction: DOWN
     centerElement: false
 - tapOn:
-    id: Save model & access
-- extendedWaitUntil:
-    visible:
-      id: Task title
-    timeout: 10000
-- tapOn:
-    id: Close
+    id: Save agent & model
 - extendedWaitUntil:
     visible:
       id: Message
@@ -170,10 +146,8 @@ appId: com.dovo.studio
 - assertVisible:
     id: Message
     text: Keep this draft through a failed settings save
-# Reopen from the task header to verify the successful retry was stored.
-- tapOn:
-    id: Task settings
-- tapOn: Model & access
+# Reopen from the composer to verify the successful retry was stored.
+- tapOn: Agent & model
 - extendedWaitUntil:
     notVisible: Loading provider models…
     timeout: 15000

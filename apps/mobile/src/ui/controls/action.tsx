@@ -14,7 +14,6 @@ const actionIcons: Readonly<Partial<Record<string, IconName>>> = {
   'PR filters': 'filters',
   'Back to PRs': 'back',
   'Attach files': 'add',
-  'Task settings': 'settings',
   Send: 'send',
   Stop: 'stop',
   Close: 'close',

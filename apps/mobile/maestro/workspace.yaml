@@ -87,19 +87,10 @@ appId: com.dovo.studio
     visible: The queue is empty.
     timeout: 10000
 - tapOn: Close
-- tapOn:
-    id: Task settings
-- assertVisible: Task settings
-- scrollUntilVisible:
-    element:
-      id: Pin task
-    direction: DOWN
-    centerElement: true
-- tapOn:
-    id: Pin task
-- extendedWaitUntil:
-    visible: Unpin task
-    timeout: 10000
+- tapOn: Task tools
+- tapOn: Pin task
+- tapOn: Task tools
+- assertVisible: Unpin task
 - tapOn: Close
 - tapOn:
     id: Message

@@ -221,12 +221,14 @@ export const Markdown = memo(function Markdown({
   fileBaseURL,
   preserveLineBreaks = false,
   variant = 'default',
+  onLinkLongPress,
 }: {
   text: string
   baseURL?: string
   fileBaseURL?: string
   preserveLineBreaks?: boolean
   variant?: 'default' | 'chat'
+  onLinkLongPress?: (url: string) => void
 }) {
   const parts = useMemo(() => mermaidBlocks(text), [text])
   const car = useCarMode()
@@ -282,6 +284,14 @@ export const Markdown = memo(function Markdown({
                 Alert.alert('Desktop link', 'Open this file or link on your desktop.')
               }
             }}
+            onLinkLongPress={
+              onLinkLongPress
+                ? ({ url }) => {
+                    const target = resolveMarkdownLink(url, baseURL, fileBaseURL)
+                    if (target) onLinkLongPress(target)
+                  }
+                : undefined
+            }
           />
         ),
       )}

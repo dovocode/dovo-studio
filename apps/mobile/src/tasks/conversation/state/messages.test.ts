@@ -56,6 +56,53 @@ describe('Dovo conversation adapter', () => {
     expect(messages[1].status).toEqual({ type: 'complete', reason: 'stop' })
     expect(messages[2].status).toEqual({ type: 'running' })
   })
+  it('keeps steered tools with their messages and counts all of them in the final summary', () => {
+    const steered: Task = {
+      ...task,
+      status: 'done',
+      messages: [
+        { id: 'a1', turnId: 't1', role: 'assistant', text: 'Before clarification' },
+        { id: 'steer', turnId: 't1', role: 'user', text: 'Clarification' },
+        { id: 'a2', turnId: 't1', role: 'assistant', text: 'Final answer' },
+      ],
+      turns: [turn('t1', 'a2', 'completed')],
+    }
+    const command = (id: string, messageId: string, input: string): ToolEvents[number] => ({
+      ...event(id, 't1', 'completed'),
+      payload: JSON.stringify({
+        turnId: 't1',
+        messageId,
+        toolId: id,
+        status: 'completed',
+        event: { item: { type: 'commandExecution', command: input } },
+      }),
+    })
+    const project = createConversationMessages()
+    const first = project(steered, [command('before', 'a1', 'pnpm test')])
+    const next = project(steered, [
+      command('after', 'a2', 'git status'),
+      command('before', 'a1', 'pnpm test'),
+    ])
+    expect(next[0]).toBe(first[0])
+    expect(next[0].content).toEqual([
+      { type: 'text', text: 'Before clarification' },
+      expect.objectContaining({ type: 'tool-call', toolCallId: 't1:before' }),
+    ])
+    expect(next[2].content).toEqual([
+      { type: 'text', text: 'Final answer' },
+      expect.objectContaining({ type: 'tool-call', toolCallId: 't1:after' }),
+      { type: 'data', name: 'dovo.turn-summary', data: '1 test command · 2 commands used' },
+    ])
+    const updated = project(steered, [
+      command('after', 'a2', 'git status'),
+      command('before', 'a1', 'git diff'),
+    ])
+    expect(updated[2].content).toEqual(
+      expect.arrayContaining([
+        { type: 'data', name: 'dovo.turn-summary', data: '0 test commands · 2 commands used' },
+      ]),
+    )
+  })
   it('keeps the existing order of multiple tools within each turn', () => {
     const result = conversationMessages(task, [
       {
@@ -78,7 +125,7 @@ describe('Dovo conversation adapter', () => {
     const result = conversationMessages(
       {
         ...task,
-        messages: [{ id: 'a2', role: 'assistant', text: 'Hello world!' }],
+        messages: [{ id: 'a2', role: 'assistant', text: 'Hello world!', textBreaks: [6, 12] }],
       },
       [
         {
@@ -112,7 +159,7 @@ describe('Dovo conversation adapter', () => {
     const result = conversationMessages(
       {
         ...task,
-        messages: [{ id: 'a2', role: 'assistant', text: 'BeforeAfter' }],
+        messages: [{ id: 'a2', role: 'assistant', text: 'BeforeAfter', textBreaks: [6, 11] }],
         compactions: [
           {
             at: startedAt,

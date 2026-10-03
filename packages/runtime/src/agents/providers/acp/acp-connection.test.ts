@@ -8,6 +8,7 @@ import {
   acpControl,
   deleteAcpSession,
   inspectAcp,
+  initializeAcp,
   listAcpSessions,
   logoutAcp,
   openAcpConnection,
@@ -158,3 +159,32 @@ it('forwards browser authentication instructions from stderr', async () => {
   await authenticateAcp(await fixture(), 'browser', undefined, (text) => output.push(text))
   expect(output.join('')).toContain('https://accounts.example.test/sign-in?state=test')
 })
+
+it.each(['closed', 'oversized'] as const)(
+  'ends pending requests when ACP input is %s even if the launcher stays alive',
+  async (failure) => {
+    const dir = await mkdtemp(join(tmpdir(), 'dovo-acp-stream-'))
+    dirs.push(dir)
+    const script = join(dir, 'agent.cjs')
+    await writeFile(
+      script,
+      `
+    process.stdin.once('data', () => {
+      ${failure === 'closed' ? 'process.stdout.end()' : "process.stdout.write('x'.repeat(32 * 1024 * 1024 + 1))"}
+    })
+    setInterval(() => {}, 1000)
+  `,
+    )
+    const connection = openAcpConnection(
+      { command: process.execPath, args: [script], env: {} },
+      { requestPermission: () => ({ outcome: { outcome: 'cancelled' } }), sessionUpdate: () => {} },
+    )
+    try {
+      await expect(initializeAcp(connection)).rejects.toThrow(/closed|byte limit/i)
+      await connection.closed
+      expect(connection.signal.aborted).toBe(true)
+    } finally {
+      await connection.close()
+    }
+  },
+)

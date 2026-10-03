@@ -1,12 +1,10 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskLifecycleActions } from './task-lifecycle-actions'
-import { Ellipsis, GitPullRequest, Minimize2, Pin, Settings2 } from 'lucide-react'
+import { Ellipsis, GitPullRequest, Minimize2, Pin } from 'lucide-react'
 import { responses, updateTask, useWorkspace, type Task } from '@dovo/studio-core'
 import { IconButton, Popover } from '@dovo/studio-ui'
-import { TaskSettings } from './task-settings'
 export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () => void }) {
   const { setWorkspace, request, connected } = useWorkspace(),
-    [settings, setSettings] = useApplicationState(false),
     [actionsOpen, setActionsOpen] = useApplicationState(false),
     [compactBusy, setCompactBusy] = useApplicationState(false),
     [compactError, setCompactError] = useApplicationState('')
@@ -78,16 +76,6 @@ export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () 
                   <GitPullRequest size={13} />
                 </IconButton>
               )}
-              <IconButton
-                label="Task settings"
-                className="size-7"
-                onClick={() => {
-                  setActionsOpen(false)
-                  setSettings(true)
-                }}
-              >
-                <Settings2 size={13} />
-              </IconButton>
             </div>
             {compactError && (
               <p role="alert" className="max-w-64 text-xs text-destructive">
@@ -97,7 +85,6 @@ export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () 
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
-      {settings && <TaskSettings task={task} open={settings} onOpenChange={setSettings} />}
     </>
   )
 }
