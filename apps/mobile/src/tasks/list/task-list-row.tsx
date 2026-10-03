@@ -31,7 +31,9 @@ import {
 } from '@dovo/protocol'
 import { DeviceLabel } from './device-label'
 import { TaskRowMenu } from './task-row-menu'
-import { useTaskLifecycle } from '../detail/use-task-lifecycle'
+import { TaskSwipeActions } from './task-swipe-actions'
+import { isSnoozed } from '@dovo/protocol'
+import { chooseSnoozeDuration, useTaskLifecycle } from '../detail/use-task-lifecycle'
 import { colors, styles } from '../../ui/theme'
 import { showTaskDone, taskRowStatus } from './task-row-status'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
@@ -116,7 +118,7 @@ export function TaskListRow({
   const icon = projectIcon(repository)
   const StatusIcon = statusIcons[state]
 
-  return (
+  const content = (
     <View style={{ marginVertical: 3, borderRadius: 12, backgroundColor: colors.surface }}>
       {/* The menu shares the metadata line, leaving the title its full width. */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
@@ -273,5 +275,33 @@ export function TaskListRow({
         </Text>
       )}
     </View>
+  )
+  if (car || task.archivedAt) return content
+  return (
+    <TaskSwipeActions
+      enabled={!disabled && !selectionActive && actions.enabled && !actions.busy}
+      primary={{
+        label: task.archived ? 'Unsettle' : 'Settle',
+        icon: task.archived ? 'reopen' : 'check',
+        disabled: task.status === 'running',
+        run: actions.toggleSettled,
+      }}
+      secondary={
+        task.archived
+          ? undefined
+          : {
+              label: isSnoozed(task, now) ? 'Unsnooze' : 'Snooze',
+              icon: 'snooze',
+              run: () =>
+                isSnoozed(task, Date.now())
+                  ? actions.snooze(null)
+                  : chooseSnoozeDuration('Snooze thread', (hours) =>
+                      actions.snooze(new Date(Date.now() + hours * 3600000).toISOString()),
+                    ),
+            }
+      }
+    >
+      {content}
+    </TaskSwipeActions>
   )
 }

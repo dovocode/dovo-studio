@@ -3,15 +3,17 @@ import { Text } from '../../ui/content/text'
 import { isSnoozed, latestCompletedTaskTurn, type Task } from '@dovo/protocol'
 import { Action } from '../../ui/controls/action'
 import { styles } from '../../ui/theme'
-import { snoozeOptions, useTaskLifecycle } from './use-task-lifecycle'
+import { chooseSnoozeDuration, useTaskLifecycle } from './use-task-lifecycle'
 export function LifecycleActions({
   task,
   allowReadState = false,
   onDeleted,
+  runtimeId,
 }: {
   task: Task
   allowReadState?: boolean
   onDeleted?: () => void
+  runtimeId?: string
 }) {
   const {
     enabled,
@@ -25,7 +27,7 @@ export function LifecycleActions({
     readStateEnabled,
     unread,
     toggleRead,
-  } = useTaskLifecycle(task, undefined, onDeleted)
+  } = useTaskLifecycle(task, runtimeId, onDeleted)
   return (
     <View style={{ gap: 10 }}>
       {allowReadState && !task.archived && latestCompletedTaskTurn(task) && (
@@ -58,21 +60,22 @@ export function LifecycleActions({
             <Action
               secondary
               label="Unsnooze"
+              icon="snooze"
               disabled={!enabled || busy}
               onPress={() => snooze(null)}
             />
           ) : (
-            <>
-              {snoozeOptions.map((item) => (
-                <Action
-                  key={item.hours}
-                  secondary
-                  label={item.label}
-                  disabled={!enabled || busy}
-                  onPress={() => snooze(new Date(Date.now() + item.hours * 3600000).toISOString())}
-                />
-              ))}
-            </>
+            <Action
+              secondary
+              label="Snooze"
+              icon="snooze"
+              disabled={!enabled || busy}
+              onPress={() =>
+                chooseSnoozeDuration('Snooze thread', (hours) =>
+                  snooze(new Date(Date.now() + hours * 3600000).toISOString()),
+                )
+              }
+            />
           )}
         </View>
       )}

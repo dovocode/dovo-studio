@@ -633,10 +633,6 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                 patch({
                   execution: { before: task.execution ?? null, after: execution },
                   existingWorktreePath: { before: task.existingWorktreePath ?? null, after: null },
-                  worktreeSetupComplete: {
-                    before: task.worktreeSetupComplete ?? null,
-                    after: null,
-                  },
                 }),
               )
             }}
@@ -665,10 +661,6 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                         worktreeBaseBranch: {
                           before: task.worktreeBaseBranch ?? null,
                           after: null,
-                        },
-                        worktreeSetupComplete: {
-                          before: task.worktreeSetupComplete ?? null,
-                          after: true,
                         },
                       }).then(() => setChoosingWorktree(false)),
                     )

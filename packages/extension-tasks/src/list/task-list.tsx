@@ -176,8 +176,12 @@ export function TaskList({
   ])
   const searchError = search.error
   const selectedEntries = entries.filter((entry) => selected.has(entry.key))
-  const bulk = async (action: 'archive' | 'reopen' | 'snooze' | 'delete' | 'read' | 'unread') => {
+  const bulk = async (
+    action: 'archive' | 'reopen' | 'snooze' | 'delete' | 'read' | 'unread',
+    hours?: number,
+  ) => {
     if (!selectedEntries.length || bulkLock.current) return
+    if (action === 'snooze' && hours === undefined) throw new Error('Choose a snooze duration.')
     if (
       action === 'delete' &&
       !window.confirm(`Delete ${selectedEntries.length} selected threads? This cannot be undone.`)
@@ -223,7 +227,7 @@ export function TaskList({
           else await client.patch(entry.task, { archived: false, snoozedUntil: null })
         } else
           await client.patch(entry.task, {
-            snoozedUntil: new Date(Date.now() + 24 * 3600000).toISOString(),
+            snoozedUntil: new Date(Date.now() + (hours ?? 0) * 3600000).toISOString(),
           })
         if ((action === 'archive' || action === 'delete') && entry.key === selectedId) onDeselect()
         setSelected((current) => {
@@ -366,7 +370,7 @@ export function TaskList({
   const selectionActions = [
     { id: 'archive', label: 'Archive' },
     { id: 'reopen', label: 'Reopen' },
-    { id: 'snooze', label: 'Snooze for 1 day' },
+    { id: 'snooze', label: 'Snooze' },
     { id: 'read', label: 'Mark as read' },
     { id: 'unread', label: 'Mark as unread' },
     { id: 'delete', label: 'Delete' },
@@ -389,16 +393,44 @@ export function TaskList({
       <ContextMenu.Label className="px-2.5 py-1.5 text-xs text-muted-foreground">
         {selectedEntries.length} threads selected
       </ContextMenu.Label>
-      {selectionActions.map(({ id, label }) => (
-        <ContextMenu.Item
-          key={id}
-          className={`flex cursor-default rounded-lg px-2.5 py-2 text-xs outline-none data-[highlighted]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 ${id === 'delete' ? 'text-destructive' : ''}`}
-          disabled={blockedAction(id)}
-          onSelect={() => void bulk(id)}
-        >
-          {label}
-        </ContextMenu.Item>
-      ))}
+      {selectionActions.map(({ id, label }) =>
+        id === 'snooze' ? (
+          <ContextMenu.Sub key={id}>
+            <ContextMenu.SubTrigger
+              disabled={blockedAction(id)}
+              className="rounded-lg px-2.5 py-2 text-xs"
+            >
+              Snooze
+            </ContextMenu.SubTrigger>
+            <ContextMenu.Portal>
+              <ContextMenu.SubContent className="z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+                {[
+                  { hours: 1, label: 'For 1 hour' },
+                  { hours: 4, label: 'For 4 hours' },
+                  { hours: 24, label: 'For 24 hours' },
+                ].map((option) => (
+                  <ContextMenu.Item
+                    key={option.hours}
+                    className="rounded-sm px-2 py-1.5 text-xs data-[highlighted]:bg-accent/55"
+                    onSelect={() => void bulk(id, option.hours)}
+                  >
+                    {option.label}
+                  </ContextMenu.Item>
+                ))}
+              </ContextMenu.SubContent>
+            </ContextMenu.Portal>
+          </ContextMenu.Sub>
+        ) : (
+          <ContextMenu.Item
+            key={id}
+            className={`flex cursor-default rounded-lg px-2.5 py-2 text-xs outline-none data-[highlighted]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 ${id === 'delete' ? 'text-destructive' : ''}`}
+            disabled={blockedAction(id)}
+            onSelect={() => void bulk(id)}
+          >
+            {label}
+          </ContextMenu.Item>
+        ),
+      )}
     </>
   )
   return (

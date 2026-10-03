@@ -130,7 +130,6 @@ export function ComposerWorkspace({
                               ...t,
                               execution,
                               existingWorktreePath: undefined,
-                              worktreeSetupComplete: undefined,
                             }
                           : t,
                       ),
@@ -343,7 +342,6 @@ export function ComposerWorkspace({
                             execution: 'worktree',
                             existingWorktreePath: item.path,
                             worktreeBaseBranch: undefined,
-                            worktreeSetupComplete: true,
                           }
                         : current,
                     ),

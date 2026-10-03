@@ -29,6 +29,7 @@ import { taskRowStatus } from '../tasks/list/task-row-status'
 import { useTaskListView } from '../tasks/list/task-list-view'
 import { useListScroll } from '../ui/layout/use-list-scroll'
 import { router } from 'expo-router'
+import { chooseSnoozeDuration } from '../tasks/detail/use-task-lifecycle'
 import { LifecycleActions } from '../tasks/detail/lifecycle-actions'
 import { Action } from '../ui/controls/action'
 import { SearchField } from '../ui/controls/field'
@@ -238,9 +239,13 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       ...settledItems,
     ]
   }, [tasks, grouping, now, projectGroups, collapsed, archived, car])
-  const bulk = async (action: 'archive' | 'restore' | 'snooze' | 'pin' | 'delete') => {
+  const bulk = async (
+    action: 'archive' | 'restore' | 'snooze' | 'pin' | 'delete',
+    hours?: number,
+  ) => {
     const chosen = allTasks.filter((item) => selected.has(item.key))
     if (!chosen.length || bulkBusy) return
+    if (action === 'snooze' && hours === undefined) throw new Error('Choose a snooze duration.')
     setBulkBusy(true)
     try {
       for (const item of chosen) {
@@ -257,7 +262,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           const field = action === 'pin' ? 'pinned' : 'snoozedUntil'
           const before =
             action === 'pin' ? (item.task.pinned ?? null) : (item.task.snoozedUntil ?? null)
-          const after = action === 'pin' ? true : new Date(Date.now() + 24 * 3600000).toISOString()
+          const after =
+            action === 'pin' ? true : new Date(Date.now() + (hours ?? 0) * 3600000).toISOString()
           await readRuntime(
             profile,
             '/api/workspace',
@@ -280,6 +286,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     }
   }
   const chooseBulk = (action: 'archive' | 'restore' | 'snooze' | 'pin' | 'delete') => {
+    if (action === 'snooze')
+      return chooseSnoozeDuration('Snooze selected threads', (hours) => void bulk(action, hours))
     if (action === 'delete')
       Alert.alert(
         'Delete selected threads?',
@@ -661,9 +669,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             {taskRowStatus(detail.task, detail.needsInput, detail.online, now)} ·{' '}
             {detail.task.queue?.length ?? 0} queued messages
           </Text>
-          {detail.runtimeId === activeId ? (
-            <LifecycleActions task={detail.task} allowReadState />
-          ) : (
+          <LifecycleActions task={detail.task} runtimeId={detail.runtimeId} allowReadState />
+          {detail.runtimeId !== activeId && (
             <Action label="Open task" disabled={busy} onPress={() => openTask(detail)} />
           )}
         </Sheet>

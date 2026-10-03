@@ -25,7 +25,13 @@ export const ComposerField = memo(function ComposerField({
       {...props}
       label="Message"
       hideLabel
+      // iOS can still revise text/selection through spellcheck and smart spacing
+      // with autocorrect off. Keep this command composer free of keyboard rewrites.
       autoCorrect={false}
+      spellCheck={false}
+      smartInsertDelete={false}
+      autoComplete="off"
+      textContentType="none"
       multiline
       autoCapitalize="sentences"
       onSelectionChange={select}

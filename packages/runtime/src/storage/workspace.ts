@@ -747,6 +747,7 @@ export class WorkspaceStore {
             'agentOverrides',
             'harness',
             'execution',
+            'existingWorktreePath',
             'worktreeBaseBranch',
             'worktreeFromOrigin',
             'setupCommand',
@@ -762,6 +763,7 @@ export class WorkspaceStore {
       if (
         patch.collection === 'tasks' &&
         (key === 'execution' ||
+          key === 'existingWorktreePath' ||
           key === 'repositoryId' ||
           key === 'worktreeBaseBranch' ||
           key === 'worktreeFromOrigin' ||
@@ -822,6 +824,16 @@ export class WorkspaceStore {
       }
       current[key] = change.after ?? undefined
       changed = true
+    }
+    if (
+      patch.collection === 'tasks' &&
+      changed &&
+      ['execution', 'existingWorktreePath', 'repositoryId'].some((key) => patch.changes[key])
+    ) {
+      // Reusing an existing checkout does not run new-worktree setup. Switching
+      // away resets the runtime-owned setup marker for the next created checkout.
+      current.worktreeSetupComplete =
+        current.execution === 'worktree' && current.existingWorktreePath ? true : undefined
     }
     if (patch.collection === 'tasks' && current.archived === false) current.archivedAt = undefined
     if (!changed) return

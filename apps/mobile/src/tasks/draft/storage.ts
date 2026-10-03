@@ -114,10 +114,12 @@ export function createDraftStorage(storage: Storage) {
     )
   const readEffect = (key: string, legacyKey?: string) =>
     readRecordEffect(key, legacyKey).pipe(Effect.map((record) => record?.text ?? null))
-  const writeEffect = (key: string, value: string) =>
+  const writeEffect = (key: string, value: string, origin?: (value: string) => void) =>
     Effect.suspend(() => {
       publishedText.set(key, value)
-      listeners.get(key)?.forEach((listener) => listener(value))
+      listeners.get(key)?.forEach((listener) => {
+        if (listener !== origin) listener(value)
+      })
       return serialize(
         key,
         Effect.gen(function* () {

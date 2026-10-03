@@ -1,6 +1,6 @@
 import { decode } from '../shared/schema.js'
 import { describe, expect, it } from 'vitest'
-import { compareTasks, taskSortOptions } from './task-priority'
+import { compareTasks, taskSortOptions, isSnoozed } from './task-priority'
 import { taskSchema } from '../workspace'
 const task = (id: string, createdAt: string) =>
   decode(taskSchema, {
@@ -140,4 +140,13 @@ it('uses legacy prompt timestamps including queued input but excludes answer and
     ],
   }
   expect(compareTasks(older, newer, 'activity', new Set(), projects)).toBeGreaterThan(0)
+})
+
+it('ends snoozing at its deadline and allows clearing it early', () => {
+  const deadline = Date.parse('2026-10-03T12:00:00Z')
+  const snoozed = { ...a, snoozedUntil: new Date(deadline).toISOString() }
+  expect(isSnoozed(snoozed, deadline - 1)).toBe(true)
+  expect(isSnoozed(snoozed, deadline)).toBe(false)
+  expect(isSnoozed(snoozed, deadline + 1)).toBe(false)
+  expect(isSnoozed({ ...snoozed, snoozedUntil: undefined }, deadline - 1)).toBe(false)
 })

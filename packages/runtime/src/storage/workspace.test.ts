@@ -766,3 +766,67 @@ it('accepts the next draft after sending consumed its baseline, but protects com
     db.close()
   }
 })
+
+it('allows draft worktree selection and keeps setup state runtime-owned', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const draft: Task = {
+      id: 'worktree-draft',
+      title: 'New task',
+      agentId: '',
+      repositoryId: 'repo',
+      status: 'draft',
+      createdAt: '',
+      messages: [],
+      files: [],
+      draft: '',
+      example: false,
+      execution: 'main',
+    }
+    store.update((w) => ({ ...w, tasks: [draft] }))
+    store.patch({
+      collection: 'tasks',
+      id: draft.id,
+      changes: {
+        execution: { before: 'main', after: 'worktree' },
+        existingWorktreePath: { before: null, after: '/repo/existing' },
+      },
+    })
+    expect(new WorkspaceStore(db).task(draft.id)).toMatchObject({
+      existingWorktreePath: '/repo/existing',
+      worktreeSetupComplete: true,
+    })
+    expect(() =>
+      store.patch({
+        collection: 'tasks',
+        id: draft.id,
+        changes: { worktreeSetupComplete: { before: true, after: false } },
+      }),
+    ).toThrow('Cannot edit worktreeSetupComplete')
+    store.patch({
+      collection: 'tasks',
+      id: draft.id,
+      changes: {
+        execution: { before: 'worktree', after: 'main' },
+        existingWorktreePath: { before: '/repo/existing', after: null },
+      },
+    })
+    expect(store.task(draft.id).worktreeSetupComplete).toBeUndefined()
+    expect(store.task(draft.id).existingWorktreePath).toBeUndefined()
+    store.updateTask(draft.id, (task) => ({
+      ...task,
+      messages: [{ id: 'message', role: 'user', text: 'Start' }],
+    }))
+    expect(() =>
+      store.patch({
+        collection: 'tasks',
+        id: draft.id,
+        changes: { existingWorktreePath: { before: null, after: '/repo/other' } },
+      }),
+    ).toThrow('before sending the first message')
+    expect(store.task(draft.id).existingWorktreePath).toBeUndefined()
+  } finally {
+    db.close()
+  }
+})

@@ -22,9 +22,15 @@ export const snoozeOptions = [
   },
   {
     hours: 24,
-    label: 'Until tomorrow',
+    label: 'For 24 hours',
   },
 ] as const
+export function chooseSnoozeDuration(title: string, apply: (hours: number) => void) {
+  Alert.alert(title, 'The thread returns to Active when this duration ends.', [
+    ...snoozeOptions.map(({ hours, label }) => ({ text: label, onPress: () => apply(hours) })),
+    { text: 'Cancel', style: 'cancel' },
+  ])
+}
 type LifecycleChanges = Partial<{
   [Key in 'pinned' | 'archived' | 'snoozedUntil']: {
     before: Task[Key] | null
@@ -43,8 +49,21 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
   } = useRuntime()
   const { act, busy, error } = useAction()
   const onCurrentRuntime = runtimeId === undefined || runtimeId === activeId
-  const enabled = connected && onCurrentRuntime
   const owner = overviews.find((entry) => entry.profile.id === (runtimeId ?? activeId))
+  const enabled = onCurrentRuntime ? connected && !!owner : !!owner?.connected
+  const ownerCall = <T extends Schema.Schema.AnyNoContext>(
+    path: string,
+    input: unknown,
+    schema: T,
+    method?: string,
+  ) => {
+    if (!owner) return Effect.fail(new Error('This computer is no longer saved.'))
+    return onCurrentRuntime
+      ? callEffect(path, input, schema, method)
+      : readRuntimeEffect(owner.profile, path, input, schema, method).pipe(
+          Effect.tap(() => refreshRuntimeEffect(owner.profile)),
+        )
+  }
   const completed = latestCompletedTaskTurn(task)
   const unread = hasUnviewedTaskCompletion(task)
   const readStateEnabled = !!owner?.connected && !!completed && !task.archived && !task.example
@@ -59,7 +78,7 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
         ...(changes.archived ? { archived: changes.archived.after ?? false } : {}),
         ...(changes.snoozedUntil ? { snoozedUntil: changes.snoozedUntil.after ?? undefined } : {}),
       },
-      callEffect(
+      ownerCall(
         '/api/workspace',
         {
           collection: 'tasks',
@@ -112,7 +131,7 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
     toggleArchived: () => {
       const run = () =>
         act(() =>
-          callEffect(
+          ownerCall(
             '/api/tasks/lifecycle',
             {
               id: task.id,
@@ -147,7 +166,7 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
             onPress: () =>
               act(() =>
                 mobileWorkflow(function* () {
-                  yield* callEffect(
+                  yield* ownerCall(
                     '/api/tasks/lifecycle',
                     {
                       id: task.id,

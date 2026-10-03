@@ -317,3 +317,22 @@ it('does not publish an old send clear over newer typing while disk writes are p
   expect(displayed).toEqual(['Sent message', 'Next message'])
   expect(await drafts.read('runtime.task')).toBe('Next message')
 })
+
+it('persists local keystrokes without echoing them into their originating composer', async () => {
+  const drafts = createDraftStorage(memoryStorage())
+  const composer = vi.fn<(value: string) => void>()
+  const otherComposer = vi.fn<(value: string) => void>()
+  drafts.subscribe('runtime.task', composer)
+  drafts.subscribe('runtime.task', otherComposer)
+  const first = drafts.writeEffect('runtime.task', 'h', composer)
+  const second = drafts.writeEffect('runtime.task', 'hi', composer)
+  await runClientEffect(first)
+  await runClientEffect(second)
+  expect(composer).not.toHaveBeenCalled()
+  expect(otherComposer.mock.calls).toEqual([['h'], ['hi']])
+  expect(await drafts.read('runtime.task')).toBe('hi')
+  // External replacements and clearing after a send still reach the same field.
+  await drafts.write('runtime.task', 'dictated')
+  await drafts.write('runtime.task', '')
+  expect(composer.mock.calls).toEqual([['dictated'], ['']])
+})

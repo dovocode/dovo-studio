@@ -26,20 +26,25 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
   const initialText = useRef(initial)
   initialText.current = initial
   const activeKey = useRef<string | null>(null)
+  const editedKey = useRef<string | null>(null)
+  const listener = useRef<((value: string) => void) | undefined>(undefined)
   useEffect(() => {
     const commands = clientTaskScope()
     let edited = false
     let disposed = false
     activeKey.current = key
+    editedKey.current = null
     setLoadedKey(null)
     setSubmission(undefined)
     // Wait for the durable delivery record rather than flashing a server's stale pre-send draft.
     setText('')
     setError('')
-    const unsubscribe = drafts.subscribe(key, (value) => {
+    const receive = (value: string) => {
       edited = true
       setText(value)
-    })
+    }
+    listener.current = receive
+    const unsubscribe = drafts.subscribe(key, receive)
     void commands.run(
       hydrateDraft(
         drafts
@@ -58,7 +63,7 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
           ),
         {
           initial: () => initialText.current,
-          edited: () => edited,
+          edited: () => edited || editedKey.current === key,
         },
       ).pipe(
         Effect.tap((hydration) =>
@@ -85,6 +90,7 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
       disposed = true
       void commands.stop()
       activeKey.current = null
+      listener.current = undefined
       unsubscribe()
     }
   }, [taskId, key, migrateLegacy])
@@ -102,9 +108,14 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
   }, [key])
   const update = useCallback(
     (value: string) => {
-      if (activeKey.current === key) setText(value)
+      if (activeKey.current === key) {
+        editedKey.current = key
+        setText(value)
+      }
       void runClientEffect(
-        drafts.writeEffect(key, value).pipe(
+        // Own edits are already in React state. Persistence must not echo an older
+        // keystroke into a controlled TextInput when its Effect starts later.
+        drafts.writeEffect(key, value, listener.current).pipe(
           Effect.catchAll((error) =>
             Effect.sync(() => {
               if (activeKey.current === key) setError(String(error))
