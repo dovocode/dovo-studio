@@ -2,6 +2,7 @@ import { createServer, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
 import { expect, it } from 'vitest'
 import { opencodeAdapter } from './opencode.js'
+import { decode, mcpServerSchema } from '@dovo/protocol'
 
 it('runs an OpenCode 2 prompt through its asynchronous event stream', async () => {
   let stream: ServerResponse | undefined
@@ -10,6 +11,8 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
     ready = resolve
   })
   const requests: Array<{ path: string; body: unknown }> = []
+  let mcpName = ''
+  let mcpReads = 0
   const server = createServer((request, response) => {
     const path = new URL(request.url ?? '/', 'http://localhost').pathname
     if (path === '/api/event') {
@@ -26,6 +29,18 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
       const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined
       requests.push({ path, body })
       response.setHeader('Content-Type', 'application/json')
+      if (path.startsWith('/api/experimental/mcp/')) {
+        mcpName = decodeURIComponent(path.split('/').at(-1) ?? '')
+        return response.writeHead(204).end()
+      }
+      if (path === '/api/mcp') {
+        mcpReads++
+        return response.end(
+          JSON.stringify({
+            data: [{ name: mcpName, status: { status: mcpReads === 1 ? 'pending' : 'connected' } }],
+          }),
+        )
+      }
       if (path === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
       if (path === '/api/session/active') return response.end(JSON.stringify({ data: {} }))
       if (path.endsWith('/session') && request.method === 'POST') {
@@ -101,6 +116,18 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
         model: 'openai/test',
         permission: 'read-only',
         instructions: '',
+        resources: {
+          skills: [],
+          mcpServers: [
+            decode(mcpServerSchema, {
+              name: 'dovo_task',
+              enabled: true,
+              transport: 'stdio',
+              command: 'node',
+              args: ['server.js'],
+            }),
+          ],
+        },
       },
       cwd: '/tmp',
       prompt: 'Hi',
@@ -112,6 +139,8 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
       approve: async () => false,
       ask: async () => null,
     })
+    expect(mcpReads).toBe(2)
+    expect(requests.filter(({ path }) => path.endsWith('/prompt'))).toHaveLength(1)
     expect(text).toEqual(['Hello'])
     expect(eventNames.filter((name) => name === 'message.part.updated')).toHaveLength(3)
     expect(requests.map((request) => request.path)).toContain('/api/session/session/prompt')

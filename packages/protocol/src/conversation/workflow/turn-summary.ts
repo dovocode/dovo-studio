@@ -1,3 +1,4 @@
+import { checkpointFileCount } from '../../scm/repositories/file-previews.js'
 import type { recentTools } from '../../automation/activity.js'
 import type { TaskTurn } from '../../workspace.js'
 import { toolPresentation } from '../presentation/tool-presentation.js'
@@ -9,7 +10,7 @@ export function turnSummary(
   includeFiles = true,
 ) {
   if (turn.status === 'running') return ''
-  const files = (turn.checkpoint?.files.length ?? 0) + (turn.checkpoint?.omitted.length ?? 0)
+  const files = checkpointFileCount(turn.checkpoint)
   const commands = tools
     .filter((tool) => tool.turnId === turn.id)
     .map((tool) => toolPresentation(tool.payload, tool.summary, tool.inputPayload))

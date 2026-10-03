@@ -1,3 +1,4 @@
+import { checkpointFileCount, checkpointCanUndo } from '@dovo/protocol'
 import { conversationPage, taskBudgetUsage } from '@dovo/protocol'
 import type { Workspace, Task } from '@dovo/protocol'
 const overviewTasks = new WeakMap<Task, Task>()
@@ -11,14 +12,7 @@ function pagedTask(task: Task): Task {
   const budget = taskBudgetUsage({ turns: older })
   const undoable = [...older]
     .reverse()
-    .find(
-      (turn) =>
-        turn.status !== 'running' &&
-        turn.checkpoint?.after &&
-        !turn.checkpoint.error &&
-        !turn.checkpoint.undone &&
-        turn.checkpoint.files.length + turn.checkpoint.omitted.length > 0,
-    )
+    .find((turn) => turn.status !== 'running' && checkpointCanUndo(turn.checkpoint))
   const result = {
     ...task,
     messages: page.messages,
@@ -29,9 +23,7 @@ function pagedTask(task: Task): Task {
           tokens: budget.tokens,
           milliseconds: budget.minutes * 60000,
           hasChanges: older.some(
-            (turn) =>
-              !!turn.checkpoint &&
-              turn.checkpoint.files.length + turn.checkpoint.omitted.length > 0,
+            (turn) => !!turn.checkpoint && checkpointFileCount(turn.checkpoint) > 0,
           ),
           undoableTurnId: undoable?.id,
         }

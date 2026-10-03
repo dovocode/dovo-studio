@@ -5,6 +5,7 @@ const id = maxValue(minValue(Schema.String, 1), 200)
 export const subagentScopeSchema = mutableStruct({ taskId: id, parentRunId: Schema.optional(id) })
 export const subagentSpawnSchema = mutableStruct({
   ...subagentScopeSchema.fields,
+  checkoutId: Schema.optional(id),
   key: maxValue(minValue(Schema.String, 1), 100),
   name: maxValue(minValue(Schema.String, 1), 100),
   prompt: maxValue(minValue(Schema.String, 1), 20000),

@@ -1,3 +1,4 @@
+import { checkpointCanUndo } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -104,14 +105,7 @@ export function Composer({
   // The newest turn whose file changes can still be undone.
   const undoable = [...(task.turns ?? [])]
     .reverse()
-    .find(
-      (turn) =>
-        turn.status !== 'running' &&
-        !!turn.checkpoint?.after &&
-        !turn.checkpoint.error &&
-        !turn.checkpoint.undone &&
-        turn.checkpoint.files.length + turn.checkpoint.omitted.length > 0,
-    )
+    .find((turn) => turn.status !== 'running' && checkpointCanUndo(turn.checkpoint))
   const undoableId = undoable?.id ?? task.historyTotals?.undoableTurnId
   const runCommand = (id: ComposerCommandId) => {
     setCommandError('')

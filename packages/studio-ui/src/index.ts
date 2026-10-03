@@ -50,3 +50,5 @@ export { useHarnessCatalog, useModelLabel } from './harness-catalog'
 export { HarnessFields } from './harness-fields'
 
 export * from './settings-scope-page'
+
+export { LinkedCheckoutEditor } from './linked-checkouts'

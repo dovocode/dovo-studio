@@ -1,3 +1,4 @@
+import { LinkedProjects } from './linked-projects'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode, resolveScopedAgents } from '@dovo/protocol'
 import { HarnessFields } from '../harness-fields'
@@ -192,6 +193,7 @@ export function TaskSettings({
             }
           />
         )}
+        <LinkedProjects key={task.id} task={task} />
         <FormField label="Title">
           <Input aria-label="Task title" value={title} onChange={(e) => setTitle(e.target.value)} />
         </FormField>

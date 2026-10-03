@@ -1,3 +1,4 @@
+import { LinkedProjects } from './linked-projects'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
@@ -75,6 +76,7 @@ export function TaskSettings({
         gap: 16,
       }}
     >
+      <LinkedProjects key={task.id} task={task} />
       <TaskSource task={task} onNavigate={onBack} />
       <Field label="Task title" value={title} editable={!busy} onChangeText={setTitle} />
       <Action

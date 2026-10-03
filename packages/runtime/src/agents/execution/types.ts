@@ -23,6 +23,7 @@ export interface AgentRun {
   agent: Agent
   acpLaunch?: AcpLaunch
   cwd: string
+  linkedDirectories?: Array<{ id: string; path: string; access: 'read-only' | 'edit' }>
   attachments?: Array<import('@dovo/protocol').Attachment & { path: string; data: string }>
   prompt: string
   /** Request the provider's native compaction, without treating the command as a model prompt. */

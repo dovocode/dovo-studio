@@ -358,6 +358,16 @@ export function createCodexAdapter(): AgentAdapter {
           )
         const tier = serviceTierValue(run.agent.serviceTier)
         const config = {
+          ...(run.linkedDirectories?.some((item) => item.access === 'edit')
+            ? {
+                'sandbox_workspace_write.writable_roots': [
+                  run.cwd,
+                  ...run.linkedDirectories
+                    .filter((item) => item.access === 'edit')
+                    .map((item) => item.path),
+                ],
+              }
+            : {}),
           ...(['priority', 'fast'].includes(tier)
             ? {
                 'features.fast_mode': true,

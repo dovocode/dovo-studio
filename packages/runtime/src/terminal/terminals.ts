@@ -43,22 +43,31 @@ export class Terminals {
     return [...this.sessions.values()].map((s) => s.info)
   }
   /** Reuse a live shell, even when two clients open the terminal at the same time. */
-  ensure(taskId: string, directory: () => Promise<string>): Promise<TerminalInfo> {
-    const open = this.list().find((session) => session.taskId === taskId && !session.exited)
+  ensure(
+    taskId: string,
+    directory: () => Promise<string>,
+    checkoutId?: string,
+  ): Promise<TerminalInfo> {
+    const open = this.list().find(
+      (session) =>
+        session.taskId === taskId && session.checkoutId === checkoutId && !session.exited,
+    )
     if (open) return Promise.resolve(open)
-    const pending = this.pendingEnsure.get(taskId)
+    const pending = this.pendingEnsure.get(`${taskId}:${checkoutId ?? ''}`)
     if (pending) return pending
     const result = directory()
       .then(
         (cwd) =>
-          this.list().find((session) => session.taskId === taskId && !session.exited) ??
-          this.create(taskId, cwd),
+          this.list().find(
+            (session) =>
+              session.taskId === taskId && session.checkoutId === checkoutId && !session.exited,
+          ) ?? this.create(taskId, cwd, checkoutId),
       )
-      .finally(() => this.pendingEnsure.delete(taskId))
-    this.pendingEnsure.set(taskId, result)
+      .finally(() => this.pendingEnsure.delete(`${taskId}:${checkoutId ?? ''}`))
+    this.pendingEnsure.set(`${taskId}:${checkoutId ?? ''}`, result)
     return result
   }
-  create(taskId: string, cwd: string) {
+  create(taskId: string, cwd: string, checkoutId?: string) {
     const settings = this.settings()
     return this.createCommand(
       taskId,
@@ -68,10 +77,17 @@ export class Terminals {
         args: shellArguments(settings),
         env: {},
       },
-      `Terminal ${this.sessions.size + 1}`,
+      `Terminal ${this.sessions.size + 1}${checkoutId ? ' · linked checkout' : ''}`,
+      checkoutId,
     )
   }
-  createCommand(taskId: string, cwd: string, launch: AcpLaunch, title: string) {
+  createCommand(
+    taskId: string,
+    cwd: string,
+    launch: AcpLaunch,
+    title: string,
+    checkoutId?: string,
+  ) {
     if (this.sessions.size >= 20)
       throw new HttpError(409, 'Close a terminal before opening another (limit 20)')
     const env = { ...processEnvironment(), ...launch.env }
@@ -89,6 +105,7 @@ export class Terminals {
       info: {
         id,
         taskId,
+        ...(checkoutId ? { checkoutId } : {}),
         title,
         exited: false,
       },

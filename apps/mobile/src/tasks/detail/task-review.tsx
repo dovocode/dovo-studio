@@ -6,7 +6,7 @@ import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { Choice } from '../../ui/controls/choice'
-import { useMemo } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 import { Alert, ScrollView, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { createTwoFilesPatch, FILE_HEADERS_ONLY } from 'diff'
@@ -26,13 +26,51 @@ export function TaskReview({
   initialPath?: string
 }) {
   const task = useConversationSelector((value) => value.task)
-  const { call, connected, callEffect } = useRuntime(),
+  const { call, connected, callEffect, snapshot } = useRuntime(),
     { busy, error, act } = useAction()
   const [checkpoint, setCheckpoint] = useApplicationState(initialCheckpoint)
-  const history = task.turns?.find((turn) => turn.id === checkpoint)?.checkpoint
+  const selectedTurn = task.turns?.find((turn) => turn.id === checkpoint)?.checkpoint
+  const [checkoutId, setCheckoutId] = useState('')
+  const linkedHistory = selectedTurn?.linked?.find((item) => item.checkoutId === checkoutId)
+  const history = checkoutId ? linkedHistory : selectedTurn
+  const [linkedFiles, setLinkedFiles] = useState<{
+    key: string
+    files: Task['files']
+    error: string
+  } | null>(null)
+  const loadKey = `${task.id}:${checkoutId}`
+  useEffect(() => {
+    if (!checkoutId || checkpoint) return
+    let active = true
+    void call('/api/tasks/checkouts/changes', { id: task.id, checkoutId }, responses.files).then(
+      (result) => {
+        if (active) setLinkedFiles({ key: loadKey, files: result.files, error: '' })
+      },
+      (error: unknown) => {
+        if (active)
+          setLinkedFiles({
+            key: loadKey,
+            files: [],
+            error: error instanceof Error ? error.message : String(error),
+          })
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [call, task.id, checkoutId, checkpoint, loadKey])
   const files = useMemo(
-    () => (checkpoint ? (history ? checkpointFiles(history) : []) : task.files),
-    [checkpoint, history, task.files],
+    () =>
+      checkpoint
+        ? history
+          ? checkpointFiles(history)
+          : []
+        : checkoutId
+          ? linkedFiles?.key === loadKey
+            ? linkedFiles.files
+            : []
+          : task.files,
+    [checkpoint, history, task.files, checkoutId, linkedFiles, loadKey],
   )
   const [path, setPath] = useApplicationState(initialPath),
     [edit, setEdit] = useApplicationState<{
@@ -52,11 +90,10 @@ export function TaskReview({
   )
   const refresh = () =>
     call(
-      '/api/scm/changes',
-      {
-        repositoryId: task.repositoryId,
-        taskId: task.id,
-      },
+      checkoutId ? '/api/tasks/checkouts/changes' : '/api/scm/changes',
+      checkoutId
+        ? { id: task.id, checkoutId }
+        : { repositoryId: task.repositoryId, taskId: task.id },
       responses.files,
     )
   return (
@@ -69,6 +106,30 @@ export function TaskReview({
           },
         ]}
       >
+        <Choice
+          label="Project checkout"
+          value={checkoutId}
+          disabled={!!edit}
+          items={[
+            { id: '', name: 'Primary checkout' },
+            ...((checkpoint
+              ? selectedTurn?.linked?.map((item) => ({
+                  id: item.checkoutId,
+                  name: `${item.repositoryName ?? item.repositoryId} · ${item.branch ?? 'Linked checkout'}`,
+                }))
+              : task.linkedCheckouts?.map((item) => ({
+                  id: item.id,
+                  name: `${snapshot?.workspace.repositories.find((repo) => repo.id === item.repositoryId)?.name ?? item.repositoryId} · ${item.branch ?? item.execution}`,
+                }))) ?? []),
+          ]}
+          onChange={(id) => {
+            setCheckoutId(id)
+            setPath('')
+          }}
+        />
+        {!!checkoutId && !checkpoint && linkedFiles?.key === loadKey && !!linkedFiles.error && (
+          <Text style={styles.error}>{linkedFiles.error}</Text>
+        )}
         <Choice
           label="Change history"
           value={checkpoint}
@@ -87,6 +148,7 @@ export function TaskReview({
           ]}
           onChange={(value) => {
             setCheckpoint(value)
+            setCheckoutId('')
             setPath('')
           }}
         />
@@ -96,19 +158,19 @@ export function TaskReview({
             Snapshot diff for this turn. Select Current changes to edit files.
           </Text>
         )}
-        {!checkpoint && !!task.files.length && <CommitSection task={task} />}
+        {!checkoutId && !checkpoint && !!task.files.length && <CommitSection task={task} />}
         <View style={styles.row}>
           <Action
             secondary
             label="Refresh changes"
-            disabled={!connected || busy || task.example || !!edit || !!checkpoint}
+            disabled={!connected || busy || task.example || !!edit || !!checkpoint || !!checkoutId}
             onPress={() => act(refresh)}
           />
           {file && (
             <Action
               label={edit ? 'Cancel edit' : 'Edit file'}
               secondary
-              disabled={busy || !!checkpoint}
+              disabled={busy || !!checkpoint || !!checkoutId}
               onPress={() =>
                 setEdit(
                   edit
@@ -146,6 +208,7 @@ export function TaskReview({
                               id: task.id,
                               path: file.path,
                               ...(checkpoint ? { turnId: checkpoint } : {}),
+                              checkoutId: checkoutId || undefined,
                             },
                             responses.ok,
                           ),
@@ -160,7 +223,7 @@ export function TaskReview({
             <Action
               secondary
               label={file.viewed ? 'Viewed' : 'Mark viewed'}
-              disabled={!connected || busy || !!checkpoint}
+              disabled={!connected || busy || !!checkpoint || !!checkoutId}
               onPress={() =>
                 act(() =>
                   callEffect(
@@ -270,10 +333,11 @@ export function TaskReview({
         </ScrollView>
       ) : file?.preview ? (
         <SavedFilePreview
-          key={`${checkpoint}:${file.path}`}
+          key={`${checkpoint}:${checkoutId}:${file.path}`}
           file={file}
           taskId={task.id}
           turnId={checkpoint || undefined}
+          checkoutId={checkoutId || undefined}
         />
       ) : (
         <DiffView patch={patch} />

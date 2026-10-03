@@ -70,3 +70,22 @@ export function fileSizeLabel(size: number) {
       ? `${(size / 1024).toFixed(1)} KB`
       : `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
+
+/** Counts all repositories without flattening or copying their file bodies. */
+export function checkpointFileCount(checkpoint: TaskTurn['checkpoint']) {
+  if (!checkpoint) return 0
+  return (
+    checkpoint.files.length +
+    checkpoint.omitted.length +
+    (checkpoint.linked?.reduce((sum, item) => sum + item.files.length + item.omitted.length, 0) ??
+      0)
+  )
+}
+
+export function checkpointCanUndo(checkpoint: TaskTurn['checkpoint']) {
+  if (!checkpoint || checkpoint.error) return false
+  return [checkpoint, ...(checkpoint.linked ?? [])].some(
+    (item) =>
+      !!item.after && !item.error && !item.undone && item.files.length + item.omitted.length > 0,
+  )
+}

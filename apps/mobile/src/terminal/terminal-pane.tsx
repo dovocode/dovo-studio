@@ -1,3 +1,4 @@
+import { Choice } from '../ui/controls/choice'
 import { terminalGroups, splitTerminal, type TerminalGroup } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -26,6 +27,7 @@ export function TerminalPane({
   const closeShell = (id: string) =>
     act(() => callEffect('/api/terminals/close', { id }, responses.ok))
   const [generation, setGeneration] = useApplicationState(0)
+  const [checkoutId, setCheckoutId] = useApplicationState('')
   const autoTried = useRef(false)
   const terminals = snapshot?.terminals.filter((t) => t.taskId === task.id) ?? [],
     active =
@@ -50,7 +52,7 @@ export function TerminalPane({
       mobileWorkflow(function* () {
         const terminal = yield* callEffect(
           '/api/terminals',
-          { taskId: task.id },
+          { taskId: task.id, checkoutId: checkoutId || undefined },
           responses.terminal,
         )
         if (split && active) setGroups(splitTerminal(groups, active.id, terminal.id, split))
@@ -73,6 +75,20 @@ export function TerminalPane({
   }, [connected, shellReady, task.id, terminals, selected])
   return (
     <View style={styles.screen}>
+      {!!task.linkedCheckouts?.length && (
+        <Choice
+          label="New terminal checkout"
+          value={checkoutId}
+          items={[
+            { id: '', name: 'Primary checkout' },
+            ...task.linkedCheckouts.map((link) => ({
+              id: link.id,
+              name: `${snapshot?.workspace.repositories.find((repo) => repo.id === link.repositoryId)?.name ?? link.repositoryId} · ${link.branch ?? link.execution}`,
+            })),
+          ]}
+          onChange={setCheckoutId}
+        />
+      )}
       <View
         style={[
           styles.content,

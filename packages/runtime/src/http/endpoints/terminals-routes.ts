@@ -13,9 +13,10 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
       const s = yield* RuntimeServices
       const method = request.method
       if (method === 'POST' && (path === '/api/terminals' || path === '/api/terminals/ensure')) {
-        const { taskId } = decode(
+        const { taskId, checkoutId } = decode(
           mutableStruct({
             taskId: idSchema,
+            checkoutId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
         )
@@ -26,17 +27,22 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         if (!repo || task.example) throw new HttpError(400, 'Select a real task with a repository')
         if (path === '/api/terminals/ensure')
           return yield* runtimeOperation(() =>
-            s.terminals.ensure(taskId, () => s.checkouts.directory(taskId)),
+            s.terminals.ensure(
+              taskId,
+              () => s.checkouts.selectedDirectory(taskId, checkoutId),
+              checkoutId,
+            ),
           )
-        const cwd = yield* runtimeOperation(() => s.checkouts.directory(taskId))
-        return yield* runtimeOperation(() => s.terminals.create(taskId, cwd))
+        const cwd = yield* runtimeOperation(() => s.checkouts.selectedDirectory(taskId, checkoutId))
+        return yield* runtimeOperation(() => s.terminals.create(taskId, cwd, checkoutId))
       }
       if (method === 'POST' && path === '/api/terminals/run') {
         // Chat code blocks reuse an open terminal. Agent tools request a fresh one so a
         // foreground program in the user's terminal never receives a shell command as input.
-        const { taskId, command, newTerminal } = decode(
+        const { taskId, command, newTerminal, checkoutId } = decode(
           mutableStruct({
             taskId: idSchema,
+            checkoutId: Schema.optional(idSchema),
             command: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 20000),
             newTerminal: Schema.optional(Schema.Boolean),
           }),
@@ -47,15 +53,33 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
           s.store.get().repositories.find((r) => r.id === task.repositoryId),
         )
         if (!repo || task.example) throw new HttpError(400, 'Select a real task with a repository')
+        if (checkoutId) {
+          const link = (yield* runtimeOperation(() => s.checkouts.linked.resolve(taskId))).find(
+            (item) => item.id === checkoutId,
+          )
+          if (!link || link.access !== 'edit')
+            throw new HttpError(403, 'Choose an editable linked checkout for terminal commands')
+        }
         const open = newTerminal
           ? undefined
           : yield* runtimeOperation(() =>
-              s.terminals.list().find((terminal) => terminal.taskId === taskId && !terminal.exited),
+              s.terminals
+                .list()
+                .find(
+                  (terminal) =>
+                    terminal.taskId === taskId &&
+                    terminal.checkoutId === checkoutId &&
+                    !terminal.exited,
+                ),
             )
         const terminal =
           open ??
           (yield* runtimeOperation(async () =>
-            s.terminals.create(taskId, await s.checkouts.directory(taskId)),
+            s.terminals.create(
+              taskId,
+              await s.checkouts.selectedDirectory(taskId, checkoutId),
+              checkoutId,
+            ),
           ))
         yield* runtimeOperation(() =>
           s.terminals.input(terminal.id, `${command.replace(/\r?\n/g, '\r')}\r`),

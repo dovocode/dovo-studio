@@ -160,6 +160,15 @@ const remoteAdapter: AgentAdapter = {
           pattern: '*',
           action: 'allow',
         })
+      for (const link of run.linkedDirectories ?? []) {
+        permission.push({
+          permission: 'external_directory',
+          pattern: `${link.path}/*`,
+          action: 'allow',
+        })
+        if (link.access === 'read-only')
+          permission.push({ permission: 'edit', pattern: `${link.path}/*`, action: 'deny' })
+      }
       permission.push({
         permission: 'dovo_*',
         pattern: '*',

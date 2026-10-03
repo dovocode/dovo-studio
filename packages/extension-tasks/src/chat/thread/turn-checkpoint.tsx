@@ -17,7 +17,7 @@ import {
   DialogTitle,
   ErrorBoundary,
 } from '@dovo/studio-ui'
-function CheckpointDiff({ file }: { file: ChangedFile }) {
+export function CheckpointDiff({ file }: { file: ChangedFile }) {
   const [ready, setReady] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   // Hooks run before any early return; the count must match once the highlighter is ready.
@@ -84,10 +84,14 @@ export function TurnCheckpoint({
   turn,
   taskId,
   taskRunning = false,
+  checkoutId,
+  projectName,
 }: {
   turn: TaskTurn
   taskId?: string
   taskRunning?: boolean
+  checkoutId?: string
+  projectName?: string
 }) {
   const { collapseChangedFiles } = useAppPreferences()
   const [expanded, setExpanded] = useApplicationState<boolean | null>(null)
@@ -137,6 +141,7 @@ export function TurnCheckpoint({
           <ChevronRight className={showFiles ? 'size-3 rotate-90' : 'size-3'} />
           <BookmarkCheck className="size-3.5" />
           <span>
+            {projectName ? `${projectName} · ` : ''}
             {undone
               ? 'Changes undone'
               : checkpoint.error
@@ -267,7 +272,7 @@ export function TurnCheckpoint({
                   setRestoreError('')
                   void request(
                     '/api/tasks/file/restore',
-                    { id: taskId, path: file.path, turnId: turn.id },
+                    { id: taskId, path: file.path, turnId: turn.id, checkoutId },
                     responses.ok,
                   )
                     .then(() => setRestoreError(`Reverted ${file.path}.`))
@@ -299,7 +304,13 @@ export function TurnCheckpoint({
             {file ? (
               <ErrorBoundary key={file.path}>
                 {file.preview ? (
-                  <SavedFilePreview key={file.path} file={file} taskId={taskId} turnId={turn.id} />
+                  <SavedFilePreview
+                    key={file.path}
+                    file={file}
+                    taskId={taskId}
+                    turnId={turn.id}
+                    checkoutId={checkoutId}
+                  />
                 ) : (
                   <CheckpointDiff key={file.path} file={file} />
                 )}

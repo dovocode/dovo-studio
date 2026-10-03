@@ -1,3 +1,4 @@
+import { checkpointFileCount } from '@dovo/protocol'
 import {
   conversationPageSchema,
   mergeConversationHistory,
@@ -374,11 +375,9 @@ function TaskDetailContent({
   >('chat')
   const hasDiff =
     task.files.length > 0 ||
+    !!task.linkedCheckouts?.length ||
     task.historyTotals?.hasChanges ||
-    (task.turns ?? []).some(
-      (turn) =>
-        !!turn.checkpoint && turn.checkpoint.files.length + turn.checkpoint.omitted.length > 0,
-    )
+    (task.turns ?? []).some((turn) => !!turn.checkpoint && checkpointFileCount(turn.checkpoint) > 0)
   useEffect(() => {
     if (pane === 'diff' && !hasDiff) setPane('chat')
   }, [pane, hasDiff])

@@ -23,6 +23,7 @@ export const approvalSchema = mutableStruct({
   createdAt: Schema.String,
 })
 export const terminalSchema = mutableStruct({
+  checkoutId: Schema.optional(Schema.String),
   id: Schema.String,
   taskId: Schema.String,
   title: Schema.String,

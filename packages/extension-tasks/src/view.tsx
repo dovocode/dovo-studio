@@ -1,3 +1,4 @@
+import { checkpointFileCount } from '@dovo/protocol'
 import { githubPullTarget } from '@dovo/protocol'
 import { ResizableSidebar } from './detail/resizable-sidebar'
 import { readTaskListViewState, saveTaskListViewState } from './list/task-list-view-state'
@@ -97,10 +98,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const hasDiff =
     !!task &&
     (task.files.length > 0 ||
+      !!task.linkedCheckouts?.length ||
       task.historyTotals?.hasChanges ||
       (task.turns ?? []).some(
-        (turn) =>
-          !!turn.checkpoint && turn.checkpoint.files.length + turn.checkpoint.omitted.length > 0,
+        (turn) => !!turn.checkpoint && checkpointFileCount(turn.checkpoint) > 0,
       ))
   useEffect(() => {
     if (!entityId && task && !deselected) host.navigate({ viewId: 'tasks', entityId: task.id })

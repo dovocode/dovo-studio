@@ -101,6 +101,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     git,
   )
   const checkouts = new TaskCheckout(store, git, () => preferences.get().branchPrefix, scratch)
+  const titles = new TitleGeneration(db, store, agents)
   const tasks = new Tasks(
       store,
       git,
@@ -116,7 +117,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         ? join(tmpdir(), 'dovo-catalog-skills')
         : join(dirname(resolve(db.name)), 'skills'),
     ),
-    jobs = new Jobs(db, store, tasks, activity)
+    jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }))
   const mcpApps = new McpApps(db, store, activity, approvals)
   tasks.setMcpApps(mcpApps)
   mcpApps.setSendMessage((taskId, messageId, text) => tasks.send(taskId, messageId, text))
@@ -167,7 +168,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     forgeCli,
     forgeWork: new ForgeWork(db, store, git, forges, pulls, () => commands.get()),
     db,
-    titles: new TitleGeneration(db, store, agents),
+    titles,
     activity,
     commands,
     pulls,

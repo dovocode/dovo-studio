@@ -12,13 +12,15 @@ export function SavedFilePreview({
   file,
   taskId,
   turnId,
+  checkoutId,
 }: {
   file: ChangedFile
   taskId?: string
   turnId?: string
+  checkoutId?: string
 }) {
   const { request } = useWorkspace()
-  const key = JSON.stringify([taskId, turnId, file.path])
+  const key = JSON.stringify([taskId, turnId, checkoutId, file.path])
   const [result, setResult] = useState<{
     key: string
     preview: FilePreview | null
@@ -31,7 +33,7 @@ export function SavedFilePreview({
     if (!taskId) return
     void request(
       '/api/tasks/file/preview',
-      { id: taskId, path: file.path, turnId },
+      { id: taskId, path: file.path, turnId, checkoutId },
       filePreviewSchema,
     ).then(
       (result) => {
@@ -49,7 +51,7 @@ export function SavedFilePreview({
     return () => {
       active = false
     }
-  }, [request, taskId, turnId, file.path, key])
+  }, [request, taskId, turnId, checkoutId, file.path, key])
   return (
     <div className="space-y-3 p-4 text-xs">
       <p className="text-muted-foreground">

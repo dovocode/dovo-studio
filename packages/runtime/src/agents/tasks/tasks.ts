@@ -39,6 +39,7 @@ type Running = {
   controller: AbortController
   fiber?: Fiber.RuntimeFiber<void, RuntimeFailure>
   cwd?: string
+  directories?: string[]
   steer?: (messageId: string) => Promise<void>
 }
 export class Tasks {
@@ -77,6 +78,7 @@ export class Tasks {
       artifactsEnabled,
       skillCacheDirectory,
     )
+    this.runner.setLinkedCheckouts(checkouts.linked)
     this.queue = new TaskQueue(store, activity)
   }
   private mcpApps?: McpApps
@@ -201,38 +203,95 @@ export class Tasks {
       throw new HttpError(409, 'Stop the agent before undoing or redoing a turn.')
     const turn = task.turns?.find((item) => item.id === turnId)
     const checkpoint = turn?.checkpoint
-    if (!turn || !checkpoint?.before)
+    if (!turn || !checkpoint || (!checkpoint.before && !checkpoint.linked?.length))
       throw new HttpError(404, 'This turn has no saved snapshot to go back to.')
     if (turn.status === 'running') throw new HttpError(409, 'This turn is still running.')
-    if (direction === 'undo' && checkpoint.undone) return { ok: true }
-    if (direction === 'redo' && !checkpoint.undone) return { ok: true }
+    if (
+      direction === 'undo' &&
+      (checkpoint.undone || (!checkpoint.before && checkpoint.linked?.every((item) => item.undone)))
+    )
+      return { ok: true }
+    if (
+      direction === 'redo' &&
+      !checkpoint.undone &&
+      !checkpoint.linked?.some((item) => item.undone)
+    )
+      return { ok: true }
     const cwd = await this.checkouts.directory(id)
-    return this.withCheckoutMutation(cwd, async () => {
+    const entries = [
+      ...(checkpoint.before ? [{ key: 'primary', directory: cwd, checkpoint }] : []),
+      ...(checkpoint.linked ?? []).map((value) => ({
+        key: value.checkoutId,
+        directory: value.directory,
+        checkpoint: value,
+      })),
+    ]
+    const lockAll = <A>(paths: string[], action: () => Promise<A>): Promise<A> =>
+      paths.length
+        ? this.withCheckoutMutation(paths[0], () => lockAll(paths.slice(1), action))
+        : action()
+    return lockAll([...new Set(entries.map((entry) => entry.directory))].sort(), async () => {
       const at = new Date().toISOString()
-      const undone =
-        direction === 'undo'
-          ? {
-              at,
-              backup: await this.git.restoreSnapshot(
-                cwd,
-                checkpoint.before,
-                `refs/dovo/checkpoints/${turnId}/undo`,
-              ),
-            }
-          : undefined
-      if (direction === 'redo' && checkpoint.undone)
-        await this.git.restoreSnapshot(
-          cwd,
-          checkpoint.undone.backup,
-          `refs/dovo/checkpoints/${turnId}/redo`,
+      const backups = new Map<string, string>()
+      for (const entry of entries) {
+        if (direction === 'redo' && !entry.checkpoint.undone) continue
+        const backup = await this.git.snapshot(
+          entry.directory,
+          `refs/dovo/checkpoints/${turnId}/${entry.key}/restore-backup`,
         )
+        backups.set(entry.key, backup)
+      }
+      const applied: typeof entries = []
+      try {
+        for (const entry of entries) {
+          const target =
+            direction === 'undo' ? entry.checkpoint.before : entry.checkpoint.undone?.backup
+          if (!target) continue
+          // Include the current entry in rollback even if Git fails partway through restoring it.
+          applied.push(entry)
+          await this.git.restoreSnapshot(
+            entry.directory,
+            target,
+            `refs/dovo/checkpoints/${turnId}/${entry.key}/${direction}`,
+          )
+        }
+      } catch (error) {
+        const rollback = await Promise.allSettled(
+          applied.map((entry) => {
+            const backup = backups.get(entry.key)
+            return backup
+              ? this.git.restoreSnapshot(
+                  entry.directory,
+                  backup,
+                  `refs/dovo/checkpoints/${turnId}/${entry.key}/rollback`,
+                )
+              : Promise.resolve()
+          }),
+        )
+        const failed = rollback.some((result) => result.status === 'rejected')
+        throw new HttpError(
+          500,
+          `${errorMessage(error)}${failed ? ' Some checkouts could not be rolled back; backups remain in Git checkpoint refs.' : ' All checkouts restored to their previous contents.'}`,
+        )
+      }
+      const undone =
+        direction === 'undo' && backups.get('primary')
+          ? { at, backup: backups.get('primary') ?? '' }
+          : undefined
+      const linked = checkpoint.linked?.map((entry) => ({
+        ...entry,
+        undone:
+          direction === 'undo' && backups.get(entry.checkoutId)
+            ? { at, backup: backups.get(entry.checkoutId) ?? '' }
+            : undefined,
+      }))
       const files = await this.git.changes(cwd).catch(() => undefined)
       this.store.updateTask(id, (current) => ({
         ...current,
         ...(files ? { files } : {}),
         turns: current.turns?.map((item) =>
           item.id === turnId && item.checkpoint
-            ? { ...item, checkpoint: { ...item.checkpoint, undone } }
+            ? { ...item, checkpoint: { ...item.checkpoint, undone, ...(linked ? { linked } : {}) } }
             : item,
         ),
         messages: [
@@ -259,15 +318,25 @@ export class Tasks {
   }
   /** Reverts one file: to how it was before a turn, or (without a turn) to the last commit.
    * The current files are saved to a ref first, and the agent gets a note. */
-  async restoreFile(id: string, path: string, turnId?: string) {
+  async restoreFile(id: string, path: string, turnId?: string, checkoutId?: string) {
     const task = this.store.task(id)
     if (task.status === 'running' || this.running.has(id))
       throw new HttpError(409, 'Stop the agent before reverting a file.')
-    const before = turnId
-      ? task.turns?.find((turn) => turn.id === turnId)?.checkpoint?.before
+    const saved = task.turns?.find((turn) => turn.id === turnId)?.checkpoint
+    const linked = checkoutId
+      ? saved?.linked?.find((item) => item.checkoutId === checkoutId)
       : undefined
+    if (turnId && checkoutId && !linked) throw new HttpError(404, 'Linked checkpoint not found')
+    const before = turnId ? (checkoutId ? linked?.before : saved?.before) : undefined
     if (turnId && !before) throw new HttpError(404, 'This turn has no saved snapshot.')
-    const cwd = await this.checkouts.directory(id)
+    const cwd = linked?.directory ?? (await this.checkouts.selectedDirectory(id, checkoutId))
+    if (
+      !turnId &&
+      checkoutId &&
+      (await this.checkouts.linked.resolve(id)).find((item) => item.id === checkoutId)?.access !==
+        'edit'
+    )
+      throw new HttpError(403, 'This linked checkout is reference-only')
     await safeFile(cwd, path)
     return this.withCheckoutMutation(cwd, async () => {
       const tree = before ?? (await this.git.headTree(cwd))
@@ -278,7 +347,7 @@ export class Tasks {
         : `I discarded the uncommitted changes to ${path}; it matches the last commit again.`
       this.store.updateTask(id, (current) => ({
         ...current,
-        ...(files ? { files } : {}),
+        ...(!checkoutId && files ? { files } : {}),
         messages: [
           ...current.messages,
           { id: randomUUID(), role: 'user', text: note, createdAt: new Date().toISOString() },
@@ -296,11 +365,16 @@ export class Tasks {
       return { ok: true }
     })
   }
-  async filePreview(id: string, path: string, turnId?: string) {
+  async filePreview(id: string, path: string, turnId?: string, checkoutId?: string) {
     const task = this.store.task(id)
-    const cwd = await this.checkouts.directory(id)
+    const saved = task.turns?.find((turn) => turn.id === turnId)?.checkpoint
+    const linked = checkoutId
+      ? saved?.linked?.find((item) => item.checkoutId === checkoutId)
+      : undefined
+    if (checkoutId && turnId && !linked) throw new HttpError(404, 'Linked checkpoint not found')
+    const cwd = linked?.directory ?? (await this.checkouts.selectedDirectory(id, checkoutId))
     if (turnId) {
-      const checkpoint = task.turns?.find((turn) => turn.id === turnId)?.checkpoint
+      const checkpoint = checkoutId ? linked : saved
       if (!checkpoint?.after) throw new HttpError(404, 'This turn has no saved snapshot.')
       if (
         !checkpoint.files.some((file) => file.path === path) &&
@@ -338,7 +412,13 @@ export class Tasks {
         !checkpoint.undone &&
         checkpoint.files.length + checkpoint.omitted.length > 0
       let backup: string | undefined
-      if (undo && checkpoint) {
+      if (
+        checkpoint?.linked?.some(
+          (item) => item.after && !item.undone && (item.files.length || item.omitted.length),
+        )
+      ) {
+        await this.restoreTurn(id, turnId, 'undo')
+      } else if (undo && checkpoint) {
         const cwd = await this.checkouts.directory(id)
         backup = await this.withCheckoutMutation(cwd, () =>
           this.git.restoreSnapshot(cwd, checkpoint.before, `refs/dovo/checkpoints/${turnId}/retry`),
@@ -390,6 +470,7 @@ export class Tasks {
       agentId: task.agentId,
       agentName: task.agentName,
       agentIcon: task.agentIcon,
+      linkedCheckouts: task.linkedCheckouts,
       ...(task.harness ? { harness: task.harness } : {}),
       ...(task.agentOverrides ? { agentOverrides: task.agentOverrides } : {}),
       execution: snapshot ? 'worktree' : task.execution,
@@ -431,6 +512,7 @@ export class Tasks {
         agentId: source.agentId,
         agentName: source.agentName,
         agentIcon: source.agentIcon,
+        linkedCheckouts: source.linkedCheckouts,
         harness: source.harness,
         agentOverrides: source.agentOverrides,
         execution: 'worktree',
@@ -695,6 +777,13 @@ export class Tasks {
           this.running.set(id, run)
           const work = Effect.gen(this, function* () {
             const cwd = yield* runtimeOperation(() => this.checkouts.directory(id))
+            const linked = yield* runtimeOperation(() => this.checkouts.linked.resolve(id))
+            if (!task.delegation && linked.some((item) => item.directory === cwd))
+              throw new HttpError(400, 'The primary checkout is already part of this thread')
+            const directories = [
+              cwd,
+              ...linked.filter((item) => item.access === 'edit').map((item) => item.directory),
+            ]
             yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
             // The checkout is ready; the last visible step is starting the agent.
             if (this.store.task(id).preparation?.steps.includes('agent'))
@@ -714,7 +803,9 @@ export class Tasks {
               [...this.running.entries()].some(
                 ([otherId, other]) =>
                   other !== run &&
-                  other.cwd === cwd &&
+                  directories.some((path) =>
+                    (other.directories ?? (other.cwd ? [other.cwd] : [])).includes(path),
+                  ) &&
                   this.delegationRoot(otherId) !== this.delegationRoot(id),
               )
             )
@@ -724,7 +815,7 @@ export class Tasks {
                   'Another task is running in this repository. Wait or cancel it first.',
                 ),
               )
-            if (this.checkoutMutations.has(cwd))
+            if (directories.some((path) => this.checkoutMutations.has(path)))
               return yield* Effect.fail(
                 new HttpError(
                   409,
@@ -732,6 +823,7 @@ export class Tasks {
                 ),
               )
             run.cwd = cwd
+            run.directories = directories
             yield* Deferred.succeed(ready, undefined)
             if (task.runPhase === 'finalizing') {
               yield* this.runner.finalizeEffect(id, cwd)
@@ -946,7 +1038,9 @@ export class Tasks {
         try: () => {
           if (
             this.checkoutMutations.has(cwd) ||
-            [...this.running.values()].some((run) => !run.cwd || run.cwd === cwd)
+            [...this.running.values()].some(
+              (run) => !run.cwd || run.cwd === cwd || run.directories?.includes(cwd),
+            )
           )
             throw new HttpError(
               409,
@@ -1090,6 +1184,7 @@ export class Tasks {
           input.model,
           input.reasoning,
           input.permission,
+          input.checkoutId,
         ]),
       )
       .digest('hex')
@@ -1129,12 +1224,16 @@ export class Tasks {
     if (!preset && (!input.provider || input.provider === 'acp'))
       throw new HttpError(400, 'Choose Codex, Claude, OpenCode, or a named ACP configuration')
     const base = preset ?? defaultTaskHarness(input.provider ?? parentAgent.provider)
+    const selectedCheckout = input.checkoutId
+      ? parent.linkedCheckouts?.find((item) => item.id === input.checkoutId)
+      : undefined
+    if (input.checkoutId && !selectedCheckout) throw new HttpError(404, 'Linked checkout not found')
     const harness = decode(taskHarnessSchema, {
       ...base,
       model: input.model ?? base.model,
       reasoning: input.reasoning ?? base.reasoning,
       permission: delegatedAccess(
-        parentAgent.permission,
+        selectedCheckout?.access === 'read-only' ? 'read-only' : parentAgent.permission,
         input.permission ?? preset?.permission ?? parentAgent.permission,
       ),
     })
@@ -1142,6 +1241,7 @@ export class Tasks {
       title: input.name,
       repositoryId: parent.repositoryId,
       execution: parent.execution,
+      linkedCheckouts: parent.linkedCheckouts,
       agentId: preset?.id ?? '',
       objective: input.prompt,
       harness,
@@ -1151,7 +1251,13 @@ export class Tasks {
       ...task,
       setupCommand: undefined,
       worktreeFromOrigin: undefined,
-      delegation: { parentTaskId: parent.id, parentRunId: run.id, key: input.key, fingerprint },
+      delegation: {
+        parentTaskId: parent.id,
+        parentRunId: run.id,
+        checkoutId: input.checkoutId,
+        key: input.key,
+        fingerprint,
+      },
     }))
     // Register through the normal executor. Admission closes the race with parent cancellation.
     void runClientEffect(
@@ -1307,9 +1413,11 @@ export class Tasks {
       objective: string
       harness?: Task['harness']
       agentOverrides?: Task['agentOverrides']
+      linkedCheckouts?: Task['linkedCheckouts']
       origin?: string
     },
   ) {
+    if (input.linkedCheckouts) this.checkouts.linked.validate(input.linkedCheckouts)
     const defaults = this.store.taskDefaults(input.repositoryId)
     const task: Task = {
       ...defaults,

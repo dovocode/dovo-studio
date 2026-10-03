@@ -232,6 +232,16 @@ export const ChatMessage = memo(function ChatMessage({
         </p>
       )}
       {turn && <TurnCheckpoint turn={turn} taskId={taskId} taskRunning={taskRunning} />}
+      {turn?.checkpoint?.linked?.map((linked) => (
+        <TurnCheckpoint
+          key={linked.checkoutId}
+          turn={{ ...turn, checkpoint: linked }}
+          taskId={taskId}
+          taskRunning={taskRunning}
+          checkoutId={linked.checkoutId}
+          projectName={`${linked.repositoryName ?? linked.repositoryId} · ${linked.branch ?? 'Linked checkout'}`}
+        />
+      ))}
       {turn && turn.status !== 'running' && (
         <p className="text-[0.6875rem] text-muted-foreground" aria-label="Turn summary">
           {turnSummary(turn, tools, false)}

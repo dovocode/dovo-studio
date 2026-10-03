@@ -1,5 +1,6 @@
 import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
 import { createHash } from 'node:crypto'
+import { waitForMcpConnection } from './mcp-readiness.js'
 import { OpenCode } from '@opencode/client'
 import { opencodeHeaders } from './opencode-server.js'
 import { decode, isImageAttachment, questionPromptSchema } from '@dovo/protocol'
@@ -128,11 +129,13 @@ export const opencodeV2Adapter: AgentAdapter = {
           },
           { signal: run.signal },
         )
-        const status = (await api.mcp.list({ location })).data.find((item) => item.name === name)
-        if (status?.status.status !== 'connected')
-          throw new Error(
-            `MCP server ${server.name} could not connect (${status?.status.status ?? 'unknown status'}). Test its configuration in Settings.`,
-          )
+        await waitForMcpConnection(
+          server.name,
+          async (signal) =>
+            (await api.mcp.list({ location }, { signal })).data.find((item) => item.name === name)
+              ?.status,
+          run.signal,
+        )
       }
       const permissions: Array<{
         action: string
@@ -155,6 +158,15 @@ export const opencodeV2Adapter: AgentAdapter = {
           permissions.push({ action, resource: '*', effect: 'allow' })
         if (run.agent.permission === 'workspace-write')
           permissions.push({ action: 'edit', resource: '*', effect: 'allow' })
+      }
+      for (const link of run.linkedDirectories ?? []) {
+        permissions.push({
+          action: 'external_directory',
+          resource: `${link.path}/**`,
+          effect: 'allow',
+        })
+        if (link.access === 'read-only')
+          permissions.push({ action: 'edit', resource: `${link.path}/**`, effect: 'deny' })
       }
       permissions.push({ action: 'dovo_*', resource: '*', effect: 'deny' })
       for (const name of registered)

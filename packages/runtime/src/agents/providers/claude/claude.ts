@@ -22,6 +22,9 @@ function claudeStream(
     prompt,
     options: {
       cwd: run.cwd,
+      ...(run.linkedDirectories?.length
+        ? { additionalDirectories: run.linkedDirectories.map((item) => item.path) }
+        : {}),
       env: processEnvironment(run.agent.env),
       extraArgs: claudeLaunchFlags(run.agent.args),
       abortController: controller,
@@ -221,8 +224,9 @@ export function createClaudeAdapter(): AgentAdapter {
   }
   const runWarm = async (run: AgentRun, command: string) => {
     if (!run.taskId) throw new Error('Warm Claude turn needs a task')
-    const config = JSON.stringify([run.agent, run.tools], (key, value: unknown) =>
-      key === 'DOVO_TASK_RUN_ID' ? undefined : value,
+    const config = JSON.stringify(
+      [run.agent, run.tools, run.linkedDirectories],
+      (key, value: unknown) => (key === 'DOVO_TASK_RUN_ID' ? undefined : value),
     )
     const mcpServers = claudeMcpServers(run.agent.resources?.mcpServers ?? [])
     const mcpBinding = JSON.stringify(mcpServers)

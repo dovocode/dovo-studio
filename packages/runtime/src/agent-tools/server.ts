@@ -103,6 +103,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           name: { type: 'string' },
           prompt: { type: 'string' },
           provider: { type: 'string', enum: ['codex', 'claude', 'opencode', 'acp'] },
+          checkoutId: {
+            type: 'string',
+            description:
+              'Optional linked checkout ID from the parent context; use it as the child working directory.',
+          },
           agentId: { type: 'string' },
           model: { type: 'string' },
           reasoning: { type: 'string' },
@@ -256,7 +261,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               'Run an interactive, persistent, or user-visible command in this task’s Dovo terminal and return its terminal ID. Use your normal command tool for quick noninteractive commands.',
             inputSchema: {
               type: 'object' as const,
-              properties: { command: { type: 'string' } },
+              properties: {
+                command: { type: 'string' },
+                checkoutId: { type: 'string', description: 'Optional linked checkout ID.' },
+              },
               required: ['command'],
             },
           },
@@ -429,6 +437,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           await post('/api/terminals/run', {
             taskId: task,
             command: string(input.command, 'command'),
+            ...(typeof input.checkoutId === 'string' ? { checkoutId: input.checkoutId } : {}),
             newTerminal: true,
           }),
         )

@@ -1,36 +1,19 @@
+import { LinkedCheckouts } from './linked-checkouts.js'
 import type { ScratchWorkspaces } from '../repositories/scratch-workspaces.js'
 import { repositoryPath } from '../repositories/paths.js'
 import { taskBranchName, taskWorktreePath } from './task-branch.js'
 import { defaultWorktreeBase, canChangeTaskCheckout } from '@dovo/protocol'
 import { listBranches } from '../git/branches.js'
 import { fetchPullHead } from '../pulls/pull-head.js'
-import { createHash } from 'node:crypto'
 import { mkdir, stat, realpath } from 'node:fs/promises'
-import { basename, dirname, join, sep } from 'node:path'
-import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { GitService } from '../git/git.js'
 import { HttpError } from '../../errors.js'
-export const worktreesRoot = () => join(homedir(), '.dovo', 'worktrees')
-
-/** Where a task's worktree lives. Tasks created before readable names keep their original
- * hashed checkout (`legacy`); newer ones end in a short suffix unique to the repository and
- * task, so a checkout is found again after the task's title (and readable name) changes. */
-export function taskWorktreeKeys(common: string, id: string) {
-  const worktrees = worktreesRoot()
-  const key = createHash('sha256').update(id).digest('hex').slice(0, 24)
-  const repositoryKey = createHash('sha256').update(common).digest('hex').slice(0, 24)
-  const suffix = createHash('sha256').update(`${common}\0${id}`).digest('hex').slice(0, 8)
-  return { key, repositoryKey, suffix, legacy: join(worktrees, repositoryKey, key), worktrees }
-}
-/** Whether a listed worktree path belongs to the task with these keys. */
-export function isTaskWorktree(path: string, keys: ReturnType<typeof taskWorktreeKeys>) {
-  return (
-    path === keys.legacy ||
-    (path.startsWith(keys.worktrees + sep) && basename(path).endsWith(`-${keys.suffix}`))
-  )
-}
+export { worktreesRoot, taskWorktreeKeys, isTaskWorktree } from './task-worktree-keys.js'
+import { taskWorktreeKeys, isTaskWorktree } from './task-worktree-keys.js'
 export class TaskCheckout {
+  readonly linked: LinkedCheckouts
   private pending = new Map<string, Promise<string>>()
   private prepared = new Map<
     string,
@@ -42,7 +25,15 @@ export class TaskCheckout {
     /** Settings → Coding → Task defaults → Branch prefix for new task branches. */
     private branchPrefix: () => string = () => 'dovo/',
     private scratch?: ScratchWorkspaces,
-  ) {}
+  ) {
+    this.linked = new LinkedCheckouts(store, git)
+  }
+  async selectedDirectory(id: string, checkoutId?: string): Promise<string> {
+    if (!checkoutId) return this.directory(id)
+    const linked = (await this.linked.resolve(id)).find((item) => item.id === checkoutId)
+    if (!linked) throw new HttpError(404, 'Linked checkout not found')
+    return linked.directory
+  }
   directory(id: string): Promise<string> {
     const pending = this.pending.get(id)
     if (pending) return pending
@@ -52,7 +43,8 @@ export class TaskCheckout {
   }
   private async preparedDirectory(id: string) {
     const task = this.store.task(id)
-    if (task.delegation) return this.directory(task.delegation.parentTaskId)
+    if (task.delegation)
+      return this.selectedDirectory(task.delegation.parentTaskId, task.delegation.checkoutId)
     const cached = this.prepared.get(id)
     if (
       cached?.repositoryId === task.repositoryId &&

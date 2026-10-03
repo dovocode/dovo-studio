@@ -1,3 +1,5 @@
+import { LinkedReview } from './linked-review'
+import { ChoicePicker } from '@dovo/studio-ui'
 import { SavedFilePreview } from '../files/saved-file-preview'
 import { checkpointFiles } from '@dovo/protocol'
 import { fileStats } from '../files/presentation'
@@ -26,7 +28,7 @@ import { PierreEditor } from './pierre-editor'
 import { ReviewFeedback } from './review-feedback'
 import { ReviewCommentsTray } from '../chat/thread/review-comments-tray'
 type DiffSource = { kind: 'working' | 'branch' | 'latest' } | { kind: 'turn'; id: string }
-export function ReviewPane({
+function PrimaryReviewPane({
   task,
   onClose,
   onReference,
@@ -387,5 +389,39 @@ export function ReviewPane({
         />
       )}
     </section>
+  )
+}
+
+export function ReviewPane(props: Parameters<typeof PrimaryReviewPane>[0]) {
+  const { workspace } = useWorkspace()
+  const [checkoutId, setCheckoutId] = useApplicationState('')
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {!!props.task.linkedCheckouts?.length && (
+        <ChoicePicker
+          aria-label="Review project checkout"
+          value={checkoutId}
+          onValueChange={setCheckoutId}
+        >
+          <option value="">Primary checkout</option>
+          {props.task.linkedCheckouts.map((link) => (
+            <option key={link.id} value={link.id}>
+              {workspace.repositories.find((repo) => repo.id === link.repositoryId)?.name ??
+                link.repositoryId}{' '}
+              · {link.branch ?? link.execution}
+            </option>
+          ))}
+        </ChoicePicker>
+      )}
+      {checkoutId && props.task.linkedCheckouts?.some((link) => link.id === checkoutId) ? (
+        <LinkedReview
+          key={`${props.task.id}:${checkoutId}`}
+          task={props.task}
+          checkoutId={checkoutId}
+        />
+      ) : (
+        <PrimaryReviewPane {...props} />
+      )}
+    </div>
   )
 }

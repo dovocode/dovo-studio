@@ -1,3 +1,4 @@
+import { LinkedCheckoutEditor } from '../tasks/detail/linked-projects'
 import { View } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
@@ -153,6 +154,11 @@ export function StepFields({
             onChange={(execution) => {
               if (execution === 'worktree' || execution === 'main') onChange({ execution })
             }}
+          />
+          <LinkedCheckoutEditor
+            value={data.linkedCheckouts ?? []}
+            disabled={disabled}
+            onChange={(linkedCheckouts) => onChange({ linkedCheckouts })}
           />
           <Text style={styles.muted}>
             Each task has its own chat. A new worktree keeps its changes separate.

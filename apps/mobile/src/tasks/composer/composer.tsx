@@ -1,3 +1,4 @@
+import { checkpointCanUndo } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { useModelCatalog } from '../../agents/use-model-catalog'
 import { CheckoutChoice } from '../creation/checkout-choice'
@@ -128,14 +129,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
       )
     const turn = [...(task.turns ?? [])]
       .reverse()
-      .find(
-        (item) =>
-          item.status !== 'running' &&
-          !!item.checkpoint?.after &&
-          !item.checkpoint.error &&
-          !item.checkpoint.undone &&
-          item.checkpoint.files.length + item.checkpoint.omitted.length > 0,
-      )
+      .find((item) => item.status !== 'running' && checkpointCanUndo(item.checkpoint))
     if (!turn) return Alert.alert('Nothing to undo', 'No turn has file changes left to undo.')
     Alert.alert(
       'Undo the last turn’s changes?',

@@ -53,6 +53,16 @@ export function automationIssues(
       }
     }
     if (data.kind === 'task') {
+      const checkouts = data.linkedCheckouts ?? []
+      if (new Set(checkouts.map((item) => item.id)).size !== checkouts.length)
+        errors.push(`Use unique linked checkout IDs for ${data.label}.`)
+      for (const link of checkouts) {
+        const repo = workspace.repositories.find((item) => item.id === link.repositoryId)
+        if (!repo || repo.kind === 'scratch')
+          errors.push(`Choose an available linked project for ${data.label}.`)
+        if (repo?.kind && link.execution === 'worktree')
+          errors.push(`Linked project does not support worktrees in ${data.label}.`)
+      }
       if (!data.objective.trim()) errors.push(`Add instructions to ${data.label}.`)
       const agent = resolveTaskAgent({ ...data, id: node.id }, workspace.agents)
       if (!agent) errors.push(`Choose an agent for ${data.label}.`)

@@ -169,6 +169,22 @@ function CheckpointRow({
         />
       )}
 
+      {turn?.checkpoint?.linked?.map((link) => (
+        <View key={link.checkoutId} style={{ gap: 4 }}>
+          <Text style={styles.muted}>
+            {link.repositoryName ?? link.repositoryId} · {link.branch ?? 'Linked checkout'} ·{' '}
+            {link.files.length} changed files
+          </Text>
+          {showFiles && (
+            <CheckpointFiles
+              files={link.files}
+              omitted={link.omitted}
+              onOpen={() => openCheckpoint(checkpoint.turnId)}
+            />
+          )}
+          {!!link.error && <Text style={styles.error}>{link.error}</Text>}
+        </View>
+      ))}
       {!!checkpoint.error && <Text style={styles.error}>{checkpoint.error}</Text>}
     </View>
   )

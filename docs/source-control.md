@@ -1,122 +1,100 @@
-# Source control connections
+# Automations
 
-Dovo's desktop, web and mobile clients browse projects across saved computers. Each operation uses
-the accounts on the computer that owns its project. Open **Settings → Source control**, connect an
-account, then link a project. On desktop you can also open **Connections** from Pull requests, or
-**Projects → Project settings** to link a checkout. Clone a connected repository from Add project
-(desktop) or Source control (mobile).
+Jobs run on the selected computer. The runtime must stay running for schedules, webhooks and task
+execution; closing the phone or desktop client does not stop a run.
 
-Existing GitHub projects continue to use `gh` authentication on the runtime without extra setup.
+## Create and edit on mobile
 
-## Providers
+Open **Settings → Coding → Automations**, select the computer, then **New automation**. Give it a
+name, choose a trigger and configure its ordered steps:
 
-| Provider                   | Runtime connection                    | Setup and capabilities             |
-| -------------------------- | ------------------------------------- | ---------------------------------- |
-| GitHub / GitHub Enterprise | GitHub CLI login for the host         | [GitHub](github-integration.md)    |
-| Bitbucket Cloud            | Named `bb` CLI profile (or API token) | [Bitbucket](bitbucket-azure.md)    |
-| Forgejo                    | `fj` / `tea` login (or API token)     | [Forgejo](forgejo-gitea.md)        |
-| Gitea                      | `fj` / `tea` login (or API token)     | [Gitea](forgejo-gitea.md)          |
-| Azure DevOps Services      | Azure CLI sign-in (or PAT)            | [Azure DevOps](bitbucket-azure.md) |
+- **Task:** instructions, project, harness, model, thinking level, permissions and local checkout or
+  new worktree. Built-in providers and installed ACP agents work directly; a saved agent
+  configuration is optional.
+- **Review:** pause for approval before the next step. Open the preceding task to inspect its chat
+  and changes, then approve or reject the run.
+- Reorder or remove steps in the editor. At least one task and one trigger are required.
 
-Bitbucket Data Center and Azure DevOps Server use different APIs and are not supported by the
-Cloud/Services connectors. GitHub connections use the active `gh` account for that hostname. The UI
-does not run an OAuth sign-in flow. Tokens can instead reference an environment variable on the
-runtime host; restart the runtime after changing its environment.
+Schedules support common presets or a custom cron expression and time zone. The saved time zone
+controls the schedule even when the phone travels. Webhook credentials are configured on the host
+desktop; paired phones do not gain access to owner-only credentials.
 
-Repository discovery may require broader scopes than accessing one repository. If discovery is
-unavailable for a repository-restricted token, enter `owner/repository` directly; use
-`project/repository` for Azure. Linking validates that repository before saving the binding. Forgejo
-and Gitea instance URLs may include a reverse-proxy path. GitHub connections take the HTTPS host
-URL; GitHub CLI selects that host's API endpoint.
+New automations have automatic triggers paused. Save and run one manually before enabling its
+schedule or webhook. Editing an existing automation updates future runs; an active or failed run
+keeps the step definitions it started with. Mobile edits use compare-and-set writes: conflicting
+desktop edits are reported instead of overwritten.
 
-## Reviewing and managing work
+The mobile editor supports a single ordered path. Existing branching graphs remain visible and
+runnable, and their connections are preserved. Edit those in the desktop/web canvas.
 
-Pull requests combine projects from all saved computers, with the project and host shown on each
-row. Lists, details, discussion, file previews and checks are cached; refresh failures keep
-available content visible. Provider connections and repository bindings are included in cache
-identity. Changing a binding or saved account revision prevents reuse of that account's old client
-cache.
+## Follow a run
 
-Cached content appears before live requests finish. Open views refresh automatically, and returning
-to the app triggers another check; pressing Refresh is optional. Desktop PR lists check the first
-page every 30 seconds and mobile PR lists every 10 seconds; both revisit loaded older pages every
-two minutes. Mobile issue and pipeline lists check every 30 seconds while focused and in the
-foreground, with a two-minute sweep of loaded older pages. Issue and pipeline details on desktop and
-mobile also refresh every 30 seconds, including the discussion/job pages you have loaded. Background
-refreshes keep existing content visible; failed reads retain it with a stale/error indication. Issue
-and pipeline details are saved locally too, including loaded comments and jobs, so they can reopen
-offline. Mutations still require a live connection and fresh data.
+Each run records the current step, completed steps, review gates, failures, task links and start/end
+times. Expand run details on mobile or open **Runs** beside the desktop canvas. Steps distinguish
+queued work from work that is running, awaiting review, completed, failed or cancelled.
 
-- **Create PR** takes a title, description, source branch and target branch. Branches must already
-  exist on the server; this does not push local commits. Draft creation appears where supported.
-- **Review & actions / PR actions** provides distinct comment, approve and request-changes actions,
-  edit, add/remove reviewers, close/reopen and merge. Enter provider usernames or stable reviewer
-  IDs as indicated by the form. Reviewer additions retain existing reviewers.
-- Reply or resolve from an individual discussion where the server supports it. Older Gitea servers
-  and Forgejo expose fewer discussion actions. Open on server remains available.
-- Desktop diff selection and mobile **Comment on line** attach feedback to a path, side and line at
-  the reviewed commit. Providers that only accept one line reject ranges rather than changing their
-  meaning.
-- Checks include provider status and links. GitHub also includes available check summaries and
-  annotations. Azure includes policy evaluations. Full CI log streaming stays on the provider; use
-  the Pipelines view to manage runs and open server links for logs.
-- Merge explicitly confirms the target and method. Repository policies still apply; conflict-free
-  does not mean approved to merge. A queued/in-progress merge is reported separately from merged.
-- Start task from PR uses the provider's source repository/ref and verifies its captured commit
-  after fetching. Existing local edits and worktrees remain intact.
+Only one run of an automation may be active or waiting for review at a time. Different automations
+may run concurrently, subject to the existing task checkout lock. A task using a new worktree has
+its own checkout; tasks sharing a local checkout must wait for the other task to finish.
 
-Every write checks the captured PR head before submission. Where the provider supports a merge
-precondition, the expected commit is included in the merge request. Providers without atomic
-review/comment preconditions can still change between this check and the write. Network failures are
-not automatically retried: refresh before retrying an uncertain submission to avoid duplicates.
+## Retry and stop
 
-## Credential handling
+**Retry** resumes a failed or cancelled run. It preserves completed steps and reuses the unfinished
+step's task, conversation and checkout. A review that was rejected must be approved again before
+execution can continue. Retry waits for cancellation to finish and refuses to overlap another run of
+the same automation.
 
-API tokens live in a dedicated table in the runtime's private SQLite database. They are not returned
-in connection listings, workspace snapshots, client read caches or activity input logs. This is
-filesystem protection, not application-level encryption: protect runtime database backups as
-credentials. Use an environment reference if tokens should be managed outside the database. GitHub
-CLI owns GitHub credentials separately.
+Retry does not roll back files or guarantee that an interrupted tool command had no effect. Inspect
+the failed task's output and changes when the error happened during an external action. Retrying
+uses the original run configuration; to use edited instructions, start a new run.
 
-Signed-in `bb`, `fj`, `tea`, and `az` credentials are read privately from the selected CLI account
-for requests, without copying them into Dovo's database. `tea` uses its named-login credential
-helper, including OAuth refresh, so Dovo can enforce the same HTTP boundaries as token connections.
-Bitbucket uses the provider's distinct Git usernames for API tokens and access tokens; an Atlassian
-email is used only for REST API-token authentication.
+**Cancel** stops the current task and prevents later steps from starting. After a runtime restart,
+interrupted runs are marked failed with an explicit recovery message. Retry reconciles tasks that
+already completed before the run saved its next step, avoiding an unnecessary second execution.
+Waiting review gates survive restarts.
 
-Connection profile pickers read account names from the runtime's CLIs without returning credentials.
-Bound project operations execute from their checkout so repository-local CLI settings apply. Named
-GitHub profiles use account-scoped subprocess credentials; profile selection never changes global
-CLI defaults. See [CLI account setup](issues-pipelines-jira.md#signed-in-cli-accounts) for each
-provider's selection rules.
+## Delivery and scheduling
 
-HTTP credentials stay within the configured API origin and base path. API-token-authenticated Git
-fetches and clones reject redirects, keep tokens out of command arguments, and disable interactive
-prompts. Use canonical repository URLs; a server that redirects its Git endpoints must be configured
-with its final endpoint. Prefer HTTPS for self-hosted servers carrying API credentials.
+Manual starts accept an optional `requestId` at `POST /api/jobs/run`. Repeating an accepted request
+for the same automation returns its original run ID, including after restart. Clients retain the ID
+after a lost response so retrying the request does not create a second run.
 
-Stored API tokens authenticate Dovo's provider operations and its explicit PR fetches/clones. Agent
-shells and terminal commands use the runtime host's normal Git credential setup; configure SSH or a
-Git credential helper there for subsequent `git push` commands.
+Webhooks require a credential and unique `X-Idempotency-Key`. Duplicate deliveries return HTTP 409.
+Delivery acceptance and run creation commit together. Retry an existing run with
+`POST /api/jobs/retry` and `{ "id": "run-id" }`.
 
-Provider API contracts are verified with isolated HTTP fixtures and local Git fixtures. Credentials
-and live write access are required for account-specific validation; tests never submit changes to
-your actual repositories.
+Schedules do not replay downtime. Missed ticks while the runtime is running are coalesced, and
+overlapping runs are skipped. Invalid schedules are isolated so they do not stop other automations.
 
-See [Issues, pipelines and Jira](issues-pipelines-jira.md) for signed-in CLI setup, Jira linking and
-provider-specific run controls.
+## Multiple projects in a task step
 
-## Starting a thread
+Task steps can include **Linked projects** on the same computer. Each link selects a main checkout,
+an existing worktree, or a new worktree, with reference-only or edit access. New worktrees have
+unique branch suffixes per task, so separate automation runs do not reuse each other's checkout.
+Existing worktrees and main checkouts are intentionally reused; concurrent editing is blocked.
 
-Choose the project first. When the same repository is available on several devices, choose its host
-before opening the draft. A project with one checkout opens directly. The draft does not run until
-its first message is sent. The composer lets you choose the local checkout or a separate worktree
-and its base branch before that first message.
+The primary project supplies agent defaults and tools. Each linked project's own worktree setup
+command runs before execution. Editable Git checkouts have separate checkpoint files and can be
+reviewed from the thread's Changes project selector. Reference-only is conveyed through harness
+permissions and instructions; it is not an operating-system sandbox.
 
-New worktree branches use the AI-generated task title, normalized to a Git-safe name with a unique
-task suffix. This reuses the configured title-generation harness, model and reasoning settings
-without a second naming request. Existing branches are not renamed when the task title changes.
+New step threads use the normal title generator with their submitted instructions. Generation runs
+independently of the task; a failure keeps the step name, and a manually edited title is preserved.
 
-Sent messages appear immediately with a Sending status while naming and delivery complete. A server
-acknowledgement replaces the local preview by message ID; an unconfirmed send keeps its draft
-available for retry.
+## Linked projects and worktrees
+
+In thread settings, **Linked projects** attaches up to twelve registered projects or checkouts on
+the thread's computer. Choose main checkout, an existing worktree, or a new worktree with optional
+base branch and branch name. New branch names receive a unique suffix. Links can be changed while
+the thread is idle; changing links starts a fresh provider session. Removing a link preserves its
+worktree and saved checkpoints.
+
+The primary checkout remains responsible for thread settings and its PR status. Linked checkouts are
+available in Changes and when opening a terminal. Agents receive their paths, project names and
+access modes, and can create separate commits and PRs in each project. A child agent can target a
+link by its checkout ID; reference-only links cap child permissions at read-only.
+
+Each editable Git checkout gets independent checkpoint previews. Undo and redo restore all recorded
+checkouts together, with backup snapshots for recovery. Checkpoint history remains available after a
+link is removed. Worktree cleanup protects links used by unarchived threads, and refuses to remove
+dirty worktrees.

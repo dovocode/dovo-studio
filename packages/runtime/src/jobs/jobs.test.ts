@@ -1,8 +1,9 @@
+import { TitleGeneration } from '../agents/tasks/title-generation'
 import { runtimeIntegration, waitForRuntime as waitForJob } from '../testing/integration'
 import { defaultTaskHarness } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type { AgentRun, AgentAdapter } from '../agents/execution/types'
-import { afterEach, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
@@ -10,6 +11,11 @@ import { responses, type Automation, type AutomationData } from '@dovo/protocol'
 // These integration tests run real Git checkout/checkpoint subprocesses.
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
+beforeEach(() => {
+  vi.spyOn(TitleGeneration.prototype, 'generate').mockResolvedValue({
+    title: 'Generated automation title',
+  })
+})
 afterEach(async () => {
   vi.restoreAllMocks()
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()

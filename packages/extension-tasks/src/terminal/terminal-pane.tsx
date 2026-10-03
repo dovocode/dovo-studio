@@ -3,7 +3,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import { ChevronDown, Plus, X, Columns2, Rows2 } from 'lucide-react'
 import { canChangeTaskCheckout, responses, useWorkspace } from '@dovo/studio-core'
-import { Button, IconButton, cn } from '@dovo/studio-ui'
+import { Button, IconButton, cn, ChoicePicker } from '@dovo/studio-ui'
 import { TerminalSession } from './terminal-session'
 export function TerminalPane({
   taskId,
@@ -22,6 +22,7 @@ export function TerminalPane({
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const [savedGroups, setGroups] = useApplicationState<TerminalGroup[]>([])
+  const [checkoutId, setCheckoutId] = useApplicationState('')
   const pending = useRef(false)
   const autoTried = useRef(false)
   useEffect(() => {
@@ -64,6 +65,7 @@ export function TerminalPane({
         '/api/terminals',
         {
           taskId,
+          checkoutId: checkoutId || undefined,
         },
         responses.terminal,
       ).then((session) => {
@@ -86,6 +88,22 @@ export function TerminalPane({
   }, [connected, shellReady, taskId, sessions, focusId, visible])
   return (
     <section className="flex h-full min-h-0 flex-col bg-[#0d0e10]" aria-label="Terminal">
+      {!!task?.linkedCheckouts?.length && (
+        <ChoicePicker
+          aria-label="New terminal checkout"
+          value={checkoutId}
+          onValueChange={setCheckoutId}
+        >
+          <option value="">Primary checkout</option>
+          {task.linkedCheckouts.map((link) => (
+            <option key={link.id} value={link.id}>
+              {workspace.repositories.find((repo) => repo.id === link.repositoryId)?.name ??
+                link.repositoryId}{' '}
+              · {link.branch ?? link.execution}
+            </option>
+          ))}
+        </ChoicePicker>
+      )}
       <header className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
         {groups.map((tab, index) => {
           const session = sessions.find((session) => session.id === tab.sessions[0])!

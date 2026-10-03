@@ -49,6 +49,7 @@ export class Jobs {
     private store: WorkspaceStore,
     private tasks: Tasks,
     private activity?: Pick<Activity, 'add'>,
+    private generateTitle?: (text: string) => Promise<{ title: string }>,
   ) {
     for (const row of db.prepare('SELECT value FROM job_runs').all()) {
       let stored: StoredRun
@@ -350,6 +351,7 @@ export class Jobs {
           agentOverrides: node.data.agentOverrides,
           repositoryId: node.data.repositoryId,
           execution: node.data.execution,
+          linkedCheckouts: node.data.linkedCheckouts,
           objective:
             run.triggerPayload === undefined
               ? node.data.objective
@@ -410,9 +412,39 @@ export class Jobs {
         if (node.data.kind === 'review') return
         if (node.data.kind === 'task') {
           // A deleted thread must not make every retry fail; start the step over instead.
-          const task =
-            (step.taskId && this.store.get().tasks.find((item) => item.id === step.taskId)) ||
-            this.createTask(run, node)
+          const existingTask =
+            step.taskId && this.store.get().tasks.find((item) => item.id === step.taskId)
+          const task = existingTask || this.createTask(run, node)
+          if (!existingTask && this.generateTitle) {
+            // Match ordinary threads: title generation is independent of execution.
+            // A slow or unavailable utility model must never hold up the automation.
+            void this.generateTitle(
+              task.messages
+                .filter((item) => item.role === 'user')
+                .map((item) => item.text)
+                .join('\n\n')
+                .slice(0, 120000),
+            )
+              .then((generated) => {
+                const current = this.store.get().tasks.find((item) => item.id === task.id)
+                if (
+                  !this.stopping &&
+                  current?.title === node.data.label &&
+                  current.status !== 'cancelled'
+                )
+                  this.store.updateTask(task.id, (value) => ({ ...value, title: generated.title }))
+              })
+              .catch((error: unknown) => {
+                if (!this.stopping)
+                  this.activity?.add(
+                    'task',
+                    task.id,
+                    'Automation title generation failed; using step name',
+                    { error: errorMessage(error) },
+                  )
+              })
+          }
+          if (this.stopping || this.runs.get(id)?.status !== 'running') return
           if (!['review', 'done'].includes(task.status)) {
             const execution = yield* this.tasks.startEffect(task.id)
             const current = this.runs.get(id)

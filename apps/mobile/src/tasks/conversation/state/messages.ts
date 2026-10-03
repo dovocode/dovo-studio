@@ -68,6 +68,12 @@ export function createConversationMessages() {
             files: turn.checkpoint.files.length,
             omitted: turn.checkpoint.omitted.length,
             error: turn.checkpoint.error,
+            linked: turn.checkpoint.linked?.map((item) => [
+              item.checkoutId,
+              item.after,
+              item.files.length,
+              item.error,
+            ]),
           },
           compactions,
           turn?.status === 'running' ? [activeTurnId, task.status] : null,
@@ -259,15 +265,26 @@ function projectMessages(
           turn.checkpoint &&
           (turn.checkpoint.files.length ||
             turn.checkpoint.error ||
-            turn.checkpoint.omitted.length) &&
-          (turn.checkpoint.after || turn.checkpoint.error)
+            turn.checkpoint.omitted.length ||
+            turn.checkpoint.linked?.some(
+              (item) => item.files.length || item.omitted.length || item.error,
+            )) &&
+          (turn.checkpoint.after ||
+            turn.checkpoint.error ||
+            turn.checkpoint.linked?.some((item) => item.after || item.error))
         )
           content.push({
             type: 'data',
             name: 'dovo.checkpoint',
             data: {
               turnId: turn.id,
-              files: turn.checkpoint.files.length + turn.checkpoint.omitted.length,
+              files:
+                turn.checkpoint.files.length +
+                turn.checkpoint.omitted.length +
+                (turn.checkpoint.linked?.reduce(
+                  (sum, item) => sum + item.files.length + item.omitted.length,
+                  0,
+                ) ?? 0),
               omitted: turn.checkpoint.omitted.length,
               error: turn.checkpoint.error,
             },

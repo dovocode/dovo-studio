@@ -64,9 +64,22 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
         )
         if (listed._tag === 'Left') continue
         const { common, records } = listed.right
-        const tasks = workspace.tasks
-          .filter((task) => task.repositoryId === repository.id)
-          .map((task) => ({ task, keys: taskWorktreeKeys(common, task.id) }))
+        const tasks = workspace.tasks.flatMap((task) => [
+          ...(task.repositoryId === repository.id
+            ? [{ task, keys: taskWorktreeKeys(common, task.id) }]
+            : []),
+          ...(task.linkedCheckouts ?? [])
+            .filter(
+              (link) =>
+                link.repositoryId === repository.id &&
+                link.execution === 'worktree' &&
+                !link.existingWorktreePath,
+            )
+            .map((link) => ({
+              task,
+              keys: taskWorktreeKeys(common, `${task.id}:linked:${link.id}`),
+            })),
+        ])
         for (const record of records) {
           const path = record.find((line) => line.startsWith('worktree '))?.slice(9)
           if (!path || !path.startsWith(root) || seen.has(path)) continue
@@ -74,7 +87,10 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
           const branch = record.find((line) => line.startsWith('branch '))?.slice(7) ?? ''
           const owner = tasks.find(({ keys }) => isTaskWorktree(path, keys))?.task
           const inUse = workspace.tasks.some(
-            (task) => task.existingWorktreePath === path && !task.archivedAt,
+            (task) =>
+              !task.archivedAt &&
+              (task.existingWorktreePath === path ||
+                task.linkedCheckouts?.some((link) => link.existingWorktreePath === path)),
           )
           const state =
             inUse || (owner && !owner.archivedAt) ? 'active' : owner ? 'archived' : 'missing'

@@ -742,6 +742,7 @@ export class WorkspaceStore {
           record.viewedRevision !== undefined ||
           record.turns !== undefined ||
           record.subagents !== undefined ||
+          record.linkedCheckoutSetup !== undefined ||
           record.delegation !== undefined ||
           record.archivedAt !== undefined ||
           record.queue !== undefined ||

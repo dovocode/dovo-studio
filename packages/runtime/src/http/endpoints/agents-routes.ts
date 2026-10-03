@@ -1,3 +1,5 @@
+import { runtimeOperation } from '../../errors.js'
+import { linkedCheckoutsSchema } from '@dovo/protocol'
 import { settingsScopeSchema, settingsScopes, scopedAgentEntries } from '@dovo/protocol'
 import { scopedSettingsRoute } from './scoped-settings-routes.js'
 import { decodeResult } from '@dovo/protocol'
@@ -800,16 +802,49 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
         return yield* serviceResult(handoffTask(s, input.id, input.target))
       }
+      if (method === 'POST' && path === '/api/tasks/checkouts/save') {
+        const input = decode(
+          mutableStruct({
+            id: idSchema,
+            before: linkedCheckoutsSchema,
+            links: linkedCheckoutsSchema,
+          }),
+          yield* serviceResult(body(request)),
+        )
+        s.tasks.requireIdle(input.id)
+        return yield* runtimeOperation(() =>
+          s.checkouts.linked.save(input.id, input.before, input.links),
+        )
+      }
+      if (method === 'POST' && path === '/api/tasks/checkouts/changes') {
+        const input = decode(
+          mutableStruct({ id: idSchema, checkoutId: idSchema, turnId: Schema.optional(idSchema) }),
+          yield* serviceResult(body(request)),
+        )
+        const task = s.store.task(input.id)
+        if (input.turnId) {
+          const checkpoint = task.turns
+            ?.find((turn) => turn.id === input.turnId)
+            ?.checkpoint?.linked?.find((item) => item.checkoutId === input.checkoutId)
+          if (!checkpoint) throw new HttpError(404, 'Linked checkpoint not found')
+          return { files: checkpoint.files }
+        }
+        const cwd = yield* serviceResult(s.checkouts.selectedDirectory(input.id, input.checkoutId))
+        return { files: yield* serviceResult(s.git.changes(cwd)) }
+      }
       if (method === 'POST' && path === '/api/tasks/file/preview') {
         const input = decode(
           mutableStruct({
             id: idSchema,
             path: maxValue(minValue(Schema.String, 1), 4000),
             turnId: Schema.optional(idSchema),
+            checkoutId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
         )
-        return yield* serviceResult(s.tasks.filePreview(input.id, input.path, input.turnId))
+        return yield* serviceResult(
+          s.tasks.filePreview(input.id, input.path, input.turnId, input.checkoutId),
+        )
       }
       if (method === 'POST' && path === '/api/tasks/file/restore') {
         const input = decode(
@@ -817,10 +852,13 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             id: idSchema,
             path: maxValue(minValue(Schema.String, 1), 4000),
             turnId: Schema.optional(idSchema),
+            checkoutId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
         )
-        return yield* serviceResult(s.tasks.restoreFile(input.id, input.path, input.turnId))
+        return yield* serviceResult(
+          s.tasks.restoreFile(input.id, input.path, input.turnId, input.checkoutId),
+        )
       }
       if (method === 'POST' && path === '/api/tasks/turn/restore') {
         const input = decode(

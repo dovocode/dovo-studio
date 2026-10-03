@@ -6,7 +6,7 @@ import {
   decode,
   taskHarnessSchema,
 } from '@dovo/protocol'
-import { ChoicePicker, HarnessFields } from '@dovo/studio-ui'
+import { ChoicePicker, HarnessFields, LinkedCheckoutEditor } from '@dovo/studio-ui'
 import type { AutomationData, AutomationNode, Workspace } from '@dovo/studio-core'
 import { Button, FormField, Input, Textarea } from '@dovo/studio-ui'
 export function NodeInspector({
@@ -123,6 +123,10 @@ export function NodeInspector({
               <option value="worktree">Dedicated task worktree</option>
             </ChoicePicker>
           </FormField>
+          <LinkedCheckoutEditor
+            value={data.linkedCheckouts ?? []}
+            onChange={(linkedCheckouts) => field({ linkedCheckouts })}
+          />
           <FormField label="Instructions">
             <Textarea
               rows={7}

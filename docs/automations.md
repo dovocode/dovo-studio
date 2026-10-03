@@ -5,8 +5,8 @@ execution; closing the phone or desktop client does not stop a run.
 
 ## Create and edit on mobile
 
-Open **Automations**, select the computer, then **New automation**. Give it a name, choose a trigger
-and configure its ordered steps:
+Open **Settings → Coding → Automations**, select the computer, then **New automation**. Give it a
+name, choose a trigger and configure its ordered steps:
 
 - **Task:** instructions, project, harness, model, thinking level, permissions and local checkout or
   new worktree. Built-in providers and installed ACP agents work directly; a saved agent
@@ -65,3 +65,18 @@ Delivery acceptance and run creation commit together. Retry an existing run with
 
 Schedules do not replay downtime. Missed ticks while the runtime is running are coalesced, and
 overlapping runs are skipped. Invalid schedules are isolated so they do not stop other automations.
+
+## Multiple projects in a task step
+
+Task steps can include **Linked projects** on the same computer. Each link selects a main checkout,
+an existing worktree, or a new worktree, with reference-only or edit access. New worktrees have
+unique branch suffixes per task, so separate automation runs do not reuse each other's checkout.
+Existing worktrees and main checkouts are intentionally reused; concurrent editing is blocked.
+
+The primary project supplies agent defaults and tools. Each linked project's own worktree setup
+command runs before execution. Editable Git checkouts have separate checkpoint files and can be
+reviewed from the thread's Changes project selector. Reference-only is conveyed through harness
+permissions and instructions; it is not an operating-system sandbox.
+
+New step threads use the normal title generator with their submitted instructions. Generation runs
+independently of the task; a failure keeps the step name, and a manually edited title is preserved.

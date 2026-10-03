@@ -232,7 +232,33 @@ export const queuedMessageSchema = mutableStruct({
     createdAt: Schema.String,
   },
 })
+export const linkedCheckoutSchema = mutableStruct({
+  id: maxValue(minValue(Schema.String.pipe(Schema.pattern(/^[a-zA-Z0-9_-]+$/)), 1), 100),
+  repositoryId: maxValue(minValue(Schema.String, 1), 200),
+  execution: executionSchema,
+  existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 4096)),
+  baseBranch: Schema.optional(maxValue(minValue(Schema.String, 1), 300)),
+  branch: Schema.optional(maxValue(minValue(Schema.String, 1), 300)),
+  access: Schema.Literal('read-only', 'edit'),
+})
+export type LinkedCheckout = Schema.Schema.Type<typeof linkedCheckoutSchema>
+export const linkedCheckoutsSchema = maxValue(mutableArray(linkedCheckoutSchema), 12)
+export const linkedCheckpointSchema = mutableStruct({
+  undone: Schema.optional(mutableStruct({ at: Schema.String, backup: Schema.String })),
+  checkoutId: Schema.String,
+  repositoryName: Schema.optional(Schema.String),
+  repositoryId: Schema.String,
+  directory: Schema.String,
+  branch: Schema.optional(Schema.String),
+  before: Schema.String,
+  after: Schema.optional(Schema.String),
+  files: mutableArray(fileSchema),
+  omitted: mutableArray(Schema.String),
+  error: Schema.optional(Schema.String),
+})
+export type LinkedCheckpoint = Schema.Schema.Type<typeof linkedCheckpointSchema>
 export const turnCheckpointSchema = mutableStruct({
+  linked: Schema.optional(mutableArray(linkedCheckpointSchema)),
   before: Schema.String,
   after: Schema.optional(Schema.String),
   files: mutableArray(fileSchema),
@@ -426,6 +452,10 @@ export const taskSchema = mutableStruct({
       failed: Schema.optional(Schema.Boolean),
     }),
   ),
+  linkedCheckoutSetup: Schema.optional(
+    mutableArray(mutableStruct({ id: Schema.String, directory: Schema.String })),
+  ),
+  linkedCheckouts: Schema.optional(linkedCheckoutsSchema),
   checkoutBranch: Schema.optional(Schema.String),
   /** Reuse a registered Git worktree instead of creating one for this task. */
   existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 4096)),
@@ -439,6 +469,7 @@ export const taskSchema = mutableStruct({
       fingerprint: Schema.optional(maxValue(Schema.String, 64)),
       parentTaskId: maxValue(minValue(Schema.String, 1), 200),
       parentRunId: maxValue(minValue(Schema.String, 1), 200),
+      checkoutId: Schema.optional(Schema.String),
       key: maxValue(minValue(Schema.String, 1), 100),
     }),
   ),
@@ -505,6 +536,7 @@ export const nodeDataSchema = mutableStruct({
   agentOverrides: taskSchema.fields.agentOverrides,
   repositoryId: Schema.String,
   execution: Schema.optional(executionSchema),
+  linkedCheckouts: Schema.optional(linkedCheckoutsSchema),
 })
 export const flowNodeSchema = mutableStruct({
   id: Schema.String,
