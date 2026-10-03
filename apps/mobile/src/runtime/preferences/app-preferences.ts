@@ -1,3 +1,4 @@
+import { mergeSharedSettings, sharedSettingsSchema } from '@dovo/protocol'
 import { useSyncExternalStore } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Schema } from 'effect'
@@ -11,6 +12,7 @@ import {
 
 /** Settings → General on this phone only. Never synced to computers. */
 const schema = mutableStruct({
+  sharedScopedSettings: sharedSettingsSchema,
   globalModelPreferencesUpdatedAt: Schema.Number,
   globalModelPreferences: Schema.NullOr(modelPreferencesSchema),
   globalAgentPresets: mutableArray(agentPresetSchema),
@@ -36,6 +38,7 @@ const schema = mutableStruct({
 })
 export type MobilePreferences = Schema.Schema.Type<typeof schema>
 const defaults: MobilePreferences = {
+  sharedScopedSettings: [],
   globalModelPreferencesUpdatedAt: 0,
   globalModelPreferences: null,
   globalAgentPresets: [],
@@ -91,7 +94,16 @@ function restoredPreferences(raw: string | null): MobilePreferences {
 export const preferencesReady = AsyncStorage.getItem(key)
   .then((raw) => {
     const restored = restoredPreferences(raw)
-    current = edits ? { ...restored, ...edits } : restored
+    current = edits
+      ? {
+          ...restored,
+          ...edits,
+          sharedScopedSettings: mergeSharedSettings(
+            restored.sharedScopedSettings,
+            edits.sharedScopedSettings ?? [],
+          ),
+        }
+      : restored
   })
   .catch(() => undefined)
   .finally(() => {

@@ -100,3 +100,43 @@ it('defaults changed files to collapsed and restores an expanded preference', as
     taskSort: 'title',
   })
 })
+
+it('merges shared scope edits with offline cached scopes that arrive during preference hydration', async () => {
+  let resolveGet: (value: string) => void = () => {}
+  storage.getItem = () =>
+    new Promise((resolve) => {
+      resolveGet = resolve
+    })
+  storage.setItem = async () => {}
+  const preferences = await loadPreferences()
+  const shared = { key: 'global', updatedAt: 2, changeId: 'new', value: {} }
+  preferences.updateMobilePreferences({ sharedScopedSettings: [shared] })
+  resolveGet(
+    JSON.stringify({
+      sharedScopedSettings: [
+        {
+          key: 'global',
+          updatedAt: 1,
+          changeId: 'old',
+          value: { taskDefaults: { setupCommand: 'old' } },
+        },
+        {
+          key: 'project:github.com/team/repo',
+          updatedAt: 1,
+          changeId: 'project',
+          value: { taskDefaults: { setupCommand: 'project' } },
+        },
+      ],
+    }),
+  )
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences().sharedScopedSettings).toEqual([
+    shared,
+    {
+      key: 'project:github.com/team/repo',
+      updatedAt: 1,
+      changeId: 'project',
+      value: { taskDefaults: { setupCommand: 'project' } },
+    },
+  ])
+})

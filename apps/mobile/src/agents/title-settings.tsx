@@ -1,3 +1,4 @@
+import { configuredTaskHarness } from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -63,7 +64,7 @@ export function TitleSettings() {
   const harness = resolveTitleHarness(
     settings,
     snapshot?.workspace.agents ?? [],
-    snapshot?.defaults?.configured ? snapshot.defaults.harness : undefined,
+    configuredTaskHarness(snapshot?.defaults),
   )
   const installations = snapshot?.acpInstallations ?? []
   const agent = {

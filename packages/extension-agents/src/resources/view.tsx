@@ -1,3 +1,13 @@
+import {
+  resolveScopedSettings,
+  sharedProjectKey,
+  resourceScopeChoices,
+  scopeEditorValue,
+  scopeEditorDefaults,
+  scopedSettingsResultSchema,
+  settingsScopeLabels,
+  type SettingsScope,
+} from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
@@ -24,8 +34,8 @@ export default function ResourcesView() {
     <section className="min-h-0 flex-1 overflow-y-auto p-4">
       <h1 className="text-base font-semibold">Agent resources & hooks</h1>
       <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">
-        Resources across all projects and agents. Agent MCP servers and skills override matching
-        project names; hooks from both scopes run. Changes apply on the next turn.
+        Global → Environment → Project → Environment + project. Matching names override earlier
+        scopes; agent entries apply last. Changes apply on the next turn.
       </p>
       {!sources.length && (
         <p className="mt-6 text-sm text-muted-foreground">
@@ -51,19 +61,8 @@ export default function ResourcesView() {
   )
 }
 function ComputerResources() {
-  const { workspace } = useWorkspace()
-  const scopes = [
-    ...workspace.repositories.map((item) => ({
-      item,
-      collection: 'repositories' as const,
-      label: 'Project',
-    })),
-    ...workspace.agents.map((item) => ({
-      item,
-      collection: 'agents' as const,
-      label: 'Agent',
-    })),
-  ]
+  const { workspace, snapshot } = useWorkspace()
+  const scopes = resourceScopeChoices(snapshot?.defaults, workspace)
   return (
     <div className="space-y-3">
       {!scopes.length && (
@@ -71,11 +70,11 @@ function ComputerResources() {
           Add a project or custom agent to manage its resources.
         </p>
       )}
-      {scopes.map(({ item, collection, label }) => {
+      {scopes.map(({ item, collection, label, scope, repository }) => {
         const resources = decode(resourceSettingsSchema, item.resources ?? {})
         return (
           <details
-            key={`${collection}:${item.id}`}
+            key={`${collection}:${scope ?? 'agent'}:${item.id}`}
             className="rounded-md border"
             open={
               resources.mcpServers.length +
@@ -91,7 +90,12 @@ function ComputerResources() {
                 {resources.hooks?.length ?? 0} hooks
               </span>
             </summary>
-            <ResourceScopeView collection={collection} id={item.id} />
+            <ResourceScopeView
+              collection={collection}
+              id={item.id}
+              settingsScope={scope}
+              repositoryId={repository?.id}
+            />
           </details>
         )
       })}
@@ -101,11 +105,24 @@ function ComputerResources() {
 function ResourceScopeView({
   collection,
   id,
+  settingsScope,
+  repositoryId,
 }: {
-  collection: 'agents' | 'repositories'
+  settingsScope?: SettingsScope
+  repositoryId?: string
+  collection: 'agents' | 'repositories' | 'settings'
   id: string
 }) {
-  const { workspace, request, connected, syncError } = useWorkspace()
+  const {
+    workspace,
+    snapshot,
+    request,
+    connected,
+    syncError,
+    refreshRuntime,
+    connection,
+    runtimes,
+  } = useWorkspace()
   const [editing, setEditing] = useApplicationState<
     | {
         kind: 'mcp'
@@ -123,38 +140,78 @@ function ResourceScopeView({
   const [catalog, setCatalog] = useApplicationState<'mcp' | 'skill' | null>(null)
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
-  const item = workspace[collection].find((item) => item.id === id)
+  const repository = workspace.repositories.find((item) => item.id === repositoryId)
+  const scopedValue = settingsScope
+    ? scopeEditorValue(snapshot?.defaults, repository, settingsScope)
+    : undefined
+  const item =
+    collection === 'settings'
+      ? {
+          id,
+          name: repository?.name ?? settingsScopeLabels[settingsScope ?? 'environment'],
+          resources: scopedValue?.resources,
+        }
+      : workspace[collection].find((item) => item.id === id)
   const scope = item
     ? {
         item,
         collection,
-        label: `${collection === 'agents' ? 'Agent' : 'Project'} · ${item.name}`,
+        label: settingsScope
+          ? `${settingsScopeLabels[settingsScope]} · ${item.name}`
+          : `${collection === 'agents' ? 'Agent' : 'Project'} · ${item.name}`,
       }
     : undefined
   const settings = decode(resourceSettingsSchema, scope?.item.resources ?? {})
+  const inherited = settingsScope
+    ? resolveScopedSettings(scopeEditorDefaults(snapshot?.defaults), repository, settingsScope)
+        .resources
+    : undefined
   const change = async (update: (value: ResourceSettings) => ResourceSettings) => {
     if (!scope) throw new Error('Choose a scope')
     setBusy(true)
     setError('')
     try {
       const resources = decode(resourceSettingsSchema, update(settings))
-      await request(
-        '/api/workspace',
-        {
-          collection: scope.collection,
-          id: scope.item.id,
-          changes: {
-            resources: {
-              before: scope.item.resources ?? null,
-              after: resources,
+      if (settingsScope) {
+        await request(
+          '/api/agents/settings/save',
+          {
+            scope: settingsScope,
+            repositoryId,
+            projectKey: sharedProjectKey(repository),
+            before: scopedValue ?? {},
+            after: { ...scopedValue, resources },
+          },
+          scopedSettingsResultSchema,
+        )
+      } else {
+        await request(
+          '/api/workspace',
+          {
+            collection: scope.collection,
+            id: scope.item.id,
+            changes: {
+              resources: {
+                before: scope.item.resources ?? null,
+                after: resources,
+              },
             },
           },
-        },
-        mutableStruct({
-          revision: Schema.Number.pipe(Schema.finite()),
-        }),
-        'PATCH',
+          mutableStruct({
+            revision: Schema.Number.pipe(Schema.finite()),
+          }),
+          'PATCH',
+        )
+      }
+      const owner = runtimes.find(
+        (entry) =>
+          entry.profile.connection.address === connection?.address &&
+          entry.profile.connection.token === connection?.token,
       )
+      if (owner)
+        await refreshRuntime(owner.profile).catch((error: unknown) =>
+          setError(`Saved, but could not refresh these settings. ${resourceError(error)}`),
+        )
     } catch (error) {
       setError(resourceError(error))
       throw error
@@ -175,6 +232,12 @@ function ResourceScopeView({
         </p>
       ) : (
         <>
+          {settingsScope && (
+            <p className="mb-4 text-xs text-muted-foreground">
+              Edit entries owned by this scope. Remove an override to inherit its earlier
+              definition. Shared MCP credentials must reference host environment variables.
+            </p>
+          )}
           {(error || syncError) && (
             <p role="alert" className="mb-4 text-xs text-destructive">
               {error || syncError}
@@ -184,6 +247,39 @@ function ResourceScopeView({
             <p className="mb-4 text-xs text-muted-foreground">
               Connect to the runtime to manage resources.
             </p>
+          )}
+          {inherited && (
+            <section className="mb-4 space-y-2">
+              <h3 className="text-sm font-medium">Inherited tools</h3>
+              {inherited.mcpServers
+                .filter((server) => !settings.mcpServers.some((item) => item.name === server.name))
+                .map((server) => (
+                  <Button
+                    key={`mcp:${server.name}`}
+                    size="sm"
+                    variant="ghost"
+                    disabled={!connected || busy}
+                    onClick={() => setEditing({ kind: 'mcp', value: server })}
+                  >
+                    Override MCP · {server.name}
+                    {server.enabled ? '' : ' · Disabled'}
+                  </Button>
+                ))}
+              {inherited.skills
+                .filter((skill) => !settings.skills.some((item) => item.name === skill.name))
+                .map((skill) => (
+                  <Button
+                    key={`skill:${skill.name}`}
+                    size="sm"
+                    variant="ghost"
+                    disabled={!connected || busy}
+                    onClick={() => act((value) => ({ ...value, skills: [...value.skills, skill] }))}
+                  >
+                    Override skill · {skill.name}
+                    {skill.enabled ? '' : ' · Disabled'}
+                  </Button>
+                ))}
+            </section>
           )}
           <div className="grid gap-6 xl:grid-cols-2">
             <HookSettings hooks={settings.hooks ?? []} disabled={!connected || busy} change={act} />

@@ -1,3 +1,4 @@
+import { changeAgentProvider, changeAgentConnection, agentConnectionValue } from '@dovo/protocol'
 import { randomUUID } from 'expo-crypto'
 import {
   useMobilePreferences,
@@ -180,19 +181,7 @@ export function AgentEditor({
         }))}
         onChange={(value) => {
           if (providerLocked && value !== requiredProvider) return
-          setDraft({
-            ...draft,
-            provider: decode(providerSchema, value),
-            model: '',
-            reasoning: '',
-            serviceTier: undefined,
-            cyberAccessProgram: undefined,
-            acpInstallationId: undefined,
-            acpMode: undefined,
-            acpConfig: undefined,
-            endpoint: '',
-            args: [],
-          })
+          setDraft(changeAgentProvider(draft, decode(providerSchema, value)))
         }}
       />
       {providerLocked && (
@@ -216,14 +205,9 @@ export function AgentEditor({
             ? 'Server URL · blank starts OpenCode automatically'
             : 'Executable path · blank uses default'
         }
-        value={draft.acpInstallationId ? (draft.executablePath ?? '') : draft.endpoint}
+        value={agentConnectionValue(draft)}
         editable={!busy}
-        onChangeText={(endpoint) =>
-          setDraft({
-            ...draft,
-            endpoint,
-          })
-        }
+        onChangeText={(endpoint) => setDraft(changeAgentConnection(draft, endpoint))}
       />
       {draft.provider === 'opencode' && !draft.endpoint.trim() && (
         <Field

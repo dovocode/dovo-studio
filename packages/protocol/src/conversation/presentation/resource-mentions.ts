@@ -1,3 +1,5 @@
+import { resolveScopedSettings } from '../../runtime/connection/scoped-settings.js'
+import type { RuntimeDefaults } from '../../runtime/connection/runtime-setup.js'
 import { mergeResources, type ResourceSettings } from '../../shared/resources.js'
 import { resolveTaskAgent, type Agent, type Repository, type Task } from '../../workspace.js'
 
@@ -25,9 +27,13 @@ export function composerMention(text: string, caret: number): ComposerMention | 
 export function taskResources(
   task: Pick<Task, 'id' | 'agentId' | 'agentOverrides' | 'harness' | 'repositoryId'>,
   workspace: { agents: readonly Agent[]; repositories: readonly Repository[] },
+  defaults?: RuntimeDefaults,
 ): ResourceSettings {
+  const repository = workspace.repositories.find(
+    (repository) => repository.id === task.repositoryId,
+  )
   return mergeResources(
-    workspace.repositories.find((repository) => repository.id === task.repositoryId)?.resources,
+    resolveScopedSettings(defaults, repository).resources,
     resolveTaskAgent(task, workspace.agents)?.resources,
   )
 }

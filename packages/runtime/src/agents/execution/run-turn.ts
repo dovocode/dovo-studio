@@ -1,3 +1,6 @@
+import { SharedSkillBundles } from '../configuration/shared-skill-bundles.js'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { journalProvider } from './journal-provider.js'
 import { ProgressBuffer } from './progress-buffer.js'
 import { reportedUsageAccount } from '../tasks/usage-account.js'
@@ -50,6 +53,7 @@ export class TurnStoreFailure extends Error {
 }
 
 export class TaskTurnRunner {
+  private sharedSkills: SharedSkillBundles
   private mcpApps?: McpApps
   setMcpApps(apps: McpApps) {
     this.mcpApps = apps
@@ -68,7 +72,10 @@ export class TaskTurnRunner {
     private attachments: Attachments,
     private activity?: Pick<Activity, 'add'>,
     private artifactsEnabled: () => boolean = () => false,
-  ) {}
+    skillCacheDirectory = join(tmpdir(), 'dovo-shared-skills'),
+  ) {
+    this.sharedSkills = new SharedSkillBundles(skillCacheDirectory)
+  }
   /** Retry only change capture for an already terminal provider turn. */
   finalizeEffect(id: string, cwd: string) {
     return Effect.gen(this, function* () {
@@ -153,9 +160,15 @@ export class TaskTurnRunner {
             `This task uses ${providerLock}. Select a model or custom agent within that provider before continuing.`,
           )
         const resources = mergeResources(
-          this.store.get().repositories.find((repository) => repository.id === task.repositoryId)
-            ?.resources,
+          this.store.projectSettings(task.repositoryId).resources,
           configured.resources,
+        )
+        const enabledSkills = yield* runtimeOperation(() =>
+          this.sharedSkills.materialize(resources.skills.filter((skill) => skill.enabled)),
+        )
+        const materializedSkills = new Map(enabledSkills.map((skill) => [skill.name, skill]))
+        resources.skills = resources.skills.map(
+          (skill) => materializedSkills.get(skill.name) ?? skill,
         )
         const originalMcpServers = resources.mcpServers
         if (this.taskTools) {
@@ -519,6 +532,9 @@ ${
               .map((message) => message.text)
               .join('\n'),
             resources,
+          )
+          mentioned.skills = yield* runtimeOperation(() =>
+            this.sharedSkills.materialize(mentioned.skills),
           )
           const mentionContext = [
             mentioned.skills.length

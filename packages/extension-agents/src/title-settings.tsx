@@ -1,3 +1,4 @@
+import { configuredTaskHarness } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   acpHarnessChoiceId,
@@ -52,11 +53,7 @@ export function TitleSettings() {
     [request],
   )
   const harness = settings
-    ? resolveTitleHarness(
-        settings,
-        workspace.agents,
-        snapshot?.defaults?.configured ? snapshot.defaults.harness : undefined,
-      )
+    ? resolveTitleHarness(settings, workspace.agents, configuredTaskHarness(snapshot?.defaults))
     : undefined
   return (
     <details className="mb-6 rounded-lg border p-4" onToggle={(e) => setOpen(e.currentTarget.open)}>

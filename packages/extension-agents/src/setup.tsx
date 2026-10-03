@@ -1,3 +1,4 @@
+import { configuredTaskHarness, resolveTaskDefaults } from '@dovo/protocol'
 import { useCallback, useEffect } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace, providers } from '@dovo/studio-core'
@@ -34,21 +35,22 @@ export function Setup() {
   const { snapshot, connected } = useWorkspace()
   const [open, setOpen] = useApplicationState(false)
   const defaults = snapshot?.defaults
+  const everyday = configuredTaskHarness(defaults)
   return (
     <section className="mb-4 rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-medium">
-            {defaults?.configured ? 'Your defaults' : 'Set up your workspace'}
+            {everyday ? 'Your defaults' : 'Set up your workspace'}
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            {defaults?.configured
-              ? `${providers[defaults.harness.provider].short} · ${defaults.harness.model || 'Provider default model'}`
+            {everyday
+              ? `${providers[everyday.provider].short} · ${everyday.model || 'Provider default model'}`
               : 'Choose your everyday model and a separate model for titles and dictation.'}
           </p>
         </div>
         <Button size="sm" disabled={!connected} onClick={() => setOpen(true)}>
-          {defaults?.configured ? 'Edit defaults' : 'Set up defaults'}
+          {everyday ? 'Edit defaults' : 'Set up defaults'}
         </Button>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
@@ -111,11 +113,15 @@ function SetupForm({ onClose }: { onClose: () => void }) {
   const titleHarness = resolveTitleHarness(
     settings.titles,
     workspace.agents,
-    settings.defaults.configured ? settings.defaults.harness : undefined,
+    configuredTaskHarness(settings.defaults),
   )
   const agent: Agent =
     step === 0
-      ? { ...settings.defaults.harness, id: 'default', name: 'Default agent' }
+      ? {
+          ...resolveTaskDefaults(settings.defaults, undefined).harness,
+          id: 'default',
+          name: 'Default agent',
+        }
       : {
           ...(titleHarness ?? defaultTaskHarness('codex')),
           id: 'titles',
@@ -246,8 +252,10 @@ function SetupForm({ onClose }: { onClose: () => void }) {
         </details>
         {step === 1 && (
           <p className="rounded-md border p-3 text-xs leading-5 text-muted-foreground">
-            New tasks: {providers[settings.defaults.harness.provider].short} ·{' '}
-            {settings.defaults.harness.model || 'Provider default model'}
+            New tasks:{' '}
+            {providers[resolveTaskDefaults(settings.defaults, undefined).harness.provider].short} ·{' '}
+            {resolveTaskDefaults(settings.defaults, undefined).harness.model ||
+              'Provider default model'}
             <br />
             Titles & dictation: {providers[agent.provider].short} ·{' '}
             {agent.model || 'Provider default model'}

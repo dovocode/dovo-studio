@@ -1,3 +1,4 @@
+import { projectPrompts } from '@dovo/protocol'
 import { useModelCatalog } from '../../agents/use-model-catalog'
 import { CheckoutChoice } from '../creation/checkout-choice'
 import { TaskMachineSelector } from '../creation/task-machine-selector'
@@ -234,20 +235,24 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
             taskId={task.id}
             text={draft.text}
             caret={caret}
-            resources={taskResources(task, {
-              agents: snapshot?.workspace.agents ?? [],
-              repositories: snapshot?.workspace.repositories ?? [],
-            })}
+            resources={taskResources(
+              task,
+              {
+                agents: snapshot?.workspace.agents ?? [],
+                repositories: snapshot?.workspace.repositories ?? [],
+              },
+              snapshot?.defaults,
+            )}
             onChange={draft.update}
             onCommand={
               task.messages.length || task.queue?.length || task.turns?.length
                 ? runCommand
                 : undefined
             }
-            prompts={
-              snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
-                ?.prompts
-            }
+            prompts={projectPrompts(
+              snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+              snapshot?.defaults,
+            )}
           />
         )}
         {/* Keep the input mounted in the same position while its toolbar expands. */}

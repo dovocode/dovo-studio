@@ -163,3 +163,6 @@ export * from './conversation/presentation/usage-history.js'
 export * from './conversation/presentation/usage-refresh.js'
 
 export * from './conversation/history.js'
+
+export * from './tasks/agent-configuration.js'
+export * from './runtime/connection/scoped-settings.js'

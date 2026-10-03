@@ -1,3 +1,4 @@
+import { projectPrompts } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -145,7 +146,7 @@ export function Composer({
       .finally(() => setCommandBusy(false))
   }
   const resources = useMemo(
-    () => taskResources(task, workspace),
+    () => taskResources(task, workspace, snapshot?.defaults),
     [
       task.id,
       task.agentId,
@@ -154,6 +155,7 @@ export function Composer({
       task.repositoryId,
       workspace.agents,
       workspace.repositories,
+      snapshot?.defaults,
     ],
   )
   const [managingPrompts, setManagingPrompts] = useState(false)
@@ -375,10 +377,10 @@ export function Composer({
           taskId={task.id}
           input={input}
           resources={resources}
-          prompts={
-            workspace.repositories.find((repository) => repository.id === task.repositoryId)
-              ?.prompts
-          }
+          prompts={projectPrompts(
+            workspace.repositories.find((repository) => repository.id === task.repositoryId),
+            snapshot?.defaults,
+          )}
           onCommand={
             task.messages.length || task.queue?.length || task.turns?.length
               ? runCommand

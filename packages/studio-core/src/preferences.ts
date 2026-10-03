@@ -1,3 +1,4 @@
+import { sharedSettingsSchema } from '@dovo/protocol'
 import { useMemo, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
 import {
@@ -13,6 +14,7 @@ import {
 /** Preferences for this app window only (like Codex and T3 Code "General" and "Appearance").
  * They never sync to computers; each device keeps its own. */
 const schema = mutableStruct({
+  sharedScopedSettings: sharedSettingsSchema,
   globalModelPreferencesUpdatedAt: Schema.Number,
   globalModelPreferences: Schema.NullOr(modelPreferencesSchema),
   globalAgentPresets: mutableArray(agentPresetSchema),
@@ -61,6 +63,7 @@ const schema = mutableStruct({
 })
 export type AppPreferences = Schema.Schema.Type<typeof schema>
 export const defaultAppPreferences: AppPreferences = {
+  sharedScopedSettings: [],
   globalModelPreferencesUpdatedAt: 0,
   globalModelPreferences: null,
   globalAgentPresets: [],

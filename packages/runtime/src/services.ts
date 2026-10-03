@@ -112,6 +112,9 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       attachments,
       activity,
       () => preferences.get().enableArtifacts,
+      db.name === ':memory:'
+        ? join(tmpdir(), 'dovo-catalog-skills')
+        : join(dirname(resolve(db.name)), 'skills'),
     ),
     jobs = new Jobs(db, store, tasks, activity)
   const mcpApps = new McpApps(db, store, activity, approvals)

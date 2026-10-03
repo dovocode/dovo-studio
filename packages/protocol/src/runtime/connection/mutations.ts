@@ -11,6 +11,8 @@ const mutations = new Set([
   '/api/tasks/viewed',
   '/api/runtime/preferences/save',
   '/api/agents/defaults/save',
+  '/api/agents/settings/save',
+  '/api/agents/settings/sync',
   '/api/agents/setup/save',
   '/api/agents/title-settings/save',
   '/api/previews/browser/profiles/save',

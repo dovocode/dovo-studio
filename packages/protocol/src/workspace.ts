@@ -100,6 +100,32 @@ export const taskTemplateSchema = mutableStruct({
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
 })
 export type TaskTemplate = Schema.Schema.Type<typeof taskTemplateSchema>
+/** Settings that can inherit across computers and projects. */
+export const scopedSettingsValueSchema = mutableStruct({
+  taskDefaults: Schema.optional(projectTaskDefaultsSchema),
+  resources: Schema.optional(resourceSettingsSchema),
+  prompts: Schema.optional(maxValue(mutableArray(savedPromptSchema), 40)),
+})
+export type ScopedSettingsValue = Schema.Schema.Type<typeof scopedSettingsValueSchema>
+export const sharedSettingsEntrySchema = mutableStruct({
+  key: maxValue(minValue(Schema.String, 1), 600),
+  updatedAt: Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative()),
+  changeId: maxValue(minValue(Schema.String, 1), 100),
+  value: scopedSettingsValueSchema,
+})
+export const sharedSettingsSchema = maxValue(mutableArray(sharedSettingsEntrySchema), 300)
+export type SharedSettingsEntry = Schema.Schema.Type<typeof sharedSettingsEntrySchema>
+export const settingsScopeSchema = Schema.Literal(
+  'global',
+  'environment',
+  'project',
+  'environment-project',
+)
+export type SettingsScope = Schema.Schema.Type<typeof settingsScopeSchema>
+export const scopedSettingsSchema = mutableStruct({
+  environment: scopedSettingsValueSchema,
+  shared: sharedSettingsSchema,
+})
 export const SCRATCH_PROJECT_ID = 'dovo:scratch'
 export const repositorySchema = mutableStruct({
   /** Missing means a Git project, preserving existing workspaces. */

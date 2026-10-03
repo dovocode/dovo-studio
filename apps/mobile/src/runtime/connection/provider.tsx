@@ -1,9 +1,18 @@
+import {
+  mergeSharedSettings,
+  pendingSharedSettings,
+  sharedSettingsSyncSchema,
+} from '@dovo/protocol'
 import { writeRuntimeSnapshotCache } from '@dovo/protocol'
 import { RuntimeMutations } from '@dovo/protocol'
 import { mobileMutationStorage } from './mutation-storage'
 import { runtimeSnapshotPath } from '@dovo/protocol'
 import { startRuntimeSync } from '@dovo/protocol'
-import { useMobilePreferences } from '../preferences/app-preferences'
+import {
+  useMobilePreferences,
+  updateMobilePreferences,
+  readMobilePreferences,
+} from '../preferences/app-preferences'
 import { pendingAgentPresets } from '@dovo/protocol'
 import {
   optimisticTaskEffect,
@@ -921,11 +930,15 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   )
   const [presetSyncError, setPresetSyncError] = useApplicationState('')
   const {
+    sharedScopedSettings,
     globalAgentPresets,
     retiredGlobalAgentPresets,
     globalModelPreferences,
     globalModelPreferencesUpdatedAt,
   } = useMobilePreferences()
+  const [settingsSyncError, setSettingsSyncError] = useApplicationState('')
+  const settingsRequests = useRef(new Set<string>())
+  const failedSettingsRequests = useRef(new Map<string, string>())
   const presetRequests = useRef(new Set<string>())
   const failedPresetRequests = useRef(new Map<string, string>())
   useEffect(() => {
@@ -987,6 +1000,62 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     readRuntime,
     refreshProfile,
   ])
+  useEffect(() => {
+    const shared = mergeSharedSettings(
+      sharedScopedSettings,
+      ...overviews
+        .filter((entry) => entry.connected)
+        .map((entry) => entry.snapshot?.defaults?.scopedSettings?.shared ?? []),
+    )
+    if (JSON.stringify(shared) !== JSON.stringify(sharedScopedSettings))
+      updateMobilePreferences({ sharedScopedSettings: shared })
+    for (const entry of overviews) {
+      if (!entry.connected || !entry.snapshot?.settingsScopesSupported) {
+        // Older runtimes keep their settings until upgraded; never send unsupported writes.
+        failedSettingsRequests.current.delete(entry.profile.id)
+        continue
+      }
+      const pending = pendingSharedSettings(
+        shared,
+        entry.snapshot.defaults?.scopedSettings?.shared ?? [],
+      )
+      if (!pending.length) {
+        failedSettingsRequests.current.delete(entry.profile.id)
+        if (!failedSettingsRequests.current.size) setSettingsSyncError('')
+        continue
+      }
+      const fingerprint = JSON.stringify(pending)
+      if (
+        settingsRequests.current.has(entry.profile.id) ||
+        failedSettingsRequests.current.get(entry.profile.id) === fingerprint
+      )
+        continue
+      settingsRequests.current.add(entry.profile.id)
+      void readRuntime(
+        entry.profile,
+        '/api/agents/settings/sync',
+        { shared: pending },
+        sharedSettingsSyncSchema,
+      )
+        .then((result) => {
+          failedSettingsRequests.current.delete(entry.profile.id)
+          if (!failedSettingsRequests.current.size) setSettingsSyncError('')
+          updateMobilePreferences({
+            sharedScopedSettings: mergeSharedSettings(
+              readMobilePreferences().sharedScopedSettings,
+              shared,
+              result.shared,
+            ),
+          })
+          return refreshProfile(entry.profile)
+        })
+        .catch((error: unknown) => {
+          failedSettingsRequests.current.set(entry.profile.id, fingerprint)
+          setSettingsSyncError(error instanceof Error ? error.message : String(error))
+        })
+        .finally(() => settingsRequests.current.delete(entry.profile.id))
+    }
+  }, [sharedScopedSettings, overviews, readRuntime, refreshProfile])
   return (
     <Context.Provider
       value={{
@@ -1001,6 +1070,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         ready,
         error:
           storageError ||
+          settingsSyncError ||
           presetSyncError ||
           active?.error ||
           (registry.pendingPairings?.length

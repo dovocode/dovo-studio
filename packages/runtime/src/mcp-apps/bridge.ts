@@ -149,9 +149,10 @@ export class McpApps {
     const agent = resolveTaskAgent(task, this.store.get().agents)
     if (!agent) throw new HttpError(409, 'The thread no longer has an agent')
     const project = this.store.get().repositories.find((item) => item.id === task.repositoryId)
-    const server = mergeResources(project?.resources, agent.resources).mcpServers.find(
-      (entry) => entry.enabled && entry.name === name,
-    )
+    const server = mergeResources(
+      this.store.projectSettings(task.repositoryId).resources,
+      agent.resources,
+    ).mcpServers.find((entry) => entry.enabled && entry.name === name)
     if (!server) throw new HttpError(403, 'This MCP server is no longer enabled for the thread')
     const scope = [...this.scopes.values()].find(
       (entry) => entry.taskId === taskId && fingerprint(entry.server) === fingerprint(server),

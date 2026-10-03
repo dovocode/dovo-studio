@@ -3,7 +3,7 @@ import { ProviderActions, type ProviderAction } from './provider-actions.js'
 import { UsageTranscripts } from './usage-transcripts.js'
 import { UsagePricing } from './usage-pricing.js'
 import { UsageHistory } from './usage-history.js'
-import { resolveTaskDefaults } from '@dovo/protocol'
+import { resolveScopedSettings, resolveTaskDefaults } from '@dovo/protocol'
 import { RuntimeDefaults, validateDefaultHarness } from './runtime-defaults.js'
 import { McpSecrets } from './mcp-secrets.js'
 import { newSecret } from '../auth/devices.js'
@@ -310,8 +310,20 @@ export class WorkspaceStore {
       }
     return this.projected.workspace
   }
+  publicValue(value: unknown) {
+    return this.secrets.public(value)
+  }
   restoreSecrets(value: unknown) {
-    return this.secrets.restore(value, this.workspace)
+    return this.secrets.restore(value, {
+      workspace: this.workspace,
+      defaults: new RuntimeDefaults(this.db).get(),
+    })
+  }
+  projectSettings(repositoryId?: string) {
+    return resolveScopedSettings(
+      new RuntimeDefaults(this.db).get(),
+      this.workspace.repositories.find((repo) => repo.id === repositoryId),
+    )
   }
   version() {
     return this.revision
@@ -728,6 +740,11 @@ export class WorkspaceStore {
       ),
       entity,
     )
+    if (
+      patch.collection === 'repositories' &&
+      (patch.changes.gitIdentity || patch.changes.gitIdentityError)
+    )
+      throw new HttpError(400, 'Cannot edit derived project metadata')
     if (patch.collection === 'repositories' && (patch.changes.kind || current.kind === 'scratch'))
       throw new HttpError(400, 'Cannot edit the managed project kind')
     const allowed =

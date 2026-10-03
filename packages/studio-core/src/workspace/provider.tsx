@@ -1,3 +1,8 @@
+import {
+  mergeSharedSettings,
+  pendingSharedSettings,
+  sharedSettingsSyncSchema,
+} from '@dovo/protocol'
 import { writeRuntimeSnapshotCache } from '@dovo/protocol'
 import { RuntimeMutations } from '@dovo/protocol'
 import { browserMutationStorage } from './read-cache'
@@ -5,7 +10,7 @@ import { runtimeSnapshotPath } from '@dovo/protocol'
 import { startRuntimeSync, runtimeSyncOnline } from '@dovo/protocol'
 import { retainWorkspace } from '@dovo/protocol'
 import { recentSnapshot } from '../runtime/recent-snapshot'
-import { useAppPreferences } from '../preferences'
+import { useAppPreferences, updateAppPreferences, readAppPreferences } from '../preferences'
 import { pendingAgentPresets } from '@dovo/protocol'
 import {
   WorkspaceContext,
@@ -94,6 +99,7 @@ const idleOverview = (
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const {
     inputPreview,
+    sharedScopedSettings,
     globalAgentPresets,
     retiredGlobalAgentPresets,
     globalModelPreferences,
@@ -116,6 +122,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [connection, setConnection, connectionRef] = useApplicationState<RuntimeConnection | null>(
     null,
   )
+  const [settingsSyncError, setSettingsSyncError] = useApplicationState('')
+  const settingsRequests = useRef(new Set<string>())
+  const failedSettingsRequests = useRef(new Map<string, string>())
   const presetRequests = useRef(new Set<string>())
   const failedPresetRequests = useRef(new Map<string, string>())
   const [presetSyncError, setPresetSyncError] = useApplicationState<string | null>(null)
@@ -1530,6 +1539,62 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     readRuntime,
     refreshRuntime,
   ])
+  useEffect(() => {
+    const shared = mergeSharedSettings(
+      sharedScopedSettings,
+      ...visibleRuntimes
+        .filter((entry) => entry.connected)
+        .map((entry) => entry.snapshot?.defaults?.scopedSettings?.shared ?? []),
+    )
+    if (JSON.stringify(shared) !== JSON.stringify(sharedScopedSettings))
+      updateAppPreferences({ sharedScopedSettings: shared })
+    for (const entry of visibleRuntimes) {
+      if (!entry.connected || !entry.snapshot?.settingsScopesSupported) {
+        // Older runtimes keep their settings until upgraded; never send unsupported writes.
+        failedSettingsRequests.current.delete(entry.profile.id)
+        continue
+      }
+      const pending = pendingSharedSettings(
+        shared,
+        entry.snapshot.defaults?.scopedSettings?.shared ?? [],
+      )
+      if (!pending.length) {
+        failedSettingsRequests.current.delete(entry.profile.id)
+        if (!failedSettingsRequests.current.size) setSettingsSyncError('')
+        continue
+      }
+      const fingerprint = JSON.stringify(pending)
+      if (
+        settingsRequests.current.has(entry.profile.id) ||
+        failedSettingsRequests.current.get(entry.profile.id) === fingerprint
+      )
+        continue
+      settingsRequests.current.add(entry.profile.id)
+      void readRuntime(
+        entry.profile,
+        '/api/agents/settings/sync',
+        { shared: pending },
+        sharedSettingsSyncSchema,
+      )
+        .then((result) => {
+          failedSettingsRequests.current.delete(entry.profile.id)
+          if (!failedSettingsRequests.current.size) setSettingsSyncError('')
+          updateAppPreferences({
+            sharedScopedSettings: mergeSharedSettings(
+              readAppPreferences().sharedScopedSettings,
+              shared,
+              result.shared,
+            ),
+          })
+          return refreshRuntime(entry.profile)
+        })
+        .catch((error: unknown) => {
+          failedSettingsRequests.current.set(entry.profile.id, fingerprint)
+          setSettingsSyncError(error instanceof Error ? error.message : String(error))
+        })
+        .finally(() => settingsRequests.current.delete(entry.profile.id))
+    }
+  }, [sharedScopedSettings, visibleRuntimes, readRuntime, refreshRuntime])
   const readCache = useMemo(
     () =>
       connection
@@ -1554,7 +1619,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       snapshot,
       connected,
       syncError:
-        presetSyncError || syncError || (connection ? mutations.status(connection).error : null),
+        settingsSyncError ||
+        presetSyncError ||
+        syncError ||
+        (connection ? mutations.status(connection).error : null),
       connect,
       cancelPairing,
       disconnect,
@@ -1590,6 +1658,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       connected,
       syncError,
       presetSyncError,
+      settingsSyncError,
       connect,
       cancelPairing,
       disconnect,

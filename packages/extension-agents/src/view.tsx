@@ -1,3 +1,4 @@
+import { providerConfiguration } from '@dovo/protocol'
 import { PageHeader } from '@dovo/studio-ui'
 import { HarnessUpdates } from './harness-updates'
 import { useAppPreferences, updateAppPreferences } from '@dovo/studio-core'
@@ -177,16 +178,8 @@ function ComputerAgents({ name }: { name: string }) {
             disabled={!connected}
             onClick={() =>
               setEditing({
-                creating: !workspace.agents.some(
-                  (agent) =>
-                    agent.provider === installation.provider &&
-                    agent.acpInstallationId === installation.installationId,
-                ),
-                agent: workspace.agents.find(
-                  (agent) =>
-                    agent.provider === installation.provider &&
-                    agent.acpInstallationId === installation.installationId,
-                ) ?? {
+                creating: !providerConfiguration(workspace.agents, installation),
+                agent: providerConfiguration(workspace.agents, installation) ?? {
                   ...defaultTaskHarness(installation.provider),
                   id: crypto.randomUUID(),
                   name: installation.name,

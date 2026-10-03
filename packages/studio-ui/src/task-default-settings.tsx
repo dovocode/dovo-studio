@@ -1,5 +1,12 @@
+import {
+  scopedSettingsResultSchema,
+  settingsScopes,
+  settingsScopeLabels,
+  type SettingsScope,
+  type ScopedSettingsValue,
+  type SavedPrompt,
+} from '@dovo/protocol'
 import { useCallback, useEffect } from 'react'
-import { Schema } from 'effect'
 import { useWorkspace } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -12,13 +19,14 @@ import {
   modelCatalogSchema,
   projectTaskDefaultsSchema,
   providerSchema,
-  runtimeSetupSchema,
   runtimeDefaultsSchema,
+  agentConnectionValue,
+  changeAgentConnection,
   taskHarnessSchema,
   type AgentDiscovery,
   type ProjectTaskDefaults,
   type Repository,
-  type RuntimeSetup,
+  type RuntimeDefaults,
 } from '@dovo/protocol'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
@@ -42,7 +50,16 @@ export function TaskDefaultSettings(props: { repository?: Repository; inline?: b
 }
 function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
   const { connected, request } = useWorkspace()
-  const [setup, setSetup] = useApplicationState<RuntimeSetup | null>(null)
+  const [setup, setSetup] = useApplicationState<{ defaults: RuntimeDefaults } | null>(null)
+  const [scope, setScope] = useApplicationState<SettingsScope>(
+    repository ? 'environment-project' : 'environment',
+  )
+  const [projectKey, setProjectKey] = useApplicationState<string | undefined>(undefined)
+  const [inheritedPrompts, setInheritedPrompts] = useApplicationState<SavedPrompt[]>([])
+  const [scopeValue, setScopeValue] = useApplicationState<ScopedSettingsValue>({})
+  const [prompts, setPrompts] = useApplicationState<SavedPrompt[]>([])
+  const [loadedScope, setLoadedScope] = useApplicationState('')
+
   const [draft, setDraft] = useApplicationState<ProjectTaskDefaults>({})
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
@@ -52,11 +69,20 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
     let active = true
     setSetup(null)
     if (!connected) return
-    void request('/api/agents/setup/read', {}, runtimeSetupSchema)
+    void request(
+      '/api/agents/settings/read',
+      { scope, repositoryId: repository?.id },
+      scopedSettingsResultSchema,
+    )
       .then((value) => {
         if (!active) return
-        setSetup(value)
-        setDraft(repository?.taskDefaults ?? (repository ? {} : value.defaults))
+        setSetup({ defaults: decode(runtimeDefaultsSchema, value.inherited.taskDefaults ?? {}) })
+        setScopeValue(value.value)
+        setProjectKey(value.projectKey)
+        setInheritedPrompts(value.inherited.prompts ?? [])
+        setPrompts(value.value.prompts ?? [])
+        setLoadedScope(`${scope}:${repository?.id ?? ''}`)
+        setDraft(value.value.taskDefaults ?? {})
       })
       .catch((error: unknown) => {
         if (active) setError(String(error))
@@ -64,7 +90,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
     return () => {
       active = false
     }
-  }, [connected, request, repository?.id, retry])
+  }, [connected, request, repository?.id, scope, retry])
   const loadModels = useCallback(
     (input: AgentDiscovery) => request('/api/agents/models', input, modelCatalogSchema),
     [request],
@@ -79,37 +105,58 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
       <div>
         <h3 className="text-sm font-medium">Task defaults</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          {repository
-            ? 'Project overrides. Unset values inherit this runtime’s defaults.'
-            : 'Defaults for new tasks on this runtime. Projects can override them.'}{' '}
-          Existing tasks keep their settings.
+          Global → Environment → Project → Environment + project. Unset values inherit the earlier
+          levels. Existing tasks keep their settings.
         </p>
       </div>
-      <fieldset disabled={!connected || busy || !setup} className="grid gap-3">
-        {repository && (
-          <FormField label="Agent configuration">
-            <ChoicePicker
-              value={harness ? 'custom' : 'inherit'}
-              onValueChange={(value) =>
-                change({
-                  ...draft,
-                  harness:
-                    value === 'inherit'
-                      ? undefined
-                      : (setup?.defaults.harness ?? defaultTaskHarness('codex')),
-                })
-              }
-            >
-              <option value="inherit">
-                Use runtime default ({setup?.defaults.harness.provider})
+      <FormField label="Settings scope">
+        <ChoicePicker
+          value={scope}
+          disabled={busy}
+          onValueChange={(value) => {
+            setSaved(false)
+            setError('')
+            setScope(settingsScopes.find((scope) => scope === value) ?? 'environment')
+          }}
+        >
+          {settingsScopes
+            .filter(
+              (value) => repository || (value !== 'project' && value !== 'environment-project'),
+            )
+            .filter((value) => value !== 'project' || !!repository?.gitIdentity)
+            .map((value) => (
+              <option key={value} value={value}>
+                {settingsScopeLabels[value]}
               </option>
-              <option value="custom">Project override</option>
-            </ChoicePicker>
-          </FormField>
-        )}
-        <FormField label={repository ? 'Default permissions' : 'Global default permissions'}>
+            ))}
+        </ChoicePicker>
+      </FormField>
+      <fieldset
+        disabled={
+          !connected || busy || !setup || loadedScope !== `${scope}:${repository?.id ?? ''}`
+        }
+        className="grid gap-3"
+      >
+        <FormField label="Agent configuration">
           <ChoicePicker
-            value={draft.permission ?? (repository ? 'inherit' : 'full-access')}
+            value={harness ? 'custom' : 'inherit'}
+            onValueChange={(value) =>
+              change({
+                ...draft,
+                harness:
+                  value === 'inherit'
+                    ? undefined
+                    : (setup?.defaults.harness ?? defaultTaskHarness('codex')),
+              })
+            }
+          >
+            <option value="inherit">Inherit ({setup?.defaults.harness.provider})</option>
+            <option value="custom">Override at this scope</option>
+          </ChoicePicker>
+        </FormField>
+        <FormField label="Default permissions">
+          <ChoicePicker
+            value={draft.permission ?? 'inherit'}
             onValueChange={(value) =>
               change({
                 ...draft,
@@ -118,11 +165,9 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
               })
             }
           >
-            {repository && (
-              <option value="inherit">
-                Use runtime default ({accessLabel(setup?.defaults.permission ?? 'full-access')})
-              </option>
-            )}
+            <option value="inherit">
+              Inherit ({accessLabel(setup?.defaults.permission ?? 'full-access')})
+            </option>
             {selectableAccessModes(draft.permission).map((mode) => (
               <option key={mode.id} value={mode.id}>
                 {mode.name}
@@ -169,9 +214,15 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
               label={harness.provider === 'opencode' ? 'Server URL' : 'Executable (optional)'}
             >
               <Input
-                value={harness.endpoint}
+                value={agentConnectionValue({ ...harness, id: 'defaults', name: 'Defaults' })}
                 onChange={(event) =>
-                  change({ ...draft, harness: { ...harness, endpoint: event.target.value } })
+                  change({
+                    ...draft,
+                    harness: changeAgentConnection(
+                      { ...harness, id: 'defaults', name: 'Defaults' },
+                      event.target.value,
+                    ),
+                  })
                 }
               />
             </FormField>
@@ -181,7 +232,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
           <>
             <FormField label="Working directory">
               <ChoicePicker
-                value={draft.execution ?? (repository ? 'inherit' : 'main')}
+                value={draft.execution ?? 'inherit'}
                 onValueChange={(value) =>
                   change({
                     ...draft,
@@ -189,35 +240,31 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
                   })
                 }
               >
-                {repository && (
-                  <option value="inherit">
-                    Use runtime default (
-                    {setup?.defaults.execution === 'worktree' ? 'Worktree' : 'Local checkout'})
-                  </option>
-                )}
+                <option value="inherit">
+                  Inherit (
+                  {setup?.defaults.execution === 'worktree' ? 'Worktree' : 'Local checkout'})
+                </option>
                 <option value="main">Local checkout</option>
                 <option value="worktree">New worktree</option>
               </ChoicePicker>
             </FormField>
             <StartFromOrigin
               value={draft.worktreeFromOrigin}
-              inherited={repository ? (setup?.defaults.worktreeFromOrigin ?? false) : undefined}
+              inherited={setup?.defaults.worktreeFromOrigin ?? false}
               onChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
             />
-            {repository && (
-              <FormField label="Worktree setup">
-                <ChoicePicker
-                  value={draft.setupCommand === undefined ? 'inherit' : 'custom'}
-                  onValueChange={(value) =>
-                    change({ ...draft, setupCommand: value === 'inherit' ? undefined : '' })
-                  }
-                >
-                  <option value="inherit">Use runtime default</option>
-                  <option value="custom">Project override (empty disables setup)</option>
-                </ChoicePicker>
-              </FormField>
-            )}
-            {(!repository || draft.setupCommand !== undefined) && (
+            <FormField label="Worktree setup">
+              <ChoicePicker
+                value={draft.setupCommand === undefined ? 'inherit' : 'custom'}
+                onValueChange={(value) =>
+                  change({ ...draft, setupCommand: value === 'inherit' ? undefined : '' })
+                }
+              >
+                <option value="inherit">Inherit</option>
+                <option value="custom">Override at this scope (empty disables setup)</option>
+              </ChoicePicker>
+            </FormField>
+            {draft.setupCommand !== undefined && (
               <FormField label="Setup command">
                 <Textarea
                   value={draft.setupCommand ?? ''}
@@ -233,6 +280,80 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
             </p>
           </>
         )}
+        <section className="space-y-2">
+          <h4 className="text-sm font-medium">Saved prompts</h4>
+          <p className="text-xs text-muted-foreground">
+            Entries at this scope override earlier prompts with the same name. Type #name in the
+            composer. Remove an entry to inherit it again.
+          </p>
+          {inheritedPrompts
+            .filter(
+              (prompt) =>
+                !prompts.some((item) => item.name.toLowerCase() === prompt.name.toLowerCase()),
+            )
+            .map((prompt) => (
+              <Button
+                key={prompt.name}
+                variant="ghost"
+                disabled={prompts.length >= 40}
+                onClick={() => {
+                  setSaved(false)
+                  setPrompts([...prompts, prompt])
+                }}
+              >
+                Override inherited #{prompt.name}
+              </Button>
+            ))}
+          {prompts.map((prompt, index) => (
+            <div key={prompt.id} className="space-y-2 rounded-md border p-2">
+              <Input
+                aria-label="Prompt name"
+                placeholder="name"
+                value={prompt.name}
+                onChange={(event) => {
+                  setSaved(false)
+                  setPrompts(
+                    prompts.map((item, i) =>
+                      i === index ? { ...item, name: event.target.value } : item,
+                    ),
+                  )
+                }}
+              />
+              <Textarea
+                aria-label="Prompt text"
+                placeholder="Prompt text"
+                value={prompt.text}
+                onChange={(event) => {
+                  setSaved(false)
+                  setPrompts(
+                    prompts.map((item, i) =>
+                      i === index ? { ...item, text: event.target.value } : item,
+                    ),
+                  )
+                }}
+              />
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSaved(false)
+                  setPrompts(prompts.filter((_, i) => i !== index))
+                }}
+              >
+                Remove prompt override
+              </Button>
+            </div>
+          ))}
+          <Button
+            variant="outline"
+            disabled={prompts.length >= 40}
+            onClick={() => {
+              setSaved(false)
+              setPrompts([...prompts, { id: crypto.randomUUID(), name: '', text: '' }])
+            }}
+          >
+            Add prompt
+          </Button>
+        </section>
         <div className="flex gap-2">
           <Button
             onClick={() => {
@@ -242,31 +363,27 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
               setSaved(false)
               const save = Promise.resolve().then(async () => {
                 const value = decode(projectTaskDefaultsSchema, draft)
-                await (repository
-                  ? request(
-                      '/api/workspace',
-                      {
-                        collection: 'repositories',
-                        id: repository.id,
-                        changes: {
-                          taskDefaults: { before: repository.taskDefaults ?? null, after: value },
-                        },
-                      },
-                      Schema.Struct({ revision: Schema.Number }),
-                      'PATCH',
-                    )
-                  : request(
-                      '/api/agents/defaults/save',
-                      {
-                        before: setup.defaults,
-                        after: {
-                          ...value,
-                          harness: value.harness ?? setup.defaults.harness,
-                          configured: true,
-                        },
-                      },
-                      runtimeDefaultsSchema,
-                    ).then((defaults) => setSetup({ ...setup, defaults })))
+                const result = await request(
+                  '/api/agents/settings/save',
+                  {
+                    scope,
+                    repositoryId: repository?.id,
+                    before: scopeValue,
+                    projectKey,
+                    after: {
+                      ...scopeValue,
+                      taskDefaults: value,
+                      prompts: prompts.map((prompt) => ({
+                        ...prompt,
+                        name: prompt.name.trim().replace(/\s+/g, '-'),
+                        text: prompt.text.trim(),
+                      })),
+                    },
+                  },
+                  scopedSettingsResultSchema,
+                )
+                setScopeValue(result.value)
+                setPrompts(result.value.prompts ?? [])
               })
               void save
                 .then(() => setSaved(true))
@@ -276,11 +393,9 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
           >
             {busy ? 'Saving…' : 'Save defaults'}
           </Button>
-          {repository && (
-            <Button variant="ghost" onClick={() => change({})}>
-              Reset to runtime defaults
-            </Button>
-          )}
+          <Button variant="ghost" onClick={() => change({})}>
+            Reset task defaults to inherited settings
+          </Button>
         </div>
       </fieldset>
       {!connected && (
@@ -346,7 +461,7 @@ function StartFromOrigin({
           className="h-auto p-0 pl-6 text-xs"
           onClick={() => onChange(undefined)}
         >
-          Use this computer’s setting ({inherited ? 'on' : 'off'})
+          Use inherited setting ({inherited ? 'on' : 'off'})
         </Button>
       )}
     </div>

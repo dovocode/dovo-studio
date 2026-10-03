@@ -1,3 +1,4 @@
+import { changeAgentProvider, changeAgentConnection, agentConnectionValue } from '@dovo/protocol'
 import { useAppPreferences, updateAppPreferences } from '@dovo/studio-core'
 import { agentPresetSchema } from '@dovo/protocol'
 import { parseAgentEnvironment, formatAgentEnvironment } from '@dovo/protocol'
@@ -247,19 +248,9 @@ export function AgentEditor({
                 disabled={availableProviders.length === 1 && providerAllowed}
                 onValueChange={(selection) => {
                   if (!availableProviders.some(([id]) => id === selection)) return
-                  setAgent({
-                    ...agent,
-                    provider: decode(agentSchema.fields.provider, selection),
-                    model: '',
-                    reasoning: '',
-                    serviceTier: undefined,
-                    cyberAccessProgram: undefined,
-                    acpInstallationId: undefined,
-                    acpMode: undefined,
-                    acpConfig: undefined,
-                    endpoint: '',
-                    args: [],
-                  })
+                  setAgent(
+                    changeAgentProvider(agent, decode(agentSchema.fields.provider, selection)),
+                  )
                 }}
               >
                 {Object.entries(providers)
@@ -328,13 +319,8 @@ export function AgentEditor({
               label={agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'}
             >
               <Input
-                value={agent.acpInstallationId ? (agent.executablePath ?? '') : agent.endpoint}
-                onChange={(e) =>
-                  setAgent({
-                    ...agent,
-                    endpoint: e.target.value,
-                  })
-                }
+                value={agentConnectionValue(agent)}
+                onChange={(e) => setAgent(changeAgentConnection(agent, e.target.value))}
                 placeholder={
                   agent.provider === 'opencode'
                     ? 'Automatic local OpenCode server'

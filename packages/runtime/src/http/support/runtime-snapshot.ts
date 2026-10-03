@@ -1,6 +1,11 @@
 import { hostname } from 'node:os'
 import { Effect } from 'effect'
-import { RUNTIME_PROTOCOL_VERSION, type RuntimeSnapshot } from '@dovo/protocol'
+import {
+  RUNTIME_PROTOCOL_VERSION,
+  runtimeDefaultsSchema,
+  decode,
+  type RuntimeSnapshot,
+} from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { serviceResult } from './effect.js'
 import { overviewWorkspace, scopedWorkspace } from './snapshot-overview.js'
@@ -39,7 +44,8 @@ export function runtimeSnapshot(
         process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop'
           ? canUpdateDesktop()
           : canUpdateServer(),
-      defaults: s.defaults.get(),
+      defaults: decode(runtimeDefaultsSchema, s.store.publicValue(s.defaults.get())),
+      settingsScopesSupported: true,
       artifactsEnabled: s.preferences.get().enableArtifacts,
       acpInstallations: s.acpInstallations.list(),
       revision,
@@ -74,18 +80,36 @@ export function runtimeSnapshot(
                   gitIdentityError: undefined,
                 }
               return yield* serviceResult(cached).pipe(
-                Effect.map((gitIdentity) => ({
-                  ...repo,
-                  discoveredIcon,
-                  gitIdentity,
-                  gitIdentityError: undefined,
-                })),
-                Effect.catchAll(() =>
-                  Effect.succeed({
+                Effect.map((gitIdentity) => {
+                  if (repo.gitIdentity !== gitIdentity)
+                    s.store.update((workspace) => ({
+                      ...workspace,
+                      repositories: workspace.repositories.map((item) =>
+                        item.id === repo.id ? { ...item, gitIdentity } : item,
+                      ),
+                    }))
+                  return {
                     ...repo,
                     discoveredIcon,
-                    gitIdentity: undefined,
-                    gitIdentityError: 'Checkout unavailable: could not inspect its Git remote',
+                    gitIdentity,
+                    gitIdentityError: undefined,
+                  }
+                }),
+                Effect.catchAll(() =>
+                  Effect.sync(() => {
+                    if (repo.gitIdentity)
+                      s.store.update((workspace) => ({
+                        ...workspace,
+                        repositories: workspace.repositories.map((item) =>
+                          item.id === repo.id ? { ...item, gitIdentity: undefined } : item,
+                        ),
+                      }))
+                    return {
+                      ...repo,
+                      discoveredIcon,
+                      gitIdentity: undefined,
+                      gitIdentityError: 'Checkout unavailable: could not inspect its Git remote',
+                    }
                   }),
                 ),
               )

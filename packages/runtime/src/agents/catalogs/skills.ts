@@ -53,14 +53,16 @@ const fileSchema = mutableStruct({
   size: Schema.optional(Schema.Number.pipe(Schema.finite())),
 })
 export async function installCatalogSkill(input: unknown, root: string) {
-  const { source, skill } = decode(skillCatalogImportSchema, input)
+  const { source, skill, revision } = decode(skillCatalogImportSchema, input)
   const api = `https://api.github.com/repos/${source}`
   const commit = decode(
     mutableStruct({
       sha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
     }),
-    await catalogJson(`${api}/commits/HEAD`),
+    await catalogJson(`${api}/commits/${revision ?? 'HEAD'}`),
   )
+  if (revision && commit.sha !== revision)
+    throw new Error('The skill catalog returned a different revision')
   const tree = decode(
     mutableStruct({
       truncated: Schema.Boolean,

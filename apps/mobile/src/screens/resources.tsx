@@ -1,3 +1,11 @@
+import {
+  resolveScopedSettings,
+  sharedProjectKey,
+  resourceScopeChoices,
+  scopeEditorValue,
+  scopeEditorDefaults,
+  scopedSettingsResultSchema,
+} from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
@@ -42,18 +50,10 @@ export default function ResourcesScreen() {
 function ComputerResources({ name }: { name: string }) {
   const { snapshot, connected } = useRuntime()
   const [selected, setSelected] = useApplicationState('')
-  const scopes = [
-    ...(snapshot?.workspace.repositories ?? []).map((item) => ({
-      item,
-      id: `project:${item.id}`,
-      label: 'Project',
-    })),
-    ...(snapshot?.workspace.agents ?? []).map((item) => ({
-      item,
-      id: `agent:${item.id}`,
-      label: 'Agent',
-    })),
-  ]
+  const scopes = resourceScopeChoices(
+    snapshot?.defaults,
+    snapshot?.workspace ?? { repositories: [], agents: [] },
+  )
   const current = scopes.find((scope) => scope.id === selected)
   return (
     <View
@@ -70,7 +70,7 @@ function ComputerResources({ name }: { name: string }) {
               key={scope.id}
               title={scope.item.name}
               subtitle={`${scope.label} · ${resources.mcpServers.length} MCP · ${resources.skills.length} skills${names.length ? ` · ${names.join(', ')}` : ''}`}
-              icon={scope.label === 'Project' ? 'folder' : 'chat'}
+              icon={scope.repository ? 'folder' : 'chat'}
               last={index === scopes.length - 1}
               onPress={() => setSelected(scope.id)}
             />
@@ -110,44 +110,53 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
       }
     | null
   >(null)
-  const scopes = [
-    ...(snapshot?.workspace.repositories ?? []).map((item) => ({
-      id: `project:${item.id}`,
-      name: `Project · ${item.name}`,
-      item,
-      collection: 'repositories' as const,
-    })),
-    ...(snapshot?.workspace.agents ?? []).map((item) => ({
-      id: `agent:${item.id}`,
-      name: `Agent · ${item.name}`,
-      item,
-      collection: 'agents' as const,
-    })),
-  ]
+  const scopes = resourceScopeChoices(
+    snapshot?.defaults,
+    snapshot?.workspace ?? { repositories: [], agents: [] },
+  )
   const scope = scopes.find((item) => item.id === scopeId)
   const resources = decode(resourceSettingsSchema, scope?.item.resources ?? {})
+  const inherited = scope?.scope
+    ? resolveScopedSettings(scopeEditorDefaults(snapshot?.defaults), scope.repository, scope.scope)
+        .resources
+    : undefined
   const save = (update: (value: ResourceSettings) => ResourceSettings) => {
     return runClientEffect(
       mobileWorkflow(function* () {
         if (!scope) return yield* Effect.fail(new Error('Choose a project or custom agent'))
         const next = decode(resourceSettingsSchema, update(resources))
-        yield* callEffect(
-          '/api/workspace',
-          {
-            collection: scope.collection,
-            id: scope.item.id,
-            changes: {
-              resources: {
-                before: scope.item.resources ?? null,
-                after: next,
+        if (scope.scope) {
+          const value = scopeEditorValue(snapshot?.defaults, scope.repository, scope.scope)
+          yield* callEffect(
+            '/api/agents/settings/save',
+            {
+              scope: scope.scope,
+              repositoryId: scope.repository?.id,
+              projectKey: sharedProjectKey(scope.repository),
+              before: value,
+              after: { ...value, resources: next },
+            },
+            scopedSettingsResultSchema,
+          )
+        } else {
+          yield* callEffect(
+            '/api/workspace',
+            {
+              collection: scope.collection,
+              id: scope.item.id,
+              changes: {
+                resources: {
+                  before: scope.item.resources ?? null,
+                  after: next,
+                },
               },
             },
-          },
-          mutableStruct({
-            revision: Schema.Number.pipe(Schema.finite()),
-          }),
-          'PATCH',
-        )
+            mutableStruct({
+              revision: Schema.Number.pipe(Schema.finite()),
+            }),
+            'PATCH',
+          )
+        }
       }),
     )
   }
@@ -160,13 +169,45 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
     >
       <ScreenHeader title="MCP servers & skills" />
       <Text style={styles.muted}>
-        Project resources apply to its tasks. Custom-agent entries override matching project names,
-        including disabled entries. Changes apply on the next turn.
+        Global → Environment → Project → Environment + project. Matching names override earlier
+        scopes; agent entries apply last. Shared credentials must reference host environment
+        variables. Changes apply on the next turn.
       </Text>
       {!scope ? (
         <Text style={styles.muted}>Add a project or custom agent first.</Text>
       ) : (
         <>
+          {inherited && (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.title}>Inherited tools</Text>
+              {inherited.mcpServers
+                .filter((server) => !resources.mcpServers.some((item) => item.name === server.name))
+                .map((server) => (
+                  <Action
+                    key={`mcp:${server.name}`}
+                    secondary
+                    label={`Override MCP · ${server.name}${server.enabled ? '' : ' · Disabled'}`}
+                    disabled={!connected || busy}
+                    onPress={() =>
+                      setEditing({ kind: 'mcp', value: server, replaceName: server.name })
+                    }
+                  />
+                ))}
+              {inherited.skills
+                .filter((skill) => !resources.skills.some((item) => item.name === skill.name))
+                .map((skill) => (
+                  <Action
+                    key={`skill:${skill.name}`}
+                    secondary
+                    label={`Override skill · ${skill.name}${skill.enabled ? '' : ' · Disabled'}`}
+                    disabled={!connected || busy}
+                    onPress={() =>
+                      act(() => save((value) => ({ ...value, skills: [...value.skills, skill] })))
+                    }
+                  />
+                ))}
+            </View>
+          )}
           <View style={styles.card}>
             <Text style={styles.title}>MCP servers</Text>
             <View style={styles.row}>
@@ -358,7 +399,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
         <ResourceEditor
           key={`${editing.kind}:${editing.value?.name ?? ''}`}
           editing={editing}
-          scope={scope?.name ?? ''}
+          scope={scope ? `${scope.label} · ${scope.item.name}` : ''}
           onClose={() => setEditing(null)}
           onSave={(result) => {
             return runClientEffect(
@@ -391,7 +432,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
       {catalog && (
         <CatalogPicker
           kind={catalog}
-          scope={scope?.name ?? ''}
+          scope={scope ? `${scope.label} · ${scope.item.name}` : ''}
           onClose={() => setCatalog(null)}
           onSelect={(entry) => {
             setCatalog(null)

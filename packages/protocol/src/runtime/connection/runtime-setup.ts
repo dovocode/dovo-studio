@@ -5,9 +5,11 @@ import {
   agentSchema,
   taskHarnessSchema,
   projectTaskDefaultsSchema,
+  scopedSettingsSchema,
   type Repository,
 } from '../../workspace.js'
 import { titleGenerationSettingsSchema } from '../../tasks/title-generation.js'
+import { resolveScopedSettings } from './scoped-settings.js'
 import { supportsAccess } from '../../auth/access.js'
 
 export const modelPreferencesSchema = Schema.Record({
@@ -15,6 +17,7 @@ export const modelPreferencesSchema = Schema.Record({
   value: mutableStruct({ favorite: Schema.Boolean, disabled: Schema.Boolean }),
 })
 export const runtimeDefaultsSchema = mutableStruct({
+  scopedSettings: Schema.optional(scopedSettingsSchema),
   globalModelPreferencesUpdatedAt: Schema.optional(Schema.Number),
   globalModelPreferences: Schema.optional(modelPreferencesSchema),
   modelPreferenceOverrides: Schema.optional(modelPreferencesSchema),
@@ -44,22 +47,24 @@ export function resolveTaskDefaults(
   runtime: RuntimeDefaults | undefined,
   repository: Repository | undefined,
 ) {
-  const selected =
-    repository?.taskDefaults?.harness ?? runtime?.harness ?? defaultTaskHarness('codex')
-  const permission = repository?.taskDefaults?.permission ?? runtime?.permission ?? 'full-access'
+  const defaults = resolveScopedSettings(runtime, repository).taskDefaults ?? {}
+  const selected = defaults.harness ?? defaultTaskHarness('codex')
+  const permission = defaults.permission ?? 'full-access'
   return {
-    setupCommand: repository?.kind
-      ? undefined
-      : (repository?.taskDefaults?.setupCommand ?? runtime?.setupCommand),
+    setupCommand: repository?.kind ? undefined : defaults.setupCommand,
     harness: {
       ...selected,
       permission: supportsAccess(selected.provider, permission) ? permission : 'ask',
     },
-    execution: repository?.kind
-      ? ('main' as const)
-      : (repository?.taskDefaults?.execution ?? runtime?.execution ?? 'main'),
-    worktreeFromOrigin: repository?.kind
-      ? false
-      : (repository?.taskDefaults?.worktreeFromOrigin ?? runtime?.worktreeFromOrigin ?? false),
+    execution: repository?.kind ? ('main' as const) : (defaults.execution ?? 'main'),
+    worktreeFromOrigin: repository?.kind ? false : (defaults.worktreeFromOrigin ?? false),
   }
+}
+
+/** The effective everyday harness, including shared settings, once explicitly configured. */
+export function configuredTaskHarness(runtime: RuntimeDefaults | undefined) {
+  const configured =
+    runtime?.configured ||
+    (runtime?.scopedSettings && resolveScopedSettings(runtime).taskDefaults?.harness)
+  return configured ? resolveTaskDefaults(runtime, undefined).harness : undefined
 }

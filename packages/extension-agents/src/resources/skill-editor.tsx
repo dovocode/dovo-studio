@@ -146,7 +146,29 @@ export function SkillEditor({
               </a>
             )}
             {draft.sourcePath && (
-              <p className="break-all text-xs text-muted-foreground">Source: {draft.sourcePath}</p>
+              <div className="space-y-2">
+                <p className="break-all text-xs text-muted-foreground">
+                  Source: {draft.sourcePath}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setDraft({
+                      ...draft,
+                      sourcePath: undefined,
+                      sourceUrl: undefined,
+                      sourceRevision: undefined,
+                    })
+                  }
+                >
+                  Use instructions only
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Supporting files stay on this environment. This copy will contain only the
+                  instructions.
+                </p>
+              </div>
             )}
             {error && (
               <p role="alert" className="text-xs text-destructive whitespace-pre-wrap">

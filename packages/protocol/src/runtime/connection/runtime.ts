@@ -74,6 +74,7 @@ export const providerStatusSchema = mutableStruct({
 })
 export const snapshotSchema = mutableStruct({
   artifactsEnabled: Schema.optional(Schema.Boolean),
+  settingsScopesSupported: Schema.optional(Schema.Boolean),
   /** Present on scoped replicas; only these threads contain authoritative history. */
   detailTaskIds: Schema.optional(mutableArray(Schema.String)),
   runtimeInstanceId: Schema.optional(Schema.String),

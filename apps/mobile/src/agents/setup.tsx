@@ -1,3 +1,4 @@
+import { configuredTaskHarness, resolveTaskDefaults } from '@dovo/protocol'
 import { HarnessLabel, ModelLabel } from './model-label'
 import { harnessNames } from '../tasks/creation/harness-choices'
 import { useEffect } from 'react'
@@ -33,15 +34,14 @@ export function Setup() {
   const { snapshot, connected } = useRuntime()
   const [open, setOpen] = useApplicationState(false)
   const defaults = snapshot?.defaults
+  const everyday = configuredTaskHarness(defaults)
   return (
     <View style={styles.card}>
-      <Text style={styles.text}>
-        {defaults?.configured ? 'Your defaults' : 'Set up your workspace'}
-      </Text>
+      <Text style={styles.text}>{everyday ? 'Your defaults' : 'Set up your workspace'}</Text>
       <Text style={styles.muted}>
-        {defaults?.configured ? (
+        {everyday ? (
           <>
-            <HarnessLabel agent={defaults.harness} /> · <ModelLabel agent={defaults.harness} />
+            <HarnessLabel agent={everyday} /> · <ModelLabel agent={everyday} />
           </>
         ) : (
           'Choose your everyday model and a separate model for titles and dictation.'
@@ -51,7 +51,7 @@ export function Setup() {
         Shared with devices paired to this computer. Existing tasks keep their settings.
       </Text>
       <Action
-        label={defaults?.configured ? 'Edit defaults' : 'Set up defaults'}
+        label={everyday ? 'Edit defaults' : 'Set up defaults'}
         disabled={!connected}
         onPress={() => setOpen(true)}
       />
@@ -107,11 +107,15 @@ function SetupForm({ onClose }: { onClose: () => void }) {
   const titleHarness = resolveTitleHarness(
     settings.titles,
     snapshot?.workspace.agents ?? [],
-    settings.defaults.configured ? settings.defaults.harness : undefined,
+    configuredTaskHarness(settings.defaults),
   )
   const agent: Agent =
     step === 0
-      ? { ...settings.defaults.harness, id: 'default', name: 'Default agent' }
+      ? {
+          ...resolveTaskDefaults(settings.defaults, undefined).harness,
+          id: 'default',
+          name: 'Default agent',
+        }
       : {
           ...(titleHarness ?? defaultTaskHarness('codex')),
           id: 'titles',
@@ -207,8 +211,9 @@ function SetupForm({ onClose }: { onClose: () => void }) {
       {step === 1 && (
         <View style={styles.card}>
           <Text style={styles.muted}>
-            New tasks: <HarnessLabel agent={settings.defaults.harness} /> ·{' '}
-            <ModelLabel agent={settings.defaults.harness} />
+            New tasks:{' '}
+            <HarnessLabel agent={resolveTaskDefaults(settings.defaults, undefined).harness} /> ·{' '}
+            <ModelLabel agent={resolveTaskDefaults(settings.defaults, undefined).harness} />
           </Text>
           <Text style={styles.muted}>
             Titles & dictation: <HarnessLabel agent={agent} /> · <ModelLabel agent={agent} />

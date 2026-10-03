@@ -1,3 +1,4 @@
+import { View } from 'react-native'
 import { openAppLink } from '../ui/content/open-link'
 import { CredentialEditor } from './credential-editor'
 import { credentialFields, credentialValues } from '@dovo/protocol'
@@ -315,9 +316,28 @@ export function ResourceEditor({
             }
           />
           {skill.sourcePath && (
-            <Text selectable style={styles.muted}>
-              Supporting files: {skill.sourcePath}
-            </Text>
+            <View style={{ gap: 8 }}>
+              <Text selectable style={styles.muted}>
+                Supporting files: {skill.sourcePath}
+              </Text>
+              <Action
+                secondary
+                label="Use instructions only"
+                disabled={busy}
+                onPress={() =>
+                  setSkill({
+                    ...skill,
+                    sourcePath: undefined,
+                    sourceUrl: undefined,
+                    sourceRevision: undefined,
+                  })
+                }
+              />
+              <Text style={styles.muted}>
+                Supporting files stay on this environment. This copy will contain only the
+                instructions.
+              </Text>
+            </View>
           )}
         </>
       )}

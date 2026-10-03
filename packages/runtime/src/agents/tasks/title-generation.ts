@@ -1,3 +1,4 @@
+import { configuredTaskHarness } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { RuntimeDefaults } from '../../storage/runtime-defaults.js'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -399,7 +400,7 @@ export class TitleGeneration {
           const harness = resolveTitleHarness(
             settings,
             this.store.get().agents,
-            defaults.configured ? defaults.harness : undefined,
+            configuredTaskHarness(defaults),
           )
           if (!harness)
             throw new HttpError(400, 'Choose a title-generation harness in Settings → Agents')

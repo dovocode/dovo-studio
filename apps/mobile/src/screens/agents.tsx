@@ -1,3 +1,4 @@
+import { providerConfiguration } from '@dovo/protocol'
 import { HarnessLabel, ModelLabel } from '../agents/model-label'
 import { HarnessUpdates } from '../agents/harness-updates'
 import {
@@ -174,16 +175,8 @@ function ComputerAgents({ name }: { name: string }) {
             disabled={!connected}
             onPress={() =>
               setEditing({
-                creating: !snapshot?.workspace.agents.some(
-                  (agent) =>
-                    agent.provider === installation.provider &&
-                    agent.acpInstallationId === installation.installationId,
-                ),
-                agent: snapshot?.workspace.agents.find(
-                  (agent) =>
-                    agent.provider === installation.provider &&
-                    agent.acpInstallationId === installation.installationId,
-                ) ?? {
+                creating: !providerConfiguration(snapshot?.workspace.agents ?? [], installation),
+                agent: providerConfiguration(snapshot?.workspace.agents ?? [], installation) ?? {
                   ...defaultTaskHarness(installation.provider),
                   id: randomUUID(),
                   name: installation.name,

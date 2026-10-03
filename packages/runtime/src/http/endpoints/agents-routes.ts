@@ -1,3 +1,4 @@
+import { scopedSettingsRoute } from './scoped-settings-routes.js'
 import { decodeResult } from '@dovo/protocol'
 import { checkAdapterUpdates } from '../../agents/execution/diagnostics.js'
 import { modelPreferencesSchema, agentPresetSchema, mutableArray } from '@dovo/protocol'
@@ -38,7 +39,18 @@ export function agentsRoute(request: IncomingMessage, path: string) {
   return routeProgram(
     Effect.gen(function* () {
       const s = yield* RuntimeServices
+      const publicDefaults = (value: unknown) =>
+        decode(runtimeDefaultsSchema, s.store.publicValue(value))
       const method = request.method
+      if (
+        method === 'POST' &&
+        [
+          '/api/agents/settings/read',
+          '/api/agents/settings/save',
+          '/api/agents/settings/sync',
+        ].includes(path)
+      )
+        return yield* scopedSettingsRoute(request, path)
       if (method === 'POST' && path === '/api/agents/updates') {
         const { checkUpdates } = decode(
           mutableStruct({ checkUpdates: Schema.Boolean }),
@@ -123,13 +135,15 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       if (method === 'POST' && path === '/api/agents/models/reset') {
         const current = s.defaults.get()
         return yield* serviceResult(
-          s.defaults.save(
-            {
-              ...current,
-              modelPreferenceOverrides: {},
-              modelPreferences: current.globalModelPreferences ?? {},
-            },
-            false,
+          publicDefaults(
+            s.defaults.save(
+              {
+                ...current,
+                modelPreferenceOverrides: {},
+                modelPreferences: current.globalModelPreferences ?? {},
+              },
+              false,
+            ),
           ),
         )
       }
@@ -153,13 +167,15 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             disabled: input.disabled ?? preferences[input.key]?.disabled ?? false,
           }
         return yield* serviceResult(
-          s.defaults.save(
-            {
-              ...current,
-              modelPreferenceOverrides: overrides,
-              modelPreferences: { ...current.globalModelPreferences, ...overrides },
-            },
-            false,
+          publicDefaults(
+            s.defaults.save(
+              {
+                ...current,
+                modelPreferenceOverrides: overrides,
+                modelPreferences: { ...current.globalModelPreferences, ...overrides },
+              },
+              false,
+            ),
           ),
         )
       }
@@ -184,39 +200,43 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           testMcpServer(s.store.restoreSecrets(yield* serviceResult(body(request)))),
         )
       if (method === 'POST' && path === '/api/agents/setup/read')
-        return yield* serviceResult({ defaults: s.defaults.get(), titles: s.titles.read() })
+        return yield* serviceResult({
+          defaults: publicDefaults(s.defaults.get()),
+          titles: s.titles.read(),
+        })
       if (method === 'POST' && path === '/api/agents/defaults/save') {
         const input = decode(
           mutableStruct({ before: runtimeDefaultsSchema, after: runtimeDefaultsSchema }),
-          yield* serviceResult(body(request)),
+          s.store.restoreSecrets(yield* serviceResult(body(request))),
         )
         const current = s.defaults.get()
         if (isDeepStrictEqual(current, { ...input.after, configured: true }))
-          return yield* serviceResult(current)
+          return yield* serviceResult(s.store.publicValue(current))
         if (!isDeepStrictEqual(current, input.before))
           throw new HttpError(
             409,
             'Runtime defaults changed on another device. Reload settings before saving.',
           )
         if (input.after.harness.acpInstallationId) s.agents.launch(input.after.harness)
-        return yield* serviceResult(s.defaults.save(input.after))
+        return yield* serviceResult(publicDefaults(s.defaults.save(input.after)))
       }
       if (method === 'POST' && path === '/api/agents/setup/save') {
-        const raw = yield* serviceResult(body(request))
+        const raw = s.store.restoreSecrets(yield* serviceResult(body(request)))
         const checked = raw !== null && typeof raw === 'object' && 'before' in raw && 'after' in raw
         const input = decode(runtimeSetupSchema, checked ? raw.after : raw)
         if (checked) {
           const before = decode(runtimeSetupSchema, raw.before)
           const current = { defaults: s.defaults.get(), titles: s.titles.read() }
           const after = { ...input, defaults: { ...input.defaults, configured: true } }
-          if (isDeepStrictEqual(current, after)) return yield* serviceResult(current)
+          if (isDeepStrictEqual(current, after))
+            return yield* serviceResult(s.store.publicValue(current))
           if (!isDeepStrictEqual(current, before))
             throw new HttpError(409, 'Agent setup changed on another device. Reload before saving.')
         }
         if (input.defaults.harness.acpInstallationId) s.agents.launch(input.defaults.harness)
         return yield* serviceResult(
           s.db.transaction(() => ({
-            defaults: s.defaults.save(input.defaults),
+            defaults: publicDefaults(s.defaults.save(input.defaults)),
             titles: s.titles.save(input.titles),
           }))(),
         )
@@ -230,7 +250,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           const before = decode(titleGenerationSettingsSchema, raw.before)
           const after = decode(titleGenerationSettingsSchema, raw.after)
           const current = s.titles.read()
-          if (isDeepStrictEqual(current, after)) return yield* serviceResult(current)
+          if (isDeepStrictEqual(current, after))
+            return yield* serviceResult(s.store.publicValue(current))
           if (!isDeepStrictEqual(current, before))
             throw new HttpError(
               409,
