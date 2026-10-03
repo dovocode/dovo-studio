@@ -1,6 +1,35 @@
 import { expect, it, vi } from 'vitest'
 import { Terminals } from './terminals'
 import { fixture } from '../testing/fixture'
+import { runtimeIntegration } from '../testing/integration'
+vi.setConfig(runtimeIntegration)
+it('waits for previously closed terminals to exit before completing disposal', async () => {
+  const f = await fixture()
+  const terminals = new Terminals()
+  try {
+    const session = terminals.createCommand(
+      'task',
+      f.directory,
+      {
+        command: process.execPath,
+        args: ['-e', 'console.log("terminal-ready"); setInterval(() => {}, 1000)'],
+        env: {},
+      },
+      'Owned process',
+    )
+    let exited = false
+    terminals.get(session.id).process.onExit(() => {
+      exited = true
+    })
+    terminals.close(session.id)
+    expect(terminals.list()).toEqual([])
+    await terminals.dispose()
+    expect(exited).toBe(true)
+  } finally {
+    await terminals.dispose()
+    await f.cleanup()
+  }
+})
 it('reuses a live shell across simultaneous terminal openings', async () => {
   const f = await fixture()
   const terminals = new Terminals()
@@ -16,7 +45,7 @@ it('reuses a live shell across simultaneous terminal openings', async () => {
     terminals.close(first.id)
     expect((await terminals.ensure('task', directory)).id).not.toBe(first.id)
   } finally {
-    terminals.dispose()
+    await terminals.dispose()
     await f.cleanup()
   }
 })
@@ -49,7 +78,7 @@ it('runs a real PTY and retains output when clients detach', async () => {
     terminals.close(session.id)
     expect(terminals.list()).toEqual([])
   } finally {
-    terminals.dispose()
+    await terminals.dispose()
     await f.cleanup()
   }
 })
@@ -81,7 +110,7 @@ it('keeps delivering terminal output when one client throws', async () => {
     terminals.close(session.id)
   } finally {
     reported.mockRestore()
-    terminals.dispose()
+    await terminals.dispose()
     await f.cleanup()
   }
 })
@@ -112,11 +141,11 @@ it('reclaims exited unattended sessions while preserving observed output and the
     expect(terminals.get(first.id).buffer).toContain('retained-output')
     expect(terminals.get(next.id).info.exited).toBe(false)
     detach()
-    terminals.dispose()
+    await terminals.dispose()
     for (let index = 0; index < 20; index++) terminals.create('task', f.directory)
     expect(() => terminals.create('task', f.directory)).toThrow('limit 20')
   } finally {
-    terminals.dispose()
+    await terminals.dispose()
     await f.cleanup()
   }
 })

@@ -34,6 +34,7 @@ type Session = {
 }
 export class Terminals {
   private pendingEnsure = new Map<string, Promise<TerminalInfo>>()
+  private exits = new Set<Promise<void>>()
   constructor(
     private settings: () => CommandSettings = () => decode(commandsSchema, {}),
     private activity?: Pick<Activity, 'add'>,
@@ -128,6 +129,11 @@ export class Terminals {
       listeners: new Set(),
     }
     this.sessions.set(id, session)
+    let resolveExit!: () => void
+    const exited = new Promise<void>((resolve) => {
+      resolveExit = resolve
+    })
+    this.exits.add(exited)
     this.activity?.add('terminal', id, 'Shell started', {
       taskId,
       cwd,
@@ -149,6 +155,8 @@ export class Terminals {
           exitCode,
         })
       notify(session.listeners, `\r\n[Process exited ${exitCode}]\r\n`)
+      this.exits.delete(exited)
+      resolveExit()
     })
     return session.info
   }
@@ -179,7 +187,23 @@ export class Terminals {
     })
     this.sessions.delete(id)
   }
-  dispose() {
+  async dispose() {
     for (const id of this.sessions.keys()) this.close(id)
+    // kill() can be deferred until a Windows PTY is ready. Closing the list entry
+    // does not mean its process and working-directory handles have been released.
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        Promise.all(this.exits),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error('Terminal processes did not exit during shutdown')),
+            10_000,
+          )
+        }),
+      ])
+    } finally {
+      clearTimeout(timeout)
+    }
   }
 }

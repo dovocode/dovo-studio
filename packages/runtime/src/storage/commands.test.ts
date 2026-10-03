@@ -152,6 +152,6 @@ it('runs new terminals with the configured shell and arguments', async () => {
       expect(terminals.get(terminal.id).buffer).toMatch(/BASH_CONFIG:[0-9][^\r\n]+:END/),
     )
   } finally {
-    terminals.dispose()
+    await terminals.dispose()
   }
 })

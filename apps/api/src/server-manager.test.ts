@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, delimiter } from 'node:path'
 import { createServer } from 'node:net'
@@ -28,7 +29,8 @@ afterEach(async () => {
   vi.unstubAllEnvs()
   for (const directory of directories.splice(0)) {
     await stopServer(directory)
-    rmSync(directory, { recursive: true, force: true })
+    // Windows can retain filesystem locks briefly after confirmed process exit.
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
 })
 
