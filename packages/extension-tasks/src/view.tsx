@@ -1,4 +1,5 @@
 import { ResizableSidebar } from './detail/resizable-sidebar'
+import { readTaskListViewState, saveTaskListViewState } from './list/task-list-view-state'
 import { useCachedTask } from '@dovo/studio-core'
 import { watchRuntimeTask } from '@dovo/protocol'
 import type { Task } from '@dovo/protocol'
@@ -308,7 +309,13 @@ export default function TasksView({ entityId }: StudioViewProps) {
   useEffect(() => {
     if (surface === 'changes' && !hasDiff) selectSurface('files')
   }, [surface, hasDiff, selectSurface])
-  const [projectId, setProjectId] = useApplicationState('')
+  const [projectId, setProjectId, projectRef] = useApplicationState(
+    () => readTaskListViewState(host).projectId ?? '',
+  )
+  useEffect(
+    () => () => saveTaskListViewState(host, { projectId: projectRef.current }),
+    [host, projectRef],
+  )
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [noProject, setNoProject] = useApplicationState(false)

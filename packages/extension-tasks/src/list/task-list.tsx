@@ -1,4 +1,5 @@
 import { useTaskSearch } from './use-task-search'
+import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
 import { flushSync } from 'react-dom'
 import { selectTaskKeys } from './task-selection'
 import { useStudioHost } from '@dovo/studio-core'
@@ -7,21 +8,13 @@ import {
   readAppPreferences,
   latestCompletedTaskTurn,
   resolveTaskAgent,
-  updateAppPreferences,
   useAppPreferences,
 } from '@dovo/studio-core'
-import { compareTasks, taskSortOptions, taskGroupOptions, isSnoozed } from '@dovo/studio-core'
-import { ProjectsMenu } from '@dovo/extension-scm/projects'
+import { compareTasks, isSnoozed } from '@dovo/studio-core'
 import { ChoicePicker } from '@dovo/studio-ui'
-import {
-  Plus,
-  MessageCirclePlus,
-  Search,
-  ChevronDown,
-  SlidersHorizontal,
-  Layers2,
-} from 'lucide-react'
-import { useEffect, useCallback, useDeferredValue, useMemo, useRef } from 'react'
+import { ProjectsMenu } from '@dovo/extension-scm/projects'
+import { Plus, MessageCirclePlus, Search, ChevronDown, Layers2 } from 'lucide-react'
+import { useEffect, useLayoutEffect, useCallback, useDeferredValue, useMemo, useRef } from 'react'
 import { Button, Input, ContextMenu } from '@dovo/studio-ui'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { TaskRow } from './task-row'
@@ -64,7 +57,8 @@ export function TaskList({
   busy: boolean
   error: string
 }) {
-  const { appInfo } = useStudioHost()
+  const host = useStudioHost()
+  const { appInfo } = host
   const store = useWorkspace()
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
   const selecting = selected.size > 0
@@ -90,15 +84,33 @@ export function TaskList({
     () => new Set(entries.filter((entry) => entry.needsInput).map((entry) => entry.key)),
     [entries],
   )
-  const [query, setQuery] = useApplicationState(''),
-    [filter, setFilter] = useApplicationState('active'),
-    // Settings → General → Task list → Default sort.
-    [sort, setSort] = useApplicationState<string>(() => readAppPreferences().taskSort),
+  const [query, setQuery, queryRef] = useApplicationState(
+      () => readTaskListViewState(host).query ?? '',
+    ),
     [actionError, setActionError] = useApplicationState('')
-  // Only a sort other than the default counts as customized.
-  const defaultSort = useAppPreferences().taskSort
+  const [environment, setEnvironment, environmentRef] = useApplicationState(
+    () => readTaskListViewState(host).environment ?? '',
+  )
+  const sort = useAppPreferences().taskSort
   const grouping = useAppPreferences().taskGrouping
-  const [expanded, setExpanded] = useApplicationState<Record<string, boolean>>({})
+  const [expanded, setExpanded, expandedRef] = useApplicationState<Record<string, boolean>>(
+    () => readTaskListViewState(host).expanded ?? {},
+  )
+  const scroll = useRef<HTMLDivElement>(null)
+  const scrollTop = useRef(readTaskListViewState(host).scrollTop ?? 0)
+  useLayoutEffect(() => {
+    if (scroll.current) scroll.current.scrollTop = scrollTop.current
+  }, [])
+  useEffect(
+    () => () =>
+      saveTaskListViewState(host, {
+        query: queryRef.current,
+        environment: environmentRef.current,
+        expanded: expandedRef.current,
+        scrollTop: scrollTop.current,
+      }),
+    [host, queryRef, expandedRef, environmentRef],
+  )
   const projects = useMemo(
     () => new Map(entries.map((entry) => [entry.projectKey, entry.projectName])),
     [entries],
@@ -119,13 +131,8 @@ export function TaskList({
                 repo.gitIdentity &&
                 `git:${repo.gitIdentity}` === projectId,
             )) &&
-          (filter === 'archive' ? !!t.archivedAt : !t.archivedAt) &&
-          (filter === 'archive' ||
-            filter === 'active' ||
-            (filter === 'archived' ? t.archived : !t.archived)) &&
-          (['active', 'archived', 'archive'].includes(filter) ||
-            (filter === 'snoozed' && isSnoozed(t, now)) ||
-            (filter === 'input' ? needsInput.has(key) : t.status === filter)) &&
+          (!environment || JSON.stringify(source.runtimeId) === environment) &&
+          !t.archivedAt &&
           (!needle ||
             [
               t.title,
@@ -156,7 +163,17 @@ export function TaskList({
           projects,
         ),
       )
-  }, [entries, projectId, filter, deferredQuery, sort, needsInput, projects, now, searchIdentity])
+  }, [
+    entries,
+    projectId,
+    environment,
+    deferredQuery,
+    sort,
+    needsInput,
+    projects,
+    now,
+    searchIdentity,
+  ])
   const searchError = search.error
   const selectedEntries = entries.filter((entry) => selected.has(entry.key))
   const bulk = async (action: 'archive' | 'reopen' | 'snooze' | 'delete' | 'read' | 'unread') => {
@@ -248,23 +265,33 @@ export function TaskList({
         tasks: tasks.filter(
           ({ task }) => !task.archived && !task.archivedAt && isSnoozed(task, now),
         ),
-        open: filter === 'snoozed',
+        open: false,
       },
       {
         id: 'settled',
-        name: filter === 'archive' ? 'Archived' : 'Settled',
+        name: 'Settled',
         tasks: tasks.filter(({ task }) => task.archived || !!task.archivedAt),
-        open: filter === 'archived' || filter === 'archive',
+        open: false,
       },
     ].filter((group) => group.tasks.length)
-    if (grouping === 'none') return [{ id: 'all', name: '', tasks, open: true }]
+    const settled = statusGroups
+      .filter((group) => group.id === 'settled')
+      .map((group) => ({
+        ...group,
+        open: expanded[group.id] ?? false,
+      }))
+    if (grouping === 'none')
+      return [
+        { id: 'all', name: '', tasks: tasks.filter(({ task }) => !task.archived), open: true },
+        ...settled,
+      ]
     if (grouping === 'status')
       return statusGroups.map((group) => ({
         ...group,
         open: expanded[group.id] ?? group.open,
       }))
     const byProject = new Map<string, { id: string; name: string; tasks: TaskEntry[] }>()
-    for (const entry of tasks) {
+    for (const entry of tasks.filter(({ task }) => !task.archived)) {
       const repository = entry.source.workspace.repositories.find(
         (repo) => repo.id === entry.task.repositoryId,
       )
@@ -277,10 +304,13 @@ export function TaskList({
       group.tasks.push(entry)
       byProject.set(key, group)
     }
-    return [...byProject.values()]
-      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
-      .map((group) => ({ ...group, open: expanded[group.id] ?? true }))
-  }, [tasks, filter, now, grouping, expanded])
+    return [
+      ...[...byProject.values()]
+        .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+        .map((group) => ({ ...group, open: expanded[group.id] ?? true })),
+      ...settled,
+    ]
+  }, [tasks, now, grouping, expanded])
   useEffect(() => {
     onOrderChange?.(groups.filter((group) => group.open).flatMap((group) => group.tasks))
   }, [groups, onOrderChange])
@@ -303,7 +333,6 @@ export function TaskList({
     onDeselect,
     onProjectChange,
     setQuery,
-    setFilter,
     onSplit,
     onTemplate,
   })
@@ -313,7 +342,6 @@ export function TaskList({
     onDeselect,
     onProjectChange,
     setQuery,
-    setFilter,
     onSplit,
     onTemplate,
   }
@@ -333,7 +361,6 @@ export function TaskList({
             : entry.projectKey,
         )
         latest.current.setQuery('')
-        latest.current.setFilter('active')
       },
     }
     handlers.current.set(entry.key, created)
@@ -438,70 +465,48 @@ export function TaskList({
           </Button>
         </div>
       </div>
-      <details className="group/filter mx-2 mb-1 rounded-md border border-transparent open:border-border/70 open:bg-muted/35">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded px-1.5 py-1 text-[0.6875rem] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
-          <SlidersHorizontal aria-hidden="true" className="size-3" />
-          <span className="flex-1">Filters & sort</span>
-          {filter !== 'active' || sort !== defaultSort || grouping !== 'status' || projectId ? (
-            <span>Custom</span>
-          ) : null}
-          <ChevronDown
-            aria-hidden="true"
-            className="size-3 transition-transform group-open/filter:rotate-180"
-          />
-        </summary>
-        <div className="flex min-w-0 items-center gap-1 px-1 pb-2">
+      {(sources.length > 1 || environment) && (
+        <div className="px-2 pb-1">
           <ChoicePicker
-            aria-label="Task status filter"
-            className="h-7 min-w-0 flex-1 rounded-sm bg-transparent px-2 text-xs"
-            value={filter}
-            onValueChange={(selection) => setFilter(selection)}
-          >
-            <option value="active">All tasks</option>
-            <option value="running">Running</option>
-            <option value="input">Needs input</option>
-            <option value="review">Ready for review</option>
-            <option value="failed">Failed</option>
-            <option value="snoozed">Snoozed</option>
-            <option value="archived">Settled</option>
-            <option value="archive">Archived</option>
-          </ChoicePicker>
-          <ChoicePicker
-            aria-label="Thread sort"
-            className="h-7 min-w-0 flex-1 rounded-sm bg-transparent px-2 text-xs text-muted-foreground"
-            value={sort}
-            onValueChange={setSort}
-          >
-            {taskSortOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.name}
-              </option>
-            ))}
-          </ChoicePicker>
-        </div>
-        <div className="px-1 pb-2">
-          <ChoicePicker
-            aria-label="Group tasks by"
+            aria-label="Filter threads by environment"
             className="h-7 w-full rounded-sm bg-transparent px-2 text-xs text-muted-foreground"
-            value={grouping}
-            onValueChange={(taskGrouping) =>
-              updateAppPreferences({ taskGrouping: taskGrouping as typeof grouping })
-            }
+            value={environment}
+            onValueChange={(value) => {
+              setEnvironment(value)
+              scrollTop.current = 0
+              if (scroll.current) scroll.current.scrollTop = 0
+            }}
           >
-            {taskGroupOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                Group by {option.name.toLowerCase()}
+            <option value="">All environments</option>
+            {environment &&
+              !sources.some((source) => JSON.stringify(source.runtimeId) === environment) && (
+                <option value={environment}>Unavailable environment</option>
+              )}
+            {sources.map((source) => (
+              <option
+                key={JSON.stringify(source.runtimeId)}
+                value={JSON.stringify(source.runtimeId)}
+              >
+                {source.name}
+                {source.online ? '' : ' · Offline'}
               </option>
             ))}
           </ChoicePicker>
         </div>
-      </details>
+      )}
       {(error || actionError || searchError) && (
         <p role="alert" className="px-3 pb-2 text-xs text-destructive">
           {error || actionError || searchError}
         </p>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5" aria-busy={busy}>
+      <div
+        ref={scroll}
+        onScroll={(event) => {
+          scrollTop.current = event.currentTarget.scrollTop
+        }}
+        className="min-h-0 flex-1 overflow-y-auto px-1.5"
+        aria-busy={busy}
+      >
         {groups.map((group) => {
           const rows = group.tasks.map((entry) => {
             const handlers = entryHandlers(entry)
@@ -574,11 +579,11 @@ export function TaskList({
               </div>
             )
           })
-          return grouping === 'none' ? (
+          return grouping === 'none' && group.id !== 'settled' ? (
             <div key={group.id}>{rows}</div>
           ) : (
             <details
-              key={`${group.id}-${filter}`}
+              key={group.id}
               open={group.open}
               onToggle={(event) => {
                 const open = event.currentTarget.open
@@ -600,22 +605,20 @@ export function TaskList({
         {!tasks.length && (
           <div className="space-y-2 px-3 py-6 text-xs">
             <p className="font-medium">
-              {query || filter !== 'active' || projectId
-                ? 'No matching tasks'
-                : 'Ready for your next idea'}
+              {query || projectId || environment ? 'No matching tasks' : 'Ready for your next idea'}
             </p>
             <p className="leading-5 text-muted-foreground">
-              {query || filter !== 'active' || projectId
+              {query || projectId || environment
                 ? 'Try a different search or clear your filters.'
                 : 'Start with a question, a fix, or something you want to build.'}
             </p>
-            {query || filter !== 'active' || projectId ? (
+            {query || projectId || environment ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
                   setQuery('')
-                  setFilter('active')
+                  setEnvironment('')
                   onProjectChange('')
                 }}
               >

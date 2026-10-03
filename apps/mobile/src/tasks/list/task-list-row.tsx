@@ -14,7 +14,6 @@ import {
   GitBranch,
   GitFork,
   MessageCircleQuestion,
-  Moon,
   Pin,
   Save,
   type LucideIcon,
@@ -44,7 +43,7 @@ const statusIcons: Record<string, LucideIcon> = {
   Finished: CircleCheck,
   Failed: CircleX,
   Stopped: CircleStop,
-  Snoozed: Moon,
+  Snoozed: Clock,
   Settled: CircleCheck,
   Archived: Archive,
   Draft: FilePenLine,
@@ -59,6 +58,9 @@ export function TaskListRow({
   disabled,
   onOpen,
   onDetails,
+  onSelect,
+  selectionActive = false,
+  selected = false,
   showDevice = true,
 }: {
   /** Which computer ran a task is noise when only one computer is saved. */
@@ -70,6 +72,9 @@ export function TaskListRow({
   disabled: boolean
   onOpen: () => void
   onDetails: () => void
+  onSelect: () => void
+  selectionActive?: boolean
+  selected?: boolean
 }) {
   const task = row.task,
     repository = runtime?.snapshot?.workspace.repositories.find(
@@ -110,7 +115,6 @@ export function TaskListRow({
     'Project checkout'
   const icon = projectIcon(repository)
   const StatusIcon = statusIcons[state]
-  const showingTime = !!age && !working
 
   return (
     <View style={{ marginVertical: 3, borderRadius: 12, backgroundColor: colors.surface }}>
@@ -120,10 +124,23 @@ export function TaskListRow({
           testID={testID}
           accessibilityRole="button"
           accessibilityLabel={`${task.pinned ? 'Pinned, ' : ''}${row.projectName}, ${task.title}, ${status}, ${worktree ? 'Worktree' : 'Local checkout'}, ${executionDevice}${row.online ? '' : ', Offline'}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}`}
-          accessibilityHint="Open conversation. Touch and hold for task actions."
+          accessibilityHint={
+            car
+              ? 'Open conversation.'
+              : selectionActive
+                ? 'Tap to toggle selection.'
+                : 'Open conversation. Touch and hold to select. Task details are in the actions menu.'
+          }
+          accessibilityState={{ disabled, selected }}
+          accessibilityActions={
+            car ? [] : [{ name: 'select', label: selected ? 'Deselect task' : 'Select task' }]
+          }
+          onAccessibilityAction={({ nativeEvent }) => {
+            if (!disabled && !car && nativeEvent.actionName === 'select') onSelect()
+          }}
           disabled={disabled}
           onPress={onOpen}
-          onLongPress={onDetails}
+          onLongPress={car ? undefined : onSelect}
           style={({ pressed }) => ({
             flex: 1,
             minWidth: 0,
@@ -134,6 +151,24 @@ export function TaskListRow({
             opacity: pressed ? 0.55 : 1,
           })}
         >
+          {selectionActive && (
+            <View style={{ width: 28, alignItems: 'center', paddingTop: 7 }}>
+              <View
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: selected ? colors.accent : colors.muted,
+                  backgroundColor: selected ? colors.accent : 'transparent',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {selected && <Icon name="check" size={14} color={colors.background} />}
+              </View>
+            </View>
+          )}
           <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
             <View
               style={{
@@ -170,7 +205,6 @@ export function TaskListRow({
               {worktree && <GitFork size={12} color={colors.muted} />}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 {StatusIcon && <StatusIcon size={14} color={stateColor} />}
-                {showingTime && <Clock size={12} color={stateColor} />}
                 <Text style={{ color: stateColor, fontSize: 13 }}>
                   {working || row.needsInput || done || failed
                     ? `${state}${age ? ` ${age}` : ''}`

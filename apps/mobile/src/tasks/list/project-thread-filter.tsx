@@ -18,7 +18,7 @@ export function ProjectThreadFilter({
 }: {
   value: string
   onChange: (key: string) => void
-  /** Render as a filter chip beside the task status filters. */
+  /** Match the compact computer selector in the task list. */
   compact?: boolean
 }) {
   const { overviews } = useRuntime()
@@ -51,17 +51,11 @@ export function ProjectThreadFilter({
           setQuery('')
         }}
         style={({ pressed }) => ({
-          minHeight: compact ? 36 : 44,
+          minHeight: 44,
           flexDirection: 'row',
           gap: compact ? 6 : 8,
           alignItems: 'center',
           opacity: pressed ? 0.7 : 1,
-          ...(compact && {
-            maxWidth: 200,
-            paddingHorizontal: 12,
-            borderRadius: 18,
-            backgroundColor: selected ? colors.elevated : 'transparent',
-          }),
         })}
       >
         <Icon
@@ -76,8 +70,7 @@ export function ProjectThreadFilter({
               ? [
                   styles.muted,
                   {
-                    flexShrink: 1,
-                    fontWeight: '600',
+                    flex: 1,
                     color: selected ? colors.text : colors.muted,
                   },
                 ]
@@ -86,7 +79,7 @@ export function ProjectThreadFilter({
         >
           {selected?.name ?? 'All projects'}
         </Text>
-        <Icon name="down" size={compact ? 10 : 13} color={colors.muted} />
+        <Icon name={compact ? 'next' : 'down'} size={compact ? 11 : 13} color={colors.muted} />
       </Pressable>
       {open && (
         <Sheet title="Projects" onClose={() => setOpen(false)}>

@@ -6,11 +6,9 @@ import { SettingsGroup, SettingsRow } from './settings-group'
 import { colors, styles } from '../ui/theme'
 import { useRuntime } from '../runtime/connection/provider'
 import { ScreenHeader } from '../ui/layout/screen-header'
-import { useTaskListView } from '../tasks/list/task-list-view'
 
 export default function SettingsScreen() {
   const { profiles, overviews } = useRuntime()
-  const { setView, scrollOffset } = useTaskListView()
   const archived = overviews.reduce(
     (count, entry) =>
       count +
@@ -105,11 +103,7 @@ export default function SettingsScreen() {
             }
             icon="tasks"
             disabled={!profiles.length}
-            onPress={() => {
-              scrollOffset.current = 0
-              setView((current) => ({ ...current, filter: 'archive', search: '' }))
-              router.navigate('/')
-            }}
+            onPress={() => router.push('/settings/archived')}
             last
           />
         </SettingsGroup>

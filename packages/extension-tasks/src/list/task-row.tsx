@@ -16,7 +16,6 @@ import {
   FilePenLine,
   GitFork,
   MessageCircleQuestion,
-  Moon,
   Save,
   type LucideIcon,
   CircleCheck,
@@ -38,7 +37,7 @@ const statusIcons: Record<string, LucideIcon> = {
   Finished: CircleCheck,
   Failed: CircleX,
   Stopped: CircleStop,
-  Snoozed: Moon,
+  Snoozed: Clock,
   Settled: CircleCheck,
   Archived: Archive,
   Draft: FilePenLine,
@@ -108,8 +107,6 @@ function TaskRowView({
     : presentation.state === 'Review'
       ? undefined
       : (statusIcons[presentation.state] ?? CircleDashed)
-  const showingTime =
-    !offline && presentation.state !== 'Working' && presentation.compactLabel !== presentation.state
   const statusDetail = [
     status,
     Number.isFinite(finished) ? `Finished ${formatDateTime(finished)}` : '',
@@ -164,7 +161,6 @@ function TaskRowView({
                 )}
               >
                 {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
-                {showingTime && <Clock className="size-3" aria-hidden="true" />}
                 {compactStatus}
               </span>
             </span>
@@ -250,7 +246,7 @@ function TaskRowView({
             ))}
             {isSnoozed(task, now) && (
               <p className="flex items-center gap-2">
-                <Moon className="size-3 shrink-0" aria-hidden="true" />
+                <Clock className="size-3 shrink-0" aria-hidden="true" />
                 Snoozed until {formatDateTime(task.snoozedUntil ?? now)}
               </p>
             )}
