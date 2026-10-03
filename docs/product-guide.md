@@ -280,8 +280,9 @@ Desktop and web settings use a grouped sidebar with search (matching words insid
   - **Source control** — forge accounts on each computer.
   - **Pull requests** (this device) — whether new pull requests start as drafts and the preferred
     merge method.
-  - **Task defaults** ([four scopes](scoped-settings.md): global, environment, project, environment + project) — agent and model, local checkout or
-    worktree, **Start from origin**, and the worktree setup command.
+  - **Task defaults** ([four scopes](scoped-settings.md): global, environment, project,
+    environment + project) — agent and model, local checkout or worktree, **Start from origin**, and
+    the worktree setup command.
   - **Worktrees** (per computer) — the branch prefix for new task branches (`dovo/` by default, or
     empty for none), removing worktrees of archived tasks in the background, and the task checkouts
     on that computer with removal for archived or deleted tasks. Worktrees with uncommitted changes
@@ -805,8 +806,9 @@ execution and human review against an isolated fixture runtime.
 ### Project and custom-agent resources
 
 Settings → MCP & skills manages resources at [four scopes](scoped-settings.md): Global → Environment
-→ Project → Environment + project. Shared projects match by Git remote identity. Custom-agent entries
-with the same name apply last, including disabled entries. Changes start a fresh harness session on the next turn.
+→ Project → Environment + project. Shared projects match by Git remote identity. Custom-agent
+entries with the same name apply last, including disabled entries. Changes start a fresh harness
+session on the next turn.
 
 MCP servers support local stdio commands and Streamable HTTP, with connection testing. Environment
 and header bindings reference environment variables on the runtime host; bearer authentication uses
