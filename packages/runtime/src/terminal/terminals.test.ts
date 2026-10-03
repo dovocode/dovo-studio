@@ -1,8 +1,13 @@
 import { expect, it, vi } from 'vitest'
 import { Terminals } from './terminals'
 import { fixture } from '../testing/fixture'
-import { runtimeIntegration } from '../testing/integration'
+import { runtimeIntegration, waitForRuntime } from '../testing/integration'
 vi.setConfig(runtimeIntegration)
+// Keep the marker out of echoed input and use the actual platform shell syntax.
+const outputCommand =
+  process.platform === 'win32'
+    ? "Write-Output ('dovo-pty-' + 'verified')\r"
+    : "printf 'dovo-pty-%s\\n' verified\r"
 it('waits for previously closed terminals to exit before completing disposal', async () => {
   const f = await fixture()
   const terminals = new Terminals()
@@ -54,20 +59,13 @@ it('runs a real PTY and retains output when clients detach', async () => {
     terminals = new Terminals()
   try {
     const session = terminals.create('task', f.directory)
-    const result = new Promise<string>((resolve, reject) => {
-      let output = ''
-      const timer = setTimeout(() => reject(new Error('PTY did not produce expected output')), 5000)
-      const detach = terminals.attach(session.id, (data) => {
-        output += data
-        if (output.includes('dovo-pty-verified')) {
-          clearTimeout(timer)
-          detach()
-          resolve(output)
-        }
-      })
-      terminals.input(session.id, "printf 'dovo-pty-%s\\n' verified\r")
+    let output = ''
+    const detachOutput = terminals.attach(session.id, (data) => {
+      output += data
     })
-    expect(await result).toContain('dovo-pty-verified')
+    terminals.input(session.id, outputCommand)
+    await waitForRuntime(() => expect(output).toContain('dovo-pty-verified'))
+    detachOutput()
     let replay = ''
     const detach = terminals.attach(session.id, (data) => {
       replay += data
@@ -93,19 +91,12 @@ it('keeps delivering terminal output when one client throws', async () => {
       if (armed && data) throw new Error('closed client')
     })
     armed = true
-    const result = new Promise<string>((resolve, reject) => {
-      let output = ''
-      const timer = setTimeout(() => reject(new Error('PTY did not produce expected output')), 5000)
-      terminals.attach(session.id, (data) => {
-        output += data
-        if (output.includes('dovo-pty-verified')) {
-          clearTimeout(timer)
-          resolve(output)
-        }
-      })
-      terminals.input(session.id, "printf 'dovo-pty-%s\\n' verified\r")
+    let output = ''
+    terminals.attach(session.id, (data) => {
+      output += data
     })
-    expect(await result).toContain('dovo-pty-verified')
+    terminals.input(session.id, outputCommand)
+    await waitForRuntime(() => expect(output).toContain('dovo-pty-verified'))
     expect(reported).toHaveBeenCalled()
     terminals.close(session.id)
   } finally {
