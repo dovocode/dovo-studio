@@ -57,7 +57,13 @@ export function createCodexAdapter(): AgentAdapter {
     async run(run) {
       run.signal.throwIfAborted()
       const endpoint = run.agent.endpoint || 'codex'
-      const launchConfig = JSON.stringify([run.agent.args, run.agent.env])
+      const mcpServers =
+        run.tools !== 'none' && run.agent.resources?.mcpServers.length
+          ? codexMcpServers(run.agent.resources.mcpServers)
+          : undefined
+      // Resuming a loaded Codex thread retains its MCP connections. Restart on binding
+      // changes so follow-up turns cannot keep the previous Dovo parent attempt.
+      const launchConfig = JSON.stringify([run.agent.args, run.agent.env, mcpServers])
       const previous = run.taskId ? idle.get(run.taskId) : undefined
       if (run.taskId) idle.delete(run.taskId)
       const reusable =
@@ -378,9 +384,9 @@ export function createCodexAdapter(): AgentAdapter {
                 'features.shell_tool': false,
                 web_search: 'disabled',
               }
-            : run.agent.resources?.mcpServers.length
+            : mcpServers
               ? {
-                  mcp_servers: codexMcpServers(run.agent.resources.mcpServers),
+                  mcp_servers: mcpServers,
                 }
               : {}),
         }

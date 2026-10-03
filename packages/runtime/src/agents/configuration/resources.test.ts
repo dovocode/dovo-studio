@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { mcpServerSchema, mergeResources, resourceSettingsSchema } from '@dovo/protocol'
 import { importSkill, testMcpServer } from './resources'
 import { acpMcpServers, claudeMcpServers, codexMcpServers } from './mcp-settings'
+import { taskToolsServer } from '../../agent-tools/config.js'
 const directories: string[] = []
 afterEach(async () => {
   vi.unstubAllEnvs()
@@ -167,6 +168,29 @@ it('maps enabled MCP transports and resolves environment references for each har
       },
     ]),
   ).toThrow('DOES_NOT_EXIST_DOVO')
+})
+it('permits only built-in child controls without Codex approval for read-only delegation', () => {
+  const builtin = taskToolsServer('parent', 1234, 'token', '127.0.0.1', true, false, 'attempt')
+  const external = decode(mcpServerSchema, {
+    name: 'external',
+    enabled: true,
+    transport: 'stdio',
+    command: 'node',
+    args: ['external.js'],
+  })
+  const configured = codexMcpServers([builtin, external])
+  expect(configured.dovo_task.tools).toEqual({
+    subagent_spawn: { approval_mode: 'approve' },
+    subagent_list: { approval_mode: 'approve' },
+    subagent_read: { approval_mode: 'approve' },
+    subagent_wait: { approval_mode: 'approve' },
+    subagent_cancel: { approval_mode: 'approve' },
+  })
+  expect(configured.dovo_task).toMatchObject({ env: { DOVO_TASK_READ_ONLY: '1' } })
+  expect(configured.external).not.toHaveProperty('tools')
+  expect(codexMcpServers([{ ...external, name: 'dovo_task' }]).dovo_task).not.toHaveProperty(
+    'tools',
+  )
 })
 it('tests a real stdio handshake and lists tools without invoking them', async () => {
   const path = join(await directory(), 'server.cjs')

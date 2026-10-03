@@ -26,6 +26,18 @@ export function codexMcpServers(servers: McpServer[]) {
       server.name,
       {
         enabled: server.enabled,
+        // Dovo enforces parent ownership and child access itself. Its child controls
+        // must work for read-only parents, whose Codex approval policy is never.
+        ...(server.name === 'dovo_task' && server.envValues?.DOVO_TASK_ID
+          ? {
+              tools: Object.fromEntries(
+                ['spawn', 'list', 'read', 'wait', 'cancel'].map((action) => [
+                  `subagent_${action}`,
+                  { approval_mode: 'approve' },
+                ]),
+              ),
+            }
+          : {}),
         ...(server.transport === 'stdio'
           ? {
               command: server.command,

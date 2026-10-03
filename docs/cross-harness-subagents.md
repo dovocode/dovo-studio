@@ -19,6 +19,10 @@ levels of nesting. Tool connections are bound to the parent attempt so a stale c
 launch children in a later turn. ACP requires a named configuration selecting its installed
 integration.
 
+Follow-up Codex turns restart the provider connection when the task-tool binding changes, then
+resume the existing conversation. Dovo child controls use Dovo's ownership and access checks, so
+read-only parents can launch and receive read-only children without a Codex approval prompt.
+
 `subagent_wait` waits up to 20 seconds. If `running` is still true, wait again. A finished result
 contains the child's assistant answer and outcome, excluding tool output and raw events. Results
 become available after provider execution and checkout finalization finish. The parent reads the

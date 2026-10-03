@@ -1,5 +1,6 @@
 import { mutableStruct } from '@dovo/protocol'
-import { decode } from '@dovo/protocol'
+import { decode, resourceSettingsSchema } from '@dovo/protocol'
+import { taskToolsServer } from '../../../agent-tools/config.js'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -35,15 +36,23 @@ if (${slowShutdown}) {
  setInterval(() => {}, 1000);
 }
 const send = x => process.stdout.write(JSON.stringify(x)+'\\n');
+let mcpServers;
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);if(m.id===undefined)return;
  fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({...m,pid:process.pid})+'\\n');
  let result={};
  if(m.method==='initialize')result={userAgent:'codex/${version}'};
- if(m.method==='thread/start'||m.method==='thread/resume')result={thread:{id:'thread',daybreakEnabled:${savedDaybreak}},approvalsReviewer:'user'};
+ if(m.method==='thread/start'||m.method==='thread/resume') {
+   result={thread:{id:'thread',daybreakEnabled:${savedDaybreak}},approvalsReviewer:'user'};
+   // A loaded Codex thread retains the original MCP connection on resume.
+   mcpServers ??= m.params.config?.mcp_servers ?? {};
+ }
  if(m.method==='thread/compact/start' && ${compactBeforeResponse})send({method:'item/completed',params:{threadId:'thread',item:{type:'contextCompaction',id:'compact'}}});
  send({id:m.id,result});
- if(m.method==='turn/start')send({method:'turn/completed',params:{turn:{status:'completed'}}});
+ if(m.method==='turn/start') {
+   send({method:'item/agentMessage/delta',params:{delta:JSON.stringify(mcpServers.dovo_task?.env ?? {})}});
+   send({method:'turn/completed',params:{turn:{status:'completed'}}});
+ }
  if(m.method==='thread/compact/start' && !${compactBeforeResponse})send({method:'item/completed',params:{threadId:'thread',item:{type:'contextCompaction',id:'compact'}}});
 });`,
     {
@@ -106,6 +115,59 @@ it('reuses the Codex app-server for follow-up turns and closes it with the adapt
     expect(new Set(rows.map((row) => row.pid)).size).toBe(1)
     expect(rows.filter((row) => row.method === 'initialize')).toHaveLength(1)
     expect(rows.filter((row) => row.method === 'turn/start')).toHaveLength(2)
+  } finally {
+    await codexAdapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
+it('rebinds Dovo task tools before a follow-up turn while resuming the same conversation', async () => {
+  const { run, requests } = await fixture()
+  run.taskId = 'bound-task'
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  const bind = (attempt: string) => {
+    run.agent.resources = decode(resourceSettingsSchema, {
+      mcpServers: [
+        taskToolsServer('bound-task', 1234, 'token', '127.0.0.1', false, false, attempt),
+      ],
+    })
+  }
+  try {
+    bind('first-run')
+    await codexAdapter.run(run)
+    expect(run.onText).toHaveBeenLastCalledWith(expect.stringContaining('first-run'))
+    expect((await requests()).find((row) => row.method === 'thread/start')?.params).toMatchObject({
+      config: {
+        mcp_servers: {
+          dovo_task: {
+            tools: {
+              subagent_spawn: { approval_mode: 'approve' },
+              subagent_list: { approval_mode: 'approve' },
+              subagent_read: { approval_mode: 'approve' },
+              subagent_wait: { approval_mode: 'approve' },
+              subagent_cancel: { approval_mode: 'approve' },
+            },
+          },
+        },
+      },
+    })
+    run.sessionId = 'thread'
+    await codexAdapter.run(run)
+    expect(new Set((await requests()).map((row) => row.pid)).size).toBe(1)
+
+    bind('second-run')
+    await codexAdapter.run(run)
+    expect(run.onText).toHaveBeenLastCalledWith(expect.stringContaining('second-run'))
+    const rows = await requests()
+    expect(new Set(rows.map((row) => row.pid)).size).toBe(2)
+    expect(rows.filter((row) => row.method === 'thread/start')).toHaveLength(1)
+    expect(rows.filter((row) => row.method === 'thread/resume').at(-1)?.params.threadId).toBe(
+      'thread',
+    )
+
+    run.agent.resources = decode(resourceSettingsSchema, {})
+    await codexAdapter.run(run)
+    expect(run.onText).toHaveBeenLastCalledWith('{}')
+    expect(new Set((await requests()).map((row) => row.pid)).size).toBe(3)
   } finally {
     await codexAdapter.dispose?.()
     pressure.mockRestore()
