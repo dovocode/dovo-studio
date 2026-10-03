@@ -202,3 +202,5 @@ export {
   modelDisplayName,
   type UsageHistoryResult,
 } from '@dovo/protocol'
+
+export * from './settings-target'

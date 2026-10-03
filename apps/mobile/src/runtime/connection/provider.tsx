@@ -332,6 +332,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [cacheFor],
   )
   useEffect(() => {
+    if (!appActive) return
     const persist = mobileWorkflow(function* () {
       if (!cacheDirty.current.size) return
       const ids = [...cacheDirty.current]
@@ -348,18 +349,14 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       )
     }).pipe(Effect.uninterruptible)
     const polling = startPolling(persist, {
-      interval: 5000,
+      interval: 15_000,
       immediate: false,
       onError: () => {},
     })
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state !== 'active') polling.refresh()
-    })
     return () => {
-      subscription.remove()
       void runClientEffect(nativeEffect(() => polling.stop()).pipe(Effect.flatMap(() => persist)))
     }
-  }, [persistEntryEffect])
+  }, [persistEntryEffect, appActive])
   const persistRegistryEffect = useCallback(
     (next: RuntimeRegistry) =>
       Effect.tryPromise({
@@ -460,13 +457,17 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     (profile: RuntimeProfile) => runClientEffect(refreshProfileEffect(profile)),
     [refreshProfileEffect],
   )
+  const pullOverviewReads = useRef(new Map<string, number>())
   const refreshOverviewEffect = useCallback(
-    (profile: RuntimeProfile): Effect.Effect<void> =>
+    (profile: RuntimeProfile, refreshPulls = true): Effect.Effect<void> =>
       Effect.suspend(() => {
         const pending = fleetPending.current.get(profile.id)
         if (pending?.token === profile.connection.token) return pending.effect
         const version = (sequence.current.get(profile.id) ?? 0) + 1
         sequence.current.set(profile.id, version)
+        const loadPulls =
+          refreshPulls ||
+          Date.now() - (pullOverviewReads.current.get(profile.id) ?? 0) >= 5 * 60_000
         const shared = Effect.runSync(
           Effect.cached(
             loadRuntimeOverviewEffect(
@@ -476,9 +477,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
                 if (sequence.current.get(profile.id) === version) updateEntry(profile, () => next)
               },
               current.current.activeId !== profile.id,
+              false,
+              { loadPulls },
             ).pipe(
               Effect.tap((next) =>
-                Effect.sync(() =>
+                Effect.sync(() => {
+                  if (loadPulls && next.connected && !next.pullError)
+                    pullOverviewReads.current.set(profile.id, Date.now())
                   updateEntry(profile, (previous) =>
                     sequence.current.get(profile.id) === version
                       ? next
@@ -487,8 +492,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
                           pulls: next.pulls,
                           pullError: next.pullError,
                         },
-                  ),
-                ),
+                  )
+                }),
               ),
               Effect.asVoid,
               Effect.ensuring(
@@ -515,7 +520,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           current.current.profiles.filter(
             (item) => includeActive || item.id !== current.current.activeId,
           ),
-          refreshOverviewEffect,
+          (profile) => refreshOverviewEffect(profile, includeActive),
           {
             concurrency: 3,
             discard: true,
@@ -868,7 +873,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [ready, profile, appActive, refreshProfileEffect, updateEntry, mutations])
   useEffect(() => {
-    if (!ready) return
+    if (!ready || !appActive) return
     const polling = startPolling(
       Effect.suspend(() =>
         AppState.currentState === 'active' ? refreshAllEffect(false) : Effect.void,
@@ -885,7 +890,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       void polling.stop()
       subscription.remove()
     }
-  }, [ready, registry.profiles, refreshAllEffect])
+  }, [ready, appActive, registry.profiles, refreshAllEffect])
   const refresh = useCallback(
     (...args: Parameters<typeof refreshEffect>) => runClientEffect(refreshEffect(...args)),
     [refreshEffect],

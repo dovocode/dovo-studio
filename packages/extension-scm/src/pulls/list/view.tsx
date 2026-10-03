@@ -1,3 +1,5 @@
+import { githubPullTarget, type PullSummary } from '@dovo/protocol'
+import { AddPullsToThread } from './add-to-thread'
 import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ChoicePicker } from '@dovo/studio-ui'
@@ -28,7 +30,9 @@ import { SourcePicker } from '../../connections/source-picker'
 export default function PullRequestsView({ entityId }: { entityId?: string }) {
   const { activeRuntimeId, switchRuntime } = useWorkspace()
   const [repositoryId, setRepository] = useApplicationState(
-      entityId ? repositorySourceKey(activeRuntimeId ?? '', entityId) : '',
+      entityId && !githubPullTarget(entityId)
+        ? repositorySourceKey(activeRuntimeId ?? '', entityId)
+        : '',
     ),
     [state, setState] = useApplicationState('open'),
     [search, setSearch] = useApplicationState(''),
@@ -44,11 +48,14 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
       source: RepositorySource
       number: number
     } | null>(null)
+  const [marked, setMarked] = useApplicationState<string[]>([])
+  const [adding, setAdding] = useApplicationState<PullSummary[] | null>(null)
+  const selectionAnchor = useRef<string | null>(null)
   const lastTarget = useRef(entityId)
   useEffect(() => {
     if (lastTarget.current === entityId) return
     lastTarget.current = entityId
-    if (entityId) {
+    if (entityId && !githubPullTarget(entityId)) {
       setRepository(repositorySourceKey(activeRuntimeId ?? '', entityId))
       setSelected(null)
     }
@@ -96,6 +103,46 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
         matchesPull(p, `${p.repositoryName} ${p.source.runtimeName}`, search),
     )
     .sort((a, b) => comparePulls(a, b, sort === 'attention'))
+  const handledLink = useRef('')
+  useEffect(() => {
+    if (!entityId || handledLink.current === entityId) return
+    const target = githubPullTarget(entityId)
+    if (!target) return
+    const source = sources.find(
+      (source) =>
+        source.runtimeId === activeRuntimeId && source.repository.gitIdentity === target.identity,
+    )
+    if (!source) return
+    handledLink.current = entityId
+    setOpenError('')
+    setSelected({ source, number: target.number })
+  }, [entityId, sources, activeRuntimeId])
+  const rowKey = (pull: (typeof pulls)[number]) => JSON.stringify([pull.source.key, pull.number])
+  const selectRow = (pull: (typeof pulls)[number], event: React.MouseEvent<HTMLButtonElement>) => {
+    const key = rowKey(pull)
+    if (event.metaKey || event.ctrlKey) {
+      setMarked((current) =>
+        current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
+      )
+      selectionAnchor.current = key
+    } else if (event.shiftKey && selectionAnchor.current) {
+      const start = pulls.findIndex((item) => rowKey(item) === selectionAnchor.current)
+      const end = pulls.indexOf(pull)
+      if (start >= 0)
+        setMarked(pulls.slice(Math.min(start, end), Math.max(start, end) + 1).map(rowKey))
+    } else {
+      setMarked([])
+      selectionAnchor.current = key
+      void open(pull.source, pull.number)
+    }
+  }
+  const addSelection = (pull: (typeof pulls)[number]) => {
+    const key = rowKey(pull)
+    const chosen = marked.includes(key)
+      ? pulls.filter((item) => marked.includes(rowKey(item)))
+      : [pull]
+    setAdding([...new Map(chosen.map((item) => [item.url, item])).values()])
+  }
   const selectStyle = 'h-8 w-auto max-w-52 rounded-md border bg-background px-2 text-xs'
   return (
     <section className="flex min-h-0 flex-1 flex-col">
@@ -163,7 +210,10 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                 className="ml-auto h-9 min-w-40 max-w-full flex-1 text-sm sm:max-w-72"
                 placeholder="Search PRs, branches, people…"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setMarked([])
+                  setSearch(e.target.value)
+                }}
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -172,6 +222,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                 className={selectStyle}
                 value={repositoryId}
                 onValueChange={(selection) => {
+                  setMarked([])
                   setRepository(selection)
                   setSelected(null)
                 }}
@@ -188,6 +239,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                 className={selectStyle}
                 value={state}
                 onValueChange={(selection) => {
+                  setMarked([])
                   setState(selection)
                   setSelected(null)
                 }}
@@ -202,7 +254,10 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                 aria-label="PR draft status"
                 className={selectStyle}
                 value={draft}
-                onValueChange={(selection) => setDraft(selection)}
+                onValueChange={(selection) => {
+                  setMarked([])
+                  setDraft(selection)
+                }}
               >
                 <option value="all">Draft + ready</option>
                 <option value="draft">Drafts</option>
@@ -222,7 +277,10 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                 variant={attention ? 'secondary' : 'ghost'}
                 aria-pressed={attention}
                 title="Your review requests, blocked PRs, and your approved PRs with passing checks"
-                onClick={() => setAttention((value) => !value)}
+                onClick={() => {
+                  setMarked([])
+                  setAttention((value) => !value)
+                }}
               >
                 Needs attention
               </Button>
@@ -275,14 +333,33 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
               <span className="w-24 text-right">Updated</span>
             </div>
           )}
-          <div className="space-y-1">
+          {!!marked.length && (
+            <div className="sticky top-0 z-10 flex items-center justify-between bg-background px-3 py-2 text-xs">
+              <span>{marked.length} PRs selected</span>
+              <Button size="sm" variant="ghost" onClick={() => setMarked([])}>
+                Clear selection
+              </Button>
+            </div>
+          )}
+          <div
+            className="space-y-1"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setMarked([])
+            }}
+          >
             {pulls.map((p) => (
               <PullRow
                 key={JSON.stringify([p.source.key, p.number])}
                 pull={p}
                 compact={!!selected}
                 repository={`${p.repositoryName} · ${p.source.runtimeName}${p.source.connected ? '' : ' · Offline'}`}
-                selected={selected?.source.key === p.source.key && selected.number === p.number}
+                selected={
+                  marked.includes(rowKey(p)) ||
+                  (selected?.source.key === p.source.key && selected.number === p.number)
+                }
+                onAddToThread={() => addSelection(p)}
+                selectionCount={marked.includes(rowKey(p)) ? marked.length : 1}
+                onClick={(event) => selectRow(p, event)}
                 onSelect={() => void open(p.source, p.number)}
               />
             ))}
@@ -330,6 +407,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
           </div>
         ) : null}
       </div>
+      {adding && <AddPullsToThread pulls={adding} onClose={() => setAdding(null)} />}
       {picking && (
         <SourcePicker
           title={picking === 'create' ? 'Create pull request' : 'Source control connections'}

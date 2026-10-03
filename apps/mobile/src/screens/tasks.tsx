@@ -1,3 +1,4 @@
+import { useForegroundInterval } from '../runtime/state/app-active'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import {
   updateMobilePreferences,
@@ -73,12 +74,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   const [collapsed, setCollapsed] = useApplicationState<Set<string>>(
     () => new Set(['snoozed', 'settled']),
   )
-  useEffect(() => {
-    if (!focused) return
-    setNow(Date.now())
-    const timer = setInterval(() => setNow(Date.now()), 15000)
-    return () => clearInterval(timer)
-  }, [focused])
+  useForegroundInterval(() => setNow(Date.now()), focused ? 15000 : null)
   useEffect(() => {
     if (source !== 'all' && !profiles.some((profile) => profile.id === source)) {
       scrollOffset.current = 0

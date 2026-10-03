@@ -129,6 +129,7 @@ function PullDetailContent({
                 #{number} · {detail.pull.author}
               </span>
               <a
+                data-dovo-external="true"
                 href={detail.pull.url}
                 target="_blank"
                 rel="noreferrer"

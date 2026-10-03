@@ -1,8 +1,9 @@
+import { useForegroundInterval } from '../runtime/state/app-active'
 import { UsagePrices } from './usage-prices'
 import { useUsageData } from './use-usage-data'
 import { Action } from '../ui/controls/action'
 import { ResetCredits } from './reset-credits'
-import { useMemo, useState, useEffect, memo } from 'react'
+import { useMemo, useState, memo } from 'react'
 import { FlatList, View } from 'react-native'
 import {
   formatUsageCost,
@@ -65,10 +66,7 @@ export default function UsageScreen() {
   const { hosts, histories, notices, busy, refresh } = useUsageData(computer)
   const [period, setPeriod] = useState<keyof typeof periods>('week')
   const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60000)
-    return () => clearInterval(timer)
-  }, [])
+  useForegroundInterval(() => setNow(Date.now()), 60000)
   const projectUsage = useMemo(() => createUsageSummary(), [])
   const summary = useMemo(
     () =>

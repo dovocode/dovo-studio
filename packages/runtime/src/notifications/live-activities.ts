@@ -1,3 +1,4 @@
+import { liveActivityRefreshMs, liveActivityStaleMs } from '@dovo/protocol'
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
@@ -33,7 +34,7 @@ export function activityPayload(props: LiveTaskProps, ended: boolean, now: numbe
             'dismissal-date': timestamp + 300,
           }
         : {
-            'stale-date': timestamp + 120,
+            'stale-date': timestamp + liveActivityStaleMs / 1000,
           }),
     },
   }
@@ -196,7 +197,7 @@ export class LiveActivities {
           props,
           ended,
         })
-        if (row.fingerprint === fingerprint && now - row.sentAt < 60_000) continue
+        if (row.fingerprint === fingerprint && now - row.sentAt < liveActivityRefreshMs) continue
         const apns = this.apns
         const status = yield* runtimeOperation(() =>
           apns.send(row.pushToken, activityPayload(props, ended, now)),

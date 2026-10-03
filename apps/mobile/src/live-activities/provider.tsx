@@ -1,3 +1,5 @@
+import { liveTaskProps } from '@dovo/protocol'
+import { useAppActive } from '../runtime/state/app-active'
 import { nativeEffect } from '../runtime/state/native-effect'
 import { Effect } from 'effect'
 import { clientTaskScope, startPolling, runClientEffect } from '@dovo/client-runtime'
@@ -16,11 +18,39 @@ const Context = createContext({
 })
 export const useLiveActivities = () => useContext(Context)
 export function LiveActivityProvider({ children }: { children: ReactNode }) {
+  const active = useAppActive()
   const { overviews, readRuntimeEffect, ready } = useRuntime()
   const [enabled, updateEnabled, enabledRef] = useApplicationState(true),
     [error, setError] = useApplicationState('')
   const [supported] = useApplicationState(
     () => Platform.OS === 'ios' && !!requireOptionalNativeModule('ExpoWidgets'),
+  )
+  // Native activity reads only need to follow visible state, not assistant text tokens.
+  const activityRevision = JSON.stringify(
+    (active && supported ? overviews : []).map((source) => {
+      const snapshot = source.snapshot
+      const tasks = snapshot?.workspace.tasks ?? []
+      const running = tasks.filter((task) => task.status === 'running' && !task.archived)
+      const needsInput = new Set(
+        [...(snapshot?.questions ?? []), ...(snapshot?.approvals ?? [])].map((item) => item.taskId),
+      )
+      return [
+        source.profile,
+        source.connected,
+        tasks.map((task) => [task.id, task.status, task.archived, task.turns?.at(-1)?.id]),
+        running.map((task) =>
+          liveTaskProps(
+            task,
+            snapshot?.runtimeHost ?? source.profile.name,
+            snapshot?.workspace.repositories.find(
+              (repository) => repository.id === task.repositoryId,
+            )?.name ?? '',
+            needsInput.has(task.id),
+            running.length,
+          ),
+        ),
+      ]
+    }),
   )
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const refresh = useRef<() => void>(() => {})
@@ -36,12 +66,12 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
   }
   useEffect(() => {
     // Coalesce streamed workspace updates while reacting promptly to status and input changes.
-    if (refreshTimer.current) return
+    if (!active || refreshTimer.current) return
     refreshTimer.current = setTimeout(() => {
       refreshTimer.current = undefined
       refresh.current()
     }, 250)
-  }, [overviews, ready, enabled])
+  }, [active, activityRevision, ready, enabled])
   useEffect(() => {
     if (!supported) return
     const commands = clientTaskScope()
@@ -74,26 +104,45 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
           const value = latest.current
           yield* controller.sync(value.overviews, value.readRuntimeEffect, enabledRef.current)
         }).pipe(Effect.uninterruptible)
-        const polling = startPolling(sync, {
-          interval: 3000,
-          onError: () => {
-            if (!disposed)
-              setError(
-                'Live Activities could not update. Check iOS Live Activity permissions and your connection.',
-              )
-            retryAfter = Date.now() + 60_000
-          },
-        })
-        refresh.current = polling.refresh
-        polling.refresh()
-        yield* Effect.addFinalizer(() => Effect.promise(() => polling.stop()))
+        // Keep one controller for this app session, but own no polling worker in the background.
+        // This preserves registrations and avoids recreating an activity during a quick resume.
+        let polling: ReturnType<typeof startPolling> | undefined
+        const stopping = new Set<Promise<void>>()
+        const pause = () => {
+          const previous = polling
+          polling = undefined
+          if (!previous) return
+          const stopped = previous.stop()
+          stopping.add(stopped)
+          void stopped.finally(() => stopping.delete(stopped))
+        }
+        const resume = () => {
+          if (disposed || polling || AppState.currentState !== 'active') return
+          retryAfter = 0
+          polling = startPolling(sync, {
+            interval: 30_000,
+            onError: () => {
+              if (!disposed)
+                setError(
+                  'Live Activities could not update. Check iOS Live Activity permissions and your connection.',
+                )
+              retryAfter = Date.now() + 60_000
+            },
+          })
+        }
+        refresh.current = () => polling?.refresh()
+        resume()
+        yield* Effect.addFinalizer(() =>
+          Effect.promise(async () => {
+            pause()
+            await Promise.all(stopping)
+          }),
+        )
         yield* Effect.acquireRelease(
           Effect.sync(() =>
             AppState.addEventListener('change', (state) => {
-              if (state === 'active') {
-                retryAfter = 0
-                polling.refresh()
-              }
+              if (state === 'active') resume()
+              else pause()
             }),
           ),
           (subscription) => Effect.sync(() => subscription.remove()),

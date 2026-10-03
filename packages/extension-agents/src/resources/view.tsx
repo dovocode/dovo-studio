@@ -17,52 +17,41 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import {
   resourceSettingsSchema,
   useWorkspace,
-  useRuntimeSources,
-  WorkspaceScope,
   type McpServer,
   type ManagedSkill,
   type AgentHook,
   type ResourceSettings,
 } from '@dovo/studio-core'
-import { Button, Checkbox } from '@dovo/studio-ui'
+import { SettingsScopePage, Button, Checkbox } from '@dovo/studio-ui'
 import { McpEditor } from './mcp-editor'
 import { CatalogPicker } from './catalog-picker'
 import { SkillEditor } from './skill-editor'
 export default function ResourcesView() {
-  const sources = useRuntimeSources()
   return (
-    <section className="min-h-0 flex-1 overflow-y-auto p-4">
-      <h1 className="text-base font-semibold">Agent resources & hooks</h1>
-      <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">
-        Global → Environment → Project → Environment + project. Matching names override earlier
-        scopes; agent entries apply last. Changes apply on the next turn.
-      </p>
-      {!sources.length && (
-        <p className="mt-6 text-sm text-muted-foreground">
-          Connect a computer to manage its project and agent resources.
-        </p>
+    <SettingsScopePage
+      title="Agent resources & hooks"
+      description="MCP servers, skills and hooks. Matching names override inherited tools; changes apply on the next turn."
+    >
+      {({ scope, repository }) => (
+        <ComputerResources selectedScope={scope} repositoryId={repository?.id} />
       )}
-      <div className="mt-4 space-y-4">
-        {sources.map((source) => (
-          <WorkspaceScope key={source.scope} profile={source.profile}>
-            <section aria-label={`Resources on ${source.name}`}>
-              <h2 className="mb-3 text-sm font-semibold">
-                {source.name}{' '}
-                <span className="ml-2 font-normal text-muted-foreground">
-                  {source.connected ? 'Online' : 'Offline · Saved resources'}
-                </span>
-              </h2>
-              <ComputerResources />
-            </section>
-          </WorkspaceScope>
-        ))}
-      </div>
-    </section>
+    </SettingsScopePage>
   )
 }
-function ComputerResources() {
+function ComputerResources({
+  selectedScope,
+  repositoryId,
+}: {
+  selectedScope: SettingsScope
+  repositoryId?: string
+}) {
   const { workspace, snapshot } = useWorkspace()
-  const scopes = resourceScopeChoices(snapshot?.defaults, workspace)
+  const scopes = resourceScopeChoices(snapshot?.defaults, workspace).filter(
+    (entry) =>
+      (entry.scope === selectedScope && entry.repository?.id === repositoryId) ||
+      (!entry.scope &&
+        (selectedScope === 'environment' || selectedScope === 'environment-project')),
+  )
   return (
     <div className="space-y-3">
       {!scopes.length && (
@@ -77,10 +66,12 @@ function ComputerResources() {
             key={`${collection}:${scope ?? 'agent'}:${item.id}`}
             className="rounded-md border"
             open={
+              !!scope ||
               resources.mcpServers.length +
                 resources.skills.length +
                 (resources.hooks?.length ?? 0) >
-                0 || undefined
+                0 ||
+              undefined
             }
           >
             <summary className="cursor-pointer px-4 py-3 text-sm font-medium">

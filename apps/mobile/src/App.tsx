@@ -1,3 +1,4 @@
+import { SettingsTargetProvider } from './runtime/preferences/settings-target'
 import { PushNotificationProvider } from './notifications/provider'
 import { TaskQuickActions } from './shell/task-quick-actions'
 import { colors } from './ui/theme'
@@ -29,15 +30,17 @@ export default function App() {
       <ThemeProvider value={theme}>
         <RegistryProvider>
           <RuntimeProvider>
-            <PushNotificationProvider>
-              <LiveActivityProvider>
-                <TaskWidgetProvider>
-                  <Workbench />
-                  <TaskQuickActions />
-                  <LinkBrowser />
-                </TaskWidgetProvider>
-              </LiveActivityProvider>
-            </PushNotificationProvider>
+            <SettingsTargetProvider>
+              <PushNotificationProvider>
+                <LiveActivityProvider>
+                  <TaskWidgetProvider>
+                    <Workbench />
+                    <TaskQuickActions />
+                    <LinkBrowser />
+                  </TaskWidgetProvider>
+                </LiveActivityProvider>
+              </PushNotificationProvider>
+            </SettingsTargetProvider>
           </RuntimeProvider>
         </RegistryProvider>
       </ThemeProvider>

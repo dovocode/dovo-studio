@@ -1,5 +1,5 @@
+import { useForegroundInterval } from '../runtime/state/app-active'
 import { useApplicationState } from '../runtime/state/application-state'
-import { useEffect } from 'react'
 import { Pressable, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import { responses, type JobRun } from '@dovo/protocol'
@@ -37,12 +37,7 @@ export function RunProgress({
     ),
   )
   const [now, setNow] = useApplicationState(Date.now())
-  useEffect(() => {
-    if (!active || !focused) return
-    setNow(Date.now())
-    const timer = setInterval(() => setNow(Date.now()), 15000)
-    return () => clearInterval(timer)
-  }, [active, focused])
+  useForegroundInterval(() => setNow(Date.now()), active && focused ? 15000 : null)
   const seconds = Math.max(
     0,
     Math.floor(

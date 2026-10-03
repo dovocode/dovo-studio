@@ -1,5 +1,6 @@
-import { useApplicationState } from '../../../runtime/state/application-state'
 import { useEffect } from 'react'
+import { useForegroundInterval } from '../../../runtime/state/app-active'
+import { useApplicationState } from '../../../runtime/state/application-state'
 import { Pressable, View } from 'react-native'
 import {
   pipelineDuration,
@@ -16,12 +17,7 @@ import { useNavigation } from '../../../shell/navigation'
 function usePipelineNow(active: boolean) {
   const { focused } = useNavigation()
   const [now, setNow] = useApplicationState(Date.now)
-  useEffect(() => {
-    if (!focused || !active) return
-    setNow(Date.now())
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [focused, active])
+  useForegroundInterval(() => setNow(Date.now()), active && focused ? 1000 : null)
   return now
 }
 export function WorkSignal({ status, emphasis = false }: { status: string; emphasis?: boolean }) {

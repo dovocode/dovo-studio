@@ -33,10 +33,13 @@
     "test:composer-send:browser": "node scripts/check-composer-send-browser.mjs",
     "test:thread-startup:browser": "node scripts/check-thread-startup-browser.mjs",
     "test:mobile-notifications:browser": "node scripts/check-mobile-notifications-browser.mjs",
+    "test:pull-links:browser": "node scripts/check-pull-links-browser.mjs",
     "test:scoped-settings:browser": "node scripts/check-scoped-settings-browser.mjs",
     "test:mobile-models:browser": "node scripts/check-mobile-models-browser.mjs",
     "test:mobile-thread-rendering:browser": "node scripts/check-mobile-thread-rendering.mjs",
-    "test:conversation-history:browser": "node scripts/check-conversation-history-browser.mjs"
+    "test:conversation-history:browser": "node scripts/check-conversation-history-browser.mjs",
+    "test:mobile-energy:browser": "node scripts/check-mobile-energy-browser.mjs",
+    "test:settings-target:browser": "node scripts/check-settings-target-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

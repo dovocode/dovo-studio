@@ -1,3 +1,4 @@
+import { liveActivityRefreshMs, liveActivityStaleMs } from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { clientTaskScope } from '@dovo/client-runtime'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
@@ -38,7 +39,7 @@ export function createActivityController(onError: (message: string) => void) {
     let lastSaved = raw
     const seen = new Set(saved.seen)
     const records = new Map(saved.records.map((record) => [record.key, record]))
-    const fingerprints = new Map<string, string>()
+    const fingerprints = new Map<string, { value: string; at: number }>()
     const registered = new Map<string, string>()
     const registering = new Map<string, string>()
     const registrationLocks = new Map<string, Effect.Semaphore>()
@@ -168,7 +169,7 @@ export function createActivityController(onError: (message: string) => void) {
                 instance = TaskActivity.start(
                   props,
                   `dovo://thread/${encodeURIComponent(source.profile.id)}/${encodeURIComponent(task.id)}`,
-                  new Date(Date.now() + 120_000),
+                  new Date(Date.now() + liveActivityStaleMs),
                 )
                 record = {
                   id: instance.getId(),
@@ -183,10 +184,16 @@ export function createActivityController(onError: (message: string) => void) {
                 yield* nativeEffect(() => persist())
               }
               if (!instance || !record) continue
-              const fingerprint = `${JSON.stringify(props)}:${Math.floor(Date.now() / 60_000)}`
-              if (fingerprints.get(record.id) !== fingerprint) {
-                yield* nativeEffect(() => instance.update(props, new Date(Date.now() + 120_000)))
-                fingerprints.set(record.id, fingerprint)
+              const fingerprint = JSON.stringify(props)
+              const previous = fingerprints.get(record.id)
+              if (
+                previous?.value !== fingerprint ||
+                Date.now() - previous.at >= liveActivityRefreshMs
+              ) {
+                yield* nativeEffect(() =>
+                  instance.update(props, new Date(Date.now() + liveActivityStaleMs)),
+                )
+                fingerprints.set(record.id, { value: fingerprint, at: Date.now() })
               }
               const id = record.id
               let lock = registrationLocks.get(id)

@@ -18,6 +18,16 @@ export function TerminalSession({ id }: { id: string }) {
     [status, setStatus] = useApplicationState('Loading terminal…')
   const [generation, setGeneration] = useApplicationState(0)
   const [ready, setReady] = useApplicationState(0)
+  const [backgrounded, setBackgrounded] = useApplicationState(
+    AppState.currentState === 'background',
+  )
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background') setBackgrounded(true)
+      else if (state === 'active') setBackgrounded(false)
+    })
+    return () => subscription.remove()
+  }, [setBackgrounded])
   const sequence = useRef(0)
   const session = useRef<{
     attempt: number
@@ -25,7 +35,7 @@ export function TerminalSession({ id }: { id: string }) {
     fail: (error: Error) => void
   } | null>(null)
   useEffect(() => {
-    if (!ready || !connection) return
+    if (!ready || !connection || backgrounded) return
     const reconnect = startReconnecting(
       async (signal, connected) => {
         setStatus('Connecting terminal…')
@@ -69,21 +79,12 @@ export function TerminalSession({ id }: { id: string }) {
       },
       (error) => setError(`${error.message} Reconnecting…`),
     )
-    // Only a real background stay can leave a dead socket behind; Control Center or a
-    // permission prompt (inactive → active) must not reset a healthy terminal.
-    let backgrounded = false
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'background') backgrounded = true
-      else if (state === 'active' && backgrounded) {
-        backgrounded = false
-        reconnect.restart()
-      }
-    })
+    // Effect cleanup closes the socket and cancels retries on a true background stay.
+    // Inactive permission prompts and Control Center preserve the healthy session.
     return () => {
-      subscription.remove()
       void reconnect.stop()
     }
-  }, [ready, connection, call, id])
+  }, [ready, connection, call, id, backgrounded])
   return (
     <View style={styles.screen}>
       <WebView

@@ -1,3 +1,5 @@
+import { AddPullsToThread } from '../scm/pulls/list/add-to-thread'
+import type { PullSummary } from '@dovo/protocol'
 import { pullStackLabel } from '@dovo/protocol'
 import { openAppLink } from '../ui/content/open-link'
 import { nativeEffect } from '../runtime/state/native-effect'
@@ -52,6 +54,8 @@ function PullsContent({
   const { focused } = useNavigation()
   const listOffset = useRef(0)
   const [creating, setCreating] = useApplicationState(false)
+  const [marked, setMarked] = useApplicationState<string[]>([])
+  const [adding, setAdding] = useApplicationState<PullSummary[] | null>(null)
   const [state, setState] = useApplicationState('open'),
     [search, setSearch] = useApplicationState(''),
     [draft, setDraft] = useApplicationState('all'),
@@ -117,6 +121,26 @@ function PullsContent({
           },
         ]}
       />
+      {adding && (
+        <AddPullsToThread
+          pulls={adding}
+          onClose={() => {
+            setAdding(null)
+            setMarked([])
+          }}
+        />
+      )}
+      {!!marked.length && (
+        <View style={[styles.row, { paddingHorizontal: 16 }]}>
+          <Action
+            label={`Add ${marked.length} PRs to thread`}
+            onPress={() =>
+              setAdding(pulls.filter((pull) => marked.includes(`${pull.sourceKey}-${pull.number}`)))
+            }
+          />
+          <Action label="Clear selection" secondary onPress={() => setMarked([])} />
+        </View>
+      )}
       {creating && (
         <CreationTarget title="Create pull request" onClose={() => setCreating(false)}>
           {(runtimeId) => (
@@ -169,7 +193,10 @@ function PullsContent({
               returnKeyType="search"
               placeholder="Title, repository, branch or author…"
               value={search}
-              onChangeText={setSearch}
+              onChangeText={(value) => {
+                setMarked([])
+                setSearch(value)
+              }}
             />
             <View
               style={[
@@ -197,7 +224,10 @@ function PullsContent({
                   accessibilityState={{
                     selected: attention,
                   }}
-                  onPress={() => setAttention((value) => !value)}
+                  onPress={() => {
+                    setMarked([])
+                    setAttention((value) => !value)
+                  }}
                   style={({ pressed }) => [
                     styles.row,
                     {
@@ -245,7 +275,10 @@ function PullsContent({
             >
               <PullTabs
                 value={state}
-                onChange={setState}
+                onChange={(value) => {
+                  setMarked([])
+                  setState(value)
+                }}
                 items={[
                   {
                     id: 'open',
@@ -273,8 +306,18 @@ function PullsContent({
         renderItem={({ item: p }) => (
           <Pressable
             accessibilityRole="button"
+            accessibilityState={{ selected: marked.includes(`${p.sourceKey}-${p.number}`) }}
             accessibilityLabel={`${p.runtimeName}${p.online ? '' : ', offline'}, ${p.repositoryName}, PR ${p.number}. ${p.title}. ${pullState(p).label}. ${pullChecks(p).label}. ${pullReview(p).label}. ${p.head} into ${p.base}. ${p.state === 'open' ? pullNextStep(p).label : ''}`}
-            onPress={() => openPull(p.runtimeId, p.repositoryId, p.number)}
+            onPress={() => {
+              const key = `${p.sourceKey}-${p.number}`
+              if (marked.length)
+                setMarked((current) =>
+                  current.includes(key)
+                    ? current.filter((item) => item !== key)
+                    : [...current, key],
+                )
+              else openPull(p.runtimeId, p.repositoryId, p.number)
+            }}
             onLongPress={() =>
               Alert.alert(p.title, `#${p.number} · ${p.repositoryName}`, [
                 {
@@ -282,10 +325,32 @@ function PullsContent({
                   onPress: () => openPull(p.runtimeId, p.repositoryId, p.number),
                 },
                 {
+                  text: 'Add to thread',
+                  onPress: () =>
+                    setAdding(
+                      marked.includes(`${p.sourceKey}-${p.number}`)
+                        ? pulls.filter((pull) =>
+                            marked.includes(`${pull.sourceKey}-${pull.number}`),
+                          )
+                        : [p],
+                    ),
+                },
+                {
+                  text: marked.includes(`${p.sourceKey}-${p.number}`) ? 'Deselect PR' : 'Select PR',
+                  onPress: () => {
+                    const key = `${p.sourceKey}-${p.number}`
+                    setMarked((current) =>
+                      current.includes(key)
+                        ? current.filter((item) => item !== key)
+                        : [...current, key],
+                    )
+                  },
+                },
+                {
                   text: `Open on ${forgeLabels[p.provider ?? 'github']}`,
                   onPress: () => {
                     void runClientEffect(
-                      nativeEffect(() => openAppLink(p.url)).pipe(
+                      nativeEffect(() => openAppLink(p.url, true)).pipe(
                         Effect.catchAll((error) =>
                           nativeEffect(() => Alert.alert('Could not open PR', String(error))),
                         ),
@@ -301,6 +366,9 @@ function PullsContent({
             }
             style={({ pressed }) => ({
               gap: 5,
+              backgroundColor: marked.includes(`${p.sourceKey}-${p.number}`)
+                ? colors.elevated
+                : undefined,
               paddingVertical: 12,
               borderBottomWidth: 0.5,
               borderBottomColor: colors.border,
@@ -436,7 +504,10 @@ function PullsContent({
           <Choice
             label="Repository"
             value={repositoryId}
-            onChange={setRepository}
+            onChange={(value) => {
+              setMarked([])
+              setRepository(value)
+            }}
             items={[
               {
                 id: '',
@@ -451,7 +522,10 @@ function PullsContent({
           <Choice
             label="Draft status"
             value={draft}
-            onChange={setDraft}
+            onChange={(value) => {
+              setMarked([])
+              setDraft(value)
+            }}
             items={[
               {
                 id: 'all',
@@ -470,7 +544,10 @@ function PullsContent({
           <Choice
             label="Attention"
             value={attention ? 'attention' : 'all'}
-            onChange={(value) => setAttention(value === 'attention')}
+            onChange={(value) => {
+              setMarked([])
+              setAttention(value === 'attention')
+            }}
             items={[
               {
                 id: 'all',
@@ -504,6 +581,7 @@ function PullsContent({
             secondary
             label="Reset PR filters"
             onPress={() => {
+              setMarked([])
               setRepository('')
               setDraft('all')
               setAttention(false)

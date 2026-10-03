@@ -1,3 +1,4 @@
+import { githubPullTarget } from '@dovo/protocol'
 import { ApplicationStateProvider, useApplicationState } from '@dovo/studio-core/state'
 import {
   lazy,
@@ -15,6 +16,7 @@ import {
   updateAppPreferences,
   useAppPreferences,
   StudioHostProvider,
+  SettingsTargetProvider,
   WorkspaceProvider,
   useWorkspace,
   type StudioCommand,
@@ -111,11 +113,13 @@ export function Workbench(props: WorkbenchProps) {
   return (
     <ApplicationStateProvider>
       <WorkspaceProvider>
-        <TooltipProvider delayDuration={350}>
-          <ErrorBoundary scope="app">
-            <WorkbenchContent {...props} />
-          </ErrorBoundary>
-        </TooltipProvider>
+        <SettingsTargetProvider>
+          <TooltipProvider delayDuration={350}>
+            <ErrorBoundary scope="app">
+              <WorkbenchContent {...props} />
+            </ErrorBoundary>
+          </TooltipProvider>
+        </SettingsTargetProvider>
       </WorkspaceProvider>
     </ApplicationStateProvider>
   )
@@ -183,7 +187,7 @@ function WorkbenchContent({
       updateAppPreferences({ lastThreadId: target.entityId })
   }, [target.viewId, target.entityId])
   const openNotification = useCallback(
-    (destination: NotificationTarget) => {
+    (destination: NotificationTarget | (StudioNavigation & { runtimeId: string })) => {
       setSwitchError('')
       void (async () => {
         if (destination.runtimeId !== runtimeRegistry.activeId)
@@ -195,6 +199,26 @@ function WorkbenchContent({
     },
     [runtimeRegistry.activeId, switchRuntime, navigate, setSwitchError],
   )
+  const pullSources = useRef({ runtimes, activeId: runtimeRegistry.activeId, openNotification })
+  pullSources.current = { runtimes, activeId: runtimeRegistry.activeId, openNotification }
+  const openPullLink = useCallback((url: string) => {
+    const pull = githubPullTarget(url)
+    if (!pull) return false
+    const current = pullSources.current
+    const source = [...current.runtimes]
+      .sort(
+        (a, b) =>
+          Number(b.profile.id === current.activeId) - Number(a.profile.id === current.activeId),
+      )
+      .find((entry) =>
+        entry.snapshot?.workspace.repositories.some(
+          (repo) => !repo.kind && repo.gitIdentity === pull.identity,
+        ),
+      )
+    if (!source) return false
+    current.openNotification({ runtimeId: source.profile.id, viewId: 'pulls', entityId: pull.url })
+    return true
+  }, [])
   useTaskNotifications(openNotification, inputPreview)
   const [palette, setPalette] = useApplicationState(false)
   const commands = useRef(new Map<string, StudioCommand>())
@@ -215,11 +239,21 @@ function WorkbenchContent({
       pickDirectory,
       browser,
       chooseLink,
+      openPullLink,
       appInfo,
       updates,
       taskLauncher,
     }),
-    [registerCommand, pickDirectory, browser, chooseLink, appInfo, updates, taskLauncher],
+    [
+      registerCommand,
+      pickDirectory,
+      browser,
+      chooseLink,
+      openPullLink,
+      appInfo,
+      updates,
+      taskLauncher,
+    ],
   )
   const catalog = useMemo(
     () => createExtensionCatalog([appSettingsExtension, ...extensions], api),
@@ -387,7 +421,25 @@ function WorkbenchContent({
               })
             }
           />
-          <main className="studio-main" tabIndex={-1}>
+          <main
+            className="studio-main"
+            tabIndex={-1}
+            onClick={(event) => {
+              if (
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return
+              const anchor =
+                event.target instanceof Element ? event.target.closest('a[href]') : null
+              if (!(anchor instanceof HTMLAnchorElement) || anchor.dataset.dovoExternal) return
+              if (openPullLink(anchor.href)) event.preventDefault()
+            }}
+          >
             {/* Settings get a grouped sidebar with search; other views use the full area. */}
             <div className="flex min-h-0 min-w-0 flex-1">
               {inSettings && (

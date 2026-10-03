@@ -1,3 +1,4 @@
+import { ScopedSettings } from '../runtime/preferences/settings-target'
 import {
   resolveScopedSettings,
   sharedProjectKey,
@@ -5,6 +6,7 @@ import {
   scopeEditorValue,
   scopeEditorDefaults,
   scopedSettingsResultSchema,
+  type SettingsScope,
 } from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -21,8 +23,8 @@ import {
   type ManagedSkill,
   type ResourceSettings,
 } from '@dovo/protocol'
-import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
-import { clientScopeKey, runClientEffect } from '@dovo/client-runtime'
+import { useRuntime } from '../runtime/connection/provider'
+import { runClientEffect } from '@dovo/client-runtime'
 import { Sheet } from '../ui/layout/sheet'
 import { SettingsGroup, SettingsRow } from './settings-group'
 import { Action } from '../ui/controls/action'
@@ -31,28 +33,37 @@ import { useAction } from '../ui/controls/use-action'
 import { ResourceEditor } from '../resources/editor'
 import { CatalogPicker } from '../resources/catalog-picker'
 export default function ResourcesScreen() {
-  const { overviews } = useRuntime()
   return (
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <View style={styles.screen}>
       <ScreenHeader title="MCP servers & skills" />
-      <Text style={styles.muted}>Project and agent resources across your computers.</Text>
-      {!overviews.length && (
-        <Text style={styles.muted}>Connect a computer to manage resources.</Text>
-      )}
-      {overviews.map((entry) => (
-        <RuntimeScope key={clientScopeKey(entry.profile.connection)} runtimeId={entry.profile.id}>
-          <ComputerResources name={entry.profile.name} />
-        </RuntimeScope>
-      ))}
-    </ScrollView>
+      <ScopedSettings>
+        {({ scope, repository }) => (
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <ComputerResources selectedScope={scope} repositoryId={repository?.id} />
+          </ScrollView>
+        )}
+      </ScopedSettings>
+    </View>
   )
 }
-function ComputerResources({ name }: { name: string }) {
+function ComputerResources({
+  selectedScope,
+  repositoryId,
+}: {
+  selectedScope: SettingsScope
+  repositoryId?: string
+}) {
   const { snapshot, connected } = useRuntime()
   const [selected, setSelected] = useApplicationState('')
   const scopes = resourceScopeChoices(
     snapshot?.defaults,
     snapshot?.workspace ?? { repositories: [], agents: [] },
+  )
+  const visibleScopes = scopes.filter(
+    (entry) =>
+      (entry.scope === selectedScope && entry.repository?.id === repositoryId) ||
+      (!entry.scope &&
+        (selectedScope === 'environment' || selectedScope === 'environment-project')),
   )
   const current = scopes.find((scope) => scope.id === selected)
   return (
@@ -61,8 +72,8 @@ function ComputerResources({ name }: { name: string }) {
         gap: 12,
       }}
     >
-      <SettingsGroup title={`${name}${connected ? '' : ' · Offline'}`}>
-        {scopes.map((scope, index) => {
+      <SettingsGroup title={connected ? 'Tools at this scope' : 'Saved tools · Offline'}>
+        {visibleScopes.map((scope, index) => {
           const resources = decode(resourceSettingsSchema, scope.item.resources ?? {})
           const names = [...resources.mcpServers, ...resources.skills].map((entry) => entry.name)
           return (
@@ -71,7 +82,7 @@ function ComputerResources({ name }: { name: string }) {
               title={scope.item.name}
               subtitle={`${scope.label} · ${resources.mcpServers.length} MCP · ${resources.skills.length} skills${names.length ? ` · ${names.join(', ')}` : ''}`}
               icon={scope.repository ? 'folder' : 'chat'}
-              last={index === scopes.length - 1}
+              last={index === visibleScopes.length - 1}
               onPress={() => setSelected(scope.id)}
             />
           )
@@ -81,11 +92,7 @@ function ComputerResources({ name }: { name: string }) {
         <Text style={styles.muted}>Add a project or custom agent to manage its resources.</Text>
       )}
       {current && (
-        <Sheet
-          title={`${current.item.name} · ${name}`}
-          scrollable={false}
-          onClose={() => setSelected('')}
-        >
+        <Sheet title={current.item.name} scrollable={false} onClose={() => setSelected('')}>
           <ResourceScopeScreen scopeId={selected} />
         </Sheet>
       )}

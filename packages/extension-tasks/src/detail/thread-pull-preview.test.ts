@@ -45,7 +45,7 @@ it('recognizes GitLab merge requests and matches another configured project', ()
     ]),
   ).toEqual({ repositoryId: 'gitlab', number: 9 })
 })
-it('uses verified linked PRs when a legacy project has no remote identity', () => {
+it('does not assume linked PRs belong to a legacy project with no remote identity', () => {
   const url = 'https://forge.example/team/project/pulls/7'
   const linkedTask = {
     ...task,
@@ -59,8 +59,5 @@ it('uses verified linked PRs when a legacy project has no remote identity', () =
       },
     ],
   }
-  expect(threadPullPreview(url, linkedTask, [{ ...project, gitIdentity: undefined }])).toEqual({
-    repositoryId: 'repo',
-    number: 7,
-  })
+  expect(threadPullPreview(url, linkedTask, [{ ...project, gitIdentity: undefined }])).toBeNull()
 })

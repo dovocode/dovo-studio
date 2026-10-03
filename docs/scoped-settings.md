@@ -8,11 +8,19 @@ inherit in this order:
 3. **Project** — shared for checkouts with the same canonical Git remote identity.
 4. **Environment + project** — overrides for one checkout on one environment.
 
-Open task defaults on a computer or project and choose the settings scope. The MCP & skills page
-lists these same scopes alongside custom agents. Saved prompts can be edited in task defaults on
-desktop and mobile. Unset task fields inherit; an empty setup command disables inherited setup. The
-agent configuration is selected as a complete group so models and account settings cannot
-accidentally cross providers.
+The **Task defaults** and **MCP & skills** settings pages share a project/environment target header
+on desktop and mobile. Choose **All projects** or a project, then **Shared across environments** or
+one computer. These two choices select one of the four levels above; shared settings are synced
+defaults, not a bulk edit of each computer’s overrides. The target stays selected when switching
+between these pages. A project missing from the selected computer cannot be edited until another
+target is chosen. Local folders are offered only with a specific environment.
+
+Task defaults show **Inheritance & overrides**, with the effective source for each setting and an
+individual reset control. Resets are saved using **Save defaults**. Unset task fields inherit; an
+empty setup command disables inherited setup. The agent configuration is selected and reset as a
+complete group so models and account settings cannot accidentally cross providers. Saved prompts can
+be edited here on both platforms. Computer and project detail panels retain their local scope
+picker. App-only preferences and host installation settings remain outside the shared target.
 
 Existing environment defaults stay environment-specific. Existing project defaults, tools and
 prompts stay at Environment + project. Existing conversations keep their copied launch defaults.

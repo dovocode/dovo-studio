@@ -288,6 +288,10 @@ export const taskModelSchema = mutableStruct({
   serviceTier: Schema.optional(Schema.NullOr(agentSchema.fields.serviceTier.from)),
   cyberAccessProgram: Schema.optional(Schema.NullOr(agentSchema.fields.cyberAccessProgram.from)),
 })
+export const linkedPullRequestSchema = mutableStruct({
+  ...taskPullSchema.pick('number', 'url', 'provider', 'repositoryUrl').fields,
+  title: maxValue(Schema.String, 2000),
+})
 export const taskSchema = mutableStruct({
   budget: Schema.optional(
     mutableStruct({
@@ -445,19 +449,7 @@ export const taskSchema = mutableStruct({
   origin: Schema.optional(Schema.String),
   pullRequest: Schema.optional(taskPullSchema),
   // Informational links never select or change the checkout used for execution.
-  linkedPullRequests: Schema.optional(
-    maxValue(
-      mutableArray(
-        mutableStruct({
-          ...taskPullSchema.pick('number', 'url', 'provider', 'repositoryUrl').fields,
-          ...{
-            title: Schema.String,
-          },
-        }),
-      ),
-      20,
-    ),
-  ),
+  linkedPullRequests: Schema.optional(maxValue(mutableArray(linkedPullRequestSchema), 20)),
   ignoredPullRequestUrls: Schema.optional(
     maxValue(mutableArray(maxValue(Schema.String, 2000)), 100),
   ),

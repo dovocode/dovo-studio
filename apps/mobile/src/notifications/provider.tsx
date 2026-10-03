@@ -38,6 +38,11 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       (Platform.OS === 'ios' || Platform.OS === 'android') &&
       !!requireOptionalNativeModule('ExpoPushTokenManager'),
   )
+  const refreshRegistration = useRef<() => void>(() => {})
+  const hosts = JSON.stringify(
+    runtime.overviews.map((entry) => [entry.profile.id, entry.profile.connection, entry.connected]),
+  )
+  useEffect(() => refreshRegistration.current(), [hosts, runtime.ready])
   const toggle = useRef<(value: boolean) => Promise<void>>(async () => {})
   useEffect(() => {
     if (!supported) return
@@ -233,10 +238,17 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
           if (!disposed) setError('Could not register push notifications. Check your connection.')
         })
       }
-      const interval = setInterval(refresh, 15_000)
+      refreshRegistration.current = refresh
+      let interval: ReturnType<typeof setInterval> | undefined
+      const schedule = () => {
+        clearInterval(interval)
+        interval = AppState.currentState === 'active' ? setInterval(refresh, 5 * 60_000) : undefined
+      }
+      schedule()
       subscriptions.push({ remove: () => clearInterval(interval) })
       subscriptions.push(
         AppState.addEventListener('change', (state) => {
+          schedule()
           if (state === 'active') {
             registered.clear()
             refresh()
@@ -253,6 +265,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       disposed = true
       subscriptions.forEach((subscription) => subscription.remove())
       toggle.current = async () => {}
+      refreshRegistration.current = () => {}
     }
   }, [supported])
   return (

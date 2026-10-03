@@ -44,7 +44,7 @@ export function ChatThread({
 }) {
   const history = useConversationHistory(liveTask)
   const task = history.task
-  const { chooseLink } = useStudioHost()
+  const { chooseLink, openPullLink } = useStudioHost()
   const [linkError, setLinkError] = useState('')
   const { request, connected } = useWorkspace()
   const [bookmarkJump, setBookmarkJump] = useState('')
@@ -260,14 +260,22 @@ export function ChatThread({
       <Conversation
         key={task.id}
         onClickCapture={(event) => {
+          if (
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+          )
+            return
           const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
           if (
             !(anchor instanceof HTMLAnchorElement) ||
             !/^https?:\/\//i.test(anchor.href) ||
-            (!onPullLink && (!chooseLink || !onBrowser))
+            (!onPullLink && !openPullLink && (!chooseLink || !onBrowser))
           )
             return
-          if (onPullLink?.(anchor.href)) {
+          if (onPullLink?.(anchor.href) || openPullLink?.(anchor.href)) {
             event.preventDefault()
             event.stopPropagation()
             return

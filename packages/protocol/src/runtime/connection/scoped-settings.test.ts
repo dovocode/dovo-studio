@@ -142,3 +142,99 @@ it('uses the same empty first-run environment value for editor saves and runtime
     'legacy',
   )
 })
+
+it('selects one settings layer and shares project identity across computers without retargeting missing projects', async () => {
+  const { resolveSettingsTarget, settingsProjectChoices, settingsProjectId } =
+    await import('./scoped-settings')
+  const mac = {
+    profile: { id: 'mac' },
+    connected: false,
+    snapshot: { workspace: { repositories: [project] } },
+  }
+  const linuxProject = { ...project, id: 'linux-checkout', path: '/linux/repo' }
+  const linux = {
+    profile: { id: 'linux' },
+    connected: true,
+    snapshot: { workspace: { repositories: [linuxProject] } },
+  }
+  const empty = {
+    profile: { id: 'empty' },
+    connected: true,
+    snapshot: { workspace: { repositories: [] } },
+  }
+  const sources = [mac, linux, empty]
+  const projectId = settingsProjectId(project, 'mac')
+  expect(settingsProjectChoices(sources, '')).toEqual([{ id: projectId, name: project.name }])
+  expect(
+    resolveSettingsTarget(sources, { environmentId: '', projectId: '' }, 'empty'),
+  ).toMatchObject({ scope: 'global', source: empty })
+  expect(
+    resolveSettingsTarget(sources, { environmentId: 'mac', projectId: '' }, 'linux'),
+  ).toMatchObject({ scope: 'environment', source: mac })
+  expect(resolveSettingsTarget(sources, { environmentId: '', projectId }, 'empty')).toMatchObject({
+    scope: 'project',
+    source: linux,
+    repository: linuxProject,
+  })
+  expect(
+    resolveSettingsTarget(sources, { environmentId: 'mac', projectId }, 'linux'),
+  ).toMatchObject({ scope: 'environment-project', source: mac, repository: project })
+  expect(
+    resolveSettingsTarget(sources, { environmentId: 'empty', projectId }, 'linux').source,
+  ).toBeUndefined()
+  expect(
+    resolveSettingsTarget(sources, { environmentId: 'removed', projectId: '' }, 'linux').source,
+  ).toBeUndefined()
+  const local = { ...project, id: 'folder', gitIdentity: undefined }
+  const localSource = { ...linux, snapshot: { workspace: { repositories: [local] } } }
+  expect(settingsProjectChoices([localSource], '')).toEqual([])
+  expect(settingsProjectChoices([localSource], 'linux')).toHaveLength(1)
+  expect(
+    resolveSettingsTarget([localSource], {
+      environmentId: '',
+      projectId: settingsProjectId(local, 'linux'),
+    }).source,
+  ).toBeUndefined()
+})
+
+it('shows the effective source of each default, including false/empty overrides and inherited harness groups', async () => {
+  const { taskDefaultOrigins } = await import('./scoped-settings')
+  const runtime = decode(runtimeDefaultsSchema, {
+    scopedSettings: {
+      environment: { taskDefaults: { permission: 'ask', setupCommand: 'host' } },
+      shared: [
+        {
+          ...entry('global', 1, 'global'),
+          value: {
+            taskDefaults: { harness: defaultTaskHarness('claude'), worktreeFromOrigin: true },
+          },
+        },
+        entry(sharedProjectKey(project)!, 2, 'project'),
+      ],
+    },
+  })
+  const origins = taskDefaultOrigins(runtime, project, 'environment-project', {
+    worktreeFromOrigin: false,
+    setupCommand: '',
+  })
+  expect(origins.find((field) => field.key === 'harness')).toMatchObject({
+    source: 'global',
+    overridden: false,
+  })
+  expect(origins.find((field) => field.key === 'permission')).toMatchObject({
+    source: 'environment',
+  })
+  expect(origins.find((field) => field.key === 'worktreeFromOrigin')).toMatchObject({
+    source: 'environment-project',
+    overridden: true,
+  })
+  expect(origins.find((field) => field.key === 'setupCommand')).toMatchObject({
+    source: 'environment-project',
+    overridden: true,
+  })
+  expect(
+    taskDefaultOrigins(runtime, project, 'environment-project', {}).find(
+      (field) => field.key === 'setupCommand',
+    ),
+  ).toMatchObject({ source: 'project', overridden: false })
+})

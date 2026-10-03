@@ -1,4 +1,10 @@
-import { pullHeadBranch } from '@dovo/protocol'
+import {
+  linkedPullRequestSchema,
+  addTaskPullLinks,
+  pullReference,
+  verifyPullUrl,
+  pullHeadBranch,
+} from '@dovo/protocol'
 import { gitActionState } from '../../scm/git/action-state.js'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
 import {
@@ -48,6 +54,40 @@ export function scmRoute(request: IncomingMessage, path: string) {
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/scm/pulls/link-thread') {
+        const input = decode(
+          mutableStruct({
+            id: idSchema,
+            pulls: minValue(maxValue(mutableArray(linkedPullRequestSchema), 20), 1),
+          }),
+          yield* serviceResult(body(request)),
+        )
+        try {
+          for (const pull of input.pulls) {
+            const reference = pullReference(pull.url)
+            if (reference.number !== pull.number)
+              throw new Error('PR number does not match its URL')
+            verifyPullUrl(reference.url, pull.url)
+          }
+        } catch (error) {
+          throw new HttpError(400, error instanceof Error ? error.message : String(error))
+        }
+        const task = s.store.task(input.id)
+        if (task.archivedAt)
+          throw new HttpError(409, 'Reopen this archived thread before linking PRs.')
+        try {
+          addTaskPullLinks(task, input.pulls)
+        } catch (error) {
+          throw new HttpError(400, error instanceof Error ? error.message : String(error))
+        }
+        s.store.update((workspace) => ({
+          ...workspace,
+          tasks: workspace.tasks.map((current) =>
+            current.id === input.id ? addTaskPullLinks(current, input.pulls) : current,
+          ),
+        }))
+        return { ok: true }
+      }
       if (method === 'POST' && path === '/api/scm/repositories/icon') {
         const input = decode(
           mutableStruct({

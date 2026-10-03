@@ -142,6 +142,7 @@ export function loadRuntimeOverviewEffect(
   onSnapshot?: (overview: RuntimeOverview) => void,
   compact = false,
   useLiveSnapshot = false,
+  options: { loadPulls?: boolean } = {},
 ): Effect.Effect<RuntimeOverview> {
   return Effect.gen(function* () {
     const cached =
@@ -185,6 +186,16 @@ export function loadRuntimeOverviewEffect(
       pulls: cached?.pulls ?? null,
       pullError: cached?.pullError ?? null,
     })
+    if (options.loadPulls === false)
+      return {
+        profile,
+        snapshot,
+        connected: true,
+        lastSeen,
+        error: null,
+        pulls: cached?.pulls ? { ...cached.pulls, partial: true } : null,
+        pullError: cached?.pullError ?? null,
+      }
     const repositories = snapshot.workspace.repositories
     // Concurrency belongs to the parent fiber; interruption cancels every child request.
     const pages = yield* Effect.forEach(

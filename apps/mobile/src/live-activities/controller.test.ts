@@ -401,3 +401,30 @@ it('orders token rotation and removal behind in-flight registration without bloc
   await vi.waitFor(() => expect(calls).toEqual(['old', 'new', 'remove']))
   await controller.dispose()
 })
+
+it('coalesces unchanged native activity updates while immediately showing changed state', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+  const controller = await runClientEffect(createActivityController(vi.fn()))
+  try {
+    const overview = source()
+    await runClientEffect(controller.sync([overview], read, true))
+    expect(native.instance.update).toHaveBeenCalledTimes(1)
+    clock.mockReturnValue(1_060_000)
+    await runClientEffect(controller.sync([overview], read, true))
+    expect(native.instance.update).toHaveBeenCalledTimes(1)
+    clock.mockReturnValue(1_180_000)
+    await runClientEffect(controller.sync([overview], read, true))
+    expect(native.instance.update).toHaveBeenCalledTimes(2)
+    overview.snapshot!.workspace.tasks[0].title = 'New title'
+    clock.mockReturnValue(1_181_000)
+    await runClientEffect(controller.sync([overview], read, true))
+    expect(native.instance.update).toHaveBeenCalledTimes(3)
+    expect(native.instance.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: 'New title' }),
+      new Date(1_481_000),
+    )
+  } finally {
+    await controller.dispose()
+    clock.mockRestore()
+  }
+})

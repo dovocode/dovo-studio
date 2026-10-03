@@ -11,12 +11,18 @@ export function PullRow({
   selected,
   onSelect,
   compact = false,
+  onClick,
+  onAddToThread,
+  selectionCount = 1,
 }: {
   pull: PullSummary
   compact?: boolean
   repository: string
   selected: boolean
   onSelect: () => void
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
+  onAddToThread?: () => void
+  selectionCount?: number
 }) {
   const [error, setError] = useApplicationState('')
   const copy = async (text: string) => {
@@ -49,7 +55,7 @@ export function PullRow({
               }
             }}
             aria-current={selected ? 'true' : undefined}
-            onClick={onSelect}
+            onClick={onClick ?? onSelect}
             className={`group block w-full rounded-md border px-3 py-3 text-left transition-colors hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-primary ${selected ? 'border-primary/50 bg-accent' : 'border-transparent bg-transparent'}`}
           >
             <div className={`flex gap-3 ${compact ? '' : 'items-center'}`}>
@@ -176,8 +182,13 @@ export function PullRow({
             <ContextMenu.Item className={menuItem} onSelect={onSelect}>
               Open PR details
             </ContextMenu.Item>
+            {onAddToThread && (
+              <ContextMenu.Item className={menuItem} onSelect={onAddToThread}>
+                Add to thread{selectionCount > 1 ? ` (${selectionCount} PRs)` : ''}
+              </ContextMenu.Item>
+            )}
             <ContextMenu.Item className={menuItem} asChild>
-              <a href={pull.url} target="_blank" rel="noreferrer">
+              <a data-dovo-external="true" href={pull.url} target="_blank" rel="noreferrer">
                 Open in browser
               </a>
             </ContextMenu.Item>

@@ -44,6 +44,8 @@ export interface StudioHostApi {
   taskLauncher?: import('@dovo/protocol').TaskLauncherBridge
   browser?: import('@dovo/protocol').BrowserBridge
   /** Ask where a link should open; true requests the thread sidebar browser. */
+  /** Opens a known GitHub PR in native details; false leaves normal link handling. */
+  openPullLink?: (url: string) => boolean
   chooseLink?: (url: string) => Promise<boolean>
   pickDirectory?: (runtimeAddress: string) => Promise<string | null>
   navigate: (target: StudioNavigation) => void

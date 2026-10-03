@@ -159,7 +159,7 @@ it('bounds push content and uses Unix seconds for stale and dismissal dates', ()
   const payload = activityPayload(props, false, 100_000)
   expect(payload.aps).toMatchObject({
     timestamp: 100,
-    'stale-date': 220,
+    'stale-date': 400,
   })
   expect(payload.aps['content-state']).toEqual({
     name: 'DovoTask',
@@ -227,4 +227,27 @@ it('bounds activity details and prefers the current preparation step over stale 
   expect(liveTaskProps({ ...f.task, status: 'review' }, 'Mac', '', false).activity).toBe(
     'Ready for review',
   )
+})
+
+it('refreshes unchanged background activities only after three minutes, with immediate input updates', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+  try {
+    const f = setup()
+    f.service.register(f.device, f.registration)
+    await f.service.flush()
+    expect(f.send).toHaveBeenCalledTimes(1)
+    clock.mockReturnValue(1_060_000)
+    await f.service.flush()
+    expect(f.send).toHaveBeenCalledTimes(1)
+    clock.mockReturnValue(1_180_000)
+    await f.service.flush()
+    expect(f.send).toHaveBeenCalledTimes(2)
+    clock.mockReturnValue(1_181_000)
+    f.input()
+    await f.service.flush()
+    expect(f.send).toHaveBeenCalledTimes(3)
+    expect(f.send.mock.calls[2]?.[1]).toMatchObject({ aps: { 'stale-date': 1481 } })
+  } finally {
+    clock.mockRestore()
+  }
 })

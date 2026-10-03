@@ -1,5 +1,7 @@
+import { Layers, Undo2 } from 'lucide-react'
 import {
   scopedSettingsResultSchema,
+  taskDefaultOrigins,
   settingsScopes,
   settingsScopeLabels,
   type SettingsScope,
@@ -36,9 +38,13 @@ import { ChoicePicker } from './choice-picker'
 import { ModelSettings } from './model-settings'
 
 /** `inline` shows the form directly, for a dedicated settings page. */
-export function TaskDefaultSettings(props: { repository?: Repository; inline?: boolean }) {
+export function TaskDefaultSettings(props: {
+  repository?: Repository
+  inline?: boolean
+  scope?: SettingsScope
+}) {
   const [open, setOpen] = useApplicationState(false)
-  if (props.inline) return <TaskDefaultSettingsForm repository={props.repository} />
+  if (props.inline) return <TaskDefaultSettingsForm {...props} />
   return (
     <div className="space-y-3">
       <Button variant="outline" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -48,12 +54,19 @@ export function TaskDefaultSettings(props: { repository?: Repository; inline?: b
     </div>
   )
 }
-function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
-  const { connected, request } = useWorkspace()
+function TaskDefaultSettingsForm({
+  repository,
+  scope: selectedScope,
+}: {
+  repository?: Repository
+  scope?: SettingsScope
+}) {
+  const { connected, request, snapshot } = useWorkspace()
   const [setup, setSetup] = useApplicationState<{ defaults: RuntimeDefaults } | null>(null)
-  const [scope, setScope] = useApplicationState<SettingsScope>(
+  const [localScope, setScope] = useApplicationState<SettingsScope>(
     repository ? 'environment-project' : 'environment',
   )
+  const scope = selectedScope ?? localScope
   const [projectKey, setProjectKey] = useApplicationState<string | undefined>(undefined)
   const [inheritedPrompts, setInheritedPrompts] = useApplicationState<SavedPrompt[]>([])
   const [scopeValue, setScopeValue] = useApplicationState<ScopedSettingsValue>({})
@@ -109,35 +122,72 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
           levels. Existing tasks keep their settings.
         </p>
       </div>
-      <FormField label="Settings scope">
-        <ChoicePicker
-          value={scope}
-          disabled={busy}
-          onValueChange={(value) => {
-            setSaved(false)
-            setError('')
-            setScope(settingsScopes.find((scope) => scope === value) ?? 'environment')
-          }}
-        >
-          {settingsScopes
-            .filter(
-              (value) => repository || (value !== 'project' && value !== 'environment-project'),
-            )
-            .filter((value) => value !== 'project' || !!repository?.gitIdentity)
-            .map((value) => (
-              <option key={value} value={value}>
-                {settingsScopeLabels[value]}
-              </option>
-            ))}
-        </ChoicePicker>
-      </FormField>
+      {!selectedScope && (
+        <>
+          <FormField layout="settings" label="Settings scope">
+            <ChoicePicker
+              value={scope}
+              disabled={busy}
+              onValueChange={(value) => {
+                setSaved(false)
+                setError('')
+                setScope(settingsScopes.find((scope) => scope === value) ?? 'environment')
+              }}
+            >
+              {settingsScopes
+                .filter(
+                  (value) => repository || (value !== 'project' && value !== 'environment-project'),
+                )
+                .filter((value) => value !== 'project' || !!repository?.gitIdentity)
+                .map((value) => (
+                  <option key={value} value={value}>
+                    {settingsScopeLabels[value]}
+                  </option>
+                ))}
+            </ChoicePicker>
+          </FormField>
+        </>
+      )}
       <fieldset
         disabled={
           !connected || busy || !setup || loadedScope !== `${scope}:${repository?.id ?? ''}`
         }
         className="grid gap-3"
       >
-        <FormField label="Agent configuration">
+        <details className="rounded-md border px-3 py-2 text-xs">
+          <summary className="flex cursor-pointer items-center gap-2 font-medium">
+            <Layers className="size-3.5" />
+            Inheritance & overrides
+          </summary>
+          <p className="mt-2 text-muted-foreground">
+            Global → Environment → Project → Environment + project. Reset an override to use the
+            preceding level; save to apply.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {taskDefaultOrigins(snapshot?.defaults, repository, scope, draft).map((field) => (
+              <li key={field.key} className="flex items-center justify-between gap-3">
+                <span>{field.label}</span>
+                <span className="ml-auto text-muted-foreground">
+                  {field.source === 'built-in'
+                    ? 'Built-in default'
+                    : settingsScopeLabels[field.source]}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="size-7 p-0"
+                  disabled={!field.overridden}
+                  aria-label={`Use inherited ${field.label.toLowerCase()}`}
+                  title="Use inherited setting"
+                  onClick={() => change({ ...draft, [field.key]: undefined })}
+                >
+                  <Undo2 className="size-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </details>
+        <FormField layout="settings" label="Agent configuration">
           <ChoicePicker
             value={harness ? 'custom' : 'inherit'}
             onValueChange={(value) =>
@@ -154,7 +204,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
             <option value="custom">Override at this scope</option>
           </ChoicePicker>
         </FormField>
-        <FormField label="Default permissions">
+        <FormField layout="settings" label="Default permissions">
           <ChoicePicker
             value={draft.permission ?? 'inherit'}
             onValueChange={(value) =>
@@ -180,7 +230,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
         </FormField>
         {harness && (
           <>
-            <FormField label="Harness">
+            <FormField layout="settings" label="Harness">
               <ChoicePicker
                 value={harness.provider}
                 onValueChange={(value) =>
@@ -202,7 +252,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
                 change({ ...draft, harness: decode(taskHarnessSchema.omit('resources'), agent) })
               }
             />
-            <FormField label="Instructions">
+            <FormField layout="settings" label="Instructions">
               <Textarea
                 value={harness.instructions}
                 onChange={(event) =>
@@ -211,6 +261,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
               />
             </FormField>
             <FormField
+              layout="settings"
               label={harness.provider === 'opencode' ? 'Server URL' : 'Executable (optional)'}
             >
               <Input
@@ -230,7 +281,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
         )}
         {!repository?.kind && (
           <>
-            <FormField label="Working directory">
+            <FormField layout="settings" label="Working directory">
               <ChoicePicker
                 value={draft.execution ?? 'inherit'}
                 onValueChange={(value) =>
@@ -253,7 +304,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
               inherited={setup?.defaults.worktreeFromOrigin ?? false}
               onChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
             />
-            <FormField label="Worktree setup">
+            <FormField layout="settings" label="Worktree setup">
               <ChoicePicker
                 value={draft.setupCommand === undefined ? 'inherit' : 'custom'}
                 onValueChange={(value) =>
@@ -265,7 +316,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
               </ChoicePicker>
             </FormField>
             {draft.setupCommand !== undefined && (
-              <FormField label="Setup command">
+              <FormField layout="settings" label="Setup command">
                 <Textarea
                   value={draft.setupCommand ?? ''}
                   placeholder="pnpm install --frozen-lockfile"

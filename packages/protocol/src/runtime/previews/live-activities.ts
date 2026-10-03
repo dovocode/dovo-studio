@@ -86,3 +86,7 @@ export function liveTaskProps(
     startedAt: Date.parse(turn?.startedAt ?? task.createdAt) || 0,
   }
 }
+
+/** Refresh unchanged activities sparingly; keep enough stale-date headroom for delivery jitter. */
+export const liveActivityRefreshMs = 3 * 60_000
+export const liveActivityStaleMs = 5 * 60_000

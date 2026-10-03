@@ -38,6 +38,13 @@ export default function SettingsScreen() {
             onPress={() => router.push('/settings/agents')}
           />
           <SettingsRow
+            title="Task defaults"
+            subtitle="Shared, environment and project overrides"
+            icon="settings"
+            disabled={!profiles.length}
+            onPress={() => router.push('/settings/task-defaults')}
+          />
+          <SettingsRow
             title="MCP & skills"
             subtitle="Project and custom-agent tools"
             icon="jobs"

@@ -140,8 +140,15 @@ export function useConversationHistory<
           setCacheError({ scope, error: `Could not save conversation: ${String(cause)}` })
       }
     }
-    const timer = setInterval(() => void persist(), 10000)
+    let timer: ReturnType<typeof setInterval> | undefined
+    const schedule = () => {
+      clearInterval(timer)
+      timer =
+        AppState.currentState === 'active' ? setInterval(() => void persist(), 30_000) : undefined
+    }
+    schedule()
     const subscription = AppState.addEventListener('change', (state) => {
+      schedule()
       if (state !== 'active') void persist()
     })
     return () => {

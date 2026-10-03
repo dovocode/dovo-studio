@@ -1,3 +1,4 @@
+import { useForegroundInterval } from '../../runtime/state/app-active'
 import { formatTurnDuration } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
 import { CheckpointFiles } from './components/checkpoint-files'
@@ -197,10 +198,7 @@ function WorkGroup(props: Parameters<typeof ConversationWorkGroup>[0]) {
 }
 function WorkingIndicator({ turn }: { turn: TaskTurn }) {
   const [now, setNow] = useApplicationState(Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [])
+  useForegroundInterval(() => setNow(Date.now()), 1000)
   const seconds = Math.max(0, Math.floor((now - Date.parse(turn.startedAt)) / 1000))
   const duration = formatTurnDuration(seconds * 1000, true)
   return (

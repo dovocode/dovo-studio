@@ -1,8 +1,10 @@
+import { useAppActive } from '../runtime/state/app-active'
 import { useEffect, useLayoutEffect, useEffectEvent, useRef, useState } from 'react'
 import { refreshUsageEntry, type UsageHistoryResult } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 /** Synchronize only when hosts change or the usage page's five-minute timer fires. */
 export function useUsageData(selected: string) {
+  const active = useAppActive()
   const { overviews: runtimes, readRuntime, refreshRuntime, cacheForRuntime } = useRuntime()
   const [saved, setSaved] = useState<
     Record<string, { connection: string; history: UsageHistoryResult }>
@@ -76,10 +78,11 @@ export function useUsageData(selected: string) {
     }
   }, [])
   useEffect(() => {
+    if (!active) return
     automaticRefresh()
     const timer = setInterval(automaticRefresh, 300000)
     return () => clearInterval(timer)
-  }, [scope])
+  }, [scope, active])
   const histories: Record<string, UsageHistoryResult> = {}
   for (const host of hosts) {
     const value = saved[host.profile.id]

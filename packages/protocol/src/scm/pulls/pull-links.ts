@@ -1,3 +1,5 @@
+import { gitRemoteIdentity } from '../../runtime/connection/project-machines.js'
+import type { Task } from '../../workspace.js'
 export function pullReference(input: string): { number: number; url?: string } {
   const text = input.trim()
   if (/^#?\d+$/.test(text)) {
@@ -48,4 +50,46 @@ export function pullReferencesInText(text: string) {
     }
   }
   return [...links.values()]
+}
+
+/** GitHub PR tabs and fragments still point to the same native PR detail. */
+export function githubPullTarget(input: string) {
+  try {
+    const url = new URL(input)
+    const match = url.pathname.match(
+      /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/(?:files|commits|checks))?\/?$/,
+    )
+    if (
+      !['http:', 'https:'].includes(url.protocol) ||
+      url.hostname.toLowerCase() !== 'github.com' ||
+      url.port ||
+      url.username ||
+      url.password ||
+      !match
+    )
+      return null
+    const number = Number(match[3])
+    if (!Number.isSafeInteger(number)) return null
+    const repositoryUrl = `https://github.com/${match[1]}/${match[2]}`
+    return {
+      number,
+      identity: gitRemoteIdentity(repositoryUrl),
+      url: `${repositoryUrl}/pull/${number}`,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function addTaskPullLinks(task: Task, pulls: NonNullable<Task['linkedPullRequests']>): Task {
+  const links = new Map((task.linkedPullRequests ?? []).map((pull) => [pull.url, pull]))
+  for (const pull of pulls) if (task.pullRequest?.url !== pull.url) links.set(pull.url, pull)
+  if (links.size > 20) throw new Error('A thread can link at most 20 pull requests.')
+  return {
+    ...task,
+    linkedPullRequests: [...links.values()],
+    ignoredPullRequestUrls: (task.ignoredPullRequestUrls ?? []).filter(
+      (url) => !pulls.some((pull) => pull.url === url),
+    ),
+  }
 }

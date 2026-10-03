@@ -429,3 +429,22 @@ it('does not reuse a live snapshot after its saved address changes', async () =>
   await Effect.runPromise(loadRuntimeOverviewEffect(moved, overview, undefined, false, true))
   expect(fetch.mock.calls[0]![0]).toEqual(new URL('http://moved.local:8787/api/snapshot'))
 })
+
+it('refreshes task snapshots without a per-project PR sweep, retaining approximate cached counts', async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(json(snapshot))
+  vi.stubGlobal('fetch', fetch)
+  const previous = {
+    ...overview,
+    pulls: { total: 3, needsAttention: 1, reviewRequested: 0, partial: false },
+  }
+  const result = await Effect.runPromise(
+    loadRuntimeOverviewEffect(profile, previous, undefined, true, false, { loadPulls: false }),
+  )
+  expect(result.connected).toBe(true)
+  expect(result.snapshot).toEqual(snapshot)
+  expect(result.pulls).toEqual({ ...previous.pulls, partial: true })
+  expect(fetch).toHaveBeenCalledOnce()
+  expect(fetch.mock.calls[0]![0]).toEqual(
+    new URL('http://one.local:51464/api/snapshot?scope=overview'),
+  )
+})

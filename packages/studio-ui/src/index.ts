@@ -48,3 +48,5 @@ export { ComposerModelPicker } from './composer-model-picker'
 export { useHarnessCatalog, useModelLabel } from './harness-catalog'
 
 export { HarnessFields } from './harness-fields'
+
+export * from './settings-scope-page'

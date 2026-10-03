@@ -358,9 +358,18 @@ Desktop and mobile use one authenticated change stream for the selected runtime'
 visible thread activity. Updates are batched briefly and assistant text is sent as appends rather
 than repeated history. Reconnecting resumes from a bounded replay cursor; server restarts or gaps
 load a fresh snapshot. Mobile closes the stream in the background and resumes on return without
-stopping the agent. Older servers and connections that block WebSockets fall back to HTTP polling.
-The current stream format omits unchanged metadata and ordering lists, and uses small string patches
-for growing tool/reasoning payloads. Older clients retain their compatible stream format. Workspace
+stopping the agent. Foreground streaming stays active; visible working durations keep seconds.
+Backgrounding pauses fleet refreshes, terminal sockets/retries, local activity polling and UI
+clocks. Widgets update only when their visible contents change. Snapshot and conversation caches
+batch writes and flush when leaving the foreground; the recent 200-message cache is preserved. Other
+computers’ task snapshots still refresh every 30 seconds while foregrounded, but their aggregate PR
+counts refresh every five minutes (or on manual refresh); open PR screens keep their normal updates.
+Unchanged Live Activities refresh every three minutes with a five-minute stale date, while changed
+status, questions and completion still update promptly.
+
+Older servers and connections that block WebSockets fall back to HTTP polling. The current stream
+format omits unchanged metadata and ordering lists, and uses small string patches for growing
+tool/reasoning payloads. Older clients retain their compatible stream format. Workspace
 acknowledgements include the runtime instance and revision so a delayed stream frame cannot undo a
 newer draft save; a server restart establishes a new instance. Mobile reconciles saved send
 identities before hydrating draft text, preserving genuinely newer or unsent input. Other computers
@@ -512,6 +521,15 @@ an existing project or clone through a connected provider. Desktop and mobile su
 creation/editing, comments, reviews, reviewer requests/removal, supported thread resolution, merge
 and close/reopen actions. Provider/version capabilities control which actions appear. See
 [Source control connections](source-control.md) for setup and limits.
+
+GitHub PR links for registered projects open native PR details on desktop and mobile, including
+links to the files, commits and checks tabs. Other links keep the existing browser flow, and **Open
+on GitHub** explicitly opens externally. On desktop, Cmd/Ctrl-click selects PRs and Shift-click
+selects a range; right-click and choose **Add to thread**. On mobile, long-press a PR to select it
+or add it to a thread. The searchable picker offers unarchived threads across projects and paired
+computers; offline destinations are disabled. Links are persistent, deduplicated and limited to 20
+per thread. Linking does not change the checkout, draft or launch settings, and a foreign-project
+link does not become the thread’s primary merge/check status.
 
 In **Settings → Agents**, save a reusable configuration for **This server** or create a **Global
 agent preset**. Global presets belong to the app that created them and apply to its connected

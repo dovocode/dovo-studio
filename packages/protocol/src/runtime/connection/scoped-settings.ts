@@ -192,3 +192,94 @@ export function resourceScopeChoices(
     })),
   ]
 }
+
+/** The two independent settings axes select one inheritance layer, never a bulk edit. */
+export type SettingsTarget = { environmentId: string; projectId: string }
+export type SettingsTargetSource = {
+  profile: { id: string }
+  connected: boolean
+  snapshot: { workspace: { repositories: readonly Repository[] } } | null
+}
+export function settingsProjectId(repository: Repository, environmentId: string) {
+  return repository.gitIdentity
+    ? `git:${repository.gitIdentity}`
+    : `local:${JSON.stringify([environmentId, repository.id])}`
+}
+export function resolveSettingsTarget<T extends SettingsTargetSource>(
+  sources: readonly T[],
+  target: SettingsTarget,
+  activeId?: string | null,
+) {
+  const scope: SettingsScope = target.projectId
+    ? target.environmentId
+      ? 'environment-project'
+      : 'project'
+    : target.environmentId
+      ? 'environment'
+      : 'global'
+  const matching = sources.filter(
+    (source) =>
+      (!target.environmentId || source.profile.id === target.environmentId) &&
+      (!target.projectId ||
+        source.snapshot?.workspace.repositories.some(
+          (repository) =>
+            settingsProjectId(repository, source.profile.id) === target.projectId &&
+            (scope !== 'project' || !!repository.gitIdentity),
+        )),
+  )
+  const source = target.environmentId
+    ? matching[0]
+    : (matching.find((source) => source.connected && source.profile.id === activeId) ??
+      matching.find((source) => source.connected) ??
+      matching[0])
+  const repository = source?.snapshot?.workspace.repositories.find(
+    (repository) => settingsProjectId(repository, source.profile.id) === target.projectId,
+  )
+  return { source, repository, scope }
+}
+export function settingsProjectChoices(
+  sources: readonly SettingsTargetSource[],
+  environmentId: string,
+) {
+  const projects = new Map<string, { id: string; name: string }>()
+  for (const source of sources) {
+    if (environmentId && source.profile.id !== environmentId) continue
+    for (const repository of source.snapshot?.workspace.repositories ?? []) {
+      if (!environmentId && !repository.gitIdentity) continue
+      const id = settingsProjectId(repository, source.profile.id)
+      if (!projects.has(id)) projects.set(id, { id, name: repository.name })
+    }
+  }
+  return [...projects.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+const taskDefaultFields = [
+  { key: 'harness', label: 'Agent, model & instructions' },
+  { key: 'permission', label: 'Permissions' },
+  { key: 'execution', label: 'Working directory' },
+  { key: 'worktreeFromOrigin', label: 'Start from origin' },
+  { key: 'setupCommand', label: 'Worktree setup' },
+] as const
+export function taskDefaultOrigins(
+  runtime: RuntimeDefaults | undefined,
+  repository: Repository | undefined,
+  scope: SettingsScope,
+  draft: NonNullable<ScopedSettingsValue['taskDefaults']>,
+) {
+  return taskDefaultFields.map((field) => {
+    let source: SettingsScope | 'built-in' = 'built-in'
+    for (const level of settingsScopes) {
+      if (level === scope) {
+        if (draft[field.key] !== undefined) source = level
+        break
+      }
+      if (
+        settingsAtScope(scopeEditorDefaults(runtime), repository, level).taskDefaults?.[
+          field.key
+        ] !== undefined
+      )
+        source = level
+    }
+    return { ...field, source, overridden: draft[field.key] !== undefined }
+  })
+}

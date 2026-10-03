@@ -1,3 +1,4 @@
+import { githubPullTarget } from '@dovo/protocol'
 import { ResizableSidebar } from './detail/resizable-sidebar'
 import { readTaskListViewState, saveTaskListViewState } from './list/task-list-view-state'
 import { useCachedTask } from '@dovo/studio-core'
@@ -245,8 +246,12 @@ export default function TasksView({ entityId }: StudioViewProps) {
     Record<string, { repositoryId: string; number: number }>
   >({})
   const openPullPreview = (target: Task, url: string) => {
-    const preview = threadPullPreview(url, target, workspace.repositories)
-    if (!preview) return false
+    const preview = threadPullPreview(
+      githubPullTarget(url)?.url ?? url,
+      target,
+      workspace.repositories,
+    )
+    if (!preview) return host.openPullLink?.(url) ?? false
     const key = taskCollectionKey(activeRuntimeId, target.id)
     setPullPreviews((current) => ({ ...current, [key]: preview }))
     if (target.id !== task?.id) {

@@ -12,7 +12,7 @@ const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)) : {}
 export const McpAppView = memo(function McpAppView({ reference }: { reference: McpAppReference }) {
   const { request, connected, activeRuntimeId } = useWorkspace()
-  const { chooseLink } = useStudioHost()
+  const { chooseLink, openPullLink } = useStudioHost()
   const theme = useResolvedTheme()
   const frame = useRef<HTMLIFrameElement>(null)
   const [app, setApp] = useState<McpApp>()
@@ -133,6 +133,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
           const url = object(value.params).url
           if (typeof url !== 'string' || !['http:', 'https:'].includes(new URL(url).protocol))
             throw new Error('Unsupported app link')
+          if (openPullLink?.(url)) return {}
           if (chooseLink) await chooseLink(url)
           else if (window.confirm(`Open ${url}?`)) window.open(url, '_blank', 'noopener,noreferrer')
           return {}
@@ -178,7 +179,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     }
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)
-  }, [app, theme, connected, request, chooseLink, reference.id, reference.taskId])
+  }, [app, theme, connected, request, chooseLink, openPullLink, reference.id, reference.taskId])
   return (
     <div
       className={

@@ -1,6 +1,7 @@
 import { randomUUID } from 'expo-crypto'
 import {
   scopedSettingsResultSchema,
+  taskDefaultOrigins,
   settingsScopes,
   settingsScopeLabels,
   type SettingsScope,
@@ -36,8 +37,13 @@ import { Action } from '../../ui/controls/action'
 import { Switch } from '../../ui/controls/switch'
 import { styles } from '../../ui/theme'
 import { ModelSettings } from '../../agents/model-settings'
-export function TaskDefaultSettings(props: { repository?: Repository }) {
+export function TaskDefaultSettings(props: {
+  repository?: Repository
+  inline?: boolean
+  scope?: SettingsScope
+}) {
   const [open, setOpen] = useApplicationState(false)
+  if (props.inline) return <TaskDefaultSettingsForm {...props} />
   return (
     <View style={{ gap: 12 }}>
       <Action
@@ -49,13 +55,20 @@ export function TaskDefaultSettings(props: { repository?: Repository }) {
     </View>
   )
 }
-function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
-  const { connected, call } = useRuntime()
+function TaskDefaultSettingsForm({
+  repository,
+  scope: selectedScope,
+}: {
+  repository?: Repository
+  scope?: SettingsScope
+}) {
+  const { connected, call, snapshot } = useRuntime()
   const { busy, error, act } = useAction()
   const [setup, setSetup] = useApplicationState<{ defaults: RuntimeDefaults } | null>(null)
-  const [scope, setScope] = useApplicationState<SettingsScope>(
+  const [localScope, setScope] = useApplicationState<SettingsScope>(
     repository ? 'environment-project' : 'environment',
   )
+  const scope = selectedScope ?? localScope
   const [projectKey, setProjectKey] = useApplicationState<string | undefined>(undefined)
   const [inheritedPrompts, setInheritedPrompts] = useApplicationState<SavedPrompt[]>([])
   const [scopeValue, setScopeValue] = useApplicationState<ScopedSettingsValue>({})
@@ -64,6 +77,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
 
   const [draft, setDraft] = useApplicationState<ProjectTaskDefaults>({})
   const [loadError, setLoadError] = useApplicationState('')
+  const [showInheritance, setShowInheritance] = useApplicationState(false)
   const [saved, setSaved] = useApplicationState(false)
   const [retry, setRetry] = useApplicationState(0)
   useEffect(() => {
@@ -107,21 +121,60 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
         Global → Environment → Project → Environment + project. Unset values inherit the earlier
         levels. Existing tasks keep their settings.
       </Text>
-      <Choice
-        label="Settings scope"
-        value={scope}
-        disabled={busy}
-        items={settingsScopes
-          .filter((value) => repository || (value !== 'project' && value !== 'environment-project'))
-          .filter((value) => value !== 'project' || !!repository?.gitIdentity)
-          .map((id) => ({ id, name: settingsScopeLabels[id] }))}
-        onChange={(value) => {
-          setSaved(false)
-          setLoadError('')
-          setScope(settingsScopes.find((scope) => scope === value) ?? 'environment')
-        }}
+      {!selectedScope && (
+        <>
+          <Choice
+            row
+            label="Settings scope"
+            value={scope}
+            disabled={busy}
+            items={settingsScopes
+              .filter(
+                (value) => repository || (value !== 'project' && value !== 'environment-project'),
+              )
+              .filter((value) => value !== 'project' || !!repository?.gitIdentity)
+              .map((id) => ({ id, name: settingsScopeLabels[id] }))}
+            onChange={(value) => {
+              setSaved(false)
+              setLoadError('')
+              setScope(settingsScopes.find((scope) => scope === value) ?? 'environment')
+            }}
+          />
+        </>
+      )}
+      <Action
+        secondary
+        label="Inheritance & overrides"
+        onPress={() => setShowInheritance(!showInheritance)}
       />
+      {showInheritance && (
+        <View style={{ gap: 10 }}>
+          <Text style={styles.muted}>
+            Reset an override to use the preceding level; save to apply.
+          </Text>
+          {taskDefaultOrigins(snapshot?.defaults, repository, scope, draft).map((field) => (
+            <View key={field.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.text}>{field.label}</Text>
+                <Text style={styles.muted}>
+                  {field.source === 'built-in'
+                    ? 'Built-in default'
+                    : settingsScopeLabels[field.source]}
+                </Text>
+              </View>
+              <Action
+                secondary
+                icon="refresh"
+                label={`Use inherited ${field.label.toLowerCase()}`}
+                disabled={disabled || !field.overridden}
+                onPress={() => change({ ...draft, [field.key]: undefined })}
+              />
+            </View>
+          ))}
+        </View>
+      )}
       <Choice
+        row
         label="Agent configuration"
         disabled={disabled}
         value={harness ? 'custom' : 'inherit'}
@@ -143,6 +196,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
         }
       />
       <Choice
+        row
         label="Default permissions"
         disabled={disabled}
         value={draft.permission ?? 'inherit'}
@@ -170,6 +224,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
       {harness && (
         <>
           <Choice
+            row
             label="Harness"
             disabled={disabled}
             value={harness.provider}
@@ -213,6 +268,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
       {!repository?.kind && (
         <>
           <Choice
+            row
             label="Working directory"
             disabled={disabled}
             value={draft.execution ?? 'inherit'}
@@ -255,6 +311,7 @@ function TaskDefaultSettingsForm({ repository }: { repository?: Repository }) {
             )}
           </View>
           <Choice
+            row
             label="Worktree setup"
             disabled={disabled}
             value={draft.setupCommand === undefined ? 'inherit' : 'custom'}

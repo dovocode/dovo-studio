@@ -64,9 +64,9 @@ export function PullDetail({
     [metadataOpen, setMetadataOpen] = useApplicationState(false)
   const [action, setAction] = useApplicationState<PullActionTarget | null>(null)
   const [lineComment, setLineComment] = useApplicationState<string | null>(null)
-  const open = (url: string) => {
+  const open = (url: string, external = false) => {
     void runClientEffect(
-      nativeEffect(() => openAppLink(url)).pipe(
+      nativeEffect(() => openAppLink(url, external)).pipe(
         Effect.catchAll((error) => nativeEffect(() => setError(String(error)))),
       ),
     )
@@ -98,7 +98,7 @@ export function PullDetail({
             <PullMenu
               providerName={forgeLabels[detail.pull.provider ?? 'github']}
               onRefresh={refresh}
-              onOpen={() => open(detail.pull.url)}
+              onOpen={() => open(detail.pull.url, true)}
               onStartTask={() => setStarting(true)}
               refreshDisabled={!connected || refreshing}
               taskDisabled={!connected}

@@ -1,5 +1,5 @@
+import { useForegroundInterval } from '../../runtime/state/app-active'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { useEffect } from 'react'
 import { ScrollView, View, Pressable } from 'react-native'
 import { subagentElapsed, subagentMetadata, type Task } from '@dovo/protocol'
 import { Text } from '../../ui/content/text'
@@ -12,11 +12,7 @@ export function TaskAgents({ task }: { task: Task }) {
   const agents = task.subagents ?? []
   const live = connected && task.status === 'running'
   const working = live ? agents.filter((agent) => agent.status === 'working').length : 0
-  useEffect(() => {
-    if (!working) return
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [working])
+  useForegroundInterval(() => setNow(Date.now()), working ? 1000 : null)
   return (
     <View
       style={{

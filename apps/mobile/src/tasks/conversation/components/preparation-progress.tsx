@@ -1,3 +1,4 @@
+import { useAppActive, useForegroundInterval } from '../../../runtime/state/app-active'
 import { useEffect, useRef, useState } from 'react'
 import {
   AccessibilityInfo,
@@ -46,16 +47,13 @@ export function PreparationProgress({
   retryError?: string
 }) {
   const { failed } = preparation
-  const reduceMotion = useReduceMotion() || failed
+  const appActive = useAppActive()
+  const reduceMotion = useReduceMotion() || failed || !appActive
   const [now, setNow] = useState(() => Date.now())
   const [trackWidth, setTrackWidth] = useState(0)
   const progress = useRef(new Animated.Value(preparation.progress)).current
   const sweep = useRef(new Animated.Value(0)).current
-  useEffect(() => {
-    if (failed) return
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [failed])
+  useForegroundInterval(() => setNow(Date.now()), failed ? null : 1000)
   useEffect(() => {
     if (reduceMotion) {
       progress.setValue(preparation.progress)

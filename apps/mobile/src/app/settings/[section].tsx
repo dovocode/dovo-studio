@@ -1,3 +1,4 @@
+import TaskDefaultsScreen from '../../screens/task-defaults'
 import AppUpdates from '../../screens/app-updates'
 import UsageScreen from '../../screens/usage'
 import GeneralScreen from '../../screens/general'
@@ -15,21 +16,23 @@ import { styles } from '../../ui/theme'
 export default function SettingsSection() {
   const { section } = useLocalSearchParams<{ section: string }>()
   const Screen =
-    section === 'updates'
-      ? AppUpdates
-      : section === 'general'
-        ? GeneralScreen
-        : section === 'devices'
-          ? DevicesScreen
-          : section === 'agents'
-            ? AgentsScreen
-            : section === 'resources'
-              ? ResourcesScreen
-              : section === 'source-control'
-                ? SourceControlSettings
-                : section === 'usage'
-                  ? UsageScreen
-                  : undefined
+    section === 'task-defaults'
+      ? TaskDefaultsScreen
+      : section === 'updates'
+        ? AppUpdates
+        : section === 'general'
+          ? GeneralScreen
+          : section === 'devices'
+            ? DevicesScreen
+            : section === 'agents'
+              ? AgentsScreen
+              : section === 'resources'
+                ? ResourcesScreen
+                : section === 'source-control'
+                  ? SourceControlSettings
+                  : section === 'usage'
+                    ? UsageScreen
+                    : undefined
   return (
     <WorkbenchDetailRoute tab="settings" bottomInset>
       {Screen ? (
