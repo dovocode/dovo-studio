@@ -1,4 +1,4 @@
-import { Clock, Check, Undo2 } from 'lucide-react'
+import { AlarmClock, Check, Undo2 } from 'lucide-react'
 import { updateTask, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button, DropdownMenu } from '@dovo/studio-ui'
 import { isSnoozed } from '../list/task-priority'
@@ -19,7 +19,7 @@ export function TaskLifecycleActions({ task }: { task: Task }) {
               aria-label="Snooze task"
               title="Snooze task"
             >
-              <Clock className="size-3.5" />
+              <AlarmClock className="size-3.5" />
             </Button>
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>

@@ -31,7 +31,7 @@ import {
   ArrowUpRight,
   Check,
   ChevronRight,
-  Clock,
+  AlarmClock,
   Copy,
   Filter,
   Mail,
@@ -297,7 +297,7 @@ export function TaskContextMenu({
             {!task.archived && (
               <ContextMenu.Sub>
                 <ContextMenu.SubTrigger className={itemClass} disabled={!canEdit}>
-                  <Clock />
+                  <AlarmClock />
                   Snooze
                   <ChevronRight className="ml-auto" />
                 </ContextMenu.SubTrigger>

@@ -9,7 +9,7 @@ import { taskPresentation } from './task-presentation'
 import {
   Archive,
   Bot,
-  Clock,
+  AlarmClock,
   CloudOff,
   CircleX,
   CircleStop,
@@ -37,7 +37,7 @@ const statusIcons: Record<string, LucideIcon> = {
   Finished: CircleCheck,
   Failed: CircleX,
   Stopped: CircleStop,
-  Snoozed: Clock,
+  Snoozed: AlarmClock,
   Settled: CircleCheck,
   Archived: Archive,
   Draft: FilePenLine,
@@ -246,7 +246,7 @@ function TaskRowView({
             ))}
             {isSnoozed(task, now) && (
               <p className="flex items-center gap-2">
-                <Clock className="size-3 shrink-0" aria-hidden="true" />
+                <AlarmClock className="size-3 shrink-0" aria-hidden="true" />
                 Snoozed until {formatDateTime(task.snoozedUntil ?? now)}
               </p>
             )}

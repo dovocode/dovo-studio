@@ -1,7 +1,7 @@
 import { Effect } from 'effect'
 import { clientTaskScope, runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useRuntime } from '../../runtime/connection/provider'
 import { AppState } from 'react-native'
@@ -16,7 +16,8 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
   const { activeId, legacyDraftRuntimeId } = useRuntime()
   const key = `dovo.draft.${encodeURIComponent(activeId ?? '')}.${taskId}`
   const migrateLegacy = !!activeId && activeId === legacyDraftRuntimeId
-  const [text, setText] = useApplicationState(''),
+  // TextInput changes must batch with React Native's own native-event state.
+  const [text, setText] = useState(''),
     [loadedKey, setLoadedKey] = useApplicationState<string | null>(null),
     [submission, setSubmission] = useApplicationState<DraftRecord['submission']>(undefined),
     [error, setError] = useApplicationState('')

@@ -274,24 +274,21 @@ export function TaskList({
         open: false,
       },
     ].filter((group) => group.tasks.length)
-    const settled = statusGroups
-      .filter((group) => group.id === 'settled')
+    const collapsedGroups = statusGroups
+      .filter((group) => group.id === 'snoozed' || group.id === 'settled')
       .map((group) => ({
         ...group,
         open: expanded[group.id] ?? false,
       }))
     if (grouping === 'none')
-      return [
-        { id: 'all', name: '', tasks: tasks.filter(({ task }) => !task.archived), open: true },
-        ...settled,
-      ]
+      return [{ id: 'all', name: '', tasks: active, open: true }, ...collapsedGroups]
     if (grouping === 'status')
       return statusGroups.map((group) => ({
         ...group,
         open: expanded[group.id] ?? group.open,
       }))
     const byProject = new Map<string, { id: string; name: string; tasks: TaskEntry[] }>()
-    for (const entry of tasks.filter(({ task }) => !task.archived)) {
+    for (const entry of active) {
       const repository = entry.source.workspace.repositories.find(
         (repo) => repo.id === entry.task.repositoryId,
       )
@@ -308,7 +305,7 @@ export function TaskList({
       ...[...byProject.values()]
         .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
         .map((group) => ({ ...group, open: expanded[group.id] ?? true })),
-      ...settled,
+      ...collapsedGroups,
     ]
   }, [tasks, now, grouping, expanded])
   useEffect(() => {
@@ -579,7 +576,7 @@ export function TaskList({
               </div>
             )
           })
-          return grouping === 'none' && group.id !== 'settled' ? (
+          return grouping === 'none' && group.id !== 'settled' && group.id !== 'snoozed' ? (
             <div key={group.id}>{rows}</div>
           ) : (
             <details

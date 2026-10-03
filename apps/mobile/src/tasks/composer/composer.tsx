@@ -7,7 +7,7 @@ import { Glass } from '../../ui/layout/glass'
 import { MessageAttachments } from '../conversation/components/message-attachments'
 import { ActivityIndicator, Alert, Keyboard, Linking, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   REVIEW_PROMPT,
   contextMeter,
@@ -65,7 +65,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
   const selection = useRef<DraftSelection | undefined>(undefined)
-  const [caret, setCaret] = useApplicationState(0)
+  const [caret, setCaret] = useState(0)
   const focus = useCallback(() => setFocused(true), [setFocused])
   const blur = useCallback(() => setFocused(false), [setFocused])
   const select = useCallback(
