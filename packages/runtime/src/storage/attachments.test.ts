@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startRuntime } from '../index'
+import { attachmentFileName } from './attachments'
+import { WorkspaceStore } from './workspace'
 import { fixture } from '../testing/fixture'
 import { claudeInput } from '../agents/providers/claude/claude-input'
 import type { AgentRun } from '../agents/execution/types'
@@ -138,4 +140,104 @@ it('keeps queued attachments through restart, supplies content and paths to agen
   expect(await readFile((await r.services.attachments.materialize(task.id, image)).path)).toEqual(
     Buffer.from(png, 'base64'),
   )
+})
+it('validates the normalized file name so paths cannot become directory references', async () => {
+  expect(attachmentFileName('../picture.png')).toBe('picture.png')
+  expect(attachmentFileName('nested/dir/')).toBe('dir')
+  for (const name of ['a/..', 'a/.', '/', '', '.', '..', 'a/b\u0001c', 'x\u007f'])
+    expect(() => attachmentFileName(name)).toThrow('Invalid file name')
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const r = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(r.close)
+  const s = r.services
+  s.store.update(() => f.workspace)
+  const task = s.tasks.create({
+    title: 'Files',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  await expect(
+    s.attachments.upload({ taskId: task.id, id: randomUUID(), name: 'a/..', data: png }),
+  ).rejects.toThrow('Invalid file name')
+  expect(s.store.task(task.id).draftAttachments ?? []).toEqual([])
+  expect(s.db.prepare('SELECT COUNT(*) AS total FROM attachments').get()).toEqual({ total: 0 })
+})
+
+it.each(['archived', 'archivedAt', 'during-upload'] as const)(
+  'rejects attachment admission for %s threads without storing a blob',
+  async (state) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const r = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+    cleanups.push(r.close)
+    const s = r.services
+    s.store.update(() => f.workspace)
+    const task = s.tasks.create({
+      title: 'Files',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: '',
+    })
+    const archive = () =>
+      s.store.updateTask(task.id, (current) => ({
+        ...current,
+        archived: state !== 'archivedAt',
+        archivedAt: state !== 'archived' ? new Date().toISOString() : undefined,
+      }))
+    if (state !== 'during-upload') archive()
+    const pending = s.attachments.upload({
+      taskId: task.id,
+      id: randomUUID(),
+      name: 'file.png',
+      data: png,
+    })
+    if (state === 'during-upload') archive()
+    await expect(pending).rejects.toThrow('Restore the task')
+    expect(s.store.task(task.id).draftAttachments).toBeUndefined()
+    expect(s.db.prepare('SELECT COUNT(*) AS total FROM attachments').get()).toEqual({ total: 0 })
+  },
+)
+
+it('restores the live workspace and history when an attachment transaction fails after its workspace update', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const r = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(r.close)
+  const s = r.services
+  s.store.update(() => f.workspace)
+  const task = s.tasks.create({
+    title: 'Files',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const before = s.store.get()
+  const projected = s.store.publicWorkspace()
+  const revision = s.store.version()
+  const history = s.db.prepare('SELECT * FROM conversation_items').all()
+  const document = s.db.prepare('SELECT value FROM documents WHERE id=?').get('workspace')
+  s.db.exec(
+    "CREATE TRIGGER fail_attachment_audit BEFORE INSERT ON activity WHEN NEW.kind='attachment' BEGIN SELECT RAISE(ABORT, 'fixture attachment audit failure'); END",
+  )
+  await expect(
+    s.attachments.upload({ taskId: task.id, id: randomUUID(), name: 'file.png', data: png }),
+  ).rejects.toThrow('fixture attachment audit failure')
+  expect(s.store.get()).toBe(before)
+  expect(s.store.publicWorkspace()).toBe(projected)
+  expect(s.store.version()).toBe(revision)
+  expect(s.db.prepare('SELECT * FROM conversation_items').all()).toEqual(history)
+  expect(s.db.prepare('SELECT value FROM documents WHERE id=?').get('workspace')).toEqual(document)
+  expect(s.db.prepare('SELECT COUNT(*) AS total FROM attachments').get()).toEqual({ total: 0 })
+  expect(new WorkspaceStore(s.db).get()).toEqual(before)
+  s.db.exec('DROP TRIGGER fail_attachment_audit')
+  const accepted = await s.attachments.upload({
+    taskId: task.id,
+    id: randomUUID(),
+    name: 'file.png',
+    data: png,
+  })
+  expect(s.store.task(task.id).draftAttachments).toEqual([accepted.attachment])
+  expect(s.attachments.read(task.id, accepted.attachment.id).data).toBe(png)
 })

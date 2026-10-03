@@ -4,7 +4,16 @@ import { fixture } from '../../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration'
 import { defaultTaskHarness } from '@dovo/protocol'
 import type { AgentAdapter, AgentRun } from '../execution/types'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 vi.setConfig(runtimeIntegration)
+function barrier() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -14,6 +23,51 @@ function taskId(run: AgentRun) {
   if (!run.taskId) throw new Error('Expected a task execution')
   return run.taskId
 }
+it('rechecks a stopped child against newly narrowed parent permissions at admission', async () => {
+  const s = await setup()
+  const childFinished = barrier()
+  const parentRelease = barrier()
+  let childId = ''
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (run.agent.provider === 'claude') {
+        run.onText('Done')
+        return
+      }
+      childId = s.tasks.subagentSpawn({
+        taskId: taskId(run),
+        key: 'review',
+        name: 'Review',
+        prompt: 'Review',
+        provider: 'claude',
+      }).id
+      await s.tasks.subagentWait(taskId(run), childId)
+      childFinished.resolve()
+      await parentRelease.promise
+      run.onText('Parent done')
+    },
+  })
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  const running = await s.tasks.start(parent.id)
+  try {
+    await childFinished.promise
+    s.store.updateTask(parent.id, (task) => ({
+      ...task,
+      harness: { ...defaultTaskHarness('codex'), permission: 'read-only' },
+    }))
+    expect(s.store.task(childId).harness?.permission).toBe('ask')
+    await expect(s.tasks.start(childId)).rejects.toThrow('cannot exceed')
+  } finally {
+    parentRelease.resolve()
+    await running.done
+  }
+})
 async function setup() {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -249,3 +303,162 @@ it('resolves scoped ACP configurations, rejects stale attempts and conflicting r
   )
   expect(s.tasks.subagentList(parent.id)).toHaveLength(4)
 })
+
+it('drains retired attempt children before a queued turn starts, then drains cancellation', async () => {
+  const s = await setup()
+  const childStarted = barrier()
+  const childAborted = barrier()
+  const releaseChild = barrier()
+  const secondStarted = barrier()
+  let attempts = 0
+  let childId = ''
+  let cleaned = false
+  let secondSawDrained = false
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (run.agent.provider === 'claude') {
+        childStarted.resolve()
+        await new Promise<void>((resolve) => {
+          if (run.signal.aborted) resolve()
+          else run.signal.addEventListener('abort', () => resolve(), { once: true })
+        })
+        childAborted.resolve()
+        await releaseChild.promise
+        cleaned = true
+        return
+      }
+      attempts++
+      if (attempts === 1) {
+        childId = s.tasks.subagentSpawn({
+          taskId: taskId(run),
+          key: 'first',
+          name: 'Child',
+          prompt: 'Work',
+          provider: 'claude',
+        }).id
+        await childStarted.promise
+        await s.tasks.send(taskId(run), 'second', 'Next turn')
+        run.onText('First finished')
+      } else {
+        secondSawDrained = cleaned && !s.tasks.subagentResult(taskId(run), childId).running
+        secondStarted.resolve()
+        await new Promise<void>((resolve) => {
+          if (run.signal.aborted) resolve()
+          else run.signal.addEventListener('abort', () => resolve(), { once: true })
+        })
+      }
+    },
+  })
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  const running = await s.tasks.start(parent.id)
+  try {
+    await childAborted.promise
+    expect(attempts).toBe(1)
+    releaseChild.resolve()
+    await secondStarted.promise
+    expect(secondSawDrained).toBe(true)
+    s.tasks.cancel(parent.id)
+    await expect(running.done).rejects.toThrow('Cancelled by user')
+    expect(s.store.task(parent.id).status).toBe('cancelled')
+    expect(s.tasks.subagentList(parent.id).every((child) => !child.running)).toBe(true)
+  } finally {
+    releaseChild.resolve()
+  }
+})
+
+it.each(['completed', 'failed', 'cancelled'] as const)(
+  'drains child cleanup before capturing a %s parent checkpoint',
+  async (outcome) => {
+    const s = await setup()
+    const childStarted = barrier()
+    const childAborted = barrier()
+    const releaseChild = barrier()
+    const finishParent = barrier()
+    let childId = ''
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        if (run.agent.provider === 'claude') {
+          childStarted.resolve()
+          await new Promise<void>((resolve) => {
+            if (run.signal.aborted) resolve()
+            else run.signal.addEventListener('abort', () => resolve(), { once: true })
+          })
+          childAborted.resolve()
+          await releaseChild.promise
+          await writeFile(join(run.cwd, 'hello.txt'), 'child cleanup write\n')
+          return
+        }
+        childId = s.tasks.subagentSpawn({
+          taskId: taskId(run),
+          key: 'writer',
+          name: 'Writer',
+          prompt: 'Work',
+          provider: 'claude',
+        }).id
+        await childStarted.promise
+        if (outcome === 'cancelled')
+          await new Promise<void>((resolve) => {
+            if (run.signal.aborted) resolve()
+            else run.signal.addEventListener('abort', () => resolve(), { once: true })
+          })
+        else await finishParent.promise
+        if (outcome === 'failed') throw new Error('Parent provider failed')
+        run.onText('Parent done')
+      },
+    })
+    const parent = s.tasks.create({
+      title: 'Parent',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Work',
+    })
+    const running = await s.tasks.start(parent.id)
+    try {
+      await childStarted.promise
+      if (outcome === 'cancelled') s.tasks.cancel(parent.id)
+      else finishParent.resolve()
+      await childAborted.promise
+      expect(s.store.task(parent.id).turns?.at(-1)?.checkpoint?.after).toBeUndefined()
+      expect(() =>
+        s.tasks.subagentSpawn({
+          taskId: parent.id,
+          key: 'late',
+          name: 'Late',
+          prompt: 'Too late',
+          provider: 'claude',
+        }),
+      ).toThrow('active parent turn')
+      releaseChild.resolve()
+      const failure = await running.done.then(
+        () => undefined,
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      )
+      expect(failure).toBe(
+        outcome === 'completed'
+          ? undefined
+          : outcome === 'cancelled'
+            ? 'Cancelled by user'
+            : 'Parent provider failed',
+      )
+      const task = s.store.task(parent.id)
+      expect(task.status).toBe(outcome === 'completed' ? 'review' : outcome)
+      expect(s.tasks.subagentResult(parent.id, childId).running).toBe(false)
+      const after = task.turns?.at(-1)?.checkpoint?.after
+      if (!after) throw new Error('Expected a completed checkpoint')
+      const cwd = await s.checkouts.directory(parent.id)
+      expect(await s.git.command(cwd, ['show', `${after}:hello.txt`])).toBe('child cleanup write\n')
+      const files = outcome === 'completed' ? task.files : task.turns?.at(-1)?.checkpoint?.files
+      expect(files?.map((file) => file.path)).toContain('hello.txt')
+    } finally {
+      finishParent.resolve()
+      releaseChild.resolve()
+    }
+  },
+)

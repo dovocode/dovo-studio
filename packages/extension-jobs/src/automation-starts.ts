@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import type { RuntimeConnection } from '@dovo/studio-core'
 
 // A lost run acknowledgement must retain its idempotency key when its detail unmounts.
@@ -10,7 +11,7 @@ export function pendingAutomationStart(connection: RuntimeConnection, id: string
 }
 export function automationStartRequest(connection: RuntimeConnection, id: string) {
   const key = scope(connection, id)
-  const request = attempts.get(key) ?? crypto.randomUUID()
+  const request = attempts.get(key) ?? randomUUID()
   attempts.set(key, request)
   return request
 }

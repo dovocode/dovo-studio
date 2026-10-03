@@ -47,22 +47,30 @@ export class Terminals {
     taskId: string,
     directory: () => Promise<string>,
     checkoutId?: string,
+    authorize: () => void = () => {},
   ): Promise<TerminalInfo> {
+    authorize()
     const open = this.list().find(
       (session) =>
         session.taskId === taskId && session.checkoutId === checkoutId && !session.exited,
     )
     if (open) return Promise.resolve(open)
     const pending = this.pendingEnsure.get(`${taskId}:${checkoutId ?? ''}`)
-    if (pending) return pending
+    if (pending)
+      return pending.then((terminal) => {
+        authorize()
+        return terminal
+      })
     const result = directory()
-      .then(
-        (cwd) =>
+      .then((cwd) => {
+        authorize()
+        return (
           this.list().find(
             (session) =>
               session.taskId === taskId && session.checkoutId === checkoutId && !session.exited,
-          ) ?? this.create(taskId, cwd, checkoutId),
-      )
+          ) ?? this.create(taskId, cwd, checkoutId)
+        )
+      })
       .finally(() => this.pendingEnsure.delete(`${taskId}:${checkoutId ?? ''}`))
     this.pendingEnsure.set(`${taskId}:${checkoutId ?? ''}`, result)
     return result
@@ -88,6 +96,12 @@ export class Terminals {
     title: string,
     checkoutId?: string,
   ) {
+    // Retained output is bounded by the same cap, but finished unattended shells
+    // must not permanently consume slots needed by new work. Attached output stays.
+    for (const [id, session] of this.sessions) {
+      if (this.sessions.size < 20) break
+      if (session.info.exited && !session.listeners.size) this.close(id)
+    }
     if (this.sessions.size >= 20)
       throw new HttpError(409, 'Close a terminal before opening another (limit 20)')
     const env = { ...processEnvironment(), ...launch.env }

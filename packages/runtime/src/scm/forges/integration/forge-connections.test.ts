@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ForgeConnections } from './forge-connections'
 import { openDatabase } from '../../../storage/database'
+import { WorkspaceStore } from '../../../storage/workspace'
 import { startRuntime } from '../../../index'
 
 const db = openDatabase(':memory:')
@@ -293,4 +294,39 @@ it('skips an unreadable stored connection instead of failing every read', () => 
   } finally {
     badDb.close()
   }
+})
+
+it('rolls back the workspace projection with a failed enclosing forge revision update', () => {
+  vi.stubEnv('DOVO_TEST_FORGE_TOKEN', 'original-account')
+  const workspace = new WorkspaceStore(db)
+  let fail = false
+  const connections = new ForgeConnections(
+    db,
+    (_id, revision) => {
+      workspace.update((current) => ({ ...current, runtimeAddress: revision }))
+      if (fail) db.prepare('INSERT INTO documents VALUES (?, ?)').run('workspace', 'duplicate')
+    },
+    undefined,
+    (fn) => workspace.transaction(fn),
+  )
+  const saved = connections.save({
+    ...input,
+    credential: 'environment',
+    token: undefined,
+    tokenEnv: 'DOVO_TEST_FORGE_TOKEN',
+  })
+  const before = workspace.get()
+  const projected = workspace.publicWorkspace()
+  const revision = workspace.version()
+  const connection = db.prepare('SELECT value FROM forge_connections WHERE id=?').get(saved.id)
+  fail = true
+  vi.stubEnv('DOVO_TEST_FORGE_TOKEN', 'changed-account')
+  expect(() => connections.get(saved.id)).toThrow(/UNIQUE constraint/)
+  expect(workspace.get()).toBe(before)
+  expect(workspace.publicWorkspace()).toBe(projected)
+  expect(workspace.version()).toBe(revision)
+  expect(db.prepare('SELECT value FROM forge_connections WHERE id=?').get(saved.id)).toEqual(
+    connection,
+  )
+  expect(new WorkspaceStore(db).get()).toEqual(before)
 })

@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import {
+  randomUUID,
   mcpAppDownloads,
   mcpAppResponseSchema,
   mcpAppRpcResponseSchema,
@@ -20,13 +21,13 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
   const [notice, setNotice] = useState('')
   const [height, setHeight] = useState(320)
   const [full, setFull] = useState(false)
-  const nonce = useRef(crypto.randomUUID())
+  const nonce = useRef(randomUUID())
   const ready = useRef(false)
   useEffect(() => {
     setApp(undefined)
     setError('')
     ready.current = false
-    nonce.current = crypto.randomUUID()
+    nonce.current = randomUUID()
   }, [activeRuntimeId, reference.taskId, reference.id])
   useEffect(() => {
     if (!connected) return

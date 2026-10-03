@@ -9,6 +9,7 @@ import {
   workspaceSchema,
   runtimeRequestEffect,
   RuntimeRequestError,
+  randomUUID,
   type RuntimeConnection,
   type Workspace,
   type WorkspacePatch,
@@ -23,11 +24,24 @@ export const workspaceOutboxSchema = mutableStruct({
   version: Schema.Literal(1),
   workspace: workspaceSchema,
   patches: minValue(mutableArray(patchSchema), 1),
-})
+  ids: Schema.optional(mutableArray(Schema.NonEmptyString)),
+}).pipe(
+  Schema.filter(
+    (value) =>
+      !value.ids ||
+      (value.ids.length === value.patches.length && new Set(value.ids).size === value.ids.length),
+    { message: () => 'Workspace patch IDs must be unique and match the pending patches' },
+  ),
+)
 export type WorkspaceOutbox = Schema.Schema.Type<typeof workspaceOutboxSchema>
-type Persist = (connection: RuntimeConnection, value: WorkspaceOutbox | null) => Promise<void>
+export type WorkspaceOutboxChange = { append: string[]; remove: string[] }
+type Persist = (
+  connection: RuntimeConnection,
+  value: WorkspaceOutbox | null,
+  change: WorkspaceOutboxChange,
+) => Promise<void>
 
-export class SynchronizationError extends Data.TaggedError('SynchronizationError')<{
+class SynchronizationError extends Data.TaggedError('SynchronizationError')<{
   readonly message: string
   readonly cause?: unknown
 }> {}
@@ -66,7 +80,7 @@ const sendPatch: Send = (connection, patch) =>
     'PATCH',
   )
 
-/** Owns the durable outbox and serializes writes independently of network availability. */
+/** Serializes this editor's writes; persistence merges stable patch IDs across tabs. */
 export class WorkspaceSynchronization {
   private connection: RuntimeConnection | null = null
   private acknowledged?: { instanceId: string; revision: number }
@@ -80,7 +94,10 @@ export class WorkspaceSynchronization {
   private generation = 0
   private version = 0
   private pending: WorkspacePatch[] = []
+  private pendingIds: string[] = []
+  private writtenIds = new Set<string>()
   private draining: Effect.Effect<void, SynchronizationError> | null = null
+  private discarding: object | null = null
   private conflicted = false
   private workspace: Workspace | null = null
   private durable: Effect.Effect<void, SynchronizationError> = Effect.void
@@ -97,9 +114,12 @@ export class WorkspaceSynchronization {
     this.acknowledged = undefined
     this.connection = connection
     this.pending = restored ? [...restored.patches] : []
+    this.pendingIds = restored?.ids ? [...restored.ids] : this.pending.map(() => randomUUID())
+    this.writtenIds = new Set(restored?.ids ?? [])
     this.workspace = restored?.workspace ?? null
     this.durable = Effect.void
     this.draining = null
+    this.discarding = null
     this.conflicted = this.pending.length > 0
     if (this.conflicted)
       this.onError(
@@ -110,6 +130,8 @@ export class WorkspaceSynchronization {
   private save(
     connection: RuntimeConnection,
     patches: WorkspacePatch[],
+    ids: string[],
+    remove: string[] = [],
   ): Effect.Effect<void, SynchronizationError> {
     if (!this.persist) return Effect.void
     if (patches.length && !this.workspace)
@@ -120,15 +142,24 @@ export class WorkspaceSynchronization {
       )
     const value: WorkspaceOutbox | null =
       patches.length && this.workspace
-        ? { version: 1, workspace: this.workspace, patches: [...patches] }
+        ? { version: 1, workspace: this.workspace, patches: [...patches], ids: [...ids] }
         : null
     const persist = this.persist
+    const written = this.writtenIds
+    const capturedIds = [...ids]
     // Each captured value is written once. Failed writes release the semaphore so
     // an explicit retry can proceed, while the failed durability gate stays failed.
     const work = Effect.runSync(
       Effect.cached(
         this.writer
-          .withPermits(1)(attempt(() => persist(connection, value)))
+          .withPermits(1)(
+            Effect.suspend(() => {
+              const append = capturedIds.filter((id) => !written.has(id))
+              return attempt(() => persist(connection, value, { append, remove })).pipe(
+                Effect.tap(() => Effect.sync(() => append.forEach((id) => written.add(id)))),
+              )
+            }),
+          )
           .pipe(Effect.uninterruptible),
       ),
     )
@@ -142,10 +173,11 @@ export class WorkspaceSynchronization {
     if (workspace) this.workspace = workspace
     if (!this.connection) return
     this.pending.push(...patches)
+    this.pendingIds.push(...patches.map(() => randomUUID()))
     const generation = this.generation
     // Synchronous editor boundary: begin durability before allowing network flush.
     void runClientEffect(
-      this.save(this.connection, this.pending).pipe(
+      this.save(this.connection, this.pending, this.pendingIds).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {
             if (generation === this.generation) {
@@ -164,7 +196,7 @@ export class WorkspaceSynchronization {
     return {
       generation: this.generation,
       version: this.version,
-      idle: !this.pending.length && !this.draining && !this.conflicted,
+      idle: !this.pending.length && !this.isSending() && !this.conflicted,
     }
   }
   isCurrent(checkpoint: Checkpoint) {
@@ -179,16 +211,25 @@ export class WorkspaceSynchronization {
     )
   }
   acceptsSaved(checkpoint: Checkpoint) {
-    return this.isCurrent(checkpoint) && checkpoint.version === this.version && !this.draining
+    return this.isCurrent(checkpoint) && checkpoint.version === this.version && !this.isSending()
   }
   /** Preserve unsent edits without requiring the old address to be reachable. */
   savedEffect() {
     return Effect.gen(this, function* () {
+      if (this.discarding)
+        return yield* Effect.fail(
+          new SynchronizationError({ message: 'Wait for saved edits to finish clearing.' }),
+        )
       if (this.draining) yield* this.draining.pipe(Effect.catchAll(() => Effect.void))
       yield* this.durable
       const outbox: WorkspaceOutbox | null =
         this.pending.length && this.workspace
-          ? { version: 1, workspace: this.workspace, patches: [...this.pending] }
+          ? {
+              version: 1,
+              workspace: this.workspace,
+              patches: [...this.pending],
+              ids: [...this.pendingIds],
+            }
           : null
       return { checkpoint: this.checkpoint(), outbox }
     })
@@ -201,7 +242,7 @@ export class WorkspaceSynchronization {
     else this.onError(null)
   }
   isSending() {
-    return this.draining !== null
+    return this.draining !== null || this.discarding !== null
   }
   hasPending() {
     return this.pending.length > 0
@@ -209,12 +250,16 @@ export class WorkspaceSynchronization {
 
   retryEffect(): Effect.Effect<void, SynchronizationError> {
     return Effect.suspend(() => {
+      if (this.discarding)
+        return Effect.fail(
+          new SynchronizationError({ message: 'Wait for saved edits to finish clearing.' }),
+        )
       if (this.draining) return this.draining
       this.version++
       this.conflicted = false
       const generation = this.generation
       return Effect.gen(this, function* () {
-        if (this.connection) yield* this.save(this.connection, this.pending)
+        if (this.connection) yield* this.save(this.connection, this.pending, this.pendingIds)
         if (generation !== this.generation)
           return yield* Effect.fail(
             new SynchronizationError({
@@ -239,6 +284,7 @@ export class WorkspaceSynchronization {
   }
 
   discardEffect(checkpoint: Checkpoint) {
+    const operation = {}
     return Effect.gen(this, function* () {
       if (
         !this.connection ||
@@ -251,19 +297,42 @@ export class WorkspaceSynchronization {
             message: 'Changes are still in progress. Wait before reloading.',
           }),
         )
-      yield* this.save(this.connection, [])
-      if (!this.isCurrent(checkpoint) || this.version !== checkpoint.version || this.isSending())
+      const remove = [...this.pendingIds]
+      this.discarding = operation
+      yield* this.save(this.connection, [], [], remove)
+      if (!this.isCurrent(checkpoint))
         return yield* Effect.fail(
           new SynchronizationError({
             message:
               'The workspace changed while clearing saved edits. Review the current changes.',
           }),
         )
-      this.pending = []
-      this.workspace = null
-      this.conflicted = false
+      const removed = new Set(remove)
+      for (let index = this.pendingIds.length - 1; index >= 0; index--) {
+        if (!removed.has(this.pendingIds[index])) continue
+        this.pendingIds.splice(index, 1)
+        this.pending.splice(index, 1)
+      }
+      const changed = this.version !== checkpoint.version
+      if (!this.pending.length) this.workspace = null
+      this.conflicted = changed && this.pending.length > 0
       this.version++
-    })
+      if (changed)
+        return yield* Effect.fail(
+          new SynchronizationError({
+            message:
+              'Saved edits were cleared. New edits remain queued; review them before syncing.',
+          }),
+        )
+    }).pipe(
+      // A committed removal and its in-memory retirement are one operation.
+      Effect.uninterruptible,
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (this.discarding === operation) this.discarding = null
+        }),
+      ),
+    )
   }
   discard(checkpoint: Checkpoint) {
     return runClientEffect(this.discardEffect(checkpoint))
@@ -271,6 +340,10 @@ export class WorkspaceSynchronization {
 
   flushEffect(): Effect.Effect<void, SynchronizationError> {
     return Effect.suspend(() => {
+      if (this.discarding)
+        return Effect.fail(
+          new SynchronizationError({ message: 'Wait for saved edits to finish clearing.' }),
+        )
       if (this.draining) return this.draining
       const target = this.connection
       if (!target) return Effect.void
@@ -283,6 +356,7 @@ export class WorkspaceSynchronization {
         )
       const generation = this.generation
       const pending = this.pending
+      const pendingIds = this.pendingIds
       const work = Effect.runSync(
         Effect.cached(
           Effect.gen(this, function* () {
@@ -309,8 +383,15 @@ export class WorkspaceSynchronization {
                 }
               }
               // Preserve an acknowledged patch until the durable queue commits.
-              yield* this.save(target, pending.slice(1))
-              pending.shift()
+              yield* this.save(target, pending.slice(1), pendingIds.slice(1), [pendingIds[0]]).pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    pending.shift()
+                    pendingIds.shift()
+                  }),
+                ),
+                Effect.uninterruptible,
+              )
             }
             if (generation === this.generation) this.onError(null)
           }).pipe(

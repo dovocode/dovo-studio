@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
@@ -24,7 +25,7 @@ export function RunControls({ task }: { task: Task }) {
           '/api/tasks/message',
           {
             id: task.id,
-            messageId: crypto.randomUUID(),
+            messageId: randomUUID(),
             text: 'Continue from where you stopped.',
             attachmentIds: [],
           },

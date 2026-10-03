@@ -276,8 +276,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.draft.outputs.tag || inputs.tag || github.ref_name }}
-          CHANNEL: ${{ needs.draft.outputs.channel || 'stable' }}
+          CHANNEL: ${{ needs.draft.outputs.channel }}
         run: |
+          # verify_only skips the draft job, so derive the channel from the nightly tag convention.
+          if test -z "$CHANNEL"; then
+            case "$TAG" in
+              *-nightly.*) CHANNEL=nightly ;;
+              *) CHANNEL=stable ;;
+            esac
+          fi
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort > /tmp/dovo-release-assets
           if test "$CHANNEL" = nightly; then
             PREFIX=Dovo-Studio-Nightly

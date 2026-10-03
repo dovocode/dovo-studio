@@ -1,6 +1,6 @@
 import { CreateGithub } from './create-github'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { validationMessages } from '@dovo/protocol'
+import { randomUUID, validationMessages } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { useId, useRef } from 'react'
 import { FolderOpen } from 'lucide-react'
@@ -147,7 +147,7 @@ function RepositoryDialogContent({
                   await request('/api/scm/repositories/add', input, repositorySchema)
                 } else if (parsed.data.source === 'local') {
                   const draft = decode(repositorySchema, {
-                    id: crypto.randomUUID(),
+                    id: randomUUID(),
                     name: parsed.data.name,
                     path: parsed.data.path,
                     branch: '',

@@ -5,7 +5,7 @@ import { scopedSettingsRoute } from './scoped-settings-routes.js'
 import { decodeResult } from '@dovo/protocol'
 import { checkAdapterUpdates } from '../../agents/execution/diagnostics.js'
 import { modelPreferencesSchema, agentPresetSchema, mutableArray } from '@dovo/protocol'
-import { canChangeTaskCheckout, taskSchema } from '@dovo/protocol'
+import { canChangeTaskCheckout, taskFamilyIds, taskSchema } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
 import { runtimeDefaultsSchema } from '@dovo/protocol'
 import { acpRoute } from './acp-routes.js'
@@ -317,7 +317,6 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
-        const task = s.store.task(input.id)
         const repo = s.store.get().repositories.find((repo) => repo.id === input.repositoryId)
         if (
           !repo ||
@@ -328,6 +327,15 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             409,
             'The source Git repository changed. Both drafts have been preserved.',
           )
+        const currentRepo = s.store
+          .get()
+          .repositories.find((entry) => entry.id === input.repositoryId)
+        if (currentRepo?.path !== repo.path || currentRepo.kind !== repo.kind)
+          throw new HttpError(
+            409,
+            'The source Git repository changed. Both drafts have been preserved.',
+          )
+        const task = s.store.task(input.id)
         if (
           task.draft !== input.draft ||
           task.repositoryId !== input.repositoryId ||
@@ -361,36 +369,61 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           return yield* serviceResult({
             ok: true,
           })
-        s.tasks.requireIdle(id)
-        s.jobs.requireTaskIdle(id)
-        if (action !== 'restore') {
-          if (s.terminals.list().some((terminal) => terminal.taskId === id && !terminal.exited))
+        const ids = taskFamilyIds(s.store.get().tasks, id)
+        const requireIdle = () => {
+          for (const taskId of ids) {
+            s.tasks.requireIdle(taskId)
+            s.jobs.requireTaskIdle(taskId)
+          }
+          if (
+            action !== 'restore' &&
+            s.terminals.list().some((terminal) => ids.has(terminal.taskId) && !terminal.exited)
+          )
             throw new HttpError(
               409,
-              'Close this thread’s terminals before archiving or deleting it.',
+              'Close this thread’s and its child agents’ terminals before archiving or deleting it.',
             )
-          yield* serviceResult(s.browsers.closeTask(id))
-          yield* serviceResult(s.simulators.closeTask(id))
-          s.tasks.requireIdle(id)
-          s.jobs.requireTaskIdle(id)
         }
-        if (action !== 'restore') s.titles.cancelSideChats(id)
+        requireIdle()
+        if (action !== 'restore') {
+          for (const taskId of ids) {
+            yield* serviceResult(s.browsers.closeTask(taskId))
+            yield* serviceResult(s.simulators.closeTask(taskId))
+          }
+          const latestIds = taskFamilyIds(s.store.get().tasks, id)
+          if (latestIds.size !== ids.size || [...latestIds].some((taskId) => !ids.has(taskId)))
+            throw new HttpError(409, 'This thread’s child agents changed. Refresh and retry.')
+          requireIdle()
+        }
+        if (action !== 'restore') for (const taskId of ids) s.titles.cancelSideChats(taskId)
         if (action === 'delete') {
-          s.db.transaction(() => {
-            s.db.prepare('DELETE FROM activity WHERE scope = ?').run(id)
-            s.db.prepare('DELETE FROM attachments WHERE task = ?').run(id)
+          for (const terminal of s.terminals.list())
+            if (ids.has(terminal.taskId)) s.terminals.close(terminal.id)
+          s.store.transaction(() => {
+            for (const taskId of ids) {
+              s.db.prepare('DELETE FROM activity WHERE scope = ?').run(taskId)
+              s.db.prepare('DELETE FROM attachments WHERE task = ?').run(taskId)
+            }
             s.store.update((workspace) => ({
               ...workspace,
-              tasks: workspace.tasks.filter((task) => task.id !== id),
+              tasks: workspace.tasks.filter((task) => !ids.has(task.id)),
             }))
-          })()
+          })
         } else {
-          s.store.updateTask(id, (task) => ({
-            ...task,
-            archived: action === 'archive',
-            archivedAt:
-              action === 'archive' ? (task.archivedAt ?? new Date().toISOString()) : undefined,
-            snoozedUntil: null,
+          const now = new Date().toISOString()
+          s.store.update((workspace) => ({
+            ...workspace,
+            tasks: workspace.tasks.map((task) =>
+              ids.has(task.id)
+                ? {
+                    ...task,
+                    archived: action === 'archive',
+                    archivedAt: action === 'archive' ? (task.archivedAt ?? now) : undefined,
+                    snoozedUntil: null,
+                    updatedAt: now,
+                  }
+                : task,
+            ),
           }))
         }
         return yield* serviceResult({

@@ -89,3 +89,8 @@ export function collectTasks(sources: readonly TaskSource[]): TaskEntry[] {
       }))
   })
 }
+
+/** Delegated threads remain navigable, but belong to their parent in list views. */
+export function mainTaskEntries(entries: readonly TaskEntry[]): TaskEntry[] {
+  return entries.filter(({ task }) => !task.delegation)
+}

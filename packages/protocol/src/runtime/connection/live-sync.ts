@@ -1,5 +1,5 @@
 import { decode } from '../../shared/schema.js'
-import { runtimeRequestEffect, setRuntimeSnapshotTag } from '../../shared/client.js'
+import { runtimeRequest, setRuntimeSnapshotTag } from '../../shared/client.js'
 import {
   applySnapshotDelta,
   applyActivityDelta,
@@ -197,17 +197,15 @@ export function startRuntimeSync(
       const requestedTasks = taskIdentity
       const query = new URLSearchParams({ format: '4', history: 'paged' })
       for (const id of value.tasks.keys()) query.append('task', id)
-      const ticket = await Effect.runPromise(
-        runtimeRequestEffect(
-          connection,
-          connection.address,
-          `/api/sync/ticket?${query}`,
-          {},
-          syncTicketSchema,
-          'POST',
-          5000,
-        ),
-        { signal: request.signal },
+      const ticket = await runtimeRequest(
+        connection,
+        connection.address,
+        `/api/sync/ticket?${query}`,
+        {},
+        syncTicketSchema,
+        'POST',
+        5000,
+        request.signal,
       )
       if (stopped || requestedTasks !== taskIdentity || options.active?.() === false) return
       const address = new URL('/ws/sync', connection.address)

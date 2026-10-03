@@ -30,7 +30,10 @@ export function RemoteBrowser({
   const reportState = useEffectEvent((state: Extract<RemoteBrowserMessage, { type: 'state' }>) =>
     onState?.(state),
   )
-  const address = useRef(initialUrl)
+  const address = useRef(initialUrl === 'about:blank' ? '' : initialUrl)
+  useEffect(() => {
+    address.current = initialUrl === 'about:blank' ? '' : initialUrl
+  }, [initialUrl])
   const visibility = useRef(active)
   const frame = useRef<HTMLIFrameElement>(null)
   const version = useRef(0)
@@ -93,7 +96,10 @@ export function RemoteBrowser({
         return
       if (data.type === 'state') {
         const state = decodeResult(remoteBrowserMessageSchema, data)
-        if (state.success && state.data.type === 'state') reportState(state.data)
+        if (state.success && state.data.type === 'state') {
+          address.current = state.data.url === 'about:blank' ? '' : state.data.url
+          reportState(state.data)
+        }
       }
       if (data.type === 'reconnect') void connect()
       if (data.type === 'close')

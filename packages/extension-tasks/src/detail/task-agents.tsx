@@ -1,17 +1,20 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { subagentElapsed, subagentMetadata } from '@dovo/studio-core'
 import { type Task, useWorkspace } from '@dovo/studio-core'
 import { Bot, ChevronRight } from 'lucide-react'
 import { useStudioHost } from '@dovo/studio-core'
 import { Button, cn } from '@dovo/studio-ui'
+import { indexTaskSubagents } from '@dovo/protocol'
 export function TaskAgents({ task }: { task: Task }) {
   const host = useStudioHost()
-  const { connected } = useWorkspace()
+  const { connected, workspace } = useWorkspace()
   const [now, setNow] = useApplicationState(Date.now)
-  const agents = task.subagents ?? []
-  const live = connected && task.status === 'running'
-  const working = live ? agents.filter((agent) => agent.status === 'working').length : 0
+  const indexed = useMemo(() => indexTaskSubagents(workspace.tasks), [workspace.tasks])
+  const agents = indexed(task)
+  const activeAgents = new Set(connected ? indexed(task, true) : [])
+  const live = connected
+  const working = activeAgents.size
   useEffect(() => {
     if (!working) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
@@ -41,17 +44,18 @@ export function TaskAgents({ task }: { task: Task }) {
         </div>
       )}
       <div className="flex-1 px-2">
-        {agents.map((agent) => {
-          const active = live && agent.status === 'working'
+        {agents.map((agent, index) => {
+          const active = live && activeAgents.has(agent)
+          const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
           const state =
-            !live && agent.status === 'working'
+            !active && agent.status === 'working'
               ? 'Last seen working'
               : agent.status === 'unknown'
                 ? 'Status unavailable'
                 : agent.status
           return (
             <details
-              key={`${agent.provider}:${agent.id}`}
+              key={`${agent.provider}:${agent.id}:${index}`}
               className="group rounded-lg px-2 py-2 hover:bg-muted/30"
             >
               <summary className="flex cursor-pointer list-none items-start gap-2">
@@ -94,11 +98,11 @@ export function TaskAgents({ task }: { task: Task }) {
               <div className="ml-3.5 mt-3 space-y-2 break-words text-xs text-muted-foreground">
                 {agent.prompt && <p className="whitespace-pre-wrap">{agent.prompt}</p>}
                 {agent.activity && <p className="whitespace-pre-wrap">{agent.activity}</p>}
-                {agent.taskId && (
+                {childId && (
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => host.navigate({ viewId: 'tasks', entityId: agent.taskId })}
+                    onClick={() => host.navigate({ viewId: 'tasks', entityId: childId })}
                   >
                     Open child thread · {agent.provider}
                   </Button>

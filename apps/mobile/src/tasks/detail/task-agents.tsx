@@ -3,18 +3,24 @@ import { Action } from '../../ui/controls/action'
 import { useForegroundInterval } from '../../runtime/state/app-active'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { ScrollView, View, Pressable } from 'react-native'
-import { subagentElapsed, subagentMetadata, type Task } from '@dovo/protocol'
+import { subagentElapsed, subagentMetadata, indexTaskSubagents, type Task } from '@dovo/protocol'
+import { useMemo } from 'react'
 import { Text } from '../../ui/content/text'
 import { colors, styles } from '../../ui/theme'
 import { useRuntime } from '../../runtime/connection/provider'
 export function TaskAgents({ task }: { task: Task }) {
-  const { connected, profile } = useRuntime()
+  const { connected, profile, snapshot } = useRuntime()
   const { navigate } = useNavigation()
   const [now, setNow] = useApplicationState(Date.now)
   const [expanded, setExpanded] = useApplicationState<string | null>(null)
-  const agents = task.subagents ?? []
-  const live = connected && task.status === 'running'
-  const working = live ? agents.filter((agent) => agent.status === 'working').length : 0
+  const indexed = useMemo(
+    () => indexTaskSubagents(snapshot?.workspace.tasks ?? []),
+    [snapshot?.workspace.tasks],
+  )
+  const agents = indexed(task)
+  const activeAgents = new Set(connected ? indexed(task, true) : [])
+  const live = connected
+  const working = activeAgents.size
   useForegroundInterval(() => setNow(Date.now()), working ? 1000 : null)
   return (
     <View
@@ -51,98 +57,95 @@ export function TaskAgents({ task }: { task: Task }) {
             No subagents yet. Agents spawned by a supported harness appear here as they work.
           </Text>
         )}
-        {agents.map((agent) => {
-          const key = `${agent.provider}:${agent.id}`
-          const active = live && agent.status === 'working'
+        {agents.map((agent, index) => {
+          const key = `${agent.provider}:${agent.id}:${index}`
+          const active = live && activeAgents.has(agent)
+          const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
           const state =
-            !live && agent.status === 'working'
+            !active && agent.status === 'working'
               ? 'Last seen working'
               : agent.status === 'unknown'
                 ? 'Status unavailable'
                 : agent.status
           return (
-            <Pressable
-              key={key}
-              accessibilityRole="button"
-              accessibilityState={{
-                expanded: expanded === key,
-              }}
-              onPress={() => setExpanded(expanded === key ? null : key)}
-              style={{
-                paddingVertical: 12,
-                gap: 5,
-              }}
-            >
-              <View
-                style={{
-                  flexDirection: 'row',
-                  gap: 8,
-                  alignItems: 'center',
-                }}
+            <View key={key} style={{ paddingVertical: 12, gap: 5 }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: expanded === key }}
+                onPress={() => setExpanded(expanded === key ? null : key)}
+                style={{ gap: 5 }}
               >
                 <View
                   style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 3,
-                    backgroundColor: active
-                      ? colors.accent
-                      : agent.status === 'failed'
-                        ? colors.error
-                        : colors.muted,
-                  }}
-                />
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    flex: 1,
-                    fontSize: 14,
-                    fontWeight: '600',
+                    flexDirection: 'row',
+                    gap: 8,
+                    alignItems: 'center',
                   }}
                 >
-                  {agent.name}
+                  <View
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: active
+                        ? colors.accent
+                        : agent.status === 'failed'
+                          ? colors.error
+                          : colors.muted,
+                    }}
+                  />
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      flex: 1,
+                      fontSize: 14,
+                      fontWeight: '600',
+                    }}
+                  >
+                    {agent.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.muted,
+                      {
+                        fontSize: 11,
+                      },
+                    ]}
+                  >
+                    {subagentElapsed(
+                      active
+                        ? agent
+                        : {
+                            ...agent,
+                            status: agent.status === 'working' ? 'unknown' : agent.status,
+                          },
+                      now,
+                    )}
+                  </Text>
+                </View>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.muted,
+                    {
+                      marginLeft: 14,
+                    },
+                  ]}
+                >
+                  {active ? agent.activity || 'Working' : state}
                 </Text>
                 <Text
                   style={[
                     styles.muted,
                     {
+                      marginLeft: 14,
                       fontSize: 11,
                     },
                   ]}
                 >
-                  {subagentElapsed(
-                    active
-                      ? agent
-                      : {
-                          ...agent,
-                          status: agent.status === 'working' ? 'unknown' : agent.status,
-                        },
-                    now,
-                  )}
+                  {subagentMetadata(agent) || agent.provider}
                 </Text>
-              </View>
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.muted,
-                  {
-                    marginLeft: 14,
-                  },
-                ]}
-              >
-                {active ? agent.activity || 'Working' : state}
-              </Text>
-              <Text
-                style={[
-                  styles.muted,
-                  {
-                    marginLeft: 14,
-                    fontSize: 11,
-                  },
-                ]}
-              >
-                {subagentMetadata(agent) || agent.provider}
-              </Text>
+              </Pressable>
               {expanded === key && (
                 <View
                   style={{
@@ -161,11 +164,11 @@ export function TaskAgents({ task }: { task: Task }) {
                       {agent.activity}
                     </Text>
                   )}
-                  {agent.taskId && (
+                  {childId && (
                     <Action
                       secondary
                       label={`Open child thread · ${agent.provider}`}
-                      onPress={() => navigate('tasks', agent.taskId, profile?.id)}
+                      onPress={() => navigate('tasks', childId, profile?.id)}
                     />
                   )}
                   <Text
@@ -181,7 +184,7 @@ export function TaskAgents({ task }: { task: Task }) {
                   </Text>
                 </View>
               )}
-            </Pressable>
+            </View>
           )
         })}
       </ScrollView>

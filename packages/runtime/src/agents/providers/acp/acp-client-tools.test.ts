@@ -1,5 +1,7 @@
 /// <reference types="node" />
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+import fsPromises from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { link, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +10,8 @@ import { acpClientTools } from './acp-client-tools.js'
 
 const dirs: string[] = []
 afterEach(async () => {
+  vi.restoreAllMocks()
+  syncBuiltinESMExports()
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
@@ -34,8 +38,127 @@ async function setup(permission: AgentRun['agent']['permission'] = 'ask', approv
     approve: async () => approved,
     ask: async () => null,
   }
-  return { cwd, controller, tools: await acpClientTools(run, () => 'session') }
+  return { cwd, controller, run, tools: await acpClientTools(run, () => 'session') }
 }
+
+function barrier() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => (resolve = done))
+  return { promise, resolve }
+}
+
+it('admits at most eight concurrent ACP terminal requests', async () => {
+  const { cwd, tools } = await setup('workspace-write')
+  const createTerminal = tools.client.createTerminal
+  if (!createTerminal) throw new Error('Expected terminal access')
+  try {
+    const requests = await Promise.allSettled(
+      Array.from({ length: 9 }, async () =>
+        createTerminal({
+          sessionId: 'session',
+          cwd,
+          command: process.execPath,
+          args: ['-e', 'setTimeout(() => {}, 1000)'],
+        }),
+      ),
+    )
+    expect(requests.filter((request) => request.status === 'fulfilled')).toHaveLength(8)
+    expect(requests.filter((request) => request.status === 'rejected')).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({ message: 'ACP terminal limit reached' }),
+      }),
+    ])
+  } finally {
+    await tools.close()
+  }
+})
+
+it('rejects an approved terminal request after client tools have closed', async () => {
+  const { run, tools } = await setup()
+  const approving = barrier()
+  const release = barrier()
+  run.approve = async () => {
+    approving.resolve()
+    await release.promise
+    return true
+  }
+  const request = tools.client.createTerminal?.({ sessionId: 'session', command: process.execPath })
+  try {
+    await approving.promise
+    await tools.close()
+    release.resolve()
+    await expect(request).rejects.toThrow('client tools are closed')
+  } finally {
+    release.resolve()
+    await tools.close()
+  }
+})
+
+it('rechecks cancellation after the final terminal path lookup', async () => {
+  const { cwd, controller, tools } = await setup('full-access')
+  const entered = barrier()
+  const release = barrier()
+  const realpath = fsPromises.realpath
+  let calls = 0
+  vi.spyOn(fsPromises, 'realpath').mockImplementation(async (path) => {
+    if (++calls === 2) {
+      entered.resolve()
+      await release.promise
+    }
+    return realpath(path)
+  })
+  syncBuiltinESMExports()
+  const request = tools.client.createTerminal?.({
+    sessionId: 'session',
+    cwd,
+    command: process.execPath,
+  })
+  try {
+    await entered.promise
+    controller.abort()
+    release.resolve()
+    await expect(request).rejects.toThrow('Task cancelled')
+  } finally {
+    release.resolve()
+    await tools.close()
+  }
+})
+
+it('drains an already-started file write before closing client tools', async () => {
+  const { cwd, tools } = await setup('workspace-write')
+  const entered = barrier()
+  const release = barrier()
+  const open = fsPromises.open
+  vi.spyOn(fsPromises, 'open').mockImplementation(async (...args) => {
+    const handle = await open(...args)
+    const write = handle.writeFile.bind(handle)
+    vi.spyOn(handle, 'writeFile').mockImplementation(async (data) => {
+      entered.resolve()
+      await release.promise
+      return write(data)
+    })
+    return handle
+  })
+  syncBuiltinESMExports()
+  const path = join(cwd, 'drained.txt')
+  const writing = tools.client.writeTextFile?.({ sessionId: 'session', path, content: 'saved' })
+  try {
+    await entered.promise
+    let closed = false
+    const closing = tools.close().then(() => {
+      closed = true
+    })
+    await Promise.resolve()
+    expect(closed).toBe(false)
+    release.resolve()
+    await writing
+    await closing
+    expect(await readFile(path, 'utf8')).toBe('saved')
+  } finally {
+    release.resolve()
+    await tools.close()
+  }
+})
 
 it('reads within the workspace and refuses symlink escapes', async () => {
   const { cwd, tools } = await setup('read-only')

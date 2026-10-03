@@ -20,6 +20,8 @@ export interface CacheStorage {
   setItem(key: string, value: string): Promise<unknown>
   removeItem(key: string): Promise<unknown>
   removePrefix(prefix: string): Promise<void>
+  /** Cross-context storage can commit an entry, eviction and index in one transaction. */
+  writeIndexedItem?(prefix: string, key: string, value: string, limit: number): Promise<void>
 }
 export type CachedRead<T> = {
   value: T
@@ -54,6 +56,7 @@ const instances = new WeakMap<
   CacheStorage,
   Map<string, Set<{ closeEffect: () => Effect.Effect<void, ReadCacheError> }>>
 >()
+const writers = new WeakMap<CacheStorage, Effect.Semaphore>()
 const storageEffect = <A>(run: () => Promise<A>) =>
   Effect.tryPromise({ try: run, catch: (cause) => new ReadCacheError({ cause }) })
 const runCache = async <A>(effect: Effect.Effect<A, ReadCacheError>): Promise<A> => {
@@ -104,12 +107,17 @@ export function createRuntimeReadCache(
         ),
   )
   let closed = false
-  const writer = Effect.runSync(Effect.makeSemaphore(1))
+  let writer = writers.get(storage)
+  if (!writer) {
+    writer = Effect.runSync(Effect.makeSemaphore(1))
+    writers.set(storage, writer)
+  }
+  const sharedWriter = writer
   const lifecycle = {
     closeEffect: (): Effect.Effect<void, ReadCacheError> =>
       Effect.suspend(() => {
         closed = true
-        return writer.withPermits(1)(
+        return sharedWriter.withPermits(1)(
           Effect.sync(() => {
             clients.delete(lifecycle)
           }),
@@ -130,7 +138,7 @@ export function createRuntimeReadCache(
         }),
       )
       if (Either.isRight(parsed)) return parsed.right
-      yield* writer
+      yield* sharedWriter
         .withPermits(1)(
           Effect.gen(function* () {
             // A newer write may have replaced the corrupt value while this read was decoding.
@@ -142,7 +150,7 @@ export function createRuntimeReadCache(
       return null
     })
   const writeEffect = (key: string, value: unknown) =>
-    writer
+    sharedWriter
       .withPermits(1)(
         Effect.gen(function* () {
           if (closed) return
@@ -151,8 +159,16 @@ export function createRuntimeReadCache(
             try: () => JSON.stringify({ version: 1, cachedAt: new Date().toISOString(), value }),
             catch: (cause) => new ReadCacheError({ cause }),
           })
+          if (key === 'snapshot') {
+            yield* storageEffect(() => storage.setItem(prefix + key, encoded))
+            return
+          }
+          const writeIndexedItem = storage.writeIndexedItem?.bind(storage)
+          if (writeIndexedItem) {
+            yield* storageEffect(() => writeIndexedItem(prefix, key, encoded, 100))
+            return
+          }
           yield* storageEffect(() => storage.setItem(prefix + key, encoded))
-          if (key === 'snapshot') return
           const raw = yield* storageEffect(() => storage.getItem(prefix + '_index'))
           const parsed = yield* Effect.either(
             Effect.try(() => decode(mutableArray(Schema.String), JSON.parse(raw ?? '[]'))),
@@ -171,7 +187,7 @@ export function createRuntimeReadCache(
       )
       .pipe(Effect.uninterruptible)
   const removeEffect = (key: string) =>
-    writer
+    sharedWriter
       .withPermits(1)(
         Effect.gen(function* () {
           const { prefix } = yield* scope

@@ -14,7 +14,7 @@ import { ChoicePicker, Input, SettingRow, SettingsGroup, Toggle } from '@dovo/st
 type Preferences = typeof runtimePreferencesSchema.Type
 
 /** Loads and saves the computer's own preferences; saves send only the changed fields. */
-export function useRuntimePreferences() {
+function useRuntimePreferences() {
   const { requestEffect, connected } = useWorkspace()
   const [value, setValue] = useApplicationState<Preferences | null>(null)
   const [busy, setBusy] = useApplicationState(false)

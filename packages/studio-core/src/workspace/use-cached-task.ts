@@ -34,7 +34,11 @@ export function useCachedTask(summary: Task | undefined) {
       stopped = true
     }
   }, [id, readCache, live])
-  const available = !!summary && cached?.cache === readCache && cached.task.id === summary.id
+  const available =
+    !!summary &&
+    cached?.cache === readCache &&
+    cached.task.id === summary.id &&
+    (cached.task.historyRevision ?? 0) === (summary.historyRevision ?? 0)
   return {
     task: summary && !live && available ? cachedThread(summary, cached.task) : summary,
     loaded: live || available,

@@ -10,6 +10,7 @@ import { taskBranchName, taskWorktreePath } from './task-branch.js'
 import { repositoryPath } from '../repositories/paths.js'
 import { listBranches } from '../git/branches.js'
 import { defaultWorktreeBase, canChangeTaskCheckout } from '@dovo/protocol'
+import { PendingCheckouts } from './pending-checkouts.js'
 
 export type ResolvedCheckout = LinkedCheckout & {
   directory: string
@@ -20,7 +21,7 @@ export type ResolvedCheckout = LinkedCheckout & {
 
 /** Resolves only projects registered on this runtime. No user-supplied arbitrary directories. */
 export class LinkedCheckouts {
-  private pending = new Map<string, Promise<ResolvedCheckout[]>>()
+  private pending = new PendingCheckouts<ResolvedCheckout[]>()
   constructor(
     private store: WorkspaceStore,
     private git: GitService,
@@ -78,26 +79,25 @@ export class LinkedCheckouts {
     return { ok: true }
   }
 
-  resolve(id: string): Promise<ResolvedCheckout[]> {
+  resolve(id: string, signal?: AbortSignal): Promise<ResolvedCheckout[]> {
+    signal?.throwIfAborted()
     const task = this.store.task(id)
-    if (task.delegation) return this.resolve(task.delegation.parentTaskId)
-    const pending = this.pending.get(id)
-    if (pending) return pending
-    const result = this.resolveAll(id).finally(() => this.pending.delete(id))
-    this.pending.set(id, result)
-    return result
+    if (task.delegation) return this.resolve(task.delegation.parentTaskId, signal)
+    return this.pending.run(id, (sharedSignal) => this.resolveAll(id, sharedSignal), signal)
   }
 
-  private async resolveAll(id: string) {
+  private async resolveAll(id: string, signal?: AbortSignal) {
     const task = this.store.task(id)
     const links = this.validate(task.linkedCheckouts ?? [])
     const resolved: ResolvedCheckout[] = []
     for (const link of links) {
+      signal?.throwIfAborted()
       const repo = this.store.get().repositories.find((item) => item.id === link.repositoryId)
       if (!repo) throw new HttpError(404, 'Linked project no longer exists')
       const root = repo.kind
         ? await repositoryPath(repo.path)
         : (await this.git.inspect(repo.path)).path
+      signal?.throwIfAborted()
       if (link.execution === 'main') {
         resolved.push({ ...link, directory: root, name: repo.name, git: !repo.kind })
         continue
@@ -153,8 +153,10 @@ export class LinkedCheckouts {
               (entry) => entry.id !== link.id,
             ),
           }))
+          signal?.throwIfAborted()
           if (kept) {
             await this.git.command(root, ['worktree', 'prune'])
+            signal?.throwIfAborted()
             await this.git.command(root, ['worktree', 'add', directory, kept])
           } else {
             const refs = await listBranches({ git: this.git }, root)
@@ -166,6 +168,7 @@ export class LinkedCheckouts {
             )?.ref
             if (!base)
               throw new HttpError(400, 'Choose an existing base branch for the linked worktree')
+            signal?.throwIfAborted()
             await this.git.command(root, ['worktree', 'add', '-b', branch, directory, base])
           }
         }
@@ -179,7 +182,9 @@ export class LinkedCheckouts {
           )
       ) {
         const setup = this.store.taskDefaults(link.repositoryId).setupCommand
-        if (setup?.trim()) await this.git.setupWorktree(directory, setup)
+        signal?.throwIfAborted()
+        if (setup?.trim()) await this.git.setupWorktree(directory, setup, signal)
+        signal?.throwIfAborted()
         this.store.updateTask(id, (current) => ({
           ...current,
           linkedCheckoutSetup: [
@@ -188,6 +193,7 @@ export class LinkedCheckouts {
           ],
         }))
       }
+      signal?.throwIfAborted()
       const inspected = await this.git.inspect(directory)
       resolved.push({
         ...link,

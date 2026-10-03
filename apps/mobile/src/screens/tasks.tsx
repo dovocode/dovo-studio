@@ -14,6 +14,7 @@ import {
   compareTasks,
   isSnoozed,
   resolveTaskAgent,
+  indexTaskSubagents,
   type RuntimeTask,
 } from '@dovo/protocol'
 import { useNavigation } from '../shell/navigation'
@@ -91,6 +92,16 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     () => (source === 'all' ? overviews : overviews.filter((entry) => entry.profile.id === source)),
     [overviews, source],
   )
+  const subagentsByRuntime = useMemo(
+    () =>
+      new Map(
+        overviews.map((entry) => [
+          entry.profile.id,
+          indexTaskSubagents(entry.snapshot?.workspace.tasks ?? []),
+        ]),
+      ),
+    [overviews],
+  )
   const projectGroups = useMemo(
     () =>
       projectMachineGroups(
@@ -125,6 +136,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     return allTasks
       .filter(
         ({ task, projectName, runtimeName, runtimeId }) =>
+          !task.delegation &&
           (!project || projectMembers.has(JSON.stringify([runtimeId, task.repositoryId]))) &&
           (archived ? !!task.archivedAt : !task.archivedAt) &&
           (!car || (!task.archived && !isSnoozed(task, now))) &&
@@ -560,6 +572,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             >
               <TaskListRow
                 row={item.entry}
+                subagents={
+                  subagentsByRuntime.get(item.entry.runtimeId)?.(item.entry.task, true) ?? []
+                }
                 runtime={overviews.find((entry) => entry.profile.id === item.entry.runtimeId)}
                 now={now}
                 testID={
@@ -571,6 +586,13 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 selected={selected.has(item.entry.key)}
                 onSelect={() => toggleSelected(item.entry.key)}
                 onOpen={() => (selecting ? toggleSelected(item.entry.key) : openTask(item.entry))}
+                onOpenSubagent={(id) => {
+                  if (selecting) return toggleSelected(item.entry.key)
+                  const child = allTasks.find(
+                    (entry) => entry.runtimeId === item.entry.runtimeId && entry.task.id === id,
+                  )
+                  if (child) openTask(child)
+                }}
                 onDetails={() => setDetails(item.entry.key)}
               />
             </View>

@@ -269,6 +269,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             },
           },
           {
+            name: 'terminal_close',
+            description:
+              'Close a terminal opened by this task tool session after its output is no longer needed. Stops a live process and releases its retained output.',
+            inputSchema: {
+              type: 'object' as const,
+              properties: { id: { type: 'string' } },
+              required: ['id'],
+            },
+          },
+          {
             name: 'terminal_read',
             description: 'Read recent output from a terminal opened by this task tool session.',
             inputSchema: {
@@ -443,6 +453,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         )
         terminals.add(terminal.id)
         return text(terminal)
+      }
+      case 'terminal_close': {
+        writable()
+        const id = string(input.id, 'id')
+        if (!terminals.has(id)) throw new Error('Open this task terminal with terminal_run first')
+        const result = await post('/api/terminals/close', { id })
+        terminals.delete(id)
+        return text(result)
       }
       case 'terminal_read':
       case 'terminal_input': {

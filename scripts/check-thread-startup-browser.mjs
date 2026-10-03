@@ -24,7 +24,9 @@ createRoot(document.getElementById('app')).render(<Conversation id="conversation
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage({ viewport: { width: 800, height: 600 } })
-  page.on('pageerror', (error) => console.log('Page error:', error.message))
+  page.setDefaultTimeout(10000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.waitForFunction(() => window.rendered.includes(499))
@@ -35,10 +37,12 @@ try {
   const first = await page.evaluate(() => window.rendered)
   if (first[0] !== 498 || first[1] !== 499 || first.includes(0) || first.length > 12)
     throw new Error('Old history rendered before latest: ' + JSON.stringify(first))
-  await page
-    .locator('#conversation > div')
-    .evaluate((el) => el.scrollTo({ top: 0, behavior: 'instant' }))
+  // Real upward input suspends automatic following; a programmatic scroll alone
+  // can be pulled back to the bottom by the conversation's active follow state.
+  await page.locator('#conversation > div').hover()
+  await page.mouse.wheel(0, -200000)
   await page.waitForFunction(() => window.rendered.includes(0))
+  if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Latest turns rendered first; old history stayed deferred and loaded on upward scrolling. Initial rendered turns:',
     first.length,

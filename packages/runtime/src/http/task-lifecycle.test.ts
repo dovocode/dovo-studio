@@ -34,6 +34,123 @@ async function setup() {
     })
   return { ...runtime.services, action, address: `http://127.0.0.1:${runtime.port}` }
 }
+function addChildren(store: WorkspaceStore) {
+  const child = (id: string, parentTaskId: string): Task => ({
+    ...task,
+    id,
+    delegation: { parentTaskId, parentRunId: 'finished-attempt', key: id },
+    messages: [{ id: `message-${id}`, role: 'assistant', text: id }],
+  })
+  store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      ...workspace.tasks,
+      child('child', task.id),
+      child('nested', 'child'),
+      child('sibling', task.id),
+    ],
+  }))
+  return [task.id, 'child', 'nested', 'sibling']
+}
+it('propagates settle, reopen and snooze changes to all descendants in one workspace update', async () => {
+  const { store } = await setup()
+  const ids = addChildren(store)
+  store.patch({
+    collection: 'tasks',
+    id: task.id,
+    changes: {
+      archived: { before: null, after: true },
+      snoozedUntil: { before: null, after: '2026-10-04T12:00:00Z' },
+    },
+  })
+  for (const id of ids)
+    expect(store.task(id)).toMatchObject({
+      archived: true,
+      snoozedUntil: '2026-10-04T12:00:00Z',
+    })
+  expect(store.task('other').archived).toBeUndefined()
+  store.patch({
+    collection: 'tasks',
+    id: task.id,
+    changes: {
+      archived: { before: true, after: false },
+      snoozedUntil: { before: '2026-10-04T12:00:00Z', after: null },
+    },
+  })
+  for (const id of ids) {
+    expect(store.task(id).archived).toBe(false)
+    expect(store.task(id).snoozedUntil).toBeUndefined()
+  }
+})
+it('archives, restores and deletes the whole family while retaining unrelated threads', async () => {
+  const { store, db, action, activity } = await setup()
+  const ids = addChildren(store)
+  for (const id of ids) {
+    activity.add('tool', id, 'Family output')
+    db.prepare('INSERT INTO attachments VALUES (?, ?, ?, ?)').run(
+      `attachment-${id}`,
+      id,
+      '{}',
+      Buffer.from('content'),
+    )
+  }
+  expect((await action('archive')).status).toBe(200)
+  for (const id of ids) expect(store.task(id).archivedAt).toBeTruthy()
+  expect((await action('restore')).status).toBe(200)
+  for (const id of ids) {
+    expect(store.task(id).archived).toBe(false)
+    expect(store.task(id).archivedAt).toBeUndefined()
+  }
+  expect((await action('delete')).status).toBe(200)
+  expect(store.get().tasks.map((entry) => entry.id)).toEqual(['other'])
+  for (const id of ids) {
+    expect(db.prepare('SELECT id FROM attachments WHERE task = ?').all(id)).toEqual([])
+    expect(activity.list('', '', 0, id).events).toEqual([])
+  }
+  expect((await action('delete')).status).toBe(200)
+})
+it('rejects a family action before changing any member when a descendant is active', async () => {
+  const { store, action } = await setup()
+  const ids = addChildren(store)
+  store.updateTask('nested', (entry) => ({ ...entry, status: 'running' }))
+  expect(() =>
+    store.patch({
+      collection: 'tasks',
+      id: task.id,
+      changes: { archived: { before: null, after: true } },
+    }),
+  ).toThrow('Stop active child agents')
+  for (const operation of ['archive', 'restore', 'delete'])
+    expect((await action(operation)).status).toBe(409)
+  for (const id of ids) expect(store.task(id).archivedAt).toBeUndefined()
+  expect(store.get().tasks).toHaveLength(5)
+})
+it('keeps the whole family visible until a nested child terminal closes', async () => {
+  const { store, terminals, action } = await setup()
+  const ids = addChildren(store)
+  const session = terminals.create('nested', process.cwd())
+  try {
+    for (const operation of ['archive', 'delete'])
+      expect((await action(operation)).status).toBe(409)
+    for (const id of ids) expect(store.task(id).archivedAt).toBeUndefined()
+  } finally {
+    terminals.close(session.id)
+  }
+  expect((await action('archive')).status).toBe(200)
+  for (const id of ids) expect(store.task(id).archivedAt).toBeTruthy()
+})
+it('deleting a child removes its descendants and preserves the parent and siblings', async () => {
+  const { store, address } = await setup()
+  addChildren(store)
+  const response = await fetch(`${address}/api/tasks/lifecycle`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: 'child', action: 'delete' }),
+  })
+  expect(response.status).toBe(200)
+  expect(store.get().tasks.map((entry) => entry.id)).toEqual(['thread', 'other', 'sibling'])
+  expect(store.task(task.id).subagents?.map((entry) => entry.id)).toEqual(['sibling'])
+})
 it('archives separately from settle, persists and restores without losing the conversation', async () => {
   const { store, db, action } = await setup()
   store.updateTask(task.id, (t) => ({

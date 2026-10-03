@@ -373,7 +373,9 @@ export class AcpInstallations {
   private stopProcess(child: ChildProcess) {
     const stopped = stopAcpChild(child)
     this.activeStops.add(stopped)
-    void stopped.finally(() => this.activeStops.delete(stopped))
+    const release = () => this.activeStops.delete(stopped)
+    // A discarded finally promise would introduce an unhandled rejection on a failed kill.
+    void stopped.then(release, release)
     return stopped
   }
 
@@ -452,7 +454,7 @@ export class AcpInstallations {
         env: options.env ?? processEnvironment(),
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
-        detached: this.platform !== 'win32',
+        detached: process.platform !== 'win32',
       })
       this.activeChildren.add(child)
       let stdout = ''
@@ -494,10 +496,6 @@ export class AcpInstallations {
     return [...this.installations.values()].map((installation) =>
       this.publicInstallation(installation),
     )
-  }
-
-  isBusy(id: string) {
-    return this.pending.has(id)
   }
 
   dispose(): Promise<void> {

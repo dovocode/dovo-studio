@@ -31,6 +31,7 @@ import { memo } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
 import { Button, cn, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
 import type { TaskSource } from './task-collection'
+import { subagentMetadata, type Subagent } from '@dovo/protocol'
 const statusIcons: Record<string, LucideIcon> = {
   Working: CircleDashed,
   Done: CircleCheck,
@@ -46,6 +47,7 @@ const statusIcons: Record<string, LucideIcon> = {
 }
 function TaskRowView({
   task,
+  subagents,
   selected,
   multiSelected = false,
   onSelect,
@@ -53,8 +55,11 @@ function TaskRowView({
   source,
   editable,
   disabled,
+  selectedChildId,
+  onOpenSubagent,
 }: {
   task: Task
+  subagents: readonly Subagent[]
   selected: boolean
   multiSelected?: boolean
   onSelect: () => void
@@ -62,6 +67,8 @@ function TaskRowView({
   source: TaskSource
   editable: boolean
   disabled: boolean
+  selectedChildId?: string
+  onOpenSubagent: (id: string) => void
 }) {
   const { workspace, snapshot } = source
   const agent = resolveTaskAgent(task, workspace.agents)
@@ -130,7 +137,7 @@ function TaskRowView({
             aria-current={selected ? 'true' : undefined}
             className={cn(
               'mb-1 h-auto min-h-[72px] w-full min-w-0 flex-col items-stretch gap-1 whitespace-normal rounded-xl border border-transparent px-2.5 py-2 text-left font-normal',
-              selected || multiSelected
+              selected || multiSelected || selectedChildId
                 ? 'border-border/50 bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
                 : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
             )}
@@ -256,6 +263,55 @@ function TaskRowView({
           </div>
         </TooltipContent>
       </Tooltip>
+      {!!subagents.length && (
+        <div className="mb-2 flex flex-wrap gap-1 px-2.5" aria-label="Working subagents">
+          {subagents.map((agent, index) => {
+            const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
+            const label = `${agent.name} · ${agent.provider}`
+            const detail = [
+              label,
+              source.online ? 'Working' : 'Last seen working',
+              subagentMetadata(agent),
+              agent.activity,
+            ]
+              .filter(Boolean)
+              .join(' · ')
+            const className = cn(
+              'inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[0.625rem] text-muted-foreground',
+              childId === selectedChildId && 'border-primary/50 bg-accent text-foreground',
+            )
+            return childId ? (
+              <button
+                key={`${agent.provider}:${agent.id}:${index}`}
+                type="button"
+                className={cn(className, 'hover:bg-accent/60')}
+                aria-label={`Open subagent ${detail}`}
+                aria-current={childId === selectedChildId ? 'true' : undefined}
+                title={detail}
+                disabled={disabled}
+                onClick={() => onOpenSubagent(childId)}
+              >
+                <span className="size-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
+                <span className="truncate">{label}</span>
+              </button>
+            ) : (
+              <span
+                key={`${agent.provider}:${agent.id}:${index}`}
+                className={className}
+                title={detail}
+                aria-label={detail}
+              >
+                <span className="size-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
+                <span className="truncate">{label}</span>
+              </span>
+            )
+          })}
+        </div>
+      )}
+      {selectedChildId &&
+        !subagents.some((agent) => (agent.taskId ?? agent.id) === selectedChildId) && (
+          <p className="mb-2 px-2.5 text-[0.625rem] text-muted-foreground">Viewing subagent</p>
+        )}
       {editable && (
         <div className="pointer-events-none absolute right-2 top-1.5 flex h-6 items-center gap-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-has-[:focus-visible]/task:pointer-events-auto group-has-[:focus-visible]/task:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 motion-safe:translate-x-0.5 motion-safe:group-hover/task:translate-x-0 motion-safe:group-has-[:focus-visible]/task:translate-x-0 motion-safe:has-[[data-state=open]]:translate-x-0 motion-reduce:transition-none">
           <TaskLifecycleActions key={source.runtimeId ?? 'local'} task={task} />

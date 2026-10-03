@@ -64,7 +64,7 @@ const projectSchema = mutableStruct({
     ),
   ),
 })
-export function jiraAccountSite(status: string) {
+function jiraAccountSite(status: string) {
   const site = /^\s*Site:\s*(\S+)\s*$/m.exec(status)?.[1]
   const parsed = decodeResult(
     jiraBindingSchema.fields.site,

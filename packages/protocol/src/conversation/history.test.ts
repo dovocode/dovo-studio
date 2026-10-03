@@ -61,6 +61,7 @@ it('keeps full budget totals correct as older pages become visible', () => {
     tokens: 100,
   }
   const live = {
+    historyBefore: 'new',
     messages: [{ id: 'new', role: 'assistant' as const, text: 'Current' }],
     turns: [],
     historyTotals: { tokens: 100, milliseconds: 60000, hasChanges: false },
@@ -104,4 +105,44 @@ it('counts checkpoint file contents in the page budget without discarding them',
   const older = conversationPage(task, recent.before)
   expect(older.turns[0]?.checkpoint?.files[0]?.after).toHaveLength(500000)
   expect(older.turns[0]?.checkpoint?.omitted).toEqual([])
+})
+
+it('treats live membership as authoritative after history captures a live window', () => {
+  const old = { id: 'old', role: 'assistant' as const, text: 'Old' }
+  const current = { id: 'live', role: 'assistant' as const, text: 'Current' }
+  const removed = { id: 'feedback', role: 'user' as const, text: 'Deleted' }
+  const pages = [{ messages: [old, current, removed], turns: [] }]
+  const live = { messages: [current], turns: [], historyBefore: 'live' }
+  expect(mergeConversationHistory(live, pages).messages).toEqual([old, current])
+  expect(mergeConversationHistory({ ...live, historyBefore: undefined }, pages).messages).toEqual([
+    current,
+  ])
+  expect(mergeConversationHistory({ messages: [], turns: [] }, pages, false).messages).toEqual(
+    pages[0]?.messages,
+  )
+})
+
+it('rejects pages from before removal or rewind even without a matching live boundary', () => {
+  const old = history(50)
+  const saved = { ...conversationPage(old), historyRevision: 0 }
+  const live = { ...history(35), historyRevision: 1, historyBefore: 'm50' }
+  live.messages = live.messages.slice(50)
+  expect(mergeConversationHistory(live, [saved]).messages).toEqual(live.messages)
+  expect(conversationPage(live).historyRevision).toBe(1)
+  const removedOlder = { ...live, historyRevision: 2 }
+  expect(
+    mergeConversationHistory(removedOlder, [{ ...saved, historyRevision: 1 }]).messages,
+  ).toEqual(live.messages)
+})
+it('rejects offline pages older than a known summary revision', () => {
+  const saved = { ...conversationPage(history(5)), historyRevision: 0 }
+  const summary = { messages: [], turns: [], historyRevision: 1 }
+  expect(mergeConversationHistory(summary, [saved], false)).toBe(summary)
+  const restored = mergeConversationHistory(
+    { messages: [], turns: [], historyRevision: 0 },
+    [{ ...saved, historyRevision: 1 }],
+    false,
+  )
+  expect(restored.messages).toEqual(saved.messages)
+  expect(restored.historyRevision).toBe(1)
 })

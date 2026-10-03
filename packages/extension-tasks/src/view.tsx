@@ -1,4 +1,4 @@
-import { checkpointFileCount } from '@dovo/protocol'
+import { randomUUID, checkpointFileCount } from '@dovo/protocol'
 import { githubPullTarget } from '@dovo/protocol'
 import { ResizableSidebar } from './detail/resizable-sidebar'
 import { readTaskListViewState, saveTaskListViewState } from './list/task-list-view-state'
@@ -265,7 +265,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   }
   const addCodeReference = useCallback(
     (taskId: string, text: string) => {
-      setCodeReference({ taskId, id: crypto.randomUUID(), text })
+      setCodeReference({ taskId, id: randomUUID(), text })
       selectSurface('chat', true)
     },
     [selectSurface],
@@ -783,7 +783,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                           onTerminal={showTerminal}
                           onPullLink={(url) => openPullPreview(task, url)}
                           onBrowser={(url) => {
-                            setBrowserLink({ taskId: task.id, id: crypto.randomUUID(), url })
+                            setBrowserLink({ taskId: task.id, id: randomUUID(), url })
                             selectSurface('browser')
                           }}
                           onAside={() => setAsking(true)}
@@ -919,7 +919,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                           key={task.id}
                           task={task}
                           onAddToComposer={(text) => {
-                            setComposerInsert({ taskId: task.id, id: crypto.randomUUID(), text })
+                            setComposerInsert({ taskId: task.id, id: randomUUID(), text })
                             selectSurface('chat', true)
                           }}
                         />
@@ -1091,7 +1091,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       task={splitTask}
                       visible
                       onBrowser={(url) => {
-                        setBrowserLink({ taskId: splitTask.id, id: crypto.randomUUID(), url })
+                        setBrowserLink({ taskId: splitTask.id, id: randomUUID(), url })
                         setThreadSurfaces((current) => ({
                           ...current,
                           [taskCollectionKey(activeRuntimeId, splitTask.id)]: 'browser',

@@ -1,8 +1,53 @@
-import { decode } from '@dovo/protocol'
+import { decode, defaultTaskHarness } from '@dovo/protocol'
 import { expect, it, vi } from 'vitest'
 import { taskHarnessSchema, type Task, type Workspace, type WorkspacePatch } from '@dovo/protocol'
 import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'
+
+it('retains ended children when parent access narrows and accepts old over-cap children on restart', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const parent: Task = {
+      id: 'parent',
+      title: 'Parent',
+      agentId: '',
+      repositoryId: '',
+      status: 'review',
+      createdAt: '',
+      draft: '',
+      messages: [],
+      files: [],
+      example: false,
+      harness: { ...defaultTaskHarness('codex'), permission: 'workspace-write' },
+    }
+    const child: Task = {
+      ...parent,
+      id: 'child',
+      title: 'Child',
+      delegation: { parentTaskId: parent.id, parentRunId: 'ended-run', key: 'child' },
+    }
+    const store = new WorkspaceStore(db)
+    store.update((workspace) => ({ ...workspace, tasks: [parent, child] }))
+    const narrowed = { ...parent.harness!, permission: 'read-only' as const }
+    store.patch({
+      collection: 'tasks',
+      id: parent.id,
+      changes: { harness: { before: parent.harness, after: narrowed } },
+    })
+    expect(store.task(parent.id).harness?.permission).toBe('read-only')
+    const reopened = new WorkspaceStore(db)
+    expect(reopened.task(child.id).harness?.permission).toBe('workspace-write')
+    reopened.updateTask(parent.id, (task) => ({ ...task, title: 'Renamed' }))
+    expect(() =>
+      reopened.updateTask(child.id, (task) => ({
+        ...task,
+        agentOverrides: { permission: 'full-access' },
+      })),
+    ).toThrow('cannot exceed')
+  } finally {
+    db.close()
+  }
+})
 it('persists custom agent icons without adding presentation metadata to task harnesses', () => {
   const db = openDatabase(':memory:')
   try {
@@ -826,6 +871,208 @@ it('allows draft worktree selection and keeps setup state runtime-owned', () => 
       }),
     ).toThrow('before sending the first message')
     expect(store.task(draft.id).existingWorktreePath).toBeUndefined()
+  } finally {
+    db.close()
+  }
+})
+
+it('persists a history revision for removals while appends and streaming keep it stable', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const message = (id: string) => ({ id, role: 'assistant' as const, text: id })
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'history',
+          title: 'History',
+          repositoryId: '',
+          agentId: '',
+          status: 'done',
+          createdAt: new Date().toISOString(),
+          messages: [message('a'), message('b')],
+          files: [],
+          draft: '',
+          example: false,
+        },
+      ],
+    }))
+    store.updateTask('history', (task) => ({ ...task, messages: [...task.messages, message('c')] }))
+    expect(store.task('history').historyRevision).toBeUndefined()
+    store.updateTask('history', (task) => ({
+      ...task,
+      messages: task.messages.map((entry) => ({ ...entry, text: 'Streaming' })),
+    }))
+    expect(store.task('history').historyRevision).toBeUndefined()
+    store.updateTask('history', (task) => ({
+      ...task,
+      messages: task.messages.filter((entry) => entry.id !== 'b'),
+    }))
+    expect(store.task('history').historyRevision).toBe(1)
+    expect(new WorkspaceStore(db).task('history').historyRevision).toBe(1)
+    store.updateTask('history', (task) => ({ ...task, messages: task.messages.slice(0, 1) }))
+    expect(store.task('history').historyRevision).toBe(2)
+  } finally {
+    db.close()
+  }
+})
+
+it.each([
+  'agents',
+  'repositories',
+  'tasks',
+  'automations',
+  'jiraSources',
+  'jiraIssueLinks',
+] as const)(
+  'rejects duplicate %s identities without changing live state or persisted history',
+  (collection) => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new WorkspaceStore(db)
+      const task: Task = {
+        id: 'task',
+        title: 'Saved conversation',
+        agentId: '',
+        repositoryId: 'repo',
+        status: 'review',
+        createdAt: '',
+        draft: '',
+        messages: [{ id: 'saved', role: 'user', text: 'Preserve this history' }],
+        files: [],
+        example: false,
+      }
+      const workspace: Workspace = {
+        version: 1,
+        runtimeAddress: '',
+        agents: [{ ...defaultTaskHarness('codex'), id: 'agent', name: 'Agent' }],
+        repositories: [{ id: 'repo', name: 'Repository', path: '/repo', branch: 'main' }],
+        tasks: [task],
+        automations: [{ id: 'flow', name: 'Automation', nodes: [], edges: [] }],
+        jiraSources: [{ id: 'jira', site: 'https://team.atlassian.net', project: 'TEAM' }],
+        jiraIssueLinks: [{ sourceId: 'jira', issueId: 'TEAM-1', repositoryId: 'repo' }],
+      }
+      store.update(() => workspace)
+      const before = store.get()
+      const revision = store.version()
+      const document = db.prepare('SELECT value FROM documents WHERE id=?').get('workspace')
+      const history = db.prepare('SELECT * FROM conversation_items').all()
+      const duplicate =
+        collection === 'tasks'
+          ? {
+              ...task,
+              messages: [{ id: 'other', role: 'user' as const, text: 'Different history' }],
+            }
+          : collection === 'jiraIssueLinks'
+            ? { sourceId: 'jira', issueId: 'TEAM-1', repositoryId: 'other-repo' }
+            : workspace[collection]?.[0]
+      expect(() =>
+        store.update((current) => ({
+          ...current,
+          [collection]: [...(current[collection] ?? []), duplicate],
+        })),
+      ).toThrow(/Duplicate/)
+      expect(store.get()).toBe(before)
+      expect(store.version()).toBe(revision)
+      expect(db.prepare('SELECT value FROM documents WHERE id=?').get('workspace')).toEqual(
+        document,
+      )
+      expect(db.prepare('SELECT * FROM conversation_items').all()).toEqual(history)
+      expect(new WorkspaceStore(db).get()).toEqual(before)
+    } finally {
+      db.close()
+    }
+  },
+)
+
+it('removes duplicate legacy example IDs before validating real task identities', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const task: Task = {
+      id: 'shared',
+      title: 'Real conversation',
+      agentId: '',
+      repositoryId: '',
+      status: 'review',
+      createdAt: '',
+      draft: '',
+      messages: [{ id: 'saved', role: 'user', text: 'Real history' }],
+      files: [],
+      example: false,
+    }
+    const workspace: Workspace = {
+      version: 1,
+      runtimeAddress: '',
+      agents: [],
+      repositories: [],
+      automations: [],
+      tasks: [task, { ...task, example: true }],
+    }
+    db.prepare('INSERT INTO documents VALUES (?, ?)').run('workspace', JSON.stringify(workspace))
+    const store = new WorkspaceStore(db)
+    expect(store.get().tasks).toEqual([task])
+    expect(new WorkspaceStore(db).get().tasks).toEqual([task])
+  } finally {
+    db.close()
+  }
+})
+
+it('restores workspace caches and receipts after a failed enclosing transaction with nested updates', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const task: Task = {
+      id: 'transaction-task',
+      title: 'Transaction',
+      repositoryId: '',
+      agentId: '',
+      status: 'review',
+      createdAt: '',
+      messages: [{ id: 'saved', role: 'user', text: 'Saved' }],
+      files: [],
+      draft: '',
+      example: false,
+    }
+    store.update((workspace) => ({ ...workspace, tasks: [task] }))
+    const before = store.get()
+    const projected = store.publicWorkspace()
+    const revision = store.version()
+    const history = db.prepare('SELECT * FROM conversation_items').all()
+    const document = db.prepare('SELECT value FROM documents WHERE id=?').get('workspace')
+    expect(() =>
+      store.transaction(() => {
+        store.updateTask(
+          task.id,
+          (current) => ({
+            ...current,
+            messages: [...current.messages, { id: 'temporary', role: 'user', text: 'Temporary' }],
+          }),
+          { id: 'submission', fingerprint: 'fingerprint' },
+          {
+            id: 'action',
+            taskId: task.id,
+            attemptId: 'run',
+            kind: 'answer',
+            state: 'pending',
+          },
+        )
+        expect(store.task(task.id).messages).toHaveLength(2)
+        store.transaction(() =>
+          store.updateTask(task.id, (current) => ({ ...current, title: 'Tentative' })),
+        )
+        expect(store.publicWorkspace().tasks[0].title).toBe('Tentative')
+        db.prepare('INSERT INTO documents VALUES (?, ?)').run('workspace', 'duplicate')
+      }),
+    ).toThrow(/UNIQUE constraint/)
+    expect(store.get()).toBe(before)
+    expect(store.publicWorkspace()).toBe(projected)
+    expect(store.version()).toBe(revision)
+    expect(store.taskSubmission(task.id, 'submission')).toBeUndefined()
+    expect(store.providerActions.state('action')).toBeUndefined()
+    expect(db.prepare('SELECT * FROM conversation_items').all()).toEqual(history)
+    expect(db.prepare('SELECT value FROM documents WHERE id=?').get('workspace')).toEqual(document)
+    expect(new WorkspaceStore(db).get()).toEqual(before)
   } finally {
     db.close()
   }

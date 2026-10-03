@@ -1,5 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { templateFromTask } from '@dovo/protocol'
+import { randomUUID, templateFromTask } from '@dovo/protocol'
 import { conversationPageSchema, taskTranscript, type ConversationPage } from '@dovo/protocol'
 import { useRef, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
@@ -536,7 +536,7 @@ export function TaskContextMenu({
                           ...item,
                           templates: [
                             ...(item.templates ?? []),
-                            templateFromTask(task, name, crypto.randomUUID()),
+                            templateFromTask(task, name, randomUUID()),
                           ],
                         }
                       : item,

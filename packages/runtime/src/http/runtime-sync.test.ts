@@ -394,3 +394,36 @@ it('updates a shared client activity subscription when detail visibility changes
     .poll(() => latest.includes('pwd') && !latest.includes('full-client-output'))
     .toBe(true)
 })
+
+it('avoids repeated idle defaults, devices and job projections and observes service invalidation', async () => {
+  const { runtime, open } = await setup()
+  const client = await open()
+  client.socket.send(JSON.stringify({ type: 'resume' }))
+  await client.wait('snapshot')
+  const s = runtime.services
+  const listJobs = vi.spyOn(s.jobs, 'list')
+  const listDevices = vi.spyOn(s.devices, 'list')
+  const prepare = vi.spyOn(s.db, 'prepare')
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 650))
+    expect(listJobs).not.toHaveBeenCalled()
+    expect(listDevices).not.toHaveBeenCalled()
+    expect(
+      prepare.mock.calls.filter(([sql]) =>
+        /provisional_devices|FROM documents WHERE id =/.test(sql),
+      ),
+    ).toHaveLength(0)
+    s.defaults.save({
+      ...s.defaults.get(),
+      harness: { ...s.defaults.get().harness, model: 'sync-invalidated' },
+    })
+    s.devices.add('New device', 'new-device-token')
+    const delta = await client.wait('delta')
+    expect(JSON.stringify(delta)).toContain('sync-invalidated')
+    expect(JSON.stringify(delta)).toContain('New device')
+  } finally {
+    listJobs.mockRestore()
+    listDevices.mockRestore()
+    prepare.mockRestore()
+  }
+})

@@ -353,6 +353,8 @@ export const taskSchema = mutableStruct({
   /** Control token for the current attempt, allocated before checkout preparation. */
   activeRunId: Schema.optional(Schema.String),
   historyBefore: Schema.optional(Schema.String),
+  /** Changes on conversation removals; append/stream updates preserve loaded pages. */
+  historyRevision: Schema.optional(Schema.NonNegativeInt),
   /** Derived metadata for turns outside a paged conversation. Never persisted by clients. */
   historyTotals: Schema.optional(
     mutableStruct({

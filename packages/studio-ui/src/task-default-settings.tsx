@@ -1,5 +1,6 @@
 import { Layers, Undo2 } from 'lucide-react'
 import {
+  randomUUID,
   scopedSettingsResultSchema,
   taskDefaultOrigins,
   settingsScopes,
@@ -399,7 +400,7 @@ function TaskDefaultSettingsForm({
             disabled={prompts.length >= 40}
             onClick={() => {
               setSaved(false)
-              setPrompts([...prompts, { id: crypto.randomUUID(), name: '', text: '' }])
+              setPrompts([...prompts, { id: randomUUID(), name: '', text: '' }])
             }}
           >
             Add prompt

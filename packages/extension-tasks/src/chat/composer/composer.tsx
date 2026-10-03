@@ -1,4 +1,4 @@
-import { checkpointCanUndo } from '@dovo/protocol'
+import { randomUUID, checkpointCanUndo } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -112,7 +112,7 @@ export function Composer({
     if (id === 'review')
       void request(
         '/api/tasks/message',
-        { id: task.id, messageId: crypto.randomUUID(), text: REVIEW_PROMPT, review: true },
+        { id: task.id, messageId: randomUUID(), text: REVIEW_PROMPT, review: true },
         responses.ok,
       ).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
     else if (id === 'compact') compact()
@@ -236,7 +236,7 @@ export function Composer({
       JSON.stringify(attempt.current.attachmentIds) !== JSON.stringify(attachmentIds)
     )
       attempt.current = {
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         text,
         attachmentIds,
         mode,

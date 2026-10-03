@@ -36,7 +36,7 @@ const snapshot = (tasks: Task[], detailTaskIds?: string[]) =>
     pendingDevices: [],
   })
 it('retains cached history without restoring deleted tasks or overwriting fresh drafts and status', () => {
-  const old = snapshot([task('a'), task('deleted')])
+  const old = snapshot([{ ...task('a'), historyBefore: 'm60' }, task('deleted')])
   const shell = { ...task('a'), title: 'New title', draft: 'New draft', messages: [] }
   const next = snapshot([shell, { ...task('new'), messages: [] }], [])
   const cached = retainCachedThreads(old, next)
@@ -46,6 +46,7 @@ it('retains cached history without restoring deleted tasks or overwriting fresh 
     title: 'New title',
     draft: 'New draft',
     messages: task('a').messages,
+    historyBefore: 'm60',
   })
   expect(next.workspace.tasks[0]?.messages).toEqual([])
   const authoritative = snapshot([{ ...shell, messages: [] }], ['a'])
@@ -81,4 +82,13 @@ it('keeps current file metadata and side-chat drafts when adding cached content'
     draft: 'new draft',
     messages: previous.sideChats[0]?.messages,
   })
+})
+it('invalidates cached content and its loaded marker when a summary reports removed history', () => {
+  const previous = { ...task('a'), historyRevision: 0 }
+  const summary = { ...previous, messages: [], historyRevision: 1 }
+  expect(cachedThread(summary, previous)).toBe(summary)
+  const retained = retainCachedThreads(snapshot([previous], ['a']), snapshot([summary], []))
+  expect(retained.detailTaskIds).toEqual([])
+  expect(retained.workspace.tasks[0]?.messages).toEqual([])
+  expect(retained.workspace.tasks[0]?.historyRevision).toBe(1)
 })

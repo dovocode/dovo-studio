@@ -11,15 +11,49 @@ import { isDeepStrictEqual } from 'node:util'
 import { environmentSettings } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 
+const defaultsCache = new WeakMap<
+  Database.Database,
+  {
+    value: ReturnType<typeof readDefaults>
+    expires: number
+    revision: number
+  }
+>()
+let revision = 0
+function readDefaults(db: Database.Database) {
+  const row = decode(
+    Schema.UndefinedOr(mutableStruct({ value: Schema.String })),
+    db.prepare('SELECT value FROM documents WHERE id = ?').get('runtime-defaults'),
+  )
+  return decode(runtimeDefaultsSchema, row ? JSON.parse(row.value) : {})
+}
+
 /** Shared runtime preferences; task copies stay stable when these defaults change. */
 export class RuntimeDefaults {
   constructor(private db: Database.Database) {}
+  private cached() {
+    // An outer transaction can roll back. Never publish its uncommitted settings
+    // into the shared cache, or serve an older cached value inside it.
+    if (this.db.inTransaction)
+      return { value: readDefaults(this.db), expires: 0, revision: ++revision }
+    let cached = defaultsCache.get(this.db)
+    if (!cached || cached.expires <= Date.now()) {
+      const value = readDefaults(this.db)
+      cached = {
+        value,
+        expires: Date.now() + 15000,
+        revision: cached && isDeepStrictEqual(cached.value, value) ? cached.revision : ++revision,
+      }
+      defaultsCache.set(this.db, cached)
+    }
+    return cached
+  }
+  version() {
+    return this.cached().revision
+  }
   get() {
-    const row = decode(
-      Schema.UndefinedOr(mutableStruct({ value: Schema.String })),
-      this.db.prepare('SELECT value FROM documents WHERE id = ?').get('runtime-defaults'),
-    )
-    return decode(runtimeDefaultsSchema, row ? JSON.parse(row.value) : {})
+    // Callers historically receive an independent settings object.
+    return structuredClone(this.cached().value)
   }
   save(value: unknown, configure = true) {
     const settings = decode(runtimeDefaultsSchema, value)
@@ -49,6 +83,7 @@ export class RuntimeDefaults {
         'runtime-defaults',
         JSON.stringify({ ...settings, configured: configure || settings.configured }),
       )
+    defaultsCache.delete(this.db)
     return this.get()
   }
 }

@@ -11,12 +11,12 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { gzipSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import * as tar from 'tar'
 import { AcpInstallations } from './acp-installations.js'
 import { openDatabase } from '../../storage/database.js'
@@ -41,6 +41,38 @@ const registryEntry = {
 const execFileAsync = promisify(execFile)
 const inputUrl = (input: RequestInfo | URL) =>
   input instanceof Request ? input.url : input.toString()
+
+it.runIf(process.platform !== 'win32')(
+  'handles a failed owned-process stop without creating an unhandled cleanup rejection',
+  async () => {
+    const db = openDatabase(':memory:')
+    const installer = new AcpInstallations(db)
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      detached: process.platform !== 'win32',
+      stdio: 'ignore',
+    })
+    const closed = new Promise<void>((resolve) => child.once('close', () => resolve()))
+    const unhandled: unknown[] = []
+    const observe = (reason: unknown) => unhandled.push(reason)
+    process.on('unhandledRejection', observe)
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw new Error('Shutdown denied')
+    })
+    try {
+      await expect(installer['stopProcess'](child)).rejects.toThrow('Shutdown denied')
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      expect(unhandled).toEqual([])
+      expect(installer['activeStops'].size).toBe(0)
+    } finally {
+      kill.mockRestore()
+      process.removeListener('unhandledRejection', observe)
+      child.kill('SIGKILL')
+      await closed
+      await installer.dispose()
+      db.close()
+    }
+  },
+)
 
 function maliciousTar(path: string, type: 'file' | 'symlink') {
   const header = Buffer.alloc(512)

@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import type { Task, Workspace } from './schema'
 export function updateTask(
   workspace: Workspace,
@@ -27,7 +28,7 @@ export function createTask(
   },
 ): Task {
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     title: input.title,
     repositoryId: input.repositoryId,
     agentId: input.agentId,
@@ -40,7 +41,7 @@ export function createTask(
     status: 'draft',
     createdAt: new Date().toISOString(),
     messages: input.objective.trim()
-      ? [{ id: crypto.randomUUID(), role: 'user', text: input.objective }]
+      ? [{ id: randomUUID(), role: 'user', text: input.objective }]
       : [],
     files: [],
     draft: '',

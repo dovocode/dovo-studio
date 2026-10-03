@@ -1,3 +1,4 @@
+import { stopOwnedChild } from '../../agents/execution/stop-owned-child.js'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createFilePreview } from './file-preview.js'
@@ -100,21 +101,79 @@ export class GitService {
       throw error
     }
   }
-  setupWorktree(cwd: string, script: string) {
+  async setupWorktree(cwd: string, script: string, signal?: AbortSignal) {
+    signal?.throwIfAborted()
     const settings = this.settings()
-    return this.run(
-      cwd,
-      settings.shell || defaultShell(),
+    const command = settings.shell || defaultShell()
+    const args =
       process.platform === 'win32' && !settings.shell
         ? [
             ...shellArguments(settings),
             '-Command',
             `$ErrorActionPreference = 'Stop';\n${script}\nif ($LASTEXITCODE) { exit $LASTEXITCODE }`,
           ]
-        : [...shellArguments(settings), '-c', `set -e\n${script}`],
-      300000,
-      2 * 1024 * 1024,
-    )
+        : [...shellArguments(settings), '-c', `set -e\n${script}`]
+    this.audit?.(cwd, [command, ...args])
+    const child = spawn(command, args, {
+      cwd,
+      env: processEnvironment(),
+      detached: process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let failure: Error | undefined
+    let cleanup: Promise<void> | undefined
+    let bytes = 0
+    let stdout = ''
+    let stderr = ''
+    let rejectShutdown!: (error: unknown) => void
+    const shutdownFailed = new Promise<never>((_resolve, reject) => {
+      rejectShutdown = reject
+    })
+    const stop = (error: Error) => {
+      failure ??= error
+      if (!cleanup) {
+        cleanup = stopOwnedChild(child)
+        // A failed kill must report the shutdown error even if close never arrives.
+        void cleanup.catch(rejectShutdown)
+      }
+    }
+    const aborted = () => stop(new Error('Worktree setup cancelled', { cause: signal?.reason }))
+    const closed = new Promise<void>((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', (code) => {
+        if (code === 0 || failure) resolve()
+        else reject(new Error(`Worktree setup exited ${code}: ${stderr}`))
+      })
+      const output = (data: string, error: boolean) => {
+        bytes += Buffer.byteLength(data)
+        if (bytes > 2 * 1024 * 1024) {
+          stop(new Error('Worktree setup output exceeded 2 MiB'))
+          return
+        }
+        if (error) stderr += data
+        else stdout += data
+      }
+      child.stdout.setEncoding('utf8').on('data', (data: string) => output(data, false))
+      child.stderr.setEncoding('utf8').on('data', (data: string) => output(data, true))
+    })
+    signal?.addEventListener('abort', aborted, { once: true })
+    if (signal?.aborted) aborted()
+    const timeout = setTimeout(() => stop(new Error('Worktree setup timed out')), 300000)
+    try {
+      await Promise.race([closed, shutdownFailed])
+      if (cleanup) await cleanup
+      if (failure) throw failure
+      this.audit?.(cwd, [command, ...args], {})
+      return stdout
+    } catch (error) {
+      this.audit?.(cwd, [command, ...args], { error: errorMessage(error) })
+      throw error
+    } finally {
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', aborted)
+      // Retain checkout ownership until the process group has stopped.
+      if (cleanup) await cleanup
+    }
   }
   command(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
     return this.run(cwd, this.settings().git, args, 30000, 12 * 1024 * 1024, env)

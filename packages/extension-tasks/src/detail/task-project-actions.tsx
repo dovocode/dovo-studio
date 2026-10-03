@@ -3,7 +3,7 @@ import { Hash, LayoutTemplate, Play, Plus, Settings2, Trash2 } from 'lucide-reac
 import { TaskTemplatesDialog } from '../dialogs/task-templates-dialog'
 import { SavedPromptsDialog } from '../dialogs/saved-prompts-dialog'
 import { ProjectInstructionsDialog } from '../dialogs/project-instructions-dialog'
-import { canChangeTaskCheckout, type ProjectAction } from '@dovo/protocol'
+import { randomUUID, canChangeTaskCheckout, type ProjectAction } from '@dovo/protocol'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import {
   Button,
@@ -205,7 +205,7 @@ function ProjectActionsDialog({
 }) {
   const { setWorkspace } = useWorkspace()
   const [rows, setRows] = useState<ProjectAction[]>(() =>
-    actions.length ? actions : [{ id: crypto.randomUUID(), name: 'Run tests', command: '' }],
+    actions.length ? actions : [{ id: randomUUID(), name: 'Run tests', command: '' }],
   )
   const [error, setError] = useState('')
   const change = (id: string, changes: Partial<ProjectAction>) =>
@@ -274,7 +274,7 @@ function ProjectActionsDialog({
           className="w-fit gap-1"
           disabled={rows.length >= 20}
           onClick={() =>
-            setRows((current) => [...current, { id: crypto.randomUUID(), name: '', command: '' }])
+            setRows((current) => [...current, { id: randomUUID(), name: '', command: '' }])
           }
         >
           <Plus className="size-3.5" /> Add action

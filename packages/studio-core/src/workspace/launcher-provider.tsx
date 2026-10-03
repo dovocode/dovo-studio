@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
@@ -8,6 +8,8 @@ import {
   snapshotSchema,
   type RuntimeRegistry,
   type RuntimeOverview,
+  type RuntimeProfile,
+  type RuntimeReadCache,
 } from '@dovo/protocol'
 import { WorkspaceContext, type WorkspaceContextValue } from './context'
 import { createWorkspace } from './seed'
@@ -29,6 +31,37 @@ export function LauncherWorkspaceProvider({
   const current = useRef(registry)
   current.current = registry
   const [entries, setEntries] = useState<Record<string, RuntimeOverview>>({})
+  const caches = useRef(new Map<string, { profile: RuntimeProfile; cache: RuntimeReadCache }>())
+  const cacheFor = useCallback((profile: RuntimeProfile) => {
+    let entry = caches.current.get(profile.id)
+    if (!entry || !sameRuntimeConnection(entry.profile.connection, profile.connection)) {
+      if (entry) void entry.cache.close()
+      entry = { profile, cache: browserReadCache(profile.connection) }
+      caches.current.set(profile.id, entry)
+    }
+    return entry.cache
+  }, [])
+  useEffect(() => {
+    for (const [id, entry] of caches.current) {
+      if (
+        !registry.profiles.some(
+          (profile) =>
+            profile.id === id &&
+            sameRuntimeConnection(profile.connection, entry.profile.connection),
+        )
+      ) {
+        void entry.cache.close()
+        caches.current.delete(id)
+      }
+    }
+  }, [registry])
+  useEffect(
+    () => () => {
+      for (const entry of caches.current.values()) void entry.cache.close()
+      caches.current.clear()
+    },
+    [],
+  )
   const readRuntimeEffect = useCallback<WorkspaceContextValue['readRuntimeEffect']>(
     (profile, path, input, schema, method) =>
       Effect.suspend(() => {
@@ -135,7 +168,7 @@ export function LauncherWorkspaceProvider({
       readRuntimeEffect,
       refreshRuntime,
       readCache: null,
-      runtimeReadCache: (profile) => browserReadCache(profile.connection),
+      runtimeReadCache: cacheFor,
       setWorkspace: unavailable,
       previewTask: unavailableAsync,
       connect: unavailableAsync,
@@ -146,6 +179,8 @@ export function LauncherWorkspaceProvider({
       flush: unavailableAsync,
       retrySync: unavailableAsync,
       discardAndReload: unavailableAsync,
+      mutationStatus: () => ({ pending: 0, error: null }),
+      discardMutations: unavailableAsync,
       refreshRuntimes: async () => {
         await Promise.all(registry.profiles.map(refreshRuntime))
       },
@@ -159,6 +194,7 @@ export function LauncherWorkspaceProvider({
     readRuntime,
     readRuntimeEffect,
     refreshRuntime,
+    cacheFor,
   ])
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }

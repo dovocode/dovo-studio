@@ -1,6 +1,7 @@
 import { decode } from '@dovo/protocol'
 import { expect, it, vi } from 'vitest'
 import { WorkspaceSynchronization, type WorkspaceOutbox } from './synchronization'
+import type { WorkspaceOutboxChange } from './synchronization'
 import { workspaceSchema, type RuntimeConnection, type WorkspacePatch } from '@dovo/protocol'
 const connection: RuntimeConnection = {
   address: 'http://localhost:8787',
@@ -133,15 +134,23 @@ it('commits the durable outbox before sending any edit to the host', async () =>
   const flushing = sync.flush()
   await Promise.resolve()
   expect(send).not.toHaveBeenCalled()
-  expect(persist).toHaveBeenCalledWith(connection, {
-    version: 1,
-    workspace: editedWorkspace,
-    patches: [patch],
-  })
+  expect(persist).toHaveBeenCalledWith(
+    connection,
+    {
+      version: 1,
+      workspace: editedWorkspace,
+      patches: [patch],
+      ids: expect.arrayContaining([expect.any(String)]),
+    },
+    { append: expect.arrayContaining([expect.any(String)]), remove: [] },
+  )
   release()
   await flushing
   expect(send).toHaveBeenCalledOnce()
-  expect(persist).toHaveBeenLastCalledWith(connection, null)
+  expect(persist).toHaveBeenLastCalledWith(connection, null, {
+    append: [],
+    remove: persist.mock.calls[0][1]?.ids,
+  })
 })
 it('restores failed edits after restart and requires explicit retry before replay', async () => {
   let saved: WorkspaceOutbox | null = null
@@ -158,7 +167,7 @@ it('restores failed edits after restart and requires explicit retry before repla
   first.bind(connection)
   first.enqueue([patch], editedWorkspace)
   await expect(first.flush()).rejects.toThrow('Offline')
-  expect(saved).toEqual({
+  expect(saved).toMatchObject({
     version: 1,
     workspace: editedWorkspace,
     patches: [patch],
@@ -211,6 +220,114 @@ it('does not discard pending changes when the durable clear fails', async () => 
   expect(sync.hasPending()).toBe(true)
   expect(sync.accepts(sync.checkpoint())).toBe(false)
 })
+
+it('keeps newer edits durable when they arrive during an explicit discard', async () => {
+  const { Effect } = await import('effect')
+  const pending = new Map<string, WorkspacePatch>([['old-edit', patch]])
+  let release: () => void = () => {}
+  const clearing = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let started = false
+  const persist = async (
+    _connection: RuntimeConnection,
+    value: WorkspaceOutbox | null,
+    change: WorkspaceOutboxChange,
+  ) => {
+    if (change.remove.includes('old-edit')) {
+      started = true
+      await clearing
+    }
+    for (const id of change.remove) pending.delete(id)
+    for (const id of change.append) {
+      const index = value?.ids?.indexOf(id) ?? -1
+      if (!value || index < 0) throw new Error('Missing durable edit')
+      pending.set(id, value.patches[index])
+    }
+  }
+  const send = vi.fn<(connection: RuntimeConnection, sent: WorkspacePatch) => Promise<void>>(
+    async (_connection, sent) => {
+      expect([...pending.values()]).toContainEqual(sent)
+    },
+  )
+  const sync = new WorkspaceSynchronization(() => {}, send, persist)
+  sync.bind(connection, {
+    version: 1,
+    workspace: editedWorkspace,
+    patches: [patch],
+    ids: ['old-edit'],
+  })
+  const discard = sync.discard(sync.checkpoint()).then(
+    () => 'Unexpected success',
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  )
+  await vi.waitFor(() => expect(started).toBe(true))
+  const newer: WorkspacePatch = {
+    collection: 'agents',
+    id: 'agent',
+    changes: { instructions: { before: '', after: 'Keep the new edit' } },
+  }
+  sync.enqueue([newer], {
+    ...editedWorkspace,
+    agents: editedWorkspace.agents.map((agent) => ({
+      ...agent,
+      instructions: 'Keep the new edit',
+    })),
+  })
+  await expect(sync.flush()).rejects.toThrow('finish clearing')
+  expect(send).not.toHaveBeenCalled()
+  release()
+  expect(await discard).toContain('New edits remain queued')
+  const saved = await Effect.runPromise(sync.savedEffect())
+  expect(saved.outbox?.patches).toEqual([newer])
+  expect([...pending.values()]).toEqual([newer])
+  await sync.retry()
+  expect(send).toHaveBeenCalledExactlyOnceWith(connection, newer)
+  expect(pending.size).toBe(0)
+})
+
+it.each(['acknowledgement', 'discard'] as const)(
+  'retires committed edits when interrupted during %s persistence',
+  async (operation) => {
+    const { Effect, Fiber } = await import('effect')
+    let release: () => void = () => {}
+    const committed = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let clearing = false
+    let durable = true
+    const send = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+    const sync = new WorkspaceSynchronization(
+      () => {},
+      send,
+      async (_connection, _value, change) => {
+        if (change.remove.length) {
+          clearing = true
+          await committed
+          durable = false
+        }
+      },
+    )
+    sync.bind(connection, {
+      version: 1,
+      workspace: editedWorkspace,
+      patches: [patch],
+      ids: ['saved-edit'],
+    })
+    const fiber = Effect.runFork(
+      operation === 'discard' ? sync.discardEffect(sync.checkpoint()) : sync.retryEffect(),
+    )
+    await vi.waitFor(() => expect(clearing).toBe(true))
+    await Effect.runPromise(Fiber.interruptFork(fiber))
+    release()
+    await Effect.runPromise(Fiber.await(fiber))
+    expect(durable).toBe(false)
+    expect(sync.hasPending()).toBe(false)
+    const sends = send.mock.calls.length
+    await sync.retry()
+    expect(send).toHaveBeenCalledTimes(sends)
+  },
+)
 
 it('keeps interrupted patches pending and requires an explicit retry', async () => {
   const { Effect, Fiber } = await import('effect')

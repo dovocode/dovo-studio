@@ -1,6 +1,13 @@
 import { resolveTaskAgent, type Task, type Agent, type Subagent } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
-/** Derived metadata only; the child's conversation remains the authoritative result. */
+/** Dovo-owned records mirror child tasks in this workspace; provider-native records
+ * (no `source`) come from the harness itself and are never derived here. */
+function ownedBy(record: Subagent) {
+  return record.source === 'dovo' ? (record.taskId ?? record.id) : undefined
+}
+/** Derived metadata only; the child's conversation remains the authoritative result.
+ * Records for children that no longer exist are dropped so parents never link to a
+ * missing task. */
 export function projectDelegatedAgents(tasks: Task[], agents: Agent[]) {
   const children = new Map<string, Task[]>()
   for (const task of tasks)
@@ -9,12 +16,19 @@ export function projectDelegatedAgents(tasks: Task[], agents: Agent[]) {
       group.push(task)
       children.set(task.delegation.parentTaskId, group)
     }
-  if (!children.size) return tasks
   return tasks.map((parent) => {
-    const group = children.get(parent.id)
-    if (!group) return parent
+    const group = children.get(parent.id) ?? []
     const records = parent.subagents ?? []
-    const merged = new Map(records.map((agent) => [agent.id, agent]))
+    if (!group.length && !records.some((record) => ownedBy(record) !== undefined)) return parent
+    const current = new Set(group.map((child) => child.id))
+    const merged = new Map(
+      records
+        .filter((record) => {
+          const childId = ownedBy(record)
+          return childId === undefined || current.has(childId)
+        })
+        .map((record) => [record.id, record]),
+    )
     for (const child of group) {
       const agent = resolveTaskAgent(child, agents)
       const status: Subagent['status'] =

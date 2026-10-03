@@ -29,6 +29,8 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
     retrySync,
     discardAndReload,
     pendingSync,
+    mutationStatus,
+    discardMutations,
   } = useWorkspace()
   const [address, setAddress] = useApplicationState(''),
     [name, setName] = useApplicationState('My computer'),
@@ -43,6 +45,7 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
     } | null>(null),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
+  const [discardTarget, setDiscardTarget] = useApplicationState<RuntimeProfile | null>(null)
   const generation = useRef(0)
   const pairingPhase = useRef<'waiting' | 'cancelled' | 'saving'>('waiting')
   const connectRef = useRef(connect)
@@ -221,6 +224,19 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
                 </p>
               </div>
               <div className="flex flex-wrap gap-1">
+                {mutationStatus(entry.profile).pending > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => {
+                      setError('')
+                      setDiscardTarget(entry.profile)
+                    }}
+                  >
+                    Discard saved actions ({mutationStatus(entry.profile).pending})
+                  </Button>
+                )}
                 {!entry.snapshot?.owner && (
                   <Button
                     size="sm"
@@ -307,6 +323,44 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
               }
             >
               Discard edits and reload
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!discardTarget}
+        onOpenChange={(value) => {
+          if (!value && !busy) setDiscardTarget(null)
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogTitle>Discard saved actions?</DialogTitle>
+          <DialogDescription>
+            This removes saved commands for {discardTarget?.name} from this device, including unsent
+            messages. Actions already applied on the computer remain applied. Workspace edits remain
+            saved. The computer can be offline.
+          </DialogDescription>
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" disabled={busy} onClick={() => setDiscardTarget(null)}>
+              Keep actions
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  if (!discardTarget) return
+                  await discardMutations(discardTarget)
+                  setDiscardTarget(null)
+                })
+              }
+            >
+              Discard saved actions
             </Button>
           </div>
         </DialogContent>

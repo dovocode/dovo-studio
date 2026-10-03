@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import { draftAttachments, type LocalAttachment } from './draft-attachments'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef, useState } from 'react'
@@ -68,7 +69,7 @@ export function useAttachments(task: Task) {
         throw new Error('Each attachment must be 4 MB or smaller.')
       const batch = selected.map((file) => {
         const attachment = {
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           name: file.name,
           mime: file.type,
           size: file.size,

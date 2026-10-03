@@ -36,6 +36,7 @@ import {
 type Running = {
   id: string
   runId: string
+  retiring?: boolean
   controller: AbortController
   fiber?: Fiber.RuntimeFiber<void, RuntimeFailure>
   cwd?: string
@@ -676,6 +677,8 @@ export class Tasks {
       Effect.uninterruptible,
     )
   }
+  // Promise boundary used by task orchestration consumers and tasks.test.ts.
+  // fallow-ignore-next-line unused-class-member
   steer(id: string, messageId: string, text: string, attachmentIds: string[] = []) {
     return runClientEffect(this.steerEffect(id, messageId, text, attachmentIds))
   }
@@ -712,7 +715,9 @@ export class Tasks {
           }
           if (
             task.delegation &&
-            this.running.get(task.delegation.parentTaskId)?.id !== task.delegation.parentRunId
+            (this.running.get(task.delegation.parentTaskId)?.id !== task.delegation.parentRunId ||
+              this.running.get(task.delegation.parentTaskId)?.retiring ||
+              this.running.get(task.delegation.parentTaskId)?.controller.signal.aborted)
           )
             return Effect.fail(
               new HttpError(
@@ -720,6 +725,30 @@ export class Tasks {
                 'This child’s parent turn has ended. Start a new task to continue independently.',
               ),
             )
+          if (task.delegation) {
+            const parent = this.store.task(task.delegation.parentTaskId)
+            const parentAgent = resolveTaskAgent(parent, this.store.get().agents)
+            const childAgent = resolveTaskAgent(task, this.store.get().agents)
+            const checkout = parent.linkedCheckouts?.find(
+              (link) => link.id === task.delegation?.checkoutId,
+            )
+            if (task.delegation.checkoutId && !checkout)
+              return Effect.fail(new HttpError(403, 'Child linked checkout no longer exists'))
+            if (
+              !parentAgent ||
+              !childAgent ||
+              delegatedAccess(
+                checkout?.access === 'read-only' ? 'read-only' : parentAgent.permission,
+                childAgent.permission,
+              ) !== childAgent.permission
+            )
+              return Effect.fail(
+                new HttpError(
+                  403,
+                  'Child permissions cannot exceed their parent or checkout access',
+                ),
+              )
+          }
           if (task.example || task.archived || task.archivedAt)
             return Effect.fail(new HttpError(400, 'Restore this task before running it'))
           if (
@@ -776,8 +805,14 @@ export class Tasks {
           )
           this.running.set(id, run)
           const work = Effect.gen(this, function* () {
-            const cwd = yield* runtimeOperation(() => this.checkouts.directory(id))
-            const linked = yield* runtimeOperation(() => this.checkouts.linked.resolve(id))
+            const cwd = yield* runtimeOperation(() =>
+              this.checkouts.directory(id, run.controller.signal),
+            )
+            yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
+            const linked = yield* runtimeOperation(() =>
+              this.checkouts.linked.resolve(id, run.controller.signal),
+            )
+            const hasGit = !this.checkouts.executionRepository(id).kind
             if (!task.delegation && linked.some((item) => item.directory === cwd))
               throw new HttpError(400, 'The primary checkout is already part of this thread')
             const directories = [
@@ -826,7 +861,9 @@ export class Tasks {
             run.directories = directories
             yield* Deferred.succeed(ready, undefined)
             if (task.runPhase === 'finalizing') {
-              yield* this.runner.finalizeEffect(id, cwd)
+              run.retiring = true
+              yield* this.drainChildren(id, run.id)
+              yield* this.runner.finalizeEffect(id, cwd, hasGit)
               resumeInterruptedTurn = false
               if (pauseQueue || !this.store.task(id).queue?.length) return
             }
@@ -850,6 +887,7 @@ export class Tasks {
                 run.id = randomUUID()
                 run.runId = randomUUID()
               }
+              run.retiring = false
               firstAttempt = false
               if (!resumeInterruptedTurn) this.queue.take(id, run.runId, run.id)
               resumeInterruptedTurn = false
@@ -857,6 +895,7 @@ export class Tasks {
               yield* this.runner.runEffect(
                 id,
                 cwd,
+                hasGit,
                 run.controller,
                 (steer) => {
                   run.steer = steer
@@ -910,7 +949,14 @@ export class Tasks {
                   )
                 },
                 continuing,
+                () =>
+                  Effect.gen(this, function* () {
+                    run.retiring = true
+                    yield* this.drainChildren(id, run.id)
+                  }),
               )
+              run.retiring = true
+              yield* this.drainChildren(id, run.id)
             } while (!this.store.task(id).queuePaused && this.store.task(id).queue?.length)
           }).pipe(
             Effect.tapErrorCause((cause) =>
@@ -965,7 +1011,8 @@ export class Tasks {
                 // Let already-delivered input enqueue before releasing this task's ownership.
                 yield* Effect.yieldNow()
                 if (this.running.get(id) === run) {
-                  this.stopChildren(id, run.id)
+                  run.retiring = true
+                  yield* this.drainChildren(id, run.id)
                   this.running.delete(id)
                   const interrupt = this.store.providerActions.state(`interrupt:${run.id}`)
                   if (interrupt && interrupt !== 'uncertain')
@@ -1097,15 +1144,27 @@ export class Tasks {
     }
     return task.id
   }
+  private drainChildren(parentTaskId: string, parentRunId: string) {
+    return Effect.suspend(() => {
+      const fibers = this.stopChildren(parentTaskId, parentRunId)
+      // Child failures are already persisted. Await settlement without joining their failure
+      // into the parent, and keep parent ownership until descendant finalizers have drained.
+      return Effect.forEach(fibers, (fiber) => Fiber.await(fiber), { discard: true })
+    })
+  }
   private stopChildren(parentTaskId: string, parentRunId: string) {
+    const fibers: Fiber.RuntimeFiber<void, RuntimeFailure>[] = []
     for (const child of this.store.get().tasks) {
       if (
         child.delegation?.parentTaskId !== parentTaskId ||
         child.delegation.parentRunId !== parentRunId
       )
         continue
-      if (this.running.has(child.id)) this.cancel(child.id)
-      else if (child.status === 'draft')
+      const run = this.running.get(child.id)
+      if (run) {
+        if (run.fiber) fibers.push(run.fiber)
+        if (!run.controller.signal.aborted) this.cancel(child.id)
+      } else if (child.status === 'draft')
         this.store.updateTask(child.id, (task) => ({
           ...task,
           status: 'cancelled',
@@ -1113,6 +1172,7 @@ export class Tasks {
           restartRecovery: undefined,
         }))
     }
+    return fibers
   }
   subagentList(taskId: string) {
     this.store.task(taskId)
@@ -1170,7 +1230,7 @@ export class Tasks {
   subagentSpawn(input: SubagentSpawn) {
     const parent = this.store.task(input.taskId)
     const run = this.running.get(parent.id)
-    if (!run || run.controller.signal.aborted || parent.activeRunId !== run.id)
+    if (!run || run.retiring || run.controller.signal.aborted || parent.activeRunId !== run.id)
       throw new HttpError(409, 'Children can only be launched during an active parent turn')
     if (input.parentRunId && input.parentRunId !== run.id)
       throw new HttpError(409, 'This parent turn has ended')
@@ -1266,6 +1326,7 @@ export class Tasks {
         false,
         () =>
           this.running.get(parent.id) === run &&
+          !run.retiring &&
           !run.controller.signal.aborted &&
           this.store.task(child.id).status === 'draft',
       ),
@@ -1287,9 +1348,28 @@ export class Tasks {
     enabled: () => boolean,
     automationOwns: (id: string) => boolean = () => false,
   ) {
+    // Draft children never reached a running turn, so storage recovery gives them no
+    // restart marker. Settle every orphan before a resumed parent can wait on it.
+    for (const task of this.store.get().tasks) {
+      if (!task.delegation || (task.status !== 'draft' && !task.restartRecovery)) continue
+      const parent = this.running.get(task.delegation.parentTaskId)
+      if (
+        parent?.id === task.delegation.parentRunId &&
+        !parent.retiring &&
+        !parent.controller.signal.aborted
+      )
+        continue
+      this.store.updateTask(task.id, (current) => ({
+        ...current,
+        status: 'cancelled',
+        queuePaused: true,
+        restartRecovery: undefined,
+        error: 'Parent turn was interrupted by runtime restart',
+      }))
+    }
     const ids = this.store
       .get()
-      .tasks.filter((task) => task.restartRecovery)
+      .tasks.filter((task) => task.restartRecovery && !task.delegation)
       .map((task) => task.id)
     this.executor.runFork(
       Effect.gen(this, function* () {
@@ -1297,15 +1377,6 @@ export class Tasks {
           if (this.stopping) break
           const task = this.store.get().tasks.find((item) => item.id === id)
           if (!task?.restartRecovery) continue
-          if (task.delegation) {
-            this.store.updateTask(id, (current) => ({
-              ...current,
-              status: 'cancelled',
-              restartRecovery: undefined,
-              error: 'Parent turn was interrupted by runtime restart',
-            }))
-            continue
-          }
           if (
             !enabled() ||
             !task.restartRecovery.automatic ||

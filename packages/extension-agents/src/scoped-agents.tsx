@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Copy, Star } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  randomUUID,
   defaultTaskHarness,
   scopedSettingsResultSchema,
   settingsScopeLabels,
@@ -88,7 +89,7 @@ export function ScopedAgents({
             setEditing({
               ...defaultTaskHarness('codex'),
               permission: 'ask',
-              id: crypto.randomUUID(),
+              id: randomUUID(),
               name: '',
             })
           }
@@ -131,9 +132,7 @@ export function ScopedAgents({
               variant="ghost"
               aria-label={`Duplicate ${agent.name}`}
               disabled={!connected || busy}
-              onClick={() =>
-                setEditing({ ...agent, id: crypto.randomUUID(), name: `${agent.name} copy` })
-              }
+              onClick={() => setEditing({ ...agent, id: randomUUID(), name: `${agent.name} copy` })}
             >
               <Copy size={14} />
             </Button>

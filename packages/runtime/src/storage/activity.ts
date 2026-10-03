@@ -42,6 +42,10 @@ const record = mutableStruct({
   payload: Schema.String,
 })
 export class Activity {
+  private pendingMessages = new Map<
+    string,
+    Map<string, Workspace['tasks'][number]['messages'][number]>
+  >()
   revision = 0
   constructor(private db: Database.Database) {
     db.exec(
@@ -92,6 +96,10 @@ export class Activity {
   workspace(before: Workspace, after: Workspace) {
     if (before.tasks === after.tasks) return
     const previousTasks = new Map(before.tasks.map((task) => [task.id, task]))
+    const currentIds = new Set(after.tasks.map((task) => task.id))
+    for (const task of before.tasks) {
+      if (!currentIds.has(task.id)) this.flushMessages(task)
+    }
     for (const task of after.tasks) {
       const previous = previousTasks.get(task.id)
       if (previous === task) continue
@@ -104,11 +112,56 @@ export class Activity {
           activity: task.activity,
           error: task.error,
         })
-      if (previous?.messages === task.messages) continue
+      const finished =
+        task.status !== 'running' ||
+        task.runPhase === 'finalizing' ||
+        previous?.activeRunId !== task.activeRunId
+      if (previous?.messages === task.messages) {
+        if (finished) {
+          // A fresh Activity instance has no pending stream after a crash. The store's
+          // startup transition still has the saved running turn; audit only its reply,
+          // never historical messages or a completed turn interrupted in finalization.
+          if (
+            !this.pendingMessages.has(task.id) &&
+            previous.status === 'running' &&
+            task.status === 'failed' &&
+            task.restartRecovery?.kind === 'turn' &&
+            previous.runPhase !== 'preparing' &&
+            previous.runPhase !== 'finalizing'
+          ) {
+            const turn = previous.turns?.at(-1)
+            const message =
+              turn?.status === 'running'
+                ? task.messages.find((item) => item.id === turn.assistantId)
+                : undefined
+            if (message?.role === 'assistant')
+              this.add(
+                'message',
+                task.id,
+                `assistant · ${task.title}`,
+                message,
+                `message:${task.id}:${message.id}`,
+              )
+          }
+          this.flushMessages(task)
+        }
+        continue
+      }
       const previousMessages = new Map(previous?.messages.map((message) => [message.id, message]))
       for (const message of task.messages) {
         const old = previousMessages.get(message.id)
         if (old === message) continue
+        if (
+          message.role === 'assistant' &&
+          task.status === 'running' &&
+          task.runPhase !== 'finalizing'
+        ) {
+          let pending = this.pendingMessages.get(task.id)
+          if (!pending) this.pendingMessages.set(task.id, (pending = new Map()))
+          pending.set(message.id, message)
+          if (message.textBreaks?.length === old?.textBreaks?.length) continue
+          pending.delete(message.id)
+        } else this.pendingMessages.get(task.id)?.delete(message.id)
         if (JSON.stringify(old) !== JSON.stringify(message))
           this.add(
             'message',
@@ -118,7 +171,22 @@ export class Activity {
             `message:${task.id}:${message.id}`,
           )
       }
+      if (finished) this.flushMessages(task)
     }
+  }
+  private flushMessages(task: Workspace['tasks'][number]) {
+    const pending = this.pendingMessages.get(task.id)
+    if (!pending) return
+    const current = new Map(task.messages.map((message) => [message.id, message]))
+    for (const message of pending.values())
+      this.add(
+        'message',
+        task.id,
+        `assistant · ${task.title}`,
+        current.get(message.id) ?? message,
+        `message:${task.id}:${message.id}`,
+      )
+    this.pendingMessages.delete(task.id)
   }
   /** Deletes up to `limit` entries older than `before`, oldest first; returns how many. Small
    * batches keep the database responsive while a large history is trimmed. */

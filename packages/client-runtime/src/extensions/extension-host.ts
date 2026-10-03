@@ -203,6 +203,8 @@ export class ExtensionHost implements Disposable {
     })
   }
 
+  // Public Promise counterpart to deactivateEffect, retained with the host lifecycle API.
+  // fallow-ignore-next-line unused-class-member
   deactivate(id: string) {
     return runClientEffect(this.deactivateEffect(id))
   }

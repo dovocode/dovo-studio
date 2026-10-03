@@ -10,12 +10,18 @@ import { useRuntime } from '../../../runtime/connection/provider'
 
 const emptyPages: ConversationPage[] = []
 export function useConversationHistory<
-  T extends Pick<Task, 'id' | 'messages' | 'turns' | 'historyBefore'>,
+  T extends Pick<Task, 'id' | 'messages' | 'turns' | 'historyBefore' | 'historyRevision'>,
 >(live: T) {
   const { profile, read: request, connected, readCache } = useRuntime()
+  const revision = live.historyRevision ?? 0
   const scope = JSON.stringify([profile?.connection.address, profile?.connection.token, live.id])
-  const [loaded, setLoaded] = useState<{ scope: string; pages: ConversationPage[] }>({
+  const [loaded, setLoaded] = useState<{
+    scope: string
+    revision: number
+    pages: ConversationPage[]
+  }>({
     scope,
+    revision,
     pages: [],
   })
   const [delivery, setDelivery] = useState<{ scope: string; busy: boolean; error: string }>({
@@ -29,6 +35,10 @@ export function useConversationHistory<
   const [hydrated, setHydrated] = useState<string | null>(null)
   const [cacheError, setCacheError] = useState({ scope, error: '' })
   const previous = useRef({ scope, live })
+  const latest = useRef(live)
+  latest.current = live
+  const refill = useRef(200)
+
   useEffect(() => {
     generation.current++
     setDelivery({ scope, busy: false, error: '' })
@@ -41,18 +51,41 @@ export function useConversationHistory<
   useEffect(() => {
     active.current = scope
     const before = previous.current
+    if (before.scope !== scope) refill.current = 200
     previous.current = { scope, live }
+    const beforeIds = new Set(before.live.messages.map((message) => message.id))
+    const gap =
+      !!before.live.messages.length &&
+      !!live.historyBefore &&
+      !live.messages.some((message) => beforeIds.has(message.id))
+    if (before.scope === scope && ((before.live.historyRevision ?? 0) !== revision || gap)) {
+      refill.current = Math.max(
+        200,
+        new Set(
+          [...loaded.pages.flatMap((page) => page.messages), ...before.live.messages].map(
+            (message) => message.id,
+          ),
+        ).size,
+      )
+      generation.current++
+      pending.current = null
+      setLoaded({ scope, revision, pages: [] })
+      setDelivery({ scope, busy: false, error: '' })
+      return
+    }
     // Only retain a live window when it rolls out of a conversation the reader expanded.
     if (before.scope === scope && before.live.messages[0]?.id !== live.messages[0]?.id)
       setLoaded((value) =>
         value.scope === scope && (value.pages.length || pending.current?.scope === scope)
           ? {
               scope,
+              revision,
               pages: [
                 ...value.pages,
                 {
                   messages: before.live.messages,
                   turns: before.live.turns ?? [],
+                  historyRevision: revision,
                   before: before.live.historyBefore,
                 },
               ],
@@ -60,56 +93,87 @@ export function useConversationHistory<
           : value,
       )
   }, [scope, live])
-  const pages = loaded.scope === scope ? loaded.pages : emptyPages
-  const task = useMemo(() => mergeConversationHistory(live, pages), [live, pages])
-  const cursor = pages.length ? pages[0]?.before : live.historyBefore
+  const pages = loaded.scope === scope && loaded.revision === revision ? loaded.pages : emptyPages
+  const authoritative = connected || live.messages.length > 0
+  const task = useMemo(
+    () => mergeConversationHistory(live, pages, authoritative),
+    [live, pages, authoritative],
+  )
+  const cursor =
+    authoritative && !live.historyBefore
+      ? undefined
+      : pages.length
+        ? pages[0]?.before
+        : live.historyBefore
   useEffect(() => {
     let stopped = false
+    setHydrated(null)
     const restore = async () => {
+      let restored = false
       try {
         const cached = await readCache?.read(`conversation:${live.id}`, conversationPageSchema)
-        if (!stopped && cached) {
+        restored = true
+        if (!stopped && cached && (latest.current.historyRevision ?? 0) === revision) {
+          const current = latest.current
+          if (
+            connected
+              ? (cached.value.historyRevision ?? 0) !== revision
+              : (cached.value.historyRevision ?? 0) < revision
+          ) {
+            setLoaded({ scope, revision, pages: [] })
+            return
+          }
           // Refill from the host if its current window no longer overlaps the
           // saved window, rather than presenting a gap as complete history.
           if (connected) {
-            const boundary = live.historyBefore
-              ? cached.value.messages.findIndex((message) => message.id === live.historyBefore)
+            const boundary = current.historyBefore
+              ? cached.value.messages.findIndex((message) => message.id === current.historyBefore)
               : -1
             // The live window is authoritative, including rewinds and removals.
             // Keep only cached messages strictly older than its first message.
             const messages = boundary < 0 ? [] : cached.value.messages.slice(0, boundary)
             const ids = new Set(messages.map((message) => message.id))
-            setLoaded({
-              scope,
-              pages: messages.length
-                ? [
-                    {
-                      messages,
-                      turns: cached.value.turns.filter((turn) => ids.has(turn.assistantId)),
-                      before: cached.value.before,
-                    },
-                  ]
-                : [],
-            })
+            setLoaded((value) =>
+              value.scope === scope &&
+              value.revision === revision &&
+              value.pages.some((page) =>
+                page.messages.some((message) => message.id === current.messages[0]?.id),
+              )
+                ? value
+                : {
+                    scope,
+                    revision,
+                    pages: messages.length
+                      ? [
+                          {
+                            messages,
+                            historyRevision: revision,
+                            turns: cached.value.turns.filter((turn) => ids.has(turn.assistantId)),
+                            before: cached.value.before,
+                          },
+                        ]
+                      : [],
+                  },
+            )
           } else
             setLoaded((value) =>
               value.scope === scope && value.pages.length
                 ? value
-                : { scope, pages: [cached.value] },
+                : { scope, revision, pages: [cached.value] },
             )
         }
       } catch (cause) {
         if (!stopped)
           setCacheError({ scope, error: `Could not restore conversation: ${String(cause)}` })
       } finally {
-        if (!stopped) setHydrated(scope)
+        if (!stopped && restored) setHydrated(scope)
       }
     }
     void restore()
     return () => {
       stopped = true
     }
-  }, [scope, readCache, live.id, connected])
+  }, [scope, readCache, live.id, connected, revision])
   const currentHistory = useRef(new Map([[scope, { task, cursor, hydrated }]]))
   useEffect(() => {
     currentHistory.current.set(scope, { task, cursor, hydrated })
@@ -118,15 +182,22 @@ export function useConversationHistory<
     if (!readCache) return
     let savedMessages: typeof task.messages | undefined
     let savedTurns: typeof task.turns | undefined
+    let savedRevision: number | undefined
     const persist = async () => {
       const current = currentHistory.current.get(scope)
-      if (!current || current.hydrated !== scope || !current.task.messages.length) return
-      if (savedMessages === current.task.messages && savedTurns === current.task.turns) return
+      if (!current || current.hydrated !== scope) return
+      if (
+        savedMessages === current.task.messages &&
+        savedTurns === current.task.turns &&
+        savedRevision === current.task.historyRevision
+      )
+        return
       // Persist a bounded recent window without rewriting large JSON on each token.
       const messages = current.task.messages.slice(-200)
       const ids = new Set(messages.map((message) => message.id))
       const page: ConversationPage = {
         messages,
+        historyRevision: current.task.historyRevision,
         turns: current.task.turns?.filter((turn) => ids.has(turn.assistantId)) ?? [],
         before: current.task.messages.length > messages.length ? messages[0]?.id : current.cursor,
       }
@@ -134,6 +205,7 @@ export function useConversationHistory<
         await readCache.write(`conversation:${live.id}`, page)
         savedMessages = current.task.messages
         savedTurns = current.task.turns
+        savedRevision = current.task.historyRevision
         if (active.current === scope) setCacheError({ scope, error: '' })
       } catch (cause) {
         if (active.current === scope)
@@ -174,15 +246,25 @@ export function useConversationHistory<
         { id: live.id, before: cursor },
         conversationPageSchema,
       )
+      if (
+        (page.historyRevision ?? 0) !== (latest.current.historyRevision ?? 0) &&
+        operation.generation === generation.current
+      )
+        throw new Error('Conversation changed. Wait for the latest snapshot, then reload history.')
       if (page.before === cursor || (!page.messages.length && page.before))
         throw new Error('History did not advance. Reload the conversation before trying again.')
-      if (active.current === scope && operation.generation === generation.current)
+      if (
+        active.current === scope &&
+        operation.generation === generation.current &&
+        (page.historyRevision ?? 0) === (latest.current.historyRevision ?? 0)
+      )
         setLoaded((value) => ({
           scope,
+          revision,
           pages: [
             page,
             ...(value.scope === scope ? value.pages : []),
-            { messages: live.messages, turns: live.turns ?? [] },
+            { messages: live.messages, turns: live.turns ?? [], historyRevision: revision },
           ],
         }))
     } catch (cause) {
@@ -197,14 +279,14 @@ export function useConversationHistory<
       if (operation.generation === generation.current)
         setDelivery((value) => (value.scope === scope ? { ...value, busy: false } : value))
     }
-  }, [cursor, connected, scope, request, live])
+  }, [cursor, connected, scope, request, live, revision])
   useEffect(() => {
     // Keep transport pages small; fill the recent window incrementally.
     if (
       hydrated !== scope ||
       !cursor ||
       !connected ||
-      task.messages.length >= 200 ||
+      task.messages.length >= refill.current ||
       (delivery.scope === scope && (delivery.busy || delivery.error))
     )
       return

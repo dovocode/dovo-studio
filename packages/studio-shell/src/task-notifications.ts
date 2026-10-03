@@ -24,7 +24,7 @@ export type TaskState = {
   pullNumber?: number
 }
 
-export function taskStates(entries: readonly RuntimeOverview[]) {
+function taskStates(entries: readonly RuntimeOverview[]) {
   const states = new Map<string, TaskState>()
   for (const entry of entries) {
     const snapshot = entry.snapshot

@@ -1,7 +1,7 @@
 import { LinkedReview } from './linked-review'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { SavedFilePreview } from '../files/saved-file-preview'
-import { checkpointFiles } from '@dovo/protocol'
+import { randomUUID, checkpointFiles } from '@dovo/protocol'
 import { fileStats } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useCallback, useMemo } from 'react'
@@ -254,7 +254,7 @@ function PrimaryReviewPane({
             setActionsOpen(true)
             void request(
               '/api/tasks/message',
-              { id: task.id, messageId: crypto.randomUUID(), text: REVIEW_PROMPT, review: true },
+              { id: task.id, messageId: randomUUID(), text: REVIEW_PROMPT, review: true },
               responses.ok,
             )
               .catch((cause: unknown) =>

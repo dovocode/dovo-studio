@@ -177,6 +177,112 @@ async function smartFixture(state: 'closed' | 'merged' = 'closed') {
   )
   return { s, task, list, detail, watcher: new TaskPullWatcher(s) }
 }
+
+it.each(['settle', 'archive'] as const)(
+  'protects pending descendants then %ss the whole PR task family',
+  async (policy) => {
+    const f = await smartFixture('merged')
+    const child = f.s.tasks.create({
+      title: 'Child',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      objective: '',
+    })
+    const nested = f.s.tasks.create({
+      title: 'Nested',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      objective: '',
+    })
+    f.s.store.updateTask(child.id, (task) => ({
+      ...task,
+      draft: 'Pending child work',
+      delegation: { parentTaskId: f.task.id, parentRunId: 'old', key: 'child' },
+    }))
+    f.s.store.updateTask(nested.id, (task) => ({
+      ...task,
+      delegation: { parentTaskId: child.id, parentRunId: 'old', key: 'nested' },
+    }))
+    f.s.preferences.save({
+      ...f.s.preferences.get(),
+      settleOnPullClose: policy === 'settle',
+      archiveOnPullMerge: policy === 'archive',
+    })
+    await f.watcher.refresh()
+    f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+    await f.watcher.refresh()
+    expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+    f.s.store.updateTask(child.id, (task) => ({ ...task, draft: '' }))
+    await f.watcher.refresh()
+    for (const id of [f.task.id, child.id, nested.id]) {
+      expect(f.s.store.task(id).archived).toBe(true)
+      expect(Boolean(f.s.store.task(id).archivedAt)).toBe(policy === 'archive')
+    }
+  },
+)
+
+it('keeps the PR family unsettled when its activity audit cannot commit', async () => {
+  const f = await smartFixture('merged')
+  const child = f.s.tasks.create({
+    title: 'Child',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: '',
+  })
+  f.s.store.updateTask(child.id, (task) => ({
+    ...task,
+    delegation: { parentTaskId: f.task.id, parentRunId: 'old', key: 'child' },
+  }))
+  f.s.preferences.save({ ...f.s.preferences.get(), settleOnPullClose: true })
+  await f.watcher.refresh()
+  f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+  const add = f.s.activity.add.bind(f.s.activity)
+  vi.spyOn(f.s.activity, 'add').mockImplementation((...args) => {
+    if (args[2].startsWith('Settled because')) throw new Error('Audit write failed')
+    return add(...args)
+  })
+  await f.watcher.refresh()
+  for (const id of [f.task.id, child.id]) expect(f.s.store.task(id).archived).not.toBe(true)
+})
+
+it('does not archive a closed PR family when new child work arrives during resource cleanup', async () => {
+  const f = await smartFixture('merged')
+  const child = f.s.tasks.create({
+    title: 'Child',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: '',
+  })
+  f.s.store.updateTask(child.id, (task) => ({
+    ...task,
+    delegation: { parentTaskId: f.task.id, parentRunId: 'old', key: 'child' },
+  }))
+  f.s.preferences.save({ ...f.s.preferences.get(), archiveOnPullMerge: true })
+  await f.watcher.refresh()
+  f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+  let entered!: () => void
+  let release!: () => void
+  const closing = new Promise<void>((resolve) => (entered = resolve))
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  vi.spyOn(f.s.browsers, 'closeTask').mockImplementation(async (id) => {
+    if (id === f.task.id) {
+      entered()
+      await gate
+    }
+  })
+  const refresh = f.watcher.refresh()
+  try {
+    await closing
+    f.s.store.updateTask(child.id, (task) => ({ ...task, draft: 'New child work' }))
+    release()
+    await refresh
+    expect(f.s.store.task(f.task.id).archivedAt).toBeUndefined()
+    expect(f.s.store.task(child.id).archivedAt).toBeUndefined()
+  } finally {
+    release()
+    await refresh
+  }
+})
 it('smart-links branch PRs and verified message URLs, ignores foreign projects and keeps unlinked PRs dismissed', async () => {
   const f = await smartFixture()
   f.s.store.updateTask(f.task.id, (task) => ({

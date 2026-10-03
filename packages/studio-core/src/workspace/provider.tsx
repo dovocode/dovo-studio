@@ -239,6 +239,50 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [synchronization] = useState(
     () => new WorkspaceSynchronization(setSyncError, undefined, writeWorkspaceOutbox),
   )
+  const beforeReplace = useCallback(
+    (previous: RuntimeConnection) =>
+      mutations.assertEmptyEffect(previous).pipe(
+        Effect.asVoid,
+        Effect.mapError(
+          (error) =>
+            new Error(
+              `Resolve saved actions before updating this computer connection. ${error.message}`,
+            ),
+        ),
+      ),
+    [mutations],
+  )
+  const beforeRecoveredReplacement = useCallback(
+    (previous: RuntimeConnection) =>
+      beforeReplace(previous).pipe(
+        Effect.flatMap(() =>
+          Effect.tryPromise({ try: () => readWorkspaceOutbox(previous), catch: connectionError }),
+        ),
+        Effect.flatMap((outbox) =>
+          outbox
+            ? Effect.fail(
+                new Error(
+                  'Saved workspace edits must be resolved before finishing this pairing. Open the saved computer and retry sync, or update its address to transfer the edits.',
+                ),
+              )
+            : Effect.void,
+        ),
+      ),
+    [beforeReplace],
+  )
+  const mutationStatus = useCallback(
+    (profile: RuntimeProfile) => mutations.status(profile.connection),
+    [mutations],
+  )
+  const discardMutations = useCallback(
+    (profile: RuntimeProfile) =>
+      runClientEffect(
+        Effect.try({ try: () => assertProfile(profile), catch: connectionError }).pipe(
+          Effect.flatMap(() => mutations.discardEffect(profile.connection)),
+        ),
+      ),
+    [assertProfile, mutations],
+  )
   const install = useCallback((value: Workspace) => {
     installedSnapshot.current = null
     const next = {
@@ -504,6 +548,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               (previousConnection.address !== profile.connection.address ||
                 previousConnection.token !== profile.connection.token)
             const replacingActive = replacing && registryRef.current.activeId === profile.id
+            if (replacing && previousConnection) yield* beforeReplace(previousConnection)
             if (!replacingActive) yield* synchronization.flushEffect()
             const saved = yield* synchronization.savedEffect()
             const checkpoint = saved.checkpoint
@@ -511,7 +556,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               replacingActive
                 ? synchronization.acceptsSaved(checkpoint)
                 : synchronization.accepts(checkpoint)
-            let outbox = yield* Effect.tryPromise({
+            let outbox: WorkspaceOutbox | null = yield* Effect.tryPromise({
               try: () => readWorkspaceOutbox(profile.connection),
               catch: connectionError,
             })
@@ -582,15 +627,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                         registryRef.current,
                         { profile: named, proof },
                         persistRegistryEffect,
+                        beforeReplace,
                       ).pipe(Effect.asVoid)
-                    : persistRegistryEffect(upsertRuntime(registryRef.current, named)),
+                    : (replacing && previousConnection
+                        ? beforeReplace(previousConnection)
+                        : Effect.void
+                      ).pipe(
+                        Effect.flatMap(() =>
+                          persistRegistryEffect(upsertRuntime(registryRef.current, named)),
+                        ),
+                      ),
                 ),
               )
               .pipe(Effect.uninterruptible)
             adopt(named, value, true, outbox, false)
-            if (replacing && previousConnection && outbox)
+            if (replacing && previousConnection && outbox) {
+              const transferredIds = outbox.ids ?? []
               yield* Effect.tryPromise({
-                try: () => writeWorkspaceOutbox(previousConnection, null),
+                try: () =>
+                  writeWorkspaceOutbox(previousConnection, null, {
+                    remove: transferredIds,
+                    append: [],
+                  }),
                 catch: connectionError,
               }).pipe(
                 Effect.catchAll((error) =>
@@ -601,6 +659,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   ),
                 ),
               )
+            }
             updateOverview({
               ...(previous?.profile.connection.token === profile.connection.token
                 ? previous
@@ -617,7 +676,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             changingConnection.current = false
           }),
       ),
-    [adopt, synchronization, updateOverview, storageLock, persistRegistryEffect],
+    [adopt, synchronization, updateOverview, storageLock, persistRegistryEffect, beforeReplace],
   )
   const openProfile = useCallback(
     (profile: RuntimeProfile, proof?: PairingProof) =>
@@ -631,7 +690,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       .withPermits(1)(
         Effect.suspend(() => {
           const before = registryRef.current
-          return recoverRuntimePairings(before, persistRegistryEffect).pipe(
+          return recoverRuntimePairings(
+            before,
+            persistRegistryEffect,
+            beforeRecoveredReplacement,
+          ).pipe(
             Effect.map((saved) => {
               const active = saved.profiles.find((item) => item.id === saved.activeId)
               const old = before.profiles.find((item) => item.id === saved.activeId)
@@ -658,7 +721,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', foreground)
       void commands.stop()
     }
-  }, [ready, storageLock, persistRegistryEffect, openProfileEffect])
+  }, [ready, storageLock, persistRegistryEffect, openProfileEffect, beforeRecoveredReplacement])
   const connect = useCallback(
     async (value: RuntimeConnection, proof?: PairingProof, replaceId?: string) => {
       const next = decode(connectionSchema, {
@@ -716,6 +779,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       changingConnection.current = true
       try {
         const profile = registryRef.current.profiles.find((item) => item.id === id)
+        if (profile) await runClientEffect(mutations.assertEmptyEffect(profile.connection))
         if (
           profile &&
           registryRef.current.activeId !== id &&
@@ -756,7 +820,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         changingConnection.current = false
       }
     },
-    [disconnectCurrent, saveRegistry, cacheFor],
+    [disconnectCurrent, saveRegistry, cacheFor, mutations],
   )
   // Explicit-owner requests never borrow the currently active connection.
   const readRuntimeEffect = useCallback<WorkspaceContextValue['readRuntimeEffect']>(
@@ -1638,6 +1702,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refreshRuntime,
       retrySync,
       discardAndReload,
+      mutationStatus,
+      discardMutations,
       pendingSync:
         synchronization.hasPending() || !!(connection && mutations.status(connection).pending),
       readCache,
@@ -1673,6 +1739,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refreshRuntime,
       retrySync,
       discardAndReload,
+      mutationStatus,
+      discardMutations,
       synchronization,
       readCache,
       readRuntime,

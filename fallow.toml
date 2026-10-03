@@ -2,10 +2,24 @@ entry = [
   "packages/*/src/index.ts",
   "packages/**/*.test.ts",
   "apps/*/src/**/*.{ts,tsx}",
-  "apps/mobile/index.js",
+  "apps/mobile/index.ts",
   "apps/desktop/electron/**/*.ts",
-  "apps/mobile/plugins/*.cjs",
+  # Expo config plugins are referenced by path from app.config.ts, not imported.
+  "apps/mobile/plugins/*.ts",
+  # Composite GitHub Actions run this directly (.github/actions/setup-build).
+  "scripts/ci/*.mjs",
+  # Documented brand tooling (assets/brand/README.md).
+  "scripts/generate-app-icons.mjs",
+  # scripts/build-mcp-apps.mjs bundles these into the MCP app host and sandbox documents.
+  "packages/studio-ui/mcp-apps/host.tsx",
+  "packages/studio-ui/mcp-apps/sandbox.ts",
 ]
+# React Native resolves these specifiers to the tracked @3x variants, and the macOS icon
+# toolchain copies an Icon Composer bundle rather than importing a module.
+ignoreUnresolvedImports = ["../../../assets/icons/*.png", "../../apps/desktop/build/Dovo.icon"]
+# Security floor pins kept on purpose; the lockfile already resolves at or above them, so
+# Fallow sees no rewritten version.
+ignoreDependencyOverrides = [{ package = "linkify-it" }, { package = "uuid" }]
 ignorePatterns = [
   "**/dist/**",
   "**/dist-electron/**",
@@ -26,6 +40,10 @@ ignoreDependencies = [
   "assistant-cloud",
   "react-native-reanimated",
   "react-native-worklets",
+  # ExpoClipboard is loaded by requireOptionalNativeModule to retain OTA compatibility.
+  "expo-clipboard",
+  # expo-router's native tabs require this SDK-compatible autolinked peer.
+  "expo-symbols",
 ]
 
 [[framework]]
@@ -34,6 +52,9 @@ detection = { type = "fileExists", pattern = "scripts/verify-*.{cjs,mjs}" }
 entryPoints = [
   "scripts/verify-*.{cjs,mjs}",
   "scripts/packaging/verify-*.mjs",
+  # Browser and benchmark checks are run as executables (package.json scripts or by hand).
+  "scripts/check-*.mjs",
+  "scripts/benchmark-*.mjs",
   # Started as child-process executables, never imported by the tests.
   "scripts/fixtures/*.cjs",
 ]
@@ -42,21 +63,25 @@ entryPointRole = "test"
 [[framework]]
 name = "dovo-extension-views"
 detection = { type = "fileExists", pattern = "packages/studio-core/src/index.ts" }
-# defineStudioExtension loads these modules; StudioShell consumes their default
-# exports through React.lazy rather than a syntactic default import.
+# defineStudioExtension loads these modules through `load: () => import(...)`; StudioShell
+# consumes their default exports through React.lazy rather than a syntactic default import.
 usedExports = [
   { pattern = "packages/extension-*/src/**/view.tsx", exports = [
     "default",
   ] },
-  { pattern = "packages/extension-scm/src/forge-settings.tsx", exports = [
+  { pattern = "packages/extension-*/src/**/*-view.tsx", exports = [
     "default",
   ] },
-  { pattern = "packages/extension-scm/src/pipelines-view.tsx", exports = [
+  { pattern = "packages/extension-scm/src/connections/forge-settings.tsx", exports = [
     "default",
   ] },
-  { pattern = "packages/extension-scm/src/work-view.tsx", exports = [
-    "default",
+  # jira-view.tsx and pipelines-view.tsx re-export these as their lazy default exports.
+  { pattern = "packages/extension-scm/src/work/work-view.tsx", exports = [
+    "JiraView",
     "PipelinesView",
+  ] },
+  { pattern = "packages/studio-shell/src/app-settings/*.tsx", exports = [
+    "default",
   ] },
 ]
 
@@ -78,16 +103,25 @@ usedClassMembers = [
 [[framework]]
 name = "expo"
 enablers = ["expo"]
-entryPoints = ["apps/mobile/index.js"]
+entryPoints = ["apps/mobile/index.ts"]
 configPatterns = [
-  "apps/mobile/babel.config.js",
-  "apps/mobile/metro.config.js",
-  "apps/mobile/app.json",
+  "apps/mobile/babel.config.cts",
+  "apps/mobile/metro.config.ts",
+  "apps/mobile/app.config.ts",
 ]
-# expo-build-properties is loaded from the plugins array in app.json.
+# expo-build-properties is loaded from the plugins array in app.config.ts.
 toolingDependencies = ["@expo/metro-config", "babel-preset-expo", "expo-build-properties"]
 
 [rules]
 unused-files = "error"
 unused-exports = "warn"
 unused-types = "off"
+# Enabled implicitly by the semantic pass; it reports exported signatures that mention
+# unexported types, which is API-surface hygiene rather than dead code.
+private-type-leaks = "off"
+
+# Services are reached through the `Services` interface (`s.tasks.subagentSpawn`, HTTP route
+# registrations); the semantic pass follows those typed accesses so class members used only
+# that way are not reported as dead.
+[typeAware]
+enabled = true

@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import type { SavedPrompt } from '@dovo/protocol'
@@ -26,7 +27,7 @@ export function SavedPromptsDialog({
   const [rows, setRows] = useState<SavedPrompt[]>(() =>
     repository?.prompts?.length
       ? repository.prompts
-      : [{ id: crypto.randomUUID(), name: 'bugfix', text: '' }],
+      : [{ id: randomUUID(), name: 'bugfix', text: '' }],
   )
   const [error, setError] = useState('')
   const change = (id: string, changes: Partial<SavedPrompt>) =>
@@ -107,7 +108,7 @@ export function SavedPromptsDialog({
           className="w-fit gap-1"
           disabled={rows.length >= 40}
           onClick={() =>
-            setRows((current) => [...current, { id: crypto.randomUUID(), name: '', text: '' }])
+            setRows((current) => [...current, { id: randomUUID(), name: '', text: '' }])
           }
         >
           <Plus className="size-3.5" /> Add prompt

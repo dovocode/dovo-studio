@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -362,3 +364,55 @@ it('launches and receives a cross-harness child through the real task MCP server
     await f.cleanup()
   }
 }, 30000)
+
+it('isolates agent commands from the user shell and closes only terminals opened by that tool session', async () => {
+  const f = await fixture()
+  const token = 'terminal-cleanup-owner-token-with-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  const client = new Client({ name: 'terminal-cleanup-test', version: '1' })
+  let transport: StdioClientTransport | undefined
+  try {
+    const s = runtime.services
+    s.store.update(() => f.workspace)
+    const task = s.tasks.create({
+      title: 'Terminal',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      objective: '',
+    })
+    const user = s.terminals.create(task.id, f.directory)
+    const input = vi.spyOn(s.terminals, 'input')
+    const config = taskToolsServer(task.id, runtime.port, token, '127.0.0.1')
+    transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [
+        '--import',
+        createRequire(import.meta.url).resolve('tsx'),
+        fileURLToPath(new URL('./server.ts', import.meta.url)),
+      ],
+      env: { ...config.envValues },
+      stderr: 'ignore',
+    })
+    await client.connect(transport)
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('terminal_close')
+    const opened = await client.callTool({
+      name: 'terminal_run',
+      arguments: { command: 'printf tool-output' },
+    })
+    const { id } = decode(mutableStruct({ id: Schema.String }), JSON.parse(decodeToolText(opened)))
+    expect(id).not.toBe(user.id)
+    expect(input.mock.calls.every(([target]) => target === id)).toBe(true)
+    expect(
+      (await client.callTool({ name: 'terminal_close', arguments: { id: user.id } })).isError,
+    ).toBe(true)
+    expect((await client.callTool({ name: 'terminal_close', arguments: { id } })).isError).not.toBe(
+      true,
+    )
+    expect(s.terminals.list().map((terminal) => terminal.id)).toEqual([user.id])
+  } finally {
+    await client.close()
+    await transport?.close()
+    await runtime.close()
+    await f.cleanup()
+  }
+}, 15000)

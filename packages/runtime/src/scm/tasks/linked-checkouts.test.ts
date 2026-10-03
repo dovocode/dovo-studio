@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { readFile, writeFile, rm, realpath } from 'node:fs/promises'
+import { readFile, writeFile, rm, realpath, mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runClientEffect } from '@dovo/client-runtime'
 import { startRuntime } from '../../index.js'
@@ -10,6 +11,13 @@ import type { AgentAdapter } from '../../agents/execution/types.js'
 import type { Automation } from '@dovo/protocol'
 
 vi.setConfig(runtimeIntegration)
+function barrier() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -35,6 +43,178 @@ async function setup() {
   }))
   return { s, primary, secondary }
 }
+
+it.each([
+  { direction: 'git-to-folder', nestedExplicit: false },
+  { direction: 'git-to-folder', nestedExplicit: true },
+  { direction: 'folder-to-git', nestedExplicit: false },
+  { direction: 'folder-to-git', nestedExplicit: true },
+])(
+  'uses selected checkout Git capability for $direction children (nested explicit: $nestedExplicit)',
+  async ({ direction, nestedExplicit }) => {
+    const { s, secondary } = await setup()
+    const folder = await mkdtemp(join(tmpdir(), 'dovo-linked-folder-'))
+    cleanups.push(() => rm(folder, { recursive: true, force: true }))
+    s.store.update((workspace) => ({
+      ...workspace,
+      repositories: [
+        ...workspace.repositories,
+        { id: 'folder', name: 'Folder', path: folder, kind: 'folder', branch: '' },
+      ],
+    }))
+    const git = direction === 'folder-to-git'
+    const selectedDirectory = await realpath(git ? secondary.directory : folder)
+    let childId = ''
+    let nestedId = ''
+    const childRuns: Array<{ id: string; cwd: string }> = []
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        if (!run.taskId) throw new Error('Expected task ID')
+        if (run.agent.provider === 'codex') {
+          childId = s.tasks.subagentSpawn({
+            taskId: run.taskId,
+            key: 'selected',
+            name: 'Selected',
+            prompt: 'Work in the linked checkout',
+            provider: 'claude',
+            checkoutId: 'selected',
+          }).id
+          await s.tasks.subagentWait(run.taskId, childId)
+        } else {
+          childRuns.push({ id: run.taskId, cwd: run.cwd })
+          if (run.agent.provider === 'claude') {
+            nestedId = s.tasks.subagentSpawn({
+              taskId: run.taskId,
+              key: 'nested',
+              name: 'Nested',
+              prompt: 'Use the current checkout',
+              provider: 'opencode',
+              checkoutId: nestedExplicit ? 'selected' : undefined,
+            }).id
+            await s.tasks.subagentWait(run.taskId, nestedId)
+            await writeFile(join(run.cwd, 'hello.txt'), 'selected child write\n')
+          } else await writeFile(join(run.cwd, 'nested.txt'), 'nested child write\n')
+        }
+        run.onText('Done')
+      },
+    })
+    const parent = s.tasks.create({
+      title: 'Parent',
+      repositoryId: git ? 'folder' : 'repo',
+      agentId: 'agent',
+      objective: 'Delegate',
+      linkedCheckouts: [
+        {
+          id: 'selected',
+          repositoryId: git ? 'backend' : 'folder',
+          execution: 'main',
+          access: 'edit',
+        },
+      ],
+    })
+    await (
+      await s.tasks.start(parent.id)
+    ).done
+    expect(childRuns).toEqual([
+      { id: childId, cwd: selectedDirectory },
+      { id: nestedId, cwd: selectedDirectory },
+    ])
+    for (const { id } of childRuns) {
+      const task = s.store.task(id)
+      expect(task.repositoryId).toBe(parent.repositoryId)
+      expect(s.checkouts.executionRepository(id).id).toBe(git ? 'backend' : 'folder')
+      expect(task.status).toBe('review')
+      expect(task.error).toBeUndefined()
+      expect(Boolean(task.turns?.at(-1)?.checkpoint)).toBe(git)
+      expect(Boolean(task.turns?.at(-1)?.checkpoint?.after)).toBe(git)
+      expect(task.files.length > 0).toBe(git)
+    }
+    expect(await readFile(join(selectedDirectory, 'hello.txt'), 'utf8')).toBe(
+      'selected child write\n',
+    )
+    expect(await readFile(join(selectedDirectory, 'nested.txt'), 'utf8')).toBe(
+      'nested child write\n',
+    )
+  },
+)
+
+it('retries selected Git checkout finalization under a folder parent without rerunning the provider', async () => {
+  const { s, secondary } = await setup()
+  const folder = await mkdtemp(join(tmpdir(), 'dovo-linked-finalization-'))
+  cleanups.push(() => rm(folder, { recursive: true, force: true }))
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      ...workspace.repositories,
+      { id: 'folder', name: 'Folder', path: folder, kind: 'folder', branch: '' },
+    ],
+  }))
+  const childFinished = barrier()
+  const finishParent = barrier()
+  const selectedDirectory = await realpath(secondary.directory)
+  const changes = s.git.changes.bind(s.git)
+  let failRefresh = true
+  vi.spyOn(s.git, 'changes').mockImplementation(async (cwd) => {
+    if (cwd === selectedDirectory && failRefresh) {
+      failRefresh = false
+      throw new Error('Change refresh failed')
+    }
+    return changes(cwd)
+  })
+  let childId = ''
+  let childRuns = 0
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (!run.taskId) throw new Error('Expected task ID')
+      if (run.agent.provider === 'claude') {
+        childRuns++
+        await writeFile(join(run.cwd, 'hello.txt'), 'child change\n')
+      } else {
+        childId = s.tasks.subagentSpawn({
+          taskId: run.taskId,
+          key: 'selected',
+          name: 'Selected',
+          prompt: 'Work',
+          provider: 'claude',
+          checkoutId: 'selected',
+        }).id
+        await s.tasks.subagentWait(run.taskId, childId)
+        childFinished.resolve()
+        await finishParent.promise
+      }
+      run.onText('Done')
+    },
+  })
+  const parent = s.tasks.create({
+    title: 'Folder parent',
+    repositoryId: 'folder',
+    agentId: 'agent',
+    objective: 'Delegate',
+    linkedCheckouts: [
+      { id: 'selected', repositoryId: 'backend', execution: 'main', access: 'edit' },
+    ],
+  })
+  const running = await s.tasks.start(parent.id)
+  try {
+    await childFinished.promise
+    expect(s.store.task(childId).runPhase).toBe('finalizing')
+    expect(s.store.task(childId).error).toContain('Change refresh failed')
+    await (
+      await s.tasks.start(childId)
+    ).done
+    expect(childRuns).toBe(1)
+    expect(s.store.task(childId).runPhase).toBeUndefined()
+    expect(s.store.task(childId).error).toBeUndefined()
+    expect(s.store.task(childId).files).toEqual([
+      expect.objectContaining({ path: 'hello.txt', after: 'child change\n' }),
+    ])
+  } finally {
+    finishParent.resolve()
+    await running.done
+  }
+})
 
 it('captures, previews, undoes and redoes both repositories without changing their commits', async () => {
   const { s, primary, secondary } = await setup()
@@ -285,6 +465,28 @@ it('starts a child in a linked checkout without granting edits to a reference-on
       )
       const result = await s.tasks.subagentWait(input.taskId, child.id, 10000)
       expect(result.status).toBe('review')
+      expect(() =>
+        s.store.updateTask(child.id, (task) => ({
+          ...task,
+          agentOverrides: { permission: 'workspace-write' },
+        })),
+      ).toThrow('cannot exceed')
+      expect(() =>
+        s.store.patch({
+          collection: 'tasks',
+          id: child.id,
+          changes: {
+            harness: {
+              before: s.store.task(child.id).harness,
+              after: { ...s.store.task(child.id).harness, permission: 'ask' },
+            },
+          },
+        }),
+      ).toThrow('cannot exceed')
+      await (
+        await s.tasks.start(child.id)
+      ).done
+      expect(s.store.task(child.id).harness?.permission).toBe('read-only')
       run.onText(result.result ?? '')
     },
   }))
@@ -341,4 +543,68 @@ it('retries failed worktree setup instead of silently using an unprepared checko
       },
     ]),
   ).toThrow('already exists')
+})
+
+it('stops linked preparation before the next project and retains ownership through setup cleanup', async () => {
+  const { s } = await setup()
+  const defaults = s.store.taskDefaults.bind(s.store)
+  vi.spyOn(s.store, 'taskDefaults').mockImplementation((id) => ({
+    ...defaults(id),
+    setupCommand: 'install',
+  }))
+  const entered = barrier()
+  const release = barrier()
+  let setupSignal: AbortSignal | undefined
+  const setupSpy = vi
+    .spyOn(s.git, 'setupWorktree')
+    .mockImplementation(async (directory, _command, signal) => {
+      cleanups.push(() => rm(directory, { recursive: true, force: true }))
+      setupSignal = signal
+      entered.resolve()
+      await release.promise
+      return ''
+    })
+  const task = s.tasks.create({
+    title: 'Cancel linked setup',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: 'Work',
+    linkedCheckouts: [
+      { id: 'first', repositoryId: 'backend', execution: 'worktree', access: 'edit' },
+      { id: 'second', repositoryId: 'backend', execution: 'worktree', access: 'edit' },
+    ],
+  })
+  const starting = s.tasks.start(task.id)
+  void starting.catch(() => {})
+  try {
+    await entered.promise
+    s.tasks.cancel(task.id)
+    expect(setupSignal?.aborted).toBe(true)
+    await expect(s.tasks.start(task.id)).rejects.toThrow('already running')
+    release.resolve()
+    await expect(starting).rejects.toThrow('Cancelled by user')
+    expect(setupSpy).toHaveBeenCalledTimes(1)
+    expect(s.store.task(task.id).linkedCheckoutSetup ?? []).toEqual([])
+  } finally {
+    release.resolve()
+  }
+})
+
+it('cancels and drains the owned setup shell and its background process', async () => {
+  const { s, primary } = await setup()
+  const controller = new AbortController()
+  const running = s.git.setupWorktree(
+    primary.directory,
+    'sleep 30 & echo $! > setup-child.pid; wait',
+    controller.signal,
+  )
+  void running.catch(() => {})
+  let pid = 0
+  await waitForRuntime(async () => {
+    pid = Number(await readFile(join(primary.directory, 'setup-child.pid'), 'utf8'))
+    expect(pid).toBeGreaterThan(0)
+  })
+  controller.abort()
+  await expect(running).rejects.toThrow('setup cancelled')
+  expect(() => process.kill(pid, 0)).toThrow('ESRCH')
 })

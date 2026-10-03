@@ -1,7 +1,7 @@
 import { decode } from '@dovo/protocol'
 import { expect, it } from 'vite-plus/test'
 import { createTask, runtimeProfile, snapshotSchema, type RuntimeOverview } from '@dovo/studio-core'
-import { collectTasks, taskCollectionKey, taskSources } from './task-collection'
+import { collectTasks, mainTaskEntries, taskCollectionKey, taskSources } from './task-collection'
 const task = {
   ...createTask({
     title: 'Cached title',
@@ -179,4 +179,39 @@ it('keeps row and filter keys stable when the selected computer changes', () => 
   expect(taskCollectionKey(mac.profile.id, 'repo')).not.toBe(
     taskCollectionKey(linux.profile.id, 'repo'),
   )
+})
+it('groups every delegated generation under its parent without removing child navigation entries', () => {
+  const child = {
+    ...task,
+    id: 'child',
+    delegation: { parentTaskId: task.id, parentRunId: 'run', key: 'child' },
+  }
+  const nested = {
+    ...child,
+    id: 'nested',
+    archivedAt: '2026-10-03T12:00:00Z',
+    delegation: { ...child.delegation, parentTaskId: child.id, key: 'nested' },
+  }
+  const sources = taskSources({
+    workspace: { ...snapshot.workspace, tasks: [task, child, nested] },
+    snapshot,
+    activeRuntimeId: mac.profile.id,
+    connected: true,
+    runtimes: [
+      mac,
+      {
+        ...linux,
+        snapshot: {
+          ...snapshot,
+          workspace: { ...snapshot.workspace, tasks: [{ ...child, delegation: undefined }] },
+        },
+      },
+    ],
+  })
+  const entries = collectTasks(sources)
+  expect(entries.map((entry) => entry.task.id)).toEqual([task.id, 'child', 'nested', 'child'])
+  expect(mainTaskEntries(entries).map((entry) => [entry.source.name, entry.task.id])).toEqual([
+    ['Mac', task.id],
+    ['Linux', 'child'],
+  ])
 })

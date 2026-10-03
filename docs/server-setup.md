@@ -7,14 +7,25 @@ to the host over LAN, Tailscale, NetBird, or an HTTPS reverse proxy; Dovo provid
 The thread list syncs status and editable drafts; opening a conversation subscribes to its history.
 Split panes subscribe to both conversations. Search runs on each connected runtime, so it can find
 messages in threads that have not been opened. Previously opened history stays available in the
-local cache while offline; an uncached thread waits for its host instead of appearing empty.
+local cache while offline; an uncached thread waits for its host instead of appearing empty. When
+the host reports a history removal or rewind, clients invalidate older cached history and reload the
+expanded conversation. Offline clients wait for the host if their saved history predates that
+change.
+
+Delegated agents appear as active pills on their main thread. Completed agents remain in the
+thread's **Agents** view. Settling, snoozing, archiving, restoring, or deleting a thread applies to
+all its delegated descendants. Stop active work and close live terminals before archiving or
+deleting the family.
 
 Desktop and mobile save supported actions before sending them, separately from the read cache.
 Reconnect delivers them in order using persistent action IDs. A lost response returns the runtime's
 saved result instead of repeating an action. If a runtime interruption leaves an action uncertain,
 review the host's current state and discard that saved action before issuing it again. Connection
 status exposes pending actions with retry and discard controls. Older runtimes still accept new
-actions, but must be updated before saved actions can be recovered safely.
+actions, but must be updated before saved actions can be recovered safely. Pending actions must be
+recovered or explicitly discarded before forgetting a paired runtime. Browser tabs share one
+transactional action journal, so a write or acknowledgement in one tab preserves actions saved by
+another.
 
 Sync uses bounded cursor replay during brief disconnects and a scoped baseline after a restart or
 expired cursor. `node scripts/check-runtime-sync.mjs` (after building the runtime) verifies both

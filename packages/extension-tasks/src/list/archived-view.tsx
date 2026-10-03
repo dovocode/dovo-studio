@@ -21,7 +21,7 @@ export default function ArchivedTasksView() {
           (source.snapshot?.workspace.repositories ?? []).map((repo) => [repo.id, repo.name]),
         )
         return (source.snapshot?.workspace.tasks ?? [])
-          .filter((task) => task.archivedAt && !task.example)
+          .filter((task) => task.archivedAt && !task.example && !task.delegation)
           .map((task) => ({
             key: JSON.stringify([source.profile.id, task.id]),
             source,

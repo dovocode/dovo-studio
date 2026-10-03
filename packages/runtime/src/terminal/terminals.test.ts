@@ -85,3 +85,38 @@ it('keeps delivering terminal output when one client throws', async () => {
     await f.cleanup()
   }
 })
+
+it('reclaims exited unattended sessions while preserving observed output and the live limit', async () => {
+  const f = await fixture()
+  const terminals = new Terminals()
+  try {
+    const first = terminals.createCommand(
+      'task',
+      f.directory,
+      { command: process.execPath, args: ['-e', 'console.log("retained-output")'], env: {} },
+      'Observed',
+    )
+    const detach = terminals.attach(first.id, () => {})
+    for (let index = 1; index < 20; index++)
+      terminals.createCommand(
+        'task',
+        f.directory,
+        { command: process.execPath, args: ['-e', ''], env: {} },
+        'Finished',
+      )
+    await vi.waitFor(() => expect(terminals.list().every((session) => session.exited)).toBe(true), {
+      timeout: 10000,
+    })
+    const next = terminals.create('task', f.directory)
+    expect(terminals.list()).toHaveLength(20)
+    expect(terminals.get(first.id).buffer).toContain('retained-output')
+    expect(terminals.get(next.id).info.exited).toBe(false)
+    detach()
+    terminals.dispose()
+    for (let index = 0; index < 20; index++) terminals.create('task', f.directory)
+    expect(() => terminals.create('task', f.directory)).toThrow('limit 20')
+  } finally {
+    terminals.dispose()
+    await f.cleanup()
+  }
+})

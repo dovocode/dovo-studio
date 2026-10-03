@@ -1,7 +1,7 @@
 import { HarnessIcon } from '../../agents/harness-icon'
 import { useCachedModelCatalog } from '../../agents/use-model-catalog'
 import { harnessNames } from '../creation/harness-choices'
-import { pullStackLabel } from '@dovo/protocol'
+import { pullStackLabel, subagentMetadata, type Subagent } from '@dovo/protocol'
 import {
   Archive,
   CircleCheck,
@@ -54,6 +54,7 @@ const statusIcons: Record<string, LucideIcon> = {
 }
 export function TaskListRow({
   row,
+  subagents,
   runtime,
   now,
   testID,
@@ -61,6 +62,7 @@ export function TaskListRow({
   onOpen,
   onDetails,
   onSelect,
+  onOpenSubagent,
   selectionActive = false,
   selected = false,
   showDevice = true,
@@ -68,6 +70,7 @@ export function TaskListRow({
   /** Which computer ran a task is noise when only one computer is saved. */
   showDevice?: boolean
   row: RuntimeTask
+  subagents: readonly Subagent[]
   runtime?: RuntimeOverview
   now: number
   testID: string
@@ -75,6 +78,7 @@ export function TaskListRow({
   onOpen: () => void
   onDetails: () => void
   onSelect: () => void
+  onOpenSubagent: (id: string) => void
   selectionActive?: boolean
   selected?: boolean
 }) {
@@ -269,6 +273,65 @@ export function TaskListRow({
           </View>
         )}
       </View>
+      {!!subagents.length && (
+        <View
+          accessibilityLabel="Working subagents"
+          style={{
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            gap: 6,
+            paddingHorizontal: 12,
+            paddingBottom: 10,
+          }}
+        >
+          {subagents.map((agent, index) => {
+            const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
+            const label = `${agent.name} · ${agent.provider}`
+            const detail = [
+              label,
+              row.online ? 'Working' : 'Last seen working',
+              subagentMetadata(agent),
+              agent.activity,
+            ]
+              .filter(Boolean)
+              .join(' · ')
+            const pillStyle = {
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: colors.border,
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              maxWidth: '100%' as const,
+            }
+            return childId ? (
+              <Pressable
+                key={`${agent.provider}:${agent.id}:${index}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Open subagent ${detail}`}
+                accessibilityState={{ disabled }}
+                disabled={disabled}
+                onPress={() => onOpenSubagent(childId)}
+                onLongPress={car ? undefined : onSelect}
+                style={pillStyle}
+              >
+                <Text numberOfLines={1} style={{ fontSize: 11, color: colors.accent }}>
+                  {label}
+                </Text>
+              </Pressable>
+            ) : (
+              <View
+                key={`${agent.provider}:${agent.id}:${index}`}
+                accessibilityLabel={detail}
+                style={pillStyle}
+              >
+                <Text numberOfLines={1} style={{ fontSize: 11, color: colors.muted }}>
+                  {label}
+                </Text>
+              </View>
+            )
+          })}
+        </View>
+      )}
       {!!actions.error && (
         <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 8 }]}>
           {actions.error}

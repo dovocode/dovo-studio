@@ -649,13 +649,18 @@ export function route(
         })
       if (method === 'POST' && path === '/api/workspace/import') {
         owner()
-        if (
-          s.store.get().agents.length ||
-          s.store.get().tasks.length ||
-          s.store.get().repositories.length ||
-          s.store.get().jiraSources?.length
-        )
-          throw new HttpError(409, 'Runtime already has workspace data')
+        const requireEmpty = () => {
+          const current = s.store.get()
+          if (
+            current.agents.length ||
+            current.tasks.length ||
+            current.repositories.length ||
+            current.automations.length ||
+            current.jiraSources?.length
+          )
+            throw new HttpError(409, 'Runtime already has workspace data')
+        }
+        requireEmpty()
         const workspace = decode(workspaceSchema, yield* serviceResult(body(request)))
         if (workspace.tasks.some((task) => task.historyBefore || task.historyTotals))
           throw new HttpError(
@@ -667,6 +672,8 @@ export function route(
           : undefined
         if (workspace.tasks.some((task) => task.repositoryId === SCRATCH_PROJECT_ID) && !scratch)
           throw new HttpError(409, 'Scratch threads cannot be restored in this Git checkout')
+        // Body parsing and scratch discovery yield to other workspace mutations.
+        requireEmpty()
         s.store.update(() => ({
           ...workspace,
           repositories: [

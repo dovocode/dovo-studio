@@ -113,26 +113,32 @@ it('does not create duplicate sockets when refreshed during a handshake', async 
   await new Promise<void>((resolve) => setTimeout(resolve, 20))
   expect(Socket.instances).toHaveLength(1)
 })
-it('uses HTTP fallback without repeated socket attempts on older servers', async () => {
-  const fetch = vi
-    .fn<typeof globalThis.fetch>()
-    .mockResolvedValue(Response.json({ error: 'Not found' }, { status: 404 }))
-  vi.stubGlobal('fetch', fetch)
-  const wake = vi.fn<() => void>(),
-    snapshot = vi.fn<(value: RuntimeSnapshot) => void>(),
-    socket = vi.fn<() => WebSocket>()
-  vi.stubGlobal('WebSocket', socket)
-  const connection = { address: 'http://older-runtime.local', token: 'older-runtime-test-token' }
-  const live = startRuntimeSync(connection, { onSnapshot: snapshot, onWake: wake })
-  stopped.push(live.stop)
-  await vi.waitFor(() => expect(wake).toHaveBeenCalledOnce())
-  live.refresh()
-  expect(live.online()).toBe(false)
-  expect(runtimeSyncOnline(connection)).toBe(false)
-  expect(fetch).toHaveBeenCalledOnce()
-  expect(socket).not.toHaveBeenCalled()
-  expect(snapshot).not.toHaveBeenCalled()
-})
+it.each([401, 403, 404])(
+  'uses HTTP fallback without repeated sync attempts after HTTP %s',
+  async (status) => {
+    vi.useFakeTimers()
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockImplementation(async () => Response.json({ error: 'Unavailable' }, { status }))
+    vi.stubGlobal('fetch', fetch)
+    const wake = vi.fn<() => void>(),
+      snapshot = vi.fn<(value: RuntimeSnapshot) => void>(),
+      socket = vi.fn<() => WebSocket>()
+    vi.stubGlobal('WebSocket', socket)
+    const connection = { address: 'http://older-runtime.local', token: 'older-runtime-test-token' }
+    const live = startRuntimeSync(connection, { onSnapshot: snapshot, onWake: wake })
+    stopped.push(live.stop)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(wake).toHaveBeenCalledOnce()
+    live.refresh()
+    await vi.advanceTimersByTimeAsync(65000)
+    expect(live.online()).toBe(false)
+    expect(runtimeSyncOnline(connection)).toBe(false)
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(socket).not.toHaveBeenCalled()
+    expect(snapshot).not.toHaveBeenCalled()
+  },
+)
 it('cancels an unfinished ticket request when the app backgrounds or switches servers', async () => {
   let signal: AbortSignal | null | undefined
   vi.stubGlobal(

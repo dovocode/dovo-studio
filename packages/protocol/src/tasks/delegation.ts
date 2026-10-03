@@ -1,6 +1,7 @@
 import { Schema } from 'effect'
 import { mutableStruct, maxValue, minValue } from '../shared/schema.js'
-import { agentSchema, providerSchema } from '../workspace.js'
+import { agentSchema, providerSchema, type Task } from '../workspace.js'
+import type { Subagent } from '../conversation/workflow/subagents.js'
 const id = maxValue(minValue(Schema.String, 1), 200)
 export const subagentScopeSchema = mutableStruct({ taskId: id, parentRunId: Schema.optional(id) })
 export const subagentSpawnSchema = mutableStruct({
@@ -34,4 +35,64 @@ export function delegatedAccess(
     'full-access': ['read-only', 'ask', 'workspace-write', 'auto', 'full-access'],
   }
   return allowed[parent].includes(requested) ? requested : parent
+}
+
+/** A thread owns the lifecycle of every delegated descendant, regardless of attempt. */
+export function taskFamilyIds(tasks: readonly Pick<Task, 'id' | 'delegation'>[], id: string) {
+  return familyIds(childIds(tasks), id)
+}
+
+function childIds(tasks: readonly Pick<Task, 'id' | 'delegation'>[]) {
+  const children = new Map<string, string[]>()
+  for (const task of tasks) {
+    if (!task.delegation) continue
+    const parent = task.delegation.parentTaskId
+    const group = children.get(parent) ?? []
+    group.push(task.id)
+    children.set(parent, group)
+  }
+  return children
+}
+
+function familyIds(children: ReadonlyMap<string, readonly string[]>, id: string) {
+  const ids = new Set<string>()
+  const pending = [id]
+  while (pending.length) {
+    const current = pending.pop()!
+    if (ids.has(current)) continue
+    ids.add(current)
+    pending.push(...(children.get(current) ?? []))
+  }
+  return ids
+}
+
+/** Include nested agents in the main thread's overview without hiding their saved results. */
+export function taskSubagents(task: Task, tasks: readonly Task[], workingOnly = false): Subagent[] {
+  return indexTaskSubagents(tasks)(task, workingOnly)
+}
+
+/** Build once for a workspace snapshot when rendering many main-thread rows. */
+export function indexTaskSubagents(tasks: readonly Task[]) {
+  const children = childIds(tasks)
+  const owners = new Map(tasks.map((task) => [task.id, task]))
+  return (task: Task, workingOnly = false): Subagent[] => {
+    const ids = familyIds(children, task.id)
+    const records = new Map<string, Subagent>()
+    for (const id of ids) {
+      const owner = id === task.id ? task : owners.get(id)
+      for (const record of owner?.subagents ?? []) {
+        if (
+          workingOnly &&
+          (record.status !== 'working' ||
+            record.finishedAt ||
+            (record.source !== 'dovo' && owner?.status !== 'running'))
+        )
+          continue
+        const child = record.source === 'dovo' ? (record.taskId ?? record.id) : undefined
+        if (child && (!owners.has(child) || !ids.has(child))) continue
+        records.set(child ? `dovo:${child}` : `${id}:${record.provider}:${record.id}`, record)
+      }
+    }
+    return [...records.values()]
+  }
 }

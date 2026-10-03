@@ -30,10 +30,10 @@ export function ChatThread({
   revealMessage,
   onRevealHandled,
 }: {
-  task: Pick<
-    Task,
-    'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions' | 'historyBefore'
-  >
+  task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'> & {
+    historyBefore: Task['historyBefore']
+    historyRevision: Task['historyRevision']
+  }
   /** Shows the terminal after a chat command ran in it. */
   onTerminal?: (terminalId: string) => void
   pending?: PendingMessage | null

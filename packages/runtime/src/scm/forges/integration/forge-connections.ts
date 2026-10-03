@@ -62,6 +62,7 @@ export class ForgeConnections {
     private db: Database.Database,
     private onRevision?: (id: string, revision: string) => void,
     private cli?: ForgeCliAccounts,
+    private transaction: <T>(fn: () => T) => T = (fn) => db.transaction(fn)(),
   ) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS forge_connections (id TEXT PRIMARY KEY, value TEXT NOT NULL)',
@@ -78,12 +79,12 @@ export class ForgeConnections {
       environmentFingerprint: fingerprint,
       revision: randomUUID(),
     }
-    this.db.transaction(() => {
+    this.transaction(() => {
       this.db
         .prepare('UPDATE forge_connections SET value=? WHERE id=?')
         .run(JSON.stringify(next), row.id)
       this.onRevision?.(row.id, next.revision)
-    })()
+    })
     return next
   }
   private rows() {
@@ -218,12 +219,12 @@ export class ForgeConnections {
         cliFingerprint,
         revision: randomUUID(),
       }
-      this.db.transaction(() => {
+      this.transaction(() => {
         this.db
           .prepare('UPDATE forge_connections SET value=? WHERE id=?')
           .run(JSON.stringify(next), id)
         this.onRevision?.(id, next.revision)
-      })()
+      })
     }
     return this.get(id)
   }

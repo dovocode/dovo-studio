@@ -59,6 +59,8 @@ export type WorkspaceContextValue = {
   refreshRuntime: (profile: RuntimeProfile) => Promise<void>
   retrySync: () => Promise<void>
   discardAndReload: () => Promise<void>
+  mutationStatus: (profile: RuntimeProfile) => { pending: number; error: string | null }
+  discardMutations: (profile: RuntimeProfile) => Promise<void>
   pendingSync: boolean
   readCache: RuntimeReadCache | null
   readRuntime: <T extends Schema.Schema.AnyNoContext>(

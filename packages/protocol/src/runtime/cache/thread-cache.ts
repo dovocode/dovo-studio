@@ -5,10 +5,12 @@ import { runtimeSnapshotCacheSchema, type RuntimeReadCache } from './read-cache.
 
 /** Preserve only cached history, while using fresh shell fields for status, drafts and settings. */
 export function cachedThread(summary: Task, cached: Task): Task {
+  if ((summary.historyRevision ?? 0) !== (cached.historyRevision ?? 0)) return summary
   const turns = new Map(cached.turns?.map((turn) => [turn.id, turn]))
   return {
     ...summary,
     messages: cached.messages,
+    historyBefore: cached.historyBefore,
     sideChats: summary.sideChats?.map((chat) => ({
       ...chat,
       messages: cached.sideChats?.find((entry) => entry.id === chat.id)?.messages ?? [],
@@ -33,7 +35,13 @@ export function retainCachedThreads(
   const ids = new Set(next.detailTaskIds)
   const tasks = next.workspace.tasks.map((task) => {
     const cached = old.get(task.id)
-    if (ids.has(task.id) || !cached || !oldIds.has(task.id)) return task
+    if (
+      ids.has(task.id) ||
+      !cached ||
+      !oldIds.has(task.id) ||
+      (task.historyRevision ?? 0) !== (cached.historyRevision ?? 0)
+    )
+      return task
     ids.add(task.id)
     return cachedThread(task, cached)
   })

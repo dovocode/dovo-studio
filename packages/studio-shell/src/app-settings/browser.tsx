@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import { useState } from 'react'
 import {
   useAppPreferences,
@@ -101,8 +102,7 @@ function Profiles({
         className="flex gap-2"
         onSubmit={(event) => {
           event.preventDefault()
-          if (name.trim())
-            void update([...profiles, { id: crypto.randomUUID(), name: name.trim() }], true)
+          if (name.trim()) void update([...profiles, { id: randomUUID(), name: name.trim() }], true)
         }}
       >
         <Input

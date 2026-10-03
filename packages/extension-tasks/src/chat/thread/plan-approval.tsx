@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ClipboardCheck } from 'lucide-react'
-import { IMPLEMENT_PLAN_PROMPT, planAwaitingApproval } from '@dovo/protocol'
+import { randomUUID, IMPLEMENT_PLAN_PROMPT, planAwaitingApproval } from '@dovo/protocol'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 
@@ -16,7 +16,7 @@ export function PlanApproval({ task }: { task: Task }) {
     setError('')
     void request(
       '/api/tasks/message',
-      { id: task.id, messageId: crypto.randomUUID(), text: IMPLEMENT_PLAN_PROMPT },
+      { id: task.id, messageId: randomUUID(), text: IMPLEMENT_PLAN_PROMPT },
       responses.ok,
     )
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))

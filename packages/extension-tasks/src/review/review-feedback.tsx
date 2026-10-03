@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace, updateTask, type Task, type ChangedFile } from '@dovo/studio-core'
 import { Button, Checkbox, Textarea } from '@dovo/studio-ui'
@@ -42,7 +43,7 @@ export function ReviewFeedback({ task, file }: { task: Task; file: ChangedFile }
               messages: [
                 ...t.messages,
                 {
-                  id: crypto.randomUUID(),
+                  id: randomUUID(),
                   role: 'user',
                   text: feedback.trim(),
                   file: file.path,

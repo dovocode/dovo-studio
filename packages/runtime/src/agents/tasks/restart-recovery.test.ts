@@ -2,6 +2,8 @@ import { runtimeIntegration, waitForRuntime as waitForRecovery } from '../../tes
 import { afterEach, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { startRuntime } from '../../index'
+import { createServices } from '../../services'
+import { openDatabase } from '../../storage/database'
 import { fixture } from '../../testing/fixture'
 import { AgentRegistry } from '../configuration/registry'
 import type { AgentAdapter, AgentRun } from '../execution/types'
@@ -53,6 +55,94 @@ function adapter(run: AgentAdapter['run']) {
     run,
   })
 }
+it.each([false, true])(
+  'settles orphan draft and interrupted children before parent restart recovery (automatic=%s)',
+  async (enabled) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const options = {
+      databasePath: join(f.directory, '.git', 'children-restart.sqlite'),
+      ownerToken: 'synthetic-owner-token-for-restart-test',
+      port: 0,
+    }
+    const db = openDatabase(options.databasePath)
+    const first = createServices(db, options.ownerToken)
+    cleanups.push(async () => {
+      await first.tasks.dispose()
+      if (db.open) db.close()
+    })
+    first.store.update(() => f.workspace)
+    first.preferences.save({ autoContinueAfterRestart: enabled })
+    const parent = first.tasks.create({
+      title: 'Parent',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Delegate',
+    })
+    first.store.updateTask(parent.id, (task) => ({
+      ...task,
+      status: 'running',
+      activeRunId: 'retired-parent-attempt',
+    }))
+    const childIds = (['draft', 'running', 'review'] as const).map((status) => {
+      const child = first.tasks.create({
+        title: `Child ${status}`,
+        repositoryId: 'repo',
+        agentId: 'agent',
+        objective: 'Inspect',
+      })
+      first.store.updateTask(child.id, (task) => ({
+        ...task,
+        status,
+        delegation: {
+          parentTaskId: parent.id,
+          parentRunId: 'retired-parent-attempt',
+          key: status,
+        },
+      }))
+      return child.id
+    })
+    expect(first.store.task(childIds[0]).restartRecovery).toBeUndefined()
+    await first.tasks.dispose()
+    db.close()
+    const run = vi.fn<AgentAdapter['run']>(async (context) => {
+      expect(context.taskId).toBe(parent.id)
+      expect(runtime.tasks.subagentList(parent.id).map((child) => child.status)).toEqual([
+        'cancelled',
+        'cancelled',
+        'review',
+      ])
+      context.onText('Continued')
+    })
+    adapter(run)
+    const restartedDb = openDatabase(options.databasePath)
+    const runtime = createServices(restartedDb, options.ownerToken)
+    cleanups.push(async () => {
+      await runtime.tasks.dispose()
+      if (restartedDb.open) restartedDb.close()
+    })
+    runtime.tasks.continueAfterRestart(() => runtime.preferences.get().autoContinueAfterRestart)
+    await waitForRecovery(() =>
+      expect(runtime.tasks.subagentList(parent.id).map((child) => child.status)).toEqual([
+        'cancelled',
+        'cancelled',
+        'review',
+      ]),
+    )
+    expect(runtime.tasks.subagentList(parent.id).every((child) => !child.running)).toBe(true)
+    expect(runtime.store.task(parent.id).subagents?.map((child) => child.status)).toEqual([
+      'stopped',
+      'stopped',
+      'completed',
+    ])
+    expect(runtime.store.task(childIds[0]).restartRecovery).toBeUndefined()
+    await expect(runtime.tasks.start(childIds[0])).rejects.toThrow('parent turn has ended')
+    await waitForRecovery(() =>
+      expect(runtime.store.task(parent.id).status).toBe(enabled ? 'review' : 'failed'),
+    )
+    expect(run).toHaveBeenCalledTimes(enabled ? 1 : 0)
+  },
+)
 it('defaults to manual continuation and keeps a recoverable interrupted task', async () => {
   const { options, id } = await seed(false)
   const run = vi.fn<AgentAdapter['run']>(async (context) => {

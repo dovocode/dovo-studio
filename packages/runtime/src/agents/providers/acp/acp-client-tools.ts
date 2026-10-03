@@ -31,6 +31,9 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
   const root = await realpath(run.cwd)
   const fullAccess = run.agent.permission === 'full-access'
   const terminals = new Map<string, Terminal>()
+  const writes = new Set<Promise<void>>()
+  let closing = false
+  let closePromise: Promise<void> | undefined
   const toolsAllowed = run.tools !== 'none'
   const canWrite = toolsAllowed && run.agent.permission !== 'read-only'
   const canUseTerminal = canWrite
@@ -45,6 +48,7 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
   }
 
   function checkSession(id: string) {
+    if (closing) throw new Error('ACP client tools are closed')
     if (id !== session()) throw new Error('ACP session does not match this task')
     if (run.signal.aborted) throw new Error('Task cancelled')
   }
@@ -111,19 +115,29 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
             throw error
           })
           if (existing?.isSymbolicLink()) throw new Error('ACP file is a symbolic link')
-          const handle = await open(
-            safeFile,
-            constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-            0o600,
-          )
+          checkSession(params.sessionId)
+          const writing = (async () => {
+            const handle = await open(
+              safeFile,
+              constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+              0o600,
+            )
+            try {
+              const info = await handle.stat()
+              if (!info.isFile() || info.nlink !== 1)
+                throw new Error('ACP file is not a regular file')
+              checkSession(params.sessionId)
+              await handle.truncate(0)
+              await handle.writeFile(params.content)
+            } finally {
+              await handle.close()
+            }
+          })()
+          writes.add(writing)
           try {
-            const info = await handle.stat()
-            if (!info.isFile() || info.nlink !== 1)
-              throw new Error('ACP file is not a regular file')
-            await handle.truncate(0)
-            await handle.writeFile(params.content)
+            await writing
           } finally {
-            await handle.close()
+            writes.delete(writing)
           }
         }
       : undefined,
@@ -146,6 +160,9 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
             throw new Error('ACP terminal declined')
           checkSession(params.sessionId)
           const safeCwd = params.cwd ? await checkedPath(params.cwd) : root
+          // Paths and approvals yield; admission must share the spawn/map registration turn.
+          checkSession(params.sessionId)
+          if (terminals.size >= 8) throw new Error('ACP terminal limit reached')
           const env = {
             ...processEnvironment(),
             ...Object.fromEntries((params.env ?? []).map(({ name, value }) => [name, value])),
@@ -231,9 +248,18 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
   return {
     client,
     capabilities,
-    close: async () => {
-      await Promise.all([...terminals.values()].map((terminal) => stopAcpChild(terminal.child)))
-      terminals.clear()
+    close: () => {
+      if (!closePromise) {
+        closing = true
+        closePromise = (async () => {
+          // Approval/path waits can no longer admit writes or processes. Already-started
+          // file writes must finish before the provider releases checkout ownership.
+          await Promise.allSettled([...writes])
+          await Promise.all([...terminals.values()].map((terminal) => stopAcpChild(terminal.child)))
+          terminals.clear()
+        })()
+      }
+      return closePromise
     },
   }
 }

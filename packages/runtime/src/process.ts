@@ -99,7 +99,7 @@ export function processEnvironment(overrides: Record<string, string> = {}) {
     delete env[key]
   return env
 }
-export const executableAvailableEffect = (command: string) =>
+const executableAvailableEffect = (command: string) =>
   execEffect(command, ['--version'], {
     timeout: 5000,
     env: processEnvironment(),

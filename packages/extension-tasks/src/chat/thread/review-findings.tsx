@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { SearchCheck, Wrench } from 'lucide-react'
-import { fixFindingsPrompt, reviewFindings, type ReviewFinding } from '@dovo/protocol'
+import { randomUUID, fixFindingsPrompt, reviewFindings, type ReviewFinding } from '@dovo/protocol'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 
@@ -25,7 +25,7 @@ export function ReviewFindings({
     setError('')
     void request(
       '/api/tasks/message',
-      { id: task.id, messageId: crypto.randomUUID(), text: fixFindingsPrompt(items) },
+      { id: task.id, messageId: randomUUID(), text: fixFindingsPrompt(items) },
       responses.ok,
     )
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))

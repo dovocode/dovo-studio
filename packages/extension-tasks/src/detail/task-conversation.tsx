@@ -80,8 +80,21 @@ export function TaskConversation({
       turns,
       status,
       compactions,
+      historyBefore: task.historyBefore,
+      historyRevision: task.historyRevision,
     }),
-    [id, messages, queue, turns, status, compactions, threadPending, startingMessage],
+    [
+      id,
+      messages,
+      queue,
+      turns,
+      status,
+      compactions,
+      threadPending,
+      startingMessage,
+      task.historyBefore,
+      task.historyRevision,
+    ],
   )
   const { snapshot } = useWorkspace()
   const loaded =

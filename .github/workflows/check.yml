@@ -21,3 +21,62 @@ jobs:
       # All packages were compiled above; the local test command intentionally builds first.
       - run: pnpm exec vp test --maxWorkers=4
       - run: node --test scripts/packaging/*.test.mjs
+  # Bounded browser gate for shared hooks that render in both desktop and mobile bundles.
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-build
+      - run: pnpm install --frozen-lockfile
+      # The history harness bundles against the published protocol entry point.
+      - run: pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build
+      - run: pnpm --filter @dovo/runtime exec playwright install --with-deps chromium
+      - run: pnpm test:conversation-history:browser
+      - run: pnpm test:scoped-settings:browser
+      - run: pnpm test:shared-storage:browser
+      - run: pnpm test:remote-browser-recovery:browser
+      - run: pnpm test:composer-send:browser
+      - run: pnpm test:thread-startup:browser
+      - run: pnpm test:settings-target:browser
+      - run: pnpm test:subagent-grouping:browser
+  # Runtime storage, delegation, restart and API lifecycle suites on Linux.
+  runtime-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-build
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @dovo/api... -r build
+      - run: >-
+          pnpm exec vp test --maxWorkers=4
+          apps/api/src
+          packages/runtime/src/services.test.ts
+          packages/runtime/src/storage
+          packages/runtime/src/terminal
+          packages/runtime/src/agents/tasks/delegation
+          packages/runtime/src/agents/tasks/housekeeping.test.ts
+          packages/runtime/src/agents/tasks/restart-recovery.test.ts
+          packages/runtime/src/scm/tasks/pending-checkouts.test.ts
+          packages/runtime/src/http/task-lifecycle.test.ts
+  # Windows shell selection, launcher and server lifecycle suites.
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-build
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @dovo/api... -r build
+      - run: >-
+          pnpm exec vp test --maxWorkers=4
+          packages/runtime/src/terminal
+          packages/runtime/src/services.test.ts
+          packages/runtime/src/agents/execution/stop-owned-child
+          apps/desktop/electron/windows-runtime.test.ts
+          apps/desktop/electron/main.test.ts
+          apps/desktop/electron/task-launcher.test.ts
+          apps/api/src/server-manager.test.ts
+          apps/api/src/server-service.test.ts
+          apps/api/src/server-cli.test.ts

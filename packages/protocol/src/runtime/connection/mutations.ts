@@ -33,13 +33,18 @@ export const mutationOutboxSchema = mutableArray(
 export type MutationOutbox = Schema.Schema.Type<typeof mutationOutboxSchema>
 export type MutationStorage = {
   read: (connection: RuntimeConnection) => Promise<unknown>
-  write: (connection: RuntimeConnection, pending: MutationOutbox) => Promise<void>
+  /** Atomically read, change and commit a host/credential journal across all writers. */
+  update: (
+    connection: RuntimeConnection,
+    change: (pending: MutationOutbox) => MutationOutbox,
+  ) => Promise<MutationOutbox>
+  /** Explicit discard must also work when the journal cannot be decoded. */
+  clear: (connection: RuntimeConnection) => Promise<void>
   id: () => string
 }
 type State = {
   supported?: boolean
   pending: MutationOutbox
-  loaded: boolean
   error: string | null
   lock: Effect.Semaphore
 }
@@ -57,7 +62,8 @@ const operation = <A>(run: () => Promise<A>) =>
   })
 
 /** A journal of user-authorized commands, separate from disposable read caches. One ordered
- * writer per host/credential; acknowledgements are removed only after storage commits. */
+ * local sender per host/credential; journal updates are atomic across clients and
+ * acknowledgements are removed by identity only after storage commits. */
 export class RuntimeMutations {
   private states = new Map<string, State>()
   constructor(
@@ -70,7 +76,6 @@ export class RuntimeMutations {
     if (!state) {
       state = {
         pending: [],
-        loaded: false,
         error: null,
         lock: Effect.runSync(Effect.makeSemaphore(1)),
       }
@@ -82,9 +87,9 @@ export class RuntimeMutations {
     const state = this.state(connection)
     return { pending: state.pending.length, error: state.error }
   }
-  private supports(connection: RuntimeConnection, state: State) {
+  private supports(connection: RuntimeConnection, state: State, refresh = false) {
     return Effect.gen(function* () {
-      if (state.supported !== undefined) return state.supported
+      if (state.supported !== undefined && !(refresh && !state.supported)) return state.supported
       const result = yield* Effect.either(
         runtimeRequestEffect(
           connection,
@@ -105,20 +110,26 @@ export class RuntimeMutations {
   }
   private load(connection: RuntimeConnection, state: State) {
     return Effect.gen(this, function* () {
-      if (state.loaded) return
       const value = yield* operation(() => this.storage.read(connection))
-      state.pending = yield* Effect.try({
+      const pending = yield* Effect.try({
         try: () => decode(mutationOutboxSchema, value ?? []),
         catch: (error) =>
           new Error('Saved actions could not be read. They have been preserved.', { cause: error }),
       })
-      state.loaded = true
-      this.changed()
+      // This comparison only suppresses notifications; every operation still reads and
+      // uses the freshly decoded durable journal, including other clients' changes.
+      const changed = JSON.stringify(pending) !== JSON.stringify(state.pending)
+      state.pending = pending
+      if (changed) this.changed()
     })
   }
-  private save(connection: RuntimeConnection, state: State, pending: MutationOutbox) {
-    return operation(() => this.storage.write(connection, pending)).pipe(
-      Effect.tap(() =>
+  private save(
+    connection: RuntimeConnection,
+    state: State,
+    change: (pending: MutationOutbox) => MutationOutbox,
+  ) {
+    return operation(() => this.storage.update(connection, change)).pipe(
+      Effect.tap((pending) =>
         Effect.sync(() => {
           state.pending = pending
           this.changed()
@@ -156,14 +167,15 @@ export class RuntimeMutations {
             ? `Saved actions will sync when this computer is reachable. ${result.left.message}`
             : result.left.message
           if (!transient(result.left))
-            yield* this.save(connection, state, [
-              { ...item, blocked: true },
-              ...state.pending.slice(1),
-            ])
+            yield* this.save(connection, state, (pending) =>
+              pending.map((entry) => (entry.id === item.id ? { ...entry, blocked: true } : entry)),
+            )
           this.changed()
           return yield* Effect.fail(result.left)
         }
-        yield* this.save(connection, state, state.pending.slice(1))
+        yield* this.save(connection, state, (pending) =>
+          pending.filter((entry) => entry.id !== item.id),
+        )
       }
       if (!state.pending.length) {
         state.error = null
@@ -177,8 +189,15 @@ export class RuntimeMutations {
       .withPermits(1)(
         Effect.gen(this, function* () {
           yield* this.load(connection, state)
-          if (!state.pending.length) return
-          if (!(yield* this.supports(connection, state)))
+          if (!state.pending.length) {
+            if (state.error !== null) {
+              state.error = null
+              this.changed()
+            }
+            return
+          }
+          // An explicit retry after upgrading a legacy host must recheck its receipts.
+          if (!(yield* this.supports(connection, state, retry)))
             return yield* Effect.fail(
               new Error('Update this runtime before recovering saved actions.'),
             )
@@ -198,10 +217,24 @@ export class RuntimeMutations {
     const state = this.state(connection)
     return state.lock.withPermits(1)(
       Effect.gen(this, function* () {
-        yield* this.load(connection, state)
-        yield* this.save(connection, state, [])
+        yield* operation(() => this.storage.clear(connection))
+        state.pending = []
         state.error = null
         this.changed()
+      }).pipe(Effect.uninterruptible),
+    )
+  }
+  assertEmptyEffect(connection: RuntimeConnection) {
+    const state = this.state(connection)
+    return state.lock.withPermits(1)(
+      Effect.gen(this, function* () {
+        yield* this.load(connection, state)
+        if (state.pending.length)
+          return yield* Effect.fail(
+            new Error(
+              'This computer has saved actions waiting to sync. Retry or discard them before forgetting it.',
+            ),
+          )
       }),
     )
   }
@@ -219,15 +252,6 @@ export class RuntimeMutations {
       .withPermits(1)(
         Effect.gen(this, function* () {
           yield* this.load(connection, state)
-          if (state.supported === false && !state.pending.length)
-            return yield* runtimeRequestEffect(
-              connection,
-              connection.address,
-              path,
-              input,
-              schema,
-              method,
-            )
           // A UI retry of the same unresolved command keeps its identity, including after restart.
           let item = state.pending.find(
             (entry) =>
@@ -237,18 +261,27 @@ export class RuntimeMutations {
           )
           const created = !item
           if (!item) {
+            if (state.pending.some((entry) => entry.blocked))
+              return yield* Effect.fail(
+                new Error(
+                  'A saved action needs review. Retry or discard pending actions before sending another.',
+                ),
+              )
             if (method !== 'POST' && method !== 'PATCH')
               return yield* Effect.fail(new Error('Cannot journal a read'))
             item = { id: this.storage.id(), path, method, input }
-            yield* this.save(connection, state, [...state.pending, item])
+            const appended = item
+            yield* this.save(connection, state, (pending) => [...pending, appended])
           }
           const command = item
+          let sent = false
           const result = yield* Effect.either(
             Effect.gen(this, function* () {
               if (!(yield* this.supports(connection, state))) {
                 // This new command has never reached the host. Legacy hosts can execute it
                 // normally; previously saved commands still require receipt support.
-                if (created && state.pending.length === 1)
+                if (created && state.pending.length === 1) {
+                  sent = true
                   return yield* runtimeRequestEffect(
                     connection,
                     connection.address,
@@ -257,11 +290,13 @@ export class RuntimeMutations {
                     schema,
                     method,
                   )
+                }
                 return yield* Effect.fail(
                   new Error('Update this runtime before recovering saved actions.'),
                 )
               }
               yield* this.drain(connection, state, false, command.id)
+              sent = true
               return yield* this.send(connection, command)
             }),
           )
@@ -269,11 +304,19 @@ export class RuntimeMutations {
             state.error = transient(result.left)
               ? `Action saved for reconnect. ${result.left.message}`
               : result.left.message
-            if (!transient(result.left))
-              yield* this.save(
-                connection,
-                state,
-                state.pending.map((entry) =>
+            const rejectedLegacyCommand =
+              sent &&
+              state.supported === false &&
+              result.left instanceof RuntimeRequestError &&
+              result.left.status !== undefined &&
+              !transient(result.left)
+            if ((!transient(result.left) && !sent && created) || rejectedLegacyCommand)
+              yield* this.save(connection, state, (pending) =>
+                pending.filter((entry) => entry.id !== command.id),
+              )
+            if (!transient(result.left) && sent && !rejectedLegacyCommand)
+              yield* this.save(connection, state, (pending) =>
+                pending.map((entry) =>
                   entry.id === command.id ? { ...entry, blocked: true } : entry,
                 ),
               )
@@ -291,7 +334,9 @@ export class RuntimeMutations {
             try: () => decode(schema, result.right),
             catch: (error) => (error instanceof Error ? error : new Error(String(error))),
           })
-          yield* this.save(connection, state, state.pending.slice(1))
+          yield* this.save(connection, state, (pending) =>
+            pending.filter((entry) => entry.id !== command.id),
+          )
           state.error = null
           this.changed()
           return value

@@ -31,6 +31,7 @@ function triggerContext(payload: unknown) {
     : text
 }
 export class Jobs {
+  revision = 0
   private runs = new Map<string, StoredRun>()
   private active = new Map<string, Fiber.RuntimeFiber<void, never>>()
   private readonly executor = ManagedRuntime.make(Layer.empty)
@@ -65,6 +66,7 @@ export class Jobs {
         steps: runSteps(stored),
       }
       this.runs.set(run.id, run)
+      this.revision++
       if (run.status === 'running') {
         this.runs.set(run.id, reconcileCompletedTasks(run, store.get().tasks))
         this.finish(
@@ -132,6 +134,7 @@ export class Jobs {
     }
     this.db.transaction(() => this.write(run))()
     this.runs.set(run.id, run)
+    this.revision++
     return run
   }
   private requireIdle(automationId: string, except?: string) {
@@ -192,6 +195,7 @@ export class Jobs {
       this.write(run)
     })()
     this.runs.set(run.id, run)
+    this.revision++
     this.launch(run.id)
     return run.id
   }
@@ -340,42 +344,35 @@ export class Jobs {
     this.active.set(id, pending)
   }
   private createTask(run: StoredRun, node: AutomationNode) {
-    const previous = this.store.get()
     let next: StoredRun = run
-    try {
-      const task = this.db.transaction(() => {
-        const task = this.tasks.create({
-          title: node.data.label,
-          agentId: node.data.agentId,
-          harness: node.data.harness,
-          agentOverrides: node.data.agentOverrides,
-          repositoryId: node.data.repositoryId,
-          execution: node.data.execution,
-          linkedCheckouts: node.data.linkedCheckouts,
-          objective:
-            run.triggerPayload === undefined
-              ? node.data.objective
-              : `${node.data.objective}\n\nExternal trigger data (event context):\n${triggerContext(run.triggerPayload)}`,
-          origin: run.automationId,
-        })
-        next = {
-          ...updateStep(run, node.id, {
-            taskId: task.id,
-          }),
-          taskIds: [...run.taskIds, task.id],
-          updatedAt: new Date().toISOString(),
-        }
-        this.write(next)
-        return task
-      })()
-      this.runs.set(run.id, next)
+    const task = this.store.transaction(() => {
+      const task = this.tasks.create({
+        title: node.data.label,
+        agentId: node.data.agentId,
+        harness: node.data.harness,
+        agentOverrides: node.data.agentOverrides,
+        repositoryId: node.data.repositoryId,
+        execution: node.data.execution,
+        linkedCheckouts: node.data.linkedCheckouts,
+        objective:
+          run.triggerPayload === undefined
+            ? node.data.objective
+            : `${node.data.objective}\n\nExternal trigger data (event context):\n${triggerContext(run.triggerPayload)}`,
+        origin: run.automationId,
+      })
+      next = {
+        ...updateStep(run, node.id, {
+          taskId: task.id,
+        }),
+        taskIds: [...run.taskIds, task.id],
+        updatedAt: new Date().toISOString(),
+      }
+      this.write(next)
       return task
-    } catch (error) {
-      // WorkspaceStore publishes its in-memory snapshot synchronously. Restore it
-      // if the enclosing task + run transaction failed before commit.
-      if (this.store.get() !== previous) this.store.update(() => previous)
-      throw error
-    }
+    })
+    this.runs.set(run.id, next)
+    this.revision++
+    return task
   }
   private advanceEffect(id: string) {
     return Effect.gen(this, function* () {
@@ -526,6 +523,7 @@ export class Jobs {
       this.db.prepare('DELETE FROM deliveries WHERE created_at<?').run(before)
     })()
     for (const run of stale) this.runs.delete(run.id)
+    if (stale.length) this.revision++
     return stale.length
   }
   tick(now = Date.now()) {

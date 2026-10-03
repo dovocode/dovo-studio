@@ -269,10 +269,10 @@ class RuntimeSync {
       s.approvals.list(),
       s.questions.list(),
       s.terminals.list(),
-      s.jobs.list(),
-      s.devices.list(),
+      s.jobs.revision,
+      s.devices.version(),
       s.pairing.pending(),
-      s.defaults.get(),
+      s.defaults.version(),
       s.acpInstallations.list(),
     ])
   }

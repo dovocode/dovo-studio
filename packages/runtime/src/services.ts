@@ -67,6 +67,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       }))
     },
     forgeCli,
+    (fn) => store.transaction(fn),
   )
   const devices = new Devices(db, ownerToken),
     pairing = new Pairing(devices),
@@ -90,7 +91,8 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     approvals = new Approvals(activity, store),
     questions = new Questions(activity, store),
     tickets = new SocketTickets()
-  activity.workspace({ ...store.get(), tasks: [] }, store.get())
+  // Task and message activity is recorded as the store changes. Replaying the stored
+  // workspace here would resurrect pruned rows and duplicate task events on every start.
   const attachments = new Attachments(db, store, activity)
   const pullCache = new PullCache(db, pulls, store, (cwd, refresh) => pulls.identity(cwd, refresh))
   const scratch = new ScratchWorkspaces(

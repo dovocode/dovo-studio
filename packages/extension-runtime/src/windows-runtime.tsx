@@ -36,7 +36,7 @@ const bridge = () => {
   return result.success ? result.data.dovo.windowsRuntime : undefined
 }
 
-export function WindowsRuntimeControl({
+function WindowsRuntimeControl({
   onApplied,
   initialError = '',
 }: {

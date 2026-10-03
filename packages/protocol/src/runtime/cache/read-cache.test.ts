@@ -217,3 +217,18 @@ it('recovers after the first namespace initialization is interrupted', async () 
   expect((await client.read('snapshot', Schema.String))?.value).toBe('recovered')
   await client.close()
 })
+
+it('shares eviction ownership across independent cache instances', async () => {
+  const { values, cache } = fixture()
+  const clients = Array.from({ length: 105 }, () => cache('http://first'))
+  await Promise.all(clients.map((client, index) => client.write(`pr:${index}`, { index })))
+  const index = [...values.entries()].find(([key]) => key.endsWith('._index'))!
+  const tracked: string[] = JSON.parse(index[1])
+  const entries = [...values.keys()].filter((key) => !key.endsWith('._index'))
+  expect(tracked).toHaveLength(100)
+  expect(entries).toHaveLength(100)
+  expect(entries.every((key) => tracked.some((item) => key.endsWith('.' + item)))).toBe(true)
+  await clients[0]!.clear()
+  await Promise.all(clients.map((client) => client.write('late', 'late')))
+  expect(values.size).toBe(0)
+})

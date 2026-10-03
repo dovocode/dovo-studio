@@ -1,6 +1,6 @@
 import { Effect, Either } from 'effect'
 import { runtimeRequestEffect, RuntimeRequestError } from '../../shared/client.js'
-import { responses, snapshotSchema } from './runtime.js'
+import { responses, snapshotSchema, type RuntimeConnection } from './runtime.js'
 import {
   upsertRuntime,
   type RuntimeRegistry,
@@ -9,6 +9,17 @@ import {
 } from './runtime-fleet.js'
 
 type WriteRegistry = (registry: RuntimeRegistry) => Effect.Effect<void, Error>
+type BeforeReplace = (previous: RuntimeConnection) => Effect.Effect<void, Error>
+const checkReplacement = (
+  previous: RuntimeConnection | undefined,
+  candidate: RuntimeConnection,
+  beforeReplace?: BeforeReplace,
+) =>
+  previous &&
+  (previous.address !== candidate.address || previous.token !== candidate.token) &&
+  beforeReplace
+    ? beforeReplace(previous)
+    : Effect.void
 const removePending = (
   registry: RuntimeRegistry,
   id: string,
@@ -35,11 +46,13 @@ const confirm = (entry: PendingRuntimePairing) =>
     5000,
   )
 
-/** Caller owns the registry lock. Retain the old profile until confirmation AND durable commit. */
+/** Caller owns the registry lock. Retain the old profile until confirmation AND durable commit.
+ * Clients with credential-scoped saved actions must check the predecessor before replacing it. */
 export function saveRuntimePairing(
   registry: RuntimeRegistry,
   entry: PendingRuntimePairing,
   write: WriteRegistry,
+  beforeReplace?: BeforeReplace,
 ) {
   return Effect.gen(function* () {
     // Validate conflicts before issuing or durably staging a new credential.
@@ -52,6 +65,11 @@ export function saveRuntimePairing(
       previousConnection:
         registry.profiles.find((item) => item.id === entry.profile.id)?.connection ?? null,
     }
+    yield* checkReplacement(
+      entry.previousConnection ?? undefined,
+      entry.profile.connection,
+      beforeReplace,
+    )
     const staged = {
       ...registry,
       pendingPairings: [
@@ -65,6 +83,11 @@ export function saveRuntimePairing(
     }
     yield* write(staged)
     yield* confirm(entry)
+    yield* checkReplacement(
+      entry.previousConnection ?? undefined,
+      entry.profile.connection,
+      beforeReplace,
+    )
     const next = confirmed(staged, entry)
     yield* write(next)
     return next
@@ -72,7 +95,11 @@ export function saveRuntimePairing(
 }
 
 /** A persisted candidate survives a crash or a lost confirmation/commit response. */
-export function recoverRuntimePairings(registry: RuntimeRegistry, write: WriteRegistry) {
+export function recoverRuntimePairings(
+  registry: RuntimeRegistry,
+  write: WriteRegistry,
+  beforeReplace?: BeforeReplace,
+) {
   return Effect.gen(function* () {
     let next = registry
     const pending = registry.pendingPairings ?? []
@@ -98,6 +125,7 @@ export function recoverRuntimePairings(registry: RuntimeRegistry, write: WriteRe
         yield* write(next)
         continue
       }
+      yield* checkReplacement(current, entry.profile.connection, beforeReplace)
       const expired = Date.parse(entry.proof.expiresAt) <= Date.now()
       const result = yield* Effect.either(
         expired
@@ -112,9 +140,14 @@ export function recoverRuntimePairings(registry: RuntimeRegistry, write: WriteRe
             ).pipe(Effect.asVoid)
           : confirm(entry).pipe(Effect.asVoid),
       )
-      if (Either.isRight(result))
+      if (Either.isRight(result)) {
+        yield* checkReplacement(current, entry.profile.connection, beforeReplace)
         next = { ...confirmed(next, entry), activeId: next.activeId ?? entry.profile.id }
-      else if (expired && result.left instanceof RuntimeRequestError && result.left.status === 401)
+      } else if (
+        expired &&
+        result.left instanceof RuntimeRequestError &&
+        result.left.status === 401
+      )
         next = removePending(next, entry.proof.id, entry.profile.connection.address)
       else continue // Offline: retain the durable candidate and existing connection for another recovery.
       yield* write(next)

@@ -27,6 +27,15 @@ failing the parent automatically.
 
 Ending or stopping the parent stops unfinished children and cancels their pending questions.
 Interrupted children are not restarted independently after a runtime restart; completed results stay
-available. Independent tasks still cannot run simultaneously in the same checkout. Desktop and
-mobile show Dovo children in the Agents panel, with links to the child conversation and back to the
-parent, so users can inspect results or respond to child questions with context.
+available. Independent tasks still cannot run simultaneously in the same checkout.
+
+Desktop and mobile thread lists show active subagents as pills under their main thread, including
+nested children. Child threads remain navigable through those pills and the Agents panel rather than
+appearing as separate list rows. Exited agents disappear from the pills; their saved results remain
+in Agents, with links to the child conversation and back to the parent. Native harness records are
+shown as saved state once their owning run ends.
+
+Settling/reopening, snoozing/unsnoozing, archiving/restoring and deleting a thread apply recursively
+to its children across attempts. Active child work and live terminals block archive/delete, and
+active child work blocks settling/reopening. Deleting a child removes its descendants while keeping
+its parent and siblings.

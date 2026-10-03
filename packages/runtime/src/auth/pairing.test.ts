@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { openDatabase } from '../storage/database'
 import { Devices } from './devices'
 import { Pairing } from './pairing'
@@ -124,6 +124,41 @@ it('expires provisional trust after runtime restart', () => {
     expect(() => restarted.authenticate(claim.token ?? '')).toThrow('authentication required')
     expect(restarted.list()[0].revokedAt).not.toBeNull()
   } finally {
+    db.close()
+  }
+})
+
+it('keeps idle owner checks query-free and invalidates revisions at provisional expiry', () => {
+  const db = openDatabase(':memory:')
+  const devices = new Devices(db, 'owner')
+  const clock = vi.spyOn(Date, 'now')
+  let now = Date.now()
+  clock.mockImplementation(() => now)
+  try {
+    const id = devices.add('Temporary', 'temporary-token', 1000)
+    const current = devices.version()
+    const prepare = vi.spyOn(db, 'prepare')
+    for (let index = 0; index < 100; index++) {
+      expect(devices.version()).toBe(current)
+      devices.authenticate('owner')
+    }
+    expect(prepare).not.toHaveBeenCalled()
+    now += 1000
+    expect(devices.version()).not.toBe(current)
+    expect(() => devices.authenticate('temporary-token')).toThrow('authentication required')
+    expect(devices.list().find((device) => device.id === id)?.revokedAt).toBeTruthy()
+    const next = devices.add('Confirmed', 'confirmed-token', 1000)
+    devices.confirm(next)
+    const confirmed = devices.version()
+    now += 15000
+    expect(devices.version()).toBe(confirmed)
+    now += 1000
+    expect(devices.authenticate('confirmed-token').id).toBe(next)
+    devices.revoke(next)
+    expect(devices.version()).not.toBe(confirmed)
+    expect(() => devices.authenticate('confirmed-token')).toThrow('authentication required')
+  } finally {
+    vi.restoreAllMocks()
     db.close()
   }
 })

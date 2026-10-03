@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, delimiter } from 'node:path'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
@@ -113,8 +113,12 @@ it('rejects stopping a runtime owned by another launcher', async () => {
 it('leaves the running server untouched when staged dependency installation fails', async () => {
   const directory = await fixture()
   const initial = await startServer(directory, entrypoint)
-  const fakePnpm = join(directory, 'pnpm')
-  writeFileSync(fakePnpm, '#!/bin/sh\nexit 12\n', { mode: 0o700 })
+  const fakePnpm = join(directory, process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm')
+  writeFileSync(
+    fakePnpm,
+    process.platform === 'win32' ? '@echo off\r\nexit /b 12\r\n' : '#!/bin/sh\nexit 12\n',
+    { mode: 0o700 },
+  )
   await expect(
     execute(
       process.execPath,
@@ -125,7 +129,10 @@ it('leaves the running server untouched when staged dependency installation fail
         directory,
         '--json',
       ],
-      { env: { ...process.env, PATH: `${directory}:${process.env.PATH}` }, timeout: 30000 },
+      {
+        env: { ...process.env, PATH: `${directory}${delimiter}${process.env.PATH}` },
+        timeout: 30000,
+      },
     ),
   ).rejects.toThrow('pnpm exited with 12')
   expect((await serverStatus(directory)).pid).toBe(initial.pid)

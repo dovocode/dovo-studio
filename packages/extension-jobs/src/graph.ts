@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import { automationIssues, defaultTaskHarness } from '@dovo/studio-core'
 import type { Automation, AutomationNode, Workspace } from '@dovo/studio-core'
 
@@ -11,7 +12,7 @@ export function newNode(
   index: number,
 ): AutomationNode {
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     type: 'automation',
     position: { x: 80 + index * 320, y: 80 },
     data: {

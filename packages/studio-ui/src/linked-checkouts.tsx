@@ -1,5 +1,10 @@
 import { useState, useRef, useLayoutEffect } from 'react'
-import { worktreeChoicesSchema, type LinkedCheckout, type Repository } from '@dovo/protocol'
+import {
+  randomUUID,
+  worktreeChoicesSchema,
+  type LinkedCheckout,
+  type Repository,
+} from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import { ChoicePicker } from './choice-picker'
 import { Button } from './components/ui/button'
@@ -36,7 +41,7 @@ export function LinkedCheckoutEditor({
             onChange([
               ...value,
               {
-                id: crypto.randomUUID(),
+                id: randomUUID(),
                 repositoryId: projects[0].id,
                 execution: projects[0].kind === 'folder' ? 'main' : 'worktree',
                 access: 'read-only',

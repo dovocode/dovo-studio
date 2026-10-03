@@ -1,4 +1,3 @@
-import { runClientEffect } from '@dovo/client-runtime'
 import { mutableStruct } from '@dovo/protocol'
 import { decode, minValue, maxValue } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
@@ -69,9 +68,6 @@ export function saveJiraSourceEffect(s: Services, value: unknown) {
       return source
     }),
   )
-}
-export function saveJiraSource(s: Services, value: unknown) {
-  return runClientEffect(saveJiraSourceEffect(s, value))
 }
 export function removeJiraSource(s: Services, value: unknown) {
   const { sourceId, before } = decode(
@@ -163,7 +159,4 @@ export function linkJiraIssueEffect(s: Services, value: unknown) {
       }
     }),
   )
-}
-export function linkJiraIssue(s: Services, value: unknown) {
-  return runClientEffect(linkJiraIssueEffect(s, value))
 }

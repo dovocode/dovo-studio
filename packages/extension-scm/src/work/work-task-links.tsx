@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import {
@@ -51,7 +52,7 @@ export function WorkTaskLinks({
           (!task.workItem.jiraSourceId || task.workItem.jiraSourceId === jiraSourceId)
         : task.repositoryId === repositoryId),
   )
-  const requestId = useRef(crypto.randomUUID())
+  const requestId = useRef(randomUUID())
   const attemptedRepository = useRef('')
   const pending = useRef(false)
   const linkPending = useRef(false)

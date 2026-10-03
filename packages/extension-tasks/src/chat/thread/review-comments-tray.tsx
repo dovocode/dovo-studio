@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MessageSquareText, Send, X } from 'lucide-react'
-import { pendingReviewComments, reviewCommentsPrompt } from '@dovo/protocol'
+import { randomUUID, pendingReviewComments, reviewCommentsPrompt } from '@dovo/protocol'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button, IconButton } from '@dovo/studio-ui'
 
@@ -24,7 +24,7 @@ export function ReviewCommentsTray({ task, className = '' }: { task: Task; class
     act(() =>
       request(
         '/api/tasks/message',
-        { id: task.id, messageId: crypto.randomUUID(), text: reviewCommentsPrompt(pending.length) },
+        { id: task.id, messageId: randomUUID(), text: reviewCommentsPrompt(pending.length) },
         responses.ok,
       ),
     )

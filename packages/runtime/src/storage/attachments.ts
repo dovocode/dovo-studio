@@ -22,6 +22,15 @@ const rowSchema = mutableStruct({
   metadata: Schema.String,
   data: Schema.instanceOf(Buffer),
 })
+/** Reduces an uploaded name to the file name that is stored and later written to disk.
+ * Validation runs on that normalized value, so `a/..` cannot pass as a raw name and then
+ * materialize as a directory reference. */
+export function attachmentFileName(raw: string) {
+  const name = basename(raw).replaceAll('\\', '_')
+  const control = name.split('').some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)
+  if (!name || ['.', '..'].includes(name) || control) throw new HttpError(400, 'Invalid file name')
+  return name
+}
 export class Attachments {
   private root: string
   constructor(
@@ -53,20 +62,17 @@ export class Attachments {
   async upload(value: unknown) {
     const input = decode(attachmentUploadSchema, value)
     const task = this.store.task(input.taskId)
-    if (task.archived) throw new HttpError(409, 'Restore the task before attaching files')
+    if (task.archived || task.archivedAt)
+      throw new HttpError(409, 'Restore the task before attaching files')
     const data = Buffer.from(input.data, 'base64')
     if (data.toString('base64') !== input.data) throw new HttpError(400, 'Invalid file data')
-    if (['.', '..'].includes(input.name) || input.name.split('').some((c) => c.charCodeAt(0) < 32))
-      throw new HttpError(400, 'Invalid file name')
+    const name = attachmentFileName(input.name)
     if (data.length > MAX_ATTACHMENT_BYTES)
       throw new HttpError(413, 'Files must be 4 MB or smaller')
     const existing = this.db.prepare('SELECT id FROM attachments WHERE id=?').get(input.id)
     if (existing) {
       const previous = this.read(input.taskId, input.id)
-      if (
-        previous.data !== input.data ||
-        previous.attachment.name !== basename(input.name).replaceAll('\\', '_')
-      )
+      if (previous.data !== input.data || previous.attachment.name !== name)
         throw new HttpError(409, 'Upload ID already has different contents')
       return {
         attachment: previous.attachment,
@@ -79,18 +85,21 @@ export class Attachments {
     })
     const attachment = decode(attachmentSchema, {
       id: input.id,
-      name: basename(input.name).replaceAll('\\', '_'),
+      name,
       mime: detected?.mime ?? 'application/octet-stream',
       size: data.length,
     })
-    this.db.transaction(() => {
+    this.store.transaction(() => {
+      const current = this.store.task(input.taskId)
+      if (current.archived || current.archivedAt)
+        throw new HttpError(409, 'Restore the task before attaching files')
       if (this.db.prepare('SELECT id FROM attachments WHERE id=?').get(input.id)) {
         const previous = this.read(input.taskId, input.id)
         if (previous.data !== input.data || previous.attachment.name !== attachment.name)
           throw new HttpError(409, 'Upload ID already has different contents')
         return
       }
-      if ((this.store.task(input.taskId).draftAttachments?.length ?? 0) >= MAX_ATTACHMENTS)
+      if ((current.draftAttachments?.length ?? 0) >= MAX_ATTACHMENTS)
         throw new HttpError(409, 'Attach up to 5 files per message')
       this.db
         .prepare('INSERT INTO attachments VALUES(?,?,?,?)')
@@ -100,7 +109,7 @@ export class Attachments {
         draftAttachments: [...(t.draftAttachments ?? []), attachment],
       }))
       this.activity.add('attachment', input.taskId, `Attached ${attachment.name}`, attachment)
-    })()
+    })
     return {
       attachment,
       revision: this.store.version(),

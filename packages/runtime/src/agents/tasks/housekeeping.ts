@@ -1,14 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { startPolling } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import type { Task } from '@dovo/protocol'
+import { taskFamilyIds, type Task } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
 
 const day = 86_400_000
 
 /** When a task last saw activity: its latest turn, update or creation. */
-export function lastTaskActivity(task: Task) {
+function lastTaskActivity(task: Task) {
   const turn = task.turns?.at(-1)
   return Math.max(
     ...[task.updatedAt, task.createdAt, turn?.finishedAt, turn?.startedAt]
@@ -28,15 +28,18 @@ export function inactiveTaskIds(
 ) {
   if (!days) return []
   return tasks
-    .filter(
-      (task) =>
-        !task.example &&
-        !task.archivedAt &&
-        !task.pinned &&
-        task.status !== 'running' &&
-        !busy(task) &&
-        now - lastTaskActivity(task) > days * day,
-    )
+    .filter((task) => {
+      if (task.delegation || task.example || task.archivedAt) return false
+      const ids = taskFamilyIds(tasks, task.id)
+      return tasks.every(
+        (member) =>
+          !ids.has(member.id) ||
+          (!member.pinned &&
+            member.status !== 'running' &&
+            !busy(member) &&
+            now - lastTaskActivity(member) > days * day),
+      )
+    })
     .map((task) => task.id)
 }
 
@@ -54,14 +57,17 @@ type ArchiveServices = Pick<
 >
 /** Whether a task is doing or waiting for something, so automatic archiving must skip it. */
 export function taskIsBusy(s: ArchiveServices, id: string) {
+  const ids = taskFamilyIds(s.store.get().tasks, id)
   if (
-    [...s.questions.list(), ...s.approvals.list()].some((item) => item.taskId === id) ||
-    s.terminals.list().some((terminal) => terminal.taskId === id && !terminal.exited)
+    [...s.questions.list(), ...s.approvals.list()].some((item) => ids.has(item.taskId)) ||
+    s.terminals.list().some((terminal) => ids.has(terminal.taskId) && !terminal.exited)
   )
     return true
   try {
-    s.tasks.requireIdle(id)
-    s.jobs.requireTaskIdle(id)
+    for (const member of ids) {
+      s.tasks.requireIdle(member)
+      s.jobs.requireTaskIdle(member)
+    }
     return false
   } catch {
     return true
@@ -73,17 +79,50 @@ export async function archiveTask(
   id: string,
   reason: string,
   now = Date.now(),
+  eligible: (task: Task) => boolean = () => true,
 ) {
   try {
-    await s.browsers.closeTask(id)
-    await s.simulators.closeTask(id)
-    s.store.updateTask(id, (task) => ({
-      ...task,
-      archived: true,
-      archivedAt: task.archivedAt ?? new Date(now).toISOString(),
-      snoozedUntil: null,
-    }))
-    s.activity.add('task', id, reason)
+    const current = s.store.get().tasks.find((task) => task.id === id)
+    if (
+      !current ||
+      current.delegation ||
+      current.archivedAt ||
+      taskIsBusy(s, id) ||
+      !eligible(current)
+    )
+      return false
+    const ids = taskFamilyIds(s.store.get().tasks, id)
+    for (const member of ids) {
+      await s.browsers.closeTask(member)
+      await s.simulators.closeTask(member)
+    }
+    const latest = s.store.get().tasks.find((task) => task.id === id)
+    const latestIds = taskFamilyIds(s.store.get().tasks, id)
+    if (
+      !latest ||
+      latest.archivedAt ||
+      latestIds.size !== ids.size ||
+      [...latestIds].some((member) => !ids.has(member)) ||
+      taskIsBusy(s, id) ||
+      !eligible(latest)
+    )
+      return false
+    s.store.transaction(() => {
+      s.store.update((workspace) => ({
+        ...workspace,
+        tasks: workspace.tasks.map((task) =>
+          ids.has(task.id)
+            ? {
+                ...task,
+                archived: true,
+                archivedAt: task.archivedAt ?? new Date(now).toISOString(),
+                snoozedUntil: null,
+              }
+            : task,
+        ),
+      }))
+      s.activity.add('task', id, reason)
+    })
     return true
   } catch {
     return false
@@ -148,22 +187,26 @@ export class Housekeeping {
   }
   async archiveInactive(now = Date.now()) {
     const { autoArchiveDays } = this.s.preferences.get()
-    const waiting = new Set(
-      [...this.s.questions.list(), ...this.s.approvals.list()].map((item) => item.taskId),
-    )
-    const openTerminals = new Set(
-      this.s.terminals
-        .list()
-        .filter((terminal) => !terminal.exited)
-        .map((terminal) => terminal.taskId),
-    )
-    const ids = inactiveTaskIds(this.s.store.get().tasks, autoArchiveDays, now, (task) => {
-      if (waiting.has(task.id) || openTerminals.has(task.id)) return true
-      return taskIsBusy(this.s, task.id)
-    })
-    for (const id of ids)
-      await archiveTask(this.s, id, `Archived after ${autoArchiveDays} days without activity`, now)
-    return ids
+    const eligibleIds = () =>
+      inactiveTaskIds(
+        this.s.store.get().tasks,
+        this.s.preferences.get().autoArchiveDays,
+        now,
+        (task) => taskIsBusy(this.s, task.id),
+      )
+    const archived: string[] = []
+    for (const id of eligibleIds())
+      if (
+        await archiveTask(
+          this.s,
+          id,
+          `Archived after ${autoArchiveDays} days without activity`,
+          now,
+          () => eligibleIds().includes(id),
+        )
+      )
+        archived.push(id)
+    return archived
   }
   /** Removes worktrees of archived tasks that have no uncommitted changes. Each removal re-checks
    * state and git refuses dirty checkouts; restoring a task reattaches its kept branch. */

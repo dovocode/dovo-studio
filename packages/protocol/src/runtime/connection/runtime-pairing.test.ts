@@ -3,6 +3,7 @@ import { Deferred, Effect } from 'effect'
 import { saveRuntimePairing, recoverRuntimePairings, cancelRuntimePairing } from './runtime-pairing'
 import { runtimeProfile, runtimeRegistrySchema, type RuntimeRegistry } from './runtime-fleet'
 import { decode } from '../../shared/schema'
+import { RuntimeMutations, type MutationOutbox } from './mutations'
 
 const previous = runtimeProfile({
   address: 'http://vpn-host:51464',
@@ -22,6 +23,88 @@ const initial = (): RuntimeRegistry => ({ version: 1, activeId: previous.id, pro
 afterEach(() => vi.unstubAllGlobals())
 const ok = () => Response.json({ ok: true })
 const fail = (message: string) => Effect.fail(new Error(message))
+
+function savedActions(initial: MutationOutbox) {
+  let pending = initial
+  return {
+    queue: new RuntimeMutations({
+      id: () => 'new-action',
+      read: async () => pending,
+      update: async (_connection, change) => (pending = change(pending)),
+      clear: async () => {
+        pending = []
+      },
+    }),
+    append: () =>
+      pending.push({
+        id: 'saved-message',
+        path: '/api/tasks/message',
+        method: 'POST',
+        input: { messageId: 'message', text: 'Continue' },
+      }),
+    pending: () => pending,
+  }
+}
+
+it.each(['direct', 'recovery'] as const)(
+  'preserves the predecessor and its saved actions during %s until explicitly discarded offline',
+  async (mode) => {
+    const actions = savedActions([])
+    actions.append()
+    let saved: RuntimeRegistry =
+      mode === 'recovery' ? { ...initial(), pendingPairings: [entry()] } : initial()
+    const before = saved
+    const fetcher = vi.fn<typeof fetch>(async () => ok())
+    vi.stubGlobal('fetch', fetcher)
+    const write = (next: RuntimeRegistry) =>
+      Effect.sync(() => {
+        saved = next
+      })
+    const guard = (connection: typeof previous.connection) =>
+      actions.queue.assertEmptyEffect(connection)
+    const pair = () =>
+      mode === 'direct'
+        ? saveRuntimePairing(saved, entry(), write, guard)
+        : recoverRuntimePairings(saved, write, guard)
+    await expect(Effect.runPromise(pair())).rejects.toThrow('saved actions')
+    expect(saved).toEqual(before)
+    expect(actions.pending()).toHaveLength(1)
+    expect(fetcher).not.toHaveBeenCalled()
+    await Effect.runPromise(actions.queue.discardEffect(previous.connection))
+    expect(fetcher).not.toHaveBeenCalled()
+    await Effect.runPromise(pair())
+    expect(saved.profiles).toEqual([candidate])
+    expect(actions.pending()).toEqual([])
+  },
+)
+
+it('rechecks predecessor actions after confirmation and preserves a blocked candidate for later recovery', async () => {
+  const actions = savedActions([])
+  const pending = entry()
+  let saved = initial()
+  const write = (next: RuntimeRegistry) =>
+    Effect.sync(() => {
+      saved = next
+    })
+  const guard = (connection: typeof previous.connection) =>
+    actions.queue.assertEmptyEffect(connection)
+  const fetcher = vi.fn<typeof fetch>(async () => {
+    actions.append()
+    return ok()
+  })
+  vi.stubGlobal('fetch', fetcher)
+  await expect(Effect.runPromise(saveRuntimePairing(saved, pending, write, guard))).rejects.toThrow(
+    'saved actions',
+  )
+  expect(saved.profiles).toEqual([previous])
+  expect(saved.pendingPairings).toEqual([pending])
+  fetcher.mockClear()
+  await expect(Effect.runPromise(recoverRuntimePairings(saved, write, guard))).rejects.toThrow(
+    'saved actions',
+  )
+  expect(fetcher).not.toHaveBeenCalled()
+  expect(actions.pending()).toHaveLength(1)
+})
 
 it('does not confirm or replace the old connection before the candidate is durable', async () => {
   let saved = initial()

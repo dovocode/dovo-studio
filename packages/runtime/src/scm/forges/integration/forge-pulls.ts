@@ -184,6 +184,8 @@ export class ForgePullRequests {
   async list(cwd: string, state: 'open' | 'closed' | 'all', page: number) {
     return (await this.target(cwd))?.list(state, page) ?? this.github.list(cwd, state, page)
   }
+  // PullCache refreshes through its structural Pick<PullRequests, ...> contract.
+  // fallow-ignore-next-line unused-class-member
   async status(cwd: string, number: number) {
     const binding = await this.binding(cwd)
     if (!binding) return this.github.status(cwd, number)

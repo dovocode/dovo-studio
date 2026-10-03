@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
@@ -146,7 +147,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
     setPending({
       runtimeId: owner,
       connection: destination.profile.connection,
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       name: name.trim(),
     })
     try {

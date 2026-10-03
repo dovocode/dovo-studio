@@ -6,6 +6,7 @@ export const conversationPageSchema = mutableStruct({
   messages: mutableArray(messageSchema),
   turns: mutableArray(turnSchema),
   before: Schema.optional(Schema.String),
+  historyRevision: Schema.optional(Schema.NonNegativeInt),
 })
 export type ConversationPage = Schema.Schema.Type<typeof conversationPageSchema>
 const encodedSizes = new WeakMap<object, number>()
@@ -19,7 +20,7 @@ const encodedSize = (value: object) => {
 }
 /** Whole messages, bounded by requests, item count and approximate encoded bytes. */
 export function conversationPage(
-  task: Pick<Task, 'messages' | 'turns'>,
+  task: Pick<Task, 'messages' | 'turns' | 'historyRevision'>,
   before?: string,
 ): ConversationPage {
   const end =
@@ -50,18 +51,40 @@ export function conversationPage(
   return {
     messages,
     turns: task.turns?.filter((turn) => ids.has(turn.assistantId)) ?? [],
+    ...(task.historyRevision !== undefined ? { historyRevision: task.historyRevision } : {}),
     ...(start > 0 ? { before: messages[0]!.id } : {}),
   }
 }
 /** Loaded history lives outside the authoritative live snapshot and its editable draft. */
 export function mergeConversationHistory<
-  T extends Pick<Task, 'messages' | 'turns' | 'historyTotals'>,
->(live: T, pages: readonly ConversationPage[]): T {
+  T extends Pick<
+    Task,
+    'messages' | 'turns' | 'historyTotals' | 'historyBefore' | 'historyRevision'
+  >,
+>(live: T, pages: readonly ConversationPage[], authoritative = true): T {
+  pages = pages.filter((page) =>
+    authoritative
+      ? (page.historyRevision ?? 0) === (live.historyRevision ?? 0)
+      : (page.historyRevision ?? 0) >= (live.historyRevision ?? 0),
+  )
   if (!pages.length) return live
+  // A complete host window owns all membership. Offline mobile restores may have
+  // no live window yet, so those explicitly retain their saved replica.
+  if (authoritative && !live.historyBefore) return live
   const messages = new Map(
     pages.flatMap((page) => page.messages.map((message) => [message.id, message] as const)),
   )
+  const cached = [...messages.values()]
+  const boundary = cached.findIndex((message) => message.id === live.messages[0]?.id)
+  if (authoritative && boundary < 0 && live.messages.some((message) => messages.has(message.id)))
+    return live
+  if (authoritative && boundary >= 0) {
+    // Cached copies at/after the first live message cannot resurrect deletions
+    // or rewind tails. Pages fetched strictly before it remain available.
+    for (const message of cached.slice(boundary)) messages.delete(message.id)
+  }
   const turns = new Map(pages.flatMap((page) => page.turns.map((turn) => [turn.id, turn] as const)))
+  for (const [id, turn] of turns) if (!messages.has(turn.assistantId)) turns.delete(id)
   for (const message of live.messages) messages.set(message.id, message)
   for (const turn of live.turns ?? []) turns.set(turn.id, turn)
   const liveTurns = new Set(live.turns?.map((turn) => turn.id))
@@ -69,6 +92,14 @@ export function mergeConversationHistory<
   const loadedUsage = taskBudgetUsage({ turns: added })
   return {
     ...live,
+    ...(!authoritative
+      ? {
+          historyRevision: Math.max(
+            live.historyRevision ?? 0,
+            ...pages.map((page) => page.historyRevision ?? 0),
+          ),
+        }
+      : {}),
     messages: [...messages.values()],
     turns: [...turns.values()],
     ...(live.historyTotals

@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import { useRef, useState } from 'react'
 import {
   resetCreditsSchema,
@@ -76,7 +77,7 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
     if (!profile || busy) return
     setBusy(true)
     setError('')
-    attempt.current ??= crypto.randomUUID()
+    attempt.current ??= randomUUID()
     try {
       const result = await readRuntime(
         profile,

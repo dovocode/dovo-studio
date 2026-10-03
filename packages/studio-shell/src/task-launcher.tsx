@@ -1,7 +1,12 @@
 import { TaskLauncherControls } from './task-launcher-controls'
 import { useEffect, useRef, useState } from 'react'
 import { useAppPreferences, useWorkspace, useStudioHost, WorkspaceScope } from '@dovo/studio-core'
-import { snapshotSchema, type RuntimeSnapshot, type TaskLauncherBridge } from '@dovo/protocol'
+import {
+  randomUUID,
+  snapshotSchema,
+  type RuntimeSnapshot,
+  type TaskLauncherBridge,
+} from '@dovo/protocol'
 import {
   Dialog,
   DialogContent,
@@ -126,9 +131,9 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
     try {
       if (!attempt.current && snapshot && profile && repository && agent) {
         attempt.current = {
-          task: createLauncherTask(snapshot, repository, agent, text, crypto.randomUUID()),
+          task: createLauncherTask(snapshot, repository, agent, text, randomUUID()),
           profile,
-          messageId: crypto.randomUUID(),
+          messageId: randomUUID(),
           text: text.trim(),
           created: false,
         }

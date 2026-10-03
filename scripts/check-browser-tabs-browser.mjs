@@ -39,12 +39,28 @@ const built = await build({
               : path === './physical-controls'
                 ? 'export const PhysicalControls=()=>null;'
                 : `
+import {createContext,createElement,useContext,useState} from 'react';
+import {resolveSettingsTarget} from '@dovo/protocol';
 export * from '@dovo/protocol';
 export const providers=[];export const useResolvedTheme=()=> 'dark';
 export const remoteBrowserHtml=${JSON.stringify(viewer)};
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});return {ok:true,ticket:body.tabId,tabId:body.tabId,profileId:body.profileId}};
 const browser=async(command)=>{window.calls.push(command)};
-export const useWorkspace=()=>({connection:{address:'http://runtime.local'},request,connected:true,snapshot:{workspace:{tasks:[],repositories:[]}}});
+const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device'}};
+const snapshot={workspace:{tasks:[],repositories:[]}};
+const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot}];
+const workspace={activeRuntimeId:profile.id,connection:profile.connection,request,connected:true,snapshot,runtimes:sources};
+const WorkspaceContext=createContext(null);
+export const useWorkspace=()=>useContext(WorkspaceContext)||workspace;
+export const WorkspaceScope=({profile,children})=>{
+  const source=sources.find(entry=>entry.profile.id===profile.id&&entry.profile.connection.address===profile.connection.address&&entry.profile.connection.token===profile.connection.token);
+  if(!source)return null;
+  return createElement(WorkspaceContext.Provider,{value:{...workspace,activeRuntimeId:source.profile.id,connection:source.profile.connection,snapshot:source.snapshot,connected:source.connected}},children);
+};
+export const useSettingsTarget=()=>{
+  const [target,setTarget]=useState({environmentId:'',projectId:''});
+  return {target,setTarget,sources,...resolveSettingsTarget(sources,target,workspace.activeRuntimeId)};
+};
 export const useStudioHost=()=>({browser});
 export const useAppPreferences=()=>({browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{}});
 export const useRemoteBrowserProfiles=()=>({profiles:[{id:'default',name:'Remote Default'},{id:'remote-work',name:'Remote Work'},{id:'remote-personal',name:'Remote Personal'}],error:'',loading:false});

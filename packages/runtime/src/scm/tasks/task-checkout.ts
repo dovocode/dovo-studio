@@ -1,4 +1,5 @@
 import { LinkedCheckouts } from './linked-checkouts.js'
+import { PendingCheckouts } from './pending-checkouts.js'
 import type { ScratchWorkspaces } from '../repositories/scratch-workspaces.js'
 import { repositoryPath } from '../repositories/paths.js'
 import { taskBranchName, taskWorktreePath } from './task-branch.js'
@@ -14,10 +15,16 @@ export { worktreesRoot, taskWorktreeKeys, isTaskWorktree } from './task-worktree
 import { taskWorktreeKeys, isTaskWorktree } from './task-worktree-keys.js'
 export class TaskCheckout {
   readonly linked: LinkedCheckouts
-  private pending = new Map<string, Promise<string>>()
+  private pending = new PendingCheckouts<string>()
   private prepared = new Map<
     string,
-    { path: string; repositoryId: string; execution?: string; existingWorktreePath?: string }
+    {
+      path: string
+      repositoryId: string
+      repositoryPath: string
+      execution?: string
+      existingWorktreePath?: string
+    }
   >()
   constructor(
     private store: WorkspaceStore,
@@ -28,32 +35,57 @@ export class TaskCheckout {
   ) {
     this.linked = new LinkedCheckouts(store, git)
   }
-  async selectedDirectory(id: string, checkoutId?: string): Promise<string> {
-    if (!checkoutId) return this.directory(id)
-    const linked = (await this.linked.resolve(id)).find((item) => item.id === checkoutId)
+  /** Delegated runs keep primary-project defaults but may execute in a linked project. */
+  executionRepository(id: string) {
+    let task = this.store.task(id)
+    const visited = new Set<string>()
+    while (task.delegation) {
+      if (visited.has(task.id)) throw new HttpError(400, 'Invalid child agent ancestry')
+      visited.add(task.id)
+      const parent = this.store.task(task.delegation.parentTaskId)
+      if (task.delegation.checkoutId) {
+        const link = parent.linkedCheckouts?.find((item) => item.id === task.delegation?.checkoutId)
+        if (!link) throw new HttpError(404, 'Linked checkout not found')
+        const repository = this.store
+          .get()
+          .repositories.find((item) => item.id === link.repositoryId)
+        if (!repository) throw new HttpError(404, 'Repository not found')
+        return repository
+      }
+      task = parent
+    }
+    const repository = this.store.get().repositories.find((item) => item.id === task.repositoryId)
+    if (!repository) throw new HttpError(404, 'Repository not found')
+    return repository
+  }
+  async selectedDirectory(id: string, checkoutId?: string, signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted()
+    if (!checkoutId) return this.directory(id, signal)
+    const linked = (await this.linked.resolve(id, signal)).find((item) => item.id === checkoutId)
     if (!linked) throw new HttpError(404, 'Linked checkout not found')
     return linked.directory
   }
-  directory(id: string): Promise<string> {
-    const pending = this.pending.get(id)
-    if (pending) return pending
-    const result = this.preparedDirectory(id).finally(() => this.pending.delete(id))
-    this.pending.set(id, result)
-    return result
+  directory(id: string, signal?: AbortSignal): Promise<string> {
+    return this.pending.run(id, (sharedSignal) => this.preparedDirectory(id, sharedSignal), signal)
   }
-  private async preparedDirectory(id: string) {
+  private async preparedDirectory(id: string, signal?: AbortSignal) {
     const task = this.store.task(id)
     if (task.delegation)
-      return this.selectedDirectory(task.delegation.parentTaskId, task.delegation.checkoutId)
+      return this.selectedDirectory(
+        task.delegation.parentTaskId,
+        task.delegation.checkoutId,
+        signal,
+      )
+    const repo = this.store.get().repositories.find((repo) => repo.id === task.repositoryId)
+    if (!repo) throw new HttpError(404, 'Repository not found')
     const cached = this.prepared.get(id)
     if (
       cached?.repositoryId === task.repositoryId &&
+      cached.repositoryPath === repo.path &&
       cached.execution === task.execution &&
       cached.existingWorktreePath === task.existingWorktreePath &&
       (!task.setupCommand?.trim() || task.worktreeSetupComplete) &&
-      (this.store.get().repositories.find((repo) => repo.id === task.repositoryId)?.kind !==
-        'scratch' ||
-        (await realpath(cached.path).catch(() => '')) === cached.path) &&
+      (repo.kind !== 'scratch' || (await realpath(cached.path).catch(() => '')) === cached.path) &&
       (await stat(cached.path)
         .then((entry) => entry.isDirectory())
         .catch((error: unknown) => {
@@ -63,16 +95,19 @@ export class TaskCheckout {
     )
       return cached.path
     this.prepared.delete(id)
-    const path = await this.resolve(id)
+    const path = await this.resolve(id, signal)
+    signal?.throwIfAborted()
     this.prepared.set(id, {
       path,
       repositoryId: task.repositoryId,
+      repositoryPath: repo.path,
       execution: task.execution,
       existingWorktreePath: task.existingWorktreePath,
     })
     return path
   }
-  private async resolve(id: string) {
+  private async resolve(id: string, signal?: AbortSignal) {
+    signal?.throwIfAborted()
     const task = this.store.task(id)
     const repo = this.store.get().repositories.find((r) => r.id === task.repositoryId)
     if (!repo) throw new HttpError(404, 'Repository not found')
@@ -86,6 +121,7 @@ export class TaskCheckout {
       return repositoryPath(repo.path)
     }
     const { path: root } = await this.git.inspect(repo.path)
+    signal?.throwIfAborted()
     if (task.execution !== 'worktree') return root
     if (task.existingWorktreePath) {
       const records = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
@@ -124,7 +160,7 @@ export class TaskCheckout {
     const setup = !!task.setupCommand?.trim()
     if (existing) {
       const steps = setup && !task.worktreeSetupComplete ? ['setup', 'agent'] : []
-      return this.prepare(id, existing, steps)
+      return this.prepare(id, existing, steps, undefined, signal)
     }
     // A removed worktree keeps its branch (Settings → Worktrees, or the archive cleanup). Reattach
     // that branch so committed work carries on, even if the title or prefix changed since.
@@ -138,16 +174,18 @@ export class TaskCheckout {
     const identity = await this.git.repositoryIdentity(root).catch(() => undefined)
     const directory = join(worktrees, taskWorktreePath(identity, root, branch, prefix))
     // Never reset an existing branch or remove a checkout. A collision/missing checkout needs repair.
+    signal?.throwIfAborted()
     await mkdir(dirname(directory), { recursive: true })
     if (kept) {
       const steps = ['restore', ...(setup ? ['setup'] : []), 'agent']
       this.progress(id, steps, 'restore', kept)
       // Drop stale registrations first; git refuses to re-add a branch a prunable entry holds.
       await this.git.command(root, ['worktree', 'prune'])
+      signal?.throwIfAborted()
       await this.git.command(root, ['worktree', 'add', directory, kept])
       // A fresh checkout lacks installed dependencies; run the setup command again.
       this.store.updateTask(id, (current) => ({ ...current, worktreeSetupComplete: false }))
-      return this.prepare(id, directory, steps, kept)
+      return this.prepare(id, directory, steps, kept, signal)
     }
     const fetching = !task.pullRequest && !task.worktreeBaseBranch && !!task.worktreeFromOrigin
     const steps = [
@@ -183,6 +221,7 @@ export class TaskCheckout {
       ? await fetchPullHead(this.git, root, task.pullRequest, key)
       : (task.forkedFrom?.head ?? base ?? 'HEAD')
     this.progress(id, steps, 'worktree', branch)
+    signal?.throwIfAborted()
     await this.git.command(root, ['worktree', 'add', '-b', branch, directory, head])
     // A fork starts from the files of the turn it was forked at, not the branch tip.
     const snapshot = task.forkedFrom?.snapshot
@@ -194,7 +233,7 @@ export class TaskCheckout {
           : current,
       )
     }
-    return this.prepare(id, directory, steps, branch)
+    return this.prepare(id, directory, steps, branch, signal)
   }
   /** Publishes which checkout step a preparing run is on, so clients can show progress.
    * Other callers (diff and terminal reads) resolve the same checkout silently. Progress is
@@ -234,13 +273,22 @@ export class TaskCheckout {
         .command(root, ['remote', 'set-head', 'origin', '--auto'])
         .catch(() => undefined)
   }
-  private async prepare(id: string, directory: string, steps: string[] = [], branch?: string) {
+  private async prepare(
+    id: string,
+    directory: string,
+    steps: string[] = [],
+    branch?: string,
+    signal?: AbortSignal,
+  ) {
+    signal?.throwIfAborted()
     const cwd = (await this.git.inspect(directory)).path
     const task = this.store.task(id)
     if (task.setupCommand?.trim() && !task.worktreeSetupComplete) {
       this.progress(id, steps, 'setup', branch)
       try {
-        await this.git.setupWorktree(cwd, task.setupCommand)
+        signal?.throwIfAborted()
+        await this.git.setupWorktree(cwd, task.setupCommand, signal)
+        signal?.throwIfAborted()
       } catch (error) {
         throw new HttpError(
           400,

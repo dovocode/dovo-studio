@@ -353,3 +353,46 @@ it('keeps a failed setup step visible and clears it when a retry succeeds', asyn
   expect(agent).toHaveBeenCalledOnce()
   expect(s.store.task(task.id).preparation).toBeUndefined()
 })
+
+it('invalidates prepared checkouts when a folder project path changes', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const first = join(f.directory, 'first'),
+    second = join(f.directory, 'second')
+  await Promise.all([mkdir(first), mkdir(second)])
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'checkout-path-test-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => ({
+    ...f.workspace,
+    repositories: [{ id: 'repo', name: 'Folder', kind: 'folder', path: first, branch: '' }],
+  }))
+  const task = s.tasks.create({
+    title: 'Path change',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: 'Use selected folder',
+  })
+  expect(await s.checkouts.directory(task.id)).toBe(await realpath(first))
+  s.store.patch({
+    collection: 'repositories',
+    id: 'repo',
+    changes: { path: { before: first, after: second } },
+  })
+  expect(await s.checkouts.selectedDirectory(task.id)).toBe(await realpath(second))
+  const directories: string[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: async () => ({ provider: 'codex', available: true, detail: '' }),
+    run: async (run) => {
+      directories.push(run.cwd)
+    },
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(directories).toEqual([await realpath(second)])
+})

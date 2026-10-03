@@ -14,11 +14,7 @@ const record = (value: unknown): Record<string, unknown> =>
     : {}
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
-export function createTranscriptUsage(
-  provider: 'codex' | 'claude',
-  fallbackSession: string,
-  since = 0,
-) {
+function createTranscriptUsage(provider: 'codex' | 'claude', fallbackSession: string, since = 0) {
   const rows = new Map<string, UsageRecord>()
   let session = fallbackSession,
     model = ''

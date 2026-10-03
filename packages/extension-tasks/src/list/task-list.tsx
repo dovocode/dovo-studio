@@ -19,8 +19,9 @@ import { Button, Input, ContextMenu } from '@dovo/studio-ui'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { TaskRow } from './task-row'
 import { TaskContextMenu } from '../detail/task-context-menu'
-import { collectTasks, type TaskEntry, type TaskSource } from './task-collection'
+import { collectTasks, mainTaskEntries, type TaskEntry, type TaskSource } from './task-collection'
 import { taskActionClient } from './task-row-actions'
+import { indexTaskSubagents } from '@dovo/protocol'
 export function TaskList({
   titleHeader = false,
   projectId,
@@ -65,7 +66,45 @@ export function TaskList({
   const selectionAnchor = useRef<string | null>(null)
   const bulkLock = useRef(false)
   const [bulkBusy, setBulkBusy] = useApplicationState(false)
-  const entries = useMemo(() => collectTasks(sources), [sources])
+  const allEntries = useMemo(() => collectTasks(sources), [sources])
+  const entries = useMemo(() => mainTaskEntries(allEntries), [allEntries])
+  const subagentsByRuntime = useMemo(
+    () =>
+      new Map(
+        sources.map((source) => [source.runtimeId, indexTaskSubagents(source.workspace.tasks)]),
+      ),
+    [sources],
+  )
+  const subagentsByKey = useMemo(
+    () =>
+      new Map(
+        entries.map((entry) => [
+          entry.key,
+          subagentsByRuntime.get(entry.source.runtimeId)?.(entry.task, true) ?? [],
+        ]),
+      ),
+    [entries, subagentsByRuntime],
+  )
+  const selectedEntry = allEntries.find((entry) => entry.key === selectedId)
+  const selectedMainKey = useMemo(() => {
+    if (!selectedEntry) return ''
+    if (!selectedEntry.task.delegation) return selectedEntry.key
+    const tasks = new Map(selectedEntry.source.workspace.tasks.map((task) => [task.id, task]))
+    const seen = new Set<string>()
+    let task = selectedEntry.task
+    while (task.delegation && !seen.has(task.id)) {
+      seen.add(task.id)
+      const parent = tasks.get(task.delegation.parentTaskId)
+      if (!parent) return ''
+      task = parent
+    }
+    return (
+      entries.find(
+        (entry) =>
+          entry.source.runtimeId === selectedEntry.source.runtimeId && entry.task.id === task.id,
+      )?.key ?? ''
+    )
+  }, [entries, selectedEntry])
   const [now, setNow] = useApplicationState(Date.now())
   const showSeconds = entries.some(({ task }) => {
     const started = Date.parse(task.turns?.at(-1)?.startedAt ?? '')
@@ -229,7 +268,8 @@ export function TaskList({
           await client.patch(entry.task, {
             snoozedUntil: new Date(Date.now() + (hours ?? 0) * 3600000).toISOString(),
           })
-        if ((action === 'archive' || action === 'delete') && entry.key === selectedId) onDeselect()
+        if ((action === 'archive' || action === 'delete') && entry.key === selectedMainKey)
+          onDeselect()
         setSelected((current) => {
           const remaining = new Set(current)
           remaining.delete(entry.key)
@@ -325,6 +365,7 @@ export function TaskList({
         template: (templateId: string) => void
         create: () => void
         filter: () => void
+        subagent: (id: string) => void
       }
     >(),
   )
@@ -336,6 +377,7 @@ export function TaskList({
     setQuery,
     onSplit,
     onTemplate,
+    allEntries,
   })
   latest.current = {
     onSelect,
@@ -345,6 +387,7 @@ export function TaskList({
     setQuery,
     onSplit,
     onTemplate,
+    allEntries,
   }
   const entryHandlers = useCallback((entry: TaskEntry) => {
     const existing = handlers.current.get(entry.key)
@@ -362,6 +405,12 @@ export function TaskList({
             : entry.projectKey,
         )
         latest.current.setQuery('')
+      },
+      subagent: (id: string) => {
+        const child = latest.current.allEntries.find(
+          (item) => item.source.runtimeId === entry.source.runtimeId && item.task.id === id,
+        )
+        if (child) latest.current.onSelect(child)
       },
     }
     handlers.current.set(entry.key, created)
@@ -562,7 +611,7 @@ export function TaskList({
                     .flatMap((group) => group.tasks.map((item) => item.key))
                   setSelected((current) =>
                     selectTaskKeys(
-                      current.size || !selectedId ? current : new Set([selectedId]),
+                      current.size || !selectedMainKey ? current : new Set([selectedMainKey]),
                       entry.key,
                       order,
                       selectionAnchor.current,
@@ -580,7 +629,7 @@ export function TaskList({
                 <TaskContextMenu
                   entry={entry}
                   selectionMenu={selecting ? selectionMenu : undefined}
-                  selected={entry.key === selectedId}
+                  selected={entry.key === selectedMainKey}
                   busy={busy}
                   onOpen={handlers.open}
                   onCreate={handlers.create}
@@ -592,8 +641,16 @@ export function TaskList({
                 >
                   <TaskRow
                     task={entry.task}
+                    subagents={subagentsByKey.get(entry.key) ?? []}
                     now={now}
                     selected={entry.key === selectedId}
+                    selectedChildId={
+                      entry.key === selectedMainKey &&
+                      selectedEntry &&
+                      selectedEntry.task.id !== entry.task.id
+                        ? selectedEntry.task.id
+                        : undefined
+                    }
                     multiSelected={selected.has(entry.key)}
                     source={entry.source}
                     editable={entry.source.runtimeId === activeRuntimeId && !busy}
@@ -603,6 +660,7 @@ export function TaskList({
                       (!entry.source.online && entry.source.runtimeId !== activeRuntimeId)
                     }
                     onSelect={handlers.open}
+                    onOpenSubagent={handlers.subagent}
                   />
                 </TaskContextMenu>
               </div>

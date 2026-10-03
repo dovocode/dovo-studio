@@ -1,3 +1,4 @@
+import { randomUUID } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
@@ -135,7 +136,7 @@ function BrowserContent({
     () =>
       savedTabs.get(scope)?.tabs ?? [
         {
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           url: addresses.get(scope) ?? '',
           title: '',
           kind: browser ? 'web' : 'remote',
@@ -165,7 +166,7 @@ function BrowserContent({
   }
   const newTab = (target = '', kind: BrowserTab['kind'] = 'web', profileId = 'default') => {
     const tab: BrowserTab = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       url: target,
       title: '',
       kind,
@@ -502,7 +503,7 @@ function BrowserContent({
                     ? remaining
                     : [
                         {
-                          id: crypto.randomUUID(),
+                          id: randomUUID(),
                           url: '',
                           title: '',
                           kind: 'web',

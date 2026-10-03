@@ -84,7 +84,7 @@ export class TaskTurnRunner {
     this.sharedSkills = new SharedSkillBundles(skillCacheDirectory)
   }
   /** Retry only change capture for an already terminal provider turn. */
-  finalizeEffect(id: string, cwd: string) {
+  finalizeEffect(id: string, cwd: string, hasGit: boolean) {
     return Effect.gen(this, function* () {
       const turn = this.store.task(id).turns?.at(-1)
       if (
@@ -92,8 +92,7 @@ export class TaskTurnRunner {
         turn.status !== 'running' &&
         turn.finishedAt &&
         !turn.checkpoint?.linked?.length &&
-        this.store.get().repositories.find((repo) => repo.id === this.store.task(id).repositoryId)
-          ?.kind
+        !hasGit
       ) {
         this.store.updateTask(id, (task) => ({
           ...task,
@@ -160,10 +159,12 @@ export class TaskTurnRunner {
   runEffect(
     id: string,
     cwd: string,
+    hasGit: boolean,
     controller: AbortController,
     onSteer?: (steer: ((messageId: string) => Promise<void>) | undefined) => void,
     onQuestions?: AgentRun['onQuestions'],
     continuingAfterRestart = false,
+    retire?: () => Effect.Effect<void>,
   ) {
     return Effect.scoped(
       Effect.gen(this, function* () {
@@ -240,8 +241,6 @@ ${
             `${agent.provider} does not support access mode ${agent.permission}`,
           )
         const commands = this.commands.get()
-        const hasGit = !this.store.get().repositories.find((repo) => repo.id === task.repositoryId)
-          ?.kind
         const branch = hasGit
           ? (yield* runtimeOperation(() => this.git.inspect(cwd))).branch
           : undefined
@@ -937,6 +936,9 @@ ${
                 // The provider may finish before its final steering acknowledgement.
                 if (steering) yield* Effect.exit(runtimeOperation(() => steering))
                 questionController.abort()
+                // Descendants share these files. Stop admission and drain their final
+                // writes before any success, failure or cancellation checkpoint.
+                if (retire) yield* retire()
               }),
             ),
           )
@@ -1043,6 +1045,8 @@ ${
                 )
                 return
               }
+              // Preparation can fail before entering the provider's finalizer.
+              if (retire) yield* retire()
               flush()
               const finishedAt = new Date().toISOString()
               const cancelled = controller.signal.aborted && !flushError

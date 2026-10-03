@@ -1,4 +1,5 @@
-import type { ChildProcess } from 'node:child_process'
+import { execFile, type ChildProcess } from 'node:child_process'
+import { win32 } from 'node:path'
 
 export class OwnedProcessShutdownError extends Error {}
 
@@ -36,6 +37,42 @@ export function stopOwnedChild(child: ChildProcess): Promise<void> {
           ),
         )
       else resolve()
+    }
+    if (!group) {
+      const drained = () =>
+        (child.exitCode !== null || child.signalCode !== null) &&
+        (!child.stdout || child.stdout.destroyed || child.stdout.readableEnded) &&
+        (!child.stderr || child.stderr.destroyed || child.stderr.readableEnded)
+      if (drained()) return resolve()
+      const waitForDrain = () => {
+        if (drained()) return finish()
+        poll = setInterval(() => {
+          if (drained()) finish()
+        }, 25)
+        deadline = setTimeout(
+          () => finish(new Error('Provider process tree did not drain after forced shutdown')),
+          2000,
+        )
+      }
+      // A crashed launcher can have pending stdio EOF events. Its old PID is no
+      // longer ours to terminate, so only wait for the remaining pipes to drain.
+      if (child.exitCode !== null || child.signalCode !== null) return waitForDrain()
+      // Windows signals stop only the launcher. taskkill /T owns descendant
+      // termination too; do not release ownership until its inherited pipes drain.
+      execFile(
+        win32.join(
+          process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows',
+          'System32',
+          'taskkill.exe',
+        ),
+        ['/PID', String(child.pid), '/T', '/F'],
+        { timeout: 2000, windowsHide: true },
+        (error) => {
+          if (error && child.exitCode === null && child.signalCode === null) return finish(error)
+          waitForDrain()
+        },
+      )
+      return
     }
     const signal = (kind: NodeJS.Signals) => {
       try {

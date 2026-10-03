@@ -216,6 +216,20 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       ),
   )
   const [storageLock] = useApplicationState(() => Effect.runSync(Effect.makeSemaphore(1)))
+  const beforeReplace = useCallback(
+    (previous: RuntimeConnection) =>
+      mutations
+        .assertEmptyEffect(previous)
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new Error(
+                `Resolve saved actions before updating this computer connection. ${error.message}`,
+              ),
+          ),
+        ),
+    [mutations],
+  )
   const sequence = useRef(new Map<string, number>())
   const fleetPending = useRef(
     new Map<
@@ -310,7 +324,14 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     (id: string) =>
       mobileWorkflow(function* () {
         const entry = entryRef.current[id]
-        if (!entry?.snapshot || !current.current.profiles.some((item) => item.id === id)) return
+        if (
+          !entry?.snapshot ||
+          !current.current.profiles.some(
+            (item) =>
+              item.id === id && sameRuntimeConnection(item.connection, entry.profile.connection),
+          )
+        )
+          return
         const cache = cacheFor(entry.profile)
         yield* writeRuntimeSnapshotCache(cache, {
           snapshot: entry.snapshot,
@@ -553,11 +574,18 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           ...runtimeProfile(value, name || previous?.name),
           ...(previous ? { id: previous.id } : {}),
         }
+        if (previous && !sameRuntimeConnection(previous.connection, next.connection))
+          yield* beforeReplace(previous.connection)
         yield* refreshProfileEffect(next)
         if (proof)
           yield* storageLock.withPermits(1)(
             Effect.suspend(() =>
-              saveRuntimePairing(current.current, { profile: next, proof }, persistRegistryEffect),
+              saveRuntimePairing(
+                current.current,
+                { profile: next, proof },
+                persistRegistryEffect,
+                beforeReplace,
+              ),
             ),
           )
         else yield* changeRegistryEffect((saved) => upsertRuntime(saved, next))
@@ -570,6 +598,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       refreshOverviewEffect,
       storageLock,
       persistRegistryEffect,
+      beforeReplace,
     ],
   )
   const selectRuntimeEffect = useCallback(
@@ -591,6 +620,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       return mobileWorkflow(function* () {
         const profile = current.current.profiles.find((item) => item.id === id)
+        if (profile) yield* mutations.assertEmptyEffect(profile.connection)
         if (profile) clearRuntimeRequestCache(profile.connection)
         yield* changeRegistryEffect((saved) => removeRuntime(saved, id))
         const next = {
@@ -616,7 +646,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           ).pipe(Effect.ignore)
       })
     },
-    [changeRegistryEffect, cacheFor],
+    [changeRegistryEffect, cacheFor, mutations],
   )
   const renameRuntimeEffect = useCallback(
     (id: string, name: string) => {
@@ -811,7 +841,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     const commands = clientTaskScope()
     const recover = storageLock
       .withPermits(1)(
-        Effect.suspend(() => recoverRuntimePairings(current.current, persistRegistryEffect)),
+        Effect.suspend(() =>
+          recoverRuntimePairings(current.current, persistRegistryEffect, beforeReplace),
+        ),
       )
       .pipe(
         Effect.asVoid,
@@ -825,7 +857,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       subscription.remove()
       void commands.stop()
     }
-  }, [ready, storageLock, persistRegistryEffect])
+  }, [ready, storageLock, persistRegistryEffect, beforeReplace])
   useEffect(() => {
     if (!ready || !profile || !appActive) return
     let stopped = false

@@ -28,6 +28,7 @@ import {
   lockedTaskProvider,
   resolveTaskAgent,
   delegatedAccess,
+  taskFamilyIds,
   workspaceSchema,
   patchSchema,
   type Workspace,
@@ -61,7 +62,7 @@ function validatedItems<S extends Schema.Schema.AnyNoContext>(
 /** Loads the stored workspace. A document written by another version, or one that a tightened
  * limit now rejects, must not stop the runtime: keep a full copy, then load every entry that
  * still validates. Entries left out stay recoverable from that copy. */
-export function loadStoredWorkspace(db: Database.Database, raw: string): Workspace {
+function loadStoredWorkspace(db: Database.Database, raw: string): Workspace {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
@@ -272,6 +273,23 @@ export class WorkspaceStore {
   get() {
     return this.workspace
   }
+  /** Enclosing writes must share this boundary so a rollback restores the live snapshot too.
+   * Updates remain synchronously visible to other operations inside the transaction. */
+  transaction<T>(fn: () => T): T {
+    const workspace = this.workspace
+    const revision = this.revision
+    const seedHistory = this.seedHistory
+    const projected = this.projected
+    try {
+      return this.db.transaction(fn)()
+    } catch (error) {
+      this.workspace = workspace
+      this.revision = revision
+      this.seedHistory = seedHistory
+      this.projected = projected
+      throw error
+    }
+  }
   removeAgent(id: string) {
     const agent = this.workspace.agents.find((entry) => entry.id === id)
     if (!agent) return
@@ -455,6 +473,15 @@ export class WorkspaceStore {
         .filter((task) => !task.example)
         .map((task) => {
           const previous = previousTasks.get(task.id)
+          const childPermissionChanged =
+            task.delegation &&
+            (!previous ||
+              previous.agentId !== task.agentId ||
+              !isDeepStrictEqual(previous.harness, task.harness) ||
+              !isDeepStrictEqual(previous.agentOverrides, task.agentOverrides) ||
+              !isDeepStrictEqual(previous.delegation, task.delegation))
+          if (previous && task.messages.length < previous.messages.length)
+            task = { ...task, historyRevision: (previous.historyRevision ?? 0) + 1 }
           if (
             !task.harness &&
             task.agentId &&
@@ -486,17 +513,25 @@ export class WorkspaceStore {
             ).find((agent) => agent.id === task.agentId)
             if (selected) task = { ...task, agentName: selected.name, agentIcon: selected.icon }
           }
-          if (task.delegation) {
+          if (task.delegation && childPermissionChanged) {
             const parent = parsed.tasks.find((entry) => entry.id === task.delegation?.parentTaskId)
             const parentAgent = parent && resolveTaskAgent(parent, parsed.agents)
             const childAgent = resolveTaskAgent(task, parsed.agents)
+            const checkout = parent?.linkedCheckouts?.find(
+              (link) => link.id === task.delegation?.checkoutId,
+            )
             if (
               parentAgent &&
               childAgent &&
-              delegatedAccess(parentAgent.permission, childAgent.permission) !==
-                childAgent.permission
+              delegatedAccess(
+                checkout?.access === 'read-only' ? 'read-only' : parentAgent.permission,
+                childAgent.permission,
+              ) !== childAgent.permission
             )
-              throw new HttpError(403, 'Child permissions cannot exceed their parent’s access')
+              throw new HttpError(
+                403,
+                'Child permissions cannot exceed their parent or checkout access',
+              )
           }
           const locked = previous ? lockedTaskProvider(previous, this.workspace.agents) : undefined
           const provider = resolveTaskAgent(task, parsed.agents)?.provider
@@ -541,6 +576,28 @@ export class WorkspaceStore {
               }
             : updated
         }),
+    }
+    // Collections are addressed by identity throughout the runtime. In particular,
+    // duplicate tasks would merge histories while retaining incompatible manifest counts.
+    for (const collection of [
+      'agents',
+      'repositories',
+      'tasks',
+      'automations',
+      'jiraSources',
+    ] as const) {
+      const ids = new Set<string>()
+      for (const item of next[collection] ?? []) {
+        if (ids.has(item.id)) throw new HttpError(400, `Duplicate ${collection} ID: ${item.id}`)
+        ids.add(item.id)
+      }
+    }
+    const issueLinks = new Set<string>()
+    for (const link of next.jiraIssueLinks ?? []) {
+      const key = JSON.stringify([link.sourceId, link.issueId])
+      if (issueLinks.has(key))
+        throw new HttpError(400, `Duplicate Jira issue link: ${link.sourceId} / ${link.issueId}`)
+      issueLinks.add(key)
     }
     next.tasks = projectDelegatedAgents(next.tasks, next.agents)
     const nextTaskIds = new Set(next.tasks.map((task) => task.id))
@@ -619,6 +676,7 @@ export class WorkspaceStore {
     if (!task) throw new HttpError(404, 'Task not found')
     return task
   }
+  // Questions consumes this through its injected receipt-store contract.
   questionResponse(id: string) {
     const row = this.db
       .prepare('SELECT fingerprint AS value FROM question_responses WHERE id = ?')
@@ -749,6 +807,7 @@ export class WorkspaceStore {
           record.runPhase !== undefined ||
           record.activeRunId !== undefined ||
           record.historyBefore !== undefined ||
+          record.historyRevision !== undefined ||
           record.historyTotals !== undefined ||
           record.runAttempt !== undefined ||
           record.preparation !== undefined ||
@@ -924,10 +983,45 @@ export class WorkspaceStore {
     }
     if (patch.collection === 'tasks' && current.archived === false) current.archivedAt = undefined
     if (!changed) return
-    if (patch.collection === 'tasks') this.validateProjectTask(decode(taskSchema, current))
+    const updatedTask = patch.collection === 'tasks' ? decode(taskSchema, current) : undefined
+    if (updatedTask) this.validateProjectTask(updatedTask)
+    const family =
+      patch.collection === 'tasks' && (patch.changes.archived || patch.changes.snoozedUntil)
+        ? taskFamilyIds(this.workspace.tasks, patch.id)
+        : undefined
+    if (
+      family &&
+      patch.changes.archived &&
+      this.workspace.tasks.some(
+        (task) => family.has(task.id) && (task.status === 'running' || !!task.activeRunId),
+      )
+    )
+      throw new HttpError(409, 'Stop active child agents before settling or reopening this thread')
     this.update((w) => ({
       ...w,
       [patch.collection]: list.map((item) => (item.id === patch.id ? current : item)),
+      ...(family && updatedTask
+        ? {
+            tasks: w.tasks.map((task) => {
+              if (task.id === patch.id) return updatedTask
+              if (!family.has(task.id)) return task
+              return {
+                ...task,
+                ...(patch.changes.archived
+                  ? {
+                      archived: updatedTask.archived,
+                      ...(updatedTask.archived === false ? { archivedAt: undefined } : {}),
+                    }
+                  : {}),
+                ...(patch.changes.snoozedUntil
+                  ? {
+                      snoozedUntil: updatedTask.snoozedUntil,
+                    }
+                  : {}),
+              }
+            }),
+          }
+        : {}),
     }))
   }
 }

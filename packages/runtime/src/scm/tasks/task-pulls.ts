@@ -1,4 +1,4 @@
-import { pullStacks, stackSummary } from '@dovo/protocol'
+import { pullStacks, stackSummary, taskFamilyIds } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import { checkOutcome, pullReferencesInText, verifyPullUrl, type Task } from '@dovo/protocol'
@@ -282,16 +282,36 @@ export class TaskPullWatcher {
               item.id === task.id ? { ...item, pullStatus: status } : item,
             ),
           }))
+        const canSettle = () => {
+          const tasks = this.s.store.get().tasks
+          const latest = tasks.find((item) => item.id === task.id)
+          const ids = taskFamilyIds(tasks, task.id)
+          return (
+            !!latest &&
+            !latest.delegation &&
+            !latest.archivedAt &&
+            latest.repositoryId === task.repositoryId &&
+            latest.checkoutBranch === task.checkoutBranch &&
+            latest.pullRequest?.url === task.pullRequest?.url &&
+            latest.pullStatus?.url === status.url &&
+            (latest.pullStatus.state === 'merged' || latest.pullStatus.state === 'closed') &&
+            !latest.ignoredPullRequestUrls?.includes(status.url) &&
+            tasks.every(
+              (member) =>
+                !ids.has(member.id) ||
+                (!member.pinned &&
+                  !member.queue?.length &&
+                  !member.draft.trim() &&
+                  !member.draftAttachments?.length &&
+                  !member.scheduledMessages?.length),
+            ) &&
+            !taskIsBusy(this.s, task.id)
+          )
+        }
         if (
           freshClosure &&
           (status.state === 'merged' || status.state === 'closed') &&
-          !current.ignoredPullRequestUrls?.includes(status.url) &&
-          !current.pinned &&
-          !current.queue?.length &&
-          !current.draft.trim() &&
-          !current.draftAttachments?.length &&
-          !current.scheduledMessages?.length &&
-          !taskIsBusy(this.s, task.id)
+          canSettle()
         ) {
           const preferences = this.s.preferences.get()
           if (preferences.archiveOnPullMerge)
@@ -299,18 +319,24 @@ export class TaskPullWatcher {
               this.s,
               task.id,
               `Archived because pull request #${number} was ${status.state}`,
+              Date.now(),
+              () => this.s.preferences.get().archiveOnPullMerge && canSettle(),
             )
           else if (preferences.settleOnPullClose && !current.archived) {
-            this.s.store.updateTask(task.id, (item) => ({
-              ...item,
-              archived: true,
-              snoozedUntil: null,
-            }))
-            this.s.activity.add(
-              'task',
-              task.id,
-              `Settled because pull request #${number} was ${status.state}`,
-            )
+            const ids = taskFamilyIds(this.s.store.get().tasks, task.id)
+            this.s.store.transaction(() => {
+              this.s.store.update((workspace) => ({
+                ...workspace,
+                tasks: workspace.tasks.map((item) =>
+                  ids.has(item.id) ? { ...item, archived: true, snoozedUntil: null } : item,
+                ),
+              }))
+              this.s.activity.add(
+                'task',
+                task.id,
+                `Settled because pull request #${number} was ${status.state}`,
+              )
+            })
           }
         }
       } catch {
