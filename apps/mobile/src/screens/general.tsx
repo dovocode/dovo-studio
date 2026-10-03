@@ -130,7 +130,7 @@ export default function GeneralScreen() {
             />
           </View>
         </SettingsGroup>
-        <SettingsGroup title="Startup" footer="The tab Dovo shows when it opens.">
+        <SettingsGroup title="Startup" footer="The page Dovo shows when it opens.">
           <View style={{ padding: 12 }}>
             <Choice
               label="Open on launch"

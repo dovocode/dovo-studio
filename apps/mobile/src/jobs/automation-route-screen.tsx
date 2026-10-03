@@ -16,7 +16,7 @@ export function AutomationRouteScreen() {
     automationId: string
   }>()
   return (
-    <RuntimeRoute runtimeId={runtimeId} title="Automation" backTo="/jobs">
+    <RuntimeRoute runtimeId={runtimeId} title="Automation" backTo="/settings/automations">
       <AutomationDetail key={`${runtimeId}:${automationId}`} automationId={automationId} />
     </RuntimeRoute>
   )
@@ -35,7 +35,7 @@ function AutomationDetail({ automationId }: { automationId: string }) {
             label="Back to automations"
             icon="back"
             variant="glass"
-            onPress={() => backToCollection('/jobs')}
+            onPress={() => backToCollection('/settings/automations')}
           />
         }
       />

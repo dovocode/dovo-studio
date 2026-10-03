@@ -33,9 +33,9 @@ export const contributions: NativeContribution[] = [
     load: () => import('../screens/pulls'),
   },
   {
-    id: 'jobs',
-    title: 'Jobs',
-    load: () => import('../screens/jobs'),
+    id: 'artifacts',
+    title: 'Artifacts',
+    load: () => import('../screens/artifacts'),
   },
   {
     id: 'settings',

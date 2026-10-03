@@ -59,6 +59,13 @@ export default function SettingsScreen() {
         </SettingsGroup>
         <SettingsGroup title="Coding">
           <SettingsRow
+            title="Automations"
+            subtitle="Scheduled tasks, workflows and runs"
+            icon="jobs"
+            disabled={!profiles.length}
+            onPress={() => router.push('/settings/automations')}
+          />
+          <SettingsRow
             title="Source control"
             subtitle="GitHub, Bitbucket, Forgejo, Gitea and Azure DevOps"
             icon="changes"

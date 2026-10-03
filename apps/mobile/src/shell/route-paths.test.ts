@@ -13,8 +13,13 @@ describe('mobile workbench route context', () => {
     ['/pulls/pr/host/project/7', 'pulls', true],
     ['/pulls/pipeline/host/project/103', 'pulls', true],
     ['/pulls/runs/host/project', 'pulls', true],
-    ['/jobs/automation/host/release', 'jobs', true],
+    ['/jobs/automation/host/release', 'settings', true],
+    ['/jobs', 'settings', true],
+    ['/settings/automations', 'settings', true],
+    ['/settings/automations/host/release', 'settings', true],
     ['/settings', 'settings', false],
+    ['/artifacts', 'artifacts', false],
+    ['/artifacts-other', 'tasks', true],
     ['/issues-other', 'tasks', true],
   ] as const)('keeps %s in %s with detail=%s', (path, tab, detail) => {
     expect(workbenchRoute(path)).toEqual({ tab, detail })

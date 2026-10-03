@@ -1,7 +1,8 @@
+import { SafeModal } from '../layout/safe-modal'
 import { useEffect, useState } from 'react'
-import { Alert, Linking, Modal, Pressable, View } from 'react-native'
+import { Alert, Linking, View } from 'react-native'
+import { Action } from '../controls/action'
 import WebView from 'react-native-webview'
-import { SafeAreaView } from 'react-native-safe-area-context'
 import { Text } from './text'
 import { colors } from '../theme'
 
@@ -40,8 +41,8 @@ export function LinkBrowser() {
     }
   }, [])
   return (
-    <Modal visible={url !== null} animationType="slide" onRequestClose={() => setUrl(null)}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeModal visible={url !== null} animationType="slide" onRequestClose={() => setUrl(null)}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
         <View
           style={{
             minHeight: 48,
@@ -50,9 +51,7 @@ export function LinkBrowser() {
             paddingHorizontal: 16,
           }}
         >
-          <Pressable accessibilityRole="button" onPress={() => setUrl(null)}>
-            <Text>Close</Text>
-          </Pressable>
+          <Action label="Close" secondary onPress={() => setUrl(null)} />
           <Text numberOfLines={1} style={{ flex: 1, marginLeft: 16 }}>
             {url}
           </Text>
@@ -64,7 +63,7 @@ export function LinkBrowser() {
             onShouldStartLoadWithRequest={(request) => /^https?:\/\//i.test(request.url)}
           />
         )}
-      </SafeAreaView>
-    </Modal>
+      </View>
+    </SafeModal>
   )
 }

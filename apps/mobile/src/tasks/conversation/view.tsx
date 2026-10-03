@@ -40,6 +40,7 @@ import { Markdown } from '../../ui/content/markdown'
 import { MessageAttachments } from './components/message-attachments'
 import { colors, styles } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
+import { IconButton } from '../../ui/controls/icon-button'
 import { ToolActivityRow, ReasoningActivity } from './components/tool-activity-row'
 import { TaskActivity } from './components/activity'
 import { TaskApprovals } from '../detail/approvals'
@@ -574,17 +575,16 @@ export function Conversation() {
           </View>
         }
         ListFooterComponent={
-          <View style={{ padding: 12 }}>
+          <View style={{ padding: 12, alignItems: 'center' }}>
             {history.hasMore && (
-              <Pressable
-                accessibilityRole="button"
+              <IconButton
+                icon="history"
+                label={history.busy ? 'Loading earlier messages…' : 'Load earlier messages'}
+                variant="plain"
+                color={colors.accent}
                 disabled={history.busy || !connected}
                 onPress={() => void history.load()}
-              >
-                <Text style={{ color: colors.accent, textAlign: 'center' }}>
-                  {history.busy ? 'Loading earlier messages…' : 'Load earlier messages'}
-                </Text>
-              </Pressable>
+              />
             )}
             {!!history.error && <Text style={styles.error}>{history.error}</Text>}
           </View>

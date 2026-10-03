@@ -20,6 +20,78 @@ const actionIcons: Readonly<Partial<Record<string, IconName>>> = {
   Close: 'close',
   Back: 'back',
   'Dismiss keyboard': 'keyboard',
+  'Close preview': 'close',
+  Artifacts: 'artifact',
+  'Latest version': 'history',
+  Preview: 'web',
+  Source: 'artifact',
+  'View source': 'artifact',
+  Share: 'share',
+  'Share file': 'share',
+  Expand: 'expand',
+  'Agent & model': 'settings',
+  'Device controls': 'settings',
+  'Review diff': 'changes',
+  'Commit & push': 'changes',
+  'Commit all': 'changes',
+  'Commit staged changes': 'changes',
+  Branches: 'changes',
+  'New task': 'newChat',
+  'New side chat': 'newChat',
+  'Open chat': 'chat',
+  'Open task': 'tasks',
+  'Open linked task': 'tasks',
+  'Go to tasks': 'tasks',
+  'Open Settings': 'settings',
+  'Open computer settings': 'settings',
+  'Manage computers': 'device',
+  'All computers': 'device',
+  'Write message': 'edit',
+  'Send answers': 'send',
+  'Send to agent': 'send',
+  'Stack a PR': 'stack',
+  'Ask agent to update stack': 'stack',
+  'Approve review': 'check',
+  'Reject review': 'close',
+  'Clear filters': 'filters',
+  'Reset filters': 'filters',
+  'Reset PR filters': 'filters',
+  Duplicate: 'copy',
+  'Newer activity': 'moveDown',
+  'Older activity': 'history',
+  'Browse folders': 'folder',
+  'Browse runtime folders…': 'folder',
+  'Browse repositories': 'projects',
+  'Browse skills.sh': 'external',
+  'Browse MCP Registry': 'external',
+  'View tasks on this device': 'tasks',
+  'View pipeline runs for this commit': 'jobs',
+  'Show issues': 'issues',
+  'Show pull requests': 'pulls',
+  'Show pending questions': 'chat',
+  'Add task': 'newChat',
+  'Add review': 'add',
+  'Add comment': 'chat',
+  'Add a new computer': 'add',
+  'Add MCP server': 'add',
+  'Add skill': 'add',
+  'Add credential': 'add',
+  'New configuration': 'add',
+  'New session': 'newChat',
+  'New global preset': 'add',
+}
+function actionIcon(label: string): IconName | undefined {
+  if (actionIcons[label]) return actionIcons[label]
+  if (/^(Refresh|Retry|Reconnect|Reload)\b/.test(label) || label === 'Try again') return 'refresh'
+  if (/^Back\b/.test(label)) return 'back'
+  if (/^Cancel\b/.test(label)) return 'close'
+  if (/^Save\b/.test(label)) return 'save'
+  if (/^(Delete|Remove|Forget|Discard)\b/.test(label)) return 'trash'
+  if (/^Stop\b/.test(label)) return 'stop'
+  if (/^Changes \(/.test(label)) return 'changes'
+  if (/^Version \d+$/.test(label)) return 'history'
+  if (/^(Load more|More comments|More jobs|More pipelines)\b/.test(label)) return 'down'
+  return undefined
 }
 // Irreversible actions read differently from navigation-style links.
 const destructive = /^(Forget|Delete|Remove|Revoke|Discard)\b/
@@ -30,9 +102,10 @@ type ActionProps = {
   secondary?: boolean
   /** Full-width primary call to action, e.g. the one decision on a form. */
   wide?: boolean
+  icon?: IconName
 }
 export function Action(props: ActionProps) {
-  const icon = props.label.startsWith('Changes (') ? 'changes' : actionIcons[props.label]
+  const icon = props.icon ?? (props.wide ? undefined : actionIcon(props.label))
   if (icon)
     return (
       <IconButton
@@ -40,6 +113,7 @@ export function Action(props: ActionProps) {
         onPress={props.onPress}
         disabled={props.disabled}
         icon={icon}
+        color={destructive.test(props.label) ? colors.error : undefined}
         variant={
           props.label === 'Back' || props.label === 'Back to PRs'
             ? 'glass'

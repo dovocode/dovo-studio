@@ -23,7 +23,7 @@ export function RuntimeRoute({
   repositoryId?: string
   jiraSourceId?: string
   title: string
-  backTo: '/issues' | '/pulls' | '/jobs'
+  backTo: '/issues' | '/pulls' | '/settings/automations'
   children: ReactNode
 }) {
   const { ready, activeId, profiles, snapshot, refresh, connected } = useRuntime()

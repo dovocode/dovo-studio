@@ -1,3 +1,4 @@
+import { SafeModal } from './safe-modal'
 import { NativeIcon, NativeMenuButton } from '../controls/native-icon'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from 'react'
@@ -20,9 +21,8 @@ import {
   presentationDetents,
   presentationDragIndicator,
 } from '@expo/ui/swift-ui/modifiers'
-import { Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, View } from 'react-native'
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
 import { Text } from '../content/text'
-import { SafeAreaView } from 'react-native-safe-area-context'
 import { Action } from '../controls/action'
 import { colors, styles } from '../theme'
 const SheetContext = createContext(false)
@@ -157,8 +157,8 @@ export function Sheet({
       </Host>
     )
   return (
-    <Modal visible={presented} animationType="slide" onRequestClose={close}>
-      <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+    <SafeModal visible={presented} animationType="slide" onRequestClose={close}>
+      <View style={styles.screen}>
         <KeyboardAvoidingView style={styles.screen} behavior="height">
           <View
             style={[
@@ -208,7 +208,7 @@ export function Sheet({
           )}
           {footer && <View style={styles.sheetFooter}>{footer}</View>}
         </KeyboardAvoidingView>
-      </SafeAreaView>
-    </Modal>
+      </View>
+    </SafeModal>
   )
 }

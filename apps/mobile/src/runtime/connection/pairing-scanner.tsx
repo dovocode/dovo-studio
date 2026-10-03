@@ -1,6 +1,6 @@
+import { SafeModal } from '../../ui/layout/safe-modal'
 import { useEffect, useRef } from 'react'
-import { ActivityIndicator, AppState, Linking, Modal, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { ActivityIndicator, AppState, Linking, View } from 'react-native'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { parsePairingInvitation, type PairingInvitation } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
@@ -34,8 +34,13 @@ export function PairingScanner({
     }
   }, [])
   return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaView style={[styles.screen, { padding: 20, gap: 16 }]}>
+    <SafeModal
+      visible
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={onClose}
+    >
+      <View style={[styles.screen, { padding: 20, gap: 16 }]}>
         <View style={[styles.row, { justifyContent: 'space-between' }]}>
           <Text style={styles.title}>Scan pairing QR code</Text>
           <Action secondary label="Cancel" onPress={onClose} />
@@ -93,7 +98,7 @@ export function PairingScanner({
           />
         )}
         <Action secondary label="Enter address and code manually" onPress={onClose} />
-      </SafeAreaView>
-    </Modal>
+      </View>
+    </SafeModal>
   )
 }

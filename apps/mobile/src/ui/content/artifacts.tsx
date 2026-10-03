@@ -1,14 +1,6 @@
+import { SafeModal } from '../layout/safe-modal'
 import { memo, useEffect, useState } from 'react'
-import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  View,
-} from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, View } from 'react-native'
 import WebView from 'react-native-webview'
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
@@ -27,7 +19,8 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from './text'
 import { Markdown } from './markdown'
 import { Action } from '../controls/action'
-import { Icon } from '../controls/icon'
+import { Icon, type IconName } from '../controls/icon'
+import { IconButton } from '../controls/icon-button'
 import { colors, styles } from '../theme'
 
 export const ArtifactCard = memo(function ArtifactCard({
@@ -76,6 +69,44 @@ export const ArtifactCard = memo(function ArtifactCard({
     </>
   )
 })
+function ArtifactAction({
+  label,
+  caption,
+  icon,
+  onPress,
+  disabled,
+  selected,
+}: {
+  label: string
+  caption: string
+  icon: IconName
+  onPress: () => void
+  disabled?: boolean
+  selected?: boolean
+}) {
+  return (
+    <View style={{ width: 44, alignItems: 'center' }}>
+      <IconButton
+        label={label}
+        icon={icon}
+        onPress={onPress}
+        disabled={disabled}
+        selected={selected}
+      />
+      <Text
+        accessible={false}
+        numberOfLines={1}
+        style={{
+          fontSize: 10,
+          color: selected ? colors.accent : colors.muted,
+          opacity: disabled ? 0.4 : 1,
+        }}
+      >
+        {caption}
+      </Text>
+    </View>
+  )
+}
 export function ArtifactBrowser({
   taskId,
   initialId = '',
@@ -161,47 +192,61 @@ export function ArtifactBrowser({
     }
   }
   return (
-    <Modal animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeModal animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
         <View style={{ padding: 16, gap: 10 }}>
-          <View style={styles.row}>
-            <Text numberOfLines={2} style={{ flex: 1, fontSize: 18, fontWeight: '600' }}>
-              {artifact?.title ?? 'Thread artifacts'}
-            </Text>
-            <Action secondary label="Close" onPress={onClose} />
-          </View>
-          <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
-            <Action
-              secondary
-              label="Artifacts"
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4 }}>
+            <ArtifactAction
+              icon="artifactList"
+              caption="Files"
+              label="Choose artifact"
+              selected={picker === 'artifacts'}
               onPress={() => setPicker('artifacts')}
               disabled={!items?.length}
             />
-            <Action
-              secondary
-              label={revision ? `Version ${revision}` : 'Latest version'}
+            <ArtifactAction
+              icon="history"
+              caption="Versions"
+              label={
+                revision
+                  ? `Choose version · current version ${revision}`
+                  : 'Choose version · latest version'
+              }
+              selected={picker === 'versions'}
               onPress={() => setPicker('versions')}
               disabled={!versions.length}
             />
-            <Action
-              secondary
-              label={source ? 'Preview' : 'Source'}
+            <ArtifactAction
+              icon={source ? 'preview' : 'code'}
+              caption={source ? 'Preview' : 'Code'}
+              label={source ? 'Show artifact preview' : 'View artifact source code'}
               onPress={() => setSource((value) => !value)}
               disabled={!artifact}
             />
-            <Action
-              secondary
-              label="Share"
+            <ArtifactAction
+              icon="share"
+              caption="Share"
+              label="Share artifact"
               onPress={() => void share()}
               disabled={!artifact || sharing}
             />
-            <Action
-              secondary
-              label="Refresh"
+            <ArtifactAction
+              icon="refresh"
+              caption="Reload"
+              label="Refresh artifact"
               onPress={() => setReload((value) => value + 1)}
               disabled={!connected}
             />
+            <ArtifactAction
+              icon="close"
+              caption="Close"
+              label="Close artifact preview"
+              onPress={onClose}
+            />
           </View>
+          <Text numberOfLines={2} style={{ fontSize: 18, fontWeight: '600' }}>
+            {artifact?.title ?? 'Thread artifacts'}
+          </Text>
           {!!error && <Text style={styles.error}>{error}</Text>}
           {!error && (!items || (!!id && !artifact)) && <ActivityIndicator />}
           {items?.length === 0 && (
@@ -282,7 +327,7 @@ export function ArtifactBrowser({
             />
           ))
         )}
-      </SafeAreaView>
-    </Modal>
+      </View>
+    </SafeModal>
   )
 }

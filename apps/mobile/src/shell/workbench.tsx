@@ -177,6 +177,11 @@ export function Workbench() {
     runtime.activeId,
   ])
   const { tab: active, detail: routeDetail } = workbenchRoute(pathname)
+  const car = useCarMode()
+  const artifactsEnabled = runtime.overviews.some((entry) => entry.snapshot?.artifactsEnabled)
+  useEffect(() => {
+    if (runtime.ready && active === 'artifacts' && (!artifactsEnabled || car)) router.replace('/')
+  }, [runtime.ready, active, artifactsEnabled, car])
   const [screens, setScreens] = useApplicationState<Record<string, ComponentType>>({}),
     [loadError, setLoadError] = useApplicationState('')
   useEffect(() => {
@@ -194,11 +199,11 @@ export function Workbench() {
       const { launchTab, carMode } = readMobilePreferences()
       // Car mode only has Tasks and Settings, so it always opens on Tasks.
       const tab = carMode ? 'tasks' : launchTab
-      if (tab !== 'tasks' && pathname === '/') router.replace(`/${tab}`)
+      if (tab !== 'tasks' && pathname === '/')
+        router.replace(tab === 'jobs' ? '/settings/automations' : `/${tab}`)
     })
   }, [runtime.ready, runtime.profiles.length, pathname])
   // Car mode: Tasks and Settings only.
-  const car = useCarMode()
   const shortcuts = useShortcuts()
   const routedShortcut = useRef('')
   const hasOnlineComputer = runtime.overviews.some((entry) => entry.connected)
@@ -215,10 +220,13 @@ export function Workbench() {
     tasks: false,
     issues: false,
     pulls: false,
-    jobs: false,
+    artifacts: false,
     settings: false,
   })
-  const detail = active === 'settings' ? details.settings : routeDetail
+  const detail =
+    active === 'settings'
+      ? details.settings || pathname.startsWith('/settings/automations/')
+      : routeDetail
   const detailSetters = useMemo(() => {
     const setter = (tab: Tab) => (value: boolean) =>
       setDetails((current) =>
@@ -233,7 +241,7 @@ export function Workbench() {
       tasks: setter('tasks'),
       issues: setter('issues'),
       pulls: setter('pulls'),
-      jobs: setter('jobs'),
+      artifacts: setter('artifacts'),
       settings: setter('settings'),
     }
   }, [])
@@ -342,13 +350,17 @@ export function Workbench() {
         })
         return
       }
+      if (view === 'jobs') {
+        router.navigate('/settings/automations')
+        return
+      }
       const tab =
         view === 'issues'
           ? 'issues'
           : view === 'pulls'
             ? 'pulls'
-            : view === 'jobs'
-              ? 'jobs'
+            : view === 'artifacts'
+              ? 'artifacts'
               : view === 'settings'
                 ? 'settings'
                 : 'tasks'
@@ -390,7 +402,7 @@ export function Workbench() {
       tasks: value('tasks'),
       issues: value('issues'),
       pulls: value('pulls'),
-      jobs: value('jobs'),
+      artifacts: value('artifacts'),
       settings: value('settings'),
     }
   }, [active, detailSetters, navigate, work, runtime.activeId])
@@ -398,7 +410,7 @@ export function Workbench() {
   // Unified collections retain their filters and position when opening work on another computer.
   const scenes = useMemo(() => {
     const content: Record<string, ReactNode> = {}
-    for (const tab of ['tasks', 'issues', 'pulls', 'jobs', 'settings', 'scm'] as const) {
+    for (const tab of ['tasks', 'issues', 'pulls', 'artifacts', 'settings', 'scm'] as const) {
       const View = screens[tab]
       content[tab] =
         !runtime.ready || !View ? (
@@ -531,18 +543,18 @@ export function Workbench() {
                 <NativeTabs.Trigger.Label>PRs</NativeTabs.Trigger.Label>
               </NativeTabs.Trigger>
               <NativeTabs.Trigger
-                name="jobs"
-                hidden={car}
+                name="artifacts"
+                hidden={car || !artifactsEnabled}
                 disableAutomaticContentInsets={Platform.OS === 'ios'}
-                testID="Tab Automations"
-                disabled={!runtime.profiles.length}
+                testID="Tab Artifacts"
                 listeners={{
-                  tabPress: () => active === 'jobs' && router.dismissTo('/jobs'),
+                  tabPress: () => active === 'artifacts' && router.dismissTo('/artifacts'),
                 }}
               >
-                <NativeTabs.Trigger.Icon src={iconAssets.jobs} renderingMode="template" />
-                <NativeTabs.Trigger.Label>Automations</NativeTabs.Trigger.Label>
+                <NativeTabs.Trigger.Icon src={iconAssets.artifact} renderingMode="template" />
+                <NativeTabs.Trigger.Label>Artifacts</NativeTabs.Trigger.Label>
               </NativeTabs.Trigger>
+              <NativeTabs.Trigger name="jobs" hidden />
               <NativeTabs.Trigger
                 name="settings"
                 disableAutomaticContentInsets={Platform.OS === 'ios'}

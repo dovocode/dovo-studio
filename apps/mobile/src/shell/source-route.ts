@@ -48,12 +48,12 @@ export function pullHref(runtimeId: string, repositoryId: string, number: number
 
 export function automationHref(runtimeId: string, automationId: string) {
   return {
-    pathname: '/jobs/automation/[runtimeId]/[automationId]' as const,
+    pathname: '/settings/automations/[runtimeId]/[automationId]' as const,
     params: { runtimeId, automationId },
   }
 }
 
-export function backToCollection(path: '/issues' | '/pulls' | '/jobs') {
+export function backToCollection(path: '/issues' | '/pulls' | '/settings/automations') {
   Keyboard.dismiss()
   if (router.canGoBack()) router.back()
   else router.replace(path)

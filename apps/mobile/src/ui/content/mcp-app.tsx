@@ -1,8 +1,9 @@
+import { SafeModal } from '../layout/safe-modal'
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import { memo, useEffect, useRef, useState } from 'react'
-import { Alert, Modal, Pressable, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { Alert, View } from 'react-native'
+import { Action } from '../controls/action'
 import * as Crypto from 'expo-crypto'
 import WebView from 'react-native-webview'
 import {
@@ -251,9 +252,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
           {reference.title}
           {!connected || app?.connected === false ? ' · disconnected' : ''}
         </Text>
-        <Pressable accessibilityRole="button" onPress={() => setFull(true)}>
-          <Text>Expand</Text>
-        </Pressable>
+        <Action label="Expand" secondary onPress={() => setFull(true)} />
       </View>
       {notice ? (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
@@ -261,18 +260,14 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
         </Text>
       ) : null}
       {full ? (
-        <Modal onRequestClose={() => setFull(false)}>
-          <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setFull(false)}
-              style={{ padding: 12 }}
-            >
-              <Text>Close</Text>
-            </Pressable>
+        <SafeModal onRequestClose={() => setFull(false)}>
+          <View style={{ flex: 1, backgroundColor: colors.background }}>
+            <View style={{ padding: 12, alignItems: 'flex-end' }}>
+              <Action label="Close" secondary onPress={() => setFull(false)} />
+            </View>
             {browser}
-          </SafeAreaView>
-        </Modal>
+          </View>
+        </SafeModal>
       ) : (
         browser
       )}

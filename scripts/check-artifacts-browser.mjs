@@ -15,8 +15,8 @@ const mocks = {
   '@dovo/studio-core': `import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
   '@dovo/studio-ui': `import React from 'react';export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Input=({className,...props})=><input {...props}/>;export const Dialog=({children})=><section>{children}</section>;export const DialogContent=Dialog;export const DialogDescription=({children})=><p>{children}</p>;export const DialogTitle=({children})=><h1>{children}</h1>;export const MessageResponse=({children})=><p>{children}</p>;`,
   '../../runtime/connection/provider': `export const useRuntime=()=>({read:window.artifactRequest,connected:true,activeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});`,
-  'react-native': `import React from 'react';export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Modal=View;export const ActivityIndicator=()=> <p>Loading</p>;export const Pressable=({children,onPress,accessibilityLabel})=><button onClick={onPress} aria-label={accessibilityLabel}>{children}</button>;export const Alert={alert:()=>{}};export const StyleSheet={create:x=>x};export const Platform={OS:'ios'};`,
-  'react-native-safe-area-context': `export {View as SafeAreaView} from 'react-native';`,
+  'react-native': `import React from 'react';export const View=({children,style})=>{const value=Object.assign({},...(Array.isArray(style)?style:[style]));return <div style={{...value,display:value.flexDirection?'flex':undefined}}>{children}</div>};export const ScrollView=View;export const Modal=View;export const ActivityIndicator=()=> <p>Loading</p>;export const Pressable=({children,onPress,accessibilityLabel})=><button onClick={onPress} aria-label={accessibilityLabel}>{children}</button>;export const Alert={alert:()=>{}};export const StyleSheet={create:x=>x};export const Platform={OS:'ios'};`,
+  'react-native-safe-area-context': `export {View as SafeAreaView,View as SafeAreaProvider} from 'react-native';`,
   'react-native-webview': `import React from 'react';export default ({source})=><iframe title="Mobile preview" sandbox="allow-scripts" srcDoc={source.html}/>;`,
   'expo-file-system': `export class File {};export const Paths={cache:''};`,
   'expo-sharing': `export const isAvailableAsync=async()=>false;export const shareAsync=async()=>{};`,
@@ -25,6 +25,7 @@ const mocks = {
   './markdown': `import React from 'react';export const Markdown=({text})=><p>{text}</p>;`,
   '../controls/action': `import React from 'react';export const Action=({label,onPress,disabled})=><button onClick={onPress} disabled={disabled}>{label}</button>;`,
   '../controls/icon': `export const Icon=()=>null;`,
+  '../controls/icon-button': `import React from 'react';export const IconButton=({label,icon,onPress,disabled})=><button aria-label={label} data-icon={icon} disabled={disabled} onClick={onPress} style={{width:44,height:44}}><span aria-hidden="true">◇</span></button>;`,
 }
 const interfaces = await Promise.all(
   ['desktop', 'mobile', 'library'].map(async (platform) => {
@@ -185,20 +186,53 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       })
       .click()
     await view.getByText('Current notes', { exact: true }).waitFor()
+    if (ui.platform === 'mobile') {
+      await view.setViewportSize({ width: 320, height: 700 })
+      const boxes = await Promise.all(
+        [
+          'Choose artifact',
+          'Choose version · latest version',
+          'View artifact source code',
+          'Share artifact',
+          'Refresh artifact',
+          'Close artifact preview',
+        ].map((name) => view.getByRole('button', { name, exact: true }).boundingBox()),
+      )
+      assert.ok(
+        boxes.every(
+          (box) =>
+            box && Math.abs(box.y - boxes[0].y) < 1 && box.x >= 0 && box.x + box.width <= 320,
+        ),
+        'All artifact controls must share one row and fit a narrow phone',
+      )
+      assert.equal(
+        await view
+          .getByRole('button', { name: 'View artifact source code' })
+          .getAttribute('data-icon'),
+        'code',
+      )
+    }
     if (ui.platform === 'desktop') await view.getByLabel('Artifact version').selectOption('1')
     else {
-      await view.getByRole('button', { name: 'Latest version', exact: true }).click()
+      await view
+        .getByRole('button', { name: 'Choose version · latest version', exact: true })
+        .click()
       await view.getByText('Version 1', { exact: true }).click()
     }
     await view.getByText('Earlier notes', { exact: true }).waitFor()
     if (ui.platform === 'desktop')
       await view.getByLabel('Artifact', { exact: true }).selectOption('interactive')
     else {
-      await view.getByRole('button', { name: 'Artifacts', exact: true }).click()
+      await view.getByRole('button', { name: 'Choose artifact', exact: true }).click()
       await view.getByText('Counter', { exact: true }).click()
     }
     await view.frameLocator('iframe').frameLocator('iframe').locator('#interactive').waitFor()
-    await view.getByRole('button', { name: 'Source', exact: true }).click()
+    await view
+      .getByRole('button', {
+        name: ui.platform === 'desktop' ? 'Source' : 'View artifact source code',
+        exact: true,
+      })
+      .click()
     await view
       .getByText('<button id="interactive">Interactive artifact</button>', { exact: true })
       .waitFor()

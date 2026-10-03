@@ -1,4 +1,4 @@
-import { WorkbenchScene } from '../../shell/workbench'
+import { Redirect } from 'expo-router'
 export default function AutomationsRoute() {
-  return <WorkbenchScene tab="jobs" />
+  return <Redirect href="/settings/automations" />
 }
