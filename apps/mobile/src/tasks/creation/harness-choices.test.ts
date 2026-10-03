@@ -244,7 +244,10 @@ it('keeps custom instructions and resources when applying task-specific model se
     harness: changes.harness.after,
     agentOverrides: changes.agentOverrides.after,
   })
-  expect(updated.harness).toBeNull()
+  expect(updated.harness).toMatchObject({
+    instructions: builder.instructions,
+    resources: builder.resources,
+  })
   expect(updated.agentId).toBe(builder.id)
   expect(resolveTaskAgent(updated, [builder])).toMatchObject({
     model: 'task-model',

@@ -45,6 +45,7 @@ export function runtimeSnapshot(
           ? canUpdateDesktop()
           : canUpdateServer(),
       defaults: decode(runtimeDefaultsSchema, s.store.publicValue(s.defaults.get())),
+      scopedAgentsSupported: true,
       settingsScopesSupported: true,
       artifactsEnabled: s.preferences.get().enableArtifacts,
       acpInstallations: s.acpInstallations.list(),

@@ -5,6 +5,7 @@ import {
   scopedSettingsValueSchema,
   settingsScopeSchema,
   sharedSettingsSchema,
+  type Agent,
   type Repository,
   type ScopedSettingsValue,
   type SharedSettingsEntry,
@@ -13,6 +14,7 @@ import {
 import type { RuntimeDefaults } from './runtime-setup.js'
 
 export const scopedSettingsReadSchema = mutableStruct({
+  includeAgents: Schema.optional(Schema.Boolean),
   scope: settingsScopeSchema,
   repositoryId: Schema.optional(Schema.String),
 })
@@ -96,6 +98,7 @@ export function settingsAtScope(
       taskDefaults: repository?.taskDefaults,
       resources: repository?.resources,
       prompts: repository?.prompts,
+      agents: repository?.agents,
     }
   const key = scope === 'global' ? 'global' : sharedProjectKey(repository)
   return runtime?.scopedSettings?.shared.find((entry) => entry.key === key)?.value ?? {}
@@ -122,6 +125,18 @@ export function resolveScopedSettings(
     if (scope === before) break
     const value = settingsAtScope(runtime, repository, scope)
     result = {
+      ...(value.agents || result.agents
+        ? {
+            agents: [
+              ...new Map(
+                [...(result.agents ?? []), ...(value.agents ?? [])].map((agent) => [
+                  agent.id,
+                  agent,
+                ]),
+              ).values(),
+            ],
+          }
+        : {}),
       taskDefaults: {
         ...result.taskDefaults,
         ...Object.fromEntries(
@@ -172,6 +187,7 @@ export function resourceScopeChoices(
     },
     label: settingsScopeLabels[scope],
     collection: 'settings' as const,
+    namedAgentId: undefined,
     scope,
     repository,
   })
@@ -182,11 +198,29 @@ export function resourceScopeChoices(
       ...(repository.gitIdentity ? [scoped('project', repository)] : []),
       scoped('environment-project', repository),
     ]),
-    ...workspace.agents.map((item) => ({
+    ...settingsScopes.flatMap((scope) => {
+      const repositories =
+        scope === 'project' || scope === 'environment-project'
+          ? workspace.repositories
+          : [undefined]
+      return repositories.flatMap((repository) =>
+        (settingsAtScope(runtime, repository, scope).agents ?? []).map((item) => ({
+          id: `settings-agent:${scope}:${repository?.id ?? ''}:${item.id}`,
+          item,
+          label: `${settingsScopeLabels[scope]} agent`,
+          collection: 'settings' as const,
+          namedAgentId: item.id,
+          scope,
+          repository,
+        })),
+      )
+    }),
+    ...(environmentSettings(runtime).agents === undefined ? workspace.agents : []).map((item) => ({
       id: `agent:${item.id}`,
       item,
       label: 'Agent',
       collection: 'agents' as const,
+      namedAgentId: undefined,
       scope: undefined,
       repository: undefined,
     })),
@@ -282,4 +316,39 @@ export function taskDefaultOrigins(
     }
     return { ...field, source, overridden: draft[field.key] !== undefined }
   })
+}
+
+/** Legacy environment configurations retain their identity; more specific scopes override by ID. */
+export function scopedAgentEntries(
+  runtime: RuntimeDefaults | undefined,
+  repository: Repository | undefined,
+  legacy: readonly Agent[],
+  before?: SettingsScope,
+) {
+  const result = new Map<string, { agent: Agent; scope: SettingsScope }>()
+  for (const scope of settingsScopes) {
+    if (scope === before) break
+    const fallback =
+      scope === 'global' && settingsAtScope(runtime, repository, scope).agents === undefined
+        ? legacy
+            .filter((agent) => agent.globalPreset)
+            .flatMap((agent) => (agent.globalPreset ? [agent.globalPreset] : []))
+        : scope === 'environment' &&
+            settingsAtScope(runtime, repository, scope).agents === undefined
+          ? legacy.filter((agent) => !agent.globalPreset || agent.serverOverride)
+          : []
+    for (const agent of [
+      ...fallback,
+      ...(settingsAtScope(runtime, repository, scope).agents ?? []),
+    ])
+      result.set(agent.id, { agent, scope })
+  }
+  return [...result.values()]
+}
+export function resolveScopedAgents(
+  runtime: RuntimeDefaults | undefined,
+  repository: Repository | undefined,
+  legacy: readonly Agent[],
+) {
+  return scopedAgentEntries(runtime, repository, legacy).map((entry) => entry.agent)
 }

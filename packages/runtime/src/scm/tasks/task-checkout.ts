@@ -52,6 +52,7 @@ export class TaskCheckout {
   }
   private async preparedDirectory(id: string) {
     const task = this.store.task(id)
+    if (task.delegation) return this.directory(task.delegation.parentTaskId)
     const cached = this.prepared.get(id)
     if (
       cached?.repositoryId === task.repositoryId &&

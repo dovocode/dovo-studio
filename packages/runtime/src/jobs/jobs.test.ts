@@ -1,7 +1,7 @@
 import { runtimeIntegration, waitForRuntime as waitForJob } from '../testing/integration'
 import { defaultTaskHarness } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
-import type { AgentAdapter } from '../agents/execution/types'
+import type { AgentRun, AgentAdapter } from '../agents/execution/types'
 import { afterEach, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { startRuntime } from '../index'
@@ -393,7 +393,28 @@ it('retries only the failed task, retaining successful steps and approved review
   expect(execute).toHaveBeenCalledTimes(3)
   expect(execute.mock.calls[2][0].sessionId).toBe('second-step-session')
   expect(execute.mock.calls[2][0].cwd).toBe(execute.mock.calls[1][0].cwd)
-  expect(execute.mock.calls[2][0].agent).toEqual(execute.mock.calls[1][0].agent)
+  // Dovo's tool connection is rebound to each attempt without changing the provider session.
+  const stableAgent = (agent: AgentRun['agent']) => ({
+    ...agent,
+    resources: agent.resources && {
+      ...agent.resources,
+      mcpServers: agent.resources.mcpServers.map((server) =>
+        server.name === 'dovo_task'
+          ? {
+              ...server,
+              envValues: Object.fromEntries(
+                Object.entries(server.envValues ?? {}).filter(
+                  ([key]) => key !== 'DOVO_TASK_RUN_ID',
+                ),
+              ),
+            }
+          : server,
+      ),
+    },
+  })
+  expect(stableAgent(execute.mock.calls[2][0].agent)).toEqual(
+    stableAgent(execute.mock.calls[1][0].agent),
+  )
   // Output proves this request was accepted; resume its saved session without resending it.
   expect(execute.mock.calls[2][0].prompt).toContain('Continue the task')
   expect(execute.mock.calls[2][0].prompt).not.toContain('Second step')

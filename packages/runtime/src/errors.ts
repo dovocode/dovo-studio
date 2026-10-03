@@ -1,3 +1,4 @@
+import { inspect } from 'node:util'
 import { Data, Effect } from 'effect'
 import { ValidationError } from '@dovo/protocol'
 
@@ -18,7 +19,11 @@ export class RuntimeOperationError extends Data.TaggedError('RuntimeOperationErr
 }
 export type RuntimeFailure = HttpError | ValidationError | RuntimeOperationError
 export function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
+  return error instanceof Error
+    ? error.message
+    : typeof error === 'object' && error !== null
+      ? inspect(error, { depth: 2 })
+      : String(error)
 }
 export const runtimeFailure = (cause: unknown): RuntimeFailure =>
   cause instanceof HttpError ||

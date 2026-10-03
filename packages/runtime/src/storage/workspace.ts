@@ -1,9 +1,10 @@
+import { projectDelegatedAgents } from '../agents/tasks/delegation-state.js'
 import { Conversations } from './conversations.js'
 import { ProviderActions, type ProviderAction } from './provider-actions.js'
 import { UsageTranscripts } from './usage-transcripts.js'
 import { UsagePricing } from './usage-pricing.js'
 import { UsageHistory } from './usage-history.js'
-import { resolveScopedSettings, resolveTaskDefaults } from '@dovo/protocol'
+import { resolveScopedAgents, resolveScopedSettings, resolveTaskDefaults } from '@dovo/protocol'
 import { RuntimeDefaults, validateDefaultHarness } from './runtime-defaults.js'
 import { McpSecrets } from './mcp-secrets.js'
 import { newSecret } from '../auth/devices.js'
@@ -26,6 +27,7 @@ import {
   latestCompletedTaskTurn,
   lockedTaskProvider,
   resolveTaskAgent,
+  delegatedAccess,
   workspaceSchema,
   patchSchema,
   type Workspace,
@@ -325,6 +327,13 @@ export class WorkspaceStore {
       this.workspace.repositories.find((repo) => repo.id === repositoryId),
     )
   }
+  agentsFor(repositoryId?: string) {
+    return resolveScopedAgents(
+      new RuntimeDefaults(this.db).get(),
+      this.workspace.repositories.find((repo) => repo.id === repositoryId),
+      this.workspace.agents,
+    )
+  }
   version() {
     return this.revision
   }
@@ -438,12 +447,57 @@ export class WorkspaceStore {
         validateDefaultHarness(harness)
     }
     const previousTasks = new Map(this.workspace.tasks.map((task) => [task.id, task]))
+    let defaults: ReturnType<RuntimeDefaults['get']> | undefined
+    const getDefaults = () => (defaults ??= new RuntimeDefaults(this.db).get())
     const next = {
       ...parsed,
       tasks: parsed.tasks
         .filter((task) => !task.example)
         .map((task) => {
           const previous = previousTasks.get(task.id)
+          if (
+            !task.harness &&
+            task.agentId &&
+            (task !== previous || parsed.agents !== this.workspace.agents)
+          ) {
+            const agents = resolveScopedAgents(
+              getDefaults(),
+              parsed.repositories.find((repo) => repo.id === task.repositoryId),
+              parsed.agents,
+            )
+            const selected = agents.find((agent) => agent.id === task.agentId)
+            const scoped = resolveScopedSettings(
+              getDefaults(),
+              parsed.repositories.find((repo) => repo.id === task.repositoryId),
+            ).agents?.some((agent) => agent.id === task.agentId)
+            if (selected && scoped)
+              task = {
+                ...task,
+                agentName: selected.name,
+                agentIcon: selected.icon,
+                harness: decode(taskHarnessSchema, selected),
+              }
+          }
+          if (task.agentId && task.harness && previous?.agentId !== task.agentId) {
+            const selected = resolveScopedAgents(
+              getDefaults(),
+              parsed.repositories.find((repo) => repo.id === task.repositoryId),
+              parsed.agents,
+            ).find((agent) => agent.id === task.agentId)
+            if (selected) task = { ...task, agentName: selected.name, agentIcon: selected.icon }
+          }
+          if (task.delegation) {
+            const parent = parsed.tasks.find((entry) => entry.id === task.delegation?.parentTaskId)
+            const parentAgent = parent && resolveTaskAgent(parent, parsed.agents)
+            const childAgent = resolveTaskAgent(task, parsed.agents)
+            if (
+              parentAgent &&
+              childAgent &&
+              delegatedAccess(parentAgent.permission, childAgent.permission) !==
+                childAgent.permission
+            )
+              throw new HttpError(403, 'Child permissions cannot exceed their parent’s access')
+          }
           const locked = previous ? lockedTaskProvider(previous, this.workspace.agents) : undefined
           const provider = resolveTaskAgent(task, parsed.agents)?.provider
           const previousInstallation = previous
@@ -488,6 +542,7 @@ export class WorkspaceStore {
             : updated
         }),
     }
+    next.tasks = projectDelegatedAgents(next.tasks, next.agents)
     const nextTaskIds = new Set(next.tasks.map((task) => task.id))
     this.db.transaction(() => {
       if (this.seedHistory) {
@@ -687,6 +742,7 @@ export class WorkspaceStore {
           record.viewedRevision !== undefined ||
           record.turns !== undefined ||
           record.subagents !== undefined ||
+          record.delegation !== undefined ||
           record.archivedAt !== undefined ||
           record.queue !== undefined ||
           record.runPhase !== undefined ||
@@ -747,6 +803,19 @@ export class WorkspaceStore {
       throw new HttpError(400, 'Cannot edit derived project metadata')
     if (patch.collection === 'repositories' && (patch.changes.kind || current.kind === 'scratch'))
       throw new HttpError(400, 'Cannot edit the managed project kind')
+    if (
+      patch.collection === 'tasks' &&
+      current.delegation &&
+      [
+        'repositoryId',
+        'execution',
+        'existingWorktreePath',
+        'worktreeBaseBranch',
+        'worktreeFromOrigin',
+        'setupCommand',
+      ].some((key) => patch.changes[key])
+    )
+      throw new HttpError(400, 'Child agents use their parent’s checkout')
     const allowed =
       patch.collection === 'tasks'
         ? new Set([

@@ -1,19 +1,33 @@
-import { defaultTaskHarness, resolveTaskAgent, decode, taskHarnessSchema } from '@dovo/protocol'
+import {
+  resolveScopedAgents,
+  type RuntimeDefaults,
+  defaultTaskHarness,
+  resolveTaskAgent,
+  decode,
+  taskHarnessSchema,
+} from '@dovo/protocol'
 import { ChoicePicker, HarnessFields } from '@dovo/studio-ui'
 import type { AutomationData, AutomationNode, Workspace } from '@dovo/studio-core'
 import { Button, FormField, Input, Textarea } from '@dovo/studio-ui'
 export function NodeInspector({
   node,
   workspace,
+  defaults,
   onChange,
   onDelete,
 }: {
   node: AutomationNode
   workspace: Workspace
+  defaults?: RuntimeDefaults
   onChange: (data: AutomationData) => void
   onDelete: () => void
 }) {
   const data = node.data
+  const agents = resolveScopedAgents(
+    defaults,
+    workspace.repositories.find((repo) => repo.id === data.repositoryId),
+    workspace.agents,
+  )
   const field = (patch: Partial<AutomationData>) => onChange({ ...data, ...patch })
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4 text-xs">
@@ -64,15 +78,20 @@ export function NodeInspector({
       {data.kind === 'task' && (
         <>
           <HarnessFields
-            agents={workspace.agents}
-            selectedAgentId={data.harness ? undefined : data.agentId || undefined}
-            onSelectAgent={(agentId) =>
-              field({ agentId, harness: undefined, agentOverrides: undefined })
-            }
+            agents={agents}
+            selectedAgentId={data.agentId || undefined}
+            onSelectAgent={(agentId) => {
+              const agent = agents.find((entry) => entry.id === agentId)
+              if (agent)
+                field({
+                  agentId,
+                  harness: decode(taskHarnessSchema, agent),
+                  agentOverrides: undefined,
+                })
+            }}
             value={decode(
               taskHarnessSchema,
-              resolveTaskAgent({ ...data, id: node.id }, workspace.agents) ??
-                defaultTaskHarness('codex'),
+              resolveTaskAgent({ ...data, id: node.id }, agents) ?? defaultTaskHarness('codex'),
             )}
             onChange={(harness) => field({ agentId: '', agentOverrides: undefined, harness })}
           />

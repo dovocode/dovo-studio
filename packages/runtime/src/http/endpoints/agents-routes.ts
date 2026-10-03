@@ -1,3 +1,4 @@
+import { settingsScopeSchema, settingsScopes, scopedAgentEntries } from '@dovo/protocol'
 import { scopedSettingsRoute } from './scoped-settings-routes.js'
 import { decodeResult } from '@dovo/protocol'
 import { checkAdapterUpdates } from '../../agents/execution/diagnostics.js'
@@ -485,13 +486,23 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         })
       }
       if (method === 'POST' && path === '/api/agents/probe') {
-        const { id } = decode(
+        const { id, repositoryId, settingsScope } = decode(
           mutableStruct({
             id: idSchema,
+            repositoryId: Schema.optional(idSchema),
+            settingsScope: Schema.optional(settingsScopeSchema),
           }),
           yield* serviceResult(body(request)),
         )
-        const agent = s.store.get().agents.find((a) => a.id === id)
+        const candidates = settingsScope
+          ? scopedAgentEntries(
+              s.defaults.get(),
+              s.store.get().repositories.find((repo) => repo.id === repositoryId),
+              s.store.get().agents,
+              settingsScopes[settingsScopes.indexOf(settingsScope) + 1],
+            ).map((entry) => entry.agent)
+          : s.store.agentsFor(repositoryId)
+        const agent = candidates.find((a) => a.id === id)
         if (!agent) throw new HttpError(404, 'Agent not found')
         return yield* serviceResult(
           (yield* serviceResult(s.agents.get(agent.provider))).probe(agent),

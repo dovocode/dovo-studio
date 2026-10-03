@@ -1,16 +1,12 @@
 import { changeAgentProvider, changeAgentConnection, agentConnectionValue } from '@dovo/protocol'
-import { useAppPreferences, updateAppPreferences } from '@dovo/studio-core'
-import { agentPresetSchema } from '@dovo/protocol'
 import { parseAgentEnvironment, formatAgentEnvironment } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
-import { selectableAccessModes, lockedTaskProvider, supportsAccess } from '@dovo/studio-core'
+import { selectableAccessModes, supportsAccess } from '@dovo/studio-core'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { ModelSettings } from './model-settings'
 import { AcpRegistry } from './acp-registry'
 import { useRef } from 'react'
-import { Schema } from 'effect'
 import { agentSchema, providers, useWorkspace, type Agent } from '@dovo/studio-core'
 import {
   Button,
@@ -30,33 +26,21 @@ export function AgentEditor({
   creating,
   computerName,
   onClose,
-  global = false,
+  onSave,
 }: {
   initial: Agent
   creating: boolean
   computerName: string
   onClose: () => void
-  global?: boolean
+  onSave: (agent: Agent) => Promise<void>
 }) {
-  const { workspace, request, connected } = useWorkspace()
-  const { globalAgentPresets } = useAppPreferences()
-  const [scope, setScope] = useApplicationState(global ? 'global' : 'server')
+  const { connected } = useWorkspace()
   const pending = useRef(false)
   const [busy, setBusy] = useApplicationState(false)
   const [agent, setAgent] = useApplicationState(initial)
   const [error, setError] = useApplicationState('')
   const [environment, setEnvironment] = useApplicationState(formatAgentEnvironment(initial.env))
-  const storedProvider = workspace.agents.find((saved) => saved.id === initial.id)?.provider
-  const lockedProviders = creating
-    ? []
-    : workspace.tasks
-        .filter((task) => task.agentId === initial.id && !task.harness)
-        .map((task) => lockedTaskProvider(task, workspace.agents))
-        .filter((provider) => provider !== undefined)
-  const availableProviders = Object.entries(providers).filter(
-    ([id]) => id === storedProvider || lockedProviders.every((provider) => provider === id),
-  )
-  const providerAllowed = availableProviders.some(([id]) => id === agent.provider)
+  const availableProviders = Object.entries(providers)
   return (
     <Dialog
       open
@@ -66,7 +50,7 @@ export function AgentEditor({
     >
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Agent configuration</DialogTitle>
+          <DialogTitle>{creating ? 'New' : 'Edit'} agent configuration</DialogTitle>
           <DialogDescription>
             {computerName} · Reusable settings. Provider sessions remain attached to tasks.
           </DialogDescription>
@@ -91,85 +75,11 @@ export function AgentEditor({
               setError('Enter an agent name.')
               return
             }
-            if (scope === 'global') {
-              if (agent.acpInstallationId) {
-                setError('Installed ACP agents belong to their server. Use a server configuration.')
-                return
-              }
-              const preset = decode(agentPresetSchema, result.data)
-              if (
-                initial.globalPreset &&
-                !globalAgentPresets.some((item) => item.id === initial.id)
-              )
-                preset.id = crypto.randomUUID()
-              updateAppPreferences({
-                globalAgentPresets: [
-                  ...globalAgentPresets.filter((item) => item.id !== preset.id),
-                  preset,
-                ],
-              })
-              onClose()
-              return
-            }
-            if (initial.globalPreset) result.data.serverOverride = true
-            if (!providerAllowed) {
-              setError(
-                'This agent is used by an existing conversation. Keep its provider or create a new agent.',
-              )
-              return
-            }
-            if (pending.current) return
+            if (pending.current || !connected) return
             pending.current = true
             setBusy(true)
             setError('')
-            const before = decode(
-              Schema.mutable(
-                Schema.Record({
-                  key: Schema.String,
-                  value: Schema.Unknown,
-                }),
-              ),
-              initial,
-            )
-            const after = decode(
-              Schema.mutable(
-                Schema.Record({
-                  key: Schema.String,
-                  value: Schema.Unknown,
-                }),
-              ),
-              result.data,
-            )
-            const changes: Record<
-              string,
-              {
-                before: unknown
-                after: unknown
-              }
-            > = {}
-            for (const key of new Set([...Object.keys(before), ...Object.keys(after)]))
-              if (key !== 'id' && JSON.stringify(before[key]) !== JSON.stringify(after[key]))
-                changes[key] = {
-                  before: before[key] ?? null,
-                  after: after[key] ?? null,
-                }
-            void request(
-              '/api/workspace',
-              {
-                collection: 'agents',
-                id: initial.id,
-                changes,
-                ...(creating || !workspace.agents.some((agent) => agent.id === initial.id)
-                  ? {
-                      create: result.data,
-                    }
-                  : {}),
-              },
-              mutableStruct({
-                revision: Schema.Number.pipe(Schema.finite()),
-              }),
-              'PATCH',
-            )
+            void onSave(result.data)
               .then(onClose)
               .catch((error: unknown) =>
                 setError(error instanceof Error ? error.message : String(error)),
@@ -180,23 +90,8 @@ export function AgentEditor({
               })
           }}
         >
-          <fieldset disabled={busy || (scope === 'server' && !connected)} className="grid gap-4">
-            <FormField label="Configuration scope">
-              <ChoicePicker
-                value={scope}
-                onValueChange={setScope}
-                aria-label="Configuration scope"
-                className="h-9 rounded-md border bg-background px-2 text-xs"
-              >
-                <option value="server">This server · {computerName}</option>
-                <option value="global">Global · All servers connected to this app</option>
-              </ChoicePicker>
-              <p className="text-xs text-muted-foreground">
-                Global presets apply on reconnect. Server overrides keep their own settings.
-                Executables and config directories resolve on each server.
-              </p>
-            </FormField>
-            <FormField label="Name">
+          <fieldset disabled={busy || !connected} className="grid gap-4">
+            <FormField layout="settings" label="Name">
               <Input
                 required
                 value={agent.name}
@@ -208,7 +103,7 @@ export function AgentEditor({
                 }
               />
             </FormField>
-            <FormField label="Icon">
+            <FormField layout="settings" label="Icon">
               <div className="flex items-center gap-3">
                 <AgentAvatar
                   provider={agent.provider}
@@ -240,12 +135,11 @@ export function AgentEditor({
                 </div>
               </div>
             </FormField>
-            <FormField label="Provider">
+            <FormField layout="settings" label="Provider">
               <ChoicePicker
                 aria-label="Provider"
                 className="h-9 rounded-md border bg-background px-2 text-xs"
                 value={agent.provider}
-                disabled={availableProviders.length === 1 && providerAllowed}
                 onValueChange={(selection) => {
                   if (!availableProviders.some(([id]) => id === selection)) return
                   setAgent(
@@ -253,33 +147,21 @@ export function AgentEditor({
                   )
                 }}
               >
-                {Object.entries(providers)
-                  .filter(
-                    ([id]) =>
-                      id === agent.provider ||
-                      availableProviders.some(([available]) => available === id),
-                  )
-                  .map(([id, p]) => (
-                    <option
-                      key={id}
-                      value={id}
-                      disabled={!availableProviders.some(([available]) => available === id)}
-                    >
-                      {p.name}
-                    </option>
-                  ))}
+                {availableProviders.map(([id, p]) => (
+                  <option
+                    key={id}
+                    value={id}
+                    disabled={!availableProviders.some(([available]) => available === id)}
+                  >
+                    {p.name}
+                  </option>
+                ))}
               </ChoicePicker>
             </FormField>
-            {lockedProviders.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Existing conversations use this agent. Keep their provider, or create a new agent to
-                use another. Models and settings can still change.
-              </p>
-            )}
             {agent.provider === 'acp' && (
               <AcpRegistry agent={agent} onChange={setAgent} showRegistry={false} />
             )}
-            <FormField label="Access">
+            <FormField layout="settings" label="Access">
               <ChoicePicker
                 aria-label="Permissions"
                 className="h-9 rounded-md border bg-background px-2 text-xs"
@@ -316,6 +198,7 @@ export function AgentEditor({
             )}
             <ModelSettings key={agent.provider} agent={agent} onChange={setAgent} />
             <FormField
+              layout="settings"
               label={agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'}
             >
               <Input
@@ -329,7 +212,7 @@ export function AgentEditor({
               />
             </FormField>
             {agent.provider === 'opencode' && !agent.endpoint.trim() && (
-              <FormField label="OpenCode executable path (optional)">
+              <FormField layout="settings" label="OpenCode executable path (optional)">
                 <Input
                   value={agent.executablePath ?? ''}
                   placeholder="opencode"
@@ -339,6 +222,7 @@ export function AgentEditor({
             )}
             {(agent.provider === 'codex' || agent.provider === 'claude') && (
               <FormField
+                layout="settings"
                 label={
                   agent.provider === 'codex'
                     ? 'CODEX_HOME directory'
@@ -353,7 +237,7 @@ export function AgentEditor({
               </FormField>
             )}
             {(agent.provider !== 'opencode' || !agent.endpoint.trim()) && (
-              <FormField label="Executable arguments (one per line)">
+              <FormField layout="settings" label="Executable arguments (one per line)">
                 <Textarea
                   value={(agent.args ?? []).join('\n')}
                   onChange={(event) =>
@@ -366,7 +250,7 @@ export function AgentEditor({
                 />
               </FormField>
             )}
-            <FormField label="Environment variables (NAME=value, one per line)">
+            <FormField layout="settings" label="Environment variables (NAME=value, one per line)">
               <Textarea
                 value={environment}
                 onChange={(event) => setEnvironment(event.target.value)}
@@ -375,7 +259,7 @@ export function AgentEditor({
                 Saved as readable configuration. Keep secrets in the server's environment.
               </p>
             </FormField>
-            <FormField label="Instructions">
+            <FormField layout="settings" label="Instructions">
               <Textarea
                 value={agent.instructions}
                 onChange={(e) =>
@@ -392,36 +276,9 @@ export function AgentEditor({
                 {error}
               </p>
             )}
-            {initial.globalPreset && (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!connected || busy}
-                onClick={() => {
-                  setBusy(true)
-                  void request(
-                    '/api/agents/presets/reset',
-                    { id: initial.id },
-                    mutableStruct({ ok: Schema.Boolean }),
-                  )
-                    .then(onClose)
-                    .catch((error: unknown) =>
-                      setError(error instanceof Error ? error.message : String(error)),
-                    )
-                    .finally(() => setBusy(false))
-                }}
-              >
-                Use global preset on this server
-              </Button>
-            )}
             <Button
               type="submit"
-              disabled={
-                busy ||
-                (scope === 'server' && !connected) ||
-                !providerAllowed ||
-                !supportsAccess(agent.provider, agent.permission)
-              }
+              disabled={busy || !connected || !supportsAccess(agent.provider, agent.permission)}
             >
               {busy ? 'Saving…' : 'Save configuration'}
             </Button>

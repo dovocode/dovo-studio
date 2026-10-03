@@ -139,9 +139,17 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
             {
               scope: scope.scope,
               repositoryId: scope.repository?.id,
+              includeAgents: !!scope.namedAgentId,
               projectKey: sharedProjectKey(scope.repository),
               before: value,
-              after: { ...value, resources: next },
+              after: scope.namedAgentId
+                ? {
+                    ...value,
+                    agents: value.agents?.map((agent) =>
+                      agent.id === scope.namedAgentId ? { ...agent, resources: next } : agent,
+                    ),
+                  }
+                : { ...value, resources: next },
             },
             scopedSettingsResultSchema,
           )

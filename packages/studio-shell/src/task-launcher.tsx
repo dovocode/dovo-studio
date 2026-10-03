@@ -147,6 +147,9 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
     }
   }
   const locked = busy || !!attempt.current
+  const selectedRepository = snapshot?.workspace.repositories.find(
+    (entry) => entry.id === repositoryId,
+  )
   const selectedProfile = runtimeRegistry.profiles.find((profile) => profile.id === runtimeId)
   const selectClass = 'h-10 w-full rounded-lg border bg-background px-3 text-sm disabled:opacity-50'
   return (
@@ -215,9 +218,10 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
               </select>
             </label>
           </div>
-          {selection && loadedRuntimeId === runtimeId && selectedProfile && (
+          {selection && loadedRuntimeId === runtimeId && selectedProfile && selectedRepository && (
             <WorkspaceScope key={runtimeId} profile={selectedProfile}>
               <TaskLauncherControls
+                repository={selectedRepository}
                 selection={selection}
                 onChange={setSelection}
                 disabled={locked || loading}

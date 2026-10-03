@@ -1,7 +1,16 @@
+import type { SettingsScope } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { responses, useWorkspace, type Agent, type ProviderStatus } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
-export function ProviderCheck({ agent }: { agent: Agent }) {
+export function ProviderCheck({
+  agent,
+  repositoryId,
+  settingsScope,
+}: {
+  agent: Agent
+  repositoryId?: string
+  settingsScope?: SettingsScope
+}) {
   const { connected, request } = useWorkspace()
   const [result, setResult] = useApplicationState<ProviderStatus | null>(null)
   const [error, setError] = useApplicationState('')
@@ -13,6 +22,8 @@ export function ProviderCheck({ agent }: { agent: Agent }) {
       '/api/agents/probe',
       {
         id: agent.id,
+        repositoryId,
+        settingsScope,
       },
       responses.provider,
     )

@@ -1,5 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { decode } from '@dovo/protocol'
+import { decode, resolveScopedAgents } from '@dovo/protocol'
 import { memo, useMemo, useRef } from 'react'
 import {
   Check,
@@ -59,15 +59,24 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
   task: Task
   disabled: boolean
 }) {
-  const { workspace, setWorkspace, flush } = useWorkspace()
-  const providerLock = lockedTaskProvider(task, workspace.agents)
-  const installationLock = lockedAcpInstallationId(task, workspace.agents)
+  const { workspace, setWorkspace, flush, snapshot } = useWorkspace()
+  const agents = useMemo(
+    () =>
+      resolveScopedAgents(
+        snapshot?.defaults,
+        workspace.repositories.find((repo) => repo.id === task.repositoryId),
+        workspace.agents,
+      ),
+    [snapshot?.defaults, workspace.repositories, workspace.agents, task.repositoryId],
+  )
+  const providerLock = lockedTaskProvider(task, agents)
+  const installationLock = lockedAcpInstallationId(task, agents)
   const value = useMemo(() => {
-    const resolved = resolveTaskAgent(task, workspace.agents)
+    const resolved = resolveTaskAgent(task, agents)
     return resolved
       ? decode(taskHarnessSchema, resolved)
       : defaultTaskHarness(providerLock ?? 'codex')
-  }, [task.id, task.agentId, task.agentOverrides, task.harness, workspace.agents, providerLock])
+  }, [task.id, task.agentId, task.agentOverrides, task.harness, agents, providerLock])
   const [open, setOpen] = useApplicationState(false)
   const [reasoningOpen, setReasoningOpen] = useApplicationState(false)
   const [connection, setConnection] = useApplicationState(false)
@@ -90,7 +99,18 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
     setSaving(true)
     setError('')
     try {
-      setWorkspace((w) => updateTask(w, task.id, (t) => change(t, w.agents)))
+      setWorkspace((w) =>
+        updateTask(w, task.id, (t) =>
+          change(
+            t,
+            resolveScopedAgents(
+              snapshot?.defaults,
+              w.repositories.find((repo) => repo.id === t.repositoryId),
+              w.agents,
+            ),
+          ),
+        ),
+      )
       await flush()
       return true
     } catch (error) {
@@ -103,16 +123,14 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
   }
   const apply = (harness: TaskHarness) =>
     save((current, agents) => changeTaskHarness(current, agents, harness))
-  const customAgent = !task.harness
-    ? workspace.agents.find((agent) => agent.id === task.agentId)
-    : undefined
+  const customAgent = task.agentId ? agents.find((agent) => agent.id === task.agentId) : undefined
   const locked = disabled || saving || task.status === 'running'
   const itemClass =
     'relative flex cursor-default select-none items-center rounded-md py-1.5 pl-3 pr-8 text-sm outline-none transition-colors duration-150 focus:bg-accent/50 data-[state=checked]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40'
   return (
     <>
       <ComposerModelPicker
-        agents={workspace.agents}
+        agents={agents}
         selectedAgent={customAgent}
         value={value}
         lockedProvider={providerLock}

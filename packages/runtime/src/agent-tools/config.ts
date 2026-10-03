@@ -9,6 +9,7 @@ export function taskToolsServer(
   host: string,
   readOnly = false,
   artifactsEnabled = false,
+  parentRunId?: string,
 ): McpServer {
   const localHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   const urlHost = localHost.includes(':') ? `[${localHost}]` : localHost
@@ -25,6 +26,7 @@ export function taskToolsServer(
     envValues: {
       ELECTRON_RUN_AS_NODE: '1',
       DOVO_TASK_ID: taskId,
+      ...(parentRunId ? { DOVO_TASK_RUN_ID: parentRunId } : {}),
       DOVO_TASK_URL: `http://${urlHost}:${port}`,
       DOVO_TASK_TOKEN: token,
       DOVO_TASK_READ_ONLY: readOnly ? '1' : '0',

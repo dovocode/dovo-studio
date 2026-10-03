@@ -166,3 +166,5 @@ export * from './conversation/history.js'
 
 export * from './tasks/agent-configuration.js'
 export * from './runtime/connection/scoped-settings.js'
+
+export * from './tasks/delegation.js'

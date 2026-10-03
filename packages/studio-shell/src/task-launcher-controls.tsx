@@ -7,6 +7,8 @@ import {
   useHarnessCatalog,
 } from '@dovo/studio-ui'
 import {
+  resolveScopedAgents,
+  type Repository,
   decode,
   taskHarnessSchema,
   defaultTaskHarness,
@@ -23,14 +25,17 @@ export function TaskLauncherControls({
   selection,
   onChange,
   disabled,
+  repository,
 }: {
   selection: LauncherAgent
   onChange: (selection: LauncherAgent) => void
   disabled: boolean
+  repository: Repository
 }) {
   const { workspace, snapshot, request } = useWorkspace()
+  const agents = resolveScopedAgents(snapshot?.defaults, repository, workspace.agents)
   const [configure, setConfigure] = useState(false)
-  const selectedAgent = workspace.agents.find((agent) => agent.id === selection.agentId)
+  const selectedAgent = agents.find((agent) => agent.id === selection.agentId)
   const value = selection.harness ?? defaultTaskHarness(selection.provider)
   const { catalog } = useHarnessCatalog(value, !disabled)
   const efforts = selectedCatalogModel(catalog, value.model)?.reasoning ?? catalog?.reasoning ?? []
@@ -62,13 +67,13 @@ export function TaskLauncherControls({
         <ComposerModelPicker
           value={value}
           disabled={disabled}
-          agents={workspace.agents}
+          agents={agents}
           selectedAgent={selectedAgent}
           onChange={change}
           onUseHarness={(harness) => change(harness, true)}
           onConfigure={() => setConfigure((open) => !open)}
           onSelectAgent={async (id) => {
-            const agent = workspace.agents.find((entry) => entry.id === id)
+            const agent = agents.find((entry) => entry.id === id)
             if (!agent || disabled) return false
             onChange({
               key: `agent:${id}`,

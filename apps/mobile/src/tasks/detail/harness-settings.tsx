@@ -1,7 +1,7 @@
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
-import { decode } from '@dovo/protocol'
+import { resolveScopedAgents, decode } from '@dovo/protocol'
 import { useEffect } from 'react'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
@@ -50,17 +50,21 @@ export function HarnessSettings({
     onBusyChange?.(busy)
     return () => onBusyChange?.(false)
   }, [busy, onBusyChange])
+  const agents = resolveScopedAgents(
+    snapshot?.defaults,
+    snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+    snapshot?.workspace.agents ?? [],
+  )
   const [selection, setSelection] = useApplicationState(() => taskHarnessSelection(task))
   const [agent, setAgent] = useApplicationState<Agent>(
     () =>
-      resolveTaskAgent(task, snapshot?.workspace.agents ?? []) ?? {
+      resolveTaskAgent(task, agents) ?? {
         ...defaultTaskHarness('codex'),
         id: 'task',
         name: 'Codex',
       },
   )
   const custom = selection.startsWith('agent:')
-  const agents = snapshot?.workspace.agents ?? []
   const installations = snapshot?.acpInstallations ?? []
   const choices = taskHarnessChoices(
     task,

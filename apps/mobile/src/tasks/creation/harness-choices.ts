@@ -62,6 +62,7 @@ export function taskHarnessChoices(
     )
 }
 export function taskHarnessSelection(task: Task) {
+  if (task.agentId) return `agent:${task.agentId}`
   return task.harness
     ? task.harness.provider === 'acp' && task.harness.acpInstallationId
       ? acpHarnessChoiceId(task.harness.acpInstallationId)
@@ -105,7 +106,7 @@ export function taskHarnessChanges(task: Task, selection: string, agent: Agent) 
     },
     harness: {
       before: task.harness ?? null,
-      after: custom ? null : decode(taskHarnessSchema, agent),
+      after: decode(taskHarnessSchema, agent),
     },
     agentOverrides: {
       before: task.agentOverrides ?? null,
@@ -136,13 +137,13 @@ export function taskHarnessLabel(
   harnessName?: string,
 ) {
   if (!agent) return 'Choose agent'
-  const name = task.harness
+  const name = !task.agentId
     ? (acpHarnessName(agent, installations) ?? harnessNames[agent.provider])
     : agent.name
   const model = modelDisplayName(agent.model, modelName)
   if (agent.provider === 'opencode' && harnessName)
-    return [task.harness ? harnessName : `${name} · ${harnessName}`, model]
+    return [!task.agentId ? harnessName : `${name} · ${harnessName}`, model]
       .filter(Boolean)
       .join(' · ')
-  return task.harness ? model || name : [name, model].filter(Boolean).join(' · ')
+  return !task.agentId ? model || name : [name, model].filter(Boolean).join(' · ')
 }

@@ -101,7 +101,12 @@ export const opencodeV2Adapter: AgentAdapter = {
     const location = { directory: run.cwd }
     try {
       const namespace = `dovo_${createHash('sha256')
-        .update(JSON.stringify([run.cwd, run.agent.id, run.agent.resources]))
+        // Attempt bindings change each turn; reuse the same managed MCP registration name.
+        .update(
+          JSON.stringify([run.cwd, run.agent.id, run.agent.resources], (key, value: unknown) =>
+            key === 'DOVO_TASK_RUN_ID' ? undefined : value,
+          ),
+        )
         .digest('hex')
         .slice(0, 12)}`
       for (const server of run.tools === 'none' ? [] : (run.agent.resources?.mcpServers ?? [])) {

@@ -11,6 +11,7 @@ const address = process.env.DOVO_TASK_URL
 const token = process.env.DOVO_TASK_TOKEN
 if (!taskId || !address || !token)
   throw new Error('Dovo task tools are missing their runtime scope')
+const parentRunId = process.env.DOVO_TASK_RUN_ID
 const task = taskId
 const base = address
 const credential = token
@@ -91,6 +92,53 @@ async function socket(path: string, payloads: unknown[], firstMessage = false): 
 const server = new Server({ name: 'dovo-task', version: '0.1.0' }, { capabilities: { tools: {} } })
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
+    {
+      name: 'subagent_spawn',
+      description:
+        'Launch a Dovo child agent on Codex, Claude, OpenCode, or a named configuration (including ACP). It works in this thread’s checkout with its own conversation. Supply all necessary context in prompt. Access cannot exceed the parent. Use a stable key to retry safely. Children are stopped when the parent turn ends; read or wait for results before finishing.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          key: { type: 'string' },
+          name: { type: 'string' },
+          prompt: { type: 'string' },
+          provider: { type: 'string', enum: ['codex', 'claude', 'opencode', 'acp'] },
+          agentId: { type: 'string' },
+          model: { type: 'string' },
+          reasoning: { type: 'string' },
+          permission: {
+            type: 'string',
+            enum: ['read-only', 'ask', 'workspace-write', 'auto', 'full-access'],
+          },
+        },
+        required: ['key', 'name', 'prompt'],
+      },
+    },
+    {
+      name: 'subagent_list',
+      description:
+        'List this thread’s Dovo child agents and named configurations available in its project. Returns metadata only; use read or wait for child answers.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    ...(['read', 'wait', 'cancel'] as const).map((action) => ({
+      name: `subagent_${action}`,
+      description:
+        action === 'wait'
+          ? 'Wait up to 20 seconds for a child’s final answer. If still running, wait again. Returns only the answer and status, excluding raw events and tool output.'
+          : action === 'read'
+            ? 'Read a child’s status and final answer.'
+            : 'Stop a child agent belonging to this parent thread.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: { type: 'string' },
+          ...(action === 'wait'
+            ? { timeoutMs: { type: 'integer', minimum: 0, maximum: 20000 } }
+            : {}),
+        },
+        required: ['id'],
+      },
+    })),
     ...(artifactsEnabled
       ? [
           {
@@ -239,6 +287,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     const input = decode(args, request.params.arguments ?? {})
     switch (request.params.name) {
+      case 'subagent_spawn':
+        return text(await post('/api/subagents/spawn', { ...input, taskId: task, parentRunId }))
+      case 'subagent_list':
+        return text(await post('/api/subagents/list', { taskId: task }))
+      case 'subagent_read':
+      case 'subagent_wait':
+      case 'subagent_cancel':
+        return text(
+          await post(`/api/subagents/${request.params.name.slice('subagent_'.length)}`, {
+            id: string(input.id, 'id'),
+            timeoutMs: input.timeoutMs,
+            taskId: task,
+          }),
+        )
       case 'artifact_list':
         artifacts()
         return text(await post('/api/artifacts/list', { taskId: task }))
@@ -260,7 +322,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             request.params.name === 'artifact_create'
               ? '/api/artifacts/create'
               : '/api/artifacts/update',
-            { ...input, taskId: task },
+            { ...input, taskId: task, parentRunId },
           ),
         )
       case 'devices':

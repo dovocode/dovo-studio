@@ -280,3 +280,230 @@ it('rejects simultaneous project saves based on the same prior document', async 
     await f.close()
   }
 })
+
+it('inherits named configurations through four scopes, syncs by Git remote, and preserves tools during independent edits', async () => {
+  const a = await fixture(),
+    b = await fixture()
+  try {
+    const agent = {
+      ...defaultTaskHarness('codex'),
+      id: 'writer',
+      name: 'Writer',
+      permission: 'ask' as const,
+    }
+    const readAgents = async (scope: SettingsScope) => {
+      const response = await a.call('settings/read', {
+        scope,
+        repositoryId: 'project',
+        includeAgents: true,
+      })
+      expect(response.status).toBe(200)
+      return decode(scopedSettingsResultSchema, await response.json())
+    }
+    const saveAgents = async (scope: SettingsScope, model: string) => {
+      const previous = await readAgents(scope)
+      const response = await a.call('settings/save', {
+        scope,
+        repositoryId: 'project',
+        includeAgents: true,
+        projectKey: previous.projectKey,
+        before: previous.value,
+        after: { ...previous.value, agents: [{ ...agent, model }] },
+      })
+      expect(response.status).toBe(200)
+      return decode(scopedSettingsResultSchema, await response.json())
+    }
+    await saveAgents('global', 'global')
+    await saveAgents('environment', 'environment')
+    await saveAgents('project', 'project')
+    await saveAgents('environment-project', 'local-project')
+    expect(a.runtime.services.store.agentsFor('project')).toMatchObject([
+      { id: 'writer', model: 'local-project' },
+    ])
+    expect((await readAgents('environment-project')).inherited.agents).toMatchObject([
+      { id: 'writer', model: 'project' },
+    ])
+    const previous = await readAgents('environment-project')
+    expect(
+      (
+        await a.call('settings/save', {
+          scope: 'environment-project',
+          repositoryId: 'project',
+          includeAgents: true,
+          before: previous.value,
+          after: { agents: [] },
+        })
+      ).status,
+    ).toBe(200)
+    expect(a.runtime.services.store.agentsFor('project')).toMatchObject([
+      { id: 'writer', model: 'project' },
+    ])
+    const shared = a.runtime.services.defaults.get().scopedSettings?.shared
+    expect((await b.call('settings/sync', { shared })).status).toBe(200)
+    await b.read('project')
+    expect(
+      b.runtime.services.store.agentsFor('project').find((entry) => entry.id === 'writer')?.model,
+    ).toBe('project')
+    const beforeDefaults = await a.read('global')
+    await saveAgents('global', 'global-new')
+    expect(
+      (
+        await a.call('settings/save', {
+          scope: 'global',
+          before: beforeDefaults.value,
+          after: { ...beforeDefaults.value, taskDefaults: { permission: 'read-only' } },
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      a.runtime.services.defaults
+        .get()
+        .scopedSettings?.shared.find((entry) => entry.key === 'global')?.value.agents?.[0].model,
+    ).toBe('global-new')
+    const beforeAgents = await readAgents('global')
+    await a.save('global', {
+      taskDefaults: { permission: 'ask' },
+      prompts: [{ id: 'p', name: 'p', text: 'Keep' }],
+    })
+    expect(
+      (
+        await a.call('settings/save', {
+          scope: 'global',
+          includeAgents: true,
+          before: beforeAgents.value,
+          after: { agents: [{ ...agent, model: 'last' }] },
+        })
+      ).status,
+    ).toBe(200)
+    expect((await a.read('global')).value).toMatchObject({
+      taskDefaults: { permission: 'ask' },
+      prompts: [{ text: 'Keep' }],
+      agents: [{ model: 'last' }],
+    })
+    const stale = await readAgents('global')
+    await saveAgents('global', 'newer')
+    expect(
+      (
+        await a.call('settings/save', {
+          scope: 'global',
+          includeAgents: true,
+          before: stale.value,
+          after: { agents: [] },
+        })
+      ).status,
+    ).toBe(409)
+  } finally {
+    await a.close()
+    await b.close()
+  }
+})
+
+it('copies scoped configurations into threads and rejects shared host-specific installations and nested credentials', async () => {
+  const f = await fixture()
+  try {
+    const read = async () => {
+      const response = await f.call('settings/read', { scope: 'global', includeAgents: true })
+      return decode(scopedSettingsResultSchema, await response.json())
+    }
+    const agent = {
+      ...defaultTaskHarness('claude'),
+      id: 'reviewer',
+      name: 'Reviewer',
+      instructions: 'Original instructions',
+    }
+    const before = await read()
+    expect(
+      (
+        await f.call('settings/save', {
+          scope: 'global',
+          includeAgents: true,
+          before: before.value,
+          after: { agents: [agent] },
+        })
+      ).status,
+    ).toBe(200)
+    const task = f.runtime.services.tasks.create({
+      title: 'Copied',
+      repositoryId: 'project',
+      agentId: agent.id,
+      objective: '',
+    })
+    expect(task.harness?.instructions).toBe('Original instructions')
+    const stored = await read()
+    expect(
+      (
+        await f.call('settings/save', {
+          scope: 'global',
+          includeAgents: true,
+          before: stored.value,
+          after: { agents: [] },
+        })
+      ).status,
+    ).toBe(200)
+    expect(f.runtime.services.store.task(task.id).harness?.instructions).toBe(
+      'Original instructions',
+    )
+    const empty = await read()
+    expect(
+      (
+        await f.call('settings/save', {
+          scope: 'global',
+          includeAgents: true,
+          before: empty.value,
+          after: {
+            agents: [{ ...agent, provider: 'acp', acpInstallationId: 'host-installation' }],
+          },
+        })
+      ).status,
+    ).toBe(400)
+    const server = decode(mcpServerSchema, {
+      name: 'private',
+      transport: 'stdio',
+      command: 'server',
+      envValues: { TOKEN: 'secret' },
+      enabled: true,
+    })
+    expect(
+      (
+        await f.call('settings/save', {
+          scope: 'global',
+          includeAgents: true,
+          before: empty.value,
+          after: { agents: [{ ...agent, resources: { skills: [], mcpServers: [server] } }] },
+        })
+      ).status,
+    ).toBe(400)
+    expect((await read()).value.agents).toEqual([])
+  } finally {
+    await f.close()
+  }
+})
+
+it('edits legacy server overrides without treating private preset metadata as a conflict', async () => {
+  const f = await fixture()
+  try {
+    const preset = { ...defaultTaskHarness('codex'), id: 'legacy', name: 'Legacy' }
+    f.runtime.services.store.update((workspace) => ({
+      ...workspace,
+      agents: [{ ...preset, model: 'local', globalPreset: preset, serverOverride: true }],
+    }))
+    const response = await f.call('settings/read', { scope: 'environment', includeAgents: true })
+    const before = decode(scopedSettingsResultSchema, await response.json())
+    expect(before.value.agents).toMatchObject([{ id: 'legacy', model: 'local' }])
+    expect(
+      (
+        await f.call('settings/save', {
+          scope: 'environment',
+          includeAgents: true,
+          before: before.value,
+          after: { agents: [{ ...preset, model: 'edited' }] },
+        })
+      ).status,
+    ).toBe(200)
+    expect(f.runtime.services.store.agentsFor().find((agent) => agent.id === 'legacy')?.model).toBe(
+      'edited',
+    )
+  } finally {
+    await f.close()
+  }
+})

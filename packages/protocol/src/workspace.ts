@@ -102,6 +102,7 @@ export const taskTemplateSchema = mutableStruct({
 export type TaskTemplate = Schema.Schema.Type<typeof taskTemplateSchema>
 /** Settings that can inherit across computers and projects. */
 export const scopedSettingsValueSchema = mutableStruct({
+  agents: Schema.optional(maxValue(mutableArray(agentPresetSchema), 100)),
   taskDefaults: Schema.optional(projectTaskDefaultsSchema),
   resources: Schema.optional(resourceSettingsSchema),
   prompts: Schema.optional(maxValue(mutableArray(savedPromptSchema), 40)),
@@ -142,6 +143,7 @@ export const repositorySchema = mutableStruct({
   approvedCommands: Schema.optional(
     maxValue(mutableArray(maxValue(minValue(Schema.String, 1), 4000)), 100),
   ),
+  agents: Schema.optional(maxValue(mutableArray(agentPresetSchema), 100)),
   templates: Schema.optional(maxValue(mutableArray(taskTemplateSchema), 30)),
   actions: Schema.optional(maxValue(mutableArray(projectActionSchema), 20)),
   prompts: Schema.optional(maxValue(mutableArray(savedPromptSchema), 40)),
@@ -432,10 +434,20 @@ export const taskSchema = mutableStruct({
   checkoutLocked: Schema.optional(Schema.Boolean),
   // Captured on the first submitted input; queued input keeps the lock after removal.
   providerLock: Schema.optional(providerSchema),
+  delegation: Schema.optional(
+    mutableStruct({
+      fingerprint: Schema.optional(maxValue(Schema.String, 64)),
+      parentTaskId: maxValue(minValue(Schema.String, 1), 200),
+      parentRunId: maxValue(minValue(Schema.String, 1), 200),
+      key: maxValue(minValue(Schema.String, 1), 100),
+    }),
+  ),
   id: Schema.String,
   title: minValue(Schema.String, 1),
   repositoryId: Schema.String,
   execution: Schema.optional(executionSchema),
+  agentName: Schema.optional(maxValue(Schema.String, 200)),
+  agentIcon: Schema.optional(agentIconSchema),
   agentId: Schema.String,
   status: Schema.Literal('draft', 'running', 'review', 'done', 'failed', 'cancelled'),
   createdAt: Schema.String,
@@ -634,14 +646,20 @@ export function lockedAcpInstallationId(task: Task, agents: readonly Agent[]): s
     : undefined
 }
 export function resolveTaskAgent(
-  task: Pick<Task, 'id' | 'agentId' | 'agentOverrides' | 'harness'>,
+  task: Pick<Task, 'id' | 'agentId' | 'agentOverrides' | 'harness' | 'agentName' | 'agentIcon'>,
   agents: readonly Agent[],
 ): Agent | undefined {
   const base = task.harness
     ? {
         ...task.harness,
-        id: `task:${task.id}`,
-        name: task.harness.provider,
+        ...(task.agentId
+          ? { icon: agents.find((agent) => agent.id === task.agentId)?.icon ?? task.agentIcon }
+          : {}),
+        id: task.agentId || `task:${task.id}`,
+        name:
+          agents.find((agent) => agent.id === task.agentId)?.name ??
+          (task.agentId ? task.agentName : undefined) ??
+          task.harness.provider,
       }
     : agents.find((agent) => agent.id === task.agentId)
   if (!base) return undefined

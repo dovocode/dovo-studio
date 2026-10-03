@@ -1,3 +1,5 @@
+import { decode, resourceSettingsSchema } from '@dovo/protocol'
+import { taskToolsServer } from '../../../agent-tools/config.js'
 import * as warmProcesses from '../../execution/warm-processes.js'
 import { expect, it, vi } from 'vitest'
 import type { AgentRun } from '../../execution/types.js'
@@ -95,6 +97,13 @@ it('keeps a streaming Claude connection across turns', async () => {
   const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
   mocks.query.mockClear()
   const prompts: string[] = []
+  const setMcpServers = vi
+    .fn<
+      (
+        servers: Record<string, unknown>,
+      ) => Promise<{ added: string[]; removed: string[]; errors: Record<string, string> }>
+    >()
+    .mockResolvedValue({ added: ['dovo_task'], removed: [], errors: {} })
   const close = vi.fn<() => void>()
   mocks.query.mockImplementation(({ prompt }) => ({
     async *[Symbol.asyncIterator]() {
@@ -110,6 +119,7 @@ it('keeps a streaming Claude connection across turns', async () => {
       }
     },
     close,
+    setMcpServers,
   }))
   const run: AgentRun = {
     agent: {
@@ -132,8 +142,26 @@ it('keeps a streaming Claude connection across turns', async () => {
     ask: async () => null,
   }
   try {
-    await claudeAdapter.run(run)
-    await claudeAdapter.run({ ...run, sessionId: 'session', prompt: 'second' })
+    const boundRun = (attempt: string): AgentRun => ({
+      ...run,
+      agent: {
+        ...run.agent,
+        resources: decode(resourceSettingsSchema, {
+          mcpServers: [
+            taskToolsServer(run.taskId!, 1234, 'token', '127.0.0.1', false, false, attempt),
+          ],
+        }),
+      },
+    })
+    await claudeAdapter.run(boundRun('first-run'))
+    await claudeAdapter.run({ ...boundRun('second-run'), sessionId: 'session', prompt: 'second' })
+    expect(setMcpServers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dovo_task: expect.objectContaining({
+          env: expect.objectContaining({ DOVO_TASK_RUN_ID: 'second-run' }),
+        }),
+      }),
+    )
     expect(prompts).toEqual(['first', 'second'])
     expect(mocks.query).toHaveBeenCalledTimes(1)
     expect(mocks.query).toHaveBeenCalledWith(
@@ -141,6 +169,15 @@ it('keeps a streaming Claude connection across turns', async () => {
         options: expect.objectContaining({ settingSources: ['user', 'project', 'local'] }),
       }),
     )
+    setMcpServers.mockResolvedValueOnce({
+      added: [],
+      removed: [],
+      errors: { dovo_task: 'connection failed' },
+    })
+    await expect(
+      claudeAdapter.run({ ...boundRun('third-run'), sessionId: 'session', prompt: 'third' }),
+    ).rejects.toThrow('dovo_task: connection failed')
+    expect(prompts).toEqual(['first', 'second'])
   } finally {
     await claudeAdapter.dispose?.()
     pressure.mockRestore()

@@ -1,5 +1,6 @@
 import { View } from 'react-native'
 import {
+  resolveScopedAgents,
   decode,
   taskHarnessSchema,
   defaultTaskHarness,
@@ -29,7 +30,7 @@ export function TaskLauncherControls({
 }) {
   const harness = selection.harness ?? defaultTaskHarness(selection.provider)
   const task = createLauncherTask(snapshot, repository, selection, '', 'launcher-selection')
-  const agents = snapshot.workspace.agents
+  const agents = resolveScopedAgents(snapshot.defaults, repository, snapshot.workspace.agents)
   const agent = { ...harness, id: selection.agentId ?? 'launcher', name: selection.name }
   return (
     <View style={{ gap: 12 }}>

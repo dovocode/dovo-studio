@@ -121,7 +121,11 @@ it('applies model and reasoning changes to a saved agent without replacing its c
     'task',
   )
   expect(task.agentId).toBe(saved.id)
-  expect(task.harness).toBeUndefined()
+  expect(task.harness).toMatchObject({
+    instructions: saved.instructions,
+    executablePath: saved.executablePath,
+    env: saved.env,
+  })
   expect(task.agentOverrides).toMatchObject({
     model: 'chosen',
     reasoning: 'high',

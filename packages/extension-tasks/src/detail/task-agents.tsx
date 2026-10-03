@@ -3,8 +3,10 @@ import { useEffect } from 'react'
 import { subagentElapsed, subagentMetadata } from '@dovo/studio-core'
 import { type Task, useWorkspace } from '@dovo/studio-core'
 import { Bot, ChevronRight } from 'lucide-react'
-import { cn } from '@dovo/studio-ui'
+import { useStudioHost } from '@dovo/studio-core'
+import { Button, cn } from '@dovo/studio-ui'
 export function TaskAgents({ task }: { task: Task }) {
+  const host = useStudioHost()
   const { connected } = useWorkspace()
   const [now, setNow] = useApplicationState(Date.now)
   const agents = task.subagents ?? []
@@ -17,6 +19,17 @@ export function TaskAgents({ task }: { task: Task }) {
   }, [working])
   return (
     <section className="flex min-h-full flex-col" aria-label="Subagents">
+      {task.delegation && (
+        <Button
+          variant="ghost"
+          className="mx-4 mt-3"
+          onClick={() =>
+            host.navigate({ viewId: 'tasks', entityId: task.delegation?.parentTaskId })
+          }
+        >
+          Back to parent thread
+        </Button>
+      )}
       <div className="px-4 py-4 text-[0.625rem] uppercase tracking-wider text-muted-foreground">
         Spawned agents
       </div>
@@ -81,7 +94,18 @@ export function TaskAgents({ task }: { task: Task }) {
               <div className="ml-3.5 mt-3 space-y-2 break-words text-xs text-muted-foreground">
                 {agent.prompt && <p className="whitespace-pre-wrap">{agent.prompt}</p>}
                 {agent.activity && <p className="whitespace-pre-wrap">{agent.activity}</p>}
-                <p className="text-[0.625rem]">{agent.id}</p>
+                {agent.taskId && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => host.navigate({ viewId: 'tasks', entityId: agent.taskId })}
+                  >
+                    Open child thread · {agent.provider}
+                  </Button>
+                )}
+                <p className="text-[0.625rem]">
+                  {agent.source === 'dovo' ? 'Dovo child agent' : agent.id}
+                </p>
               </div>
             </details>
           )

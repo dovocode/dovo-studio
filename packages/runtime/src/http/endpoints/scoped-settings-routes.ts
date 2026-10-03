@@ -11,6 +11,10 @@ import {
   initializeScopedSettings,
   settingsAtScope,
   resolveScopedSettings,
+  scopedAgentEntries,
+  decodeResult,
+  taskHarnessSchema,
+  agentPresetSchema,
   sharedProjectKey,
   mergeSharedSettings,
   type SharedSettingsEntry,
@@ -23,6 +27,15 @@ import { body } from '../support/body.js'
 import { serviceResult } from '../support/effect.js'
 
 function validatePrompts(value: ScopedSettingsValue) {
+  const agents = value.agents ?? []
+  if (
+    new Set(agents.map((agent) => agent.id)).size !== agents.length ||
+    new Set(agents.map((agent) => agent.name.trim().toLowerCase())).size !== agents.length
+  )
+    throw new HttpError(400, 'Agent configurations require unique IDs and names in each scope.')
+  for (const agent of agents) {
+    validateDefaultHarness(agent)
+  }
   const prompts = value.prompts ?? []
   if (
     prompts.some((prompt) => !/^[\w.-]+$/.test(prompt.name) || !prompt.text.trim()) ||
@@ -34,6 +47,14 @@ function validatePrompts(value: ScopedSettingsValue) {
     )
 }
 function prepareShared(value: ScopedSettingsValue): ScopedSettingsValue {
+  if (value.agents)
+    value = {
+      ...value,
+      agents: value.agents.map((agent) => ({
+        ...agent,
+        resources: prepareShared({ resources: agent.resources }).resources,
+      })),
+    }
   if (!value.resources) return value
   return {
     ...value,
@@ -53,6 +74,11 @@ function prepareShared(value: ScopedSettingsValue): ScopedSettingsValue {
 }
 function validateShared(value: ScopedSettingsValue) {
   validatePrompts(value)
+  for (const agent of value.agents ?? []) {
+    if (agent.acpInstallationId)
+      throw new HttpError(400, 'Installed ACP agents belong to one environment.')
+    validateShared({ resources: agent.resources })
+  }
   if (value.resources?.skills.some((skill) => skill.sourcePath))
     throw new HttpError(400, 'Shared skills cannot contain environment-specific file paths.')
   if (
@@ -131,23 +157,86 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
     if (repository)
       repository = s.store.get().repositories.find((repo) => repo.id === repository?.id)
     const base = { ...current, scopedSettings: scoped }
-    const value = settingsAtScope(base, repository, input.scope)
+    const legacy = s.store.get().agents
+    const stored = settingsAtScope(base, repository, input.scope)
+    const includeAgents = input.includeAgents === true
+    const legacyAtScope =
+      input.scope === 'environment' && stored.agents === undefined
+        ? legacy.filter((agent) => !agent.globalPreset || agent.serverOverride)
+        : input.scope === 'global' && stored.agents === undefined
+          ? legacy.flatMap((agent) => (agent.globalPreset ? [agent.globalPreset] : []))
+          : []
+    const value = includeAgents
+      ? {
+          ...stored,
+          agents: [
+            ...new Map(
+              [...legacyAtScope, ...(stored.agents ?? [])].map((agent) => [
+                agent.id,
+                decode(agentPresetSchema, agent),
+              ]),
+            ).values(),
+          ],
+        }
+      : stored
+    const inherited = {
+      ...resolveScopedSettings(base, repository, input.scope),
+      ...(includeAgents
+        ? {
+            agents: scopedAgentEntries(base, repository, legacy, input.scope).map(
+              (entry) => entry.agent,
+            ),
+          }
+        : {}),
+    }
     if (path.endsWith('/save')) {
       const save = decode(scopedSettingsSaveSchema, raw)
       if (input.scope === 'project' && save.projectKey !== sharedProjectKey(repository))
         throw new HttpError(409, 'The project remote changed. Reload settings before saving.')
-      if (!isDeepStrictEqual(JSON.parse(JSON.stringify(s.store.publicValue(value))), save.before))
+      const comparable = (document: ScopedSettingsValue) =>
+        includeAgents ? { agents: document.agents ?? [] } : { ...document, agents: undefined }
+      if (
+        !isDeepStrictEqual(
+          JSON.parse(JSON.stringify(s.store.publicValue(comparable(value)))),
+          JSON.parse(JSON.stringify(comparable(save.before))),
+        )
+      )
         throw new HttpError(409, 'Settings changed on another device. Reload before saving.')
       let after = decode(scopedSettingsSaveSchema.fields.after, s.store.restoreSecrets(save.after))
+      after = includeAgents
+        ? { ...stored, agents: after.agents ?? [] }
+        : { ...after, agents: stored.agents }
       validatePrompts(after)
       if (input.scope === 'global' || input.scope === 'project') {
         after = prepareShared(after)
         validateShared(after)
       }
+      for (const agent of after.agents ?? []) if (agent.acpInstallationId) s.agents.launch(agent)
       if (after.taskDefaults?.harness) {
         validateDefaultHarness(after.taskDefaults.harness)
         if (after.taskDefaults.harness.acpInstallationId)
           s.agents.launch(after.taskDefaults.harness)
+      }
+      if (includeAgents) {
+        // Freeze configurations before removal or override, keeping established sessions intact.
+        s.store.update((workspace) => ({
+          ...workspace,
+          tasks: workspace.tasks.map((task) => {
+            if (
+              task.harness ||
+              !task.agentId ||
+              (repository && task.repositoryId !== repository.id)
+            )
+              return task
+            const agent = s.store
+              .agentsFor(task.repositoryId)
+              .find((entry) => entry.id === task.agentId)
+            const harness = agent && decodeResult(taskHarnessSchema, agent)
+            return harness?.success
+              ? { ...task, agentName: agent?.name, agentIcon: agent?.icon, harness: harness.data }
+              : task
+          }),
+        }))
       }
       if (input.scope === 'environment-project') {
         if (!repository) throw new HttpError(404, 'Choose a project')
@@ -161,6 +250,7 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
                   taskDefaults: after.taskDefaults,
                   resources: after.resources,
                   prompts: after.prompts,
+                  agents: after.agents,
                 }
               : repo,
           ),
@@ -170,6 +260,7 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
           taskDefaults: after.taskDefaults,
           resources: after.resources,
           prompts: after.prompts,
+          agents: after.agents,
         }
       } else if (input.scope === 'environment') {
         scoped.environment = after
@@ -186,13 +277,13 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
       }
       return s.store.publicValue({
         value: after,
-        inherited: resolveScopedSettings(base, repository, input.scope),
+        inherited,
         projectKey: sharedProjectKey(repository),
       })
     }
     return s.store.publicValue({
       value,
-      inherited: resolveScopedSettings(base, repository, input.scope),
+      inherited,
       projectKey: sharedProjectKey(repository),
     })
   })

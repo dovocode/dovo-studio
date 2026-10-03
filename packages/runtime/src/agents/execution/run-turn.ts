@@ -183,6 +183,7 @@ export class TaskTurnRunner {
               this.taskTools.host,
               configured.permission === 'read-only',
               artifactsEnabled,
+              task.activeRunId,
             ),
           )
         }
@@ -579,6 +580,9 @@ ${
                   instructions: [
                     agent.instructions,
                     browserCdpInstructions(id),
+                    this.taskTools
+                      ? 'Dovo supports child agents across harnesses with dovo_task subagent_spawn. Use subagent_list to find named configurations. Delegate only when the user’s instructions allow it. Include the child’s goal, relevant context and constraints in its prompt; prefer read-only for investigation. Children share this checkout, so avoid overlapping writes. Use a stable key for each child. Call subagent_wait/read and incorporate the returned answer in this thread before finishing. subagent_cancel stops a child; ending this parent turn stops unfinished children.'
+                      : '',
                     this.taskTools && artifactsEnabled && configured.permission !== 'read-only'
                       ? 'Dovo Artifacts is enabled. Use dovo_task artifact_create for persistent documents, code, SVG diagrams and self-contained interactive HTML the user can view inside Dovo. Use artifact_list/read to find existing artifacts and artifact_update to save a new revision. Artifact HTML has no external network access; embed assets and scripts.'
                       : '',

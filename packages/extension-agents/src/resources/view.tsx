@@ -59,7 +59,7 @@ function ComputerResources({
           Add a project or custom agent to manage its resources.
         </p>
       )}
-      {scopes.map(({ item, collection, label, scope, repository }) => {
+      {scopes.map(({ item, collection, label, scope, repository, namedAgentId }) => {
         const resources = decode(resourceSettingsSchema, item.resources ?? {})
         return (
           <details
@@ -85,6 +85,7 @@ function ComputerResources({
               collection={collection}
               id={item.id}
               settingsScope={scope}
+              namedAgentId={namedAgentId}
               repositoryId={repository?.id}
             />
           </details>
@@ -98,7 +99,9 @@ function ResourceScopeView({
   id,
   settingsScope,
   repositoryId,
+  namedAgentId,
 }: {
+  namedAgentId?: string
   settingsScope?: SettingsScope
   repositoryId?: string
   collection: 'agents' | 'repositories' | 'settings'
@@ -140,7 +143,9 @@ function ResourceScopeView({
       ? {
           id,
           name: repository?.name ?? settingsScopeLabels[settingsScope ?? 'environment'],
-          resources: scopedValue?.resources,
+          resources: namedAgentId
+            ? scopedValue?.agents?.find((agent) => agent.id === namedAgentId)?.resources
+            : scopedValue?.resources,
         }
       : workspace[collection].find((item) => item.id === id)
   const scope = item
@@ -169,9 +174,17 @@ function ResourceScopeView({
           {
             scope: settingsScope,
             repositoryId,
+            includeAgents: !!namedAgentId,
             projectKey: sharedProjectKey(repository),
             before: scopedValue ?? {},
-            after: { ...scopedValue, resources },
+            after: namedAgentId
+              ? {
+                  ...scopedValue,
+                  agents: scopedValue?.agents?.map((agent) =>
+                    agent.id === namedAgentId ? { ...agent, resources } : agent,
+                  ),
+                }
+              : { ...scopedValue, resources },
           },
           scopedSettingsResultSchema,
         )

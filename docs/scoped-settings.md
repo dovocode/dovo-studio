@@ -8,12 +8,12 @@ inherit in this order:
 3. **Project** — shared for checkouts with the same canonical Git remote identity.
 4. **Environment + project** — overrides for one checkout on one environment.
 
-The **Task defaults** and **MCP & skills** settings pages share a project/environment target header
-on desktop and mobile. Choose **All projects** or a project, then **Shared across environments** or
-one computer. These two choices select one of the four levels above; shared settings are synced
-defaults, not a bulk edit of each computer’s overrides. The target stays selected when switching
-between these pages. A project missing from the selected computer cannot be edited until another
-target is chosen. Local folders are offered only with a specific environment.
+The **Task defaults**, **Agents** and **MCP & skills** settings pages share a project/environment
+target header on desktop and mobile. Choose **All projects** or a project, then **Shared across
+environments** or one computer. These two choices select one of the four levels above; shared
+settings are synced defaults, not a bulk edit of each computer’s overrides. The target stays
+selected when switching between these pages. A project missing from the selected computer cannot be
+edited until another target is chosen. Local folders are offered only with a specific environment.
 
 Task defaults show **Inheritance & overrides**, with the effective source for each setting and an
 individual reset control. Resets are saved using **Save defaults**. Unset task fields inherit; an
@@ -57,3 +57,25 @@ supporting files before using the skill, preserving edited instruction text. Cac
 used offline after installation. Arbitrary local skill folders remain environment-specific; choose
 **Use instructions only** to explicitly share a copy without supporting files. Shared settings never
 copy another computer’s skill filesystem path.
+
+## Named agent configurations
+
+The **Agents** screen uses the same target header as task defaults and project tools. Reusable
+configurations inherit by stable ID through Global → Environment → Project → Environment + project.
+Choose **Override** on an inherited row to customize it at the selected target, or **Reset** to
+remove the override. Duplicate creates a separate ID. Removing a configuration preserves copies
+already used by threads. Existing environment configurations and older global presets remain
+available until their corresponding scope is edited; an explicit empty configuration list prevents
+legacy entries from returning.
+
+Each configuration includes its harness, model, access, instructions, connection and optional tools.
+MCP & skills lists configurations owned by the selected scope alongside its project tools. Shared
+configurations follow the same credential and local-file restrictions as shared project tools;
+installed ACP configurations require an environment target. Launchers on both platforms resolve the
+selected project's effective configurations and copy the chosen launch settings into the thread.
+Favorites and provider checks belong to the connected environment. Installations, titles and
+dictation are shown when editing that environment for all projects.
+
+Named configurations and default/tool settings compare and save independently, preserving concurrent
+changes to the other category. Conflicting edits to configurations still require a reload. Older
+runtimes display an update notice instead of accepting unsupported named configuration writes.

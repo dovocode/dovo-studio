@@ -70,6 +70,7 @@ export function AutomationDetail({
   const inspector = node && (
     <NodeInspector
       node={node}
+      defaults={snapshot?.defaults}
       workspace={workspace}
       onChange={(data) =>
         update((current) => ({

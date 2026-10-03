@@ -1,5 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { decode } from '@dovo/protocol'
+import { decode, resolveScopedAgents } from '@dovo/protocol'
 import { HarnessFields } from '../harness-fields'
 import {
   defaultTaskHarness,
@@ -49,9 +49,14 @@ export function TaskSettings({
   ) => Promise<void>
 }) {
   const { workspace, setWorkspace, request, connected, flush, snapshot } = useWorkspace()
+  const agents = resolveScopedAgents(
+    snapshot?.defaults,
+    workspace.repositories.find((repo) => repo.id === task.repositoryId),
+    workspace.agents,
+  )
   const installations = snapshot?.acpInstallations ?? []
-  const providerLock = lockedTaskProvider(task, workspace.agents)
-  const installationLock = lockedAcpInstallationId(task, workspace.agents)
+  const providerLock = lockedTaskProvider(task, agents)
+  const installationLock = lockedAcpInstallationId(task, agents)
   const [laterText, setLaterText] = useState('')
   const [laterAt, setLaterAt] = useState('')
   const [timingError, setTimingError] = useState('')
@@ -77,7 +82,7 @@ export function TaskSettings({
     [harness, setHarness] = useApplicationState(task.harness ?? null),
     [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
-  const base = workspace.agents.find((a) => a.id === agentId)
+  const base = agents.find((a) => a.id === agentId)
   const agent = resolveTaskAgent(
     {
       ...task,
@@ -85,7 +90,7 @@ export function TaskSettings({
       harness,
       agentOverrides: overrides,
     },
-    workspace.agents,
+    agents,
   )
   const load = useCallback(
     (input: AgentDiscovery) => request('/api/agents/models', input, modelCatalogSchema),
@@ -103,7 +108,7 @@ export function TaskSettings({
           agentOverrides: overrides,
           harness,
         }
-        const provider = lockedTaskProvider(task, workspace.agents)
+        const provider = lockedTaskProvider(task, agents)
         if (
           provider &&
           resolveTaskAgent(
@@ -111,7 +116,7 @@ export function TaskSettings({
               ...task,
               ...changes,
             },
-            workspace.agents,
+            agents,
           )?.provider !== provider
         )
           throw new Error(
@@ -234,7 +239,7 @@ export function TaskSettings({
                   })
                   setAgentId('')
                 } else {
-                  const selectedAgent = workspace.agents.find((agent) => agent.id === selection)
+                  const selectedAgent = agents.find((agent) => agent.id === selection)
                   if (providerLock && selectedAgent?.provider !== providerLock) return
                   if (
                     installationLock !== undefined &&
@@ -271,7 +276,7 @@ export function TaskSettings({
                     {installation.name} · ACP
                   </option>
                 ))}
-              {workspace.agents
+              {agents
                 .filter(
                   (a) =>
                     (!providerLock || a.provider === providerLock) &&

@@ -1,3 +1,5 @@
+import { useNavigation } from '../../shell/navigation'
+import { Action } from '../../ui/controls/action'
 import { useForegroundInterval } from '../../runtime/state/app-active'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { ScrollView, View, Pressable } from 'react-native'
@@ -6,7 +8,8 @@ import { Text } from '../../ui/content/text'
 import { colors, styles } from '../../ui/theme'
 import { useRuntime } from '../../runtime/connection/provider'
 export function TaskAgents({ task }: { task: Task }) {
-  const { connected } = useRuntime()
+  const { connected, profile } = useRuntime()
+  const { navigate } = useNavigation()
   const [now, setNow] = useApplicationState(Date.now)
   const [expanded, setExpanded] = useApplicationState<string | null>(null)
   const agents = task.subagents ?? []
@@ -25,6 +28,13 @@ export function TaskAgents({ task }: { task: Task }) {
           gap: 4,
         }}
       >
+        {task.delegation && (
+          <Action
+            secondary
+            label="Back to parent thread"
+            onPress={() => navigate('tasks', task.delegation?.parentTaskId, profile?.id)}
+          />
+        )}
         <Text
           style={[
             styles.muted,
@@ -151,6 +161,13 @@ export function TaskAgents({ task }: { task: Task }) {
                       {agent.activity}
                     </Text>
                   )}
+                  {agent.taskId && (
+                    <Action
+                      secondary
+                      label={`Open child thread · ${agent.provider}`}
+                      onPress={() => navigate('tasks', agent.taskId, profile?.id)}
+                    />
+                  )}
                   <Text
                     selectable
                     style={[
@@ -160,7 +177,7 @@ export function TaskAgents({ task }: { task: Task }) {
                       },
                     ]}
                   >
-                    {agent.id}
+                    {agent.source === 'dovo' ? 'Dovo child agent' : agent.id}
                   </Text>
                 </View>
               )}

@@ -39,7 +39,8 @@
     "test:mobile-thread-rendering:browser": "node scripts/check-mobile-thread-rendering.mjs",
     "test:conversation-history:browser": "node scripts/check-conversation-history-browser.mjs",
     "test:mobile-energy:browser": "node scripts/check-mobile-energy-browser.mjs",
-    "test:settings-target:browser": "node scripts/check-settings-target-browser.mjs"
+    "test:settings-target:browser": "node scripts/check-settings-target-browser.mjs",
+    "test:scoped-agents:browser": "node scripts/check-scoped-agents-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

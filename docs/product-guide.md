@@ -531,13 +531,13 @@ computers; offline destinations are disabled. Links are persistent, deduplicated
 per thread. Linking does not change the checkout, draft or launch settings, and a foreign-project
 link does not become the thread’s primary merge/check status.
 
-In **Settings → Agents**, save a reusable configuration for **This server** or create a **Global
-agent preset**. Global presets belong to the app that created them and apply to its connected
-servers, including servers paired later. Offline servers receive changes on reconnect. Editing an
-inherited configuration creates a complete server override; **Use global preset on this server**
-restores the latest baseline. Removing a global preset leaves existing server configurations
-available as independent configurations. Installed ACP agents are server-specific because their
-installation IDs belong to that host.
+In **Settings → Agents**, select the project and environment target for both the default agent and
+reusable named configurations. They inherit through **Global → Environment → Project → Environment +
+project**. Shared project configurations follow the canonical Git remote identity. **Override**
+copies an inherited configuration into the selected scope; **Reset** reveals the earlier level.
+**Duplicate** creates an independent configuration. Threads keep copied launch settings when a
+configuration changes or is removed. Installed ACP agents require an environment-specific scope. See
+[scoped settings](scoped-settings.md) and [cross-harness child agents](cross-harness-subagents.md).
 
 Agent configurations support executable paths, launch arguments (one argument per line), and literal
 environment variables (`NAME=value`, one per line). These values are readable configuration; keep
@@ -553,7 +553,8 @@ Global presets and preferences require an updated server; unsupported servers re
 
 Tasks, PRs, Issues, Pipelines, Automations and Settings combine all saved computers by default. Rows
 show their host; opening one selects that computer automatically. Project filters do not switch the
-runtime. Agents, accounts and resources stay grouped by host; editing them does not switch the open
+runtime. Agents and resources use a shared project/environment target with four inheritance levels;
+accounts and installations remain environment-specific. Editing settings does not switch the open
 workspace. Device commands and activity open from each computer’s settings. Choose the destination
 inside creation or connection setup. See
 [unified collections](design/source-navigation.md#unified-collections).

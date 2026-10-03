@@ -65,7 +65,7 @@ function TaskRowView({
 }) {
   const { workspace, snapshot } = source
   const agent = resolveTaskAgent(task, workspace.agents)
-  const customIcon = !task.harness && task.agentId && agent ? (agent.icon ?? 'bot') : undefined
+  const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const repository = workspace.repositories.find((r) => r.id === task.repositoryId)
   const latest = task.turns?.at(-1)
   const provider =

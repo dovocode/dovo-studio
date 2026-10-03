@@ -1,3 +1,4 @@
+import { subagentSpawnSchema, subagentScopeSchema, subagentReadSchema } from '@dovo/protocol'
 import { conversationPage } from '@dovo/protocol'
 import { compactActivityEvents } from '@dovo/protocol'
 import { searchTaskMessages } from '@dovo/protocol'
@@ -145,6 +146,37 @@ export function route(
         )
       }
       const device = s.devices.authenticate(token)
+      if (method === 'POST' && path.startsWith('/api/subagents/')) {
+        if (!device.owner)
+          throw new HttpError(403, 'Child agents are controlled by the parent agent')
+        const raw = yield* serviceResult(body(request))
+        if (path === '/api/subagents/spawn')
+          return yield* serviceResult(s.tasks.subagentSpawn(decode(subagentSpawnSchema, raw)))
+        if (path === '/api/subagents/list') {
+          const { taskId } = decode(subagentScopeSchema, raw)
+          const parent = s.store.task(taskId)
+          return yield* serviceResult({
+            agents: s.tasks.subagentList(taskId),
+            configurations: s.store
+              .agentsFor(parent.repositoryId)
+              .map(({ id, name, provider, model, permission }) => ({
+                id,
+                name,
+                provider,
+                model,
+                permission,
+              })),
+          })
+        }
+        const input = decode(subagentReadSchema, raw)
+        if (path === '/api/subagents/read')
+          return yield* serviceResult(s.tasks.subagentResult(input.taskId, input.id))
+        if (path === '/api/subagents/wait')
+          return yield* serviceResult(s.tasks.subagentWait(input.taskId, input.id, input.timeoutMs))
+        if (path === '/api/subagents/cancel')
+          return yield* serviceResult(s.tasks.subagentCancel(input.taskId, input.id))
+        throw new HttpError(404, 'Unknown child agent action')
+      }
       if (method === 'POST' && path.startsWith('/api/artifacts/')) {
         if (!s.preferences.get().enableArtifacts)
           throw new HttpError(403, 'Enable Dovo Artifacts in this computer’s settings first')

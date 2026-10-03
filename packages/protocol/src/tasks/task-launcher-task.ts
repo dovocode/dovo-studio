@@ -46,8 +46,9 @@ export function createLauncherTask(
               : {}),
           }
         : undefined,
+    agentName: agent.agentId ? agent.name : undefined,
     harness: agent.agentId
-      ? undefined
+      ? agent.harness
       : (agent.harness ?? {
           ...base,
           model: agent.model ?? '',

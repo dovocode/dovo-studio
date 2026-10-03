@@ -189,6 +189,7 @@ type WarmClaude = {
   cwd: string
   command: string
   config: string
+  mcpBinding: string
   taskId: string
   consumer: Promise<void>
   closed: boolean
@@ -220,7 +221,11 @@ export function createClaudeAdapter(): AgentAdapter {
   }
   const runWarm = async (run: AgentRun, command: string) => {
     if (!run.taskId) throw new Error('Warm Claude turn needs a task')
-    const config = JSON.stringify([run.agent, run.tools])
+    const config = JSON.stringify([run.agent, run.tools], (key, value: unknown) =>
+      key === 'DOVO_TASK_RUN_ID' ? undefined : value,
+    )
+    const mcpServers = claudeMcpServers(run.agent.resources?.mcpServers ?? [])
+    const mcpBinding = JSON.stringify(mcpServers)
     const previous = idle.get(run.taskId)
     idle.delete(run.taskId)
     const reusable =
@@ -252,6 +257,7 @@ export function createClaudeAdapter(): AgentAdapter {
         cwd: run.cwd,
         command,
         config,
+        mcpBinding,
         taskId: run.taskId,
         sessionId: run.sessionId,
         consumer: Promise.resolve(),
@@ -305,7 +311,6 @@ export function createClaudeAdapter(): AgentAdapter {
     run.signal.addEventListener('abort', abort, { once: true })
     try {
       run.signal.throwIfAborted()
-      session.input.push(claudeMessage(run))
       const accountInfo =
         typeof session.stream.accountInfo === 'function'
           ? session.stream.accountInfo().catch((error) => {
@@ -319,6 +324,20 @@ export function createClaudeAdapter(): AgentAdapter {
       // Observe both promises immediately, so a failed turn cannot become an unhandled rejection while metadata is loading.
       await Promise.all([
         completion,
+        (async () => {
+          // Rebind attempt ownership without restarting the provider or removing host settings.
+          if (session.mcpBinding !== mcpBinding) {
+            const result = await session.stream.setMcpServers(mcpServers)
+            const errors = Object.entries(result.errors)
+            if (errors.length)
+              throw new Error(
+                `Claude MCP configuration failed: ${errors.map(([name, error]) => `${name}: ${error}`).join('; ')}`,
+              )
+            session.mcpBinding = mcpBinding
+          }
+          run.signal.throwIfAborted()
+          session.input.push(claudeMessage(run))
+        })(),
         accountInfo.then((account) => {
           const env = processEnvironment(run.agent.env)
           if (account && !env.ANTHROPIC_AUTH_TOKEN && !env.ANTHROPIC_API_KEY)
@@ -336,6 +355,7 @@ export function createClaudeAdapter(): AgentAdapter {
         }
       } else await close(session)
     } catch (error) {
+      session.turn = undefined
       await close(session)
       throw error
     } finally {

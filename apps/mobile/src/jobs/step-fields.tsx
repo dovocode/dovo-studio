@@ -1,6 +1,7 @@
 import { View } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
+  resolveScopedAgents,
   defaultTaskHarness,
   resolveTaskAgent,
   decode,
@@ -35,6 +36,11 @@ export function StepFields({
   onChange: (patch: Partial<AutomationData>) => void
 }) {
   const { snapshot } = useRuntime()
+  const agents = resolveScopedAgents(
+    snapshot?.defaults,
+    workspace.repositories.find((repo) => repo.id === data.repositoryId),
+    workspace.agents,
+  )
   const task: Task = {
     id: 'automation-step',
     title: data.label,
@@ -49,7 +55,7 @@ export function StepFields({
     harness: data.harness,
     agentOverrides: data.agentOverrides,
   }
-  const agent = resolveTaskAgent(task, workspace.agents) ?? {
+  const agent = resolveTaskAgent(task, agents) ?? {
     ...defaultTaskHarness('codex'),
     id: task.id,
     name: 'Codex',
@@ -92,18 +98,18 @@ export function StepFields({
             value={taskHarnessSelection(task)}
             items={taskHarnessChoices(
               task,
-              workspace.agents,
+              agents,
               installations,
               snapshot?.defaults?.modelPreferences,
             )}
             disabled={disabled}
             onChange={(selection) => {
-              const next = selectedTaskHarness(task, workspace.agents, selection, installations)
+              const next = selectedTaskHarness(task, agents, selection, installations)
               if (!next) return
               if (selection.startsWith('agent:'))
                 onChange({
                   agentId: selection.slice(6),
-                  harness: undefined,
+                  harness: decode(taskHarnessSchema, next),
                   agentOverrides: undefined,
                 })
               else changeAgent(next)

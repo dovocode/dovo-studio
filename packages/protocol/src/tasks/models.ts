@@ -1,3 +1,5 @@
+import { modelDisplayName } from './model-display-name.js'
+export { modelDisplayName } from './model-display-name.js'
 import { mutableStruct, mutableArray } from '../shared/schema.js'
 import { Schema } from 'effect'
 import { agentSchema } from '../workspace.js'
@@ -78,21 +80,6 @@ export const modelCatalogSchema = mutableStruct({
 })
 export type AgentDiscovery = Schema.Schema.Type<typeof agentDiscoverySchema>
 export type ModelCatalog = Schema.Schema.Type<typeof modelCatalogSchema>
-
-/** Catalogue names are authoritative; only prettify recognizable raw model identifiers. */
-export function modelDisplayName(id: string, name?: string) {
-  if (name && name !== id) return name
-  const claude = id.replace(
-    /(^|\/)claude-(opus|sonnet|haiku)-(\d+)-(\d+)(?:-\d{8})?$/i,
-    (_match, prefix: string, family: string, major: string, minor: string) =>
-      `${prefix}Claude ${family[0].toUpperCase()}${family.slice(1)} ${major}.${minor}`,
-  )
-  return claude.replace(
-    /(^|\/)gpt-(\d[^/]+)/i,
-    (_match, prefix: string, suffix: string) =>
-      `${prefix}GPT-${suffix.replace(/(^|-)([a-z])/g, (_match, separator: string, letter: string) => `${separator}${letter.toUpperCase()}`)}`,
-  )
-}
 
 export function modelCatalogChoices(models: ModelCatalog['models']) {
   const names = models.map((model) => modelDisplayName(model.id, model.name))

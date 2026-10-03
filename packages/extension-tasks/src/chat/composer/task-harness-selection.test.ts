@@ -51,7 +51,7 @@ const draft = createTask({
 it('switches freely between built-in providers and custom agents before sending input', () => {
   const selected = chooseTaskAgent(draft, agents, claude.id)
   expect(selected.agentId).toBe(claude.id)
-  expect(selected.harness).toBeNull()
+  expect(selected.harness).toEqual(decode(taskHarnessSchema, claude))
   expect(resolveTaskAgent(selected, agents)).toEqual(claude)
   const builtin = changeTaskHarness(selected, agents, defaultTaskHarness('opencode'), true)
   expect(builtin.agentId).toBe('')
@@ -82,7 +82,7 @@ it('keeps the saved custom agent identity and configuration when changing model 
     },
   })
   expect(changed.agentId).toBe(custom.id)
-  expect(changed.harness).toBeNull()
+  expect(changed.harness).toEqual(decode(taskHarnessSchema, custom))
   expect(resolveTaskAgent(changed, agents)).toEqual({
     ...custom,
     model: 'another-model',

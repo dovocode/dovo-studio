@@ -2,7 +2,14 @@ import { OwnedProcessShutdownError } from '../execution/stop-owned-child.js'
 import type { McpApps } from '../../mcp-apps/bridge.js'
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { decode } from '@dovo/protocol'
+import {
+  decode,
+  defaultTaskHarness,
+  resolveTaskAgent,
+  taskHarnessSchema,
+  delegatedAccess,
+  type SubagentSpawn,
+} from '@dovo/protocol'
 import type { Attachments } from '../../storage/attachments.js'
 import { TaskTurnRunner, FinalizationFailure, TurnStoreFailure } from '../execution/run-turn.js'
 import { TaskQueue } from './task-queue.js'
@@ -12,7 +19,7 @@ import type { Activity } from '../../storage/activity.js'
 import { pendingReviewComments, taskFeedbackSchema } from '@dovo/protocol'
 import type { Commands } from '../../storage/commands.js'
 import type { TaskCheckout } from '../../scm/tasks/task-checkout.js'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import type { Task } from '@dovo/protocol'
 import { WorkspaceStore } from '../../storage/workspace.js'
 import { GitService } from '../../scm/git/git.js'
@@ -381,6 +388,8 @@ export class Tasks {
       title: `Fork: ${task.title}`.slice(0, 200),
       repositoryId: task.repositoryId,
       agentId: task.agentId,
+      agentName: task.agentName,
+      agentIcon: task.agentIcon,
       ...(task.harness ? { harness: task.harness } : {}),
       ...(task.agentOverrides ? { agentOverrides: task.agentOverrides } : {}),
       execution: snapshot ? 'worktree' : task.execution,
@@ -420,6 +429,8 @@ export class Tasks {
         title: mode === 'fork' ? `Fork: ${source.title}`.slice(0, 200) : 'New thread',
         repositoryId: source.repositoryId,
         agentId: source.agentId,
+        agentName: source.agentName,
+        agentIcon: source.agentIcon,
         harness: source.harness,
         agentOverrides: source.agentOverrides,
         execution: 'worktree',
@@ -617,6 +628,16 @@ export class Tasks {
             const completion: Effect.Effect<void, RuntimeFailure> = Effect.void
             return Effect.succeed({ completion })
           }
+          if (
+            task.delegation &&
+            this.running.get(task.delegation.parentTaskId)?.id !== task.delegation.parentRunId
+          )
+            return Effect.fail(
+              new HttpError(
+                409,
+                'This child’s parent turn has ended. Start a new task to continue independently.',
+              ),
+            )
           if (task.example || task.archived || task.archivedAt)
             return Effect.fail(new HttpError(400, 'Restore this task before running it'))
           if (
@@ -689,7 +710,14 @@ export class Tasks {
                     }
                   : current,
               )
-            if ([...this.running.values()].some((other) => other !== run && other.cwd === cwd))
+            if (
+              [...this.running.entries()].some(
+                ([otherId, other]) =>
+                  other !== run &&
+                  other.cwd === cwd &&
+                  this.delegationRoot(otherId) !== this.delegationRoot(id),
+              )
+            )
               return yield* Effect.fail(
                 new HttpError(
                   409,
@@ -845,6 +873,7 @@ export class Tasks {
                 // Let already-delivered input enqueue before releasing this task's ownership.
                 yield* Effect.yieldNow()
                 if (this.running.get(id) === run) {
+                  this.stopChildren(id, run.id)
                   this.running.delete(id)
                   const interrupt = this.store.providerActions.state(`interrupt:${run.id}`)
                   if (interrupt && interrupt !== 'uncertain')
@@ -942,6 +971,7 @@ export class Tasks {
     if (!run) throw new HttpError(409, 'Task is not running')
     if (expectedRunId !== undefined && run.id !== expectedRunId)
       throw new HttpError(409, 'This run ended. Refresh before stopping the current run.')
+    this.stopChildren(id, run.id)
     this.steering.delete(id)
     this.store.updateTask(
       id,
@@ -963,6 +993,189 @@ export class Tasks {
     this.mcpApps?.cancelTask(id)
     run.controller.abort(new Error('Cancelled by user'))
   }
+  private delegationRoot(id: string) {
+    let task = this.store.task(id)
+    const visited = new Set<string>()
+    while (task.delegation) {
+      if (visited.has(task.id)) throw new HttpError(400, 'Invalid child agent ancestry')
+      visited.add(task.id)
+      task = this.store.task(task.delegation.parentTaskId)
+    }
+    return task.id
+  }
+  private stopChildren(parentTaskId: string, parentRunId: string) {
+    for (const child of this.store.get().tasks) {
+      if (
+        child.delegation?.parentTaskId !== parentTaskId ||
+        child.delegation.parentRunId !== parentRunId
+      )
+        continue
+      if (this.running.has(child.id)) this.cancel(child.id)
+      else if (child.status === 'draft')
+        this.store.updateTask(child.id, (task) => ({
+          ...task,
+          status: 'cancelled',
+          error: 'Parent turn ended before this child started',
+          restartRecovery: undefined,
+        }))
+    }
+  }
+  subagentList(taskId: string) {
+    this.store.task(taskId)
+    return this.store
+      .get()
+      .tasks.filter((child) => child.delegation?.parentTaskId === taskId)
+      .map((child) => this.subagentResult(taskId, child.id, false))
+  }
+  subagentResult(taskId: string, id: string, includeResult = true) {
+    const parent = this.store.task(taskId)
+    const child = this.store.task(id)
+    if (child.delegation?.parentTaskId !== taskId)
+      throw new HttpError(403, 'This child belongs to another thread')
+    const record = parent.subagents?.find((agent) => agent.taskId === id)
+    return {
+      id,
+      name: child.title,
+      provider: child.harness?.provider,
+      status: child.status,
+      running: this.running.has(child.id) || child.status === 'draft',
+      activity: child.activity,
+      error: child.error,
+      subagent: record,
+      result:
+        !includeResult || this.running.has(child.id) || child.status === 'draft'
+          ? undefined
+          : child.messages
+              .filter((message) => message.role === 'assistant')
+              .map((message) => message.text)
+              .join('\n\n'),
+    }
+  }
+  subagentCancel(taskId: string, id: string) {
+    this.subagentResult(taskId, id)
+    if (this.running.has(id)) this.cancel(id)
+    else if (this.store.task(id).status === 'draft')
+      this.store.updateTask(id, (task) => ({
+        ...task,
+        status: 'cancelled',
+        error: 'Cancelled by parent',
+      }))
+    return this.subagentResult(taskId, id)
+  }
+  async subagentWait(taskId: string, id: string, timeoutMs = 20000) {
+    const deadline = Date.now() + timeoutMs
+    let result = this.subagentResult(taskId, id)
+    while (result.running && Date.now() < deadline) {
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, Math.min(250, deadline - Date.now())),
+      )
+      result = this.subagentResult(taskId, id)
+    }
+    return result
+  }
+  subagentSpawn(input: SubagentSpawn) {
+    const parent = this.store.task(input.taskId)
+    const run = this.running.get(parent.id)
+    if (!run || run.controller.signal.aborted || parent.activeRunId !== run.id)
+      throw new HttpError(409, 'Children can only be launched during an active parent turn')
+    if (input.parentRunId && input.parentRunId !== run.id)
+      throw new HttpError(409, 'This parent turn has ended')
+    const fingerprint = createHash('sha256')
+      .update(
+        JSON.stringify([
+          input.name,
+          input.prompt,
+          input.agentId,
+          input.provider,
+          input.model,
+          input.reasoning,
+          input.permission,
+        ]),
+      )
+      .digest('hex')
+    const children = this.store
+      .get()
+      .tasks.filter(
+        (task) =>
+          task.delegation?.parentTaskId === parent.id && task.delegation.parentRunId === run.id,
+      )
+    const existing = children.find((task) => task.delegation?.key === input.key)
+    if (existing) {
+      if (existing.delegation?.fingerprint && existing.delegation.fingerprint !== fingerprint)
+        throw new HttpError(409, 'This child key was already used for a different request')
+      return this.subagentResult(parent.id, existing.id)
+    }
+    if (
+      children.filter((child) => this.running.has(child.id) || child.status === 'draft').length >= 4
+    )
+      throw new HttpError(
+        409,
+        'Wait for a child to finish before launching another (maximum four active children)',
+      )
+    let ancestor = parent
+    let depth = 0
+    while (ancestor.delegation) {
+      if (++depth >= 3) throw new HttpError(409, 'Maximum child agent nesting reached')
+      ancestor = this.store.task(ancestor.delegation.parentTaskId)
+    }
+    const agents = this.store.agentsFor(parent.repositoryId)
+    const parentAgent = resolveTaskAgent(parent, this.store.get().agents)
+    if (!parentAgent) throw new HttpError(400, 'Choose a parent agent before delegation')
+    const preset = input.agentId ? agents.find((agent) => agent.id === input.agentId) : undefined
+    if (input.agentId && !preset)
+      throw new HttpError(404, 'Named agent configuration not found in this project')
+    if (preset && input.provider && input.provider !== preset.provider)
+      throw new HttpError(400, 'The selected configuration uses another harness')
+    if (!preset && (!input.provider || input.provider === 'acp'))
+      throw new HttpError(400, 'Choose Codex, Claude, OpenCode, or a named ACP configuration')
+    const base = preset ?? defaultTaskHarness(input.provider ?? parentAgent.provider)
+    const harness = decode(taskHarnessSchema, {
+      ...base,
+      model: input.model ?? base.model,
+      reasoning: input.reasoning ?? base.reasoning,
+      permission: delegatedAccess(
+        parentAgent.permission,
+        input.permission ?? preset?.permission ?? parentAgent.permission,
+      ),
+    })
+    const child = this.create({
+      title: input.name,
+      repositoryId: parent.repositoryId,
+      execution: parent.execution,
+      agentId: preset?.id ?? '',
+      objective: input.prompt,
+      harness,
+      origin: 'dovo-subagent',
+    })
+    this.store.updateTask(child.id, (task) => ({
+      ...task,
+      setupCommand: undefined,
+      worktreeFromOrigin: undefined,
+      delegation: { parentTaskId: parent.id, parentRunId: run.id, key: input.key, fingerprint },
+    }))
+    // Register through the normal executor. Admission closes the race with parent cancellation.
+    void runClientEffect(
+      this.startEffect(
+        child.id,
+        false,
+        () =>
+          this.running.get(parent.id) === run &&
+          !run.controller.signal.aborted &&
+          this.store.task(child.id).status === 'draft',
+      ),
+    )
+      .then(({ completion }) => runClientEffect(completion))
+      .catch((error: unknown) => {
+        const current = this.store.task(child.id)
+        if (current.status === 'draft')
+          this.store.updateTask(child.id, (task) => ({
+            ...task,
+            status: 'failed',
+            error: errorMessage(error),
+          }))
+      })
+    return this.subagentResult(parent.id, child.id)
+  }
   /** Startup work is owned by this executor, so shutdown also drains its current task. */
   continueAfterRestart(
     enabled: () => boolean,
@@ -978,6 +1191,15 @@ export class Tasks {
           if (this.stopping) break
           const task = this.store.get().tasks.find((item) => item.id === id)
           if (!task?.restartRecovery) continue
+          if (task.delegation) {
+            this.store.updateTask(id, (current) => ({
+              ...current,
+              status: 'cancelled',
+              restartRecovery: undefined,
+              error: 'Parent turn was interrupted by runtime restart',
+            }))
+            continue
+          }
           if (
             !enabled() ||
             !task.restartRecovery.automatic ||
@@ -1108,6 +1330,6 @@ export class Tasks {
       ...w,
       tasks: [...w.tasks, task],
     }))
-    return task
+    return this.store.task(task.id)
   }
 }

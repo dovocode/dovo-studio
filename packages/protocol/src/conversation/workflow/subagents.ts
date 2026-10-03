@@ -1,6 +1,9 @@
+import { modelDisplayName } from '../../tasks/model-display-name.js'
 import { mutableStruct } from '../../shared/schema.js'
 import { Schema } from 'effect'
 export const subagentSchema = mutableStruct({
+  source: Schema.optional(Schema.Literal('dovo')),
+  taskId: Schema.optional(Schema.String),
   id: Schema.String,
   provider: Schema.String,
   name: Schema.String,
@@ -37,7 +40,7 @@ export function subagentElapsed(agent: Subagent, now: number) {
 }
 export function subagentMetadata(agent: Subagent) {
   return [
-    agent.model,
+    agent.model ? modelDisplayName(agent.model) : undefined,
     agent.reasoning,
     agent.tokens === undefined
       ? undefined
