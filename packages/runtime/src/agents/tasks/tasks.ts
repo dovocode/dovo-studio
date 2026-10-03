@@ -1282,7 +1282,7 @@ export class Tasks {
     if (preset && input.provider && input.provider !== preset.provider)
       throw new HttpError(400, 'The selected configuration uses another harness')
     if (!preset && (!input.provider || input.provider === 'acp'))
-      throw new HttpError(400, 'Choose Codex, Claude, OpenCode, or a named ACP configuration')
+      throw new HttpError(400, 'Choose a built-in harness or a named ACP configuration')
     const base = preset ?? defaultTaskHarness(input.provider ?? parentAgent.provider)
     const selectedCheckout = input.checkoutId
       ? parent.linkedCheckouts?.find((item) => item.id === input.checkoutId)

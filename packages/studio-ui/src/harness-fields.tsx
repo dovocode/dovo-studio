@@ -76,7 +76,10 @@ export function HarnessFields({
               (!lockedProvider || next === lockedProvider) &&
               (next !== 'acp' || lockedInstallationId === undefined || lockedInstallationId === '')
             )
-              onChange({ ...defaultTaskHarness(next), permission: value.permission })
+              onChange({
+                ...defaultTaskHarness(next),
+                permission: supportsAccess(next, value.permission) ? value.permission : 'ask',
+              })
           }}
         >
           {providerSchema.literals
@@ -197,7 +200,8 @@ export function HarnessFields({
               />
             </FormField>
           )}
-          {value.provider === 'acp' && !value.acpInstallationId && (
+          {(['hermes', 'copilot', 'grok', 'muse'].includes(value.provider) ||
+            (value.provider === 'acp' && !value.acpInstallationId)) && (
             <FormField label="Arguments (one per line)">
               <Textarea
                 aria-label="Harness arguments"

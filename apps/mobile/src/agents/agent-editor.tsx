@@ -74,6 +74,13 @@ export function AgentEditor({
         <AcpRegistry agent={draft} onChange={setDraft} showRegistry={false} />
       )}
       <ModelSettings key={draft.provider} agent={draft} onChange={setDraft} disabled={busy} />
+      {draft.provider === 'hermes' && (
+        <Text style={styles.muted}>
+          Uses Hermes on the runtime computer, including its memory and skills. Configure its
+          provider with hermes model. Select the Python executable from its environment to launch
+          the native Hermes gateway.
+        </Text>
+      )}
       <Field
         label={
           draft.provider === 'opencode'
@@ -92,10 +99,19 @@ export function AgentEditor({
           onChangeText={(executablePath) => setDraft({ ...draft, executablePath })}
         />
       )}
-      {(draft.provider === 'codex' || draft.provider === 'claude') && (
+      {(draft.provider === 'codex' ||
+        draft.provider === 'claude' ||
+        draft.provider === 'hermes' ||
+        draft.provider === 'copilot') && (
         <Field
           label={
-            draft.provider === 'codex' ? 'CODEX_HOME directory' : 'CLAUDE_CONFIG_DIR directory'
+            draft.provider === 'hermes'
+              ? 'HERMES_HOME directory'
+              : draft.provider === 'copilot'
+                ? 'COPILOT_HOME directory'
+                : draft.provider === 'codex'
+                  ? 'CODEX_HOME directory'
+                  : 'CLAUDE_CONFIG_DIR directory'
           }
           value={draft.configDirectory ?? ''}
           onChangeText={(configDirectory) => setDraft({ ...draft, configDirectory })}

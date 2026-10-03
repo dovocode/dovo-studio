@@ -1,3 +1,4 @@
+import { supportsUtilities } from '@dovo/protocol'
 import { configuredTaskHarness } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { RuntimeDefaults } from '../../storage/runtime-defaults.js'
@@ -75,6 +76,14 @@ export class TitleGeneration {
   }
   save(value: unknown) {
     const settings = decode(titleGenerationSettingsSchema, value)
+    const selected =
+      settings.harness?.provider ??
+      this.store.get().agents.find((agent) => agent.id === settings.agentId)?.provider
+    if (selected && !supportsUtilities(selected))
+      throw new HttpError(
+        400,
+        'Hermes, Grok and Muse cannot disable tools for titles or dictation. Choose another utility provider.',
+      )
     if (
       !settings.harness &&
       settings.agentId &&
@@ -402,6 +411,11 @@ export class TitleGeneration {
             this.store.get().agents,
             configuredTaskHarness(defaults),
           )
+          if (harness && !supportsUtilities(harness.provider))
+            throw new HttpError(
+              400,
+              'Choose a separate utility provider in Settings → Agents; Hermes, Grok and Muse cannot disable tools.',
+            )
           if (!harness)
             throw new HttpError(400, 'Choose a title-generation harness in Settings → Agents')
           const directory = yield* Effect.acquireRelease(

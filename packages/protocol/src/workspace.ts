@@ -10,7 +10,16 @@ import { attachmentSchema, MAX_ATTACHMENTS } from './shared/attachments.js'
 import { Schema } from 'effect'
 import { forgeBindingSchema, forgeProviderSchema } from './scm/forges/forges.js'
 export const executionSchema = Schema.Literal('main', 'worktree')
-export const providerSchema = Schema.Literal('codex', 'opencode', 'claude', 'acp')
+export const providerSchema = Schema.Literal(
+  'codex',
+  'opencode',
+  'claude',
+  'hermes',
+  'copilot',
+  'grok',
+  'muse',
+  'acp',
+)
 export const agentIconSchema = Schema.Literal(
   'bot',
   'code',

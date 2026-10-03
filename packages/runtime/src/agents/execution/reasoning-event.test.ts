@@ -11,6 +11,15 @@ function recorder(provider: ConstructorParameters<typeof ReasoningEvents>[0]) {
   const stream = new ReasoningEvents(provider, (row) => rows.push(row))
   return { stream, rows }
 }
+it('keeps Hermes thinking out of assistant prose', () => {
+  const { stream, rows } = recorder('hermes')
+  expect(stream.accept('reasoning.delta', { text: 'Checking files' })).toBe(true)
+  stream.accept('message.delta', { text: 'Reply' })
+  stream.finish()
+  expect(rows).toEqual([
+    { toolId: 'reasoning:hermes:1', status: 'completed', reasoning: { text: 'Checking files' } },
+  ])
+})
 it('coalesces Codex summary deltas and lifecycle snapshots without exposing raw reasoning', () => {
   vi.useFakeTimers()
   const { stream, rows } = recorder('codex')

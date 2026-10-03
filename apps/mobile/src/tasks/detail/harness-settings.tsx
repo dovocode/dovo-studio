@@ -137,9 +137,18 @@ export function HarnessSettings({
       </Text>
       {!custom &&
         (agent.provider === 'opencode' ||
+          ['hermes', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
           (agent.provider === 'acp' && !agent.acpInstallationId)) && (
           <Field
-            label={agent.provider === 'acp' ? 'ACP executable' : 'OpenCode server URL'}
+            label={
+              agent.provider === 'hermes'
+                ? 'Hermes Python executable'
+                : agent.provider === 'acp'
+                  ? 'ACP executable'
+                  : agent.provider === 'opencode'
+                    ? 'OpenCode server URL'
+                    : 'Executable'
+            }
             value={agent.endpoint}
             editable={!controlsDisabled && selectionAllowed}
             onChangeText={(endpoint) =>
@@ -150,20 +159,22 @@ export function HarnessSettings({
             }
           />
         )}
-      {!custom && agent.provider === 'acp' && !agent.acpInstallationId && (
-        <Field
-          label="ACP arguments (one per line)"
-          value={agent.args?.join('\n') ?? ''}
-          multiline
-          editable={!controlsDisabled && selectionAllowed}
-          onChangeText={(value) =>
-            setAgent({
-              ...agent,
-              args: value.split('\n').filter(Boolean),
-            })
-          }
-        />
-      )}
+      {!custom &&
+        (['hermes', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
+          (agent.provider === 'acp' && !agent.acpInstallationId)) && (
+          <Field
+            label="Arguments (one per line)"
+            value={agent.args?.join('\n') ?? ''}
+            multiline
+            editable={!controlsDisabled && selectionAllowed}
+            onChangeText={(value) =>
+              setAgent({
+                ...agent,
+                args: value.split('\n').filter(Boolean),
+              })
+            }
+          />
+        )}
       {task.status === 'running' ? (
         <Text style={styles.muted}>Stop the active turn to change model settings.</Text>
       ) : (

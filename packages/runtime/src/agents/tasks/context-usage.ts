@@ -58,10 +58,26 @@ export function contextUsage(
     }
     return undefined
   }
-  if (provider === 'acp' && name === 'usage_update') {
+  if ((provider === 'acp' || provider === 'grok') && name === 'usage_update') {
     const update = record(event.update)
     const used = count(update.used)
     const limit = count(update.size)
+    return used === undefined && limit === undefined ? undefined : { used, limit }
+  }
+  if (provider === 'hermes' && ['session.usage', 'message.complete'].includes(name)) {
+    const usage = record(event.usage),
+      used = count(usage.context_used),
+      limit = count(usage.context_max)
+    return used === undefined && limit === undefined ? undefined : { used, limit }
+  }
+  if (provider === 'copilot' && name === 'session.usage_info') {
+    const used = count(event.currentTokens),
+      limit = count(event.tokenLimit)
+    return used === undefined && limit === undefined ? undefined : { used, limit }
+  }
+  if (provider === 'muse' && name === 'session/contextUsage') {
+    const used = count(event.usedTokens),
+      limit = count(event.windowTokens)
     return used === undefined && limit === undefined ? undefined : { used, limit }
   }
   if (provider === 'opencode' && name === 'message.updated') {

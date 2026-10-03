@@ -197,6 +197,13 @@ export function AgentEditor({
               </p>
             )}
             <ModelSettings key={agent.provider} agent={agent} onChange={setAgent} />
+            {agent.provider === 'hermes' && (
+              <p className="text-xs text-muted-foreground">
+                Uses Hermes installed on this computer, including its memory and skills. Configure
+                its provider with <code>hermes model</code>. Select the Python executable from its
+                environment; Dovo launches the native Hermes gateway.
+              </p>
+            )}
             <FormField
               layout="settings"
               label={agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'}
@@ -220,13 +227,20 @@ export function AgentEditor({
                 />
               </FormField>
             )}
-            {(agent.provider === 'codex' || agent.provider === 'claude') && (
+            {(agent.provider === 'codex' ||
+              agent.provider === 'claude' ||
+              agent.provider === 'hermes' ||
+              agent.provider === 'copilot') && (
               <FormField
                 layout="settings"
                 label={
-                  agent.provider === 'codex'
-                    ? 'CODEX_HOME directory'
-                    : 'CLAUDE_CONFIG_DIR directory'
+                  agent.provider === 'hermes'
+                    ? 'HERMES_HOME directory'
+                    : agent.provider === 'copilot'
+                      ? 'COPILOT_HOME directory'
+                      : agent.provider === 'codex'
+                        ? 'CODEX_HOME directory'
+                        : 'CLAUDE_CONFIG_DIR directory'
                 }
               >
                 <Input

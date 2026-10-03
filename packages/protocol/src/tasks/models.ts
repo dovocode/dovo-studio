@@ -105,7 +105,7 @@ export function modelDiscoveryInput(agent: AgentDiscovery): AgentDiscovery {
     configDirectory: agent.configDirectory,
     args: agent.args ?? [],
     env: sorted(agent.env),
-    model: agent.provider === 'acp' ? agent.model : '',
+    model: ['acp', 'grok'].includes(agent.provider) ? agent.model : '',
     ...(agent.provider === 'acp'
       ? {
           acpInstallationId: agent.acpInstallationId,

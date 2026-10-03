@@ -71,7 +71,7 @@ export function ModelSettings({
     selected = selectedCatalogModel(catalog, agent.model),
     efforts =
       selected?.reasoning ??
-      (!agent.model || agent.provider === 'acp' ? catalog?.reasoning : []) ??
+      (!agent.model || ['acp', 'grok'].includes(agent.provider) ? catalog?.reasoning : []) ??
       []
   const changeModel = (model: string) =>
     onChange({

@@ -144,7 +144,15 @@ export function openAcpConnection(
     void close()
   }
   signal?.addEventListener('abort', abort, { once: true })
-  return { rpc, signal: active.signal, closed: active.closed, exited, close }
+  return {
+    rpc,
+    signal: active.signal,
+    closed: active.closed,
+    exited,
+    close,
+    authentication: launch.authentication,
+    apiKey: !!env.XAI_API_KEY,
+  }
 }
 
 export async function initializeAcp(
@@ -166,6 +174,22 @@ export async function initializeAcp(
     ])
     if (result.protocolVersion !== PROTOCOL_VERSION)
       throw new Error(`ACP protocol version ${result.protocolVersion} is unsupported`)
+    if (connection.authentication === 'grok') {
+      const methodsAvailable = new Set(result.authMethods?.map((method) => method.id))
+      const methodId =
+        connection.apiKey && methodsAvailable.has('xai.api_key')
+          ? 'xai.api_key'
+          : methodsAvailable.has('cached_token')
+            ? 'cached_token'
+            : undefined
+      if (!methodId)
+        throw new Error('Run grok login on this runtime, or set XAI_API_KEY on the agent')
+      await acpControl(
+        connection,
+        connection.rpc.request(methods.agent.authenticate, { methodId, _meta: { headless: true } }),
+        'Grok authentication',
+      )
+    }
     return result
   } finally {
     clearTimeout(timeout)

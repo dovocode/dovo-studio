@@ -18,6 +18,16 @@ export const harnessIconData: Record<TaskHarness['provider'], HarnessIconData> =
       { d: 'M180 60H60V240H180V60ZM240 300H0V0H240V300Z' },
     ],
   },
+  hermes: {
+    viewBox: '0 0 24 24',
+    paths: [{ d: 'M4 4h4v6h8V4h4v16h-4v-6H8v6H4V4Z' }],
+  },
+  copilot: {
+    viewBox: '0 0 24 24',
+    paths: [{ d: 'M4 3h16v18H4zM7 7v4h4V7zM13 7v4h4V7zM8 15h8v3H8z' }],
+  },
+  grok: { viewBox: '0 0 24 24', paths: [{ d: 'M4 20L18 4h3L7 20zM4 4h4l12 16h-4z' }] },
+  muse: { viewBox: '0 0 24 24', paths: [{ d: 'M3 21V3h3l6 9 6-9h3v18h-4V10l-5 8-5-8v11z' }] },
   acp: {
     viewBox: '0 0 160 61',
     paths: [

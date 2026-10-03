@@ -142,7 +142,60 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
       documentationUrl: 'https://github.com/modelcontextprotocol/typescript-sdk/releases',
     },
   ]
-  const configured = new Set<string>(['codex\0' + settings.codex])
+  result.push({
+    id: 'hermes',
+    name: 'Hermes gateway Python',
+    provider: 'hermes',
+    kind: 'executable',
+    inspect: executable(settings.hermes),
+    guidance:
+      'Update Hermes using its original installer (hermes update). Configure providers with hermes model; Dovo uses the native gateway; select the Python executable from the Hermes environment.',
+    documentationUrl:
+      'https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration/',
+  })
+  for (const [provider, name, command, url] of [
+    ['copilot', 'GitHub Copilot CLI', settings.copilot, 'https://github.com/github/copilot-sdk'],
+    ['grok', 'Grok Build CLI', settings.grok, 'https://docs.x.ai/build/overview'],
+    ['muse', 'Muse Code CLI', settings.muse, 'https://meta-models.github.io/muse-code-sdk/next/'],
+  ] as const)
+    result.push({
+      id: provider,
+      provider,
+      name,
+      kind: 'executable',
+      inspect: executable(command),
+      guidance: 'Update this CLI with its original installer. Authenticate on the runtime host.',
+      documentationUrl: url,
+    })
+  for (const [provider, packageName, name, url] of [
+    [
+      'copilot',
+      '@github/copilot-sdk',
+      'GitHub Copilot SDK',
+      'https://github.com/github/copilot-sdk',
+    ],
+    [
+      'muse',
+      '@muse-code/sdk',
+      'Muse Code SDK',
+      'https://meta-models.github.io/muse-code-sdk/next/',
+    ],
+  ] as const)
+    result.push({
+      id: `${provider}-sdk`,
+      provider,
+      packageName,
+      name,
+      kind: 'sdk',
+      inspect: sdk(packageName),
+      guidance: 'Update Dovo to receive its tested SDK. The agent CLI has its own release channel.',
+      documentationUrl: url,
+    })
+  const configured = new Set<string>(
+    (['codex', 'hermes', 'copilot', 'grok', 'muse'] as const).map(
+      (provider) => provider + '\0' + settings[provider],
+    ),
+  )
   for (const agent of [
     {
       provider: 'claude' as const,
@@ -160,7 +213,7 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
     configured.add(`${agent.provider}\0${command}`)
     result.push({
       id: `${agent.provider}-executable-${result.length}`,
-      name: `${agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : 'ACP'} executable (${command})`,
+      name: `${agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : agent.provider === 'hermes' ? 'Hermes gateway Python' : agent.provider === 'copilot' ? 'Copilot' : agent.provider === 'grok' ? 'Grok Build' : agent.provider === 'muse' ? 'Muse Code' : 'ACP'} executable (${command})`,
       provider: agent.provider,
       kind: 'executable',
       ...(agent.provider === 'claude'
@@ -174,15 +227,27 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
           : {}),
       inspect: executable(command),
       guidance:
-        agent.provider === 'claude'
-          ? 'Update this configured executable using its original installer; native Claude installations support claude update. Dovo’s bundled SDK is updated separately.'
-          : 'Update this configured executable using its original installer. Custom ACP agents do not share a release version.',
+        agent.provider === 'hermes'
+          ? 'Update this Hermes executable using its original installer (hermes update). Provider credentials use hermes model.'
+          : agent.provider === 'claude'
+            ? 'Update this configured executable using its original installer; native Claude installations support claude update. Dovo’s bundled SDK is updated separately.'
+            : agent.provider === 'acp'
+              ? 'Update this configured executable using its original installer. Custom ACP agents do not share a release version.'
+              : 'Update this configured executable with its original installer and authenticate on the runtime host. Dovo’s bundled SDK is updated separately.',
       documentationUrl:
-        agent.provider === 'claude'
-          ? 'https://code.claude.com/docs/en/setup'
-          : agent.provider === 'codex'
-            ? 'https://developers.openai.com/codex/cli/'
-            : 'https://agentclientprotocol.com/overview/agents',
+        agent.provider === 'hermes'
+          ? 'https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration/'
+          : agent.provider === 'claude'
+            ? 'https://code.claude.com/docs/en/setup'
+            : agent.provider === 'codex'
+              ? 'https://developers.openai.com/codex/cli/'
+              : agent.provider === 'copilot'
+                ? 'https://github.com/github/copilot-sdk'
+                : agent.provider === 'grok'
+                  ? 'https://docs.x.ai/build/overview'
+                  : agent.provider === 'muse'
+                    ? 'https://meta-models.github.io/muse-code-sdk/next/'
+                    : 'https://agentclientprotocol.com/overview/agents',
     })
   }
   const openCodeAgents = agents.filter((agent) => agent.provider === 'opencode')

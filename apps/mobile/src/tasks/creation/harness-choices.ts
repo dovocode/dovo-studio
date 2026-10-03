@@ -19,6 +19,10 @@ export const harnessNames: Record<Agent['provider'], string> = {
   codex: 'Codex',
   claude: 'Claude',
   opencode: 'OpenCode',
+  hermes: 'Hermes',
+  copilot: 'Copilot',
+  grok: 'Grok',
+  muse: 'Muse',
   acp: 'ACP',
 }
 export function taskHarnessChoices(
@@ -31,11 +35,13 @@ export function taskHarnessChoices(
   const provider = lockedTaskProvider(task, agents)
   const installationId = lockedAcpInstallationId(task, agents)
   return [
-    ...(['codex', 'claude', 'opencode', 'acp'] as const).map((provider) => ({
-      id: `harness:${provider}`,
-      name: harnessNames[provider],
-      provider,
-    })),
+    ...(['codex', 'claude', 'opencode', 'hermes', 'copilot', 'grok', 'muse', 'acp'] as const).map(
+      (provider) => ({
+        id: `harness:${provider}`,
+        name: harnessNames[provider],
+        provider,
+      }),
+    ),
     ...installations.map((installation) => ({
       id: acpHarnessChoiceId(installation.id),
       name: `${installation.name} · ACP`,

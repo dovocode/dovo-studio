@@ -30,3 +30,13 @@ it('recognizes tool lifecycle events from all four providers and ignores text de
   ).toMatchObject({ title: 'bash', status: 'completed' })
   expect(toolEvent('codex', 'item/agentMessage/delta', { delta: 'Hello' })).toBeUndefined()
 })
+
+it('records Hermes native tool lifecycle events', () => {
+  expect(
+    toolEvent('hermes', 'tool.complete', {
+      tool_id: 'hermes-tool',
+      name: 'Patch file',
+      result: {},
+    }),
+  ).toEqual({ toolId: 'hermes-tool', title: 'Patch file', status: 'completed' })
+})

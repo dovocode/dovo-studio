@@ -134,9 +134,59 @@ try {
   await page
     .getByRole('option', { name: 'Updated Host Model', exact: true })
     .waitFor({ state: 'attached' })
+  await page.evaluate(() => window.harness('hermes'))
+  await waitRequests(1)
+  const hermesRequest = await page.evaluate(() => window.requests[0].input)
+  if (hermesRequest.provider !== 'hermes')
+    throw new Error('Hermes model discovery used another provider')
+  await finish(0, catalog('openrouter:anthropic/claude-sonnet-4.6', 'Hermes Sonnet'))
+  await page
+    .getByRole('option', { name: 'Hermes Sonnet', exact: true })
+    .waitFor({ state: 'attached' })
+  await page
+    .getByRole('combobox', { name: 'Model', exact: true })
+    .selectOption('openrouter:anthropic/claude-sonnet-4.6')
+  await page.evaluate(() => window.online(false))
+  await page
+    .getByRole('option', { name: 'Hermes Sonnet', exact: true })
+    .waitFor({ state: 'attached' })
+  await page.evaluate(() => window.online(true))
+  for (const [provider, id, name] of [
+    ['copilot', 'gpt-example', 'Copilot Model'],
+    ['muse', JSON.stringify({ providerId: 'meta', modelId: 'example' }), 'Muse Model'],
+    ['grok', 'grok-example', 'Grok Model'],
+  ]) {
+    const before = await page.evaluate(() => window.requests.length)
+    await page.evaluate((provider) => window.harness(provider), provider)
+    await waitRequests(before + 1)
+    const request = await page.evaluate((index) => window.requests[index].input, before)
+    if (request.provider !== provider)
+      throw new Error(`${provider} discovered through another provider`)
+    await finish(before, {
+      models: [
+        { id, name, ...(provider === 'grok' ? {} : { reasoning: [{ id: 'high', name: 'High' }] }) },
+      ],
+      reasoning: [{ id: 'high', name: 'High' }],
+    })
+    await page.getByRole('option', { name, exact: true }).waitFor({ state: 'attached' })
+    await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption(id)
+    if (provider === 'grok') {
+      await waitRequests(before + 2)
+      const selected = await page.evaluate((index) => window.requests[index].input, before + 1)
+      if (selected.model !== id) throw new Error('Grok reasoning discovery lost the selected model')
+      await finish(before + 1, {
+        models: [{ id, name }],
+        reasoning: [{ id: 'high', name: 'High' }],
+      })
+    }
+    await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).selectOption('high')
+    await page.evaluate(() => window.online(false))
+    await page.getByRole('option', { name, exact: true }).waitFor({ state: 'attached' })
+    await page.evaluate(() => window.online(true))
+  }
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names and OpenCode v1/v2 labels passed.',
+    'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names, Hermes/Copilot/Grok/Muse model selection, reasoning and OpenCode v1/v2 labels passed.',
   )
 } finally {
   await browser.close()

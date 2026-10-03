@@ -27,6 +27,16 @@ export class AgentRegistry {
         'claude',
         () => import('../providers/claude/claude.js').then((m) => m.createClaudeAdapter()),
       ],
+      [
+        'hermes',
+        () => import('../providers/hermes/hermes.js').then((m) => m.createHermesAdapter()),
+      ],
+      [
+        'copilot',
+        () => import('../providers/copilot/copilot.js').then((m) => m.createCopilotAdapter()),
+      ],
+      ['grok', () => import('../providers/grok/grok.js').then((m) => m.createGrokAdapter())],
+      ['muse', () => import('../providers/muse/muse.js').then((m) => m.createMuseAdapter())],
       ['acp', () => import('../providers/acp/acp.js').then((m) => m.createAcpAdapter())],
     ] as const
     for (const [id, load] of providers)
@@ -51,13 +61,17 @@ export class AgentRegistry {
   configure<T extends AgentDiscovery>(agent: T): T {
     return {
       ...agent,
-      ...(agent.configDirectory && (agent.provider === 'codex' || agent.provider === 'claude')
+      ...(agent.configDirectory ? { configDirectory: expandHome(agent.configDirectory) } : {}),
+      ...(agent.configDirectory &&
+      (agent.provider === 'codex' || agent.provider === 'claude' || agent.provider === 'hermes')
         ? {
             env: {
               ...agent.env,
-              [agent.provider === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR']: expandHome(
-                agent.configDirectory,
-              ),
+              [agent.provider === 'hermes'
+                ? 'HERMES_HOME'
+                : agent.provider === 'codex'
+                  ? 'CODEX_HOME'
+                  : 'CLAUDE_CONFIG_DIR']: expandHome(agent.configDirectory),
             },
           }
         : {}),

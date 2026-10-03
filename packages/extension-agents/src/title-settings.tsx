@@ -1,3 +1,4 @@
+import { supportsUtilities } from '@dovo/protocol'
 import { configuredTaskHarness } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -125,7 +126,7 @@ export function TitleSettings() {
                     }}
                   >
                     <option value="">Default provider · separate model</option>
-                    {providerSchema.literals.map((provider) => (
+                    {providerSchema.literals.filter(supportsUtilities).map((provider) => (
                       <option key={provider} value={`harness:${provider}`}>
                         {providers[provider].short}
                       </option>
@@ -135,11 +136,13 @@ export function TitleSettings() {
                         {installation.name} · ACP
                       </option>
                     ))}
-                    {workspace.agents.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} / {providers[a.provider].short}
-                      </option>
-                    ))}
+                    {workspace.agents
+                      .filter((a) => supportsUtilities(a.provider))
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} / {providers[a.provider].short}
+                        </option>
+                      ))}
                   </ChoicePicker>
                 </FormField>
                 {settings.harness && (

@@ -41,13 +41,49 @@ export function toolEvent(provider: Agent['provider'], name: string, payload: un
           : 'completed',
     }
   }
-  if (provider === 'acp') {
+  if (provider === 'acp' || provider === 'grok') {
     const update = object(data.update)
     if (!['tool_call', 'tool_call_update'].includes(string(update.sessionUpdate))) return
     return {
       toolId: string(update.toolCallId),
       title: string(update.title) || 'Tool update',
       status: string(update.status) || 'running',
+    }
+  }
+  if (provider === 'hermes' && ['tool.start', 'tool.complete'].includes(name))
+    return {
+      toolId: string(data.tool_id),
+      title: string(data.name) || 'Hermes tool',
+      status:
+        name === 'tool.start' ? 'running' : object(data.result).error ? 'failed' : 'completed',
+    }
+  if (provider === 'copilot' && ['tool.execution_start', 'tool.execution_complete'].includes(name))
+    return {
+      toolId: string(data.toolCallId),
+      title: string(data.toolName) || 'Copilot tool',
+      status:
+        name === 'tool.execution_start'
+          ? 'running'
+          : data.success === false
+            ? 'failed'
+            : 'completed',
+    }
+  if (provider === 'muse' && ['item/started', 'item/updated', 'item/completed'].includes(name)) {
+    const item = object(data.item)
+    if (!['toolCall', 'userShell', 'subagent', 'workflow'].includes(string(item.kind))) return
+    return {
+      toolId: string(item.itemId),
+      title:
+        string(item.tool) ||
+        string(item.commandText) ||
+        string(item.fallbackText) ||
+        string(item.kind),
+      status:
+        item.status === 'inProgress'
+          ? 'running'
+          : item.status === 'failed' || item.failureKind
+            ? 'failed'
+            : string(item.status) || 'completed',
     }
   }
   if (provider === 'opencode' && name === 'message.part.updated') {

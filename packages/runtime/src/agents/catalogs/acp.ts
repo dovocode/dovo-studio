@@ -1,3 +1,4 @@
+import { legacyAcpModels } from '../providers/acp/acp-models.js'
 import { homedir } from 'node:os'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import { methods, type SessionConfigOption } from '@agentclientprotocol/sdk'
@@ -67,7 +68,16 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
       )
       config = updatedConfig ?? config
     }
-    const models = options(config, 'model')
+    const legacy = legacyAcpModels(session)
+    const configured = options(config, 'model')
+    const models = configured.length
+      ? configured
+      : (legacy?.availableModels ?? []).map((model) => ({
+          id: model.modelId,
+          name: model.name,
+          description: model.description ?? undefined,
+          isDefault: model.modelId === legacy?.currentModelId,
+        }))
     const modelOption = config?.find((item) => item.category === 'model' && item.type === 'select')
     if (agent.model && modelOption) {
       config = (
@@ -81,6 +91,18 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
           'model discovery',
         )
       ).configOptions
+    }
+    if (agent.model && !modelOption) {
+      if (!legacy?.availableModels.some((model) => model.modelId === agent.model))
+        throw new Error('ACP agent does not offer the selected model')
+      await acpControl(
+        connection,
+        connection.rpc.request('session/set_model', {
+          sessionId: session.sessionId,
+          modelId: agent.model,
+        }),
+        'model selection',
+      )
     }
     for (const [configId, value] of Object.entries(agent.acpConfig ?? {})) {
       const option = config?.find((item) => item.id === configId)

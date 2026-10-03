@@ -23,6 +23,8 @@ provider setup, and feature manual. The guides below focus on particular workflo
 - [Chat interactions](chat-interactions.md): queues, steering, questions, and approvals.
 - [Usage and limits](usage.md): account windows, CLI history, pricing, refresh, and caching.
 - [Codex modes](codex-modes.md): supported Codex reasoning and speed choices.
+- [Native agent providers](agent-providers.md): Hermes, Copilot, Grok Build, and Muse setup and
+  integration boundaries.
 - [Orchestration](orchestration.md): task turn ownership and recovery behavior.
 - [Browser and device previews](design/browser-and-devices.md): setup and current preview
   capabilities.

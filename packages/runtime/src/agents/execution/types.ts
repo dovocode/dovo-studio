@@ -7,6 +7,8 @@ export type AgentInput = {
 }
 export type AgentSteer = (input: AgentInput) => Promise<void>
 export interface AcpLaunch {
+  /** Built-in headless authentication; custom ACP installs keep their own flow. */
+  authentication?: 'grok'
   command: string
   args: string[]
   env: Record<string, string>

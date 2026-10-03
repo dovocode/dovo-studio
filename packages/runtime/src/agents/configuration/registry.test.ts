@@ -1,4 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { AcpLaunch } from '../execution/types.js'
 import { AgentRegistry } from './registry.js'
 import * as acpModule from '../providers/acp/acp.js'
@@ -93,10 +95,22 @@ it('expands provider config directories without changing HOME or caller environm
     env: { EXTRA: 'kept' },
   }
   const configured = registry.configure(agent)
+  expect(configured.configDirectory).toBe(join(homedir(), 'claude-work'))
   expect(configured.env).toMatchObject({
     EXTRA: 'kept',
     CLAUDE_CONFIG_DIR: expect.stringMatching(/\/claude-work$/),
   })
   expect(configured.env).not.toHaveProperty('HOME')
   expect(agent.env).toEqual({ EXTRA: 'kept' })
+})
+it('expands the Copilot SDK base directory', () => {
+  const registry = new AgentRegistry()
+  expect(
+    registry.configure({
+      provider: 'copilot',
+      model: '',
+      endpoint: 'copilot',
+      configDirectory: '~/copilot-work',
+    }).configDirectory,
+  ).toBe(join(homedir(), 'copilot-work'))
 })

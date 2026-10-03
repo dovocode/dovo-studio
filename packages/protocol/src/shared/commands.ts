@@ -46,6 +46,12 @@ export const commandsSchema = mutableStruct({
   claude: Schema.optionalWith(executable, {
     default: () => '',
   }),
+  hermes: Schema.optionalWith(minValue(executable, 1), {
+    default: () => 'python3',
+  }),
+  copilot: Schema.optionalWith(minValue(executable, 1), { default: () => 'copilot' }),
+  grok: Schema.optionalWith(minValue(executable, 1), { default: () => 'grok' }),
+  muse: Schema.optionalWith(minValue(executable, 1), { default: () => 'muse' }),
   acp: Schema.optionalWith(executable, {
     default: () => '',
   }),
@@ -106,6 +112,14 @@ export const commandFields = [
     label: 'Claude executable',
     placeholder: 'Bundled SDK default',
   },
+  {
+    id: 'hermes',
+    label: 'Hermes Python executable',
+    placeholder: 'python3',
+  },
+  { id: 'copilot', label: 'Copilot executable', placeholder: 'copilot' },
+  { id: 'grok', label: 'Grok Build executable', placeholder: 'grok' },
+  { id: 'muse', label: 'Muse executable', placeholder: 'muse' },
   {
     id: 'acp',
     label: 'ACP executable',

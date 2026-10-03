@@ -3,7 +3,17 @@ import { mutableArray, mutableStruct } from '../shared/schema.js'
 export const adapterDiagnosticSchema = mutableStruct({
   id: Schema.String,
   name: Schema.String,
-  provider: Schema.Literal('codex', 'claude', 'opencode', 'acp', 'mcp'),
+  provider: Schema.Literal(
+    'codex',
+    'claude',
+    'opencode',
+    'hermes',
+    'copilot',
+    'grok',
+    'muse',
+    'acp',
+    'mcp',
+  ),
   kind: Schema.Literal('executable', 'sdk', 'server'),
   available: Schema.Boolean,
   installedVersion: Schema.NullOr(Schema.String),

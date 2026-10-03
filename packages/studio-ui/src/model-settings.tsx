@@ -46,7 +46,7 @@ export function ModelSettings({
     env: agent.env,
     executablePath: agent.executablePath,
     configDirectory: agent.configDirectory,
-    model: agent.provider === 'acp' ? agent.model : '',
+    model: ['acp', 'grok'].includes(agent.provider) ? agent.model : '',
     acpInstallationId: agent.provider === 'acp' ? agent.acpInstallationId : undefined,
     acpMode: agent.provider === 'acp' ? agent.acpMode : undefined,
     acpConfig: agent.provider === 'acp' ? agent.acpConfig : undefined,
@@ -96,7 +96,7 @@ export function ModelSettings({
     selected = selectedCatalogModel(catalog, agent.model)
   const efforts =
     selected?.reasoning ??
-    (!agent.model || agent.provider === 'acp' ? catalog?.reasoning : []) ??
+    (!agent.model || ['acp', 'grok'].includes(agent.provider) ? catalog?.reasoning : []) ??
     []
   const changeModel = (model: string) =>
     onChange({

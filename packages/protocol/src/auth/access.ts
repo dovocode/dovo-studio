@@ -29,11 +29,17 @@ const legacyReadOnly = {
 export function selectableAccessModes(current?: Agent['permission']) {
   return current === 'read-only' ? [...accessModes, legacyReadOnly] : accessModes
 }
-export function supportsAccess(_provider: Agent['provider'], _permission: Agent['permission']) {
-  return true
+export function supportsAccess(provider: Agent['provider'], permission: Agent['permission']) {
+  // These native hosts do not expose a restricted read-only session.
+  return !['hermes', 'grok', 'muse'].includes(provider) || permission !== 'read-only'
 }
 export function accessLabel(permission: Agent['permission']) {
   return (
     selectableAccessModes(permission).find((mode) => mode.id === permission)?.name ?? permission
   )
+}
+
+/** These providers have no tool-disable boundary for utility prompts. */
+export function supportsUtilities(provider: Agent['provider']) {
+  return !['hermes', 'grok', 'muse'].includes(provider)
 }

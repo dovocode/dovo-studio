@@ -214,7 +214,7 @@ export class ReasoningEvents {
         )
       }
     }
-    if (this.provider === 'acp') {
+    if (this.provider === 'acp' || this.provider === 'grok') {
       const update = object(data.update)
       if (update.sessionUpdate === 'agent_thought_chunk') {
         const content = object(update.content)
@@ -231,6 +231,46 @@ export class ReasoningEvents {
       ) {
         this.complete(`acp:${this.acpGroup}`)
         this.acpActive = false
+      }
+    }
+    if (this.provider === 'hermes') {
+      if (['reasoning.delta', 'thinking.delta'].includes(name)) {
+        if (!this.acpActive) {
+          this.acpGroup++
+          this.acpActive = true
+        }
+        this.append(`hermes:${this.acpGroup}`, string(data.text))
+        return true
+      }
+      if (
+        this.acpActive &&
+        ['message.delta', 'message.interim', 'message.complete', 'tool.start'].includes(name)
+      ) {
+        this.complete(`hermes:${this.acpGroup}`)
+        this.acpActive = false
+      }
+    }
+    if (this.provider === 'copilot' && name.startsWith('assistant.reasoning')) {
+      const id = `copilot:${string(data.reasoningId)}`
+      if (name === 'assistant.reasoning_delta') this.append(id, string(data.deltaContent))
+      else if (name === 'assistant.reasoning') this.set(id, string(data.content), 'completed')
+      return true
+    }
+    if (this.provider === 'muse') {
+      const item = object(data.item),
+        id = `muse:${string(item.itemId) || string(data.itemId)}`
+      if (item.kind === 'reasoning') {
+        const summary = decodeResult(mutableArray(Schema.String), item.summary).data ?? []
+        this.set(
+          id,
+          summary.join('\n\n') || string(item.text),
+          item.status === 'inProgress' ? 'running' : 'completed',
+        )
+        return true
+      }
+      if (name === 'item/delta' && this.entries.has(id)) {
+        this.append(id, string(data.delta))
+        return true
       }
     }
     if (this.provider === 'opencode') {

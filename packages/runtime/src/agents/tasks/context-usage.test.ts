@@ -1,6 +1,15 @@
 import { expect, it } from 'vitest'
 import { contextUsage, turnTokenCounter } from './context-usage'
 
+it('reads Hermes native context usage', () => {
+  expect(
+    contextUsage('hermes', 'session.usage', { usage: { context_used: 42, context_max: 1000 } }),
+  ).toEqual({
+    used: 42,
+    limit: 1000,
+  })
+})
+
 it('reads context usage from each provider and ignores unrelated events', () => {
   expect(
     contextUsage(

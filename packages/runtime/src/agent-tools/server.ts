@@ -110,7 +110,10 @@ const tools: Array<
         key: { type: 'string' as const },
         name: { type: 'string' as const },
         prompt: { type: 'string' as const },
-        provider: { type: 'string' as const, enum: ['codex', 'claude', 'opencode', 'acp'] },
+        provider: {
+          type: 'string' as const,
+          enum: ['codex', 'claude', 'opencode', 'hermes', 'copilot', 'grok', 'muse', 'acp'],
+        },
         checkoutId: {
           type: 'string' as const,
           description:

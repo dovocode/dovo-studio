@@ -1,3 +1,4 @@
+import { supportsUtilities } from '@dovo/protocol'
 import { configuredTaskHarness } from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -95,7 +96,7 @@ export function TitleSettings() {
         disabled={busy}
         items={[
           { id: 'default', name: 'Default provider · separate model' },
-          ...(['codex', 'claude', 'opencode', 'acp'] as const).map((provider) => ({
+          ...(['codex', 'claude', 'opencode', 'copilot', 'acp'] as const).map((provider) => ({
             id: `harness:${provider}`,
             name: provider,
           })),
@@ -103,10 +104,12 @@ export function TitleSettings() {
             id: acpHarnessChoiceId(installation.id),
             name: `${installation.name} · ACP`,
           })),
-          ...(snapshot?.workspace.agents ?? []).map((agent) => ({
-            id: `agent:${agent.id}`,
-            name: agent.name,
-          })),
+          ...(snapshot?.workspace.agents ?? [])
+            .filter((agent) => supportsUtilities(agent.provider))
+            .map((agent) => ({
+              id: `agent:${agent.id}`,
+              name: agent.name,
+            })),
         ]}
         onChange={(value) => {
           const installation = installations.find((item) => acpHarnessChoiceId(item.id) === value)

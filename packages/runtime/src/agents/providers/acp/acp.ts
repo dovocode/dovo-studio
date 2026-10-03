@@ -1,3 +1,4 @@
+import { legacyAcpModels } from './acp-models.js'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { acpMcpServers } from '../../configuration/mcp-settings.js'
@@ -59,7 +60,7 @@ export function createAcpAdapter(): AgentAdapter {
         ...legacyAcpLaunch(run.agent.endpoint, run.agent.args ?? []),
         env: run.agent.env ?? {},
       }
-      const launchKey = JSON.stringify(launch)
+      const launchKey = JSON.stringify([launch, run.agent, run.tools])
       const previous = run.taskId ? idle.get(run.taskId) : undefined
       if (run.taskId) idle.delete(run.taskId)
       const reusable =
@@ -287,17 +288,30 @@ export function createAcpAdapter(): AgentAdapter {
           let configOptions = session.configOptions
           if (run.agent.model) {
             const model = session.configOptions?.find((option) => option.category === 'model')
-            if (!model) throw new Error('ACP agent does not advertise model configuration')
-            const updated = await acpControl(
-              connection,
-              rpc.request(methods.agent.session.setConfigOption, {
-                sessionId: id,
-                configId: model.id,
-                value: run.agent.model,
-              }),
-              'model selection',
-            )
-            configOptions = updated.configOptions
+            if (!model) {
+              if (
+                !legacyAcpModels(session)?.availableModels.some(
+                  (model) => model.modelId === run.agent.model,
+                )
+              )
+                throw new Error('ACP agent does not advertise the selected model')
+              await acpControl(
+                connection,
+                rpc.request('session/set_model', { sessionId: id, modelId: run.agent.model }),
+                'model selection',
+              )
+            } else {
+              const updated = await acpControl(
+                connection,
+                rpc.request(methods.agent.session.setConfigOption, {
+                  sessionId: id,
+                  configId: model.id,
+                  value: run.agent.model,
+                }),
+                'model selection',
+              )
+              configOptions = updated.configOptions
+            }
           }
           if (run.agent.reasoning) {
             const option = configOptions?.find(

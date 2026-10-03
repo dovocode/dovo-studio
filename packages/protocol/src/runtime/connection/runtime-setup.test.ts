@@ -17,7 +17,16 @@ it('decodes older snapshots with an unconfigured provider default', () => {
 })
 it('uses the global permission for new tasks of every harness', async () => {
   const { resolveTaskDefaults } = await import('./runtime-setup')
-  for (const provider of ['codex', 'claude', 'opencode', 'acp'] as const) {
+  for (const provider of [
+    'codex',
+    'claude',
+    'opencode',
+    'hermes',
+    'copilot',
+    'grok',
+    'muse',
+    'acp',
+  ] as const) {
     const runtime = decode(runtimeDefaultsSchema, { harness: defaultTaskHarness(provider) })
     expect(resolveTaskDefaults(runtime, undefined).harness.permission).toBe('full-access')
     expect(
