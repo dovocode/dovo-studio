@@ -131,6 +131,7 @@ export * from './runtime/push-notifications.js'
 export * from './task-launcher.js'
 export * from './tasks/task-launcher-choices.js'
 export * from './tasks/task-launcher-dispatch.js'
+export * from './tasks/task-fork.js'
 export * from './tasks/task-launcher-task.js'
 
 export { retainWorkspace } from './runtime/cache/retain-workspace.js'

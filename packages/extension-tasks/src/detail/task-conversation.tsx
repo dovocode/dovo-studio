@@ -30,6 +30,7 @@ import { ReviewFindings } from '../chat/thread/review-findings'
 import { useTaskViewed } from '../chat/thread/use-task-viewed'
 import { Button } from '@dovo/studio-ui'
 import { ArtifactOpenContext } from '../chat/artifact-open-context'
+import { TaskPullLinkDialog } from '../dialogs/task-pull-link-dialog'
 export function TaskConversation({
   task,
   historyLoaded,
@@ -66,6 +67,7 @@ export function TaskConversation({
 }) {
   const { collapseComposerOnScroll } = useAppPreferences()
   const [composerCollapsed, setComposerCollapsed] = useState(false)
+  const [managePullTask, setManagePullTask] = useState<string | null>(null)
   const [pending, setPending] = useApplicationState<PendingMessage | null>(null)
   const { id, messages, queue, turns, status, compactions } = task
   const visiblePending = useMemo(
@@ -158,6 +160,7 @@ export function TaskConversation({
     >
       <ArtifactOpenContext value={onArtifact}>
         <ChatThread
+          onManagePulls={() => setManagePullTask(task.id)}
           task={displayedTask}
           onTerminal={onTerminal}
           onBrowser={onBrowser}
@@ -250,6 +253,9 @@ export function TaskConversation({
           onComposerInsertApplied={onComposerInsertApplied}
         />
       </div>
+      {managePullTask === task.id && (
+        <TaskPullLinkDialog key={task.id} task={task} onClose={() => setManagePullTask(null)} />
+      )}
     </div>
   )
 }

@@ -9,7 +9,7 @@ const mocks = {
   '../../runtime/connection/provider': `export const useRuntime=()=>({activeId:window.runtimeId??'computer',legacyDraftRuntimeId:null});`,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../ui/theme': `export const styles={chatText:{}};`,
-  '../../ui/controls/field': `import {useRef,useImperativeHandle,useEffect} from 'react';export function Field({value,defaultValue,inputRef,onChangeText,onSelectionChange,editable,label,style,scrollEnabled,onContentSizeChange}){const input=useRef();useEffect(()=>{window.mounts++},[]);useImperativeHandle(inputRef,()=>({clear:()=>{window.clears++;window.writes.push('');input.current.value=''},setNativeProps:props=>{window.writes.push(props.text);if(props.text!==defaultValue)input.current.value=props.text}}),[]);window.resizeComposer=height=>onContentSizeChange({nativeEvent:{contentSize:{height}}});return <textarea style={{height:style.at(-1).height}} data-scroll-enabled={String(scrollEnabled)} ref={input} aria-label={label} value={value} defaultValue={defaultValue} disabled={!editable} onChange={e=>onChangeText(e.target.value)} onSelect={e=>onSelectionChange({nativeEvent:{selection:{start:e.target.selectionStart,end:e.target.selectionEnd}}})}/>;}`,
+  '../../ui/controls/field': `import {useRef,useImperativeHandle,useEffect} from 'react';export function Field({value,defaultValue,inputRef,onChangeText,onSelectionChange,editable,label,style,scrollEnabled}){const input=useRef();useEffect(()=>{window.mounts++},[]);useImperativeHandle(inputRef,()=>({clear:()=>{window.clears++;window.writes.push('');input.current.value=''},setNativeProps:props=>{window.writes.push(props.text);if(props.text!==defaultValue)input.current.value=props.text}}),[]);window.composerLayout=style.at(-1);return <textarea style={{height:style.at(-1).height,minHeight:style.at(-1).minHeight,maxHeight:style.at(-1).maxHeight}} data-scroll-enabled={String(scrollEnabled)} ref={input} aria-label={label} value={value} defaultValue={defaultValue} disabled={!editable} onChange={e=>onChangeText(e.target.value)} onSelect={e=>onSelectionChange({nativeEvent:{selection:{start:e.target.selectionStart,end:e.target.selectionEnd}}})}/>;}`,
 }
 const built = await build({
   stdin: {
@@ -87,15 +87,20 @@ try {
   await page.waitForFunction((expected) => window.storageText() === expected, expected)
   await page.evaluate(() => window.apply('Mention @src/file.ts and dictated words'))
   assert.equal(await input.inputValue(), 'Mention @src/file.ts and dictated words')
-  await page.evaluate(() => window.resizeComposer(220))
-  await page.waitForFunction(() => document.querySelector('textarea').style.height === '144px')
+  // Native Fabric owns text measurement; JS must leave height unconstrained so native
+  // typing can trigger layout, while retaining the composer bounds and overflow scrolling.
+  assert.deepEqual(
+    await page.evaluate(() => ({
+      height: window.composerLayout.height ?? null,
+      minHeight: window.composerLayout.minHeight,
+      maxHeight: window.composerLayout.maxHeight,
+    })),
+    { height: null, minHeight: 44, maxHeight: 144 },
+  )
   assert.equal(await input.getAttribute('data-scroll-enabled'), 'true')
-  await page.evaluate(() => window.resizeComposer(88))
-  await page.waitForFunction(() => document.querySelector('textarea').style.height === '88px')
-  assert.equal(await input.getAttribute('data-scroll-enabled'), 'false')
   await page.evaluate(() => window.send())
   assert.equal(await input.inputValue(), '')
-  assert.equal(await input.evaluate((e) => e.style.height), '44px')
+  assert.equal(await input.evaluate((e) => e.style.height), '')
   await page.evaluate(() => window.fail())
   assert.equal(await input.inputValue(), 'Mention @src/file.ts and dictated words')
   await page.evaluate(() => window.apply(''))
@@ -126,7 +131,7 @@ try {
   assert.equal(await input.inputValue(), 'Fresh message')
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile composer: rapid middle-of-draft typing, 100 stale acknowledgements and stream updates preserve text, caret and persistence; external edits, send clearing, failed-send restoration, capped growth, shrink, scroll toggling and computer switching pass.',
+    'Mobile composer: rapid middle-of-draft typing, 100 stale acknowledgements and stream updates preserve text, caret and persistence; external edits, send clearing, failed-send restoration, native measurement constraints, overflow scrolling and computer switching pass.',
   )
 } finally {
   await browser.close()

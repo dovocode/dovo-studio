@@ -520,6 +520,94 @@ export class Tasks {
     this.activity?.add('task', fork.id, 'Forked from another task', { taskId: id, turnId })
     return { id: fork.id }
   }
+  /** Continue the conversation in an independent worktree at the source's committed HEAD. */
+  async startFork(id: string, forkId: string, text: string, attachmentIds: string[]) {
+    const source = this.store.task(id)
+    if (source.archived || source.archivedAt)
+      throw new HttpError(409, 'Reopen this thread before forking.')
+    if (!text.trim() && !attachmentIds.length)
+      throw new HttpError(400, 'A message needs text or attachments')
+    const existing = () => {
+      const task = this.store.get().tasks.find((task) => task.id === forkId)
+      if (!task) return undefined
+      const input = [...task.messages, ...(task.queue ?? [])].find(
+        (message) => message.id === forkId,
+      )
+      const files = input?.attachments ?? []
+      const sameAttachments =
+        files.length === attachmentIds.length &&
+        files.every((file, index) => {
+          const original = this.attachments.read(id, attachmentIds[index]!)
+          const copied = this.attachments.read(forkId, file.id)
+          return (
+            original.data === copied.data && original.attachment.name === copied.attachment.name
+          )
+        })
+      if (task.forkedFrom?.taskId !== id || input?.text !== text || !sameAttachments)
+        throw new HttpError(409, 'This fork request already has different contents.')
+      return task
+    }
+    const submit = async () => {
+      const task = this.store.task(forkId)
+      const message = [...task.messages, ...(task.queue ?? [])].find(
+        (message) => message.id === forkId,
+      )
+      await runClientEffect(
+        this.sendEffect(forkId, forkId, text, message?.attachments?.map((file) => file.id) ?? []),
+      )
+      return { id: forkId }
+    }
+    if (existing()) return submit()
+    const repo = this.store.get().repositories.find((repo) => repo.id === source.repositoryId)
+    if (!repo || repo.kind) throw new HttpError(400, 'Start in fork requires a Git project.')
+    // Reading HEAD never changes the source checkout, even while its agent is writing files.
+    const cwd = await this.checkouts.directory(id)
+    const head = (await this.git.command(cwd, ['rev-parse', 'HEAD'])).trim()
+    await this.git.command(cwd, ['update-ref', `refs/dovo/forks/${forkId}/head`, head])
+    this.store.transaction(() => {
+      if (existing()) return
+      const task: Task = {
+        id: forkId,
+        title: `Fork: ${source.title}`.slice(0, 200),
+        repositoryId: source.repositoryId,
+        agentId: source.agentId,
+        agentName: source.agentName,
+        agentIcon: source.agentIcon,
+        harness: source.harness,
+        agentOverrides: source.agentOverrides,
+        budget: source.budget,
+        linkedCheckouts: source.linkedCheckouts,
+        linkedPullRequests: source.linkedPullRequests,
+        execution: 'worktree',
+        setupCommand: source.setupCommand,
+        submodules: source.submodules,
+        forkedFrom: { taskId: id, title: source.title, head },
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        messages: source.messages
+          .filter((message) => message.role === 'assistant' || !message.file)
+          .map((message) => ({
+            ...message,
+            ...(message.attachments?.length
+              ? {
+                  attachments: this.attachments.copy(
+                    id,
+                    forkId,
+                    message.attachments.map((file) => file.id),
+                  ),
+                }
+              : {}),
+          })),
+        files: [],
+        draft: '',
+        example: false,
+      }
+      this.store.update((workspace) => ({ ...workspace, tasks: [...workspace.tasks, task] }))
+      this.queue.add(forkId, forkId, text, this.attachments.copy(id, forkId, attachmentIds))
+    })
+    return submit()
+  }
+
   /** Empty conversation in this checkout, or an independent snapshot of its current files. */
   async newWorktreeThread(id: string, mode: 'reuse' | 'fork') {
     const source = this.store.task(id)

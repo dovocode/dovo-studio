@@ -224,7 +224,7 @@ function projectMessages(
                 toolName: tool.summary,
                 args: {},
                 argsText: '',
-                artifact: { ...tool, status },
+                artifact: { ...tool, status, groupKey: block.key },
                 ...(!pendingActivity(status)
                   ? {
                       result: tool.payload,

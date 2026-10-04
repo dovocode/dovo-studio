@@ -49,7 +49,7 @@ import { Pill } from '../../ui/controls/pill'
 import { ConnectionPill } from '../../runtime/connection/connection-status'
 import { useRuntime } from '../../runtime/connection/provider'
 import { createConversationScroll } from './state/scroll'
-import { turnPartBoundaries } from './state/turn-parts'
+import { foldedTurnPartRanges, toolPartGroupEnd, turnPartBoundaries } from './state/turn-parts'
 import { ConversationWorkGroup } from './components/work-group'
 const checkpointSchema = mutableStruct({
   turnId: Schema.String,
@@ -286,18 +286,7 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
       const part = message.content[index]
       if (part.type === 'tool-call') {
         const first = index
-        while (index + 1 < end) {
-          const current = message.content[index]
-          const next = message.content[index + 1]
-          if (
-            current.type !== 'tool-call' ||
-            next.type !== 'tool-call' ||
-            current.isError ||
-            next.isError
-          )
-            break
-          index++
-        }
+        index = toolPartGroupEnd(message.content, first, end)
         elements.push(
           <WorkGroup key={part.toolCallId} startIndex={first} endIndex={index}>
             {Array.from({ length: index - first + 1 }, (_, offset) => (
@@ -347,13 +336,9 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
       )}
       {open
         ? renderRange(0, end)
-        : message.content
-            .slice(0, end)
-            .flatMap((part, index) =>
-              index === finalIndex || (part.type === 'tool-call' && part.isError)
-                ? renderRange(index, index + 1)
-                : [],
-            )}
+        : foldedTurnPartRanges(message.content, finalIndex, end).flatMap((range) =>
+            renderRange(range.start, range.end),
+          )}
     </>
   )
 }

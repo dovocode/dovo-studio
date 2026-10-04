@@ -209,12 +209,8 @@ export function threadTimeline(
     }
     for (const entry of entries) {
       if (entry.kind === 'tool') {
-        const failed = ['failed', 'error', 'cancelled', 'interrupted'].includes(entry.tool.status)
-        if (failed || (current.length && current[0]?.turnId !== entry.tool.turnId)) flush()
+        if (current.length && current[0]?.turnId !== entry.tool.turnId) flush()
         current.push(entry.tool)
-        if (failed) {
-          flush()
-        }
       } else {
         flush()
         blocks.push({ kind: 'compaction', offset, event: entry.event })

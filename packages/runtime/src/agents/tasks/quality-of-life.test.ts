@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 import { exec } from '../../process'
+import { randomUUID } from 'node:crypto'
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -34,6 +35,112 @@ const exists = (path: string) =>
     () => true,
     () => false,
   )
+
+it('starts an active-thread fork at committed HEAD with conversation, settings and independent attachments', async () => {
+  const { s, call } = await setup()
+  const source = s.tasks.create({
+    title: 'Source',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Original request',
+    agentOverrides: { model: 'same-model' },
+  })
+  const cwd = await s.checkouts.directory(source.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  await writeFile(join(cwd, 'hello.txt'), 'committed in source worktree\n')
+  await exec('git', ['add', 'hello.txt'], { cwd })
+  await exec('git', ['commit', '-qm', 'Source worktree commit'], { cwd })
+  const head = (await exec('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim()
+  let finishSource: (() => void) | undefined
+  const sourceRunning = new Promise<void>((resolve) => {
+    finishSource = resolve
+  })
+  const forkPrompts: string[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: async () => ({ provider: 'codex', available: true, detail: '' }),
+    run: async (run) => {
+      if (run.cwd === cwd) {
+        run.onPromptAccepted?.()
+        await sourceRunning
+      } else forkPrompts.push(run.prompt)
+    },
+  })
+  const running = await s.tasks.start(source.id)
+  try {
+    await vi.waitFor(() => expect(s.store.task(source.id).runPhase).toBe('provider'))
+    await writeFile(join(cwd, 'hello.txt'), 'uncommitted source edit\n')
+    await writeFile(join(cwd, 'untracked.txt'), 'source only\n')
+    const file = await s.attachments.upload({
+      id: randomUUID(),
+      taskId: source.id,
+      name: 'context.txt',
+      data: Buffer.from('attachment context').toString('base64'),
+    })
+    s.store.updateTask(source.id, (task) => ({
+      ...task,
+      messages: task.messages.map((message, index) =>
+        index === 0 ? { ...message, attachments: [file.attachment] } : message,
+      ),
+    }))
+    const before = s.store.task(source.id)
+    const forkId = randomUUID()
+    const input = {
+      id: source.id,
+      forkId,
+      text: 'New direction',
+      attachmentIds: [file.attachment.id],
+    }
+    const result = await call('/api/tasks/start-fork', input)
+    expect(result.status).toBe(200)
+    expect(result.body.id).toBe(forkId)
+    await vi.waitFor(() => expect(forkPrompts).toHaveLength(1))
+    const fork = s.store.task(forkId)
+    expect(fork).toMatchObject({
+      execution: 'worktree',
+      agentId: source.agentId,
+      agentOverrides: { model: 'same-model' },
+      forkedFrom: { taskId: source.id, head },
+    })
+    expect(forkPrompts[0]).toContain('Original request')
+    expect(forkPrompts[0]).toContain('New direction')
+    expect(fork.sessionId).toBeUndefined()
+    expect(fork.forkedFrom?.snapshot).toBeUndefined()
+    expect(fork.messages.slice(0, before.messages.length).map((message) => message.text)).toEqual(
+      before.messages.map((message) => message.text),
+    )
+    expect(
+      fork.messages.some((message) => message.id === forkId && message.text === 'New direction'),
+    ).toBe(true)
+    const forkCwd = await s.checkouts.directory(forkId)
+    cleanups.push(() => rm(forkCwd, { recursive: true, force: true }))
+    expect(forkCwd).not.toBe(cwd)
+    expect(await readFile(join(forkCwd, 'hello.txt'), 'utf8')).toBe(
+      'committed in source worktree\n',
+    )
+    expect(await exists(join(forkCwd, 'untracked.txt'))).toBe(false)
+    expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('uncommitted source edit\n')
+    expect(s.store.task(source.id).status).toBe('running')
+    expect(s.store.task(source.id).activeRunId).toBe(before.activeRunId)
+    expect(s.store.task(source.id).queue).toEqual(before.queue)
+    const copied = fork.messages.find((message) => message.id === forkId)?.attachments?.[0]
+    expect(copied?.id).not.toBe(file.attachment.id)
+    expect(s.attachments.read(forkId, copied?.id ?? '').data).toBe(
+      Buffer.from('attachment context').toString('base64'),
+    )
+    expect((await call('/api/tasks/start-fork', input)).status).toBe(200)
+    expect(forkPrompts).toHaveLength(1)
+    expect(
+      s.store.get().tasks.filter((task) => task.forkedFrom?.taskId === source.id),
+    ).toHaveLength(1)
+    expect(
+      (await call('/api/tasks/start-fork', { ...input, text: 'Different input' })).status,
+    ).toBe(409)
+  } finally {
+    finishSource?.()
+    await running.done
+  }
+})
 
 it('undoes and redoes a turn’s file changes without touching the branch or index', async () => {
   const { f, s, call } = await setup()

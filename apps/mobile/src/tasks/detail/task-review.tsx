@@ -18,6 +18,7 @@ import { Field } from '../../ui/controls/field'
 import { styles } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import { DiffView } from '../preview/diff-view'
+import { PullStatus } from './pull-status'
 export function TaskReview({
   initialCheckpoint = '',
   initialPath = '',
@@ -98,6 +99,7 @@ export function TaskReview({
     )
   return (
     <View style={styles.screen}>
+      <PullStatus task={task} />
       <View
         style={[
           styles.content,

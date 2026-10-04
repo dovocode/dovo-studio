@@ -2,9 +2,9 @@ import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
 const mocks = {
-  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});const preferences={followUp:'queue',confirmStop:false};export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
+  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});const preferences={followUp:'queue',confirmStop:false};export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=Button;export const PromptInput=({children,...props})=><form {...props}>{children}</form>;export const PromptInputFooter=({children})=><div>{children}</div>;export const PromptInputTools=PromptInputFooter;export const PromptInputSubmit=({children,busy,...props})=><button type="submit" aria-label="Send" {...props}>{children}</button>;`,
+  '@dovo/studio-ui': `export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export const PromptInput=({children,...props})=><form {...props}>{children}</form>;export const PromptInputFooter=({children})=><div>{children}</div>;export const PromptInputTools=PromptInputFooter;export const PromptInputSubmit=({children,busy,...props})=><button type="submit" aria-label="Send" {...props}>{children}</button>;`,
   './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:()=>{},remove:()=>{}});`,
   './composer-editor': `import {useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText})=>{const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} onChange={event=>controller.update(event.target.value)}/>};`,
 }
@@ -21,11 +21,11 @@ for (const [path, name] of [
 const built = await build({
   stdin: {
     contents: `
-import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';
+import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {MessageQueue} from './src/chat/thread/message-queue.tsx';
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
-window.requests=[];window.pending=null;window.fail=false;window.response=null;
-const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/message'||path==='/api/tasks/steer')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve({ok:true})});return {ok:true}};
-function App(){const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[]}};return <WorkspaceHarness value={value}><Composer task={workspace.tasks[0]} onPending={onPending}/></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;
+const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
+function App(){const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[]}};return <WorkspaceHarness value={value}><><Composer task={workspace.tasks[0]} onPending={onPending}/><MessageQueue task={workspace.tasks[0]}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -142,9 +142,53 @@ try {
     '/api/tasks/message,/api/tasks/message,/api/tasks/steer,/api/tasks/message,/api/tasks/message'
   )
     throw new Error(JSON.stringify(requests))
+  await page.evaluate(() =>
+    window.setTask((task) => ({
+      ...task,
+      queue: [{ id: 'queued-message', role: 'user', text: 'Original queued input' }],
+    })),
+  )
+  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  await page
+    .getByRole('textbox', { name: 'Edit queued message', exact: true })
+    .fill('Edited queued input')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page
+    .getByRole('textbox', { name: 'Edit queued message', exact: true })
+    .waitFor({ state: 'hidden' })
+  const edit = await page.evaluate(() => window.requests.at(-1))
+  if (
+    edit.path !== '/api/tasks/queue' ||
+    edit.input.id !== 'task' ||
+    edit.input.messageId !== 'queued-message' ||
+    edit.input.text !== 'Edited queued input' ||
+    edit.input.expectedText !== 'Original queued input'
+  )
+    throw new Error('Queue editing corrupted the task or message identity: ' + JSON.stringify(edit))
+  await page.evaluate(() => window.setTask((task) => ({ ...task, queue: [] })))
+  await submit('Fork continuation', 'Start in fork')
+  const forkId = await page.evaluate(() => window.requests.at(-1).input.forkId)
+  await respond(true)
+  if ((await input.inputValue()) !== 'Fork continuation')
+    throw new Error('Fork failure lost the draft')
+  await submit('Fork continuation', 'Start in fork')
+  if ((await page.evaluate(() => window.requests.at(-1).input.forkId)) !== forkId)
+    throw new Error('Fork retry changed identity')
+  await respond()
+  await page.waitForFunction(() => window.navigations.length === 1)
+  if ((await input.inputValue()) !== '') throw new Error('Accepted fork did not clear composer')
+  const forkRequest = await page.evaluate(() => window.requests.at(-1))
+  if (
+    forkRequest.path !== '/api/tasks/start-fork' ||
+    forkRequest.input.id !== 'task' ||
+    forkRequest.input.text !== 'Fork continuation'
+  )
+    throw new Error('Incorrect fork request')
+  if ((await page.evaluate(() => window.navigations[0].entityId)) !== forkId)
+    throw new Error('Fork did not open the new thread')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Desktop send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal passed.',
+    'Desktop send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing and fork dispatch with stable retry IDs passed.',
   )
 } finally {
   await browser.close()

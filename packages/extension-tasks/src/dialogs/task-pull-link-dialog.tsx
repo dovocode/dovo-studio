@@ -1,6 +1,13 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ExternalLink, GitPullRequest, Unlink } from 'lucide-react'
-import { pullDetailSchema, updateTask, useWorkspace, type Task } from '@dovo/studio-core'
+import {
+  pullDetailSchema,
+  responses,
+  threadPullLink,
+  updateTask,
+  useWorkspace,
+  type Task,
+} from '@dovo/studio-core'
 import {
   Button,
   Dialog,
@@ -10,9 +17,9 @@ import {
   IconButton,
   Input,
 } from '@dovo/studio-ui'
-import { pullReference, taskPullLinks, verifyPullUrl } from '../detail/task-pull-links'
+import { pullReference, taskPullLinks } from '../detail/task-pull-links'
 export function TaskPullLinkDialog({ task, onClose }: { task: Task; onClose: () => void }) {
-  const { request, connected, setWorkspace, flush, workspace } = useWorkspace()
+  const { request, connected, setWorkspace, flush } = useWorkspace()
   const [reference, setReference] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
@@ -26,34 +33,38 @@ export function TaskPullLinkDialog({ task, onClose }: { task: Task; onClose: () 
     setBusy(true)
     setError('')
     try {
-      const input = pullReference(reference)
-      const { pull } = await request(
-        '/api/scm/pulls/detail',
-        {
-          repositoryId: task.repositoryId,
-          number: input.number,
-        },
-        pullDetailSchema,
-      )
-      verifyPullUrl(input.url, pull.url)
+      const urlPull = threadPullLink(reference)
+      const input = urlPull ?? pullReference(reference)
+      const pull = input.url
+        ? urlPull
+        : task.repositoryId
+          ? (
+              await request(
+                '/api/scm/pulls/detail',
+                { repositoryId: task.repositoryId, number: input.number },
+                pullDetailSchema,
+              )
+            ).pull
+          : null
+      if (!pull) throw new Error('Use a full PR URL when this thread has no project.')
       if (links.some((entry) => entry.url === pull.url))
         throw new Error('This PR is already linked.')
-      await save((current) => ({
-        ...current,
-        linkedPullRequests: [
-          ...(current.linkedPullRequests ?? []).filter((entry) => entry.url !== pull.url),
-          {
-            number: pull.number,
-            url: pull.url,
-            title: pull.title,
-            provider: pull.provider,
-            repositoryUrl: pull.repositoryUrl,
-          },
-        ],
-        ignoredPullRequestUrls: (current.ignoredPullRequestUrls ?? []).filter(
-          (url) => url !== pull.url,
-        ),
-      }))
+      await request(
+        '/api/scm/pulls/link-thread',
+        {
+          id: task.id,
+          pulls: [
+            {
+              number: pull.number,
+              url: pull.url,
+              title: pull.title,
+              provider: pull.provider,
+              repositoryUrl: pull.repositoryUrl,
+            },
+          ],
+        },
+        responses.ok,
+      )
       setReference('')
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))
@@ -91,10 +102,7 @@ export function TaskPullLinkDialog({ task, onClose }: { task: Task; onClose: () 
           Linked pull requests
         </DialogTitle>
         <DialogDescription className="text-xs">
-          Link a PR from{' '}
-          {workspace.repositories.find((repo) => repo.id === task.repositoryId)?.name ??
-            'this project'}
-          . Your checkout stays the same.
+          Paste a PR URL from any project, or enter a PR number for this thread’s project.
         </DialogDescription>
         <div className="max-h-[40vh] space-y-1 overflow-y-auto">
           {links.map((pull) => (
@@ -158,7 +166,8 @@ export function TaskPullLinkDialog({ task, onClose }: { task: Task; onClose: () 
               busy ||
               !connected ||
               !reference.trim() ||
-              !task.repositoryId ||
+              !!task.archivedAt ||
+              !!task.archived ||
               (task.linkedPullRequests?.length ?? 0) >= 20
             }
           >

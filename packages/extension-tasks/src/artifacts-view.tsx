@@ -139,6 +139,7 @@ export default function ArtifactsView() {
             {(['all', 'markdown', 'html', 'svg', 'code'] as const).map((value) => (
               <Button
                 key={value}
+                aria-label={value === 'all' ? 'All formats' : artifactFormatLabels[value]}
                 variant="ghost"
                 size="sm"
                 aria-pressed={format === value}
