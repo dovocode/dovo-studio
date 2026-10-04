@@ -62,6 +62,7 @@ export async function prepareRuntime(root, target) {
     execFileSync(process.execPath, ['--input-type=module', '--eval', runtimeSmoke], {
       cwd: target,
       stdio: 'inherit',
+      timeout: 60000,
     })
     await writeFile(join(target, '.dovo-runtime.json'), JSON.stringify(await stamp(root)))
   } finally {

@@ -86,6 +86,7 @@ try {
   execFileSync(join(runtime, 'bin', nodeName), ['--input-type=module', '--eval', runtimeSmoke], {
     cwd: runtime,
     stdio: 'inherit',
+    timeout: 60000,
   })
   // Deploy the desktop dependency closure too (notably electron-updater).
   deploy(
@@ -157,7 +158,7 @@ try {
         execFileSync(
           join(destination, 'bin', nodeName),
           ['--input-type=module', '--eval', runtimeSmoke],
-          { cwd: destination, stdio: 'inherit' },
+          { cwd: destination, stdio: 'inherit', timeout: 60000 },
         )
       },
       // Without a Developer ID, Electron's linker signature no longer matches the renamed bundle.

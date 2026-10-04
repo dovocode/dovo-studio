@@ -131,6 +131,7 @@ patchedDependencies:
   '@expo/ui@57.0.18': 019742b3e6e843a7f1bad8aa5bd30588fe2cc9b4d1683bfa5d79b4c5567a44f8
   app-builder-lib@26.15.3: 4688f96749e3d76cf27bc535d874470bf264610a331db13644df7715d699acf1
   decode-uri-component@0.2.2: e231f71fc619a04192ab399e3c4bc6f2935a1a346617895db275cb001afe0d2c
+  node-pty@1.1.0: 6a20ad585f63dddf10335cad5862054afd4b7d7c15a53a43976b2b8b6dd4a999
   react-native-diffs@1.0.3: 3af6deeb51afb3c84a029d698c27493d85c9d8870d20a46a17433acb1a1ce799
   react-native-enriched-markdown@1.0.2: 42855f007a9146d690235f2c7ae922973d5dc4b03c721adac032516ed1db0610
 
@@ -802,7 +803,7 @@ importers:
         version: 2.1.2
       node-pty:
         specifier: ^1.1.0
-        version: 1.1.0
+        version: 1.1.0(patch_hash=6a20ad585f63dddf10335cad5862054afd4b7d7c15a53a43976b2b8b6dd4a999)
       playwright:
         specifier: ^1.63.0
         version: 1.63.0
@@ -16214,7 +16215,7 @@ snapshots:
 
   node-int64@0.4.0: {}
 
-  node-pty@1.1.0:
+  node-pty@1.1.0(patch_hash=6a20ad585f63dddf10335cad5862054afd4b7d7c15a53a43976b2b8b6dd4a999):
     dependencies:
       node-addon-api: 7.1.1
 

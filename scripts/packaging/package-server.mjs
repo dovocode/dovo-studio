@@ -87,7 +87,7 @@ exec "$base/libexec/node" "$base/libexec/server/dist/server-cli.js" "$@"
   execFileSync(
     join(archive, 'libexec', nodeName),
     ['--input-type=module', '--eval', runtimeSmoke],
-    { cwd: server, stdio: 'inherit' },
+    { cwd: server, stdio: 'inherit', timeout: 60000 },
   )
   const output = resolve(root, 'release')
   await mkdir(output, { recursive: true })
