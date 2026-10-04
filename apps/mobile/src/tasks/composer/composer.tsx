@@ -16,6 +16,7 @@ import {
   responses,
   taskResources,
   worktreeChoicesSchema,
+  taskForkResultSchema,
   type WorktreeChoices,
   type Task,
 } from '@dovo/protocol'
@@ -37,6 +38,7 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 import { randomUUID } from 'expo-crypto'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
+import { useNavigation } from '../../shell/navigation'
 export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
   const insets = useSafeAreaInsets()
   const { actions, send, stop } = useTaskConversation()
@@ -60,8 +62,16 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
     patch,
   } = actions
   const { modelName, catalog: modelCatalog } = useModelCatalog(agent)
+  const { navigate } = useNavigation()
+  const forkAction = useAction()
+  const forkAttempt = useRef<{
+    scope: string
+    id: string
+    text: string
+    attachmentIds: string[]
+  } | null>(null)
   const [machineMoving, setMachineMoving] = useApplicationState(false)
-  const busy = actionBusy || machineMoving
+  const busy = actionBusy || machineMoving || forkAction.busy
   const [focused, setFocused] = useApplicationState(false),
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
@@ -79,6 +89,48 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
   const type = useCallback((text: string) => draft.update(text, 'keyboard'), [draft.update])
   const meter = contextMeter(task)
   const { callEffect: commandCall } = useRuntime()
+  const startFork = () => {
+    const text = draft.text.trim()
+    const attachmentIds = (actions.draftAttachments ?? []).map((file) => file.id)
+    if (!connected || busy || attaching || (!text && !attachmentIds.length)) return
+    const scope = actions.threadScope
+    if (
+      forkAttempt.current?.scope !== scope ||
+      forkAttempt.current.text !== text ||
+      JSON.stringify(forkAttempt.current.attachmentIds) !== JSON.stringify(attachmentIds)
+    )
+      forkAttempt.current = { scope, id: randomUUID(), text, attachmentIds }
+    forkAction.act(() =>
+      commandCall(
+        '/api/tasks/start-fork',
+        { id: task.id, forkId: forkAttempt.current?.id, text, attachmentIds },
+        taskForkResultSchema,
+      ).pipe(
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            draft.update('')
+            if (attachmentIds.length)
+              void patch({
+                draftAttachments: {
+                  before: task.draftAttachments,
+                  after: task.draftAttachments?.filter((file) => !attachmentIds.includes(file.id)),
+                },
+              }).catch((cause: unknown) =>
+                Alert.alert(
+                  'Could not clear the original attachments',
+                  cause instanceof Error ? cause.message : String(cause),
+                ),
+              )
+            forkAttempt.current = null
+            navigate('tasks', result.id)
+          }),
+        ),
+      ),
+    )
+  }
+  useEffect(() => {
+    if (forkAction.error) Alert.alert('Could not start in fork', forkAction.error)
+  }, [forkAction.error])
   const commandAction = useAction()
   const compactDisabled =
     !connected ||
@@ -530,16 +582,25 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                   variant="plain"
                   icon="queue"
                   label="Queue follow-up"
-                  disabled={!canSend}
+                  disabled={!canSend || busy}
                   onPress={() => send()}
                 />
                 <IconButton
                   variant="plain"
                   icon="steer"
                   label="Steer agent"
-                  disabled={!canSend}
+                  disabled={!canSend || busy}
                   onPress={() => send('steer')}
                 />
+                {hasGit && task.repositoryId && (
+                  <IconButton
+                    variant="plain"
+                    icon="changes"
+                    label="Start in fork"
+                    disabled={!canSend || busy}
+                    onPress={startFork}
+                  />
+                )}
               </View>
             )}
             <IconButton

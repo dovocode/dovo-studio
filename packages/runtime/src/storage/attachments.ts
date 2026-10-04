@@ -17,6 +17,7 @@ import {
 import type { WorkspaceStore } from './workspace.js'
 import type { Activity } from './activity.js'
 import { HttpError } from '../errors.js'
+import { randomUUID } from 'node:crypto'
 const rowSchema = mutableStruct({
   task: Schema.String,
   metadata: Schema.String,
@@ -58,6 +59,17 @@ export class Attachments {
   }
   metadata(taskId: string, ids: string[]): Attachment[] {
     return ids.map((id) => this.read(taskId, id).attachment)
+  }
+  /** A fork owns independent attachment records, including inherited conversation files. */
+  copy(sourceId: string, taskId: string, ids: string[]): Attachment[] {
+    return ids.map((id) => {
+      const source = this.read(sourceId, id)
+      const attachment = { ...source.attachment, id: randomUUID() }
+      this.db
+        .prepare('INSERT INTO attachments VALUES(?,?,?,?)')
+        .run(attachment.id, taskId, JSON.stringify(attachment), Buffer.from(source.data, 'base64'))
+      return attachment
+    })
   }
   async upload(value: unknown) {
     const input = decode(attachmentUploadSchema, value)

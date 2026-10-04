@@ -7,30 +7,30 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const environment = `
 import {createContext,useContext} from 'react';
 export * from '@dovo/protocol';
-export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);
+export const updateTask=(w,id,change)=>({...w,tasks:w.tasks.map(task=>task.id===id?change(task):task)});export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);
 export const useRuntime=useWorkspace;export const useConversationSelector=select=>{const value=useWorkspace();return select({task:value.workspace.tasks[0],actions:{threadScope:JSON.stringify([value.connection.address,value.connection.token,value.workspace.tasks[0].id])}})};
 export const useStudioHost=()=>({openExternalLink:async url=>{window.external.push(url)},openPullLink:url=>{window.opened.push(url);return true}});
 `
 const fixture = `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
-import {Effect} from 'effect';import {addTaskPullLinks} from '@dovo/protocol';import {Context} from '@dovo/studio-core';
-window.writes=[];window.opened=[];window.external=[];window.alerts=[];window.fail=false;
+import {TooltipProvider} from '@radix-ui/react-tooltip';import {Effect} from 'effect';import {addTaskPullLinks} from '@dovo/protocol';import {Context} from '@dovo/studio-core';
+window.writes=[];window.copied=[];window.opened=[];window.external=[];window.alerts=[];window.fail=false;
 const url='https://github.com/foreign/project/pull/42/files#note';
 const initial={id:'thread',title:'Thread',repositoryId:'original-project',status:'draft',messages:[{id:'m',role:'assistant',text:url}],files:[],draft:'',example:false};
-function App(){const[task,setTask]=useState(initial),[connected,setConnected]=useState(true),[runtime,setRuntime]=useState('http://runtime.local');window.setTask=setTask;window.connect=setConnected;window.runtime=setRuntime;
-const request=async(path,input)=>{window.writes.push({path,input,runtime});if(window.fail)throw new Error('Link failed');setTask(current=>addTaskPullLinks(current,input.pulls));return {ok:true}};
+function App(){const[task,setTask]=useState(initial),[connected,setConnected]=useState(true),[runtime,setRuntime]=useState('http://runtime.local'),[manage,setManage]=useState(false);window.setTask=setTask;window.connect=setConnected;window.runtime=setRuntime;
+const request=async(path,input)=>{window.writes.push({path,input,runtime});if(path==='/api/tasks/message/bookmark'){setTask(task=>({...task,messages:task.messages.map(message=>message.id===input.messageId?{...message,bookmarked:input.bookmarked}:message)}));return {ok:true}};if(path==='/api/scm/pulls/detail')return {pull:{number:input.number,title:'Resolved project PR',url:'https://github.com/original/project/pull/'+input.number,repositoryUrl:'https://github.com/original/project',provider:'github'}};if(window.fail)throw new Error('Link failed');setTask(current=>addTaskPullLinks(current,input.pulls));return {ok:true}};
 const value={workspace:{tasks:[task]},connected,connection:{address:runtime,token:'paired'},profile:{connection:{address:runtime,token:'paired'}},request,callEffect:(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error})};
-return <Context.Provider value={value}>CONTENT</Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
+return <Context.Provider value={value}>CONTENT</Context.Provider>};createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
 `
 async function bundle(mobile) {
   const mocks = {
     '@dovo/studio-core': environment,
     '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-    '@dovo/client-runtime': `import {Effect} from 'effect';export const runClientEffect=Effect.runPromise;`,
+    '@dovo/client-runtime': `import {TooltipProvider} from '@radix-ui/react-tooltip';import {Effect} from 'effect';export const runClientEffect=Effect.runPromise;`,
     './task-activity': `export const useTaskActivity=()=>({tools:[],error:''});export const TaskActivity=()=>null;`,
     './turn-label': `export const TurnLabel=()=>null;`,
     './deferred-turn': `export const DeferredTurn=({children})=>children();`,
-    './chat-message': `export const ChatMessage=({message})=><a href={message.text}><span>Thread PR</span></a>;`,
+    './chat-message': `export const ChatMessage=({message})=><div id={'message-thread-'+message.id}><p>Message context text</p><a href={message.text}><span>Thread PR</span></a><div data-empty>Conversation space</div></div>;`,
     '../../../runtime/connection/provider': `export {useRuntime} from '@dovo/studio-core';`,
     '../state/provider': `export {useConversationSelector} from '@dovo/studio-core';`,
     '../../../ui/content/open-link': `export const openAppLink=async url=>{window.opened.push(url)};`,
@@ -51,10 +51,10 @@ async function bundle(mobile) {
   const ui = `${root}/packages/studio-ui/src/components`
   if (!mobile)
     mocks['@dovo/studio-ui'] =
-      `export * as ContextMenu from '@radix-ui/react-context-menu';export {Button} from '${ui}/ui/button.tsx';export {IconButton} from '${ui}/icon-button.tsx';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${ui}/ui/dialog.tsx';export const Conversation=({children,...props})=><div {...props}>{children}</div>;export const ConversationContent=({children})=><div>{children}</div>;export const ConversationHistory=ConversationContent;export const ConversationRail=()=>null;export const ConversationScrollButton=()=>null;`
+      `export * as ContextMenu from '@radix-ui/react-context-menu';export {Button} from '${ui}/ui/button.tsx';export {Input} from '${ui}/ui/input.tsx';export {IconButton} from '${ui}/icon-button.tsx';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${ui}/ui/dialog.tsx';export const Conversation=({children,...props})=><div {...props}>{children}</div>;export const ConversationContent=({children})=><div>{children}</div>;export const ConversationHistory=ConversationContent;export const ConversationRail=()=>null;export const ConversationScrollButton=()=>null;`
   const entry = mobile
     ? `import {ThreadMarkdown} from '${root}/apps/mobile/src/tasks/conversation/components/thread-markdown.tsx';${fixture.replace('CONTENT', '<><ThreadMarkdown text={url} variant="chat"/><ThreadMarkdown text={"See "+url+"."} plainText/></>')}`
-    : `import {ChatThread} from '${root}/packages/extension-tasks/src/chat/thread/chat-thread.tsx';${fixture.replace('CONTENT', '<ChatThread task={task}/>')}`
+    : `import {TaskPullLinkDialog} from '${root}/packages/extension-tasks/src/dialogs/task-pull-link-dialog.tsx';import {ChatThread} from '${root}/packages/extension-tasks/src/chat/thread/chat-thread.tsx';${fixture.replace('CONTENT', '<><ChatThread task={task} onManagePulls={()=>setManage(true)}/>{manage&&<TaskPullLinkDialog task={task} onClose={()=>setManage(false)}/>}</>')}`
   const result = await build({
     stdin: { contents: entry, resolveDir: root, loader: 'tsx' },
     alias: {
@@ -97,6 +97,62 @@ try {
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: await bundle(mobile) })
     const link = page.getByRole('link', { name: 'Thread PR', exact: true })
+    if (!mobile) {
+      await page.evaluate(() => {
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: {
+            writeText: async (text) => {
+              window.copied.push(text)
+            },
+          },
+        })
+      })
+      // The first interaction is a right-click, before any link has been activated.
+      await link.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Copy link', exact: true }).click()
+      assert.deepEqual(await page.evaluate(() => window.copied), [
+        'https://github.com/foreign/project/pull/42/files#note',
+      ])
+      const prose = page.getByText('Message context text', { exact: true })
+      await prose.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Copy message', exact: true }).click()
+      assert.equal(
+        await page.evaluate(() => window.copied.at(-1)),
+        'https://github.com/foreign/project/pull/42/files#note',
+      )
+      await prose.evaluate((element) => {
+        const range = document.createRange()
+        range.selectNodeContents(element)
+        window.getSelection().removeAllRanges()
+        window.getSelection().addRange(range)
+      })
+      await prose.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Copy selected text', exact: true }).click()
+      assert.equal(await page.evaluate(() => window.copied.at(-1)), 'Message context text')
+      await page.evaluate(() => window.getSelection().removeAllRanges())
+      await page.locator('[data-empty]').click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Find in thread', exact: true }).click()
+      await page.getByRole('searchbox', { name: 'Search this thread' }).waitFor()
+      await page.getByRole('button', { name: 'Close thread search' }).click()
+      await prose.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Bookmark reply', exact: true }).click()
+      await page.waitForFunction(() => window.writes.length === 1)
+      const bookmark = await page.evaluate(() => window.writes[0])
+      assert.equal(bookmark.path, '/api/tasks/message/bookmark')
+      assert.deepEqual(bookmark.input, { id: 'thread', messageId: 'm', bookmarked: true })
+      await prose.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Remove bookmark', exact: true }).waitFor()
+      await page.getByRole('menuitem', { name: 'Copy conversation', exact: true }).click()
+      assert.ok(
+        (await page.evaluate(() => window.copied.at(-1))).includes(
+          'https://github.com/foreign/project/pull/42/files#note',
+        ),
+      )
+      await page.evaluate(() => {
+        window.writes = []
+      })
+    }
     await link.click()
     await page.waitForFunction(() => window.opened.length === 1)
     assert.equal(await page.getByRole('dialog').count(), 0)
@@ -195,6 +251,7 @@ try {
           ],
         }))
       })
+      await page.keyboard.press('Escape')
       await page.locator('#app').dispatchEvent('contextmenu')
       assert.equal(await page.getByRole('menu').count(), 0)
       const ordinary = page.getByRole('link', { name: 'Thread PR', exact: true })
@@ -217,6 +274,46 @@ try {
       await ordinary.click({ button: 'right' })
       await page.getByRole('menuitem', { name: 'Copy link', exact: true }).click()
       await page.getByRole('alert').filter({ hasText: 'Clipboard denied' }).waitFor()
+    }
+    if (!mobile) {
+      await page.evaluate(() => {
+        window.setTask((task) => ({ ...task, repositoryId: '', linkedPullRequests: [] }))
+      })
+      await page.locator('[data-empty]').click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Manage linked pull requests', exact: true }).click()
+      const reference = page.getByRole('textbox', { name: 'Pull request number or URL' })
+      await reference.fill('https://github.com/outside/another-project/pull/99/files#note')
+      const count = await page.evaluate(() => window.writes.length)
+      await page.getByRole('button', { name: 'Link PR', exact: true }).click()
+      await page.waitForFunction(
+        () => document.querySelector('input[aria-label="Pull request number or URL"]').value === '',
+      )
+      const calls = await page.evaluate((count) => window.writes.slice(count), count)
+      assert.equal(calls.length, 1)
+      assert.equal(calls[0].path, '/api/scm/pulls/link-thread')
+      assert.equal(
+        calls[0].input.pulls[0].url,
+        'https://github.com/outside/another-project/pull/99',
+      )
+      await reference.fill('https://github.com/outside/another-project/pull/99')
+      await page.getByRole('button', { name: 'Link PR', exact: true }).click()
+      await page.getByText('This PR is already linked.', { exact: true }).waitFor()
+      await reference.fill('#12')
+      await page.getByRole('button', { name: 'Link PR', exact: true }).click()
+      await page
+        .getByText('Use a full PR URL when this thread has no project.', { exact: true })
+        .waitFor()
+      await page.evaluate(() =>
+        window.setTask((task) => ({ ...task, repositoryId: 'original-project' })),
+      )
+      await page.getByRole('button', { name: 'Link PR', exact: true }).click()
+      await page.waitForFunction(
+        () => document.querySelector('input[aria-label="Pull request number or URL"]').value === '',
+      )
+      const latest = await page.evaluate(() => window.writes.slice(-2))
+      assert.equal(latest[0].path, '/api/scm/pulls/detail')
+      assert.equal(latest[0].input.repositoryId, 'original-project')
+      assert.equal(latest[1].input.pulls[0].title, 'Resolved project PR')
     }
     assert.deepEqual(errors, [])
     await page.close()

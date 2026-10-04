@@ -6,6 +6,10 @@ import {
   conversationMessageTurns,
   conversationToolsByMessage,
   type PendingMessage,
+  conversationPageSchema,
+  taskTranscript,
+  type ConversationPage,
+  responses,
 } from '@dovo/protocol'
 import { TurnWork } from './turn-work'
 import { PullLinkActions } from './pull-link-actions'
@@ -44,6 +48,7 @@ export function ChatThread({
   onPullLink,
   revealMessage,
   onRevealHandled,
+  onManagePulls,
 }: {
   task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'> & {
     historyBefore: Task['historyBefore']
@@ -56,6 +61,7 @@ export function ChatThread({
   onPullLink?: (url: string) => boolean
   revealMessage?: string
   onRevealHandled?: () => void
+  onManagePulls?: () => void
 }) {
   const history = useConversationHistory(liveTask)
   const task = history.task
@@ -66,6 +72,31 @@ export function ChatThread({
   const [selectedPull, setSelectedPull] = useState<{ scope: string; url: string } | null>(null)
   const pull = selectedPull?.scope === linkScope ? threadPullLink(selectedPull.url) : null
   const fullTask = workspace.tasks.find((item) => item.id === liveTask.id)
+  const copyThread = async () => {
+    if (!task.historyBefore || !connected) {
+      await navigator.clipboard.writeText(
+        taskTranscript({ ...task, title: fullTask?.title ?? 'Thread' }),
+      )
+      return
+    }
+    const pages: ConversationPage[] = []
+    let before: string | undefined
+    do {
+      const page = await request(
+        '/api/tasks/history',
+        { id: task.id, before },
+        conversationPageSchema,
+      )
+      pages.unshift(page)
+      before = page.before
+    } while (before)
+    await navigator.clipboard.writeText(
+      taskTranscript({
+        title: fullTask?.title ?? 'Thread',
+        messages: pages.flatMap((page) => page.messages),
+      }),
+    )
+  }
   const selectPull = (url: string) => {
     if (!fullTask || !threadPullLink(url)) return false
     setSelectedPull({ scope: linkScope, url })
@@ -291,6 +322,22 @@ export function ChatThread({
       )}
       <ThreadLinkMenu
         key={linkScope}
+        task={task}
+        onSearch={() => {
+          setSearchOpen(true)
+          requestAnimationFrame(() => searchInput.current?.focus())
+        }}
+        onCopyThread={copyThread}
+        canBookmark={(id) => connected && turns.get(id)?.status !== 'running'}
+        onBookmark={async (messageId, bookmarked) => {
+          await request(
+            '/api/tasks/message/bookmark',
+            { id: task.id, messageId, bookmarked },
+            responses.ok,
+          )
+          history.setBookmark(messageId, bookmarked)
+        }}
+        onManagePulls={onManagePulls}
         onBrowser={onBrowser}
         onPullLink={(url) => onPullLink?.(url) || openPullLink?.(url) || false}
         onLinkPull={

@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useLayoutEffect, useRef } from 'react'
 import type { TextInput, TextInputProps } from 'react-native'
 import { Field } from '../../ui/controls/field'
 import { styles } from '../../ui/theme'
@@ -24,11 +24,6 @@ export const ComposerField = memo(function ComposerField({
   const initial = useRef(value)
   const nativeText = useRef(value)
   const appliedRevision = useRef(revision)
-  const [contentHeight, setContentHeight] = useState(44)
-  const resize = useCallback<NonNullable<TextInputProps['onContentSizeChange']>>(
-    ({ nativeEvent }) => setContentHeight(Math.ceil(nativeEvent.contentSize.height)),
-    [],
-  )
   useLayoutEffect(() => {
     if (appliedRevision.current === revision) return
     appliedRevision.current = revision
@@ -38,7 +33,6 @@ export const ComposerField = memo(function ComposerField({
     // be ignored by Fabric even after native typing; clear() uses the native text command.
     if (!value) {
       input.current?.clear()
-      setContentHeight(44)
     } else input.current?.setNativeProps({ text: value })
   }, [value, revision])
   const type = useCallback(
@@ -68,8 +62,9 @@ export const ComposerField = memo(function ComposerField({
       autoComplete="off"
       textContentType="none"
       multiline
-      onContentSizeChange={resize}
-      scrollEnabled={contentHeight > 144}
+      // Fabric measures native text as it changes. A fixed height prevents that layout
+      // from growing and can leave iOS content-size notifications stuck at one line.
+      scrollEnabled
       textAlignVertical="top"
       autoCapitalize="sentences"
       onSelectionChange={select}
@@ -78,7 +73,6 @@ export const ComposerField = memo(function ComposerField({
         {
           maxHeight: 144,
           minHeight: 44,
-          height: Math.max(44, Math.min(144, contentHeight)),
           borderWidth: 0,
           paddingLeft: showOptions ? 12 : 44,
           paddingRight: showOptions ? 12 : 88,

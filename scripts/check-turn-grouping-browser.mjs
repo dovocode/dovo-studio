@@ -219,11 +219,50 @@ try {
     })
     await page.locator('[data-tools]').waitFor()
     assert.equal(await page.locator('[data-tools]').count(), 1)
+    // Resumed executions share a disclosure; the next independent request gets its own.
+    await page.evaluate(() => {
+      window.events.length = 0
+      window.setTask((task) => ({
+        ...task,
+        messages: [
+          { id: 'request', role: 'user', text: 'First request' },
+          { id: 'before', turnId: 'attempt', role: 'assistant', text: 'Initial execution' },
+          { id: 'steer', turnId: 'resume', role: 'user', text: 'Resume clarification' },
+          { id: 'after', turnId: 'resume', role: 'assistant', text: 'Resumed answer' },
+          { id: 'next-request', role: 'user', text: 'Second request' },
+          { id: 'next-answer', turnId: 'next', role: 'assistant', text: 'Independent answer' },
+        ],
+        turns: [
+          { ...task.turns[0], id: 'attempt', runId: 'run', assistantId: 'before' },
+          { ...task.turns[0], id: 'resume', runId: 'run', assistantId: 'after' },
+          { ...task.turns[0], id: 'next', runId: 'next-run', assistantId: 'next-answer' },
+        ],
+      }))
+    })
+    await page.getByText('Independent answer', { exact: true }).waitFor()
+    const disclosures = page.getByRole('button', { name: /Worked for/ })
+    assert.equal(await disclosures.count(), 2)
+    for (let index = 0; index < 2; index++) {
+      if ((await disclosures.nth(index).getAttribute('aria-expanded')) === 'true')
+        await disclosures.nth(index).click()
+    }
+    assert.deepEqual(await page.locator('[data-prose]').allTextContents(), [
+      'First request',
+      'Resume clarification',
+      'Resumed answer',
+      'Second request',
+      'Independent answer',
+    ])
+    await disclosures.first().click()
+    assert.equal(await page.getByText('Initial execution', { exact: true }).count(), 1)
+    assert.equal(await disclosures.nth(1).getAttribute('aria-expanded'), 'false')
+    await disclosures.first().click()
+    assert.equal(await page.getByText('Initial execution', { exact: true }).count(), 0)
     assert.deepEqual(errors, [])
     await page.close()
   }
   console.log(
-    'Desktop and mobile: one logical turn, steering remains visible, separate provider messages, intact hyphenated prose, tool order, final reply retained and shared collapse state passed.',
+    'Desktop and mobile: logical turns, resumed executions, independent request disclosures, visible steering and final replies, separate provider messages, intact prose, tool order and collapse state passed.',
   )
 } finally {
   await browser.close()

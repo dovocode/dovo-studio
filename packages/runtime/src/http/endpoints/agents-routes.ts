@@ -27,6 +27,7 @@ import { harnessAvailabilityCandidates } from '@dovo/protocol'
 import { searchSkills, installCatalogSkill } from '../../agents/catalogs/skills.js'
 import { importSkill, testMcpServer } from '../../agents/configuration/resources.js'
 import { attachmentIdsSchema } from '@dovo/protocol'
+import { startForkSchema } from '@dovo/protocol'
 import {
   agentDiscoverySchema,
   modelDiscoveryInput,
@@ -875,6 +876,12 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         return yield* serviceResult(s.tasks.newWorktreeThread(input.id, input.mode))
+      }
+      if (method === 'POST' && path === '/api/tasks/start-fork') {
+        const input = decode(startForkSchema, yield* serviceResult(body(request)))
+        return yield* serviceResult(
+          s.tasks.startFork(input.id, input.forkId, input.text, input.attachmentIds),
+        )
       }
       if (method === 'POST' && path === '/api/tasks/handoff') {
         const input = decode(

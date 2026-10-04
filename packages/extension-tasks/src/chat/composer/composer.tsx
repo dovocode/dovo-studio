@@ -1,4 +1,4 @@
-import { randomUUID, checkpointCanUndo } from '@dovo/protocol'
+import { randomUUID, checkpointCanUndo, taskForkResultSchema } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -27,8 +27,9 @@ import {
   Square,
   CornerUpRight,
   Minimize2,
+  GitBranchPlus,
 } from 'lucide-react'
-import { useWorkspace, updateTask, responses, type Task } from '@dovo/studio-core'
+import { useWorkspace, useStudioHost, updateTask, responses, type Task } from '@dovo/studio-core'
 import {
   Button,
   IconButton,
@@ -73,6 +74,8 @@ export function Composer({
   const sendingRequest = useRef(false)
   const attachments = useAttachments(task)
   const composerDraft = useComposerDraft(task, temporary)
+  const host = useStudioHost()
+  const forkAttempt = useRef<{ id: string; text: string; attachmentIds: string[] } | null>(null)
   const setDraft = composerDraft.update
   const [submittedText, setSubmittedText] = useState<string | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
@@ -328,6 +331,53 @@ export function Composer({
       setSending(false)
     }
   }
+  const startFork = async () => {
+    const text = composerDraft.controller.text.trim()
+    const attachmentIds = attachments.files.map((file) => file.id)
+    if (
+      !connected ||
+      sendingRequest.current ||
+      sending ||
+      stopping ||
+      attachments.busy ||
+      (!text && !attachmentIds.length)
+    )
+      return
+    sendingRequest.current = true
+    setSending(true)
+    setSubmittedText(text)
+    setError('')
+    if (
+      forkAttempt.current?.text !== text ||
+      JSON.stringify(forkAttempt.current.attachmentIds) !== JSON.stringify(attachmentIds)
+    )
+      forkAttempt.current = { id: randomUUID(), text, attachmentIds }
+    try {
+      composerDraft.flush()
+      await flush()
+      const fork = await request(
+        '/api/tasks/start-fork',
+        { id: task.id, forkId: forkAttempt.current.id, text, attachmentIds },
+        taskForkResultSchema,
+      )
+      setWorkspace((workspace) =>
+        updateTask(workspace, task.id, (current) => ({
+          ...current,
+          draftAttachments: current.draftAttachments?.filter(
+            (file) => !attachmentIds.includes(file.id),
+          ),
+        })),
+      )
+      composerDraft.accept(text)
+      forkAttempt.current = null
+      host.navigate({ viewId: 'tasks', entityId: fork.id })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      sendingRequest.current = false
+      setSending(false)
+    }
+  }
   return (
     <div className="shrink-0 px-3 pb-2 pt-1">
       {meter && meter.level !== 'ok' && !pendingQuestion && (
@@ -463,6 +513,27 @@ export function Composer({
 
             {task.status === 'running' && hasInput && !pendingQuestion && (
               <>
+                {task.repositoryId &&
+                  !workspace.repositories.find((repo) => repo.id === task.repositoryId)?.kind && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-8 gap-1.5 px-2 text-[0.6875rem]"
+                      aria-label="Start in fork"
+                      title="Continue this conversation in a new worktree from the latest commit"
+                      disabled={
+                        !connected ||
+                        sending ||
+                        stopping ||
+                        attachments.busy ||
+                        !!task.archived ||
+                        !!task.archivedAt
+                      }
+                      onClick={() => void startFork()}
+                    >
+                      <GitBranchPlus className="size-3.5" /> Start in fork
+                    </Button>
+                  )}
                 <Button
                   type="button"
                   variant="ghost"

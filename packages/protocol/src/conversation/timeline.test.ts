@@ -229,7 +229,7 @@ it('does not promote previous commentary when the terminal assistant message has
   ).toEqual(['after'])
 })
 
-it('separates failed tools and execution boundaries from adjacent successful tools', () => {
+it('groups failures with adjacent tools while preserving execution boundaries', () => {
   const tools = ['completed', 'failed', 'completed', 'completed'].map((status, index) => ({
     id: String(index),
     status,
@@ -244,12 +244,10 @@ it('separates failed tools and execution boundaries from adjacent successful too
   }))
   const groups = threadTimeline('', tools).filter((block) => block.kind === 'activity')
   expect(groups.map((block) => block.tools.map((tool) => tool.id))).toEqual([
-    ['0'],
-    ['1'],
-    ['2'],
+    ['0', '1', '2'],
     ['3'],
   ])
-  expect(new Set(groups.map((block) => block.key)).size).toBe(4)
+  expect(new Set(groups.map((block) => block.key)).size).toBe(2)
 })
 
 it('keeps a tool group disclosure stable when new activity events update the same tool', () => {

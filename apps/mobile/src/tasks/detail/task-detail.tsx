@@ -53,7 +53,6 @@ import { useTaskViewed } from './use-task-viewed'
 import { copyText } from '../../ui/content/clipboard'
 import { PreparationProgress } from '../conversation/components/preparation-progress'
 import { ReviewComments } from '../conversation/components/review-comments'
-import { PullStatus } from './pull-status'
 import { PlanApproval } from '../conversation/components/plan-approval'
 import { SideQuestion } from '../conversation/components/side-question'
 import { ProjectInstructions } from './project-instructions'
@@ -378,6 +377,8 @@ function TaskDetailContent({
     'chat' | 'diff' | 'terminal' | 'browser' | 'devices' | 'agents'
   >('chat')
   const hasDiff =
+    !!task.pullStatus ||
+    !!task.linkedPullRequests?.length ||
     task.files.length > 0 ||
     !!task.linkedCheckouts?.length ||
     task.historyTotals?.hasChanges ||
@@ -564,7 +565,6 @@ function TaskDetailContent({
             ] satisfies HeaderAction[],
           )}
       />
-      <PullStatus task={task} />
       {task.workItem && (
         <View
           style={{

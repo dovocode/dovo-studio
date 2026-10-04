@@ -37,7 +37,7 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
           action,
           runId: action === 'steer' ? task.activeRunId : undefined,
           messageId,
-          ...edit,
+          ...(edit ? { text: edit.text, expectedText: edit.expectedText } : {}),
         },
         responses.ok,
       )
