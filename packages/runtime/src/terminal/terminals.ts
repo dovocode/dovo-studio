@@ -109,12 +109,16 @@ export class Terminals {
     delete env.DOVO_OWNER_TOKEN
     delete env.ELECTRON_RUN_AS_NODE
     const id = randomUUID(),
-      process = loadPty().spawn(launch.command, launch.args, {
+      terminal = loadPty().spawn(launch.command, launch.args, {
         name: 'xterm-256color',
         cols: 100,
         rows: 24,
         cwd,
         env,
+        // The OS ConPTY path enumerates processes after closing the console, then
+        // kills a potentially recycled PID five seconds later (node-pty #967).
+        // The bundled ConPTY owns teardown without that delayed process sweep.
+        ...(process.platform === 'win32' ? { useConptyDll: true } : {}),
       })
     const session: Session = {
       info: {
@@ -124,7 +128,7 @@ export class Terminals {
         title,
         exited: false,
       },
-      process,
+      process: terminal,
       buffer: '',
       listeners: new Set(),
     }
@@ -139,11 +143,11 @@ export class Terminals {
       cwd,
       command: launch.command,
     })
-    process.onData((data) => {
+    terminal.onData((data) => {
       session.buffer = (session.buffer + data).slice(-1024 * 1024)
       notify(session.listeners, data)
     })
-    process.onExit(({ exitCode }) => {
+    terminal.onExit(({ exitCode }) => {
       session.info = {
         ...session.info,
         exited: true,

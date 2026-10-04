@@ -23,7 +23,6 @@ jobs:
       - run: pnpm build
       - run: pnpm check
       - run: pnpm typecheck
-      - run: node scripts/check-mobile-markdown-queue.mjs
       - run: node scripts/check-runtime-sync.mjs
       # All packages were compiled above; the local test command intentionally builds first.
       - run: pnpm exec vp test --maxWorkers=4
@@ -61,6 +60,7 @@ jobs:
         with:
           node: ${{ steps.setup.outputs.node }}
       - run: pnpm exec vp run --cache --filter @dovo/api... build
+      - run: node scripts/check-mobile-markdown-queue.mjs
       - run: node --test scripts/packaging/desktop-build-stamp.test.mjs scripts/packaging/prepared-runtime.test.mjs
       - run: >-
           pnpm exec vp test --maxWorkers=3

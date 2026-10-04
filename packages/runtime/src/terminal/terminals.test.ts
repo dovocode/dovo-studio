@@ -4,6 +4,52 @@ import { fixture } from '../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration'
 import { stripVTControlCharacters } from 'node:util'
 vi.setConfig(runtimeIntegration)
+function killIfRunning(pid: number) {
+  try {
+    process.kill(pid)
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error
+  }
+}
+it.skipIf(process.platform !== 'win32')(
+  'closes the Windows pseudoconsole and its child processes',
+  async () => {
+    const f = await fixture()
+    const terminals = new Terminals()
+    let descendantPid: number | undefined
+    try {
+      const session = terminals.createCommand(
+        'task',
+        f.directory,
+        {
+          command: process.execPath,
+          args: [
+            '-e',
+            `const { spawn } = require('node:child_process');
+             const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' });
+             console.log('descendant:' + child.pid);
+             setInterval(() => {}, 1000);`,
+          ],
+          env: {},
+        },
+        'Owned process tree',
+      )
+      await waitForRuntime(() => {
+        const match = terminals.get(session.id).buffer.match(/descendant:(\d+)/)
+        expect(match).not.toBeNull()
+        descendantPid = Number(match![1])
+      })
+      terminals.close(session.id)
+      await terminals.dispose()
+      await waitForRuntime(() => expect(() => process.kill(descendantPid!, 0)).toThrow(/ESRCH/))
+    } finally {
+      await terminals.dispose()
+      // Keep failed regression runs from leaving a background process behind.
+      if (descendantPid) killIfRunning(descendantPid)
+      await f.cleanup()
+    }
+  },
+)
 // Keep the marker out of echoed input and use the actual platform shell syntax.
 const outputCommand =
   process.platform === 'win32'
