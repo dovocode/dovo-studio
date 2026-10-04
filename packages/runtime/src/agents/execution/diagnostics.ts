@@ -168,6 +168,7 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
       documentationUrl: url,
     })
   for (const [provider, packageName, name, url] of [
+    ['cursor', '@cursor/sdk', 'Cursor SDK', 'https://cursor.com/docs/sdk/typescript'],
     [
       'copilot',
       '@github/copilot-sdk',
@@ -188,7 +189,10 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
       name,
       kind: 'sdk',
       inspect: sdk(packageName),
-      guidance: 'Update Dovo to receive its tested SDK. The agent CLI has its own release channel.',
+      guidance:
+        provider === 'cursor'
+          ? 'Update Dovo to receive its tested Cursor SDK. Set CURSOR_API_KEY or use the SDK browser login on this runtime; Cursor desktop authentication is separate.'
+          : 'Update Dovo to receive its tested SDK. The agent CLI has its own release channel.',
       documentationUrl: url,
     })
   const configured = new Set<string>(
@@ -207,7 +211,7 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
     },
     ...agents,
   ]) {
-    if (agent.provider === 'opencode') continue
+    if (agent.provider === 'opencode' || agent.provider === 'cursor') continue
     const command = agent.endpoint || (agent.provider === 'claude' ? 'claude' : '')
     if (!command || configured.has(`${agent.provider}\0${command}`)) continue
     configured.add(`${agent.provider}\0${command}`)

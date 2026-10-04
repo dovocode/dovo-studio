@@ -114,3 +114,23 @@ it('expands the Copilot SDK base directory', () => {
     }).configDirectory,
   ).toBe(join(homedir(), 'copilot-work'))
 })
+it('activates the Cursor SDK without resolving a CLI command or mutating its credentials', async () => {
+  const registry = new AgentRegistry()
+  try {
+    const agent = {
+      provider: 'cursor' as const,
+      endpoint: '/ignored-cli',
+      model: 'example',
+      env: { CURSOR_API_KEY: 'private' },
+    }
+    expect(registry.configure(agent)).toEqual({ ...agent, endpoint: '' })
+    expect(await registry.get('cursor')).toMatchObject({
+      run: expect.any(Function),
+      models: expect.any(Function),
+      probe: expect.any(Function),
+    })
+    expect(process.env.CURSOR_API_KEY).not.toBe('private')
+  } finally {
+    await registry.dispose()
+  }
+})

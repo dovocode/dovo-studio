@@ -11,6 +11,7 @@ export const adapterDiagnosticSchema = mutableStruct({
     'copilot',
     'grok',
     'muse',
+    'cursor',
     'acp',
     'mcp',
   ),

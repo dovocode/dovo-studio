@@ -28,6 +28,7 @@ export const harnessIconData: Record<TaskHarness['provider'], HarnessIconData> =
   },
   grok: { viewBox: '0 0 24 24', paths: [{ d: 'M4 20L18 4h3L7 20zM4 4h4l12 16h-4z' }] },
   muse: { viewBox: '0 0 24 24', paths: [{ d: 'M3 21V3h3l6 9 6-9h3v18h-4V10l-5 8-5-8v11z' }] },
+  cursor: { viewBox: '0 0 24 24', paths: [{ d: 'M3 2l17 10-7 2-4 8L3 2Z' }] },
   acp: {
     viewBox: '0 0 160 61',
     paths: [

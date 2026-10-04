@@ -17,6 +17,7 @@ export function completedCompaction(
     return object(event.item).type === 'contextCompaction' ? 'auto' : undefined
   if (provider === 'claude' && name === 'system' && event.subtype === 'compact_boundary')
     return object(event.compact_metadata).trigger === 'manual' ? 'manual' : 'auto'
+  if (provider === 'cursor' && name === 'cursor/summary-completed') return 'auto'
   if (provider === 'opencode' && name === 'session.compacted') return 'auto'
   if (provider === 'opencode' && name === 'session.compaction.ended')
     return object(event.data).reason === 'manual' ? 'manual' : 'auto'

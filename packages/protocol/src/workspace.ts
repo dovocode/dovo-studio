@@ -18,6 +18,7 @@ export const providerSchema = Schema.Literal(
   'copilot',
   'grok',
   'muse',
+  'cursor',
   'acp',
 )
 export const agentIconSchema = Schema.Literal(

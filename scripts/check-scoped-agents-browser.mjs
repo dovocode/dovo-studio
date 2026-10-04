@@ -8,7 +8,7 @@ const state = `export {useState as useApplicationState} from 'react';`
 const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
-    const core = `import {createContext,useContext} from 'react';export {selectableAccessModes,supportsAccess,agentSchema} from '@dovo/protocol';export {SettingsTargetProvider,useSettingsTarget} from '${root}/packages/studio-core/src/settings-target.tsx';export const providers={codex:{name:'Codex'},claude:{name:'Claude'},opencode:{name:'OpenCode'},acp:{name:'ACP'}};const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,workspace:entry.snapshot.workspace,snapshot:entry.snapshot,connected:entry.connected,request:window.requests[profile.id]}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
+    const core = `import {createContext,useContext} from 'react';export {selectableAccessModes,supportsAccess,agentSchema} from '@dovo/protocol';export {SettingsTargetProvider,useSettingsTarget} from '${root}/packages/studio-core/src/settings-target.tsx';export const providers={codex:{name:'Codex'},claude:{name:'Claude'},opencode:{name:'OpenCode'},acp:{name:'ACP'},cursor:{name:'Cursor SDK'}};const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,workspace:entry.snapshot.workspace,snapshot:entry.snapshot,connected:entry.connected,request:window.requests[profile.id]}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
     const native = `import {createContext,useContext} from 'react';import {Effect} from 'effect';const Scope=createContext(null);export const useRuntime=()=>useContext(Scope)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const entry=window.sources.find(entry=>entry.profile.id===runtimeId);return <Scope.Provider value={{...window.runtime,profile:entry.profile,snapshot:entry.snapshot,connected:entry.connected,callEffect:window.effects[runtimeId]}}><div data-owner={runtimeId}>{children}</div></Scope.Provider>};`
     const mocks = {
       '@dovo/studio-core': core,
@@ -123,11 +123,53 @@ try {
       .click()
     await page.getByText('Research', { exact: true }).waitFor()
     assert.equal(await page.evaluate(() => window.writes.at(-1).after.agents[0].provider), 'claude')
+    await page.getByRole('button', { name: 'New configuration', exact: true }).click()
+    await page.getByLabel('Name', { exact: true }).fill('Cursor worker')
+    await page.getByLabel('Access', { exact: true }).selectOption('ask')
+    await page.getByLabel('Provider', { exact: true }).selectOption('cursor')
+    assert.equal(await page.getByLabel('Access', { exact: true }).inputValue(), 'read-only')
+    assert.deepEqual(
+      await page
+        .getByLabel('Access', { exact: true })
+        .locator('option')
+        .evaluateAll((rows) => rows.map((row) => row.value)),
+      ['read-only', 'auto', 'full-access'],
+    )
+    assert.equal(
+      await page
+        .getByLabel(mobile ? 'Executable path · blank uses default' : 'Connection / executable', {
+          exact: true,
+        })
+        .count(),
+      0,
+    )
+    assert.equal(
+      await page
+        .getByLabel(mobile ? 'Arguments · one per line' : 'Executable arguments (one per line)', {
+          exact: true,
+        })
+        .count(),
+      0,
+    )
+    await page.getByText(/Cursor desktop login is separate/).waitFor()
+    await page
+      .getByRole('button', { name: mobile ? 'Save agent' : 'Save configuration', exact: true })
+      .click()
+    await page.getByText('Cursor worker', { exact: true }).waitFor()
+    assert.deepEqual(
+      await page.evaluate(() => {
+        const agent = window.writes
+          .at(-1)
+          .after.agents.find((agent) => agent.name === 'Cursor worker')
+        return { provider: agent.provider, permission: agent.permission }
+      }),
+      { provider: 'cursor', permission: 'read-only' },
+    )
     assert.deepEqual(errors, [])
     await page.close()
     console.log(
       (mobile ? 'Mobile' : 'Desktop') +
-        ' scoped agents: inherited override, reset, host/project ownership and editor save passed',
+        ' scoped agents: inherited override, reset, host/project ownership, Cursor SDK access/auth fields and editor save passed',
     )
   }
 } finally {

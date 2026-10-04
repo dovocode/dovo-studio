@@ -116,7 +116,7 @@ export function HarnessSettings({
         label="Access"
         value={agent.permission}
         disabled={controlsDisabled || !selectionAllowed}
-        items={selectableAccessModes(agent.permission)
+        items={selectableAccessModes(agent.permission, agent.provider)
           .filter((mode) => supportsAccess(agent.provider, mode.id))
           .map((mode) => ({
             id: mode.id,
@@ -131,8 +131,9 @@ export function HarnessSettings({
       />
       <Text style={styles.muted}>
         {
-          selectableAccessModes(agent.permission).find((mode) => mode.id === agent.permission)
-            ?.description
+          selectableAccessModes(agent.permission, agent.provider).find(
+            (mode) => mode.id === agent.permission,
+          )?.description
         }
       </Text>
       {!custom &&

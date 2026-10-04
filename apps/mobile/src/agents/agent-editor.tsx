@@ -81,16 +81,18 @@ export function AgentEditor({
           the native Hermes gateway.
         </Text>
       )}
-      <Field
-        label={
-          draft.provider === 'opencode'
-            ? 'Server URL · blank starts OpenCode automatically'
-            : 'Executable path · blank uses default'
-        }
-        value={agentConnectionValue(draft)}
-        editable={!busy}
-        onChangeText={(endpoint) => setDraft(changeAgentConnection(draft, endpoint))}
-      />
+      {draft.provider !== 'cursor' && (
+        <Field
+          label={
+            draft.provider === 'opencode'
+              ? 'Server URL · blank starts OpenCode automatically'
+              : 'Executable path · blank uses default'
+          }
+          value={agentConnectionValue(draft)}
+          editable={!busy}
+          onChangeText={(endpoint) => setDraft(changeAgentConnection(draft, endpoint))}
+        />
+      )}
       {draft.provider === 'opencode' && !draft.endpoint.trim() && (
         <Field
           label="OpenCode executable path · optional"
@@ -118,7 +120,7 @@ export function AgentEditor({
           editable={!busy}
         />
       )}
-      {(draft.provider !== 'opencode' || !draft.endpoint.trim()) && (
+      {draft.provider !== 'cursor' && (draft.provider !== 'opencode' || !draft.endpoint.trim()) && (
         <Field
           label="Arguments · one per line"
           editable={!busy}
@@ -131,6 +133,12 @@ export function AgentEditor({
           }
           multiline
         />
+      )}
+      {draft.provider === 'cursor' && (
+        <Text style={styles.muted}>
+          Runs locally through the Cursor SDK. Set CURSOR_API_KEY on this runtime or use Cursor SDK
+          browser login. Cursor desktop login is separate.
+        </Text>
       )}
       <>
         <Field
@@ -149,7 +157,7 @@ export function AgentEditor({
         label="Access"
         disabled={busy}
         value={draft.permission}
-        items={selectableAccessModes(draft.permission)
+        items={selectableAccessModes(draft.permission, draft.provider)
           .filter((mode) => supportsAccess(draft.provider, mode.id))
           .map((mode) => ({
             id: mode.id,

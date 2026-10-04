@@ -8,6 +8,7 @@ import {
   acpHarnessChoiceId,
   selectableAccessModes,
   supportsAccess,
+  resolveProviderAccess,
   agentSchema,
   modelCatalogSchema,
   useWorkspace,
@@ -78,7 +79,7 @@ export function HarnessFields({
             )
               onChange({
                 ...defaultTaskHarness(next),
-                permission: supportsAccess(next, value.permission) ? value.permission : 'ask',
+                permission: resolveProviderAccess(next, value.permission),
               })
           }}
         >
@@ -161,7 +162,7 @@ export function HarnessFields({
             })
           }
         >
-          {selectableAccessModes(value.permission).map((mode) => (
+          {selectableAccessModes(value.permission, value.provider).map((mode) => (
             <option
               key={mode.id}
               value={mode.id}
@@ -174,8 +175,9 @@ export function HarnessFields({
       </FormField>
       <p className="text-xs text-muted-foreground">
         {
-          selectableAccessModes(value.permission).find((mode) => mode.id === value.permission)
-            ?.description
+          selectableAccessModes(value.permission, value.provider).find(
+            (mode) => mode.id === value.permission,
+          )?.description
         }
       </p>
       <details className="text-xs">
@@ -183,23 +185,24 @@ export function HarnessFields({
           Connection and instructions
         </summary>
         <div className="mt-3 grid gap-3">
-          {(value.provider !== 'acp' || !value.acpInstallationId) && (
-            <FormField label={value.provider === 'opencode' ? 'Server URL' : 'Executable'}>
-              <Input
-                aria-label="Harness endpoint"
-                value={value.endpoint}
-                onChange={(e) =>
-                  onChange({
-                    ...value,
-                    endpoint: e.target.value,
-                  })
-                }
-                placeholder={
-                  value.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Use runtime default'
-                }
-              />
-            </FormField>
-          )}
+          {value.provider !== 'cursor' &&
+            (value.provider !== 'acp' || !value.acpInstallationId) && (
+              <FormField label={value.provider === 'opencode' ? 'Server URL' : 'Executable'}>
+                <Input
+                  aria-label="Harness endpoint"
+                  value={value.endpoint}
+                  onChange={(e) =>
+                    onChange({
+                      ...value,
+                      endpoint: e.target.value,
+                    })
+                  }
+                  placeholder={
+                    value.provider === 'opencode' ? 'http://127.0.0.1:4096' : 'Use runtime default'
+                  }
+                />
+              </FormField>
+            )}
           {(['hermes', 'copilot', 'grok', 'muse'].includes(value.provider) ||
             (value.provider === 'acp' && !value.acpInstallationId)) && (
             <FormField label="Arguments (one per line)">

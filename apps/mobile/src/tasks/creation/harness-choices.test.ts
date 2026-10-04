@@ -52,6 +52,7 @@ it('offers all providers and custom agents before the first input', () => {
     'harness:copilot',
     'harness:grok',
     'harness:muse',
+    'harness:cursor',
     'harness:acp',
     'agent:builder',
     'agent:reviewer',
@@ -342,4 +343,15 @@ it('uses persistent host names and distinguishes the detected OpenCode generatio
   expect(
     taskHarnessLabel({ ...draft, harness: agent }, agent, [], 'GPT-5.1 Sol', 'OpenCode v2'),
   ).toBe('OpenCode v2 · GPT-5.1 Sol')
+})
+
+it('selects Cursor with read-only access when the previous harness required approvals', () => {
+  const current = {
+    ...draft,
+    harness: { ...defaultTaskHarness('codex'), permission: 'ask' as const },
+  }
+  expect(selectedTaskHarness(current, agents, 'harness:cursor')).toMatchObject({
+    provider: 'cursor',
+    permission: 'read-only',
+  })
 })

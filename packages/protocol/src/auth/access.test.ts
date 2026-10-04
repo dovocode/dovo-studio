@@ -31,3 +31,23 @@ it('restricts utilities to providers with a tool-disable boundary', () => {
   }
   expect(supportsUtilities('copilot')).toBe(true)
 })
+
+it('offers Cursor native modes and safely falls back from unsupported approval policies', async () => {
+  const { resolveProviderAccess, changeAgentProvider, defaultTaskHarness } =
+    await import('../index.js')
+  expect(selectableAccessModes('full-access', 'cursor').map((mode) => mode.id)).toEqual([
+    'read-only',
+    'auto',
+    'full-access',
+  ])
+  expect(supportsAccess('cursor', 'ask')).toBe(false)
+  expect(supportsAccess('cursor', 'workspace-write')).toBe(false)
+  expect(resolveProviderAccess('cursor', 'ask')).toBe('read-only')
+  expect(resolveProviderAccess('cursor', 'auto')).toBe('auto')
+  expect(
+    changeAgentProvider(
+      { ...defaultTaskHarness('codex'), id: 'a', name: 'A', permission: 'ask' },
+      'cursor',
+    ).permission,
+  ).toBe('read-only')
+})

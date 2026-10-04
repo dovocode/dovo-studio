@@ -173,7 +173,7 @@ export function AgentEditor({
                   })
                 }
               >
-                {selectableAccessModes(agent.permission).map((mode) => (
+                {selectableAccessModes(agent.permission, agent.provider).map((mode) => (
                   <option
                     key={mode.id}
                     value={mode.id}
@@ -187,8 +187,9 @@ export function AgentEditor({
             </FormField>
             <p className="text-xs text-muted-foreground">
               {
-                selectableAccessModes(agent.permission).find((mode) => mode.id === agent.permission)
-                  ?.description
+                selectableAccessModes(agent.permission, agent.provider).find(
+                  (mode) => mode.id === agent.permission,
+                )?.description
               }
             </p>
             {!supportsAccess(agent.provider, agent.permission) && (
@@ -204,20 +205,22 @@ export function AgentEditor({
                 environment; Dovo launches the native Hermes gateway.
               </p>
             )}
-            <FormField
-              layout="settings"
-              label={agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'}
-            >
-              <Input
-                value={agentConnectionValue(agent)}
-                onChange={(e) => setAgent(changeAgentConnection(agent, e.target.value))}
-                placeholder={
-                  agent.provider === 'opencode'
-                    ? 'Automatic local OpenCode server'
-                    : 'Managed by runtime'
-                }
-              />
-            </FormField>
+            {agent.provider !== 'cursor' && (
+              <FormField
+                layout="settings"
+                label={agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'}
+              >
+                <Input
+                  value={agentConnectionValue(agent)}
+                  onChange={(e) => setAgent(changeAgentConnection(agent, e.target.value))}
+                  placeholder={
+                    agent.provider === 'opencode'
+                      ? 'Automatic local OpenCode server'
+                      : 'Managed by runtime'
+                  }
+                />
+              </FormField>
+            )}
             {agent.provider === 'opencode' && !agent.endpoint.trim() && (
               <FormField layout="settings" label="OpenCode executable path (optional)">
                 <Input
@@ -250,19 +253,26 @@ export function AgentEditor({
                 />
               </FormField>
             )}
-            {(agent.provider !== 'opencode' || !agent.endpoint.trim()) && (
-              <FormField layout="settings" label="Executable arguments (one per line)">
-                <Textarea
-                  value={(agent.args ?? []).join('\n')}
-                  onChange={(event) =>
-                    setAgent({
-                      ...agent,
-                      args: event.target.value.split('\n').filter(Boolean),
-                    })
-                  }
-                  placeholder={agent.provider === 'claude' ? '--flag=value' : '--flag\nvalue'}
-                />
-              </FormField>
+            {agent.provider !== 'cursor' &&
+              (agent.provider !== 'opencode' || !agent.endpoint.trim()) && (
+                <FormField layout="settings" label="Executable arguments (one per line)">
+                  <Textarea
+                    value={(agent.args ?? []).join('\n')}
+                    onChange={(event) =>
+                      setAgent({
+                        ...agent,
+                        args: event.target.value.split('\n').filter(Boolean),
+                      })
+                    }
+                    placeholder={agent.provider === 'claude' ? '--flag=value' : '--flag\nvalue'}
+                  />
+                </FormField>
+              )}
+            {agent.provider === 'cursor' && (
+              <p className="text-xs text-muted-foreground">
+                Runs locally through the Cursor SDK. Set CURSOR_API_KEY on this runtime or use
+                Cursor SDK browser login. Cursor desktop login is separate.
+              </p>
             )}
             <FormField layout="settings" label="Environment variables (NAME=value, one per line)">
               <Textarea

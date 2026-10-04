@@ -10,7 +10,7 @@ import {
 } from '../../workspace.js'
 import { titleGenerationSettingsSchema } from '../../tasks/title-generation.js'
 import { resolveScopedSettings } from './scoped-settings.js'
-import { supportsAccess } from '../../auth/access.js'
+import { resolveProviderAccess } from '../../auth/access.js'
 
 export const modelPreferencesSchema = Schema.Record({
   key: Schema.String,
@@ -54,7 +54,7 @@ export function resolveTaskDefaults(
     setupCommand: repository?.kind ? undefined : defaults.setupCommand,
     harness: {
       ...selected,
-      permission: supportsAccess(selected.provider, permission) ? permission : 'ask',
+      permission: resolveProviderAccess(selected.provider, permission),
     },
     execution: repository?.kind ? ('main' as const) : (defaults.execution ?? 'main'),
     worktreeFromOrigin: repository?.kind ? false : (defaults.worktreeFromOrigin ?? false),

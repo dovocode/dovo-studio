@@ -155,6 +155,11 @@ try {
     ['copilot', 'gpt-example', 'Copilot Model'],
     ['muse', JSON.stringify({ providerId: 'meta', modelId: 'example' }), 'Muse Model'],
     ['grok', 'grok-example', 'Grok Model'],
+    [
+      'cursor',
+      JSON.stringify({ id: 'cursor-example', params: [{ id: 'effort', value: 'low' }] }),
+      'Cursor Model',
+    ],
   ]) {
     const before = await page.evaluate(() => window.requests.length)
     await page.evaluate((provider) => window.harness(provider), provider)
@@ -162,11 +167,12 @@ try {
     const request = await page.evaluate((index) => window.requests[index].input, before)
     if (request.provider !== provider)
       throw new Error(`${provider} discovered through another provider`)
+    const high = provider === 'cursor' ? JSON.stringify({ id: 'effort', value: 'high' }) : 'high'
     await finish(before, {
       models: [
-        { id, name, ...(provider === 'grok' ? {} : { reasoning: [{ id: 'high', name: 'High' }] }) },
+        { id, name, ...(provider === 'grok' ? {} : { reasoning: [{ id: high, name: 'High' }] }) },
       ],
-      reasoning: [{ id: 'high', name: 'High' }],
+      reasoning: [{ id: high, name: 'High' }],
     })
     await page.getByRole('option', { name, exact: true }).waitFor({ state: 'attached' })
     await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption(id)
@@ -176,17 +182,17 @@ try {
       if (selected.model !== id) throw new Error('Grok reasoning discovery lost the selected model')
       await finish(before + 1, {
         models: [{ id, name }],
-        reasoning: [{ id: 'high', name: 'High' }],
+        reasoning: [{ id: high, name: 'High' }],
       })
     }
-    await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).selectOption('high')
+    await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).selectOption(high)
     await page.evaluate(() => window.online(false))
     await page.getByRole('option', { name, exact: true }).waitFor({ state: 'attached' })
     await page.evaluate(() => window.online(true))
   }
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names, Hermes/Copilot/Grok/Muse model selection, reasoning and OpenCode v1/v2 labels passed.',
+    'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names, Hermes/Copilot/Grok/Muse/Cursor model selection, reasoning and OpenCode v1/v2 labels passed.',
   )
 } finally {
   await browser.close()

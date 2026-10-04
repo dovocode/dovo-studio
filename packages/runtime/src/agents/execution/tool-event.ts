@@ -27,6 +27,12 @@ export function toolEvent(provider: Agent['provider'], name: string, payload: un
       status: name.endsWith('completed') ? string(item.status) || 'completed' : 'running',
     }
   }
+  if (provider === 'cursor' && name === 'cursor/tool_call')
+    return {
+      toolId: string(data.call_id),
+      title: string(data.name) || 'Cursor tool',
+      status: data.status === 'error' ? 'failed' : string(data.status) || 'running',
+    }
   if (provider === 'claude') {
     const blocks = decodeResult(mutableArray(record), object(data.message).content).data ?? []
     const tools = blocks.filter((b) => b.type === 'tool_use' || b.type === 'tool_result')

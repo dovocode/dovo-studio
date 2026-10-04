@@ -87,7 +87,13 @@ export type { Attachment } from '@dovo/protocol'
 
 export { attachmentUploadResultSchema, attachmentMutationSchema } from '@dovo/protocol'
 
-export { accessModes, selectableAccessModes, supportsAccess, accessLabel } from '@dovo/protocol'
+export {
+  accessModes,
+  selectableAccessModes,
+  supportsAccess,
+  resolveProviderAccess,
+  accessLabel,
+} from '@dovo/protocol'
 
 export { titleGenerationSettingsSchema, generatedTitleSchema } from '@dovo/protocol'
 export type { TitleGenerationSettings } from '@dovo/protocol'

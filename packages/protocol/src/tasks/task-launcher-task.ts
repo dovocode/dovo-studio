@@ -1,7 +1,7 @@
 import { defaultTaskHarness, type Repository, type Task } from '../workspace.js'
 import type { RuntimeSnapshot } from '../runtime/connection/runtime.js'
 import { resolveTaskDefaults } from '../runtime/connection/runtime-setup.js'
-import { supportsAccess } from '../auth/access.js'
+import { resolveProviderAccess } from '../auth/access.js'
 import type { LauncherAgent } from './task-launcher-choices.js'
 
 export function createLauncherTask(
@@ -19,9 +19,7 @@ export function createLauncherTask(
       ? defaults.harness
       : {
           ...defaultTaskHarness(agent.provider),
-          permission: supportsAccess(agent.provider, defaults.harness.permission)
-            ? defaults.harness.permission
-            : 'ask',
+          permission: resolveProviderAccess(agent.provider, defaults.harness.permission),
         }
   return {
     ...defaults,

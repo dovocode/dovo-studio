@@ -61,6 +61,17 @@ it('discovers models through the installed SDK', async () => {
     models: [{ id: 'a', reasoning: [{ id: 'low' }, { id: 'high' }] }],
   })
 })
+it('fails the turn when recording an SDK event fails instead of letting the SDK swallow it', async () => {
+  const f = await fixture()
+  await expect(
+    f.adapter.run({
+      ...f.run,
+      onEvent: () => {
+        throw new Error('Could not record provider activity')
+      },
+    }),
+  ).rejects.toThrow('Could not record provider activity')
+})
 it('ends an admitted turn if the SDK host disconnects', async () => {
   const f = await fixture()
   await expect(f.adapter.run({ ...f.run, prompt: 'disconnect' })).rejects.toThrow(

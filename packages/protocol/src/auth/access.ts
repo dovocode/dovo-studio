@@ -26,10 +26,31 @@ const legacyReadOnly = {
   name: 'Read only',
   description: 'Explore files without granting write access.',
 } as const
-export function selectableAccessModes(current?: Agent['permission']) {
+export function selectableAccessModes(current?: Agent['permission'], provider?: Agent['provider']) {
+  if (provider === 'cursor')
+    return [
+      legacyReadOnly,
+      {
+        id: 'auto',
+        name: 'Auto-review',
+        description: 'Use Cursor’s review when available; otherwise tools execute automatically.',
+      },
+      accessModes[3],
+    ] as const
   return current === 'read-only' ? [...accessModes, legacyReadOnly] : accessModes
 }
+export function resolveProviderAccess(
+  provider: Agent['provider'],
+  permission: Agent['permission'],
+) {
+  return supportsAccess(provider, permission)
+    ? permission
+    : provider === 'cursor'
+      ? 'read-only'
+      : 'ask'
+}
 export function supportsAccess(provider: Agent['provider'], permission: Agent['permission']) {
+  if (provider === 'cursor') return ['read-only', 'auto', 'full-access'].includes(permission)
   // These native hosts do not expose a restricted read-only session.
   return !['hermes', 'grok', 'muse'].includes(provider) || permission !== 'read-only'
 }

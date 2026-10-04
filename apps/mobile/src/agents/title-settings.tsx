@@ -96,10 +96,12 @@ export function TitleSettings() {
         disabled={busy}
         items={[
           { id: 'default', name: 'Default provider · separate model' },
-          ...(['codex', 'claude', 'opencode', 'copilot', 'acp'] as const).map((provider) => ({
-            id: `harness:${provider}`,
-            name: provider,
-          })),
+          ...(['codex', 'claude', 'opencode', 'copilot', 'cursor', 'acp'] as const).map(
+            (provider) => ({
+              id: `harness:${provider}`,
+              name: provider,
+            }),
+          ),
           ...installations.map((installation) => ({
             id: acpHarnessChoiceId(installation.id),
             name: `${installation.name} · ACP`,

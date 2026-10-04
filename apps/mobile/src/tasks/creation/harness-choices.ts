@@ -6,6 +6,7 @@ import {
   acpInstallationHarness,
   canChangeTaskProvider,
   defaultTaskHarness,
+  resolveProviderAccess,
   lockedTaskProvider,
   lockedAcpInstallationId,
   resolveTaskAgent,
@@ -23,6 +24,7 @@ export const harnessNames: Record<Agent['provider'], string> = {
   copilot: 'Copilot',
   grok: 'Grok',
   muse: 'Muse',
+  cursor: 'Cursor',
   acp: 'ACP',
 }
 export function taskHarnessChoices(
@@ -35,13 +37,13 @@ export function taskHarnessChoices(
   const provider = lockedTaskProvider(task, agents)
   const installationId = lockedAcpInstallationId(task, agents)
   return [
-    ...(['codex', 'claude', 'opencode', 'hermes', 'copilot', 'grok', 'muse', 'acp'] as const).map(
-      (provider) => ({
-        id: `harness:${provider}`,
-        name: harnessNames[provider],
-        provider,
-      }),
-    ),
+    ...(
+      ['codex', 'claude', 'opencode', 'hermes', 'copilot', 'grok', 'muse', 'cursor', 'acp'] as const
+    ).map((provider) => ({
+      id: `harness:${provider}`,
+      name: harnessNames[provider],
+      provider,
+    })),
     ...installations.map((installation) => ({
       id: acpHarnessChoiceId(installation.id),
       name: `${installation.name} · ACP`,
@@ -98,7 +100,10 @@ export function selectedTaskHarness(
     ? agents.find((agent) => agent.id === selection.slice(6))
     : {
         ...defaultTaskHarness(choice.provider),
-        permission: resolveTaskAgent(task, agents)?.permission ?? 'full-access',
+        permission: resolveProviderAccess(
+          choice.provider,
+          resolveTaskAgent(task, agents)?.permission ?? 'full-access',
+        ),
         id: 'task',
         name: harnessNames[choice.provider],
       }

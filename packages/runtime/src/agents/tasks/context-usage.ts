@@ -111,6 +111,19 @@ export function turnTokenCounter(
   let claudeUsage: TurnTokenUsage | undefined
   let claudeModel: string | undefined
   let reportedModel: string | undefined
+  const cursorUsage = new Map<string, TurnTokenUsage>()
+  const cursorTotal = () =>
+    cursorUsage.size
+      ? [...cursorUsage.values()].reduce(
+          (total, value) => ({
+            input: total.input + value.input,
+            output: total.output + value.output,
+            cacheRead: total.cacheRead + value.cacheRead,
+            cacheWrite: total.cacheWrite + value.cacheWrite,
+          }),
+          { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        )
+      : undefined
   const opencodeUsage = new Map<string, TurnTokenUsage>()
   const opencodeCost = new Map<string, number>()
   let opencodeV2Usage: TurnTokenUsage | undefined
@@ -125,6 +138,18 @@ export function turnTokenCounter(
   return {
     accept(name: string, payload: unknown) {
       const event = record(payload)
+      if (provider === 'cursor' && name === 'cursor/usage' && typeof event.usageId === 'string') {
+        const usage = record(event.usage)
+        const input = count(usage.inputTokens),
+          output = count(usage.outputTokens)
+        if (input !== undefined && output !== undefined)
+          cursorUsage.set(event.usageId, {
+            input,
+            output,
+            cacheRead: count(usage.cacheReadTokens) ?? 0,
+            cacheWrite: count(usage.cacheWriteTokens) ?? 0,
+          })
+      }
       if (provider === 'opencode' && name === 'dovo/usage/unavailable') opencodeV2Unavailable = true
       if (provider === 'codex' && name === 'model/rerouted' && typeof event.toModel === 'string')
         reportedModel = event.toModel
@@ -283,6 +308,10 @@ export function turnTokenCounter(
       }
     },
     total() {
+      if (provider === 'cursor') {
+        const usage = cursorTotal()
+        return usage ? Object.values(usage).reduce((a, b) => a + b, 0) : undefined
+      }
       if (provider === 'codex')
         return codexLatest !== undefined && codexStart !== undefined
           ? codexLatest - codexStart
@@ -294,6 +323,7 @@ export function turnTokenCounter(
       return undefined
     },
     usage(): TurnTokenUsage | undefined {
+      if (provider === 'cursor') return cursorTotal()
       if (provider === 'claude') return claudeUsage
       if (provider === 'opencode' && opencodeV2Unavailable) return undefined
       if (provider === 'opencode')

@@ -25,13 +25,14 @@ it('uses the global permission for new tasks of every harness', async () => {
     'copilot',
     'grok',
     'muse',
+    'cursor',
     'acp',
   ] as const) {
     const runtime = decode(runtimeDefaultsSchema, { harness: defaultTaskHarness(provider) })
     expect(resolveTaskDefaults(runtime, undefined).harness.permission).toBe('full-access')
     expect(
       resolveTaskDefaults({ ...runtime, permission: 'ask' }, undefined).harness.permission,
-    ).toBe('ask')
+    ).toBe(provider === 'cursor' ? 'read-only' : 'ask')
   }
   const runtime = decode(runtimeDefaultsSchema, { harness: defaultTaskHarness('codex') })
   expect(

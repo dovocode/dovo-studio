@@ -261,10 +261,11 @@ export function createCopilotAdapter(): AgentAdapter {
         run.onSession(owned.sessionId)
         unsubscribe = owned.on((event) => {
           if (!active || signal.aborted) return
-          run.onEvent?.(event.type, event.data)
-          if (event.agentId || ('parentToolCallId' in event.data && event.data.parentToolCallId))
-            return
           try {
+            // The SDK catches listener exceptions, so persistence failures must reject our turn.
+            run.onEvent?.(event.type, event.data)
+            if (event.agentId || ('parentToolCallId' in event.data && event.data.parentToolCallId))
+              return
             if (event.type === 'assistant.message_delta') {
               boundary(event.data.messageId)
               parts.set(

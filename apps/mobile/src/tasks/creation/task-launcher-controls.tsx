@@ -71,11 +71,11 @@ export function TaskLauncherControls({
         label="Access"
         value={agent.permission}
         disabled={disabled}
-        items={selectableAccessModes(agent.permission)
+        items={selectableAccessModes(agent.permission, agent.provider)
           .filter((mode) => supportsAccess(agent.provider, mode.id))
           .map((mode) => ({ id: mode.id, name: mode.name }))}
         onChange={(permission) => {
-          const mode = selectableAccessModes(agent.permission).find(
+          const mode = selectableAccessModes(agent.permission, agent.provider).find(
             (mode) => mode.id === permission,
           )
           if (mode && !disabled && supportsAccess(agent.provider, mode.id))

@@ -112,7 +112,17 @@ const tools: Array<
         prompt: { type: 'string' as const },
         provider: {
           type: 'string' as const,
-          enum: ['codex', 'claude', 'opencode', 'hermes', 'copilot', 'grok', 'muse', 'acp'],
+          enum: [
+            'codex',
+            'claude',
+            'opencode',
+            'hermes',
+            'copilot',
+            'grok',
+            'muse',
+            'cursor',
+            'acp',
+          ],
         },
         checkoutId: {
           type: 'string' as const,

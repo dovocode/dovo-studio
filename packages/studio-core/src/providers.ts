@@ -14,5 +14,6 @@ export const providers: Record<
   },
   grok: { name: 'Grok Build', short: 'Grok', description: 'Local Grok coding agent' },
   muse: { name: 'Muse Code SDK', short: 'Muse', description: 'Local Muse session host' },
+  cursor: { name: 'Cursor SDK', short: 'Cursor', description: 'Runtime-hosted Cursor SDK' },
   acp: { name: 'Agent Client Protocol', short: 'ACP', description: 'Compatible agent process' },
 }

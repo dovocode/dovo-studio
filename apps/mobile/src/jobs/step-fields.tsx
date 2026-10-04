@@ -121,7 +121,7 @@ export function StepFields({
             label="Permissions"
             value={agent.permission}
             disabled={disabled}
-            items={selectableAccessModes(agent.permission)
+            items={selectableAccessModes(agent.permission, agent.provider)
               .filter((mode) => supportsAccess(agent.provider, mode.id))
               .map((mode) => ({ id: mode.id, name: mode.name }))}
             onChange={(permission) =>

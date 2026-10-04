@@ -256,6 +256,15 @@ export class ReasoningEvents {
       else if (name === 'assistant.reasoning') this.set(id, string(data.content), 'completed')
       return true
     }
+    if (
+      this.provider === 'cursor' &&
+      ['cursor/thinking', 'cursor/thinking-completed'].includes(name)
+    ) {
+      const id = `cursor:${String(data.id)}`
+      if (name === 'cursor/thinking') this.append(id, string(data.text))
+      else this.complete(id)
+      return true
+    }
     if (this.provider === 'muse') {
       const item = object(data.item),
         id = `muse:${string(item.itemId) || string(data.itemId)}`

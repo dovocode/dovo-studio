@@ -76,8 +76,8 @@ guide before creating a separate workspace.
 - Desktop attaches to an existing authenticated runtime in its data directory, or starts its
   runtime. On macOS the managed background runtime stays available after the window closes. The
   background server continues when desktop closes; web/mobile pair with a running host.
-- Codex, OpenCode, Claude, Hermes, Copilot, Grok Build, Muse Code and ACP adapters load through the
-  extension host. Task sessions resume, stream responses, request approvals and support
+- Codex, OpenCode, Claude, Hermes, Copilot, Grok Build, Muse Code, Cursor and ACP adapters load
+  through the extension host. Task sessions resume, stream responses, request approvals and support
   cancellation.
 - Task conversations provide commit and pull request creation from Changes, generated commit and
   pull request text, approval shortcuts (Y/N and question options 1–9), bookmarks, and a tool-based
@@ -213,20 +213,27 @@ HTTPS/WSS runtime endpoint, supplied by your local reverse proxy; browsers block
 
 ### Provider setup and execution limits
 
-| Integration | Host requirement                                                                                                                                          |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Codex       | `codex` on PATH, or executable path in Agent settings; authenticated Codex login                                                                          |
-| OpenCode    | Installed OpenCode CLI; a blank URL starts an authenticated local server automatically. Explicit URLs use an existing server; models use `provider/model` |
-| Claude      | User-installed Claude CLI on the runtime host; bundled Agent SDK; Claude login or `ANTHROPIC_API_KEY`                                                     |
-| Hermes      | Installed Hermes Python environment; native gateway; configure credentials with `hermes model`                                                            |
-| Copilot     | Installed and authenticated Copilot CLI; Dovo bundles the official SDK                                                                                    |
-| Grok Build  | Installed Grok Build CLI; `grok login` or `XAI_API_KEY`; official ACP interface                                                                           |
-| Muse Code   | Installed and authenticated Muse CLI; Dovo bundles the official MSP SDK                                                                                   |
-| ACP         | Install one or more agents from the official ACP Registry, or configure an executable and arguments                                                       |
+| Integration | Host requirement                                                                                                                                           |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex       | `codex` on PATH, or executable path in Agent settings; authenticated Codex login                                                                           |
+| OpenCode    | Installed OpenCode CLI; a blank URL starts an authenticated local server automatically. Explicit URLs use an existing server; models use `provider/model`  |
+| Claude      | User-installed Claude CLI on the runtime host; bundled Agent SDK; Claude login or `ANTHROPIC_API_KEY`                                                      |
+| Hermes      | Installed Hermes Python environment; native gateway; configure credentials with `hermes model`                                                             |
+| Copilot     | Installed and authenticated Copilot CLI; Dovo bundles the official SDK                                                                                     |
+| Grok Build  | Installed Grok Build CLI; `grok login` or `XAI_API_KEY`; official ACP interface                                                                            |
+| Cursor      | Bundled official Cursor SDK; select a model and set `CURSOR_API_KEY` or use the SDK’s saved browser login on the runtime; Cursor desktop login is separate |
+| Muse Code   | Installed and authenticated Muse CLI; Dovo bundles the official MSP SDK                                                                                    |
+| ACP         | Install one or more agents from the official ACP Registry, or configure an executable and arguments                                                        |
 
 See [native provider setup](agent-providers.md) for host versions, MCP scope and native approval
-boundaries. Hermes, Grok and Muse cannot enforce read-only or tool-free sessions; choose another
-provider for restricted tasks, titles and dictation.
+boundaries. Cursor runs locally in an isolated SDK worker, persists and resumes sessions, streams
+messages and tool activity, and receives thread MCP servers. It supports read-only tools (without
+MCP or subagents), native Auto-review, and full access. Auto-review executes automatically if the
+backend’s classifier is unavailable; it is not a supervised approval boundary. Supervised and
+auto-accept-edits modes are unavailable for Cursor.
+
+Hermes, Grok and Muse cannot enforce read-only or tool-free sessions; choose another provider for
+restricted tasks, titles and dictation.
 
 OpenCode server authentication uses `OPENCODE_SERVER_PASSWORD` and optional
 `OPENCODE_SERVER_USERNAME` on the runtime host. ACP read-only execution requires an advertised
@@ -670,9 +677,9 @@ controls.
   compact an idle session on desktop or mobile; completed manual and automatic compactions appear in
   the conversation. Codex uses its app-server command, Claude uses `/compact`, and OpenCode uses
   session summarization. ACP uses `/compact` only when the connected agent advertises that command.
-  Hermes, Copilot and Muse use their native compression or history-compaction commands; Grok follows
-  its advertised ACP commands. A provider error leaves the previous context meter and session
-  intact.
+  Cursor handles context summaries automatically and has no manual compaction API. Hermes, Copilot
+  and Muse use their native compression or history-compaction commands; Grok follows its advertised
+  ACP commands. A provider error leaves the previous context meter and session intact.
 - Mobile provides queue/steer controls, tool history, pin/settle/snooze actions, task-specific model
   settings and read-only per-turn checkpoint diffs. Long-press a task for metadata and actions. The
   command palette supports arrow keys and Enter; the terminal remains fully collapsible.
@@ -791,8 +798,10 @@ context on the next turn and never change a reusable agent through a task overri
   advertised Read only modes; unsupported selections are disabled and rejected before running.
 
 Auto-accept edits allows workspace changes while retaining approvals for actions outside the
-provider's automatic edit scope. Auto is harness review, not an unattended/bypass alias. Full access
-opts into the provider's broadest mode; host and organization policies still apply. See the
+provider's automatic edit scope. Cursor offers its native Auto-review instead of interactive
+approvals, and clearly labels the SDK’s automatic-execution fallback. For other providers, Auto is
+harness review, not an unattended/bypass alias. Full access opts into the provider's broadest mode;
+host and organization policies still apply. See the
 [Codex app-server documentation](https://learn.chatgpt.com/docs/app-server) and
 [Claude SDK permissions](https://code.claude.com/docs/en/agent-sdk/permissions).
 

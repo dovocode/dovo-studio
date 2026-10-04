@@ -1,4 +1,4 @@
-import { supportsAccess } from '../auth/access.js'
+import { resolveProviderAccess } from '../auth/access.js'
 import type { Agent, TaskHarness } from '../workspace.js'
 
 /** Launch settings belong to the provider that supplied them. */
@@ -18,7 +18,7 @@ export function changeAgentProvider(agent: Agent, provider: TaskHarness['provide
     executablePath: undefined,
     configDirectory: undefined,
     args: [],
-    permission: supportsAccess(provider, agent.permission) ? agent.permission : 'ask',
+    permission: resolveProviderAccess(provider, agent.permission),
   }
 }
 
