@@ -63,7 +63,12 @@ export type {
 export { modelCatalogSchema } from '@dovo/protocol'
 export type { ModelCatalog } from '@dovo/protocol'
 
-export { commandsSchema, commandSettingsResponse, commandFields } from '@dovo/protocol'
+export {
+  commandsSchema,
+  commandSettingsResponse,
+  commandFields,
+  cuaCheckResponse,
+} from '@dovo/protocol'
 export type { CommandSettings } from '@dovo/protocol'
 
 export { pullPageSchema, pullDetailSchema } from '@dovo/protocol'

@@ -7,6 +7,7 @@ import { journalProvider } from './journal-provider.js'
 import { ProgressBuffer } from './progress-buffer.js'
 import { reportedUsageAccount } from '../tasks/usage-account.js'
 import { browserCdpInstructions } from './browser-cdp.js'
+import { cuaAgentServer, cuaInstructions, CUA_SERVER_NAME } from '../../computer-use/cua.js'
 import { runWithHooks } from './agent-hooks.js'
 import { Cause, Effect } from 'effect'
 import { OwnedProcessShutdownError } from './stop-owned-child.js'
@@ -189,6 +190,14 @@ export class TaskTurnRunner {
         resources.skills = resources.skills.map(
           (skill) => materializedSkills.get(skill.name) ?? skill,
         )
+        const cuaServer = yield* runtimeOperation(() =>
+          cuaAgentServer(this.commands.get(), configured.permission),
+        )
+        if (cuaServer && resources.mcpServers.some((server) => server.name === CUA_SERVER_NAME))
+          throw new HttpError(
+            409,
+            'The MCP name dovo_cua is reserved for this computer’s Cua Driver. Rename the custom MCP server.',
+          )
         const originalMcpServers = resources.mcpServers
         if (this.taskTools) {
           resources.mcpServers = resources.mcpServers.filter(
@@ -215,9 +224,15 @@ export class TaskTurnRunner {
             this.taskTools,
             controller.signal,
           )
+        // The app bridge resolves saved project/agent servers. Machine-owned Cua is
+        // launched directly by the provider and follows its per-session lifecycle.
+        if (cuaServer) resources.mcpServers.push(cuaServer)
         const skills = resources.skills.filter((skill) => skill.enabled)
+        const baseInstructions = cuaServer
+          ? `${configured.instructions}\n\n${cuaInstructions}`
+          : configured.instructions
         const instructions = skills.length
-          ? `${configured.instructions}
+          ? `${baseInstructions}
 
 Enabled skills for this task (apply when relevant):
 ${skills
@@ -232,7 +247,7 @@ ${
 }${skill.content}`,
   )
   .join('\n\n')}`
-          : configured.instructions
+          : baseInstructions
         const appContext = this.mcpApps?.context(id)
         const agent = this.registry.configure({ ...configured, resources, instructions })
         if (!supportsAccess(agent.provider, agent.permission))
@@ -259,6 +274,7 @@ ${
                 },
                 cwd,
                 commands,
+                cuaServer,
                 branch,
                 acpLaunch: this.registry.launch(agent),
               }),

@@ -25,6 +25,22 @@ it('protects concurrent CLI settings edits and accepts older client saves', asyn
       gh: original.gh,
     })
     expect((await call('save', { ...original, shell: '/bin/zsh' })).status).toBe(200)
+    const current = (await call('read', {})).body.settings
+    expect(current).toMatchObject({ cua: '', cuaEnabled: false })
+    expect(
+      (
+        await call('save', {
+          before: current,
+          after: { ...current, cua: '/missing/cua-driver', cuaEnabled: true },
+        })
+      ).body.settings,
+    ).toMatchObject({ cua: '/missing/cua-driver', cuaEnabled: true })
+    expect((await call('cua/check', { path: '/missing/cua-driver' })).body).toMatchObject({
+      available: false,
+      path: null,
+      version: null,
+    })
+    expect((await call('cua/check', { path: 'cua-driver\nother' })).status).toBe(400)
   } finally {
     await runtime.close()
   }

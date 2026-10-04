@@ -20,6 +20,8 @@ it('persists command defaults and validates executable paths', () => {
       gh: 'gh',
       codex: 'codex',
       shell: '',
+      cua: '',
+      cuaEnabled: false,
       shellArgs: ['-l'],
     })
     commands.save({
@@ -27,6 +29,8 @@ it('persists command defaults and validates executable paths', () => {
       shell: '/bin/bash',
       shellArgs: ['--noprofile', '--norc'],
       git: '/path with spaces/git',
+      cua: '/path with spaces/cua-driver',
+      cuaEnabled: true,
     })
     expect(new Commands(db).get()).toEqual(commands.get())
     expect(() =>
