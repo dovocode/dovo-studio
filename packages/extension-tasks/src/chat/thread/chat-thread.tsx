@@ -353,7 +353,7 @@ export function ChatThread({
                 : undefined
             }
           >
-            <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-12 md:pr-5">
+            <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-16 md:pr-5">
               {history.busy && (
                 <p role="status" className="text-xs text-muted-foreground">
                   Loading earlier messages…
