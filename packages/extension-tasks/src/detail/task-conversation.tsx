@@ -8,6 +8,7 @@ import {
   pendingMessageQueue,
   startingConversationMessage,
   type PendingMessage,
+  type ArtifactReference,
 } from '@dovo/protocol'
 import { MessageQueue } from '../chat/thread/message-queue'
 import { TaskQuestions } from '../chat/thread/task-questions'
@@ -28,6 +29,7 @@ import { PlanApproval } from '../chat/thread/plan-approval'
 import { ReviewFindings } from '../chat/thread/review-findings'
 import { useTaskViewed } from '../chat/thread/use-task-viewed'
 import { Button } from '@dovo/studio-ui'
+import { ArtifactOpenContext } from '../chat/artifact-open-context'
 import { TaskPullLinkDialog } from '../dialogs/task-pull-link-dialog'
 export function TaskConversation({
   task,
@@ -37,6 +39,7 @@ export function TaskConversation({
   onTerminal,
   onBrowser,
   onPullLink,
+  onArtifact,
   revealMessage,
   onRevealHandled,
   onAside,
@@ -52,6 +55,7 @@ export function TaskConversation({
   onTerminal?: (terminalId: string) => void
   onBrowser?: (url: string) => void
   onPullLink?: (url: string) => boolean
+  onArtifact?: (reference: ArtifactReference) => void
   revealMessage?: string
   onRevealHandled?: () => void
   /** Opens the side question dialog. */
@@ -154,16 +158,18 @@ export function TaskConversation({
           setComposerCollapsed(true)
       }}
     >
-      <ChatThread
-        onManagePulls={() => setManagePullTask(task.id)}
-        task={displayedTask}
-        onTerminal={onTerminal}
-        onBrowser={onBrowser}
-        onPullLink={onPullLink}
-        revealMessage={revealMessage}
-        onRevealHandled={onRevealHandled}
-        pending={threadPending}
-      />
+      <ArtifactOpenContext value={onArtifact}>
+        <ChatThread
+          onManagePulls={() => setManagePullTask(task.id)}
+          task={displayedTask}
+          onTerminal={onTerminal}
+          onBrowser={onBrowser}
+          onPullLink={onPullLink}
+          revealMessage={revealMessage}
+          onRevealHandled={onRevealHandled}
+          pending={threadPending}
+        />
+      </ArtifactOpenContext>
       {(budget.tokenExceeded || budget.timeExceeded) && (
         <p
           role="status"
