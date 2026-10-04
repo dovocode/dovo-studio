@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { Terminals } from './terminals'
 import { fixture } from '../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration'
+import { stripVTControlCharacters } from 'node:util'
 vi.setConfig(runtimeIntegration)
 // Keep the marker out of echoed input and use the actual platform shell syntax.
 const outputCommand =
@@ -63,6 +64,12 @@ it('runs a real PTY and retains output when clients detach', async () => {
     const detachOutput = terminals.attach(session.id, (data) => {
       output += data
     })
+    // PowerShell's line editor can lose input sent before its first prompt is ready.
+    await waitForRuntime(() =>
+      expect(
+        process.platform !== 'win32' || /PS [^\r\n]*> /.test(stripVTControlCharacters(output)),
+      ).toBe(true),
+    )
     terminals.input(session.id, outputCommand)
     await waitForRuntime(() => expect(output).toContain('dovo-pty-verified'))
     detachOutput()
@@ -95,6 +102,11 @@ it('keeps delivering terminal output when one client throws', async () => {
     terminals.attach(session.id, (data) => {
       output += data
     })
+    await waitForRuntime(() =>
+      expect(
+        process.platform !== 'win32' || /PS [^\r\n]*> /.test(stripVTControlCharacters(output)),
+      ).toBe(true),
+    )
     terminals.input(session.id, outputCommand)
     await waitForRuntime(() => expect(output).toContain('dovo-pty-verified'))
     expect(reported).toHaveBeenCalled()
