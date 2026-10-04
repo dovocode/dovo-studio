@@ -27,6 +27,40 @@ desktop edits are reported instead of overwritten.
 The mobile editor supports a single ordered path. Existing branching graphs remain visible and
 runnable, and their connections are preserved. Edit those in the desktop/web canvas.
 
+## GitHub event triggers
+
+Select **GitHub event** on the trigger node (desktop/web) or in the mobile editor. Enter the GitHub
+hostname and `owner/repository`, then choose an event:
+
+- Issues: created, comment, assigned, labeled.
+- Pull requests: opened, assigned, labeled, merged, ready for review, review requested, review
+  submitted, synchronized, review comment, timeline comment.
+- Discussions: opened, updated, comment (including replies).
+- Sub-issues: added to a parent issue.
+
+Optional filters select a current label or the triggering actor's login. **Require actor write
+access** checks the actor's current repository permission before accepting an event. The event's
+repository, item, actor and details are included as external context in each task's instructions.
+Task projects, harnesses, permissions, linked checkouts and review gates work as usual.
+
+The selected computer polls once a minute using its configured GitHub CLI and existing `gh` login.
+Run `gh auth login --hostname <host>` on that computer if needed. GitHub event triggers work with
+LAN/VPN runtimes without an incoming public webhook or a Dovo account. Authentication and API errors
+appear in runtime activity; polling shares SCM's GitHub rate-limit controls.
+
+Enabling a trigger starts with new events, without running through historical issues or PRs. While
+it remains enabled, its polling progress and pending events survive a restart. Events discovered
+after downtime are caught up, and events wait when another run is active or awaiting review.
+Accepted deliveries are deduplicated across restarts. Disabling the trigger clears pending external
+events; changing its GitHub settings starts a fresh observation window. Active runs continue with
+the configuration they started with.
+
+Polling observes changes rather than receiving every webhook. Discussion updates use the latest edit
+and editor. PR synchronization compares head commits after the first observation; multiple pushes
+between polls are combined, and GitHub does not expose the pusher through this comparison, so
+actor/write-access filters are unavailable for synchronization. Multiple discussion edits between
+polls are likewise combined. Label filters use the item's labels at polling time.
+
 ## Follow a run
 
 Each run records the current step, completed steps, review gates, failures, task links and start/end

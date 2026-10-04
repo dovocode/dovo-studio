@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { defaultGithubTrigger, githubEventChoices, automationScheduleChoices } from '@dovo/protocol'
 import {
   resolveScopedAgents,
   type RuntimeDefaults,
@@ -23,6 +25,7 @@ export function NodeInspector({
   onDelete: () => void
 }) {
   const data = node.data
+  const [customSchedule, setCustomSchedule] = useState(false)
   const agents = resolveScopedAgents(
     defaults,
     workspace.repositories.find((repo) => repo.id === data.repositoryId),
@@ -44,17 +47,49 @@ export function NodeInspector({
               value={data.trigger}
               onValueChange={(selection) => {
                 const value = selection
-                if (value === 'manual' || value === 'schedule' || value === 'webhook')
-                  field({ trigger: value })
+                if (
+                  value === 'manual' ||
+                  value === 'schedule' ||
+                  value === 'webhook' ||
+                  value === 'github'
+                )
+                  field({
+                    trigger: value,
+                    ...(value === 'github'
+                      ? { github: data.github ?? { ...defaultGithubTrigger } }
+                      : {}),
+                  })
               }}
             >
               <option value="manual">Manual</option>
               <option value="schedule">Schedule</option>
               <option value="webhook">External webhook</option>
+              <option value="github">GitHub event</option>
             </ChoicePicker>
           </FormField>
           {data.trigger === 'schedule' && (
             <>
+              <FormField label="Schedule preset">
+                <ChoicePicker
+                  aria-label="Schedule preset"
+                  value={
+                    !customSchedule &&
+                    automationScheduleChoices.some((item) => item.id === data.schedule)
+                      ? data.schedule
+                      : 'custom'
+                  }
+                  onValueChange={(value) => {
+                    setCustomSchedule(value === 'custom')
+                    if (value !== 'custom') field({ schedule: value })
+                  }}
+                >
+                  {automationScheduleChoices.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </ChoicePicker>
+              </FormField>
               <FormField label="Cron expression">
                 <Input
                   value={data.schedule}
@@ -69,9 +104,96 @@ export function NodeInspector({
               </FormField>
             </>
           )}
+          {data.trigger === 'github' &&
+            (() => {
+              const github = data.github ?? defaultGithubTrigger
+              const update = (patch: Partial<typeof github>) =>
+                field({ github: { ...github, ...patch } })
+              const hasActor = github.event !== 'pull_request.synchronized'
+              return (
+                <>
+                  <FormField label="GitHub host">
+                    <Input
+                      value={github.host}
+                      placeholder="github.com"
+                      onChange={(event) => update({ host: event.target.value })}
+                    />
+                  </FormField>
+                  <FormField label="GitHub repository">
+                    <Input
+                      value={github.repository}
+                      placeholder="owner/repository"
+                      onChange={(event) => update({ repository: event.target.value })}
+                    />
+                  </FormField>
+                  <FormField label="Event">
+                    <ChoicePicker
+                      aria-label="GitHub event"
+                      value={github.event}
+                      onValueChange={(value) => {
+                        const choice = githubEventChoices.find((item) => item.id === value)
+                        if (choice)
+                          update({
+                            event: choice.id,
+                            ...(choice.id === 'pull_request.synchronized'
+                              ? { actor: '', requireWriteAccess: false }
+                              : {}),
+                          })
+                      }}
+                    >
+                      {githubEventChoices.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </ChoicePicker>
+                  </FormField>
+                  <FormField label="Label filter (optional)">
+                    <Input
+                      value={github.label}
+                      onChange={(event) => update({ label: event.target.value })}
+                    />
+                  </FormField>
+                  {hasActor && (
+                    <>
+                      <FormField label="Actor login (optional)">
+                        <Input
+                          value={github.actor}
+                          placeholder="octocat"
+                          onChange={(event) => update({ actor: event.target.value })}
+                        />
+                      </FormField>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={github.requireWriteAccess}
+                          onChange={(event) => update({ requireWriteAccess: event.target.checked })}
+                        />
+                        Require actor write access
+                      </label>
+                    </>
+                  )}
+                  <p className="text-muted-foreground">
+                    Uses the runtime host’s gh login. Polls every minute while this computer is
+                    running. Existing events are not replayed when enabling a trigger.
+                  </p>
+                  {github.event === 'pull_request.synchronized' && (
+                    <p className="text-muted-foreground">
+                      Detects changes to the PR head after its first observation. Pushes between
+                      polls are combined; GitHub does not expose the pusher here.
+                    </p>
+                  )}
+                  {github.event === 'discussion.updated' && (
+                    <p className="text-muted-foreground">
+                      Detects the latest discussion edit; multiple edits between polls are combined.
+                    </p>
+                  )}
+                </>
+              )
+            })()}
           <p className="text-muted-foreground">
-            Enable triggers to schedule this flow or accept authenticated webhook deliveries. The
-            runtime must remain running.
+            Enable triggers to schedule this flow, watch GitHub events or accept authenticated
+            webhook deliveries. The runtime must remain running.
           </p>
         </>
       )}

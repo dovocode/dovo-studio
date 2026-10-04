@@ -52,6 +52,23 @@ export function automationIssues(
         errors.push('Enter a valid cron expression and time zone.')
       }
     }
+    if (data.kind === 'trigger' && data.trigger === 'github') {
+      const config = data.github
+      if (!config || !/^[A-Za-z0-9][A-Za-z0-9-]*(?:\.[A-Za-z0-9][A-Za-z0-9-]*)+$/.test(config.host))
+        errors.push('Enter a GitHub hostname, such as github.com.')
+      if (
+        !config ||
+        !/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(config.repository)
+      )
+        errors.push('Enter a GitHub repository as owner/repository.')
+      if (
+        config?.event === 'pull_request.synchronized' &&
+        (config.actor || config.requireWriteAccess)
+      )
+        errors.push('PR synchronization polling cannot filter by pusher or write access.')
+      if (config?.actor && !/^[A-Za-z0-9][A-Za-z0-9-]*(?:\[bot\])?$/.test(config.actor))
+        errors.push('Enter a GitHub actor login without @.')
+    }
     if (data.kind === 'task') {
       const checkouts = data.linkedCheckouts ?? []
       if (new Set(checkouts.map((item) => item.id)).size !== checkouts.length)

@@ -119,7 +119,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         ? join(tmpdir(), 'dovo-catalog-skills')
         : join(dirname(resolve(db.name)), 'skills'),
     ),
-    jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }))
+    jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git)
   const mcpApps = new McpApps(db, store, activity, approvals)
   tasks.setMcpApps(mcpApps)
   mcpApps.setSendMessage((taskId, messageId, text) => tasks.send(taskId, messageId, text))

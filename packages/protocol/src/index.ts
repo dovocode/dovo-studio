@@ -173,3 +173,5 @@ export * from './runtime/connection/scoped-settings.js'
 export * from './tasks/delegation.js'
 
 export * from './random-uuid.js'
+
+export * from './automation/triggers.js'

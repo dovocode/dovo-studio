@@ -1,3 +1,4 @@
+import { defaultGithubTrigger, githubEventChoices } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
@@ -143,12 +144,21 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                 id: 'webhook',
                 name: 'Webhook',
               },
+              { id: 'github', name: 'GitHub event' },
             ]}
             disabled={busy}
             onChange={(value) => {
-              if (value === 'manual' || value === 'schedule' || value === 'webhook')
+              if (
+                value === 'manual' ||
+                value === 'schedule' ||
+                value === 'webhook' ||
+                value === 'github'
+              )
                 updateNode(trigger.id, {
                   trigger: value,
+                  ...(value === 'github'
+                    ? { github: trigger.data.github ?? { ...defaultGithubTrigger } }
+                    : {}),
                 })
             }}
           />
@@ -194,6 +204,88 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
               <Text style={styles.muted}>Schedules use this time zone, even when you travel.</Text>
             </>
           )}
+          {trigger.data.trigger === 'github' &&
+            (() => {
+              const github = trigger.data.github ?? defaultGithubTrigger
+              const update = (patch: Partial<typeof github>) =>
+                updateNode(trigger.id, { github: { ...github, ...patch } })
+              return (
+                <>
+                  <Field
+                    label="GitHub host"
+                    value={github.host}
+                    editable={!busy}
+                    onChangeText={(host) => update({ host })}
+                    placeholder="github.com"
+                  />
+                  <Field
+                    label="GitHub repository"
+                    value={github.repository}
+                    editable={!busy}
+                    onChangeText={(repository) => update({ repository })}
+                    placeholder="owner/repository"
+                  />
+                  <Choice
+                    label="GitHub event"
+                    value={github.event}
+                    items={githubEventChoices.map((item) => ({ ...item }))}
+                    disabled={busy}
+                    onChange={(value) => {
+                      const choice = githubEventChoices.find((item) => item.id === value)
+                      if (choice)
+                        update({
+                          event: choice.id,
+                          ...(choice.id === 'pull_request.synchronized'
+                            ? { actor: '', requireWriteAccess: false }
+                            : {}),
+                        })
+                    }}
+                  />
+                  <Field
+                    label="Label filter (optional)"
+                    value={github.label}
+                    editable={!busy}
+                    onChangeText={(label) => update({ label })}
+                  />
+                  {github.event !== 'pull_request.synchronized' && (
+                    <>
+                      <Field
+                        label="Actor login (optional)"
+                        value={github.actor}
+                        editable={!busy}
+                        onChangeText={(actor) => update({ actor })}
+                        placeholder="octocat"
+                      />
+                      <Choice
+                        label="Require actor write access"
+                        value={github.requireWriteAccess ? 'yes' : 'no'}
+                        items={[
+                          { id: 'no', name: 'Any actor' },
+                          { id: 'yes', name: 'Actors with write access' },
+                        ]}
+                        disabled={busy}
+                        onChange={(value) => update({ requireWriteAccess: value === 'yes' })}
+                      />
+                    </>
+                  )}
+                  <Text style={styles.muted}>
+                    Uses the selected computer’s gh login. Polls every minute while the runtime is
+                    running. Enabling a trigger starts with new events.
+                  </Text>
+                  {github.event === 'pull_request.synchronized' && (
+                    <Text style={styles.muted}>
+                      Detects PR head changes after the first observation. Pushes between polls are
+                      combined; pusher filters are unavailable.
+                    </Text>
+                  )}
+                  {github.event === 'discussion.updated' && (
+                    <Text style={styles.muted}>
+                      Detects the latest discussion edit; edits between polls are combined.
+                    </Text>
+                  )}
+                </>
+              )
+            })()}
           {trigger.data.trigger === 'webhook' && (
             <Text style={styles.muted}>
               After saving, configure the webhook credential on the host desktop. Each delivery

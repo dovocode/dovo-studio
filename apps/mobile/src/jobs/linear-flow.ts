@@ -1,4 +1,4 @@
-import { defaultTaskHarness } from '@dovo/protocol'
+import { defaultTaskHarness, automationScheduleChoices, githubEventChoices } from '@dovo/protocol'
 import type { Automation, AutomationData, AutomationNode } from '@dovo/protocol'
 
 /** Mobile edits a single ordered path; never flatten a canvas with branches or missing nodes. */
@@ -71,16 +71,13 @@ export function newAutomationNode(
   }
 }
 
-export const scheduleChoices = [
-  { id: '0 9 * * 1-5', name: 'Weekdays at 09:00' },
-  { id: '0 9 * * *', name: 'Every day at 09:00' },
-  { id: '0 * * * *', name: 'Every hour' },
-  { id: 'custom', name: 'Custom schedule' },
-]
+export const scheduleChoices = automationScheduleChoices
 
 export function triggerSummary(flow: Automation) {
   const trigger = flow.nodes.find((node) => node.data.kind === 'trigger')?.data
   if (trigger?.trigger === 'schedule')
     return `${scheduleChoices.find((choice) => choice.id === trigger.schedule)?.name ?? trigger.schedule} · ${trigger.timezone}`
+  if (trigger?.trigger === 'github')
+    return `GitHub · ${githubEventChoices.find((item) => item.id === trigger.github?.event)?.name ?? 'Event'} · ${trigger.github?.repository ?? ''}`
   return trigger?.trigger === 'webhook' ? 'Webhook' : 'Manual'
 }

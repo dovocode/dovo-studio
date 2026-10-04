@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { defaultTaskHarness } from '../workspace.js'
+import { defaultTaskHarness, automationSchema } from '../workspace.js'
+import { defaultGithubTrigger } from './triggers.js'
+import { decode } from '../shared/schema.js'
 import { automationIssues } from './automations.js'
 import type { Automation, AutomationData, Workspace } from '../workspace.js'
 
@@ -98,4 +100,26 @@ it('validates direct harnesses without predefined agents and checks provider per
   )
   data.harness = { ...data.harness, acpInstallationId: 'installed-agent' }
   expect(automationIssues(automation, workspace)).toEqual([])
+})
+
+it('validates GitHub configuration and preserves it through workspace decoding', () => {
+  const automation = flow()
+  const trigger = automation.nodes[0].data
+  trigger.trigger = 'github'
+  expect(automationIssues(automation, workspace)).toContain(
+    'Enter a GitHub repository as owner/repository.',
+  )
+  trigger.github = { ...defaultGithubTrigger, repository: 'team/project' }
+  expect(automationIssues(automation, workspace)).toEqual([])
+  expect(decode(automationSchema, automation).nodes[0].data.github).toEqual(trigger.github)
+  trigger.github.host = 'https://github.com/path'
+  expect(automationIssues(automation, workspace)).toContain(
+    'Enter a GitHub hostname, such as github.com.',
+  )
+  trigger.github.host = 'github.com'
+  trigger.github.event = 'pull_request.synchronized'
+  trigger.github.requireWriteAccess = true
+  expect(automationIssues(automation, workspace)).toContain(
+    'PR synchronization polling cannot filter by pusher or write access.',
+  )
 })

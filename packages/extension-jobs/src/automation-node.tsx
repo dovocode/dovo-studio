@@ -1,3 +1,4 @@
+import { githubEventChoices } from '@dovo/protocol'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { Bot, CircleCheck, Zap } from 'lucide-react'
 import { useWorkspace, type AutomationData } from '@dovo/studio-core'
@@ -25,7 +26,10 @@ export function AutomationNodeView({ data, selected }: NodeProps<FlowNode>) {
         {data.kind === 'trigger'
           ? data.trigger === 'schedule'
             ? data.schedule
-            : data.trigger
+            : data.trigger === 'github'
+              ? (githubEventChoices.find((item) => item.id === data.github?.event)?.name ??
+                'GitHub event')
+              : data.trigger
           : data.kind === 'task'
             ? data.objective || 'Configure task instructions'
             : 'Pause for your review'}

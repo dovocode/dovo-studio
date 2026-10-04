@@ -1,3 +1,4 @@
+import { githubEventChoices } from '@dovo/protocol'
 import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowLeft, Ellipsis, Monitor, Plus, Workflow, X } from 'lucide-react'
@@ -303,9 +304,11 @@ export function AutomationDetail({
                           <span className="mt-1 block text-xs text-muted-foreground">
                             {trigger.data.trigger === 'schedule'
                               ? `${trigger.data.schedule} · ${trigger.data.timezone}`
-                              : trigger.data.trigger === 'webhook'
-                                ? 'Authenticated webhook'
-                                : 'Manual start'}
+                              : trigger.data.trigger === 'github'
+                                ? `GitHub · ${githubEventChoices.find((item) => item.id === trigger.data.github?.event)?.name ?? 'Event'} · ${trigger.data.github?.repository ?? ''}`
+                                : trigger.data.trigger === 'webhook'
+                                  ? 'Authenticated webhook'
+                                  : 'Manual start'}
                           </span>
                         </span>
                         <span className="text-xs text-muted-foreground">Configure</span>

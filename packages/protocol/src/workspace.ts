@@ -1,3 +1,4 @@
+import { githubTriggerSchema } from './automation/triggers.js'
 import { pullStackSummarySchema } from './scm/pulls/pull-stack.js'
 import { filePreviewMetadataSchema } from './scm/repositories/file-previews.js'
 import { mutableArray, mutableStruct } from './shared/schema.js'
@@ -566,7 +567,8 @@ export const taskSchema = mutableStruct({
 export const nodeDataSchema = mutableStruct({
   kind: Schema.Literal('trigger', 'task', 'review'),
   label: Schema.String,
-  trigger: Schema.Literal('manual', 'schedule', 'webhook'),
+  trigger: Schema.Literal('manual', 'schedule', 'webhook', 'github'),
+  github: Schema.optional(githubTriggerSchema),
   schedule: Schema.String,
   timezone: Schema.String,
   objective: Schema.String,

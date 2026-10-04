@@ -1,3 +1,6 @@
+import { GithubTriggers } from './github-triggers.js'
+import { GithubEvents } from './github-events.js'
+import type { GitService } from '../scm/git/git.js'
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
@@ -37,6 +40,8 @@ export class Jobs {
   private readonly executor = ManagedRuntime.make(Layer.empty)
   private stopping = false
   private scheduler?: ReturnType<typeof startPolling>
+  private githubScheduler?: ReturnType<typeof startPolling>
+  private githubTriggers?: GithubTriggers
   private scheduleErrors = new Map<string, string>()
   private next = new Map<
     string,
@@ -51,7 +56,19 @@ export class Jobs {
     private tasks: Tasks,
     private activity?: Pick<Activity, 'add'>,
     private generateTitle?: (text: string) => Promise<{ title: string }>,
+    git?: Pick<GitService, 'githubAccount'>,
   ) {
+    if (git)
+      this.githubTriggers = new GithubTriggers(
+        db,
+        new GithubEvents(git),
+        () => store.get().automations,
+        (id, key, payload) => this.start(id, key, payload),
+        (id, message) => {
+          console.error(message)
+          this.activity?.add('job', id, message)
+        },
+      )
     for (const row of db.prepare('SELECT value FROM job_runs').all()) {
       let stored: StoredRun
       try {
@@ -96,6 +113,16 @@ export class Jobs {
         interval: 1000,
         immediate: false,
         onError: (error) => console.error('Scheduler failed', error),
+      },
+    )
+    this.githubScheduler = startPolling(
+      Effect.tryPromise(async () => {
+        await this.githubTriggers?.tick()
+      }),
+      {
+        interval: 1000,
+        immediate: false,
+        onError: (error) => console.error('GitHub triggers failed', error),
       },
     )
   }
@@ -585,6 +612,9 @@ export class Jobs {
     }
   }
   dispose() {
+    this.githubTriggers?.dispose()
+    void this.githubScheduler?.stop()
+    this.githubScheduler = undefined
     void this.scheduler?.stop()
     this.scheduler = undefined
   }

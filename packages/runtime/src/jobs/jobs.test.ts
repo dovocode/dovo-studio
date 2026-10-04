@@ -1,6 +1,9 @@
+import { GithubTriggers } from './github-triggers.js'
+import { GithubEvents } from './github-events.js'
+import type { GitService } from '../scm/git/git.js'
 import { TitleGeneration } from '../agents/tasks/title-generation'
 import { runtimeIntegration, waitForRuntime as waitForJob } from '../testing/integration'
-import { defaultTaskHarness } from '@dovo/protocol'
+import { defaultGithubTrigger, defaultTaskHarness } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type { AgentRun, AgentAdapter } from '../agents/execution/types'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
@@ -772,4 +775,78 @@ it('runs an automation with its own harness, model, thinking and permissions wit
     reasoning: harness.reasoning,
     permission: harness.permission,
   })
+})
+
+it('runs polled GitHub events through task instructions and review gates without losing queued events', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.jobs.dispose()
+  const flow = createFlow()
+  flow.enabled = true
+  flow.nodes[0].data.trigger = 'github'
+  flow.nodes[0].data.github = { ...defaultGithubTrigger, repository: 'team/project' }
+  s.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => run.onText('Done'),
+  })
+  const now = Date.parse('2026-10-04T09:00:00Z')
+  const events = new GithubEvents({
+    githubAccount: vi.fn<GitService['githubAccount']>().mockResolvedValue(
+      JSON.stringify({
+        data: {
+          repository: {
+            items: {
+              nodes: [1, 2].map((number) => ({
+                id: `issue-${number}`,
+                number,
+                title: `Issue ${number}`,
+                body: 'Investigate the root cause',
+                url: `https://github.com/team/project/issues/${number}`,
+                author: { login: 'octocat' },
+                createdAt: new Date(now + 30_000).toISOString(),
+                updatedAt: new Date(now + 30_000).toISOString(),
+              })),
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      }),
+    ),
+  })
+  const report = vi.fn<(id: string, message: string) => void>()
+  const poller = new GithubTriggers(
+    s.db,
+    events,
+    () => s.store.get().automations,
+    (id, key, payload) => s.jobs.start(id, key, payload),
+    report,
+  )
+  cleanups.push(async () => poller.dispose())
+  await poller.tick(now)
+  expect(s.jobs.list()).toHaveLength(0)
+  await poller.tick(now + 60_000)
+  expect(report.mock.calls).toEqual([])
+  expect(s.jobs.list()).toHaveLength(1)
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('waiting'))
+  expect(s.store.task(s.jobs.list()[0].taskIds[0]).messages[0].text).toContain(
+    'Investigate the root cause',
+  )
+  expect(s.store.task(s.jobs.list()[0].taskIds[0]).messages[0].text).toContain('issue.created')
+  await poller.tick(now + 61_000)
+  expect(s.jobs.list()).toHaveLength(1)
+  s.jobs.approve(s.jobs.list()[0].id, true)
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('completed'))
+  await poller.tick(now + 62_000)
+  await waitForJob(() => expect(s.jobs.list()[0].status).toBe('waiting'))
+  expect(s.jobs.list()).toHaveLength(2)
+  expect(s.store.task(s.jobs.list()[0].taskIds[0]).messages[0].text).toContain('Issue 2')
+  expect(report).not.toHaveBeenCalled()
 })
