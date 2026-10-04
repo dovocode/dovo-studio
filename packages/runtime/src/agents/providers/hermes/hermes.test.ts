@@ -50,9 +50,10 @@ createInterface({input:process.stdin}).on('line',line=>{
   adapters.push(adapter)
   return { ...f, adapter }
 }
-for (const legacy of [false, true]) {
+for (const kind of ['modern', 'legacy', 'forwarding'] as const) {
+  const legacy = kind !== 'modern'
   it.runIf(process.platform !== 'win32')(
-    `discovers, probes and runs an installed ${legacy ? 'legacy' : 'modern'} Hermes outside PATH`,
+    `discovers, probes and runs an installed ${kind} Hermes outside PATH`,
     async () => {
       const f = await fixture()
       const bin = join(f.cwd, '.local', 'bin'),
@@ -75,6 +76,13 @@ for (const legacy of [false, true]) {
           `#!/bin/sh\nunset PYTHONPATH\nunset PYTHONHOME\nexec "${python}" "${join(f.cwd, 'hermes')}" "$@"\n`,
           { mode: 0o755 },
         )
+        if (kind === 'forwarding') {
+          const nestedBin = join(f.cwd, '.hermes', 'hermes-agent', '.hermes', 'bin')
+          const nested = join(nestedBin, 'hermes')
+          await mkdir(nestedBin, { recursive: true })
+          await writeFile(nested, `#!${python}\nfrom hermes_cli.main import main\n`)
+          await writeFile(command, `#!/bin/sh\nexec ${nested} "$@"\n`, { mode: 0o755 })
+        }
       } else {
         await writeFile(command, `#!${process.execPath}\n${script}`, { mode: 0o755 })
       }

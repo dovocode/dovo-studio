@@ -94,3 +94,25 @@ it('preserves Python overrides, source roots and explicit custom launch argument
     args: ['custom-gateway'],
   })
 })
+it('follows the older uv forwarding shim without executing shell expressions or loops', async () => {
+  const { home, command } = await installation()
+  const bin = join(home, '.hermes', 'hermes-agent', '.hermes', 'bin')
+  const nested = join(bin, 'hermes')
+  const python = join(bin, 'python3')
+  await mkdir(bin, { recursive: true })
+  await writeFile(nested, `#!${python}\nfrom hermes_cli.main import main\n`)
+  const agent = { provider: 'hermes' as const, endpoint: command, model: '' }
+  for (const target of [nested, `"${nested}"`]) {
+    await writeFile(command, `#!/bin/sh\nexec ${target} "$@"\n`)
+    expect(hermesLaunch(agent)).toMatchObject({
+      command: python,
+      args: ['-u', '-P', '-m', 'tui_gateway.entry'],
+    })
+  }
+  await writeFile(nested, `#!/bin/sh\nexec "${command}" "$@"\n`)
+  expect(hermesLaunch(agent).command).toBe(command)
+  await writeFile(command, '#!/bin/sh\nexec "$HERMES_ENTRYPOINT" "$@"\n')
+  expect(hermesLaunch(agent).command).toBe(command)
+  await writeFile(command, `#!/bin/sh\nexec ${nested}; touch /tmp/should-not-run "$@"\n`)
+  expect(hermesLaunch(agent).command).toBe(command)
+})

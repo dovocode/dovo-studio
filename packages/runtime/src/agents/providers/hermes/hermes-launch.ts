@@ -38,12 +38,19 @@ export function hermesExecutable(command: string, environment = processEnvironme
 /** Recognize the published pre-bootstrap installer shim and Python console script.
  * Read only small scripts; never execute or interpret shell expressions.
  */
-function legacyPython(command: string) {
-  if (!isAbsolute(command)) return undefined
+function legacyPython(command: string, visited = new Set<string>()): string | undefined {
+  if (!isAbsolute(command) || visited.has(command) || visited.size >= 8) return undefined
+  visited.add(command)
   try {
     const info = statSync(command)
     if (!info.isFile() || info.size > 64 * 1024) return undefined
     const script = readFileSync(command, 'utf8')
+    // Older uv installers forward to another console script, rather than Python.
+    // Accept only a literal absolute path plus "$@"; never evaluate shell code.
+    const delegate = script.match(/^exec (?:"([^"\r\n$`]+)"|(\/[^\s"'$`;|&<>\\]+)) "\$@"\s*$/m)
+    const target = delegate?.[1] ?? delegate?.[2]
+    if (target && isAbsolute(target) && basename(target) === 'hermes')
+      return legacyPython(target, visited)
     const wrapper = script.match(/^exec "([^"\r\n$`]+)" "([^"\r\n$`]+)" "\$@"\s*$/m)
     const interpreter = wrapper?.[1]
     if (
