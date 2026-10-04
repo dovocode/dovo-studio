@@ -138,12 +138,10 @@ it('runs a real PTY and retains output when clients detach', async () => {
     const detachOutput = terminals.attach(session.id, (data) => {
       output += data
     })
-    // PowerShell's line editor can lose input sent before its first prompt is ready.
-    await waitForRuntime(() =>
-      expect(
-        process.platform !== 'win32' || /PS [^\r\n]*> /.test(stripVTControlCharacters(output)),
-      ).toBe(true),
-    )
+    // ConPTY may encode the prompt's trailing space as cursor movement rather than text.
+    // Wait for the prompt itself before sending input to PowerShell's line editor.
+    if (process.platform === 'win32')
+      await waitForRuntime(() => expect(stripVTControlCharacters(output)).toMatch(/PS [^\r\n]*>/))
     terminals.input(session.id, outputCommand)
     await waitForRuntime(() => expect(output).toContain('dovo-pty-verified'))
     detachOutput()
@@ -176,11 +174,8 @@ it('keeps delivering terminal output when one client throws', async () => {
     terminals.attach(session.id, (data) => {
       output += data
     })
-    await waitForRuntime(() =>
-      expect(
-        process.platform !== 'win32' || /PS [^\r\n]*> /.test(stripVTControlCharacters(output)),
-      ).toBe(true),
-    )
+    if (process.platform === 'win32')
+      await waitForRuntime(() => expect(stripVTControlCharacters(output)).toMatch(/PS [^\r\n]*>/))
     terminals.input(session.id, outputCommand)
     await waitForRuntime(() => expect(output).toContain('dovo-pty-verified'))
     expect(reported).toHaveBeenCalled()
