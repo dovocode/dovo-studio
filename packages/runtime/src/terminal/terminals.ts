@@ -31,6 +31,7 @@ type Session = {
   process: pty.IPty
   buffer: string
   listeners: Set<(data: string) => void>
+  shutdown?: ReturnType<typeof setTimeout>
 }
 export class Terminals {
   private pendingEnsure = new Map<string, Promise<TerminalInfo>>()
@@ -148,6 +149,7 @@ export class Terminals {
       notify(session.listeners, data)
     })
     terminal.onExit(({ exitCode }) => {
+      clearTimeout(session.shutdown)
       session.info = {
         ...session.info,
         exited: true,
@@ -185,7 +187,22 @@ export class Terminals {
   }
   close(id: string) {
     const session = this.get(id)
-    if (!session.info.exited) session.process.kill()
+    if (!session.info.exited) {
+      session.process.kill()
+      // A shell or custom command can ignore SIGHUP. Keep ownership until exit,
+      // but do not let it survive a closed terminal or block runtime shutdown.
+      if (process.platform !== 'win32')
+        session.shutdown = setTimeout(() => {
+          if (session.info.exited) return
+          try {
+            // forkpty gives each terminal its own process group.
+            process.kill(-session.process.pid, 'SIGKILL')
+          } catch (error) {
+            if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH'))
+              console.error('Terminal forced shutdown failed', error)
+          }
+        }, 1000)
+    }
     this.activity?.add('terminal', id, 'Terminal closed', {
       taskId: session.info.taskId,
     })

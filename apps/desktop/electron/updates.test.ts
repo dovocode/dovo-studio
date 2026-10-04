@@ -1,5 +1,5 @@
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
-import { afterEach, expect, it, vi } from 'vite-plus/test'
+import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 const f = vi.hoisted(() => ({
   open: vi.fn<(url: string) => Promise<void>>(async (_url) => {}),
   listeners: new Map<
@@ -81,6 +81,11 @@ vi.mock('electron-updater', () => ({
 vi.mock('./local-runtime.js', () => ({
   startLocalRuntime: async () => ({ address: 'http://fixture', token: 'fixture-token' }),
 }))
+beforeEach(() => {
+  // Generic updater tests describe an auto-updatable installation on every host.
+  // The package-manager cases below explicitly clear APPIMAGE.
+  vi.stubEnv('APPIMAGE', '/fixture/Dovo.AppImage')
+})
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()

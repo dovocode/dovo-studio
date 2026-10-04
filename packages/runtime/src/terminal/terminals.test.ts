@@ -55,6 +55,34 @@ const outputCommand =
   process.platform === 'win32'
     ? "Write-Output ('dovo-pty-' + 'verified')\r"
     : "printf 'dovo-pty-%s\\n' verified\r"
+it.skipIf(process.platform === 'win32')('stops commands that ignore terminal hangup', async () => {
+  const f = await fixture()
+  const terminals = new Terminals()
+  try {
+    const session = terminals.createCommand(
+      'task',
+      f.directory,
+      {
+        command: process.execPath,
+        args: [
+          '-e',
+          "process.on('SIGHUP', () => {}); console.log('hangup-ready'); setInterval(() => {}, 1000)",
+        ],
+        env: {},
+      },
+      'Ignores hangup',
+    )
+    const child = terminals.get(session.id)
+    await waitForRuntime(() => expect(child.buffer).toContain('hangup-ready'))
+    terminals.close(session.id)
+    await terminals.dispose()
+    expect(child.info.exited).toBe(true)
+    expect(() => process.kill(child.process.pid, 0)).toThrow(/ESRCH/)
+  } finally {
+    await terminals.dispose()
+    await f.cleanup()
+  }
+})
 it('waits for previously closed terminals to exit before completing disposal', async () => {
   const f = await fixture()
   const terminals = new Terminals()

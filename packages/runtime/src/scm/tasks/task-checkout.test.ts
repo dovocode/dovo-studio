@@ -180,6 +180,8 @@ it('starts worktrees from the local branch, or with Start from origin from the l
   await git('clone', '--quiet', '--bare', f.directory, origin)
   const bare = (...args: string[]) =>
     s.git.command(f.directory, ['--git-dir', origin, ...args]).then((out) => out.trim())
+  await bare('config', 'user.name', 'Dovo Test')
+  await bare('config', 'user.email', 'test@example.invalid')
   const remote = await bare('commit-tree', `${current}^{tree}`, '-p', current, '-m', 'Remote work')
   await bare('update-ref', `refs/heads/${current}`, remote)
   await git('remote', 'add', 'origin', origin)
