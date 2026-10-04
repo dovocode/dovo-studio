@@ -19,7 +19,7 @@ import { PullChanges } from './changes'
 import { PullStatus, Signal } from './status'
 import { StartPullTask } from '../list/start-task'
 import { ReviewBadge } from './review-badge'
-import { PullActions } from '../list/actions'
+import { PullActions, PullCommentComposer } from '../list/actions'
 import { PullPipelineRuns } from './pipeline-runs'
 type PullDetailProps = {
   embedded?: boolean
@@ -62,9 +62,7 @@ function PullDetailContent({
   const [creatingStack, setCreatingStack] = useApplicationState(false)
   const selectPull = (next: number) => onSelect?.(next)
   const [starting, setStarting] = useApplicationState(false)
-  const [tab, setTab] = useApplicationState<'overview' | 'changes' | 'discussion' | 'checks'>(
-    'overview',
-  )
+  const [tab, setTab] = useApplicationState<'overview' | 'changes'>('overview')
   const [changesOpened, setChangesOpened] = useApplicationState(false)
   const [objective, setObjective] = useApplicationState<string | undefined>(undefined)
   const [discussionFilter, setDiscussionFilter] = useApplicationState<'all' | 'review' | 'comment'>(
@@ -83,7 +81,9 @@ function PullDetailContent({
           <ArrowLeft className="size-4" /> {embedded ? 'Close preview' : 'Back to PRs'}
         </Button>
         <span className="mr-auto min-w-0 flex-1 basis-24 truncate text-xs text-muted-foreground">
-          {workspace.repositories.find((repo) => repo.id === repositoryId)?.name} / #{number}
+          {detail?.pull.title ??
+            workspace.repositories.find((repo) => repo.id === repositoryId)?.name}{' '}
+          · #{number}
         </span>
         <Button
           size="icon"
@@ -95,6 +95,20 @@ function PullDetailContent({
         >
           <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />
         </Button>
+        {detail && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!connected}
+            onClick={() => {
+              setObjective(undefined)
+              setStarting(true)
+            }}
+          >
+            New task
+          </Button>
+        )}
+        {detail && <Badge variant="outline">{pullState(detail.pull).label}</Badge>}
         {detail && (
           <PullActions
             repositoryId={repositoryId}
@@ -122,106 +136,10 @@ function PullDetailContent({
       )}
       {detail && (
         <>
-          <header className="space-y-3 px-5 py-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{pullState(detail.pull).label}</Badge>
-              <span className="text-xs text-muted-foreground">
-                #{number} · {detail.pull.author}
-              </span>
-              <a
-                data-dovo-external="true"
-                href={detail.pull.url}
-                target="_blank"
-                rel="noreferrer"
-                className="ml-auto inline-flex shrink-0 items-center gap-1 py-1 text-xs text-muted-foreground hover:text-foreground"
-              >
-                Open on {forgeLabels[detail.pull.provider ?? 'github']}{' '}
-                <ArrowUpRight className="size-3.5" />
-              </a>
-            </div>
-            <h2 className="break-words text-xl font-semibold leading-snug">{detail.pull.title}</h2>
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              <GitBranch className="size-3.5 shrink-0" />
-              <span className="break-all font-mono">
-                {detail.pull.head} → {detail.pull.base}
-                <span className="ml-2 text-muted-foreground" title={detail.pull.headSha}>
-                  {detail.pull.headSha.slice(0, 8)}
-                </span>
-              </span>
-            </p>
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
-              <Signal signal={pullDetailChecks(detail)} />
-              <Signal signal={pullDetailReviews(detail)} />
-              <Signal signal={pullMergeability(detail.pull)} />
-            </div>
-            <PullStack
-              detail={detail}
-              connected={connected}
-              onSelect={selectPull}
-              onCreate={() => setCreatingStack(true)}
-              onUpdate={() => {
-                setStackAction('update')
-                setStarting(true)
-              }}
-            />
-            <dl className="grid grid-cols-2 gap-3 rounded-md border bg-card px-3 py-3 text-xs @2xl:grid-cols-4">
-              <div>
-                <dt className="text-muted-foreground">Changes</dt>
-                <dd className="mt-1 font-medium">
-                  {detail.pull.changedFiles === null
-                    ? 'File count unavailable'
-                    : `${detail.pull.changedFiles} files`}
-                  {detail.pull.additions !== null && detail.pull.deletions !== null && (
-                    <span className="ml-2 tabular-nums">
-                      <span className="text-emerald-400">+{detail.pull.additions}</span>{' '}
-                      <span className="text-red-400">−{detail.pull.deletions}</span>
-                    </span>
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Requested reviewers</dt>
-                <dd className="mt-1 break-words">
-                  {detail.pull.reviewers.join(', ') || 'None requested'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Assignees</dt>
-                <dd className="mt-1 break-words">
-                  {detail.pull.assignees.join(', ') || 'Unassigned'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Updated</dt>
-                <dd className="mt-1">{formatDateTime(detail.pull.updatedAt)}</dd>
-              </div>
-            </dl>
-            {(detail.stale || detail.refreshError || !connected) && (
-              <p role="status" className="text-xs text-amber-400">
-                {!connected
-                  ? 'Offline · showing last loaded details.'
-                  : detail.refreshError
-                    ? `Refresh failed: ${detail.refreshError}`
-                    : 'Showing cached details · refreshing in background.'}
-                {detail.cachedAt
-                  ? ` Last fetched ${formatDateTime(detail.cachedAt, { timeStyle: 'medium' })}.`
-                  : ''}
-              </p>
-            )}
-            {detail.warnings.map((warning) => (
-              <p
-                key={warning}
-                role="alert"
-                className="rounded-lg border border-amber-400/20 px-3 py-2 text-xs text-amber-400"
-              >
-                {warning}
-              </p>
-            ))}
-          </header>
           <div
             role="tablist"
             aria-label="PR detail sections"
-            className="flex gap-1 overflow-x-auto border-b px-5"
+            className="sticky top-12 z-10 flex gap-1 overflow-x-auto border-b bg-background/95 px-5 backdrop-blur"
           >
             {(
               [
@@ -231,15 +149,7 @@ function PullDetailContent({
                 },
                 {
                   id: 'changes',
-                  label: `Files (${detail.files.length})`,
-                },
-                {
-                  id: 'discussion',
-                  label: `Activity (${discussion.length})`,
-                },
-                {
-                  id: 'checks',
-                  label: `Checks (${detail.checks.length})`,
+                  label: `Changes (${detail.files.length})`,
                 },
               ] as const
             ).map((item) => (
@@ -274,10 +184,115 @@ function PullDetailContent({
                 className={`shrink-0 border-b-2 px-3 py-3 text-xs font-medium ${tab === item.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
               >
                 {item.label}
+                {item.id === 'changes' && (
+                  <span className="ml-2 tabular-nums">
+                    <span className="text-emerald-400">+{detail.pull.additions ?? '—'}</span>{' '}
+                    <span className="text-red-400">−{detail.pull.deletions ?? '—'}</span>
+                  </span>
+                )}
               </button>
             ))}
           </div>
           <div className="min-w-0 p-5">
+            <header hidden={tab !== 'overview'} className="space-y-3 pb-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{pullState(detail.pull).label}</Badge>
+                <span className="text-xs text-muted-foreground">
+                  #{number} · {detail.pull.author}
+                </span>
+                <a
+                  data-dovo-external="true"
+                  href={detail.pull.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-auto inline-flex shrink-0 items-center gap-1 py-1 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Open on {forgeLabels[detail.pull.provider ?? 'github']}{' '}
+                  <ArrowUpRight className="size-3.5" />
+                </a>
+              </div>
+              <h2 className="break-words text-xl font-semibold leading-snug">
+                {detail.pull.title}
+              </h2>
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <GitBranch className="size-3.5 shrink-0" />
+                <span className="break-all font-mono">
+                  {detail.pull.head} → {detail.pull.base}
+                  <span className="ml-2 text-muted-foreground" title={detail.pull.headSha}>
+                    {detail.pull.headSha.slice(0, 8)}
+                  </span>
+                </span>
+              </p>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+                <Signal signal={pullDetailChecks(detail)} />
+                <Signal signal={pullDetailReviews(detail)} />
+                <Signal signal={pullMergeability(detail.pull)} />
+              </div>
+              <PullStack
+                detail={detail}
+                connected={connected}
+                onSelect={selectPull}
+                onCreate={() => setCreatingStack(true)}
+                onUpdate={() => {
+                  setStackAction('update')
+                  setStarting(true)
+                }}
+              />
+              <dl className="grid grid-cols-2 gap-3 rounded-md border bg-card px-3 py-3 text-xs @2xl:grid-cols-4">
+                <div>
+                  <dt className="text-muted-foreground">Changes</dt>
+                  <dd className="mt-1 font-medium">
+                    {detail.pull.changedFiles === null
+                      ? 'File count unavailable'
+                      : `${detail.pull.changedFiles} files`}
+                    {detail.pull.additions !== null && detail.pull.deletions !== null && (
+                      <span className="ml-2 tabular-nums">
+                        <span className="text-emerald-400">+{detail.pull.additions}</span>{' '}
+                        <span className="text-red-400">−{detail.pull.deletions}</span>
+                      </span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Requested reviewers</dt>
+                  <dd className="mt-1 break-words">
+                    {detail.pull.reviewers.join(', ') || 'None requested'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Assignees</dt>
+                  <dd className="mt-1 break-words">
+                    {detail.pull.assignees.join(', ') || 'Unassigned'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Updated</dt>
+                  <dd className="mt-1">{formatDateTime(detail.pull.updatedAt)}</dd>
+                </div>
+              </dl>
+              {(detail.stale || detail.refreshError || !connected) && (
+                <p role="status" className="text-xs text-amber-400">
+                  {!connected
+                    ? 'Offline · showing last loaded details.'
+                    : detail.refreshError
+                      ? `Refresh failed: ${detail.refreshError}`
+                      : 'Showing cached details · refreshing in background.'}
+                  {detail.cachedAt
+                    ? ` Last fetched ${formatDateTime(detail.cachedAt, { timeStyle: 'medium' })}.`
+                    : ''}
+                </p>
+              )}
+              {detail.warnings.map((warning) => (
+                <p
+                  key={warning}
+                  role="alert"
+                  className="rounded-lg border border-amber-400/20 px-3 py-2 text-xs text-amber-400"
+                >
+                  {warning}
+                </p>
+              ))}
+            </header>
+
             <section
               role="tabpanel"
               id="pr-panel-overview"
@@ -285,9 +300,15 @@ function PullDetailContent({
               hidden={tab !== 'overview'}
             >
               <div className="grid items-start gap-5 @4xl:grid-cols-[minmax(0,1fr)_240px]">
-                <section aria-label="PR description" className="min-w-0 py-1">
-                  <h3 className="mb-4 text-sm font-medium">Description</h3>
-                  <div className="min-w-0 max-w-prose text-sm leading-7">
+                <section
+                  aria-label="PR description"
+                  className="min-w-0 overflow-hidden rounded-xl border"
+                >
+                  <h3 className="border-b bg-muted/20 px-4 py-3 text-xs font-medium">
+                    {detail.pull.author}{' '}
+                    <span className="ml-2 font-normal text-muted-foreground">Description</span>
+                  </h3>
+                  <div className="min-w-0 p-4 text-sm leading-7">
                     <MessageResponse
                       baseURL={detail.pull.url}
                       fileBaseURL={
@@ -344,10 +365,10 @@ function PullDetailContent({
               </div>
             </section>
             <section
-              role="tabpanel"
+              className="mt-8 border-t pt-6"
               id="pr-panel-discussion"
-              aria-labelledby="pr-tab-discussion"
-              hidden={tab !== 'discussion'}
+              aria-label="Pull request activity"
+              hidden={tab !== 'overview'}
             >
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <h3 className="mr-auto text-sm font-medium">Activity</h3>
@@ -396,12 +417,12 @@ function PullDetailContent({
               />
             </section>
             <section
-              role="tabpanel"
+              className="mt-8 border-t pt-6"
               id="pr-panel-checks"
-              aria-labelledby="pr-tab-checks"
-              hidden={tab !== 'checks'}
+              aria-label="Pull request checks"
+              hidden={tab !== 'overview'}
             >
-              {tab === 'checks' && (
+              {tab === 'overview' && (
                 <PullPipelineRuns
                   key={detail.pull.headSha}
                   repositoryId={repositoryId}
@@ -409,6 +430,7 @@ function PullDetailContent({
                 />
               )}
               <PullStatus detail={detail} />
+              <PullCommentComposer repositoryId={repositoryId} detail={detail} onDone={changed} />
             </section>
             <section
               role="tabpanel"

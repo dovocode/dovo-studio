@@ -22,10 +22,10 @@ export function PullComments({
           id={comment.id}
           data-comment-kind={comment.kind}
           aria-label={`${comment.author} ${comment.kind}`}
-          className={`min-w-0 overflow-hidden ${comment.kind === 'comment' ? 'border-b' : 'rounded-lg border'} ${comment.kind === 'review' && comment.state === 'APPROVED' ? 'border-emerald-400/20' : comment.kind === 'review' && comment.state === 'CHANGES_REQUESTED' ? 'border-red-400/25' : ''}`}
+          className={`min-w-0 overflow-hidden rounded-xl border ${comment.kind === 'review' && comment.state === 'APPROVED' ? 'border-emerald-400/20' : comment.kind === 'review' && comment.state === 'CHANGES_REQUESTED' ? 'border-red-400/25' : ''}`}
         >
           <header
-            className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 text-xs ${comment.kind === 'comment' ? '' : 'border-b bg-muted/20'}`}
+            className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 text-xs border-b bg-muted/20`}
           >
             <strong className="min-w-0 break-words font-medium">{comment.author}</strong>
             <ReviewBadge comment={comment} />

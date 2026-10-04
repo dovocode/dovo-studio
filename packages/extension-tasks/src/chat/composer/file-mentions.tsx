@@ -1,3 +1,4 @@
+import { useAppPreferences } from '@dovo/studio-core'
 import { useEffect, useState, type KeyboardEvent, type RefObject } from 'react'
 import { Schema } from 'effect'
 import { FileText, Hash, Plug, Settings2, Sparkles, SquareSlash } from 'lucide-react'
@@ -57,21 +58,24 @@ export function useFileMentions({
   const [files, setFiles] = useState<string[]>([])
   const [active, setActive] = useState(0)
   const [dismissed, setDismissed] = useState<number | null>(null)
+  const { showSkillsInSlashMenu } = useAppPreferences()
   const mention = composerMention(draft, caret)
   const trigger = mention?.trigger
   const query = mention?.query
   const resourceItems: Suggestion[] = mention
-    ? resourceSuggestions(resources, mention.trigger, mention.query).map((item) => ({
-        kind: item.kind,
-        value: item.name,
-        detail:
-          item.kind === 'mcp'
-            ? 'MCP server'
-            : item.enabled
-              ? item.description
-              : `Not enabled · added to this message only${item.description ? ` · ${item.description}` : ''}`,
-        muted: !item.enabled,
-      }))
+    ? resourceSuggestions(resources, mention.trigger, mention.query)
+        .filter((item) => mention.trigger !== '/' || showSkillsInSlashMenu || item.kind !== 'skill')
+        .map((item) => ({
+          kind: item.kind,
+          value: item.name,
+          detail:
+            item.kind === 'mcp'
+              ? 'MCP server'
+              : item.enabled
+                ? item.description
+                : `Not enabled · added to this message only${item.description ? ` · ${item.description}` : ''}`,
+          muted: !item.enabled,
+        }))
     : []
   const commandItems: Suggestion[] =
     mention?.trigger === '/' && onCommand

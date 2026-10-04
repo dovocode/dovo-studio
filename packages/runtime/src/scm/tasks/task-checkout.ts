@@ -1,3 +1,4 @@
+import { processEnvironment } from '../../process.js'
 import { LinkedCheckouts } from './linked-checkouts.js'
 import { PendingCheckouts } from './pending-checkouts.js'
 import type { ScratchWorkspaces } from '../repositories/scratch-workspaces.js'
@@ -85,6 +86,7 @@ export class TaskCheckout {
       cached.execution === task.execution &&
       cached.existingWorktreePath === task.existingWorktreePath &&
       (!task.setupCommand?.trim() || task.worktreeSetupComplete) &&
+      (!task.submodules || task.submodules === 'none' || task.worktreeSubmodulesComplete) &&
       (repo.kind !== 'scratch' || (await realpath(cached.path).catch(() => '')) === cached.path) &&
       (await stat(cached.path)
         .then((entry) => entry.isDirectory())
@@ -184,13 +186,18 @@ export class TaskCheckout {
       signal?.throwIfAborted()
       await this.git.command(root, ['worktree', 'add', directory, kept])
       // A fresh checkout lacks installed dependencies; run the setup command again.
-      this.store.updateTask(id, (current) => ({ ...current, worktreeSetupComplete: false }))
+      this.store.updateTask(id, (current) => ({
+        ...current,
+        worktreeSetupComplete: false,
+        worktreeSubmodulesComplete: false,
+      }))
       return this.prepare(id, directory, steps, kept, signal)
     }
     const fetching = !task.pullRequest && !task.worktreeBaseBranch && !!task.worktreeFromOrigin
     const steps = [
       ...(task.pullRequest ? ['pull'] : fetching ? ['fetch'] : []),
       'worktree',
+      ...(task.submodules && task.submodules !== 'none' ? ['submodules'] : []),
       ...(setup && !task.worktreeSetupComplete ? ['setup'] : []),
       'agent',
     ]
@@ -283,6 +290,22 @@ export class TaskCheckout {
     signal?.throwIfAborted()
     const cwd = (await this.git.inspect(directory)).path
     const task = this.store.task(id)
+    if (task.submodules && task.submodules !== 'none' && !task.worktreeSubmodulesComplete) {
+      this.progress(id, steps, 'submodules', branch)
+      signal?.throwIfAborted()
+      await this.git.command(
+        cwd,
+        [
+          'submodule',
+          'update',
+          '--init',
+          ...(task.submodules === 'recursive' ? ['--recursive'] : []),
+        ],
+        processEnvironment({ GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' }),
+      )
+      signal?.throwIfAborted()
+      this.store.updateTask(id, (current) => ({ ...current, worktreeSubmodulesComplete: true }))
+    }
     if (task.setupCommand?.trim() && !task.worktreeSetupComplete) {
       this.progress(id, steps, 'setup', branch)
       try {

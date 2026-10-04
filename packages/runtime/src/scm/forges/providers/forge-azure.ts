@@ -345,6 +345,11 @@ export class AzureForge implements ForgeAdapter {
       base: branchName(value.targetRefName),
       labels: value.labels.map((entry) => entry.name),
       viewerIsAuthor: viewer ? viewer === value.createdBy.id : undefined,
+      // Azure PRs represent assignment through reviewers, not a separate assignee field.
+      viewerIsAssigned: viewer ? false : undefined,
+      viewerIsInvolved: viewer
+        ? viewer === value.createdBy.id || value.reviewers.some((entry) => entry.id === viewer)
+        : undefined,
       viewerReviewRequested: viewer
         ? value.reviewers.some((entry) => entry.id === viewer && entry.vote === 0)
         : undefined,

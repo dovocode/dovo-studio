@@ -1,6 +1,6 @@
 import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
 import { urlSchema, decode } from '@dovo/protocol'
-import { Schema } from 'effect'
+import { Effect, Schema } from 'effect'
 import type {
   ForgeCapabilities,
   ForgeRepository,
@@ -89,6 +89,11 @@ const pull = mutableStruct({
   links: mutableStruct({
     html: link,
   }),
+})
+const listPull = mutableStruct({
+  ...pull.omit('reviewers', 'participants').fields,
+  reviewers: Schema.optional(mutableArray(user)),
+  participants: Schema.optional(mutableArray(participant)),
 })
 const comment = mutableStruct({
   id: Schema.Number.pipe(Schema.finite()).pipe(
@@ -337,6 +342,13 @@ export class BitbucketForge implements ForgeAdapter {
       base: value.destination.branch.name,
       labels: [],
       viewerIsAuthor: viewer ? viewer === value.author.uuid : undefined,
+      // Bitbucket PRs have reviewers and participants, but no assignees.
+      viewerIsAssigned: viewer ? false : undefined,
+      viewerIsInvolved: viewer
+        ? viewer === value.author.uuid ||
+          value.reviewers.some((entry) => entry.uuid === viewer) ||
+          value.participants.some((entry) => entry.user.uuid === viewer)
+        : undefined,
       viewerReviewRequested: viewer
         ? value.reviewers.some((entry) => entry.uuid === viewer) &&
           !value.participants.some(
@@ -365,20 +377,46 @@ export class BitbucketForge implements ForgeAdapter {
     })
     for (const state of states) query.append('state', state)
     const [pageResult, viewer] = await Promise.allSettled([
-      this.page(`${this.path}/pullrequests?${query}`, pull, page),
+      this.page(`${this.path}/pullrequests?${query}`, listPull, page),
       this.http.json('user').then((data) => decode(user, data).uuid),
     ])
     if (pageResult.status === 'rejected') throw pageResult.reason
     const result = pageResult.value
     return {
-      pulls: result.values.map((value) => ({
-        ...this.summary(value, viewer.status === 'fulfilled' ? viewer.value : undefined),
-        ...(viewer.status === 'rejected'
-          ? {
-              statusError: `Viewer identity unavailable: ${message(viewer.reason)}`,
-            }
-          : {}),
-      })),
+      pulls: await Effect.runPromise(
+        Effect.forEach(
+          result.values,
+          (entry) =>
+            Effect.promise(async () => {
+              const viewerId = viewer.status === 'fulfilled' ? viewer.value : undefined
+              let value = decode(pull, entry)
+              let relationshipError: string | undefined
+              // Bitbucket omits relationship lists from collection responses. Hydrate only missing data.
+              if (viewerId && (!entry.reviewers || !entry.participants)) {
+                try {
+                  value = await this.get(entry.id)
+                } catch (error) {
+                  relationshipError = `Personal filters unavailable: ${message(error)}`
+                }
+              }
+              const summary = this.summary(value, viewerId)
+              return {
+                ...summary,
+                ...(relationshipError
+                  ? {
+                      viewerIsInvolved: summary.viewerIsAuthor ? true : undefined,
+                      viewerReviewRequested: undefined,
+                      statusError: relationshipError,
+                    }
+                  : {}),
+                ...(viewer.status === 'rejected'
+                  ? { statusError: `Viewer identity unavailable: ${message(viewer.reason)}` }
+                  : {}),
+              }
+            }),
+          { concurrency: 4 },
+        ),
+      ),
       page,
       hasMore: !!result.next,
     }

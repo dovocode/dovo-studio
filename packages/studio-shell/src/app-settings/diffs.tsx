@@ -1,13 +1,10 @@
 import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
 import { SettingRow, SettingsGroup, SettingsPage, Segmented, Toggle } from './layout'
 
-export default function DiffSettings() {
+export function DiffSettingsRows() {
   const preferences = useAppPreferences()
   return (
-    <SettingsPage
-      title="Diffs"
-      description="How changes look in task reviews, turn checkpoints and pull requests. Diffs follow your Appearance theme."
-    >
+    <>
       <SettingsGroup title="Conversation">
         <SettingRow
           label="Collapse changed files by default"
@@ -71,6 +68,14 @@ export default function DiffSettings() {
           />
         </SettingRow>
       </SettingsGroup>
+    </>
+  )
+}
+
+export default function DiffSettings() {
+  return (
+    <SettingsPage title="Diffs" description="How changes appear on this device.">
+      <DiffSettingsRows />
     </SettingsPage>
   )
 }

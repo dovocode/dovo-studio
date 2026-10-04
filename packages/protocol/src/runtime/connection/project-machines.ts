@@ -49,11 +49,12 @@ export function gitRemoteIdentity(remote: string): string | undefined {
 }
 export function projectMachineGroups<
   T extends { repository: Repository; runtimeId: string | null },
->(entries: readonly T[]) {
+>(entries: readonly T[], groupMatching = true) {
   const groups = new Map<string, { key: string; name: string; entries: T[] }>()
   for (const entry of entries) {
     const key =
-      entry.repository.gitIdentity ?? JSON.stringify([entry.runtimeId, entry.repository.id])
+      (groupMatching ? entry.repository.gitIdentity : undefined) ??
+      JSON.stringify([entry.runtimeId, entry.repository.id])
     const group = groups.get(key) ?? { key, name: entry.repository.name, entries: [] }
     group.entries.push(entry)
     groups.set(key, group)

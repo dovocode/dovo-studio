@@ -83,7 +83,7 @@ export default function SettingsScreen() {
           title="Computers"
           footer={
             profiles.length
-              ? 'Running tasks, worktrees, task defaults, CLI commands and activity are on each computer’s page.'
+              ? 'Running tasks, worktrees, task defaults, CLI commands, computer use and activity are on each computer’s page.'
               : undefined
           }
         >

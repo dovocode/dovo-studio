@@ -1,3 +1,4 @@
+import { useAppPreferences, projectActivity } from '@dovo/studio-core'
 import { projectMachineGroups } from '@dovo/protocol'
 import {
   Button,
@@ -36,6 +37,7 @@ export function ProjectSelectionDialog({
   suggestedProject,
   onSelect,
 }: ProjectSelectionDialogProps) {
+  const preferences = useAppPreferences()
   const projectGroups = useMemo(
     () =>
       open
@@ -51,9 +53,26 @@ export function ProjectSelectionDialog({
                   source,
                 })),
             ),
-          )
+            preferences.projectGrouping,
+          ).sort((a, b) => {
+            const activity = (group: typeof a) =>
+              Math.max(
+                0,
+                ...group.entries.map((entry) =>
+                  projectActivity(
+                    entry.source.workspace.tasks,
+                    entry.repository.id,
+                    preferences.projectOrder,
+                  ),
+                ),
+              )
+            return (
+              (preferences.projectOrder === 'name' ? 0 : activity(b) - activity(a)) ||
+              a.name.localeCompare(b.name)
+            )
+          })
         : [],
-    [sources, open, noProject],
+    [sources, open, noProject, preferences.projectGrouping, preferences.projectOrder],
   )
   const normalizedProjectQuery = projectQuery.trim().toLowerCase()
 

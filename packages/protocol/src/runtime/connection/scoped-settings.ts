@@ -96,6 +96,7 @@ export function settingsAtScope(
   if (scope === 'environment-project')
     return {
       taskDefaults: repository?.taskDefaults,
+      taskBehavior: repository?.taskBehavior,
       resources: repository?.resources,
       prompts: repository?.prompts,
       agents: repository?.agents,
@@ -137,6 +138,12 @@ export function resolveScopedSettings(
             ],
           }
         : {}),
+      taskBehavior: {
+        ...result.taskBehavior,
+        ...Object.fromEntries(
+          Object.entries(value.taskBehavior ?? {}).filter(([, value]) => value !== undefined),
+        ),
+      },
       taskDefaults: {
         ...result.taskDefaults,
         ...Object.fromEntries(
@@ -291,6 +298,7 @@ const taskDefaultFields = [
   { key: 'harness', label: 'Agent, model & instructions' },
   { key: 'permission', label: 'Permissions' },
   { key: 'execution', label: 'Working directory' },
+  { key: 'submodules', label: 'Submodules' },
   { key: 'worktreeFromOrigin', label: 'Start from origin' },
   { key: 'setupCommand', label: 'Worktree setup' },
 ] as const

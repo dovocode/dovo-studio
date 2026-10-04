@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { LoaderCircle, GitFork, Folder } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -12,7 +12,13 @@ import {
 import { MessageQueue } from '../chat/thread/message-queue'
 import { TaskQuestions } from '../chat/thread/task-questions'
 import { RunControls } from '../chat/actions/run-controls'
-import { responses, useWorkspace, type Task } from '@dovo/studio-core'
+import {
+  useAppPreferences,
+  formatDateTime,
+  responses,
+  useWorkspace,
+  type Task,
+} from '@dovo/studio-core'
 import { ChatThread } from '../chat/thread/chat-thread'
 import { Composer } from '../chat/composer/composer'
 import type { CodeReference } from './code-reference'
@@ -54,6 +60,8 @@ export function TaskConversation({
   composerInsert?: { id: string; text: string } | null
   onComposerInsertApplied?: () => void
 }) {
+  const { collapseComposerOnScroll } = useAppPreferences()
+  const [composerCollapsed, setComposerCollapsed] = useState(false)
   const [pending, setPending] = useApplicationState<PendingMessage | null>(null)
   const { id, messages, queue, turns, status, compactions } = task
   const visiblePending = useMemo(
@@ -129,7 +137,21 @@ export function TaskConversation({
       </div>
     )
   return (
-    <div data-task-conversation={task.id} className="flex h-full min-h-0 flex-col">
+    <div
+      data-task-conversation={task.id}
+      className="flex h-full min-h-0 flex-col"
+      onScrollCapture={(event) => {
+        if (
+          !collapseComposerOnScroll ||
+          !(event.target instanceof HTMLElement) ||
+          !event.target.closest('[role="log"]')
+        )
+          return
+        const element = event.target
+        if (element.scrollHeight - element.clientHeight - element.scrollTop > 120)
+          setComposerCollapsed(true)
+      }}
+    >
       <ChatThread
         task={displayedTask}
         onTerminal={onTerminal}
@@ -180,21 +202,48 @@ export function TaskConversation({
           <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
         </div>
       ) : null}
+      {task.quotaContinuation && (
+        <div
+          role="status"
+          className="mx-auto flex w-full max-w-[var(--chat-max)] items-center gap-2 px-5 py-2 text-xs text-muted-foreground"
+        >
+          <span className="flex-1">
+            {task.quotaContinuation.resume ? 'Scheduled to resume' : 'Snoozed'} at{' '}
+            {formatDateTime(task.quotaContinuation.at)}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!connected}
+            onClick={() => {
+              void request('/api/tasks/quota/cancel', { id: task.id }, responses.ok).catch(
+                (cause) => setRetryError(String(cause)),
+              )
+            }}
+          >
+            Cancel continuation
+          </Button>
+          {retryError && <span role="alert">{retryError}</span>}
+        </div>
+      )}
       <TaskQuestions taskId={task.id} />
       <RunControls task={task} />
       <PlanApproval task={task} />
       <ReviewFindings task={task} className="px-5 pb-2" onOpen={onReview} />
       <ReviewCommentsTray task={task} className="px-5 pb-2" />
       <MessageQueue task={queueTask} pending={visiblePending} />
-      <Composer
-        key={task.id}
-        task={task}
-        onPending={setPending}
-        onAside={onAside}
-        codeReference={codeReference}
-        composerInsert={composerInsert}
-        onComposerInsertApplied={onComposerInsertApplied}
-      />
+      <div onFocusCapture={() => setComposerCollapsed(false)}>
+        <Composer
+          collapsed={collapseComposerOnScroll && composerCollapsed}
+          key={task.id}
+          task={task}
+          onPending={setPending}
+          onAside={onAside}
+          codeReference={codeReference}
+          composerInsert={composerInsert}
+          onComposerInsertApplied={onComposerInsertApplied}
+        />
+      </div>
     </div>
   )
 }

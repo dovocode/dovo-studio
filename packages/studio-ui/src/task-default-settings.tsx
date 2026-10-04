@@ -300,6 +300,27 @@ function TaskDefaultSettingsForm({
                 <option value="worktree">New worktree</option>
               </ChoicePicker>
             </FormField>
+            <FormField layout="settings" label="Submodules">
+              <ChoicePicker
+                aria-label="Submodules"
+                disabled={!snapshot?.taskBehaviorSupported}
+                value={draft.submodules ?? 'inherit'}
+                onValueChange={(value) =>
+                  change({
+                    ...draft,
+                    submodules:
+                      value === 'none' || value === 'direct' || value === 'recursive'
+                        ? value
+                        : undefined,
+                  })
+                }
+              >
+                <option value="inherit">Inherit</option>
+                <option value="none">None</option>
+                <option value="direct">Direct</option>
+                <option value="recursive">Recursive</option>
+              </ChoicePicker>
+            </FormField>
             <StartFromOrigin
               value={draft.worktreeFromOrigin}
               inherited={setup?.defaults.worktreeFromOrigin ?? false}
@@ -415,15 +436,24 @@ function TaskDefaultSettingsForm({
               setSaved(false)
               const save = Promise.resolve().then(async () => {
                 const value = decode(projectTaskDefaultsSchema, draft)
+                const latest = await request(
+                  '/api/agents/settings/read',
+                  { scope, repositoryId: repository?.id },
+                  scopedSettingsResultSchema,
+                )
+                const edited = (value: ScopedSettingsValue) =>
+                  JSON.stringify({ taskDefaults: value.taskDefaults, prompts: value.prompts })
+                if (edited(latest.value) !== edited(scopeValue))
+                  throw new Error('Task defaults changed on another device. Reload before saving.')
                 const result = await request(
                   '/api/agents/settings/save',
                   {
                     scope,
                     repositoryId: repository?.id,
-                    before: scopeValue,
+                    before: latest.value,
                     projectKey,
                     after: {
-                      ...scopeValue,
+                      ...latest.value,
                       taskDefaults: value,
                       prompts: prompts.map((prompt) => ({
                         ...prompt,

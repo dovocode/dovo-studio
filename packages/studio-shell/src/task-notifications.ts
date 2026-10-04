@@ -1,6 +1,6 @@
 import { runtimeComputerName } from '@dovo/protocol'
 import type { InputPreviewBridge, InputPreviewItem } from '@dovo/protocol'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { readAppPreferences, useAppPreferences, useWorkspace } from '@dovo/studio-core'
 
 type RuntimeOverview = ReturnType<typeof useWorkspace>['runtimes'][number]
@@ -107,7 +107,9 @@ export function taskNotificationEvents(
 export function useTaskNotifications(
   onOpen: (target: NotificationTarget) => void,
   preview?: InputPreviewBridge,
+  activeTarget?: NotificationTarget,
 ) {
+  const [notice, setNotice] = useState<{ title: string; target: NotificationTarget } | null>(null)
   const { runtimes } = useWorkspace()
   const preferences = useAppPreferences()
   useEffect(() => {
@@ -144,8 +146,27 @@ export function useTaskNotifications(
     const current = taskStates(runtimes)
     const before = previous.current
     previous.current = current
-    if (!before || typeof Notification === 'undefined') return
-    if (Notification.permission !== 'granted' || (!document.hidden && document.hasFocus())) return
+    if (!before) return
+    if (!document.hidden && document.hasFocus()) {
+      if (readAppPreferences().inAppNotifications) {
+        const event = taskNotificationEvents(before, current)
+          .reverse()
+          .find(
+            (event) =>
+              !activeTarget ||
+              event.target.runtimeId !== activeTarget.runtimeId ||
+              event.target.entityId !== activeTarget.entityId ||
+              event.target.viewId !== activeTarget.viewId,
+          )
+        if (event)
+          setNotice({
+            title: `${event.title} · ${event.kind === 'input' ? 'Needs input' : event.kind === 'failed' ? 'Failed' : event.kind === 'done' ? 'Finished' : event.kind === 'checks-passed' ? 'Checks passed' : 'Checks failed'}`,
+            target: event.target,
+          })
+      }
+      return
+    }
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
     const { notifyInput, notifyDone, notifyAutomations, notifySound } = readAppPreferences()
     for (const event of taskNotificationEvents(before, current)) {
       if (
@@ -173,5 +194,11 @@ export function useTaskNotifications(
         onOpen(event.target)
       }
     }
-  }, [runtimes, onOpen])
+  }, [runtimes, onOpen, activeTarget?.runtimeId, activeTarget?.viewId, activeTarget?.entityId])
+  useEffect(() => {
+    if (!notice) return
+    const timer = setTimeout(() => setNotice(null), 8000)
+    return () => clearTimeout(timer)
+  }, [notice])
+  return { notice, dismiss: () => setNotice(null) }
 }

@@ -1,7 +1,13 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskLifecycleActions } from './task-lifecycle-actions'
 import { Ellipsis, GitPullRequest, Minimize2, Pin } from 'lucide-react'
-import { responses, updateTask, useWorkspace, type Task } from '@dovo/studio-core'
+import {
+  readAppPreferences,
+  responses,
+  updateTask,
+  useWorkspace,
+  type Task,
+} from '@dovo/studio-core'
 import { IconButton, Popover } from '@dovo/studio-ui'
 export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () => void }) {
   const { setWorkspace, request, connected } = useWorkspace(),
@@ -39,14 +45,15 @@ export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () 
                 label={task.pinned ? 'Unpin task' : 'Pin task'}
                 aria-pressed={!!task.pinned}
                 className="size-7"
-                onClick={() =>
-                  setWorkspace((w) =>
-                    updateTask(w, task.id, (t) => ({
-                      ...t,
-                      pinned: !t.pinned,
-                    })),
+                onClick={() => {
+                  if (
+                    task.pinned &&
+                    readAppPreferences().confirmUnpin &&
+                    !window.confirm(`Unpin “${task.title}”?`)
                   )
-                }
+                    return
+                  setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, pinned: !t.pinned })))
+                }}
               >
                 <Pin size={13} />
               </IconButton>

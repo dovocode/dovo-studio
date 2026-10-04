@@ -68,7 +68,9 @@ export function PullRow({
                 />
               )}
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-[0.6875rem] text-muted-foreground">
+                <div
+                  className={`${compact ? 'hidden' : 'flex'} items-center gap-2 text-[0.6875rem] text-muted-foreground`}
+                >
                   <span className="truncate">{repository}</span>
                   <span className="shrink-0">#{pull.number}</span>
                   {pull.stack && (
@@ -91,16 +93,23 @@ export function PullRow({
                 <p
                   className={`mt-1 font-medium ${compact ? 'line-clamp-2 text-sm leading-relaxed' : 'text-sm leading-relaxed'}`}
                 >
-                  {pull.title}
+                  {pull.title}{' '}
+                  {compact && (
+                    <span className="font-normal text-muted-foreground">#{pull.number}</span>
+                  )}
                 </p>
                 <p
                   className="mt-1 truncate text-[0.6875rem] text-muted-foreground"
                   title={`${pull.head} → ${pull.base}`}
                 >
-                  {pull.author} ·{' '}
-                  <span className="font-mono">
-                    {pull.head} → {pull.base}
-                  </span>
+                  {compact ? repository : pull.author} ·{' '}
+                  {compact ? (
+                    new Date(pull.updatedAt).toLocaleDateString()
+                  ) : (
+                    <span className="font-mono">
+                      {pull.head} → {pull.base}
+                    </span>
+                  )}
                 </p>
                 {(pull.additions != null ||
                   pull.deletions != null ||
@@ -131,7 +140,7 @@ export function PullRow({
                     )}
                   </div>
                 )}
-                {!!pull.labels.length && (
+                {!compact && !!pull.labels.length && (
                   <div className="mt-2 flex flex-wrap gap-1" aria-label="Labels">
                     {pull.labels.slice(0, 3).map((label) => (
                       <Badge
@@ -153,12 +162,7 @@ export function PullRow({
                     )}
                   </div>
                 )}
-                {compact && (
-                  <p className="mt-1 text-[0.6875rem] text-muted-foreground">
-                    Updated {new Date(pull.updatedAt).toLocaleDateString()}
-                  </p>
-                )}
-                {pull.state === 'open' && (
+                {!compact && pull.state === 'open' && (
                   <div className="mt-2">
                     <Signal signal={pullNextStep(pull)} />
                   </div>

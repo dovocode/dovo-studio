@@ -398,3 +398,44 @@ it('invalidates prepared checkouts when a folder project path changes', async ()
   ).done
   expect(directories).toEqual([await realpath(second)])
 })
+
+it('populates worktree submodules before setup and does not repeat initialization', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'submodule-checkout-owner-token-long-enough',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  s.defaults.save(
+    {
+      ...s.defaults.get(),
+      scopedSettings: {
+        shared: [],
+        environment: { taskDefaults: { submodules: 'recursive', execution: 'worktree' } },
+      },
+    },
+    false,
+  )
+  const task = s.tasks.create({
+    title: 'Submodules',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  const command = vi.spyOn(s.git, 'command')
+  const cwd = await s.checkouts.directory(task.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  expect(
+    command.mock.calls.some(
+      ([path, args]) => path === cwd && args.join(' ') === 'submodule update --init --recursive',
+    ),
+  ).toBe(true)
+  expect(s.store.task(task.id).worktreeSubmodulesComplete).toBe(true)
+  command.mockClear()
+  await s.checkouts.directory(task.id)
+  expect(command.mock.calls.some(([, args]) => args[0] === 'submodule')).toBe(false)
+})

@@ -13,7 +13,7 @@ import {
   Search,
   Check,
 } from 'lucide-react'
-import { useWorkspace } from '@dovo/studio-core'
+import { useAppPreferences, projectActivity, useWorkspace } from '@dovo/studio-core'
 import {
   Button,
   Dialog,
@@ -42,6 +42,7 @@ export function ProjectsMenu({
   compact?: boolean
   disabled?: boolean
 }) {
+  const preferences = useAppPreferences()
   const { workspace, connection, activeRuntimeId, runtimes, connected, switchRuntime } =
     useWorkspace()
   const [adding, setAdding] = useApplicationState<{
@@ -65,6 +66,7 @@ export function ProjectsMenu({
       runtimeId: activeRuntimeId,
       name: activeComputer ? runtimeComputerName(activeComputer) : 'This computer',
       repositories: workspace.repositories,
+      tasks: workspace.tasks,
       online: connected || !activeRuntimeId,
     },
     ...(allDevices
@@ -74,6 +76,7 @@ export function ProjectsMenu({
             runtimeId: entry.profile.id,
             name: runtimeComputerName(entry),
             repositories: entry.snapshot?.workspace.repositories ?? [],
+            tasks: entry.snapshot?.workspace.tasks ?? [],
             online: entry.connected,
           }))
       : []),
@@ -95,12 +98,30 @@ export function ProjectsMenu({
   const projectGroups = allDevices
     ? projectMachineGroups(
         projects.map((repository) => ({ repository, runtimeId: repository.source.runtimeId })),
+        preferences.projectGrouping,
       )
     : projects.map((repository) => ({
         key: repository.key,
         name: repository.name,
         entries: [{ repository, runtimeId: repository.source.runtimeId }],
       }))
+  projectGroups.sort((a, b) => {
+    const activity = (group: typeof a) =>
+      Math.max(
+        0,
+        ...group.entries.map((entry) =>
+          projectActivity(
+            entry.repository.source.tasks,
+            entry.repository.id,
+            preferences.projectOrder,
+          ),
+        ),
+      )
+    return (
+      (preferences.projectOrder === 'name' ? 0 : activity(b) - activity(a)) ||
+      a.name.localeCompare(b.name)
+    )
+  })
   const managed =
     managing?.runtimeId === activeRuntimeId
       ? workspace.repositories.find((r) => r.id === managing.id)
@@ -199,7 +220,10 @@ export function ProjectsMenu({
                 )
                 .map((group) => {
                   const repo = group.entries[0].repository
-                  const key = allDevices && repo.gitIdentity ? `git:${repo.gitIdentity}` : repo.key
+                  const key =
+                    allDevices && preferences.projectGrouping && repo.gitIdentity
+                      ? `git:${repo.gitIdentity}`
+                      : repo.key
                   const selected =
                     key === value ||
                     group.entries.some(({ repository }) => repository.key === value)

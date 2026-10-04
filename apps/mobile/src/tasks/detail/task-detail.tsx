@@ -165,6 +165,7 @@ function TaskDetailContent({
   const resume = useAction()
   const preparation = taskPreparation(task)
   const budget = taskBudgetUsage(task)
+  const quota = useAction()
   const retry = useAction()
   const [asking, setAsking] = useApplicationState(false)
   const [editingInstructions, setEditingInstructions] = useApplicationState(false)
@@ -647,6 +648,25 @@ function TaskDetailContent({
               <Text style={[styles.muted, { flex: 1 }]}>Starting agent…</Text>
             </View>
           ) : null}
+          {task.quotaContinuation && (
+            <View style={{ padding: 12, gap: 8 }}>
+              <Text style={styles.muted}>
+                {task.quotaContinuation.resume ? 'Scheduled to resume' : 'Snoozed'} at{' '}
+                {new Date(task.quotaContinuation.at).toLocaleString()}
+              </Text>
+              <Action
+                secondary
+                label="Cancel quota continuation"
+                disabled={!connected || quota.busy}
+                onPress={() =>
+                  quota.act(() =>
+                    callEffect('/api/tasks/quota/cancel', { id: task.id }, responses.ok),
+                  )
+                }
+              />
+              {quota.error && <Text style={{ color: colors.error }}>{quota.error}</Text>}
+            </View>
+          )}
           <TaskQuestions taskId={task.id} questionId={questionId} />
           {(budget.tokenExceeded || budget.timeExceeded) && (
             <Text

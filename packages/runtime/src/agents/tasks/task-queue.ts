@@ -44,7 +44,8 @@ export class TaskQueue {
   ) {
     if (this.accepted(id, messageId, text, attachments)) return false
     const task = this.store.task(id)
-    if (task.archived) throw new HttpError(409, 'Restore this task before sending a message')
+    if (task.archived && !task.autoSettled)
+      throw new HttpError(409, 'Restore this task before sending a message')
     if ((task.queue?.length ?? 0) >= 50)
       throw new HttpError(409, 'Queue is full (50 messages). Remove a message or let it run.')
     const createdAt = new Date().toISOString()

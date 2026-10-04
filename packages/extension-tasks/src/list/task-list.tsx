@@ -130,8 +130,9 @@ export function TaskList({
   const [environment, setEnvironment, environmentRef] = useApplicationState(
     () => readTaskListViewState(host).environment ?? '',
   )
-  const sort = useAppPreferences().taskSort
-  const grouping = useAppPreferences().taskGrouping
+  const preferences = useAppPreferences()
+  const sort = preferences.taskSort
+  const grouping = preferences.taskGrouping
   const [expanded, setExpanded, expandedRef] = useApplicationState<Record<string, boolean>>(
     () => readTaskListViewState(host).expanded ?? {},
   )
@@ -300,9 +301,25 @@ export function TaskList({
       {
         id: 'active',
         name: 'Active',
-        tasks: active.filter(({ task }) => !task.pinned),
+        tasks: active.filter(
+          ({ task, needsInput }) =>
+            !task.pinned &&
+            !(preferences.workingSection && task.status === 'running' && !needsInput),
+        ),
         open: true,
       },
+      ...(preferences.workingSection
+        ? [
+            {
+              id: 'working',
+              name: 'Working',
+              tasks: active.filter(
+                ({ task, needsInput }) => !task.pinned && task.status === 'running' && !needsInput,
+              ),
+              open: false,
+            },
+          ]
+        : []),
       {
         id: 'snoozed',
         name: 'Snoozed',
@@ -319,24 +336,30 @@ export function TaskList({
       },
     ].filter((group) => group.tasks.length)
     const collapsedGroups = statusGroups
-      .filter((group) => group.id === 'snoozed' || group.id === 'settled')
+      .filter((group) => group.id === 'snoozed' || group.id === 'settled' || group.id === 'working')
       .map((group) => ({
         ...group,
         open: expanded[group.id] ?? false,
       }))
+    const visibleActive = active.filter(
+      ({ task, needsInput }) =>
+        !preferences.workingSection || task.pinned || task.status !== 'running' || needsInput,
+    )
     if (grouping === 'none')
-      return [{ id: 'all', name: '', tasks: active, open: true }, ...collapsedGroups]
+      return [{ id: 'all', name: '', tasks: visibleActive, open: true }, ...collapsedGroups]
     if (grouping === 'status')
       return statusGroups.map((group) => ({
         ...group,
         open: expanded[group.id] ?? group.open,
       }))
     const byProject = new Map<string, { id: string; name: string; tasks: TaskEntry[] }>()
-    for (const entry of active) {
+    for (const entry of visibleActive) {
       const repository = entry.source.workspace.repositories.find(
         (repo) => repo.id === entry.task.repositoryId,
       )
-      const key = repository?.gitIdentity ?? entry.projectKey
+      const key = preferences.projectGrouping
+        ? (repository?.gitIdentity ?? entry.projectKey)
+        : entry.projectKey
       const group = byProject.get(key) ?? {
         id: `project:${key}`,
         name: entry.projectName,
@@ -351,7 +374,7 @@ export function TaskList({
         .map((group) => ({ ...group, open: expanded[group.id] ?? true })),
       ...collapsedGroups,
     ]
-  }, [tasks, now, grouping, expanded])
+  }, [tasks, now, grouping, expanded, preferences.projectGrouping, preferences.workingSection])
   useEffect(() => {
     onOrderChange?.(groups.filter((group) => group.open).flatMap((group) => group.tasks))
   }, [groups, onOrderChange])
@@ -666,7 +689,10 @@ export function TaskList({
               </div>
             )
           })
-          return grouping === 'none' && group.id !== 'settled' && group.id !== 'snoozed' ? (
+          return grouping === 'none' &&
+            group.id !== 'settled' &&
+            group.id !== 'snoozed' &&
+            group.id !== 'working' ? (
             <div key={group.id}>{rows}</div>
           ) : (
             <details

@@ -1,19 +1,20 @@
 # Scoped project and environment settings
 
-Task defaults and agent launch settings, MCP servers, managed skills, hooks and saved prompts
-inherit in this order:
+Task defaults, lifecycle policies and agent launch settings, MCP servers, managed skills, hooks and
+saved prompts inherit in this order:
 
 1. **Global** — shared with connected paired environments.
 2. **Environment** — overrides for one computer/runtime.
 3. **Project** — shared for checkouts with the same canonical Git remote identity.
 4. **Environment + project** — overrides for one checkout on one environment.
 
-The **Task defaults**, **Agents** and **MCP & skills** settings pages share a project/environment
-target header on desktop and mobile. Choose **All projects** or a project, then **Shared across
-environments** or one computer. These two choices select one of the four levels above; shared
-settings are synced defaults, not a bulk edit of each computer’s overrides. The target stays
-selected when switching between these pages. A project missing from the selected computer cannot be
-edited until another target is chosen. Local folders are offered only with a specific environment.
+The **General** (desktop/web), **Task defaults**, **Agents** and **MCP & skills** settings pages
+share a project/environment target header on desktop and mobile. Choose **All projects** or a
+project, then **Shared across environments** or one computer. These two choices select one of the
+four levels above; shared settings are synced defaults, not a bulk edit of each computer’s
+overrides. The target stays selected when switching between these pages. A project missing from the
+selected computer cannot be edited until another target is chosen. Local folders are offered only
+with a specific environment.
 
 Task defaults show **Inheritance & overrides**, with the effective source for each setting and an
 individual reset control. Resets are saved using **Save defaults**. Unset task fields inherit; an
@@ -26,6 +27,10 @@ Existing environment defaults stay environment-specific. Existing project defaul
 prompts stay at Environment + project. Existing conversations keep their copied launch defaults.
 Resource changes take effect on the next turn; custom-agent resources apply after the four settings
 scopes.
+
+Lifecycle policies are resolved when tasks run or housekeeping checks them, rather than copied at
+creation. See [General settings](general-settings.md) for quota continuation, settling and legacy
+per-computer fallbacks.
 
 MCP servers and skills override earlier definitions by exact name, including disabled entries.
 Prompts override by case-insensitive name. Removing an override reveals the inherited definition.

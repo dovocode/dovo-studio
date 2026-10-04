@@ -591,3 +591,15 @@ it('removes only the selected Bitbucket reviewers and preserves everyone omitted
     ],
   })
 })
+it('hydrates relationship lists omitted by Bitbucket collection responses for personal filters', async () => {
+  const { reviewers: _reviewers, participants: _participants, ...listed } = pull
+  const { forge, calls } = fixture(({ url }) =>
+    url.pathname.endsWith('/pullrequests') ? { data: { values: [listed] } } : undefined,
+  )
+  expect((await forge.list('open', 1)).pulls[0]).toMatchObject({
+    viewerIsAuthor: true,
+    viewerIsInvolved: true,
+    viewerIsAssigned: false,
+  })
+  expect(calls.some(({ url }) => url.pathname.endsWith('/pullrequests/7'))).toBe(true)
+})

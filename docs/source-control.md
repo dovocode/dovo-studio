@@ -98,3 +98,21 @@ Each editable Git checkout gets independent checkpoint previews. Undo and redo r
 checkouts together, with backup snapshots for recovery. Checkpoint history remains available after a
 link is removed. Worktree cleanup protects links used by unarchived threads, and refuses to remove
 dirty worktrees.
+
+### Pull request workspace
+
+Desktop and web keep the PR list, repository picker and personal views alongside an open PR.
+Additional filters, refresh, creation and connection controls live under **Filters**. Personal views
+use each computer's authenticated forge account. **Involves me** includes authorship, assignment and
+review participation reported by the forge. GitHub also includes conversation participants. Gitea
+and Forgejo include requested reviewers and assignees. Bitbucket includes reviewers and
+participants; Azure DevOps includes reviewers. Bitbucket and Azure DevOps have no separate PR
+assignee field, so **Assigned to me** applies to GitHub, Gitea and Forgejo. Filters apply to loaded
+pages; load more to expand results. Missing identity or relationship data is reported rather than
+treated as a match.
+
+**Overview** combines the description, discussion, checks and a Markdown comment composer.
+**Changes** shows stacked file cards, a searchable directory tree and local reviewed-file progress.
+Selecting a tree entry scrolls to its card. Review decisions remain tied to the commit captured when
+the review form opens. Review/comment editors provide formatting insertion and a rendered preview;
+submissions still use Markdown and the existing forge capability and revision checks.

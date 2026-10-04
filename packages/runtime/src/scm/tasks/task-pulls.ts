@@ -128,6 +128,15 @@ export class TaskPullWatcher {
     return matches
   }
   constructor(private s: WatcherServices) {}
+  private shouldSettle(task: Task, state?: string) {
+    const policy = this.s.store.projectSettings(task.repositoryId).taskBehavior
+    const fallback = this.s.preferences.get().settleOnPullClose
+    return state === 'merged'
+      ? (policy?.settleMerged ?? fallback)
+      : state === 'closed'
+        ? (policy?.settleClosed ?? fallback)
+        : (policy?.settleMerged ?? fallback) || (policy?.settleClosed ?? fallback)
+  }
   start() {
     this.poller = startPolling(
       Effect.tryPromise(() => this.refresh()),
@@ -172,7 +181,7 @@ export class TaskPullWatcher {
         if (!open) {
           open = await this.s.pullCache.list(repo.path, 'open', 1)
           const preferences = this.s.preferences.get()
-          if (open.stale && (preferences.settleOnPullClose || preferences.archiveOnPullMerge))
+          if (open.stale && (this.shouldSettle(task) || preferences.archiveOnPullMerge))
             open = await this.s.pullCache.list(repo.path, 'open', 1, true)
           openPulls.set(repo.path, open)
         }
@@ -222,7 +231,8 @@ export class TaskPullWatcher {
             !task.draftAttachments?.length &&
             !task.scheduledMessages?.length &&
             !taskIsBusy(this.s, task.id) &&
-            (preferences.archiveOnPullMerge || (preferences.settleOnPullClose && !task.archived))
+            (preferences.archiveOnPullMerge ||
+              (this.shouldSettle(task, detail.pull.state) && !task.archived))
           ) {
             const key = JSON.stringify([repo.path, number])
             const confirmed =
@@ -322,7 +332,7 @@ export class TaskPullWatcher {
               Date.now(),
               () => this.s.preferences.get().archiveOnPullMerge && canSettle(),
             )
-          else if (preferences.settleOnPullClose && !current.archived) {
+          else if (this.shouldSettle(task, status.state) && !current.archived) {
             const ids = taskFamilyIds(this.s.store.get().tasks, task.id)
             this.s.store.transaction(() => {
               this.s.store.update((workspace) => ({

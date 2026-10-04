@@ -1,3 +1,4 @@
+import { fileStats } from './files/presentation'
 import { randomUUID, checkpointFileCount } from '@dovo/protocol'
 import { githubPullTarget } from '@dovo/protocol'
 import { ResizableSidebar } from './detail/resizable-sidebar'
@@ -19,6 +20,7 @@ import { templateTaskFields } from '@dovo/protocol'
 import {
   createTask,
   readAppPreferences,
+  useAppPreferences,
   responses,
   updateAppPreferences,
   resolveTaskDefaults,
@@ -77,6 +79,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
       }),
     [workspace, snapshot, activeRuntimeId, connected, runtimes, store.connection],
   )
+  const preferences = useAppPreferences()
   const host = useStudioHost()
   const localTasks = useMemo(
     () => workspace.tasks.filter((task) => !task.example),
@@ -256,6 +259,27 @@ export default function TasksView({ entityId }: StudioViewProps) {
     } else selectSurface('pull-preview')
     return true
   }
+  const proactiveSeen = useRef(new Set<string>())
+  useEffect(() => {
+    if (
+      !preferences.proactivePanels ||
+      !task ||
+      !historyLoaded ||
+      task.status === 'running' ||
+      threadSurfaces[threadKey] !== undefined ||
+      proactiveSeen.current.has(threadKey)
+    )
+      return
+    proactiveSeen.current.add(threadKey)
+    if (task.pullRequest?.url) {
+      openPullPreview(task, task.pullRequest.url)
+      return
+    }
+    const lines = task.files
+      .map(fileStats)
+      .reduce((sum, stats) => sum + stats.additions + stats.deletions, 0)
+    if (task.files.length >= 3 || lines >= 50) selectSurface('changes')
+  }, [preferences.proactivePanels, task, historyLoaded, threadKey, threadSurfaces])
   const addCodeReference = useCallback(
     (taskId: string, text: string) => {
       setCodeReference({ taskId, id: randomUUID(), text })

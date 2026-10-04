@@ -217,3 +217,8 @@ export {
 export * from './settings-target'
 
 export { TemporaryTaskWorkspace } from './workspace/temporary-task'
+export { completedStreamingText } from './streaming-text'
+
+export { whitespaceOnlyFile, whitespaceOnlyPatch } from './whitespace-changes'
+
+export { projectActivity } from './project-order'

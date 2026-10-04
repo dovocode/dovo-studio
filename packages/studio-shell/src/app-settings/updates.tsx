@@ -1,3 +1,4 @@
+import { Button } from '@dovo/studio-ui'
 import { useEffect, useState } from 'react'
 import { useStudioHost } from '@dovo/studio-core'
 import type { DesktopUpdateState } from '@dovo/protocol'
@@ -31,6 +32,41 @@ export function UpdateSettings() {
   if (!updates) return null
   return (
     <SettingsGroup title="Updates">
+      <SettingRow
+        label="Application updates"
+        description={
+          state?.error ||
+          (state?.version
+            ? `Version ${state.version} · ${state.status}`
+            : state?.status === 'idle'
+              ? 'Check for the latest version.'
+              : state?.status)
+        }
+      >
+        <Button
+          variant="outline"
+          disabled={
+            !state ||
+            busy ||
+            appInfo?.channel === 'dev' ||
+            state.status === 'downloading' ||
+            state.status === 'restarting'
+          }
+          onClick={() => {
+            setBusy(true)
+            setError('')
+            void (state?.status === 'downloaded' ? updates.install() : updates.check())
+              .catch((cause) => setError(String(cause)))
+              .finally(() => setBusy(false))
+          }}
+        >
+          {busy
+            ? 'Checking…'
+            : state?.status === 'downloaded'
+              ? 'Restart to update'
+              : 'Check for updates'}
+        </Button>
+      </SettingRow>
       <SettingRow
         label="Release channel"
         description="Defaults to this build’s channel. Changes are saved only when you choose a channel here. Nightly includes the newest changes and may be less stable."

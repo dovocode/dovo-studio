@@ -1,3 +1,4 @@
+import { PullMarkdownEditor } from '../detail/markdown-editor'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { MoreHorizontal } from 'lucide-react'
 import { useRef } from 'react'
@@ -22,7 +23,6 @@ import {
   DropdownMenu,
   FormField,
   Input,
-  Textarea,
 } from '@dovo/studio-ui'
 export type PullActionContext = {
   repositoryId: string
@@ -68,6 +68,7 @@ export function PullActions(
       {available.includes('review') && (
         <Button
           size="sm"
+          variant="outline"
           disabled={!connected}
           onClick={() => {
             setNotice('')
@@ -397,27 +398,41 @@ function PullActionDialog({
             </>
           )}
           {kind === 'review' && (
-            <FormField label="Review decision">
-              <ChoicePicker
-                aria-label="Review decision"
-                disabled={busy}
-                value={event}
-                onValueChange={(value) => {
-                  if (value === 'comment' || value === 'approve' || value === 'request-changes')
-                    setEvent(value)
-                }}
-              >
-                {detail.capabilities?.reviewDecisions.map((value) => (
-                  <option key={value} value={value}>
-                    {value === 'approve'
-                      ? 'Approve'
-                      : value === 'request-changes'
-                        ? 'Request changes'
-                        : 'Comment'}
-                  </option>
-                ))}
-              </ChoicePicker>
-            </FormField>
+            <fieldset className="grid gap-3">
+              <legend className="mb-3 text-sm font-medium">Review decision</legend>
+              {detail.capabilities?.reviewDecisions.map((value) => (
+                <label
+                  key={value}
+                  className="flex items-start gap-3 rounded-lg p-2 hover:bg-muted/30"
+                >
+                  <input
+                    type="radio"
+                    name="review-decision"
+                    value={value}
+                    checked={event === value}
+                    disabled={busy}
+                    onChange={() => setEvent(value)}
+                    className="mt-1 accent-primary"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">
+                      {value === 'approve'
+                        ? 'Approve'
+                        : value === 'request-changes'
+                          ? 'Request changes'
+                          : 'Comment'}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {value === 'approve'
+                        ? 'Approve merging these changes.'
+                        : value === 'request-changes'
+                          ? 'Request changes before merging.'
+                          : 'Submit feedback without an approval decision.'}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
           )}
           {kind === 'reviewers' && (
             <>
@@ -514,14 +529,11 @@ function PullActionDialog({
                       : 'Comment'
               }
             >
-              <Textarea
-                aria-label="PR action body"
-                className="min-h-32"
+              <PullMarkdownEditor
                 value={body}
+                onChange={setBody}
                 disabled={busy}
-                maxLength={60000}
-                placeholder="Markdown supported"
-                onChange={(e) => setBody(e.target.value)}
+                baseURL={detail.pull.url}
               />
             </FormField>
           )}
@@ -553,5 +565,77 @@ function PullActionDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+export function PullCommentComposer({ repositoryId, detail, onDone }: PullActionContext) {
+  const { request, connected } = useWorkspace()
+  const [body, setBody] = useApplicationState('')
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [notice, setNotice] = useApplicationState('')
+  const pending = useRef(false)
+  if (!detail.capabilities?.actions.includes('comment')) return null
+  const submit = async () => {
+    if (pending.current || !connected || !body.trim()) return
+    pending.current = true
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      await request(
+        '/api/scm/pulls/action',
+        {
+          repositoryId,
+          number: detail.pull.number,
+          headSha: detail.pull.headSha,
+          action: 'comment',
+          body,
+        },
+        pullActionResultSchema,
+      )
+      setBody('')
+      setNotice('Comment posted.')
+      onDone()
+    } catch (error) {
+      setError(
+        `${error instanceof Error ? error.message : String(error)} Refresh the PR before retrying if the response was lost.`,
+      )
+    } finally {
+      pending.current = false
+      setBusy(false)
+    }
+  }
+  return (
+    <form
+      aria-label="Add a pull request comment"
+      className="mt-6 space-y-3"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void submit()
+      }}
+    >
+      <PullMarkdownEditor
+        value={body}
+        onChange={setBody}
+        disabled={busy}
+        baseURL={detail.pull.url}
+      />
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {notice}
+        </p>
+      )}
+      <div className="flex justify-end">
+        <Button type="submit" disabled={busy || !connected || !body.trim()}>
+          {busy ? 'Posting…' : 'Comment'}
+        </Button>
+      </div>
+    </form>
   )
 }

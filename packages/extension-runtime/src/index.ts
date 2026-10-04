@@ -36,8 +36,19 @@ export const runtimeExtension = defineStudioExtension(
       icon: 'runtime',
       order: 3.8,
       settingsSection: 'coding',
-      keywords: 'codex claude gh git az path executable shell login terminal cua computer use',
+      keywords: 'codex claude gh git az path executable shell login terminal',
       load: () => import('./commands-view'),
+    },
+    {
+      id: 'computer-use',
+      navigationGroup: 'settings',
+      title: 'Computer use',
+      icon: 'runtime',
+      order: 4.1,
+      settingsSection: 'computers',
+      keywords:
+        'cua driver desktop install permissions accessibility screen recording history mcp skills daemon',
+      load: () => import('./computer-use-view'),
     },
     {
       id: 'worktrees',

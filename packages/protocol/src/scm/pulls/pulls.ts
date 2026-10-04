@@ -32,6 +32,8 @@ export const pullSummarySchema = mutableStruct({
   base: Schema.String,
   labels: mutableArray(Schema.String),
   viewerIsAuthor: Schema.optional(Schema.Boolean),
+  viewerIsAssigned: Schema.optional(Schema.Boolean),
+  viewerIsInvolved: Schema.optional(Schema.Boolean),
   viewerReviewRequested: Schema.optional(Schema.Boolean),
   checksState: Schema.optional(Schema.NullOr(Schema.String)),
   reviewDecision: Schema.optional(Schema.NullOr(Schema.String)),

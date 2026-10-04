@@ -27,6 +27,7 @@ function rememberSnapshotTag(value: unknown, tag: string | null | undefined) {
   if (tag && value && typeof value === 'object') snapshotTags.set(value, tag)
 }
 function requestTimeout(path: string) {
+  if (path === '/api/commands/cua/action') return 90000
   if (path === '/api/agents/availability') return 90000
   if (path === '/api/agents/models') return 65000
   if (path === '/api/agents/acp/install') return 630000

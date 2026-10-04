@@ -2,7 +2,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
 import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
 
-export default function NotificationSettings() {
+export function NotificationSettingsRows() {
   const preferences = useAppPreferences()
   const [notice, setNotice] = useApplicationState('')
   // Turning on a notification asks the OS for permission once.
@@ -34,10 +34,7 @@ export default function NotificationSettings() {
     updateAppPreferences({ [key]: enabled })
   }
   return (
-    <SettingsPage
-      title="Notifications"
-      description="Alerts while Dovo is in the background on this device."
-    >
+    <>
       <SettingsGroup title="Tasks and automations">
         <SettingRow
           label="When a task needs your input"
@@ -92,6 +89,14 @@ export default function NotificationSettings() {
           {notice}
         </p>
       )}
+    </>
+  )
+}
+
+export default function NotificationSettings() {
+  return (
+    <SettingsPage title="Notifications" description="Alerts on this device.">
+      <NotificationSettingsRows />
     </SettingsPage>
   )
 }

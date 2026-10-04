@@ -1,5 +1,5 @@
-import { cuaCheckRequest } from '@dovo/protocol'
-import { checkCua } from '../computer-use/cua.js'
+import { cuaCheckRequest, cuaActionRequest } from '@dovo/protocol'
+import { checkCua, cuaAction } from '../computer-use/cua.js'
 import { subagentSpawnSchema, subagentScopeSchema, subagentReadSchema } from '@dovo/protocol'
 import { conversationPage } from '@dovo/protocol'
 import { compactActivityEvents } from '@dovo/protocol'
@@ -631,6 +631,10 @@ export function route(
         const settings = s.preferences.save(yield* serviceResult(body(request)))
         s.artifacts.prune()
         return yield* serviceResult(settings)
+      }
+      if (method === 'POST' && path === '/api/commands/cua/action') {
+        const input = decode(cuaActionRequest, yield* serviceResult(body(request)))
+        return yield* serviceResult(cuaAction(input.path, input.action))
       }
       if (method === 'POST' && path === '/api/commands/cua/check') {
         const input = decode(cuaCheckRequest, yield* serviceResult(body(request)))

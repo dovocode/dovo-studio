@@ -1,3 +1,4 @@
+import { registerQuitShortcut } from './quit-shortcut.js'
 import { registerInputPreview } from './input-preview.js'
 import { decode, windowsRuntimeChoiceSchema } from '@dovo/protocol'
 import {
@@ -173,6 +174,7 @@ function createWindow(): void {
       void offerLink(window, url)
     }
   }
+  registerQuitShortcut(window.webContents)
   window.webContents.on('will-navigate', guardNavigation)
   window.webContents.on('will-redirect', guardNavigation)
 

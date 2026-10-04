@@ -39,6 +39,7 @@ vi.mock('electron', () => ({
     webContents = {
       setWindowOpenHandler: vi.fn<(...args: unknown[]) => void>(),
       on: vi.fn<(...args: unknown[]) => void>(),
+      once: vi.fn<(...args: unknown[]) => void>(),
     }
     constructor() {
       fixture.windows++

@@ -109,6 +109,36 @@ export class Tasks {
       const now = Date.now()
       for (const task of this.store.get().tasks) {
         if (this.stopping || task.archived || task.archivedAt || task.example) continue
+        const continuation = task.quotaContinuation
+        if (continuation && Date.parse(continuation.at) <= now) {
+          const policy = this.store.projectSettings(task.repositoryId).taskBehavior
+          const eligible =
+            continuation.resume &&
+            policy?.quotaResume === true &&
+            task.status === 'failed' &&
+            task.turns?.at(-1)?.id === continuation.turnId &&
+            !task.queue?.length &&
+            !task.delegation &&
+            !this.store.get().automations.some((automation) => automation.id === task.origin)
+          // Consume before admission: a failed admission cannot retry indefinitely.
+          this.store.updateTask(task.id, (current) => ({
+            ...current,
+            quotaContinuation: undefined,
+            snoozedUntil: current.snoozedUntil === continuation.at ? null : current.snoozedUntil,
+          }))
+          if (eligible) {
+            try {
+              await this.start(task.id, true)
+              this.activity?.add('task', task.id, 'Resumed after the reported quota reset')
+            } catch (error) {
+              this.activity?.add(
+                'task',
+                task.id,
+                `Quota continuation could not start: ${errorMessage(error)}`,
+              )
+            }
+          }
+        }
         for (const message of task.scheduledMessages ?? []) {
           if (message.failed || Date.parse(message.at) > now) continue
           try {
@@ -477,6 +507,7 @@ export class Tasks {
       execution: snapshot ? 'worktree' : task.execution,
       ...(snapshot && task.checkoutBranch ? { worktreeBaseBranch: task.checkoutBranch } : {}),
       ...(task.setupCommand ? { setupCommand: task.setupCommand } : {}),
+      submodules: task.submodules,
       status: 'draft',
       createdAt: new Date().toISOString(),
       messages,
@@ -522,6 +553,7 @@ export class Tasks {
           : {
               forkedFrom: { taskId: id, title: source.title, head, snapshot },
               setupCommand: source.setupCommand,
+              submodules: source.submodules,
             }),
         status: 'draft',
         createdAt: new Date().toISOString(),
@@ -782,6 +814,9 @@ export class Tasks {
             (task) => ({
               ...task,
               startAfter: undefined,
+              quotaContinuation: undefined,
+              snoozedUntil:
+                task.quotaContinuation?.at === task.snoozedUntil ? null : task.snoozedUntil,
               status: 'running',
               activeRunId: run.id,
               runPhase: task.runPhase === 'finalizing' ? 'finalizing' : 'preparing',
@@ -1378,7 +1413,10 @@ export class Tasks {
           const task = this.store.get().tasks.find((item) => item.id === id)
           if (!task?.restartRecovery) continue
           if (
-            !enabled() ||
+            !(
+              this.store.projectSettings(task.repositoryId).taskBehavior?.continueAfterRestart ??
+              enabled()
+            ) ||
             !task.restartRecovery.automatic ||
             task.restartRecovery.kind === 'queue' ||
             task.archived ||

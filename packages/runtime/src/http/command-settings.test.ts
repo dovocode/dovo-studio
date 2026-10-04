@@ -41,6 +41,13 @@ it('protects concurrent CLI settings edits and accepts older client saves', asyn
       version: null,
     })
     expect((await call('cua/check', { path: 'cua-driver\nother' })).status).toBe(400)
+    expect(
+      (await call('cua/action', { path: '/missing/cua-driver', action: 'arbitrary-command' }))
+        .status,
+    ).toBe(400)
+    expect((await call('cua/action', { path: 'cua-driver\nother', action: 'stop' })).status).toBe(
+      400,
+    )
   } finally {
     await runtime.close()
   }

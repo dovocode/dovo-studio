@@ -252,6 +252,8 @@ describe('Forgejo and Gitea', () => {
         {
           provider: 'forgejo',
           viewerReviewRequested: true,
+          viewerIsInvolved: true,
+          viewerIsAssigned: false,
           checksState: 'FAILURE',
           reviewDecision: 'CHANGES_REQUESTED',
         },

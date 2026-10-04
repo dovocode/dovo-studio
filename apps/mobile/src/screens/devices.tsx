@@ -283,7 +283,9 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
   const [help, setHelp] = useApplicationState(false)
   const [changingAddress, setChangingAddress] = useApplicationState(false)
   const [pairingBusy, setPairingBusy] = useApplicationState(false)
-  const [panel, setPanel] = useApplicationState<'commands' | 'activity' | null>(null)
+  const [panel, setPanel] = useApplicationState<'commands' | 'computer-use' | 'activity' | null>(
+    null,
+  )
   if (!profile) return null
   return (
     <Sheet
@@ -309,7 +311,11 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
       ) : panel ? (
         <>
           <Action secondary label="Back to computer" onPress={() => setPanel(null)} />
-          {panel === 'commands' ? <CommandSettings /> : <ActivityLog />}
+          {panel === 'activity' ? (
+            <ActivityLog />
+          ) : (
+            <CommandSettings computerUse={panel === 'computer-use'} />
+          )}
         </>
       ) : (
         <>
@@ -346,6 +352,12 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
               icon="terminal"
               disabled={!connected}
               onPress={() => setPanel('commands')}
+            />
+            <SettingsRow
+              title="Computer use"
+              icon="terminal"
+              disabled={!connected}
+              onPress={() => setPanel('computer-use')}
             />
             <SettingsRow
               title="Activity log"

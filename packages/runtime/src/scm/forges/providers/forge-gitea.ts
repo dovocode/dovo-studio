@@ -202,6 +202,14 @@ export class GiteaForge implements ForgeAdapter {
       ...(viewer
         ? {
             viewerIsAuthor: pull.user?.login.toLowerCase() === viewer.toLowerCase(),
+            viewerIsAssigned:
+              pull.assignees?.some((user) => user.login.toLowerCase() === viewer.toLowerCase()) ??
+              false,
+            viewerIsInvolved: [
+              pull.user,
+              ...(pull.assignees ?? []),
+              ...(pull.requested_reviewers ?? []),
+            ].some((user) => user?.login.toLowerCase() === viewer.toLowerCase()),
             viewerReviewRequested:
               pull.requested_reviewers?.some(
                 (u) => u.login.toLowerCase() === viewer.toLowerCase(),

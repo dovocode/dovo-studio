@@ -15,7 +15,9 @@ export function SettingsScopePage({
   description,
   children,
   wide = false,
+  localChildren,
 }: {
+  localChildren?: ReactNode
   title: string
   wide?: boolean
   description: string
@@ -96,6 +98,7 @@ export function SettingsScopePage({
               {children({ scope, repository })}
             </WorkspaceScope>
           )}
+          {localChildren}
         </div>
       </div>
     </section>

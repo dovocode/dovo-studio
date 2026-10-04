@@ -100,6 +100,7 @@ const idleOverview = (
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const {
     inputPreview,
+    backgroundActivity,
     sharedScopedSettings,
     globalAgentPresets,
     retiredGlobalAgentPresets,
@@ -1518,7 +1519,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           : Effect.void,
       ),
       {
-        interval: inputPreview ? 3000 : 30000,
+        interval: inputPreview ? 3000 : backgroundActivity === 'reduced' ? 120000 : 30000,
         immediate: false,
         onError: (error) => setSyncError(String(error)),
       },
@@ -1528,7 +1529,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       void polling.stop()
       document.removeEventListener('visibilitychange', polling.refresh)
     }
-  }, [ready, refreshRuntimesEffect, inputPreview])
+  }, [ready, refreshRuntimesEffect, inputPreview, backgroundActivity])
   const visibleWorkspace = useMemo(
     () => previewWorkspace(workspace, connection, previews),
     [workspace, connection, previews],

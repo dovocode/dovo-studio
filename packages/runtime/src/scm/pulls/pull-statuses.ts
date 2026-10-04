@@ -9,6 +9,18 @@ const status = mutableStruct({
   deletions: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
   totalCommentsCount: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
   viewerDidAuthor: Schema.optional(Schema.Boolean),
+  assignees: Schema.optional(
+    mutableStruct({
+      nodes: mutableArray(mutableStruct({ login: Schema.String })),
+      pageInfo: mutableStruct({ hasNextPage: Schema.Boolean }),
+    }),
+  ),
+  participants: Schema.optional(
+    mutableStruct({
+      nodes: mutableArray(mutableStruct({ login: Schema.String })),
+      pageInfo: mutableStruct({ hasNextPage: Schema.Boolean }),
+    }),
+  ),
   reviewRequests: Schema.optional(
     mutableStruct({
       nodes: mutableArray(
@@ -44,6 +56,8 @@ type SummaryStatus = Pick<
   | 'additions'
   | 'deletions'
   | 'commentCount'
+  | 'viewerIsAssigned'
+  | 'viewerIsInvolved'
 >
 export async function pullStatuses(
   git: GitService,
@@ -59,7 +73,7 @@ export async function pullStatuses(
   const fields = numbers
     .map(
       (n) =>
-        `pr${n}:pullRequest(number:${n}){additions deletions totalCommentsCount viewerDidAuthor reviewRequests(first:100){nodes{requestedReviewer{... on User{login}}} pageInfo{hasNextPage}} reviewDecision statusCheckRollup{state}}`,
+        `pr${n}:pullRequest(number:${n}){additions deletions totalCommentsCount viewerDidAuthor assignees(first:100){nodes{login} pageInfo{hasNextPage}} participants(first:100){nodes{login} pageInfo{hasNextPage}} reviewRequests(first:100){nodes{requestedReviewer{... on User{login}}} pageInfo{hasNextPage}} reviewDecision statusCheckRollup{state}}`,
     )
     .join(' ')
   const query = `query($owner:String!,$name:String!){viewer{login} repository(owner:$owner,name:$name){${fields}}}`
@@ -126,6 +140,34 @@ export async function pullStatuses(
               ...(value.totalCommentsCount !== undefined
                 ? { commentCount: value.totalCommentsCount }
                 : {}),
+              viewerIsAssigned:
+                value.assignees && response.data.viewer
+                  ? value.assignees.nodes.some((user) => user.login === response.data.viewer?.login)
+                    ? true
+                    : value.assignees.pageInfo.hasNextPage
+                      ? undefined
+                      : false
+                  : undefined,
+              viewerIsInvolved:
+                value.participants && response.data.viewer
+                  ? value.participants.nodes.some(
+                      (user) => user.login === response.data.viewer?.login,
+                    ) ||
+                    value.viewerDidAuthor === true ||
+                    value.assignees?.nodes.some(
+                      (user) => user.login === response.data.viewer?.login,
+                    ) === true ||
+                    value.reviewRequests?.nodes.some(
+                      (request) =>
+                        request?.requestedReviewer?.login === response.data.viewer?.login,
+                    ) === true
+                    ? true
+                    : value.participants.pageInfo.hasNextPage ||
+                        value.assignees?.pageInfo.hasNextPage ||
+                        value.reviewRequests?.pageInfo.hasNextPage
+                      ? undefined
+                      : false
+                  : undefined,
               checksState: value.statusCheckRollup?.state ?? null,
               reviewDecision: value.reviewDecision,
             }

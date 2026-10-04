@@ -1,5 +1,6 @@
+import { useAppPreferences } from '@dovo/studio-core'
 import { memo, useCallback, useSyncExternalStore, type RefObject } from 'react'
-import { PromptInputTextarea, cn } from '@dovo/studio-ui'
+import { PromptInputTextarea, MessageResponse, cn } from '@dovo/studio-ui'
 import type { ResourceSettings, SavedPrompt } from '@dovo/protocol'
 import { useFileMentions, type ComposerCommandId } from './file-mentions'
 import type { createComposerDraft } from './composer-draft'
@@ -34,6 +35,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   submittedText: string | null
   placeholder: string
 }) {
+  const { markdownComposerPreview } = useAppPreferences()
   const draft = useSyncExternalStore(
     controller.subscribe,
     () => controller.text,
@@ -57,6 +59,14 @@ export const ComposerEditor = memo(function ComposerEditor({
   })
   return (
     <>
+      {!hidden && markdownComposerPreview && draft.trim() && (
+        <div
+          aria-label="Formatted message preview"
+          className="max-h-40 overflow-y-auto border-b px-4 py-3 text-sm"
+        >
+          <MessageResponse>{draft}</MessageResponse>
+        </div>
+      )}
       {!submitBusy && mentions.menu}
       <PromptInputTextarea
         ref={input}

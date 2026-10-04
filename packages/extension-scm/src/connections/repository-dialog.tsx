@@ -1,3 +1,4 @@
+import { useAppPreferences } from '@dovo/studio-core'
 import { CreateGithub } from './create-github'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { randomUUID, validationMessages } from '@dovo/protocol'
@@ -35,6 +36,7 @@ function RepositoryDialogContent({
   const { pickDirectory } = useStudioHost()
   const [source, setSource] = useApplicationState<'local' | 'github' | 'forge'>('local')
   const [name, setName] = useApplicationState('')
+  const { addProjectStartsIn } = useAppPreferences()
   const [path, setPath] = useApplicationState('')
   const [repository, setRepository] = useApplicationState('')
   const [directory, setDirectory] = useApplicationState('')
@@ -94,7 +96,7 @@ function RepositoryDialogContent({
         {picker === 'directory' ? (
           <DirectoryPicker
             key={clientScopeKey(connection)}
-            initialPath={source === 'local' ? path : directory}
+            initialPath={(source === 'local' ? path : directory) || addProjectStartsIn}
             onClose={() => setPicker(null)}
             onSelect={(selected) => {
               ;(source === 'local' ? setPath : setDirectory)(selected)

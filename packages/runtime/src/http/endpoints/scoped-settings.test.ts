@@ -507,3 +507,38 @@ it('edits legacy server overrides without treating private preset metadata as a 
     await f.close()
   }
 })
+
+it('inherits lifecycle policy across all four scopes and resets individual overrides', async () => {
+  const f = await fixture()
+  try {
+    expect(
+      (
+        await f.save('global', {
+          taskBehavior: { quotaResume: true, quotaSnooze: true, inactiveDays: 3 },
+          taskDefaults: { submodules: 'recursive' },
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      (await f.save('environment', { taskBehavior: { quotaResume: false, settleInactive: true } }))
+        .status,
+    ).toBe(200)
+    expect((await f.save('project', { taskBehavior: { inactiveDays: 7 } })).status).toBe(200)
+    expect(
+      (await f.save('environment-project', { taskBehavior: { quotaResume: true } })).status,
+    ).toBe(200)
+    expect(f.runtime.services.store.projectSettings('project')).toMatchObject({
+      taskBehavior: { quotaResume: true, quotaSnooze: true, inactiveDays: 7, settleInactive: true },
+      taskDefaults: { submodules: 'recursive' },
+    })
+    expect((await f.save('environment-project', { taskBehavior: {} })).status).toBe(200)
+    expect(f.runtime.services.store.projectSettings('project').taskBehavior?.quotaResume).toBe(
+      false,
+    )
+    expect(f.runtime.services.store.taskDefaults('project').submodules).toBe('recursive')
+    expect((await f.save('global', { taskBehavior: { inactiveDays: 0 } })).status).toBe(400)
+    expect((await f.save('global', { taskBehavior: { inactiveDays: 366 } })).status).toBe(400)
+  } finally {
+    await f.close()
+  }
+})

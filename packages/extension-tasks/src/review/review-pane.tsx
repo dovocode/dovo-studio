@@ -1,3 +1,4 @@
+import { useAppPreferences, whitespaceOnlyFile } from '@dovo/studio-core'
 import { LinkedReview } from './linked-review'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { SavedFilePreview } from '../files/saved-file-preview'
@@ -39,6 +40,7 @@ function PrimaryReviewPane({
   onClose?: () => void
   onReference?: (text: string) => void
 }) {
+  const { hideWhitespaceChanges } = useAppPreferences()
   const { setWorkspace, request, connected } = useWorkspace()
   const [editing, setEditing] = useApplicationState(false)
   const editingChanged = useCallback(
@@ -87,8 +89,14 @@ function PrimaryReviewPane({
           source.kind === 'branch'
             ? (branchDiff?.omitted ?? [])
             : (selectedTurn?.checkpoint?.omitted ?? []),
-      }),
-    [sourceFiles, source.kind, branchDiff?.omitted, selectedTurn?.checkpoint?.omitted],
+      }).filter((file) => !hideWhitespaceChanges || !whitespaceOnlyFile(file)),
+    [
+      hideWhitespaceChanges,
+      sourceFiles,
+      source.kind,
+      branchDiff?.omitted,
+      selectedTurn?.checkpoint?.omitted,
+    ],
   )
   const file = files.find((item) => item.path === selected) ?? files[0]
   const sourceLabel =

@@ -43,6 +43,7 @@ import { ComposerWorkspace } from './composer-workspace'
 import type { CodeReference } from '../../detail/code-reference'
 export function Composer({
   task,
+  collapsed = false,
   onPending,
   onAside,
   codeReference,
@@ -54,6 +55,7 @@ export function Composer({
   task: Task
   temporary?: boolean
   workspaceControls?: import('react').ReactNode
+  collapsed?: boolean
   onPending: (pending: PendingMessage | null) => void
   /** Opens the side question dialog. */
   onAside?: () => void
@@ -348,7 +350,10 @@ export function Composer({
         </div>
       )}
       <PromptInput
-        className="studio-composer relative z-10 mx-auto max-w-[var(--chat-max)] rounded-2xl border-border/70 bg-card shadow-none"
+        className={cn(
+          'studio-composer relative z-10 mx-auto max-w-[var(--chat-max)] rounded-2xl border-border/70 bg-card shadow-none',
+          collapsed && 'max-h-12 overflow-hidden',
+        )}
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes('Files')) event.preventDefault()
         }}

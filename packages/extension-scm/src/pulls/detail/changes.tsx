@@ -1,3 +1,5 @@
+import { useRef } from 'react'
+import { useAppPreferences, whitespaceOnlyPatch } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   useWorkspace,
@@ -22,25 +24,28 @@ export function PullChanges({
   onSteer: (objective: string) => void
   onPosted: () => void
 }) {
+  const { hideWhitespaceChanges } = useAppPreferences()
+  const files = detail.files.filter((file) => !hideWhitespaceChanges || !whitespaceOnlyPatch(file))
   const { request, connected } = useWorkspace()
-  const [selected, setSelected] = useApplicationState(detail.files[0]?.path ?? ''),
+  const [selected, setSelected] = useApplicationState(files[0]?.path ?? ''),
     [split, setSplit] = useApplicationState(
       !embedded && readAppPreferences().diffLayout === 'split',
     ),
     [treeOpen, setTreeOpen] = useApplicationState(true),
     [query, setQuery] = useApplicationState(''),
     [viewed, setViewed] = useApplicationState<Set<string>>(new Set())
-  const file = detail.files.find((f) => f.path === selected) ?? detail.files[0]
-  const index = detail.files.findIndex((f) => f.path === file?.path)
-  if (!file) return <p className="p-4 text-xs text-muted-foreground">No changed files returned.</p>
-  const comments = detail.comments.filter(
-    (c) => c.kind === 'inline' && (c.path === file.path || c.path === file.previousPath),
-  )
+  const cards = useRef(new Map<string, HTMLElement>())
+  const selectFile = (path: string) => {
+    setSelected(path)
+    cards.current.get(path)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+  if (!files.length)
+    return <p className="p-4 text-xs text-muted-foreground">No changed files returned.</p>
   return (
     <section aria-label="Code changes" className="min-w-0">
       <div className="flex flex-wrap items-center gap-2 border-y py-2 text-xs">
         <h3 className="mr-auto font-medium">
-          Code changes · {viewed.size}/{detail.files.length} viewed
+          {files.filter((file) => viewed.has(file.path)).length} of {files.length} reviewed
         </h3>
         <Button size="sm" variant="outline" onClick={() => setSplit((v) => !v)}>
           {split ? 'Split diff' : 'Unified diff'}
@@ -55,96 +60,102 @@ export function PullChanges({
         </Button>
       </div>
       <div className="flex min-w-0 flex-col-reverse gap-3 @4xl:flex-row">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2 py-3">
-            <span className="min-w-0 flex-1 break-all font-mono text-xs">
-              {file.previousPath ? `${file.previousPath} → ` : ''}
-              {file.path}
-            </span>
-            <span className="text-xs">
-              {file.additions !== null && <span className="text-green-400">+{file.additions}</span>}{' '}
-              {file.deletions !== null && <span className="text-red-400">−{file.deletions}</span>}
-            </span>
-            <label className="flex items-center gap-1 text-xs">
-              <Checkbox
-                checked={viewed.has(file.path)}
-                onCheckedChange={(checked) =>
-                  setViewed((current) => {
-                    const next = new Set(current)
-                    if (checked === true) next.add(file.path)
-                    else next.delete(file.path)
-                    return next
-                  })
-                }
-              />
-              Viewed
-            </label>
-          </div>
-          <PullPatch
-            key={file.path}
-            file={file}
-            split={split}
-            provider={detail.pull.provider}
-            allowInlineComment={detail.capabilities?.actions.includes('inline-comment') ?? true}
-            allowInlineRange={detail.capabilities?.inlineRange ?? true}
-            onComment={
-              connected
-                ? async (body, range, destination) => {
-                    if (destination === 'github') {
-                      await request(
-                        '/api/scm/pulls/comment',
-                        {
-                          repositoryId,
-                          number: detail.pull.number,
-                          headSha: detail.pull.headSha,
-                          path: file.path,
-                          body,
-                          ...range,
-                        },
-                        pullLineCommentResponse,
-                      )
-                      onPosted()
-                    } else
-                      onSteer(
-                        `Address this feedback on ${file.path}:${range.start}-${range.end} (${range.side === 'additions' ? 'new' : 'old'} version), PR commit ${detail.pull.headSha}:\n${body}\n\nReference patch at time of comment:\n${(file.patch ?? '').slice(0, 1500)}`,
-                      )
-                  }
-                : undefined
-            }
-          />
-          <div className="flex flex-wrap items-center justify-between gap-2 border-y py-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={index <= 0}
-              onClick={() => setSelected(detail.files[index - 1].path)}
-            >
-              Previous file
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              {index + 1} of {detail.files.length}
-            </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={index >= detail.files.length - 1}
-              onClick={() => setSelected(detail.files[index + 1].path)}
-            >
-              Next file
-            </Button>
-          </div>
-          <h4 className="my-3 text-xs font-medium">Feedback on this file ({comments.length})</h4>
-          <PullComments
-            comments={comments}
-            fileBaseURL={
-              detail.fileBaseUrl ?? `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
-            }
-            actionContext={{
-              repositoryId,
-              detail,
-              onDone: onPosted,
-            }}
-          />
+        <div className="min-w-0 flex-1 space-y-4 py-3">
+          {files.map((file) => {
+            const comments = detail.comments.filter(
+              (c) => c.kind === 'inline' && (c.path === file.path || c.path === file.previousPath),
+            )
+            return (
+              <article
+                key={file.path}
+                ref={(element) => {
+                  if (element) cards.current.set(file.path, element)
+                  else cards.current.delete(file.path)
+                }}
+                className="scroll-mt-28 overflow-hidden rounded-xl border bg-card/30"
+              >
+                <div className="px-3">
+                  <div className="flex flex-wrap items-center gap-2 py-3">
+                    <span className="min-w-0 flex-1 break-all font-mono text-xs">
+                      {file.previousPath ? `${file.previousPath} → ` : ''}
+                      {file.path}
+                    </span>
+                    <span className="text-xs">
+                      {file.additions !== null && (
+                        <span className="text-green-400">+{file.additions}</span>
+                      )}{' '}
+                      {file.deletions !== null && (
+                        <span className="text-red-400">−{file.deletions}</span>
+                      )}
+                    </span>
+                    <label className="flex items-center gap-1 text-xs">
+                      <Checkbox
+                        checked={viewed.has(file.path)}
+                        onCheckedChange={(checked) =>
+                          setViewed((current) => {
+                            const next = new Set(current)
+                            if (checked === true) next.add(file.path)
+                            else next.delete(file.path)
+                            return next
+                          })
+                        }
+                      />
+                      Reviewed
+                    </label>
+                  </div>
+                  <PullPatch
+                    key={file.path}
+                    file={file}
+                    split={split}
+                    provider={detail.pull.provider}
+                    allowInlineComment={
+                      detail.capabilities?.actions.includes('inline-comment') ?? true
+                    }
+                    allowInlineRange={detail.capabilities?.inlineRange ?? true}
+                    onComment={
+                      connected
+                        ? async (body, range, destination) => {
+                            if (destination === 'github') {
+                              await request(
+                                '/api/scm/pulls/comment',
+                                {
+                                  repositoryId,
+                                  number: detail.pull.number,
+                                  headSha: detail.pull.headSha,
+                                  path: file.path,
+                                  body,
+                                  ...range,
+                                },
+                                pullLineCommentResponse,
+                              )
+                              onPosted()
+                            } else
+                              onSteer(
+                                `Address this feedback on ${file.path}:${range.start}-${range.end} (${range.side === 'additions' ? 'new' : 'old'} version), PR commit ${detail.pull.headSha}:\n${body}\n\nReference patch at time of comment:\n${(file.patch ?? '').slice(0, 1500)}`,
+                              )
+                          }
+                        : undefined
+                    }
+                  />
+                  <h4 className="my-3 text-xs font-medium">
+                    Feedback on this file ({comments.length})
+                  </h4>
+                  <PullComments
+                    comments={comments}
+                    fileBaseURL={
+                      detail.fileBaseUrl ??
+                      `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
+                    }
+                    actionContext={{
+                      repositoryId,
+                      detail,
+                      onDone: onPosted,
+                    }}
+                  />
+                </div>
+              </article>
+            )
+          })}
         </div>
         {treeOpen && (
           <aside className="max-h-[65vh] shrink-0 overflow-y-auto border-b p-2 @4xl:border-b-0 @4xl:border-l @4xl:sticky @4xl:top-2 @4xl:w-56">
@@ -156,10 +167,10 @@ export function PullChanges({
               onChange={(e) => setQuery(e.target.value)}
             />
             <PullFileTree
-              files={detail.files.filter((f) => f.path.toLowerCase().includes(query.toLowerCase()))}
-              selected={file.path}
+              files={files.filter((f) => f.path.toLowerCase().includes(query.toLowerCase()))}
+              selected={selected}
               viewed={viewed}
-              onSelect={setSelected}
+              onSelect={selectFile}
             />
           </aside>
         )}

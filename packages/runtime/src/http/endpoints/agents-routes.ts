@@ -389,6 +389,15 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         }))
         return yield* serviceResult({ ok: true })
       }
+      if (method === 'POST' && path === '/api/tasks/quota/cancel') {
+        const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        s.store.updateTask(id, (task) => ({
+          ...task,
+          quotaContinuation: undefined,
+          snoozedUntil: task.snoozedUntil === task.quotaContinuation?.at ? null : task.snoozedUntil,
+        }))
+        return { ok: true }
+      }
       if (method === 'POST' && path === '/api/tasks/lifecycle') {
         const { id, action } = decode(
           mutableStruct({
@@ -455,8 +464,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
                 ? {
                     ...task,
                     archived: action === 'archive',
+                    autoSettled: undefined,
                     archivedAt: action === 'archive' ? (task.archivedAt ?? now) : undefined,
                     snoozedUntil: null,
+                    quotaContinuation: undefined,
                     updatedAt: now,
                   }
                 : task,

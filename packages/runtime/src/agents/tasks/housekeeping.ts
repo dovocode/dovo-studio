@@ -164,6 +164,7 @@ export class Housekeeping {
     this.archiver = startPolling(
       Effect.all(
         [
+          step('settle inactive tasks', () => this.settleInactive()),
           step('archive inactive tasks', () => this.archiveInactive()),
           step('prune activity history', () => this.pruneActivity()),
           step('prune expired artifacts', () => this.s.artifacts.prune()),
@@ -207,6 +208,44 @@ export class Housekeeping {
       )
         archived.push(id)
     return archived
+  }
+  async settleInactive(now = Date.now()) {
+    const settled: string[] = []
+    for (const task of this.s.store.get().tasks) {
+      const policy = this.s.store.projectSettings(task.repositoryId).taskBehavior
+      if (!policy?.settleInactive || task.archived) continue
+      const eligible = inactiveTaskIds(
+        this.s.store.get().tasks,
+        policy.inactiveDays ?? 3,
+        now,
+        (member) =>
+          taskIsBusy(this.s, member.id) ||
+          !!member.queue?.length ||
+          !!member.draft.trim() ||
+          !!member.draftAttachments?.length ||
+          !!member.scheduledMessages?.length ||
+          !!member.quotaContinuation,
+      )
+      if (!eligible.includes(task.id)) continue
+      const ids = taskFamilyIds(this.s.store.get().tasks, task.id)
+      this.s.store.transaction(() => {
+        this.s.store.update((workspace) => ({
+          ...workspace,
+          tasks: workspace.tasks.map((member) =>
+            ids.has(member.id)
+              ? { ...member, archived: true, autoSettled: true, snoozedUntil: null }
+              : member,
+          ),
+        }))
+        this.s.activity.add(
+          'task',
+          task.id,
+          `Settled after ${policy.inactiveDays ?? 3} days without activity`,
+        )
+      })
+      settled.push(task.id)
+    }
+    return settled
   }
   /** Removes worktrees of archived tasks that have no uncommitted changes. Each removal re-checks
    * state and git refuses dirty checkouts; restoring a task reattaches its kept branch. */

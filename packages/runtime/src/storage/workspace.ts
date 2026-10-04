@@ -702,17 +702,32 @@ export class WorkspaceStore {
     action?: ProviderAction,
   ) {
     this.update(
-      (w) => ({
-        ...w,
-        tasks: w.tasks.map((t) =>
-          t.id === id
-            ? {
-                ...fn(t),
-                updatedAt: new Date().toISOString(),
-              }
-            : t,
-        ),
-      }),
+      (w) => {
+        const previous = this.task(id)
+        const next = fn(previous)
+        const newActivity =
+          previous.autoSettled &&
+          !previous.archivedAt &&
+          (next.draft !== previous.draft ||
+            !isDeepStrictEqual(next.messages, previous.messages) ||
+            !isDeepStrictEqual(next.files, previous.files) ||
+            !isDeepStrictEqual(next.queue, previous.queue))
+        const family = newActivity ? taskFamilyIds(w.tasks, id) : undefined
+        return {
+          ...w,
+          tasks: w.tasks.map((task) =>
+            task.id === id
+              ? {
+                  ...next,
+                  ...(newActivity ? { archived: false, autoSettled: undefined } : {}),
+                  updatedAt: new Date().toISOString(),
+                }
+              : family?.has(task.id) && task.autoSettled && !task.archivedAt
+                ? { ...task, archived: false, autoSettled: undefined }
+                : task,
+          ),
+        }
+      },
       submission ? { ...submission, taskId: id } : undefined,
       action,
     )
@@ -796,6 +811,9 @@ export class WorkspaceStore {
           record.checkoutLocked !== undefined ||
           record.providerLock !== undefined ||
           record.worktreeSetupComplete !== undefined ||
+          record.worktreeSubmodulesComplete !== undefined ||
+          record.quotaContinuation !== undefined ||
+          record.autoSettled !== undefined ||
           record.lastViewedTurnId !== undefined ||
           record.viewedRevision !== undefined ||
           record.turns !== undefined ||
@@ -872,6 +890,7 @@ export class WorkspaceStore {
         'existingWorktreePath',
         'worktreeBaseBranch',
         'worktreeFromOrigin',
+        'submodules',
         'setupCommand',
       ].some((key) => patch.changes[key])
     )
@@ -896,6 +915,7 @@ export class WorkspaceStore {
             'existingWorktreePath',
             'worktreeBaseBranch',
             'worktreeFromOrigin',
+            'submodules',
             'setupCommand',
           ])
         : null
@@ -913,6 +933,7 @@ export class WorkspaceStore {
           key === 'repositoryId' ||
           key === 'worktreeBaseBranch' ||
           key === 'worktreeFromOrigin' ||
+          key === 'submodules' ||
           key === 'setupCommand') &&
         'messages' in entity &&
         !canChangeTaskCheckout(entity)
@@ -978,15 +999,32 @@ export class WorkspaceStore {
     ) {
       // Reusing an existing checkout does not run new-worktree setup. Switching
       // away resets the runtime-owned setup marker for the next created checkout.
+      current.worktreeSubmodulesComplete = undefined
       current.worktreeSetupComplete =
         current.execution === 'worktree' && current.existingWorktreePath ? true : undefined
     }
+    if (
+      patch.collection === 'tasks' &&
+      (patch.changes.archived?.after === true || patch.changes.snoozedUntil)
+    )
+      current.quotaContinuation = undefined
+    const autoUnsettle =
+      patch.collection === 'tasks' &&
+      current.autoSettled &&
+      !current.archivedAt &&
+      !!(patch.changes.draft || patch.changes.messages || patch.changes.files)
+    if (autoUnsettle) {
+      current.archived = false
+      current.autoSettled = undefined
+    }
+    if (patch.collection === 'tasks' && patch.changes.archived) current.autoSettled = undefined
     if (patch.collection === 'tasks' && current.archived === false) current.archivedAt = undefined
     if (!changed) return
     const updatedTask = patch.collection === 'tasks' ? decode(taskSchema, current) : undefined
     if (updatedTask) this.validateProjectTask(updatedTask)
     const family =
-      patch.collection === 'tasks' && (patch.changes.archived || patch.changes.snoozedUntil)
+      patch.collection === 'tasks' &&
+      (patch.changes.archived || patch.changes.snoozedUntil || autoUnsettle)
         ? taskFamilyIds(this.workspace.tasks, patch.id)
         : undefined
     if (
@@ -1005,6 +1043,8 @@ export class WorkspaceStore {
             tasks: w.tasks.map((task) => {
               if (task.id === patch.id) return updatedTask
               if (!family.has(task.id)) return task
+              if (autoUnsettle && task.autoSettled && !task.archivedAt)
+                return { ...task, archived: false, autoSettled: undefined }
               return {
                 ...task,
                 ...(patch.changes.archived

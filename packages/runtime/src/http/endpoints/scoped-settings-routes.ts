@@ -248,6 +248,7 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
               ? {
                   ...repo,
                   taskDefaults: after.taskDefaults,
+                  taskBehavior: after.taskBehavior,
                   resources: after.resources,
                   prompts: after.prompts,
                   agents: after.agents,
@@ -258,6 +259,7 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
         repository = {
           ...repository,
           taskDefaults: after.taskDefaults,
+          taskBehavior: after.taskBehavior,
           resources: after.resources,
           prompts: after.prompts,
           agents: after.agents,

@@ -52,6 +52,7 @@ export function resolveTaskDefaults(
   const permission = defaults.permission ?? 'full-access'
   return {
     setupCommand: repository?.kind ? undefined : defaults.setupCommand,
+    ...(defaults.submodules && !repository?.kind ? { submodules: defaults.submodules } : {}),
     harness: {
       ...selected,
       permission: resolveProviderAccess(selected.provider, permission),

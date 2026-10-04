@@ -213,7 +213,17 @@ function WorkbenchContent({
     current.openNotification({ runtimeId: source.profile.id, viewId: 'pulls', entityId: pull.url })
     return true
   }, [])
-  useTaskNotifications(openNotification, inputPreview)
+  const taskNotice = useTaskNotifications(
+    openNotification,
+    inputPreview,
+    target.entityId && (target.viewId === 'tasks' || target.viewId === 'jobs')
+      ? {
+          runtimeId: runtimeRegistry.activeId ?? '',
+          viewId: target.viewId,
+          entityId: target.entityId,
+        }
+      : undefined,
+  )
   const [palette, setPalette] = useApplicationState(false)
   const commands = useRef(new Map<string, StudioCommand>())
   const [, refreshCommands] = useApplicationState(0)
@@ -326,6 +336,25 @@ function WorkbenchContent({
   return (
     <StudioHostProvider api={api}>
       <div className="studio dark" data-platform={desktopPlatform}>
+        {taskNotice.notice && (
+          <div
+            role="status"
+            className="fixed bottom-5 right-5 z-50 flex max-w-sm items-center gap-3 rounded-lg border bg-card p-3 text-sm shadow-lg"
+          >
+            <button
+              className="text-left"
+              onClick={() => {
+                if (taskNotice.notice) openNotification(taskNotice.notice.target)
+                taskNotice.dismiss()
+              }}
+            >
+              {taskNotice.notice.title}
+            </button>
+            <button aria-label="Dismiss notification" onClick={taskNotice.dismiss}>
+              ×
+            </button>
+          </div>
+        )}
         {!taskChrome && (
           <TitleBar
             platform={desktopPlatform}

@@ -1,6 +1,8 @@
 import { memo, useMemo, useState } from 'react'
 import {
   formatDateTime,
+  useAppPreferences,
+  completedStreamingText,
   responses,
   type Task,
   type TaskTurn,
@@ -55,6 +57,7 @@ export const ChatMessage = memo(function ChatMessage({
   final?: boolean
   footer?: boolean
 }) {
+  const { responseStreaming } = useAppPreferences()
   const [bookmarkError, setBookmarkError] = useState('')
   const timeline = useMemo(
     () =>
@@ -130,7 +133,11 @@ export const ChatMessage = memo(function ChatMessage({
                       index === timeline.length - 1
                     }
                   >
-                    {block.text}
+                    {responseStreaming === 'paragraphs' &&
+                    turn?.status === 'running' &&
+                    index === timeline.length - 1
+                      ? completedStreamingText(block.text)
+                      : block.text}
                   </MessageResponse>
                 </MessageContent>
               ),

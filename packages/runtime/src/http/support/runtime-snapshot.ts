@@ -47,6 +47,7 @@ export function runtimeSnapshot(
       defaults: decode(runtimeDefaultsSchema, s.store.publicValue(s.defaults.get())),
       scopedAgentsSupported: true,
       settingsScopesSupported: true,
+      taskBehaviorSupported: true,
       artifactsEnabled: s.preferences.get().enableArtifacts,
       acpInstallations: s.acpInstallations.list(),
       revision,

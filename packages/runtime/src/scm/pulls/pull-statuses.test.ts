@@ -97,3 +97,46 @@ it('loads diff and comment totals in the status batch, including zero counts', a
   expect(run).toHaveBeenCalledTimes(1)
   expect(run.mock.calls[0][1].join(' ')).toContain('additions deletions totalCommentsCount')
 })
+
+it('personalizes assignment and involvement without excluding paginated unknown relationships', async () => {
+  const git = new GitService()
+  const users = (names: string[], more = false) => ({
+    nodes: names.map((login) => ({ login })),
+    pageInfo: { hasNextPage: more },
+  })
+  vi.spyOn(git, 'github').mockResolvedValue(
+    JSON.stringify({
+      data: {
+        viewer: { login: 'dominic' },
+        repository: {
+          pr1: {
+            viewerDidAuthor: false,
+            assignees: users(['dominic']),
+            participants: users([]),
+            reviewDecision: null,
+            statusCheckRollup: null,
+          },
+          pr2: {
+            viewerDidAuthor: false,
+            assignees: users([], true),
+            participants: users([], true),
+            reviewDecision: null,
+            statusCheckRollup: null,
+          },
+          pr3: {
+            viewerDidAuthor: false,
+            assignees: users([]),
+            participants: users(['dominic']),
+            reviewDecision: null,
+            statusCheckRollup: null,
+          },
+        },
+      },
+    }),
+  )
+  const result = await pullStatuses(git, '/project', 'github.com', 'team/repo', [1, 2, 3])
+  expect(result.get(1)).toMatchObject({ viewerIsAssigned: true, viewerIsInvolved: true })
+  expect(result.get(2)?.viewerIsAssigned).toBeUndefined()
+  expect(result.get(2)?.viewerIsInvolved).toBeUndefined()
+  expect(result.get(3)).toMatchObject({ viewerIsAssigned: false, viewerIsInvolved: true })
+})

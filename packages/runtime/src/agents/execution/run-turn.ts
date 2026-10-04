@@ -1,3 +1,4 @@
+import { quotaContinuation } from '../tasks/quota-continuation.js'
 import type { LinkedCheckouts } from '../../scm/tasks/linked-checkouts.js'
 import { linkedBefore, linkedAfter } from '../../scm/tasks/linked-checkpoints.js'
 import { SharedSkillBundles } from '../configuration/shared-skill-bundles.js'
@@ -7,7 +8,12 @@ import { journalProvider } from './journal-provider.js'
 import { ProgressBuffer } from './progress-buffer.js'
 import { reportedUsageAccount } from '../tasks/usage-account.js'
 import { browserCdpInstructions } from './browser-cdp.js'
-import { cuaAgentServer, cuaInstructions, CUA_SERVER_NAME } from '../../computer-use/cua.js'
+import {
+  cuaAgentServer,
+  cuaInstructions,
+  cuaSkillInstructions,
+  CUA_SERVER_NAME,
+} from '../../computer-use/cua.js'
 import { runWithHooks } from './agent-hooks.js'
 import { Cause, Effect } from 'effect'
 import { OwnedProcessShutdownError } from './stop-owned-child.js'
@@ -228,8 +234,11 @@ export class TaskTurnRunner {
         // launched directly by the provider and follows its per-session lifecycle.
         if (cuaServer) resources.mcpServers.push(cuaServer)
         const skills = resources.skills.filter((skill) => skill.enabled)
+        const cuaSkill = cuaServer
+          ? yield* runtimeOperation(() => cuaSkillInstructions(cuaServer.command))
+          : ''
         const baseInstructions = cuaServer
-          ? `${configured.instructions}\n\n${cuaInstructions}`
+          ? `${configured.instructions}\n\n${cuaInstructions}\n${cuaSkill}`
           : configured.instructions
         const instructions = skills.length
           ? `${baseInstructions}
@@ -478,6 +487,7 @@ ${
           )
         })
         const acceptedIds = new Set<string>()
+        let turnLimits: ReturnType<typeof reportedPlanLimits> = []
         let providerFinishedAt: string | undefined
         let providerOpen = true
         let promptAccepted = false
@@ -636,7 +646,6 @@ ${
           const adapter = yield* runtimeOperation(() => this.registry.get(agent.provider))
           controller.signal.throwIfAborted()
           let usageAccount: ReturnType<typeof reportedUsageAccount>
-          let turnLimits: ReturnType<typeof reportedPlanLimits> = []
           const saveLimits = (limits: ReturnType<typeof reportedPlanLimits>) => {
             this.store.update((workspace) => ({
               ...workspace,
@@ -1149,6 +1158,12 @@ ${
                     : turn,
                 ),
               }))
+              const policy = this.store.projectSettings(
+                this.store.task(id).repositoryId,
+              ).taskBehavior
+              const continuation = cancelled
+                ? undefined
+                : quotaContinuation(errorMessage(error), turnLimits, policy, turnId)
               const captured =
                 error instanceof RuntimeOperationError &&
                 error.cause instanceof OwnedProcessShutdownError
@@ -1162,6 +1177,8 @@ ${
               this.store.updateTask(id, (t) => ({
                 ...t,
                 status,
+                quotaContinuation: continuation,
+                ...(continuation && policy?.quotaSnooze ? { snoozedUntil: continuation.at } : {}),
                 runPhase: undefined,
                 error: errorMessage(controller.signal.reason ?? error),
                 activity: undefined,

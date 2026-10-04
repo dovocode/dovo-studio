@@ -52,3 +52,7 @@ export { HarnessFields } from './harness-fields'
 export * from './settings-scope-page'
 
 export { LinkedCheckoutEditor } from './linked-checkouts'
+
+export { TaskBehaviorSettings } from './task-behavior-settings'
+
+export { HarnessUpdates } from './harness-updates'

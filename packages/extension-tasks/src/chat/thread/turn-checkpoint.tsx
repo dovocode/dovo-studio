@@ -1,3 +1,4 @@
+import { whitespaceOnlyFile } from '@dovo/studio-core'
 import { SavedFilePreview } from '../../files/saved-file-preview'
 import { checkpointFiles, filePreviewLabel } from '@dovo/protocol'
 import { fileStats, FileIcon, DiffAmounts } from '../../files/presentation'
@@ -93,7 +94,7 @@ export function TurnCheckpoint({
   checkoutId?: string
   projectName?: string
 }) {
-  const { collapseChangedFiles } = useAppPreferences()
+  const { collapseChangedFiles, hideWhitespaceChanges } = useAppPreferences()
   const [expanded, setExpanded] = useApplicationState<boolean | null>(null)
   const showFiles = expanded ?? !collapseChangedFiles
   const [open, setOpen] = useApplicationState(false)
@@ -102,8 +103,13 @@ export function TurnCheckpoint({
   const [restoreError, setRestoreError] = useApplicationState('')
   const { request, connected } = useWorkspace()
   const files = useMemo(
-    () => (turn.checkpoint ? checkpointFiles(turn.checkpoint) : []),
-    [turn.checkpoint],
+    () =>
+      turn.checkpoint
+        ? checkpointFiles(turn.checkpoint).filter(
+            (file) => !hideWhitespaceChanges || !whitespaceOnlyFile(file),
+          )
+        : [],
+    [turn.checkpoint, hideWhitespaceChanges],
   )
   const stats = useMemo(() => files.filter((file) => !file.preview).map(fileStats), [files])
   const byPath = useMemo(() => new Map(files.map((file) => [file.path, file])), [files])

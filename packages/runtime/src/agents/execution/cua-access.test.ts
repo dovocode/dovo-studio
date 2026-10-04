@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { startRuntime } from '../../index.js'
 import { fixture } from '../../testing/fixture.js'
+import * as cua from '../../computer-use/cua.js'
 import type { AgentAdapter } from './types.js'
 
 it('injects machine Cua into writable turns without persisting it as an agent resource', async () => {
@@ -11,6 +12,11 @@ it('injects machine Cua into writable turns without persisting it as an agent re
     ownerToken: 'test-owner-token-with-at-least-32-characters',
   })
   try {
+    const skill = vi
+      .spyOn(cua, 'cuaSkillInstructions')
+      .mockResolvedValue(
+        'Official Cua Driver skill: read /fixture/cua-driver/SKILL.md before computer use.',
+      )
     runtime.services.store.update(() => f.workspace)
     const run = vi.fn<AgentAdapter['run']>(async (input) => {
       input.onText('Checked')
@@ -50,6 +56,7 @@ it('injects machine Cua into writable turns without persisting it as an agent re
         exposed ? { command: process.execPath, args: ['mcp'] } : undefined,
       )
       expect(input?.agent.instructions.includes('opted in to desktop computer use')).toBe(exposed)
+      expect(input?.agent.instructions.includes('/fixture/cua-driver/SKILL.md')).toBe(exposed)
       expect(
         runtime.services.store
           .get()
@@ -57,6 +64,7 @@ it('injects machine Cua into writable turns without persisting it as an agent re
       ).toBeFalsy()
     }
     expect(run).toHaveBeenCalledTimes(4)
+    expect(skill).toHaveBeenCalledExactlyOnceWith(process.execPath)
   } finally {
     vi.restoreAllMocks()
     await runtime.close()

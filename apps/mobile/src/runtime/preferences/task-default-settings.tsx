@@ -1,10 +1,12 @@
 import { randomUUID } from 'expo-crypto'
 import {
+  runtimePreferencesSchema,
   scopedSettingsResultSchema,
   taskDefaultOrigins,
   settingsScopes,
   settingsScopeLabels,
   type SettingsScope,
+  type TaskBehavior,
   type ScopedSettingsValue,
   type SavedPrompt,
 } from '@dovo/protocol'
@@ -75,6 +77,9 @@ function TaskDefaultSettingsForm({
   const [prompts, setPrompts] = useApplicationState<SavedPrompt[]>([])
   const [loadedScope, setLoadedScope] = useApplicationState('')
 
+  const [legacyBehavior, setLegacyBehavior] = useApplicationState<TaskBehavior>({})
+  const [behavior, setBehavior] = useApplicationState<TaskBehavior>({})
+  const [inheritedBehavior, setInheritedBehavior] = useApplicationState<TaskBehavior>({})
   const [draft, setDraft] = useApplicationState<ProjectTaskDefaults>({})
   const [loadError, setLoadError] = useApplicationState('')
   const [showInheritance, setShowInheritance] = useApplicationState(false)
@@ -84,6 +89,19 @@ function TaskDefaultSettingsForm({
     let active = true
     setSetup(null)
     if (!connected) return
+    if (snapshot?.taskBehaviorSupported)
+      void call('/api/runtime/preferences/read', {}, runtimePreferencesSchema)
+        .then((value) => {
+          if (active)
+            setLegacyBehavior({
+              continueAfterRestart: value.autoContinueAfterRestart,
+              settleMerged: value.settleOnPullClose,
+              settleClosed: value.settleOnPullClose,
+            })
+        })
+        .catch((cause) => {
+          if (active) setLoadError(String(cause))
+        })
     void call(
       '/api/agents/settings/read',
       { scope, repositoryId: repository?.id },
@@ -98,6 +116,8 @@ function TaskDefaultSettingsForm({
           setPrompts(value.value.prompts ?? [])
           setLoadedScope(`${scope}:${repository?.id ?? ''}`)
           setDraft(value.value.taskDefaults ?? {})
+          setBehavior(value.value.taskBehavior ?? {})
+          setInheritedBehavior(value.inherited.taskBehavior ?? {})
         }
       })
       .catch((error: unknown) => {
@@ -106,7 +126,7 @@ function TaskDefaultSettingsForm({
     return () => {
       active = false
     }
-  }, [call, connected, repository?.id, scope, retry])
+  }, [call, connected, repository?.id, scope, retry, snapshot?.taskBehaviorSupported])
   const change = (value: ProjectTaskDefaults) => {
     setDraft(value)
     setSaved(false)
@@ -312,6 +332,27 @@ function TaskDefaultSettingsForm({
           </View>
           <Choice
             row
+            label="Submodules"
+            value={draft.submodules ?? 'inherit'}
+            disabled={disabled || !snapshot?.taskBehaviorSupported}
+            items={[
+              { id: 'inherit', name: 'Inherit' },
+              { id: 'none', name: 'None' },
+              { id: 'direct', name: 'Direct' },
+              { id: 'recursive', name: 'Recursive' },
+            ]}
+            onChange={(value) =>
+              change({
+                ...draft,
+                submodules:
+                  value === 'none' || value === 'direct' || value === 'recursive'
+                    ? value
+                    : undefined,
+              })
+            }
+          />
+          <Choice
+            row
             label="Worktree setup"
             disabled={disabled}
             value={draft.setupCommand === undefined ? 'inherit' : 'custom'}
@@ -405,6 +446,63 @@ function TaskDefaultSettingsForm({
           setPrompts([...prompts, { id: randomUUID(), name: '', text: '' }])
         }}
       />
+      {snapshot?.taskBehaviorSupported && (
+        <View style={{ gap: 12 }}>
+          <Text style={styles.text}>Task lifecycle · scoped</Text>
+          {(
+            [
+              ['quotaResume', 'Auto-resume limited tasks'],
+              ['quotaSnooze', 'Snooze limited tasks'],
+              ['settleMerged', 'Auto-settle merged tasks'],
+              ['settleClosed', 'Auto-settle closed tasks'],
+              ['settleInactive', 'Auto-settle inactive tasks'],
+              ['continueAfterRestart', 'Continue after restarts'],
+            ] as const
+          ).map(([key, label]) => (
+            <Choice
+              key={key}
+              label={label}
+              value={behavior[key] === undefined ? 'inherit' : behavior[key] ? 'on' : 'off'}
+              disabled={disabled}
+              items={[
+                {
+                  id: 'inherit',
+                  name: `Inherit (${(inheritedBehavior[key] ?? legacyBehavior[key]) ? 'On' : 'Off'})`,
+                },
+                { id: 'on', name: 'On' },
+                { id: 'off', name: 'Off' },
+              ]}
+              onChange={(value) => {
+                setSaved(false)
+                setBehavior({
+                  ...behavior,
+                  [key]: value === 'inherit' ? undefined : value === 'on',
+                })
+              }}
+            />
+          ))}
+          <Field
+            label="Days of inactivity before settling"
+            value={behavior.inactiveDays === undefined ? '' : String(behavior.inactiveDays)}
+            placeholder={`Inherit (${inheritedBehavior.inactiveDays ?? 3})`}
+            editable={!disabled}
+            keyboardType="number-pad"
+            onChangeText={(value) => {
+              if (!value) {
+                setBehavior({ ...behavior, inactiveDays: undefined })
+                setSaved(false)
+              } else if (
+                Number.isInteger(Number(value)) &&
+                Number(value) >= 1 &&
+                Number(value) <= 365
+              ) {
+                setBehavior({ ...behavior, inactiveDays: Number(value) })
+                setSaved(false)
+              }
+            }}
+          />
+        </View>
+      )}
       <Action
         label={busy ? 'Saving…' : 'Save defaults'}
         disabled={disabled}
@@ -422,6 +520,7 @@ function TaskDefaultSettingsForm({
                 after: {
                   ...scopeValue,
                   taskDefaults: value,
+                  ...(snapshot?.taskBehaviorSupported ? { taskBehavior: behavior } : {}),
                   prompts: prompts.map((prompt) => ({
                     ...prompt,
                     name: prompt.name.trim().replace(/\s+/g, '-'),

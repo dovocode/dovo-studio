@@ -163,3 +163,66 @@ it('prunes activity older than the retention window and keeps newer entries', as
   expect(await housekeeping.pruneActivity(now)).toBe(4500)
   expect(db.prepare('SELECT id FROM activity').all()).toEqual([{ id: 'recent' }])
 })
+
+it('settles inactive task families using scoped policy without archiving or touching worktrees', async () => {
+  const { s, housekeeping } = await archiveFixture()
+  s.defaults.save(
+    {
+      ...s.defaults.get(),
+      scopedSettings: {
+        environment: { taskBehavior: { settleInactive: true, inactiveDays: 14 } },
+        shared: [],
+      },
+    },
+    false,
+  )
+  const close = vi.spyOn(s.browsers, 'closeTask').mockResolvedValue()
+  expect(await housekeeping.settleInactive(now)).toEqual(['parent'])
+  expect(s.store.get().tasks.every((item) => item.archived && !item.archivedAt)).toBe(true)
+  expect(close).not.toHaveBeenCalled()
+  s.store.updateTask('parent', (task) => ({ ...task, draft: 'New work' }))
+  expect(s.store.task('parent').archived).toBe(false)
+  expect(s.store.task('parent').autoSettled).toBeUndefined()
+  expect(s.store.get().tasks.every((task) => !task.archived)).toBe(true)
+})
+it('revives automatically settled families when a new message is queued', async () => {
+  const { s, housekeeping } = await archiveFixture()
+  s.defaults.save(
+    {
+      ...s.defaults.get(),
+      scopedSettings: { environment: { taskBehavior: { settleInactive: true } }, shared: [] },
+    },
+    false,
+  )
+  expect(await housekeeping.settleInactive(now)).toEqual(['parent'])
+  s.store.updateTask('parent', (task) => ({ ...task, queuePaused: true }))
+  await s.tasks.send('parent', 'new-user-message', 'New work')
+  expect(s.store.get().tasks.every((task) => !task.archived && !task.autoSettled)).toBe(true)
+  expect(s.store.task('parent').queue?.map((message) => message.id)).toEqual(['new-user-message'])
+})
+it('protects drafts, pending input, queued work and quota continuations from inactive settling', async () => {
+  const { s, housekeeping } = await archiveFixture()
+  s.defaults.save(
+    {
+      ...s.defaults.get(),
+      scopedSettings: { environment: { taskBehavior: { settleInactive: true } }, shared: [] },
+    },
+    false,
+  )
+  s.store.updateTask('nested', (task) => ({ ...task, draft: 'Keep this work' }))
+  expect(await housekeeping.settleInactive(now)).toEqual([])
+  s.store.updateTask('nested', (task) => ({
+    ...task,
+    draft: '',
+    quotaContinuation: { turnId: 'turn', at: new Date(now + 60000).toISOString(), resume: true },
+  }))
+  expect(await housekeeping.settleInactive(now)).toEqual([])
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((repo) => ({
+      ...repo,
+      taskBehavior: { settleInactive: false },
+    })),
+  }))
+  expect(await housekeeping.settleInactive(now)).toEqual([])
+})

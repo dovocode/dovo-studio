@@ -245,13 +245,15 @@ export function TaskContextMenu({
             <ContextMenu.Item
               className={itemClass}
               disabled={!canEdit}
-              onSelect={() =>
-                void run(() =>
-                  patch({
-                    pinned: !task.pinned,
-                  }),
+              onSelect={() => {
+                if (
+                  task.pinned &&
+                  readAppPreferences().confirmUnpin &&
+                  !window.confirm(`Unpin “${task.title}”?`)
                 )
-              }
+                  return
+                void run(() => patch({ pinned: !task.pinned }))
+              }}
             >
               {task.pinned ? <PinOff /> : <Pin />}
               {task.pinned ? 'Unpin' : 'Pin'}
@@ -458,7 +460,17 @@ export function TaskContextMenu({
               disabled={!canEdit || task.status === 'running'}
               onSelect={() => {
                 setError('')
-                setDialog('delete')
+                if (readAppPreferences().confirmDelete) setDialog('delete')
+                else
+                  void run(async () => {
+                    await client.request(
+                      '/api/tasks/lifecycle',
+                      { id: task.id, action: 'delete' },
+                      responses.ok,
+                    )
+                    if (selected) onDeselect()
+                    await client.refresh()
+                  })
               }}
             >
               <Trash2 />

@@ -78,6 +78,7 @@ export const projectTaskDefaultsSchema = mutableStruct({
   permission: Schema.optional(agentSchema.fields.permission),
   harness: Schema.optional(taskHarnessSchema.omit('resources')),
   execution: Schema.optional(executionSchema),
+  submodules: Schema.optional(Schema.Literal('none', 'direct', 'recursive')),
   // A fixed default base branch was replaced by Start from origin; older saved values are dropped
   // on read. A task can still pick its own base branch before its first message.
   /** Start worktrees from origin (fetched first) instead of the local branch. */
@@ -110,10 +111,22 @@ export const taskTemplateSchema = mutableStruct({
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
 })
 export type TaskTemplate = Schema.Schema.Type<typeof taskTemplateSchema>
+/** Live lifecycle policy; unlike checkout defaults, this applies to existing tasks too. */
+export const taskBehaviorSchema = mutableStruct({
+  quotaResume: Schema.optional(Schema.Boolean),
+  quotaSnooze: Schema.optional(Schema.Boolean),
+  settleMerged: Schema.optional(Schema.Boolean),
+  settleClosed: Schema.optional(Schema.Boolean),
+  settleInactive: Schema.optional(Schema.Boolean),
+  inactiveDays: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(1, 365))),
+  continueAfterRestart: Schema.optional(Schema.Boolean),
+})
+export type TaskBehavior = Schema.Schema.Type<typeof taskBehaviorSchema>
 /** Settings that can inherit across computers and projects. */
 export const scopedSettingsValueSchema = mutableStruct({
   agents: Schema.optional(maxValue(mutableArray(agentPresetSchema), 100)),
   taskDefaults: Schema.optional(projectTaskDefaultsSchema),
+  taskBehavior: Schema.optional(taskBehaviorSchema),
   resources: Schema.optional(resourceSettingsSchema),
   prompts: Schema.optional(maxValue(mutableArray(savedPromptSchema), 40)),
 })
@@ -160,6 +173,7 @@ export const repositorySchema = mutableStruct({
   gitIdentity: Schema.optional(Schema.String),
   gitIdentityError: Schema.optional(Schema.String),
   taskDefaults: Schema.optional(projectTaskDefaultsSchema),
+  taskBehavior: Schema.optional(taskBehaviorSchema),
   forge: Schema.optional(forgeBindingSchema),
   jira: Schema.optional(jiraBindingSchema),
   resources: Schema.optional(resourceSettingsSchema),
@@ -386,6 +400,8 @@ export const taskSchema = mutableStruct({
   ),
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
   worktreeSetupComplete: Schema.optional(Schema.Boolean),
+  submodules: projectTaskDefaultsSchema.fields.submodules,
+  worktreeSubmodulesComplete: Schema.optional(Schema.Boolean),
   // Runtime-owned: this task was forked from another task's turn. `snapshot` is that turn's
   // files; the fork's new worktree is restored to it once, then it is cleared.
   sideChats: Schema.optional(
@@ -524,10 +540,18 @@ export const taskSchema = mutableStruct({
       .pipe(Schema.nonNegative()),
   ),
   pinned: Schema.optional(Schema.Boolean),
+  autoSettled: Schema.optional(Schema.Boolean),
   // Legacy archived flag means Settled; archivedAt hides the thread from normal lists.
   archived: Schema.optional(Schema.Boolean),
   archivedAt: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
   subagents: Schema.optional(mutableArray(subagentSchema)),
+  quotaContinuation: Schema.optional(
+    mutableStruct({
+      turnId: Schema.String,
+      at: isoDateTime(Schema.String),
+      resume: Schema.Boolean,
+    }),
+  ),
   snoozedUntil: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
   agentOverrides: Schema.optional(taskModelSchema),
   harness: Schema.optional(Schema.NullOr(taskHarnessSchema)),
