@@ -14,8 +14,10 @@ export function SettingsScopePage({
   title,
   description,
   children,
+  wide = false,
 }: {
   title: string
+  wide?: boolean
   description: string
   children: (selection: { scope: SettingsScope; repository?: Repository }) => ReactNode
 }) {
@@ -25,7 +27,9 @@ export function SettingsScopePage({
     <section className="flex min-h-0 flex-1 flex-col">
       <PageHeader title={title} description={description} />
       <div className="border-b px-4 py-3">
-        <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <div
+          className={`mx-auto flex ${wide ? 'max-w-6xl' : 'max-w-3xl'} flex-wrap items-center gap-2 text-xs text-muted-foreground`}
+        >
           <span>Applying settings for</span>
           <ChoicePicker
             aria-label="Settings project"
@@ -66,7 +70,7 @@ export function SettingsScopePage({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <div className="mx-auto max-w-3xl space-y-4">
+        <div className={`mx-auto ${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-4`}>
           {!source ? (
             <p role="status" className="text-sm text-muted-foreground">
               {sources.length
