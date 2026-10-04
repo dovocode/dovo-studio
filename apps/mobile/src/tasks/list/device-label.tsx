@@ -14,7 +14,7 @@ export function DeviceLabel({
   compact?: boolean
 }) {
   const turn = task.turns?.at(-1)
-  const host = turn ? turn.runtimeHost : runtimeHost
+  const host = runtimeHost ?? turn?.runtimeHost
   const prefix = turn ? (turn.status === 'running' ? 'Running on' : 'Last ran on') : 'Runs on'
   const label = host ? `${prefix} ${host}` : 'Execution device unknown'
   return (

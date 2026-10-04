@@ -72,6 +72,9 @@ appId: com.dovo.studio
     height: 44
     tolerance: 1
 - takeScreenshot: dovo-mobile-native-thread
+# One tap from a focused input must send, without blurring and moving the button first.
+- tapOn:
+    id: Message
 - tapOn:
     id: Send
 # The event stream confirms acceptance even though the HTTP response is lost.

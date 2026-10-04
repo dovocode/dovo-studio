@@ -1,4 +1,4 @@
-import { liveActivityRefreshMs, liveActivityStaleMs } from '@dovo/protocol'
+import { liveActivityRefreshMs, liveActivityStaleMs, runtimeComputerName } from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { clientTaskScope } from '@dovo/client-runtime'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
@@ -124,7 +124,7 @@ export function createActivityController(onError: (message: string) => void) {
             const props = task
               ? liveTaskProps(
                   task,
-                  source.snapshot.runtimeHost ?? source.profile.name,
+                  runtimeComputerName(source),
                   source.snapshot.workspace.repositories.find(
                     (repo) => repo.id === task.repositoryId,
                   )?.name ?? '',
@@ -157,7 +157,7 @@ export function createActivityController(onError: (message: string) => void) {
               const key = JSON.stringify([source.profile.id, task.id, turnId])
               const props = liveTaskProps(
                 task,
-                snapshot.runtimeHost ?? source.profile.name,
+                runtimeComputerName(source),
                 snapshot.workspace.repositories.find((repo) => repo.id === task.repositoryId)
                   ?.name ?? '',
                 needsInput.has(task.id),

@@ -112,8 +112,8 @@ it('keeps approvals, cached state and device labels scoped to the owning compute
   expect(
     entries.map((entry) => [entry.source.name, entry.needsInput, entry.source.online]),
   ).toEqual([
-    ['Mac computer', false, true],
-    ['Linux computer', true, false],
+    ['Mac', false, true],
+    ['Linux', true, false],
   ])
 })
 it('retains settled and snoozed threads for filters and omits samples and unhydrated runtimes', () => {
@@ -213,7 +213,7 @@ it('groups every delegated generation under its parent without removing child na
   const entries = collectTasks(sources)
   expect(entries.map((entry) => entry.task.id)).toEqual([task.id, 'child', 'nested', 'child'])
   expect(mainTaskEntries(entries).map((entry) => [entry.source.name, entry.task.id])).toEqual([
-    ['Mac computer', task.id],
-    ['Linux computer', 'child'],
+    ['Mac', task.id],
+    ['Linux', 'child'],
   ])
 })

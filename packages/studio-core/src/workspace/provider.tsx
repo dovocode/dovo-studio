@@ -1,4 +1,4 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeComputerName, runtimeHasCustomName } from '@dovo/protocol'
 import {
   mergeSharedSettings,
   pendingSharedSettings,
@@ -617,7 +617,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               }).pipe(Effect.uninterruptible)
             const named = {
               ...profile,
-              name: value.runtimeHost || profile.name,
+              name: runtimeComputerName({ profile, snapshot: value }),
+              nameIsCustom: runtimeHasCustomName(profile),
             }
             const previous = overviewsRef.current[profile.id]
             yield* storageLock
@@ -733,7 +734,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (replaceId && (!previous || (!proof && previous.connection.token !== next.token)))
         throw new Error('Select a saved computer and pair its new address before replacing it.')
       await openProfile(
-        { ...runtimeProfile(next, previous?.name), ...(previous ? { id: previous.id } : {}) },
+        {
+          ...runtimeProfile(next, previous?.name),
+          nameIsCustom: previous ? runtimeHasCustomName(previous) : false,
+          ...(previous ? { id: previous.id } : {}),
+        },
         proof,
       )
     },
@@ -1168,7 +1173,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         )
         registry = upsertRuntime(
           registry,
-          previousLocal ? { ...local, id: previousLocal.id, name: previousLocal.name } : local,
+          previousLocal
+            ? {
+                ...local,
+                id: previousLocal.id,
+                name: previousLocal.name,
+                nameIsCustom: runtimeHasCustomName(previousLocal),
+              }
+            : local,
           selection.activate === true || firstConnection || registry.activeId === previousLocal?.id,
         )
         if (firstConnection) firstLocalConnection = local.connection

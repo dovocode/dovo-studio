@@ -1,4 +1,4 @@
-import { randomUUID } from '@dovo/protocol'
+import { randomUUID, runtimeComputerName } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
@@ -111,7 +111,7 @@ function BrowserContent({
   taskId: string
   onClose?: () => void
 }) {
-  const { connection, request, connected, snapshot } = useWorkspace(),
+  const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = useWorkspace(),
     { browser } = useStudioHost()
   const preferences = useAppPreferences()
   const profiles = preferences.browserProfiles.length
@@ -966,7 +966,10 @@ function BrowserContent({
           )}
           <DeviceList
             devices={devices}
-            host={snapshot?.runtimeHost ?? 'This computer'}
+            host={runtimeComputerName({
+              profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
+              snapshot,
+            })}
             busy={busy}
             connected={connected}
             onOpen={setLiveDevice}

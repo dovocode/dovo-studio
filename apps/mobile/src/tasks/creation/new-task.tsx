@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { createDraftCreation } from './draft-creation'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -131,7 +132,7 @@ export function NewTask({
   return (
     <View style={styles.content}>
       <Text style={styles.title}>{requested ? 'Opening draft chat…' : 'Choose a project'}</Text>
-      <Text style={styles.muted}>On {snapshot?.runtimeHost ?? 'this computer'}</Text>
+      <Text style={styles.muted}>On {runtimeComputerName({ profile, snapshot })}</Text>
       {!requested && (
         <>
           <Choice

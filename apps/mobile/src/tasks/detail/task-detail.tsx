@@ -1,4 +1,4 @@
-import { checkpointFileCount } from '@dovo/protocol'
+import { checkpointFileCount, runtimeComputerName } from '@dovo/protocol'
 import {
   conversationPageSchema,
   mergeConversationHistory,
@@ -140,7 +140,7 @@ function TaskDetailContent({
   const { focused, navigate } = useNavigation()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const { snapshot, connected, profiles, callEffect, read, activeId } = useRuntime()
+  const { snapshot, connected, profiles, profile, callEffect, read, activeId } = useRuntime()
   const worktreeThread = useAction()
   const worktreeActions: HeaderAction[] =
     task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
@@ -344,8 +344,10 @@ function TaskDetailContent({
     snapshot?.approvals.some((a) => a.taskId === task.id)
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const latestTurn = task.turns?.at(-1)
-  const runtimeHost =
-    (latestTurn ? latestTurn.runtimeHost : snapshot?.runtimeHost) ?? 'Unknown device'
+  const runtimeHost = runtimeComputerName({
+    profile,
+    snapshot: { runtimeHost: latestTurn?.runtimeHost ?? snapshot?.runtimeHost },
+  })
   // Name the computer only when there is more than one to tell apart.
   const subtitle = [repository?.name, profiles.length > 1 ? runtimeHost : undefined]
     .filter(Boolean)

@@ -29,7 +29,10 @@ export const ComposerField = memo(function ComposerField({
     appliedRevision.current = revision
     if (nativeText.current === value) return
     nativeText.current = value
-    input.current?.setNativeProps({ text: value })
+    // A fresh uncontrolled input already has an empty text prop. Writing that prop again can
+    // be ignored by Fabric even after native typing; clear() uses the native text command.
+    if (!value) input.current?.clear()
+    else input.current?.setNativeProps({ text: value })
   }, [value, revision])
   const type = useCallback(
     (text: string) => {

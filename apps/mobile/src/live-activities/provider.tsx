@@ -1,4 +1,4 @@
-import { liveTaskProps } from '@dovo/protocol'
+import { liveTaskProps, runtimeComputerName } from '@dovo/protocol'
 import { useAppActive } from '../runtime/state/app-active'
 import { nativeEffect } from '../runtime/state/native-effect'
 import { Effect } from 'effect'
@@ -41,7 +41,7 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
         running.map((task) =>
           liveTaskProps(
             task,
-            snapshot?.runtimeHost ?? source.profile.name,
+            runtimeComputerName(source),
             snapshot?.workspace.repositories.find(
               (repository) => repository.id === task.repositoryId,
             )?.name ?? '',

@@ -1,10 +1,11 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 export function RunControls({ task }: { task: Task }) {
-  const { request, connected, snapshot } = useWorkspace(),
+  const { request, connected, snapshot, runtimes, activeRuntimeId } = useWorkspace(),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const act = (path: string, input: unknown) => {
@@ -65,8 +66,10 @@ export function RunControls({ task }: { task: Task }) {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [approvals, connected, busy])
-  const executionHost =
-    task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost ?? 'the selected computer'
+  const executionHost = runtimeComputerName({
+    profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
+    snapshot: { runtimeHost: task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost },
+  })
   if (
     connected &&
     !approvals.length &&

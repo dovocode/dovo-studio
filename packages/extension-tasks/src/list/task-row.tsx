@@ -94,7 +94,7 @@ function TaskRowView({
   )
   const branch =
     task.checkoutBranch ?? (task.execution === 'worktree' ? latest?.branch : repository?.branch)
-  const host = latest?.runtimeHost ?? source.name
+  const host = source.name
   const linkedPulls = taskPullLinks(task).sort(
     (a, b) => Number(b.url === task.pullStatus?.url) - Number(a.url === task.pullStatus?.url),
   )

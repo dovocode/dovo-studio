@@ -25,6 +25,7 @@ export function runtimeProfile(connection: RuntimeConnection, name?: string) {
   return {
     id: url.origin,
     name: name?.trim() || url.hostname,
+    nameIsCustom: !!name?.trim(),
     connection: {
       ...parsed,
       address: url.origin,
@@ -35,6 +36,7 @@ export function runtimeProfile(connection: RuntimeConnection, name?: string) {
 const profileSchema = mutableStruct({
   id: minValue(Schema.String, 1),
   name: minValue(Schema.String, 1),
+  nameIsCustom: Schema.optional(Schema.Boolean),
   connection: connectionSchema,
 })
 
@@ -76,7 +78,11 @@ export function upsertRuntime(
   profile: RuntimeProfile,
   activate = true,
 ): RuntimeRegistry {
-  const normalized = { ...runtimeProfile(profile.connection, profile.name), id: profile.id }
+  const normalized = {
+    ...runtimeProfile(profile.connection, profile.name),
+    id: profile.id,
+    nameIsCustom: runtimeHasCustomName(profile),
+  }
   if (
     registry.profiles.some(
       (item) =>
@@ -123,15 +129,26 @@ export type RuntimeOverview = {
   /** The runtime rejected this device's token: it was revoked or the runtime was reset. */
   unauthorized?: boolean
 }
-/** Display the computer's reported name; the connection label is a fallback for older hosts. */
+/** Older profiles used the address hostname as their automatic label. Preserve saved overrides. */
+export function runtimeHasCustomName(
+  profile: Pick<RuntimeProfile, 'name' | 'nameIsCustom' | 'connection'>,
+) {
+  return profile.nameIsCustom ?? profile.name !== new URL(profile.connection.address).hostname
+}
+/** An explicit Dovo name wins; otherwise use the computer's reported hostname. */
 export function runtimeComputerName({
   profile,
   snapshot,
 }: {
-  profile?: Pick<RuntimeProfile, 'name'> | null
+  profile?: Pick<RuntimeProfile, 'name' | 'nameIsCustom' | 'connection'> | null
   snapshot?: Pick<RuntimeSnapshot, 'runtimeHost'> | null
 }) {
-  return snapshot?.runtimeHost?.trim() || profile?.name || 'Unknown computer'
+  return (
+    (profile && runtimeHasCustomName(profile) ? profile.name.trim() : '') ||
+    snapshot?.runtimeHost?.trim() ||
+    profile?.name ||
+    'Unknown computer'
+  )
 }
 /** A 401 means the saved pairing no longer works; polling again cannot fix it. */
 export function isUnauthorizedRuntimeError(error: unknown) {
