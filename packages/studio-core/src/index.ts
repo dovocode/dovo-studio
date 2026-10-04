@@ -215,3 +215,5 @@ export {
 } from '@dovo/protocol'
 
 export * from './settings-target'
+
+export { TemporaryTaskWorkspace } from './workspace/temporary-task'

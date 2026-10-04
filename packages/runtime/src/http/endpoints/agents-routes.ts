@@ -292,14 +292,21 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/draft-receive') {
         const input = decode(
-          mutableStruct({ task: taskSchema, gitIdentity: Schema.String }),
+          mutableStruct({
+            task: taskSchema,
+            gitIdentity: Schema.String,
+            projectKind: Schema.optional(Schema.Literal('scratch')),
+          }),
           yield* serviceResult(body(request)),
         )
         const repo = s.store.get().repositories.find((repo) => repo.id === input.task.repositoryId)
         if (
           !repo ||
-          !input.gitIdentity ||
-          (yield* serviceResult(s.git.repositoryIdentity(repo.path, true))) !== input.gitIdentity
+          (input.projectKind === 'scratch'
+            ? repo.kind !== 'scratch'
+            : !input.gitIdentity ||
+              (yield* serviceResult(s.git.repositoryIdentity(repo.path, true))) !==
+                input.gitIdentity)
         )
           throw new HttpError(
             409,
@@ -340,14 +347,18 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             draft: Schema.String,
             repositoryId: idSchema,
             gitIdentity: Schema.String,
+            projectKind: Schema.optional(Schema.Literal('scratch')),
           }),
           yield* serviceResult(body(request)),
         )
         const repo = s.store.get().repositories.find((repo) => repo.id === input.repositoryId)
         if (
           !repo ||
-          !input.gitIdentity ||
-          (yield* serviceResult(s.git.repositoryIdentity(repo.path, true))) !== input.gitIdentity
+          (input.projectKind === 'scratch'
+            ? repo.kind !== 'scratch'
+            : !input.gitIdentity ||
+              (yield* serviceResult(s.git.repositoryIdentity(repo.path, true))) !==
+                input.gitIdentity)
         )
           throw new HttpError(
             409,

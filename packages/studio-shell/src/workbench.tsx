@@ -12,7 +12,6 @@ import {
 } from 'react'
 import {
   type StudioViewProps,
-  readAppPreferences,
   updateAppPreferences,
   useAppPreferences,
   StudioHostProvider,
@@ -173,15 +172,10 @@ function WorkbenchContent({
     runtimes.some((runtime) => runtime.snapshot?.artifactsEnabled === true)
   const [switchError, setSwitchError] = useApplicationState('')
   const [switching, setSwitching] = useApplicationState(false)
-  // Restore the last thread, otherwise open the task list.
-  const [target, navigate] = useApplicationState<StudioNavigation>(() => {
-    const preferences = readAppPreferences()
-    return preferences.lastThreadId
-      ? { viewId: 'tasks', entityId: preferences.lastThreadId }
-      : {
-          viewId: extensions[0]?.views[0]?.id ?? '',
-        }
-  })
+  // Start with a fresh composer; explicit navigation still opens existing threads.
+  const [target, navigate] = useApplicationState<StudioNavigation>(() => ({
+    viewId: extensions[0]?.views[0]?.id ?? '',
+  }))
   useEffect(() => {
     if (target.viewId === 'tasks' && target.entityId)
       updateAppPreferences({ lastThreadId: target.entityId })

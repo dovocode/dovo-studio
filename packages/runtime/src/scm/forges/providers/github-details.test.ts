@@ -367,7 +367,13 @@ it('loads explicit-target list status through account transport without requirin
             data: {
               viewer: { login: 'reviewer' },
               repository: {
-                pr7: { reviewDecision: 'APPROVED', statusCheckRollup: { state: 'SUCCESS' } },
+                pr7: {
+                  additions: 12,
+                  deletions: 3,
+                  totalCommentsCount: 5,
+                  reviewDecision: 'APPROVED',
+                  statusCheckRollup: { state: 'SUCCESS' },
+                },
               },
             },
           }
@@ -391,7 +397,13 @@ it('loads explicit-target list status through account transport without requirin
     host: repo.host,
     repository: repo.nameWithOwner,
   }).list('/not-a-checkout', 'open', 1)
-  expect(page.pulls[0]).toMatchObject({ reviewDecision: 'APPROVED', checksState: 'SUCCESS' })
+  expect(page.pulls[0]).toMatchObject({
+    additions: 12,
+    deletions: 3,
+    commentCount: 5,
+    reviewDecision: 'APPROVED',
+    checksState: 'SUCCESS',
+  })
   expect(page.pulls[0].statusError).toBeUndefined()
   expect(inspect).not.toHaveBeenCalled()
 })

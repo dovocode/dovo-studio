@@ -48,8 +48,12 @@ export function Composer({
   codeReference,
   composerInsert,
   onComposerInsertApplied,
+  workspaceControls,
+  temporary = false,
 }: {
   task: Task
+  temporary?: boolean
+  workspaceControls?: import('react').ReactNode
   onPending: (pending: PendingMessage | null) => void
   /** Opens the side question dialog. */
   onAside?: () => void
@@ -66,7 +70,7 @@ export function Composer({
   const sending = submitBusy || machineMoving
   const sendingRequest = useRef(false)
   const attachments = useAttachments(task)
-  const composerDraft = useComposerDraft(task)
+  const composerDraft = useComposerDraft(task, temporary)
   const setDraft = composerDraft.update
   const [submittedText, setSubmittedText] = useState<string | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
@@ -575,11 +579,13 @@ export function Composer({
         onConfirm={confirmCommand}
       />
       <div className={pendingQuestion ? 'hidden' : undefined}>
-        <ComposerWorkspace
-          task={task}
-          disabled={sending || !!task.archived}
-          onMachineMoving={setMachineMoving}
-        />
+        {workspaceControls ?? (
+          <ComposerWorkspace
+            task={task}
+            disabled={sending || !!task.archived}
+            onMachineMoving={setMachineMoving}
+          />
+        )}
         <p className="mx-auto mt-1 hidden max-w-[var(--chat-max)] text-right text-[0.625rem] text-muted-foreground/70">
           {task.status === 'running' ? 'Enter to queue' : 'Enter to send'} · Shift + Enter for a new
           line

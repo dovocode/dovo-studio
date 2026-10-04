@@ -5,6 +5,9 @@ import type { PullSummary } from '@dovo/protocol'
 import type { GitService } from '../git/git.js'
 import { errorMessage } from '../../errors.js'
 const status = mutableStruct({
+  additions: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
+  deletions: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
+  totalCommentsCount: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
   viewerDidAuthor: Schema.optional(Schema.Boolean),
   reviewRequests: Schema.optional(
     mutableStruct({
@@ -33,7 +36,14 @@ const status = mutableStruct({
 })
 type SummaryStatus = Pick<
   PullSummary,
-  'checksState' | 'reviewDecision' | 'statusError' | 'viewerIsAuthor' | 'viewerReviewRequested'
+  | 'checksState'
+  | 'reviewDecision'
+  | 'statusError'
+  | 'viewerIsAuthor'
+  | 'viewerReviewRequested'
+  | 'additions'
+  | 'deletions'
+  | 'commentCount'
 >
 export async function pullStatuses(
   git: GitService,
@@ -49,7 +59,7 @@ export async function pullStatuses(
   const fields = numbers
     .map(
       (n) =>
-        `pr${n}:pullRequest(number:${n}){viewerDidAuthor reviewRequests(first:100){nodes{requestedReviewer{... on User{login}}} pageInfo{hasNextPage}} reviewDecision statusCheckRollup{state}}`,
+        `pr${n}:pullRequest(number:${n}){additions deletions totalCommentsCount viewerDidAuthor reviewRequests(first:100){nodes{requestedReviewer{... on User{login}}} pageInfo{hasNextPage}} reviewDecision statusCheckRollup{state}}`,
     )
     .join(' ')
   const query = `query($owner:String!,$name:String!){viewer{login} repository(owner:$owner,name:$name){${fields}}}`
@@ -110,6 +120,11 @@ export async function pullStatuses(
                         ? undefined
                         : false,
                   }
+                : {}),
+              ...(value.additions !== undefined ? { additions: value.additions } : {}),
+              ...(value.deletions !== undefined ? { deletions: value.deletions } : {}),
+              ...(value.totalCommentsCount !== undefined
+                ? { commentCount: value.totalCommentsCount }
                 : {}),
               checksState: value.statusCheckRollup?.state ?? null,
               reviewDecision: value.reviewDecision,

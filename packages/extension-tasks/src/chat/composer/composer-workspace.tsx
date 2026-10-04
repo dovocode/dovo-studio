@@ -1,3 +1,4 @@
+import { ComposerProject } from './composer-project'
 import { TaskMachineSelector } from './task-machine-selector'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Schema } from 'effect'
@@ -65,6 +66,7 @@ export function ComposerWorkspace({
   if (repository?.kind)
     return (
       <div className="mx-auto flex w-[calc(100%-24px)] max-w-[744px] items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
+        <ComposerProject task={task} disabled={disabled} />
         <TaskMachineSelector task={task} disabled={disabled} onMoving={onMachineMoving} />
         <Folder className="size-3" />{' '}
         {repository.kind === 'scratch' ? 'No project · private thread folder' : 'Project folder'}
@@ -72,6 +74,7 @@ export function ComposerWorkspace({
     )
   return (
     <div className="relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[744px] flex-wrap items-center gap-x-2 gap-y-1 rounded-b-xl border border-t-0 bg-muted/15 px-2 pb-1.5 pt-4 text-muted-foreground">
+      <ComposerProject task={task} disabled={disabled} />
       <TaskMachineSelector task={task} disabled={disabled} onMoving={onMachineMoving} />
       <span className="h-4 border-l border-border/60" aria-hidden="true" />
       {editable ? (

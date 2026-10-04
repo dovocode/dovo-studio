@@ -27,7 +27,6 @@ import {
   type StudioViewProps,
 } from '@dovo/studio-core'
 import {
-  EmptyState,
   Button,
   IconButton,
   ResizableHandle,
@@ -56,6 +55,7 @@ import {
   type TaskEntry,
 } from './list/task-collection'
 import { TaskSearchDialog, type TaskSearchMode } from './dialogs/task-search-dialog'
+import { StartupDraft } from './task-creation/startup-draft'
 import { ProjectSelectionDialog } from './task-creation/project-selection-dialog'
 import { SideQuestion } from './chat/thread/side-question'
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
@@ -82,20 +82,9 @@ export default function TasksView({ entityId }: StudioViewProps) {
     () => workspace.tasks.filter((task) => !task.example),
     [workspace.tasks],
   )
-  const [selectedId, setSelectedId] = useApplicationState(
-    entityId ??
-      localTasks.find((t) => !t.archived && !t.archivedAt)?.id ??
-      localTasks.find((t) => !t.archivedAt)?.id ??
-      '',
-  )
+  const [selectedId, setSelectedId] = useApplicationState(entityId ?? '')
   const [deselected, setDeselected] = useApplicationState(false)
-  const selectedTask = deselected
-    ? undefined
-    : (localTasks.find((t) => t.id === selectedId) ??
-      (entityId
-        ? undefined
-        : (localTasks.find((t) => !t.archived && !t.archivedAt) ??
-          localTasks.find((t) => !t.archivedAt))))
+  const selectedTask = deselected ? undefined : localTasks.find((t) => t.id === selectedId)
   const { task, loaded: historyLoaded, error: historyError } = useCachedTask(selectedTask)
   const hasDiff =
     !!task &&
@@ -1047,21 +1036,14 @@ export default function TasksView({ entityId }: StudioViewProps) {
               <div className="flex h-full min-h-0 flex-col">
                 {!compact && <header className="studio-task-thread-header">Tasks</header>}
                 <div className="min-h-0 flex-1">
-                  <EmptyState
-                    title="What would you like to work on?"
-                    description="Pick up a task from the sidebar, or start with a question, a fix, or a new idea."
-                    action={
-                      <div className="flex gap-2">
-                        {compact && (
-                          <Button variant="outline" onClick={() => setListOpen(true)}>
-                            Browse tasks
-                          </Button>
-                        )}
-                        <Button disabled={busy} onClick={() => void startTask()}>
-                          Create task
-                        </Button>
-                      </div>
-                    }
+                  <StartupDraft
+                    onBrowse={compact ? () => setListOpen(true) : undefined}
+                    onProject={() => void startTask()}
+                    onCommit={(draft) => {
+                      setSelectedId(draft.id)
+                      setDeselected(false)
+                      host.navigate({ viewId: 'tasks', entityId: draft.id })
+                    }}
                   />
                 </div>
               </div>

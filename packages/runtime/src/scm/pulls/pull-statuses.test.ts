@@ -66,3 +66,34 @@ it('identifies explicit current-user review requests and authored PRs', async ()
   expect(result.get(2)?.viewerIsAuthor).toBe(true)
   expect(result.get(2)?.viewerReviewRequested).toBeUndefined()
 })
+
+it('loads diff and comment totals in the status batch, including zero counts', async () => {
+  const git = new GitService()
+  const run = vi.spyOn(git, 'github').mockResolvedValue(
+    JSON.stringify({
+      data: {
+        repository: {
+          pr1: {
+            additions: 123,
+            deletions: 45,
+            totalCommentsCount: 8,
+            reviewDecision: null,
+            statusCheckRollup: null,
+          },
+          pr2: {
+            additions: 0,
+            deletions: 0,
+            totalCommentsCount: 0,
+            reviewDecision: null,
+            statusCheckRollup: null,
+          },
+        },
+      },
+    }),
+  )
+  const result = await pullStatuses(git, '/project', 'github.com', 'team/repo', [1, 2])
+  expect(result.get(1)).toMatchObject({ additions: 123, deletions: 45, commentCount: 8 })
+  expect(result.get(2)).toMatchObject({ additions: 0, deletions: 0, commentCount: 0 })
+  expect(run).toHaveBeenCalledTimes(1)
+  expect(run.mock.calls[0][1].join(' ')).toContain('additions deletions totalCommentsCount')
+})

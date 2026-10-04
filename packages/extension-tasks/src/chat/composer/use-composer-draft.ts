@@ -3,7 +3,7 @@ import { updateTask, useWorkspace, type Task } from '@dovo/studio-core'
 import { createComposerDraft } from './composer-draft'
 
 /** The parent keys the composer by task; cleanup always writes to that same task. */
-export function useComposerDraft(task: Task) {
+export function useComposerDraft(task: Task, immediate = false) {
   const { setWorkspace } = useWorkspace()
   const [error, setError] = useState('')
   const report = useCallback((cause: unknown) => {
@@ -51,8 +51,9 @@ export function useComposerDraft(task: Task) {
     (value: SetStateAction<string>) => {
       const next = typeof value === 'function' ? value(controller.text) : value
       controller.update(next)
+      if (immediate) controller.flush()
     },
-    [controller],
+    [controller, immediate],
   )
   const accept = useCallback(
     (submitted: string) => {

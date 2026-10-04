@@ -3,7 +3,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import type { PullSummary } from '@dovo/studio-core'
 import { Badge, ContextMenu } from '@dovo/studio-ui'
 import { pullChecks, pullReview, pullState, pullNextStep, formatDateTime } from '@dovo/studio-core'
-import { GitPullRequest, GitMerge, Layers } from 'lucide-react'
+import { GitPullRequest, GitMerge, Layers, MessageSquare } from 'lucide-react'
 import { Signal } from '../detail/status'
 export function PullRow({
   pull,
@@ -102,6 +102,35 @@ export function PullRow({
                     {pull.head} → {pull.base}
                   </span>
                 </p>
+                {(pull.additions != null ||
+                  pull.deletions != null ||
+                  pull.commentCount != null) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-[0.6875rem] tabular-nums">
+                    {pull.additions != null && (
+                      <span
+                        className="text-emerald-400"
+                        aria-label={`${pull.additions} lines added`}
+                      >
+                        +{pull.additions.toLocaleString()}
+                      </span>
+                    )}
+                    {pull.deletions != null && (
+                      <span className="text-red-400" aria-label={`${pull.deletions} lines deleted`}>
+                        −{pull.deletions.toLocaleString()}
+                      </span>
+                    )}
+                    {pull.commentCount != null && (
+                      <span
+                        className="inline-flex items-center gap-1 text-muted-foreground"
+                        title={`${pull.commentCount} comments`}
+                        aria-label={`${pull.commentCount} comments`}
+                      >
+                        <MessageSquare className="size-3" aria-hidden />
+                        {pull.commentCount.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {!!pull.labels.length && (
                   <div className="mt-2 flex flex-wrap gap-1" aria-label="Labels">
                     {pull.labels.slice(0, 3).map((label) => (

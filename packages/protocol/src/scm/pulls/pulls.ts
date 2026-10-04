@@ -8,6 +8,15 @@ const link = urlSchema({
   protocol: /^https?$/,
 })
 export const pullSummarySchema = mutableStruct({
+  additions: Schema.optional(
+    Schema.NullOr(Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative())),
+  ),
+  deletions: Schema.optional(
+    Schema.NullOr(Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative())),
+  ),
+  commentCount: Schema.optional(
+    Schema.NullOr(Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative())),
+  ),
   stack: Schema.optional(pullStackSummarySchema),
   provider: Schema.optional(forgeProviderSchema),
   number: Schema.Number.pipe(Schema.finite())

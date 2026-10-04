@@ -21,13 +21,14 @@ export function TaskMachineSelector({
   const [error, setError] = useApplicationState('')
   const sources = taskSources(store)
   const repository = store.workspace.repositories.find((repo) => repo.id === task.repositoryId)
-  const identity = repository?.gitIdentity
+  const scratch = repository?.kind === 'scratch'
+  const identity = scratch ? 'scratch' : repository?.gitIdentity
   const targets = sources.flatMap((source) =>
     source.workspace.repositories
       .filter(
         (repo) =>
           !!identity &&
-          repo.gitIdentity === identity &&
+          (scratch ? repo.kind === 'scratch' : repo.gitIdentity === identity) &&
           (source.runtimeId !== store.activeRuntimeId || repo.id === task.repositoryId),
       )
       .map((repo) => ({ source, repository: repo })),
@@ -93,7 +94,11 @@ export function TaskMachineSelector({
                     await store.readRuntime(
                       profile,
                       '/api/tasks/draft-receive',
-                      { task: draft, gitIdentity: identity },
+                      {
+                        task: draft,
+                        gitIdentity: scratch ? '' : identity,
+                        projectKind: scratch ? 'scratch' : undefined,
+                      },
                       taskSchema,
                     )
                     const sourceRequest: typeof store.request = origin
@@ -106,7 +111,8 @@ export function TaskMachineSelector({
                         id: task.id,
                         repositoryId: task.repositoryId,
                         draft: task.draft,
-                        gitIdentity: identity,
+                        gitIdentity: scratch ? '' : identity,
+                        projectKind: scratch ? 'scratch' : undefined,
                       },
                       Schema.Struct({ ok: Schema.Boolean }),
                     )
@@ -134,7 +140,9 @@ export function TaskMachineSelector({
             ))}
             {targets.length < 2 && (
               <p className="max-w-64 px-2 py-2 text-xs text-muted-foreground">
-                No other saved machine has this Git repository checked out.
+                {scratch
+                  ? 'No other saved machine has a temporary task environment.'
+                  : 'No other saved machine has this Git repository checked out.'}
               </p>
             )}
             <p className="max-w-64 px-2 py-1 text-[0.625rem] text-muted-foreground">
