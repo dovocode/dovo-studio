@@ -11,6 +11,7 @@ import { RuntimeProvider } from './runtime/connection/provider'
 import { Workbench } from './shell/workbench'
 import { LinkBrowser } from './ui/content/open-link'
 import { TaskWidgetProvider } from './widgets/provider'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 const theme = {
   ...DarkTheme,
   colors: {
@@ -25,25 +26,27 @@ const theme = {
 }
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <StatusBar style="light" />
-      <ThemeProvider value={theme}>
-        <RegistryProvider>
-          <RuntimeProvider>
-            <SettingsTargetProvider>
-              <PushNotificationProvider>
-                <LiveActivityProvider>
-                  <TaskWidgetProvider>
-                    <Workbench />
-                    <TaskQuickActions />
-                    <LinkBrowser />
-                  </TaskWidgetProvider>
-                </LiveActivityProvider>
-              </PushNotificationProvider>
-            </SettingsTargetProvider>
-          </RuntimeProvider>
-        </RegistryProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        <ThemeProvider value={theme}>
+          <RegistryProvider>
+            <RuntimeProvider>
+              <SettingsTargetProvider>
+                <PushNotificationProvider>
+                  <LiveActivityProvider>
+                    <TaskWidgetProvider>
+                      <Workbench />
+                      <TaskQuickActions />
+                      <LinkBrowser />
+                    </TaskWidgetProvider>
+                  </LiveActivityProvider>
+                </PushNotificationProvider>
+              </SettingsTargetProvider>
+            </RuntimeProvider>
+          </RegistryProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   )
 }

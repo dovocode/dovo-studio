@@ -1,0 +1,15 @@
+diff --git a/lib/windowsPtyAgent.js b/lib/windowsPtyAgent.js
+--- a/lib/windowsPtyAgent.js
++++ b/lib/windowsPtyAgent.js
+@@ -56,6 +56,11 @@
+         // Create terminal pipe IPC channel and forward to a local unix socket.
+         this._outSocket = new net_1.Socket();
+         this._outSocket.setEncoding('utf8');
++        // The DLL can close without emitting any final data. Always release the
++        // worker on close, including natural exits, so it cannot retain the host.
++        if (this._useConptyDll) {
++            this._outSocket.once('close', function () { return _this._conoutSocketWorker.dispose(); });
++        }
+         // The conout socket must be ready out on another thread to avoid deadlocks
+         // We must wait for the worker to connect before calling conptyNative.connect()
+         // to avoid blocking the Node.js event loop in ConnectNamedPipe.
