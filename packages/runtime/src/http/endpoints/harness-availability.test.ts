@@ -50,6 +50,7 @@ it('probes configured providers independently, authenticates, caches and never e
     expect(entries.filter((entry) => entry.available).map((entry) => entry.id)).toEqual([
       'harness:claude',
       'agent:custom',
+      'agent:dovo:claude',
     ])
     expect(JSON.stringify(entries)).not.toContain('private credential')
     const calls = probe.mock.calls.length

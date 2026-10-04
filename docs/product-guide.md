@@ -283,46 +283,51 @@ client storage; paired devices are trusted to operate this personal workspace.
 Desktop and web settings use a grouped sidebar with search (matching words inside each page, such as
 "shell", "resume" or "worktree"). Per-computer pages have a computer picker.
 
-- **App** (stored on this device only):
-  - **General** — open on launch; default task sort; 12- or 24-hour time; Conversation: send
-    messages with Enter or ⌘/Ctrl+Enter, whether a follow-up typed while a task runs is queued or
-    steers the current turn, and whether tool activity starts collapsed or expanded; the default
-    viewport for browser previews; confirm before archiving or stopping a running task.
-  - **Notifications** — while Dovo is in the background: a task needs input, a task finishes, an
-    automation finishes, fails or reaches a review step; with or without sound.
-  - **Appearance** — dark, light or system theme; text size; reduce animations.
-  - **Diffs** — unified/split layout, wrap or scroll long lines, word/character highlights, line
-    numbers; diffs follow the theme.
+- **This app** (stored on this device only):
+  - **General** — project organization, default task sort, navigation, 12- or 24-hour time,
+    confirmations and background activity.
+  - **Appearance** — dark, light or system theme, text size and reduced animations.
+  - **Conversation** — sending with Enter or ⌘/Ctrl+Enter, queued or immediate follow-ups, Markdown
+    preview, response streaming, composer behavior and tool activity.
+  - **Notifications** — in-app and background alerts for tasks and automations, with or without
+    sound.
   - **Keyboard shortcuts**.
-- **Agents** — Agents, MCP & skills.
-- **Coding**:
+  - **Browser** — preview viewport, browser profiles and separate saved logins. Remote browser
+    profiles stay on their computer.
+  - **Updates & about** — version, release channel, update preferences and open-source notices.
+- **Agents**:
+  - **Agents** — built-in Codex, Claude Code and other provider profiles, plus custom
+    configurations. Models, access and instructions come first; connection and account details
+    expand when needed.
+  - **Titles & dictation** — choose a utility model for each computer.
+  - **Usage & limits** — provider quotas and task usage across computers.
+  - **MCP, skills & hooks** — inherited project tools and custom-agent resources.
+- **Tasks & projects**:
+  - **Task defaults** ([four scopes](scoped-settings.md): Global → Computer → Project → Project on
+    computer) — agent and model, permissions, checkout or worktree, **Start from origin**,
+    submodules, setup command, saved prompts and lifecycle policy. Source labels and Reset appear
+    beside each inherited setting. Existing conversations keep their copied launch defaults.
   - **Source control** — forge accounts on each computer.
   - **Pull requests** (this device) — whether new pull requests start as drafts and the preferred
     merge method.
-  - **Task defaults** ([four scopes](scoped-settings.md): global, environment, project,
-    environment + project) — agent and model, local checkout or worktree, **Start from origin**, and
-    the worktree setup command.
-  - **Worktrees** (per computer) — the branch prefix for new task branches (`dovo/` by default, or
-    empty for none), removing worktrees of archived tasks in the background, and the task checkouts
-    on that computer with removal for archived or deleted tasks. Worktrees with uncommitted changes
-    or an active task are never removed, and branches are always kept. Restoring a task whose
-    worktree was removed checks its branch out again and reruns the setup command.
-  - **CLI commands & shell** (per computer).
+  - **Review & diffs** (this device) — unified/split layout, line wrapping, highlights, line
+    numbers, whitespace filtering and review panels; diffs follow the theme.
+  - **Worktrees** (per computer) — branch prefix, background cleanup and removing archived or
+    deleted task checkouts. Worktrees with uncommitted changes or active tasks are protected, and
+    branches are kept. Restoring a removed worktree checks its branch out again and reruns setup.
 - **Computers**:
-  - **Devices & runtime** — computers, pairing and trusted devices, with links to each computer's
-    pages.
-  - **Running tasks** (per computer) — continue interrupted tasks after a restart; keep the Mac
-    awake while tasks run; auto-archive tasks inactive for 7, 14 or 30 days (never running, waiting,
-    pinned or terminal-open tasks).
-  - **Activity & message history** (per computer) — the log, and **Keep activity history**: 90 days
-    by default, or forever, 1 year or 30 days; older entries are deleted in small background
-    batches, while task conversations stay.
-- **Archived** — Archived tasks across every computer, with Restore.
+  - **Devices & runtime** — computers, pairing and trusted devices, with links to computer settings.
+  - **CLI commands & shell** — executable paths and shell configuration for each computer.
+  - **Computer use** — driver, installation and platform permissions for each computer.
+  - **Running tasks** — restart continuation, keeping the Mac awake and per-computer automatic
+    archival. Scoped continuation and settling are in Task defaults.
+  - **Activity & message history** — recorded activity and retention on each computer.
+- **History** — archived tasks across computers, with Restore.
 
 On iPhone, **Settings → This app → General** sets the tab to open on launch, the default task sort,
 12- or 24-hour time, whether tool activity starts expanded, the preferred merge method, whether new
 pull requests start as drafts, whether the screen stays on while an open task is running, and
-whether archiving or stopping a task asks for confirmation. **Car mode** (at the top of General, or
+whether archiving or stopping a task asks for confirmation. **Car mode** (in General → Driving, or
 the car button on Tasks) enlarges text, keeps only the Tasks and Settings tabs, shows tasks as title
 and state without search, filters or row menus, hides tool activity, timestamps and the change and
 terminal buttons in conversations, and keeps the screen on while a task runs. Replies start with
@@ -850,8 +855,8 @@ execution and human review against an isolated fixture runtime.
 
 ### Project and custom-agent resources
 
-Settings → MCP & skills manages resources at [four scopes](scoped-settings.md): Global → Environment
-→ Project → Environment + project. Shared projects match by Git remote identity. Custom-agent
+Settings → MCP, skills & hooks manages resources at [four scopes](scoped-settings.md): Global →
+Computer → Project → Project on computer. Shared projects match by Git remote identity. Custom-agent
 entries with the same name apply last, including disabled entries. Changes start a fresh harness
 session on the next turn.
 

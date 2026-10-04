@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Copy, Star, Plus } from 'lucide-react'
+import { Copy, Star, Plus, Search } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   randomUUID,
@@ -9,12 +9,13 @@ import {
   scopedAgentEntries,
   modelDisplayName,
   runtimeDefaultsSchema,
+  builtInAgentDefinition,
   type Agent,
   type Repository,
   type SettingsScope,
 } from '@dovo/protocol'
 import { useWorkspace, providers } from '@dovo/studio-core'
-import { AgentAvatar, Button } from '@dovo/studio-ui'
+import { AgentAvatar, Button, ChoicePicker, Input, SettingSource } from '@dovo/studio-ui'
 import { AgentEditor } from './agent-editor'
 import { ProviderCheck } from './provider-check'
 export function ScopedAgents({
@@ -34,6 +35,8 @@ export function ScopedAgents({
   const [selectedId, setSelectedId] = useApplicationState('')
   const [dirty, setDirty] = useApplicationState(false)
   const [notice, setNotice] = useApplicationState('')
+  const [query, setQuery] = useApplicationState('')
+  const [retry, setRetry] = useApplicationState(0)
   useEffect(() => {
     if (!connected || !snapshot?.scopedAgentsSupported) return
     let current = true
@@ -54,7 +57,7 @@ export function ScopedAgents({
     return () => {
       current = false
     }
-  }, [request, connected, scope, repository?.id, snapshot?.scopedAgentsSupported])
+  }, [request, connected, scope, repository?.id, snapshot?.scopedAgentsSupported, retry])
   const save = async (agents: Agent[]) => {
     if (!settings) throw new Error('Reload settings before saving')
     setBusy(true)
@@ -90,13 +93,20 @@ export function ScopedAgents({
   const selected = agents.find((agent) => agent.id === selectedId) ?? agents[0]
   const local = selected && own.some((entry) => entry.id === selected.id)
   const inheritedSelected = selected && inherited.some((entry) => entry.id === selected.id)
+  const filtered = agents.filter((agent) =>
+    `${agent.name} ${agent.provider} ${agent.model}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
+  )
+  const origin = origins.find((entry) => entry.agent.id === selected?.id)?.scope ?? 'built-in'
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold">Providers</h2>
+          <h2 className="text-sm font-semibold">Agent profiles</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Reusable configurations. Select a provider to configure it at this target.
+            Built-in providers are ready to configure. Use your computer’s installation and login,
+            or add a custom profile.
           </p>
         </div>
         <Button
@@ -112,58 +122,101 @@ export function ScopedAgents({
             })
           }
         >
-          <Plus size={14} /> Add provider
+          <Plus size={14} /> Add profile
         </Button>
       </div>
-      <div className="grid overflow-hidden rounded-xl border md:max-h-[calc(100dvh-15rem)] md:grid-cols-[15rem_minmax(0,1fr)]">
+      <div className="lg:hidden">
+        <ChoicePicker
+          aria-label="Agent profile"
+          value={selected?.id ?? ''}
+          disabled={busy || !agents.length}
+          onValueChange={(id) => {
+            if (id === selected?.id) return
+            if (dirty && !window.confirm('Discard unsaved configuration changes?')) return
+            setNotice('')
+            setSelectedId(id)
+          }}
+        >
+          {agents.map((agent) => (
+            <option key={agent.id} value={agent.id}>
+              {agent.name} · {own.some((entry) => entry.id === agent.id) ? 'Set here' : 'Inherited'}
+            </option>
+          ))}
+        </ChoicePicker>
+      </div>
+      <div className="grid overflow-hidden rounded-xl border lg:grid-cols-[14rem_minmax(0,1fr)]">
         <nav
           aria-label="Provider configurations"
-          className="border-b bg-muted/10 md:overflow-y-auto md:border-b-0 md:border-r"
+          className="hidden min-w-0 border-r bg-card/30 lg:block"
         >
-          {agents.map((agent) => {
-            const local = own.some((entry) => entry.id === agent.id)
-            const origin = origins.find((entry) => entry.agent.id === agent.id)?.scope
-            return (
-              <button
-                key={agent.id}
-                type="button"
-                aria-pressed={selected?.id === agent.id}
-                disabled={busy}
-                onClick={() => {
-                  if (agent.id === selected?.id) return
-                  if (dirty && !window.confirm('Discard unsaved configuration changes?')) return
-                  setNotice('')
-                  setSelectedId(agent.id)
-                }}
-                className={`flex w-full items-start gap-3 border-b p-4 text-left transition-colors hover:bg-muted/50 ${selected?.id === agent.id ? 'bg-accent' : ''}`}
-              >
-                <AgentAvatar
-                  provider={agent.provider}
-                  customIcon={agent.icon}
-                  className="mt-0.5 size-6 shrink-0"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{agent.name}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {providers[agent.provider].short ?? providers[agent.provider].name} ·{' '}
-                    {modelDisplayName(agent.model) || 'Provider default'}
+          <div className="border-b p-3">
+            <div className="relative">
+              <Search
+                aria-hidden="true"
+                className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
+              />
+              <Input
+                aria-label="Search agent profiles"
+                className="h-9 pl-8 text-xs"
+                placeholder="Find an agent…"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:block">
+            {filtered.map((agent) => {
+              const local = own.some((entry) => entry.id === agent.id)
+              const origin = origins.find((entry) => entry.agent.id === agent.id)?.scope
+              return (
+                <button
+                  key={agent.id}
+                  type="button"
+                  aria-pressed={selected?.id === agent.id}
+                  disabled={busy}
+                  onClick={() => {
+                    if (agent.id === selected?.id) return
+                    if (dirty && !window.confirm('Discard unsaved configuration changes?')) return
+                    setNotice('')
+                    setSelectedId(agent.id)
+                  }}
+                  className={`flex w-full items-start gap-3 border-b border-l-2 px-3 py-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${selected?.id === agent.id ? 'border-l-primary bg-primary/8' : 'border-l-transparent'}`}
+                >
+                  <AgentAvatar
+                    provider={agent.provider}
+                    customIcon={agent.icon}
+                    className="mt-0.5 size-6 shrink-0"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{agent.name}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {providers[agent.provider].short ?? providers[agent.provider].name} ·{' '}
+                      {modelDisplayName(agent.model) || 'Provider default'}
+                    </span>
+                    <span className="mt-1 block text-[11px] text-muted-foreground">
+                      {local
+                        ? `Set here · ${settingsScopeLabels[scope]}`
+                        : origin === 'built-in'
+                          ? 'Built-in · provider defaults'
+                          : `Inherited · ${origin ? settingsScopeLabels[origin] : 'Earlier scope'}`}
+                    </span>
                   </span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {local
-                      ? settingsScopeLabels[scope]
-                      : `Inherited · ${origin ? settingsScopeLabels[origin] : 'Earlier scope'}`}
-                  </span>
-                </span>
-              </button>
-            )
-          })}
+                </button>
+              )
+            })}
+          </div>
           {!agents.length && (
             <p className="p-4 text-xs text-muted-foreground">
               {settings ? 'No provider configurations yet.' : 'Loading configurations…'}
             </p>
           )}
+          {agents.length > 0 && !filtered.length && (
+            <p role="status" className="p-4 text-xs text-muted-foreground">
+              No profiles match “{query}”.
+            </p>
+          )}
         </nav>
-        <div className="min-w-0 p-4 md:overflow-y-auto lg:p-6">
+        <div className="min-w-0 p-4 lg:p-6">
           {selected ? (
             <>
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -240,17 +293,28 @@ export function ScopedAgents({
                   )}
                 </div>
               </div>
-              {!local && (
-                <p className="mb-4 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-                  Saving creates an override at {settingsScopeLabels[scope]}. Reset it to use the
-                  inherited configuration.
+              <div className="mb-5 space-y-2 rounded-lg border bg-muted/30 p-3">
+                <SettingSource
+                  label={selected.name}
+                  origin={{ source: local ? scope : origin, overridden: !!local }}
+                />
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {local
+                    ? `This profile is customized at ${settingsScopeLabels[scope]}. ${inheritedSelected ? 'Reset restores the inherited configuration.' : 'More specific levels can override it.'}`
+                    : `Saving creates an override at ${settingsScopeLabels[scope]}. Reset it to use the inherited configuration.`}
                 </p>
-              )}
+                {builtInAgentDefinition(selected.id) && (
+                  <p className="text-xs text-muted-foreground">
+                    {builtInAgentDefinition(selected.id)?.description}
+                  </p>
+                )}
+              </div>
               <AgentEditor
                 key={JSON.stringify(selected)}
                 initial={selected}
                 creating={false}
                 inline
+                fixedProvider={!!builtInAgentDefinition(selected.id)}
                 onDirtyChange={setDirty}
                 computerName={settingsScopeLabels[scope]}
                 onClose={() => {}}
@@ -287,7 +351,17 @@ export function ScopedAgents({
       </div>
       {error && (
         <p role="alert" className="text-xs text-destructive">
-          {error}
+          {error}{' '}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              if (!dirty || window.confirm('Discard unsaved configuration changes?'))
+                setRetry(retry + 1)
+            }}
+          >
+            Reload profiles
+          </Button>
         </p>
       )}
       {editing && (

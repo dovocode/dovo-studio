@@ -31,16 +31,8 @@ export function ModelSettings({
       : (globalModelPreferences ?? snapshot?.defaults?.globalModelPreferences ?? {})
   return (
     <div className="grid gap-3">
-      <ChoicePicker
-        aria-label="Model preference scope"
-        value={scope}
-        onValueChange={setScope}
-        className="h-9 rounded-md border bg-background px-2 text-xs"
-      >
-        <option value="server">Model favorites & visibility · This server</option>
-        <option value="global">Model favorites & visibility · Global</option>
-      </ChoicePicker>
       <Fields
+        layout="settings"
         agent={agent}
         onChange={onChange}
         connected={connected}
@@ -68,6 +60,20 @@ export function ModelSettings({
           await refreshRuntimes()
         }}
       />
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">Model library preferences</summary>
+        <div className="mt-3">
+          <ChoicePicker
+            aria-label="Model preference scope"
+            value={scope}
+            onValueChange={setScope}
+            className="h-9 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="server">Model favorites & visibility · This computer</option>
+            <option value="global">Model favorites & visibility · Global</option>
+          </ChoicePicker>
+        </div>
+      </details>
       {scope === 'server' && snapshot?.defaults?.globalModelPreferences && (
         <Button
           type="button"

@@ -1,6 +1,6 @@
 import type { SettingsSection, StudioView } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { Input } from '@dovo/studio-ui'
+import { ChoicePicker, Input } from '@dovo/studio-ui'
 import {
   Archive,
   Bell,
@@ -13,16 +13,23 @@ import {
   HardDrive,
   Keyboard,
   ListTodo,
+  Layers,
+  MessagesSquare,
+  Download,
   MonitorSmartphone,
   Palette,
   Search,
   Settings2,
   Terminal,
   Wrench,
+  X,
 } from 'lucide-react'
 
 const icons: Record<string, typeof Search> = {
   general: Settings2,
+  'conversation-settings': MessagesSquare,
+  'updates-settings': Download,
+  'text-generation': MessagesSquare,
   notifications: Bell,
   appearance: Palette,
   diffs: GitBranch,
@@ -42,11 +49,11 @@ const icons: Record<string, typeof Search> = {
 }
 
 const headings: readonly [SettingsSection | 'more', string][] = [
-  ['app', 'App'],
+  ['app', 'This app'],
   ['agents', 'Agents'],
-  ['coding', 'Coding'],
+  ['coding', 'Tasks & projects'],
   ['computers', 'Computers'],
-  ['archived', 'Archived'],
+  ['archived', 'History'],
   ['more', 'More'],
 ]
 
@@ -61,6 +68,9 @@ export function SettingsNav({
   onSelect: (viewId: string) => void
 }) {
   const [query, setQuery] = useApplicationState('')
+  const select = (id: string) => {
+    if (id !== activeId) onSelect(id)
+  }
   const needle = query.trim().toLowerCase()
   const matches = views.filter((view) => {
     if (!needle) return true
@@ -73,9 +83,23 @@ export function SettingsNav({
   return (
     <nav
       aria-label="Settings sections"
-      className="flex w-52 shrink-0 flex-col gap-5 overflow-y-auto border-r bg-sidebar/70 px-3 py-4 lg:w-60"
+      className="flex shrink-0 flex-col border-b bg-sidebar/60 px-4 py-3 md:w-52 md:gap-5 md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-5 lg:w-56"
     >
-      <div className="px-1">
+      <div className="md:hidden">
+        <ChoicePicker aria-label="Settings section" value={activeId} onValueChange={select}>
+          {headings.flatMap(([section]) =>
+            views
+              .filter((view) => (view.settingsSection ?? 'more') === section)
+              .sort((a, b) => a.order - b.order)
+              .map((view) => (
+                <option key={view.id} value={view.id}>
+                  {view.title}
+                </option>
+              )),
+          )}
+        </ChoicePicker>
+      </div>
+      <div className="hidden px-1 md:block">
         <h1 className="mb-3 px-1 text-base font-semibold tracking-tight">Settings</h1>
         {/* Buttons and inputs inherit their font size (see studio-ui styles). */}
         <div className="relative text-[0.8125rem]">
@@ -89,11 +113,21 @@ export function SettingsNav({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && matches[0]) onSelect(matches[0].id)
+              if (event.key === 'Enter' && matches[0]) select(matches[0].id)
               if (event.key === 'Escape') setQuery('')
             }}
             className="h-9 rounded-lg border-border/70 bg-background/70 pl-8"
           />
+          {query && (
+            <button
+              type="button"
+              aria-label="Clear settings search"
+              onClick={() => setQuery('')}
+              className="absolute right-1 top-1 rounded p-1.5 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
         </div>
       </div>
       {headings.map(([section, label]) => {
@@ -102,7 +136,7 @@ export function SettingsNav({
           .sort((a, b) => a.order - b.order)
         if (!items.length) return null
         return (
-          <div key={section} className="space-y-1 text-sm">
+          <div key={section} className="hidden space-y-1 text-sm md:block">
             <h2 className="px-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
               {label}
             </h2>
@@ -114,10 +148,10 @@ export function SettingsNav({
                   key={view.id}
                   type="button"
                   aria-current={active ? 'page' : undefined}
-                  onClick={() => onSelect(view.id)}
+                  onClick={() => select(view.id)}
                   className={`group flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[0.8125rem] transition-colors ${
                     active
-                      ? 'bg-primary/10 font-medium text-foreground ring-1 ring-primary/20'
+                      ? 'bg-accent/70 font-medium text-foreground'
                       : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
                   }`}
                 >
@@ -128,7 +162,16 @@ export function SettingsNav({
                     className={active ? 'text-primary' : 'text-muted-foreground/70'}
                   />
                   <span className="min-w-0 flex-1 truncate">{view.title}</span>
-                  {active && <ChevronRight size={13} aria-hidden="true" className="text-primary" />}
+                  {['agents', 'resources', 'task-defaults'].includes(view.id) && (
+                    <Layers
+                      size={12}
+                      aria-label="Inherits across settings levels"
+                      className="shrink-0 text-muted-foreground/60"
+                    />
+                  )}
+                  {active && (
+                    <ChevronRight size={13} aria-hidden="true" className="text-muted-foreground" />
+                  )}
                 </button>
               )
             })}
@@ -136,8 +179,17 @@ export function SettingsNav({
         )
       })}
       {!matches.length && (
-        <p className="px-2 text-[0.8125rem] text-muted-foreground">No settings match “{query}”.</p>
+        <p role="status" className="hidden px-2 text-xs text-muted-foreground md:block">
+          No settings match “{query}”.
+        </p>
       )}
+      <div className="mt-auto hidden border-t px-2 pt-4 text-[11px] leading-relaxed text-muted-foreground md:block">
+        <p className="mb-1 flex items-center gap-1.5">
+          <Layers className="size-3" />
+          Inherited settings
+        </p>
+        <p>Agent and task defaults can be shared or customized for a computer or project.</p>
+      </div>
     </nav>
   )
 }

@@ -5,6 +5,7 @@ export default function PullRequestSettings() {
   const preferences = useAppPreferences()
   return (
     <SettingsPage
+      local
       title="Pull requests"
       description="How this device creates and merges pull requests. Accounts are in Source control."
     >

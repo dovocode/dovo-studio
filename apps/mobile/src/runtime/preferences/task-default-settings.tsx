@@ -3,6 +3,9 @@ import {
   runtimePreferencesSchema,
   scopedSettingsResultSchema,
   taskDefaultOrigins,
+  taskBehaviorOrigin,
+  providerDisplayName,
+  scopedAgentEntries,
   settingsScopes,
   settingsScopeLabels,
   type SettingsScope,
@@ -11,7 +14,7 @@ import {
   type SavedPrompt,
 } from '@dovo/protocol'
 import { useEffect } from 'react'
-import { View } from 'react-native'
+import { Alert, View } from 'react-native'
 import {
   executionSchema,
   accessLabel,
@@ -39,30 +42,48 @@ import { Action } from '../../ui/controls/action'
 import { Switch } from '../../ui/controls/switch'
 import { styles } from '../../ui/theme'
 import { ModelSettings } from '../../agents/model-settings'
+import { SettingSource } from './setting-source'
+import { useSettingsDraft } from './settings-target'
 export function TaskDefaultSettings(props: {
   repository?: Repository
   inline?: boolean
   scope?: SettingsScope
 }) {
   const [open, setOpen] = useApplicationState(false)
+  const [editing, setEditing] = useApplicationState(false)
+  const [saving, setSaving] = useApplicationState(false)
   if (props.inline) return <TaskDefaultSettingsForm {...props} />
   return (
     <View style={{ gap: 12 }}>
       <Action
         secondary
         label={open ? 'Hide task defaults' : 'Task defaults'}
-        onPress={() => setOpen(!open)}
+        disabled={saving}
+        onPress={() => {
+          if (!open || !editing) setOpen(!open)
+          else
+            Alert.alert('Unsaved settings', 'Discard unsaved settings changes?', [
+              { text: 'Keep editing', style: 'cancel' },
+              { text: 'Discard', style: 'destructive', onPress: () => setOpen(false) },
+            ])
+        }}
       />
-      {open && <TaskDefaultSettingsForm {...props} />}
+      {open && (
+        <TaskDefaultSettingsForm {...props} onDirtyChange={setEditing} onSavingChange={setSaving} />
+      )}
     </View>
   )
 }
 function TaskDefaultSettingsForm({
   repository,
   scope: selectedScope,
+  onDirtyChange,
+  onSavingChange,
 }: {
   repository?: Repository
   scope?: SettingsScope
+  onDirtyChange?: (dirty: boolean) => void
+  onSavingChange?: (saving: boolean) => void
 }) {
   const { connected, call, snapshot } = useRuntime()
   const { busy, error, act } = useAction()
@@ -82,7 +103,7 @@ function TaskDefaultSettingsForm({
   const [inheritedBehavior, setInheritedBehavior] = useApplicationState<TaskBehavior>({})
   const [draft, setDraft] = useApplicationState<ProjectTaskDefaults>({})
   const [loadError, setLoadError] = useApplicationState('')
-  const [showInheritance, setShowInheritance] = useApplicationState(false)
+  const [showSetupCommand, setShowSetupCommand] = useApplicationState(false)
   const [saved, setSaved] = useApplicationState(false)
   const [retry, setRetry] = useApplicationState(0)
   useEffect(() => {
@@ -116,6 +137,7 @@ function TaskDefaultSettingsForm({
           setPrompts(value.value.prompts ?? [])
           setLoadedScope(`${scope}:${repository?.id ?? ''}`)
           setDraft(value.value.taskDefaults ?? {})
+          setShowSetupCommand(!!value.value.taskDefaults?.setupCommand)
           setBehavior(value.value.taskBehavior ?? {})
           setInheritedBehavior(value.inherited.taskBehavior ?? {})
         }
@@ -130,16 +152,48 @@ function TaskDefaultSettingsForm({
   const change = (value: ProjectTaskDefaults) => {
     setDraft(value)
     setSaved(false)
+    if (value.setupCommand === undefined) setShowSetupCommand(false)
   }
   const harness = draft.harness
   const disabled =
     !connected || busy || !setup || loadedScope !== `${scope}:${repository?.id ?? ''}`
+  const origins = taskDefaultOrigins(snapshot?.defaults, repository, scope, draft)
+  const source = (key: keyof ProjectTaskDefaults) => {
+    const origin = origins.find((entry) => entry.key === key)
+    return (
+      origin && (
+        <SettingSource
+          {...origin}
+          label={origin.label}
+          disabled={disabled}
+          onReset={() => change({ ...draft, [key]: undefined })}
+        />
+      )
+    )
+  }
+  const configurations = scopedAgentEntries(
+    snapshot?.defaults,
+    repository,
+    snapshot?.workspace.agents ?? [],
+    settingsScopes[settingsScopes.indexOf(scope) + 1],
+  )
+  const dirty =
+    !!setup &&
+    JSON.stringify({ draft, prompts, behavior }) !==
+      JSON.stringify({
+        draft: scopeValue.taskDefaults ?? {},
+        prompts: scopeValue.prompts ?? [],
+        behavior: scopeValue.taskBehavior ?? {},
+      })
+  useSettingsDraft(dirty, busy)
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange])
+  useEffect(() => onSavingChange?.(busy), [busy, onSavingChange])
   return (
     <View style={[styles.card, { gap: 12 }]}>
-      <Text style={styles.text}>Task defaults</Text>
+      <Text style={[styles.text, { fontWeight: '600' }]}>New tasks</Text>
       <Text style={styles.muted}>
-        Global → Environment → Project → Environment + project. Unset values inherit the earlier
-        levels. Existing tasks keep their settings.
+        Choose the agent and access for new tasks. Source labels show where each value comes from.
+        Existing conversations keep their launch settings.
       </Text>
       {!selectedScope && (
         <>
@@ -155,43 +209,20 @@ function TaskDefaultSettingsForm({
               .filter((value) => value !== 'project' || !!repository?.gitIdentity)
               .map((id) => ({ id, name: settingsScopeLabels[id] }))}
             onChange={(value) => {
-              setSaved(false)
-              setLoadError('')
-              setScope(settingsScopes.find((scope) => scope === value) ?? 'environment')
+              const select = () => {
+                setSaved(false)
+                setLoadError('')
+                setScope(settingsScopes.find((scope) => scope === value) ?? 'environment')
+              }
+              if (!dirty) select()
+              else
+                Alert.alert('Unsaved settings', 'Discard unsaved settings changes?', [
+                  { text: 'Keep editing', style: 'cancel' },
+                  { text: 'Discard', style: 'destructive', onPress: select },
+                ])
             }}
           />
         </>
-      )}
-      <Action
-        secondary
-        label="Inheritance & overrides"
-        onPress={() => setShowInheritance(!showInheritance)}
-      />
-      {showInheritance && (
-        <View style={{ gap: 10 }}>
-          <Text style={styles.muted}>
-            Reset an override to use the preceding level; save to apply.
-          </Text>
-          {taskDefaultOrigins(snapshot?.defaults, repository, scope, draft).map((field) => (
-            <View key={field.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.text}>{field.label}</Text>
-                <Text style={styles.muted}>
-                  {field.source === 'built-in'
-                    ? 'Built-in default'
-                    : settingsScopeLabels[field.source]}
-                </Text>
-              </View>
-              <Action
-                secondary
-                icon="refresh"
-                label={`Use inherited ${field.label.toLowerCase()}`}
-                disabled={disabled || !field.overridden}
-                onPress={() => change({ ...draft, [field.key]: undefined })}
-              />
-            </View>
-          ))}
-        </View>
       )}
       <Choice
         row
@@ -201,20 +232,29 @@ function TaskDefaultSettingsForm({
         items={[
           {
             id: 'inherit',
-            name: `Inherit (${setup?.defaults.harness.provider ?? ''})`,
+            name: `Inherit (${providerDisplayName(setup?.defaults.harness.provider ?? 'codex')})`,
           },
           { id: 'custom', name: 'Override at this scope' },
+          ...configurations.map(({ agent }) => ({
+            id: `agent:${agent.id}`,
+            name: `Use ${agent.name}`,
+          })),
         ]}
-        onChange={(value) =>
+        onChange={(value) => {
+          const agent = configurations.find((entry) => `agent:${entry.agent.id}` === value)?.agent
           change({
             ...draft,
             harness:
               value === 'inherit'
                 ? undefined
-                : (setup?.defaults.harness ?? defaultTaskHarness('codex')),
+                : agent
+                  ? decode(taskHarnessSchema.omit('resources'), agent)
+                  : (setup?.defaults.harness ?? defaultTaskHarness('codex')),
+            ...(agent ? { permission: agent.permission } : {}),
           })
-        }
+        }}
       />
+      {source('harness')}
       <Choice
         row
         label="Default permissions"
@@ -238,6 +278,7 @@ function TaskDefaultSettingsForm({
           })
         }
       />
+      {source('permission')}
       <Text style={styles.muted}>
         Applies to new tasks across all harnesses. Existing tasks keep their access setting.
       </Text>
@@ -248,7 +289,7 @@ function TaskDefaultSettingsForm({
             label="Harness"
             disabled={disabled}
             value={harness.provider}
-            items={providerSchema.literals.map((id) => ({ id, name: id }))}
+            items={providerSchema.literals.map((id) => ({ id, name: providerDisplayName(id) }))}
             onChange={(value) =>
               change({ ...draft, harness: defaultTaskHarness(decode(providerSchema, value)) })
             }
@@ -287,6 +328,7 @@ function TaskDefaultSettingsForm({
       )}
       {!repository?.kind && (
         <>
+          <Text style={[styles.text, { marginTop: 8, fontWeight: '600' }]}>Workspace & setup</Text>
           <Choice
             row
             label="Working directory"
@@ -307,6 +349,7 @@ function TaskDefaultSettingsForm({
               })
             }
           />
+          {source('execution')}
           <View style={{ gap: 4 }}>
             <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
               <Text style={[styles.text, { flex: 1 }]}>Start from origin</Text>
@@ -321,14 +364,7 @@ function TaskDefaultSettingsForm({
               Creates the worktree from the latest matching branch on origin instead of your local
               branch. Without a matching branch, origin’s default branch is used.
             </Text>
-            {draft.worktreeFromOrigin !== undefined && (
-              <Action
-                secondary
-                label={`Use inherited setting (${setup?.defaults.worktreeFromOrigin ? 'on' : 'off'})`}
-                disabled={disabled}
-                onPress={() => change({ ...draft, worktreeFromOrigin: undefined })}
-              />
-            )}
+            {source('worktreeFromOrigin')}
           </View>
           <Choice
             row
@@ -351,20 +387,38 @@ function TaskDefaultSettingsForm({
               })
             }
           />
+          {source('submodules')}
           <Choice
             row
             label="Worktree setup"
             disabled={disabled}
-            value={draft.setupCommand === undefined ? 'inherit' : 'custom'}
+            value={
+              draft.setupCommand === undefined
+                ? 'inherit'
+                : showSetupCommand
+                  ? 'custom'
+                  : 'disabled'
+            }
             items={[
               { id: 'inherit', name: 'Inherit' },
-              { id: 'custom', name: 'Override at this scope (empty disables setup)' },
+              { id: 'custom', name: 'Custom command' },
+              { id: 'disabled', name: 'Disable setup' },
             ]}
-            onChange={(value) =>
-              change({ ...draft, setupCommand: value === 'inherit' ? undefined : '' })
-            }
+            onChange={(value) => {
+              setShowSetupCommand(value === 'custom')
+              change({
+                ...draft,
+                setupCommand:
+                  value === 'inherit'
+                    ? undefined
+                    : value === 'disabled'
+                      ? ''
+                      : (setup?.defaults.setupCommand ?? ''),
+              })
+            }}
           />
-          {draft.setupCommand !== undefined && (
+          {source('setupCommand')}
+          {draft.setupCommand !== undefined && showSetupCommand && (
             <Field
               label="Setup command"
               multiline
@@ -448,7 +502,10 @@ function TaskDefaultSettingsForm({
       />
       {snapshot?.taskBehaviorSupported && (
         <View style={{ gap: 12 }}>
-          <Text style={styles.text}>Task lifecycle · scoped</Text>
+          <Text style={[styles.text, { fontWeight: '600' }]}>Task lifecycle</Text>
+          <Text style={styles.muted}>
+            Applies to existing tasks too. Off overrides an inherited On.
+          </Text>
           {(
             [
               ['quotaResume', 'Auto-resume limited tasks'],
@@ -459,27 +516,44 @@ function TaskDefaultSettingsForm({
               ['continueAfterRestart', 'Continue after restarts'],
             ] as const
           ).map(([key, label]) => (
-            <Choice
-              key={key}
-              label={label}
-              value={behavior[key] === undefined ? 'inherit' : behavior[key] ? 'on' : 'off'}
-              disabled={disabled}
-              items={[
-                {
-                  id: 'inherit',
-                  name: `Inherit (${(inheritedBehavior[key] ?? legacyBehavior[key]) ? 'On' : 'Off'})`,
-                },
-                { id: 'on', name: 'On' },
-                { id: 'off', name: 'Off' },
-              ]}
-              onChange={(value) => {
-                setSaved(false)
-                setBehavior({
-                  ...behavior,
-                  [key]: value === 'inherit' ? undefined : value === 'on',
-                })
-              }}
-            />
+            <View key={key} style={{ gap: 4 }}>
+              <Choice
+                label={label}
+                value={behavior[key] === undefined ? 'inherit' : behavior[key] ? 'on' : 'off'}
+                disabled={disabled}
+                items={[
+                  {
+                    id: 'inherit',
+                    name: `Inherit (${(inheritedBehavior[key] ?? legacyBehavior[key]) ? 'On' : 'Off'})`,
+                  },
+                  { id: 'on', name: 'On' },
+                  { id: 'off', name: 'Off' },
+                ]}
+                onChange={(value) => {
+                  setSaved(false)
+                  setBehavior({
+                    ...behavior,
+                    [key]: value === 'inherit' ? undefined : value === 'on',
+                  })
+                }}
+              />
+              <SettingSource
+                {...taskBehaviorOrigin(
+                  snapshot?.defaults,
+                  repository,
+                  scope,
+                  behavior,
+                  key,
+                  legacyBehavior[key] !== undefined,
+                )}
+                label={label}
+                disabled={disabled}
+                onReset={() => {
+                  setBehavior({ ...behavior, [key]: undefined })
+                  setSaved(false)
+                }}
+              />
+            </View>
           ))}
           <Field
             label="Days of inactivity before settling"
@@ -499,6 +573,15 @@ function TaskDefaultSettingsForm({
                 setBehavior({ ...behavior, inactiveDays: Number(value) })
                 setSaved(false)
               }
+            }}
+          />
+          <SettingSource
+            {...taskBehaviorOrigin(snapshot?.defaults, repository, scope, behavior, 'inactiveDays')}
+            label="Days of inactivity before settling"
+            disabled={disabled}
+            onReset={() => {
+              setBehavior({ ...behavior, inactiveDays: undefined })
+              setSaved(false)
             }}
           />
         </View>
@@ -531,6 +614,8 @@ function TaskDefaultSettingsForm({
               scopedSettingsResultSchema,
             )
             setScopeValue(result.value)
+            setDraft(result.value.taskDefaults ?? {})
+            setBehavior(result.value.taskBehavior ?? {})
             setPrompts(result.value.prompts ?? [])
             setSaved(true)
           })

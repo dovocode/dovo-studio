@@ -1,32 +1,22 @@
-import { LicenseSettingsRow } from './licenses'
-import { DiffSettingsRows } from './diffs'
-import { NotificationSettingsRows } from './notifications'
-import { Input } from '@dovo/studio-ui'
-import { useStudioHost } from '@dovo/studio-core'
 import { useEffect, useState } from 'react'
+import { Bot, ChevronRight, ListTodo } from 'lucide-react'
 import { taskLauncherShortcuts } from '@dovo/protocol'
 import {
   formatDateTime,
   taskSortOptions,
   updateAppPreferences,
   useAppPreferences,
+  useStudioHost,
 } from '@dovo/studio-core'
-import { UpdateSettings } from './updates'
-import {
-  HarnessUpdates,
-  Button,
-  SettingsScopePage,
-  TaskDefaultSettings,
-  TaskBehaviorSettings,
-  ChoicePicker,
-} from '@dovo/studio-ui'
-import { SettingRow, SettingsGroup, Segmented, Toggle } from './layout'
+import { Button, ChoicePicker, Input } from '@dovo/studio-ui'
+import { SettingRow, SettingsGroup, SettingsPage, Segmented, Toggle } from './layout'
 
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const mod = mac ? '⌘' : 'Ctrl'
 
 export default function GeneralSettings() {
-  const { appInfo, taskLauncher } = useStudioHost()
+  const host = useStudioHost()
+  const { taskLauncher } = host
   const preferences = useAppPreferences()
   const [shortcutError, setShortcutError] = useState('')
   useEffect(() => {
@@ -45,300 +35,59 @@ export default function GeneralSettings() {
     }
   }, [taskLauncher, preferences.taskLauncherShortcut])
   return (
-    <SettingsScopePage
+    <SettingsPage
+      local
       title="General"
-      description="Task defaults, organization and app behavior."
-      localChildren={
-        <div className="space-y-6">
-          <GeneralBehaviorRows />
-          <NotificationSettingsRows />
-          <DiffSettingsRows />
-          {appInfo && (
-            <SettingsGroup title="About">
-              <SettingRow label="Dovo Studio" description="Installed app version">
-                <span className="text-xs text-muted-foreground">
-                  {appInfo.version}
-                  {appInfo.channel !== 'stable'
-                    ? ` · ${appInfo.channel === 'nightly' ? 'Nightly' : 'Dev'}`
-                    : ''}
-                </span>
-              </SettingRow>
-            </SettingsGroup>
-          )}
-          <UpdateSettings />
-          <SettingsGroup title="Navigation">
-            {taskLauncher && (
-              <SettingRow
-                label="Global new task shortcut"
-                description={
-                  shortcutError ||
-                  'Open the task launcher from any app. Select a server, project and favorite agent.'
-                }
-              >
-                <ChoicePicker
-                  aria-label="Global new task shortcut"
-                  value={preferences.taskLauncherShortcut}
-                  onValueChange={(value) => {
-                    const shortcut = taskLauncherShortcuts.find((shortcut) => shortcut === value)
-                    if (shortcut !== undefined)
-                      updateAppPreferences({ taskLauncherShortcut: shortcut })
-                  }}
-                >
-                  <option value="CommandOrControl+Shift+Space">{mod} + Shift + Space</option>
-                  <option value="CommandOrControl+Alt+N">{mod} + Alt + N</option>
-                  <option value="">Disabled</option>
-                </ChoicePicker>
-              </SettingRow>
-            )}
-            <SettingRow label="Issues" description="Show code-host issues in the sidebar.">
-              <Toggle
-                label="Show Issues"
-                checked={preferences.showIssues}
-                onChange={(showIssues) => updateAppPreferences({ showIssues })}
-              />
-            </SettingRow>
-            <SettingRow label="Jira" description="Show Jira issues in a separate sidebar view.">
-              <Toggle
-                label="Show Jira"
-                checked={preferences.showJira}
-                onChange={(showJira) => updateAppPreferences({ showJira })}
-              />
-            </SettingRow>
-          </SettingsGroup>
-          <SettingsGroup title="Task list">
-            <SettingRow
-              label="Default sort"
-              description="How the task sidebar is ordered when Dovo opens."
-            >
-              <ChoicePicker
-                aria-label="Default task sort"
-                className="h-8 min-w-40 rounded-md px-2 text-xs"
-                value={preferences.taskSort}
-                onValueChange={(taskSort) =>
-                  updateAppPreferences({
-                    taskSort:
-                      taskSort === 'activity' ||
-                      taskSort === 'newest' ||
-                      taskSort === 'oldest' ||
-                      taskSort === 'priority' ||
-                      taskSort === 'project' ||
-                      taskSort === 'title'
-                        ? taskSort
-                        : preferences.taskSort,
-                  })
-                }
-              >
-                {taskSortOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </ChoicePicker>
-            </SettingRow>
-          </SettingsGroup>
-          <SettingsGroup title="Date & time">
-            <SettingRow
-              label="Time format"
-              description={`Example: ${formatDateTime(new Date(2026, 8, 25, 21, 30))}`}
-            >
-              <Segmented
-                label="Time format"
-                value={preferences.timeFormat}
-                options={[
-                  ['auto', 'Automatic'],
-                  ['12h', '12-hour'],
-                  ['24h', '24-hour'],
-                ]}
-                onChange={(timeFormat) => updateAppPreferences({ timeFormat })}
-              />
-            </SettingRow>
-          </SettingsGroup>
-          <SettingsGroup title="Conversation">
-            <SettingRow
-              label="Send messages with"
-              description={
-                preferences.sendWith === 'enter'
-                  ? 'Enter sends. Shift+Enter adds a new line.'
-                  : `${mod}+Enter sends. Enter adds a new line.`
-              }
-            >
-              <Segmented
-                label="Send messages with"
-                value={preferences.sendWith}
-                options={[
-                  ['enter', 'Enter'],
-                  ['mod-enter', `${mod}+Enter`],
-                ]}
-                onChange={(sendWith) => updateAppPreferences({ sendWith })}
-              />
-            </SettingRow>
-            <SettingRow
-              label="Follow-ups while a task runs"
-              description={
-                preferences.followUp === 'queue'
-                  ? 'Queued messages are sent when the current turn finishes. Steer stays one click away.'
-                  : 'Messages guide the current turn right away. Queue stays one click away.'
-              }
-            >
-              <Segmented
-                label="Follow-ups while a task runs"
-                value={preferences.followUp}
-                options={[
-                  ['queue', 'Queue'],
-                  ['steer', 'Steer'],
-                ]}
-                onChange={(followUp) => updateAppPreferences({ followUp })}
-              />
-            </SettingRow>
-            <SettingRow
-              label="Tool activity"
-              description="Whether commands, edits and searches in each turn start open, folded, or stay hidden so only replies show. Ctrl+O switches between them."
-            >
-              <Segmented
-                label="Tool activity"
-                value={preferences.toolActivity}
-                options={[
-                  ['collapsed', 'Collapsed'],
-                  ['expanded', 'Expanded'],
-                  ['hidden', 'Replies only'],
-                ]}
-                onChange={(toolActivity) => updateAppPreferences({ toolActivity })}
-              />
-            </SettingRow>
-            <SettingRow
-              label="Show tool call details"
-              description="Show tool output, full inputs and raw events in threads. Commands stay visible when this is off."
-            >
-              <Toggle
-                label="Show tool call details"
-                checked={preferences.showToolDetails}
-                onChange={(showToolDetails) => updateAppPreferences({ showToolDetails })}
-              />
-            </SettingRow>
-          </SettingsGroup>
-          <SettingsGroup title="Confirmations">
-            <SettingRow
-              label="Confirm before archiving a task"
-              description="Archived tasks can always be restored from Archived tasks."
-            >
-              <Toggle
-                label="Confirm before archiving a task"
-                checked={preferences.confirmArchive}
-                onChange={(confirmArchive) => updateAppPreferences({ confirmArchive })}
-              />
-            </SettingRow>
-            <SettingRow
-              label="Confirm before stopping a running task"
-              description="Stopping ends the agent's current turn and pauses queued messages."
-            >
-              <Toggle
-                label="Confirm before stopping a running task"
-                checked={preferences.confirmStop}
-                onChange={(confirmStop) => updateAppPreferences({ confirmStop })}
-              />
-            </SettingRow>
-          </SettingsGroup>
-        </div>
-      }
+      description="Organization, navigation and everyday app behavior."
     >
-      {({ scope, repository }) => (
-        <>
-          <TaskDefaultSettings inline scope={scope} repository={repository} />
-          <TaskBehaviorSettings scope={scope} repository={repository} />
-          <HarnessUpdates />
-        </>
-      )}
-    </SettingsScopePage>
-  )
-}
-
-function GeneralBehaviorRows() {
-  const preferences = useAppPreferences()
-  const host = useStudioHost()
-  const switches = [
-    [
-      'providerUpdateChecks',
-      'Provider update checks',
-      'Check installed provider versions for available updates when opening diagnostics. Updates use each provider’s installer.',
-    ],
-    ['projectGrouping', 'Project grouping', 'Combine matching repositories across environments.'],
-    [
-      'workingSection',
-      'Working section',
-      'Fold running tasks into Working. Tasks return to Active when they need your input.',
-    ],
-    [
-      'inAppNotifications',
-      'In-app notifications',
-      'Show an alert when another task finishes, fails or needs input while Dovo has focus.',
-    ],
-    [
-      'showSkillsInSlashMenu',
-      'Show skills in slash menu',
-      'Include skills in the / menu. Skills always appear when you type $.',
-    ],
-    [
-      'markdownComposerPreview',
-      'Formatted composer preview',
-      'Show rendered Markdown above the message as you type.',
-    ],
-    [
-      'collapseComposerOnScroll',
-      'Collapse composer on scroll',
-      'Collapse when reading older messages. Focus the composer to expand it.',
-    ],
-    [
-      'hideWhitespaceChanges',
-      'Hide whitespace changes',
-      'Hide files whose only changes are whitespace.',
-    ],
-    [
-      'proactivePanels',
-      'Proactive panels',
-      'Open linked pull requests first, otherwise open Changes for edits to at least 3 files or 50 lines.',
-    ],
-    ['confirmUnpin', 'Unpin confirmation', 'Ask before removing a task from Pinned.'],
-    [
-      'confirmDelete',
-      'Delete confirmation',
-      'Ask before permanently deleting a task and its conversation.',
-    ],
-  ] as const
-  return (
-    <>
-      {(
-        [
-          ['Organization', ['projectGrouping', 'workingSection']],
+      <div className="grid gap-3 sm:grid-cols-2">
+        {(
           [
-            'Behavior',
-            [
-              'inAppNotifications',
-              'showSkillsInSlashMenu',
-              'markdownComposerPreview',
-              'collapseComposerOnScroll',
-              'hideWhitespaceChanges',
-              'proactivePanels',
-            ],
-          ],
-          ['Confirmations', ['confirmUnpin', 'confirmDelete']],
-          ['Providers', ['providerUpdateChecks']],
-        ] as const
-      ).map(([title, keys]) => (
-        <SettingsGroup key={title} title={`${title} · this device`}>
-          {switches
-            .filter(([key]) => keys.some((value) => value === key))
-            .map(([key, label, description]) => (
-              <SettingRow key={key} label={label} description={description}>
-                <Toggle
-                  label={label}
-                  checked={preferences[key]}
-                  onChange={(value) => updateAppPreferences({ [key]: value })}
-                />
-              </SettingRow>
-            ))}
-        </SettingsGroup>
-      ))}
-      <SettingsGroup title="Ordering & streaming · this device">
+            {
+              id: 'agents',
+              title: 'Set up your agents',
+              description: 'Providers, models and reusable profiles',
+              icon: Bot,
+            },
+            {
+              id: 'task-defaults',
+              title: 'Choose task defaults',
+              description: 'Global, computer and project settings',
+              icon: ListTodo,
+            },
+          ] as const
+        ).map(({ id, title, description, icon: Icon }) => (
+          <button
+            type="button"
+            key={id}
+            onClick={() => host.navigate({ viewId: id })}
+            className="flex items-center gap-3 rounded-xl border bg-card/30 p-4 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Icon className="size-5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-medium">{title}</span>
+              <span className="mt-1 block text-[11px] leading-relaxed text-muted-foreground">
+                {description}
+              </span>
+            </span>
+            <ChevronRight className="size-3.5 text-muted-foreground" />
+          </button>
+        ))}
+      </div>
+      <SettingsGroup
+        title="Organization"
+        description="Arrange projects and tasks in your workspace."
+      >
+        <SettingRow
+          label="Project grouping"
+          description="Combine matching repositories across computers."
+        >
+          <Toggle
+            label="Project grouping"
+            checked={preferences.projectGrouping}
+            onChange={(projectGrouping) => updateAppPreferences({ projectGrouping })}
+          />
+        </SettingRow>
         <SettingRow label="Project order" description="Order of projects in the project picker.">
           <ChoicePicker
             aria-label="Project order"
@@ -354,33 +103,137 @@ function GeneralBehaviorRows() {
           </ChoicePicker>
         </SettingRow>
         <SettingRow
-          label="Response streaming"
-          description="Choose when the latest assistant paragraph becomes visible."
+          label="Working section"
+          description="Group running tasks together. They return to Active when they need your input."
         >
-          <Segmented
-            label="Response streaming"
-            value={preferences.responseStreaming}
-            options={[
-              ['live', 'Live text'],
-              ['paragraphs', 'Finished paragraphs'],
-            ]}
-            onChange={(responseStreaming) => updateAppPreferences({ responseStreaming })}
+          <Toggle
+            label="Working section"
+            checked={preferences.workingSection}
+            onChange={(workingSection) => updateAppPreferences({ workingSection })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Default sort"
+          description="How the task sidebar is ordered when Dovo opens."
+        >
+          <ChoicePicker
+            aria-label="Default task sort"
+            value={preferences.taskSort}
+            onValueChange={(value) => {
+              const sort = taskSortOptions.find((entry) => entry.id === value)
+              if (sort && sort.id !== 'status') updateAppPreferences({ taskSort: sort.id })
+            }}
+          >
+            {taskSortOptions
+              .filter((option) => option.id !== 'status')
+              .map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name}
+                </option>
+              ))}
+          </ChoicePicker>
+        </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup title="Navigation">
+        {taskLauncher && (
+          <SettingRow
+            label="Global new task shortcut"
+            description={shortcutError || 'Open the task launcher from any app.'}
+          >
+            <ChoicePicker
+              aria-label="Global new task shortcut"
+              value={preferences.taskLauncherShortcut}
+              onValueChange={(value) => {
+                const shortcut = taskLauncherShortcuts.find((entry) => entry === value)
+                if (shortcut !== undefined) updateAppPreferences({ taskLauncherShortcut: shortcut })
+              }}
+            >
+              <option value="CommandOrControl+Shift+Space">{mod} + Shift + Space</option>
+              <option value="CommandOrControl+Alt+N">{mod} + Alt + N</option>
+              <option value="">Disabled</option>
+            </ChoicePicker>
+          </SettingRow>
+        )}
+        <SettingRow label="Issues" description="Show code-host issues in the sidebar.">
+          <Toggle
+            label="Show Issues"
+            checked={preferences.showIssues}
+            onChange={(showIssues) => updateAppPreferences({ showIssues })}
+          />
+        </SettingRow>
+        <SettingRow label="Jira" description="Show Jira issues in a separate sidebar view.">
+          <Toggle
+            label="Show Jira"
+            checked={preferences.showJira}
+            onChange={(showJira) => updateAppPreferences({ showJira })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Add project starts in"
+          description="Starting folder for the project picker. Leave empty to use the computer’s default."
+        >
+          <Input
+            aria-label="Add project starts in"
+            value={preferences.addProjectStartsIn}
+            onChange={(event) => updateAppPreferences({ addProjectStartsIn: event.target.value })}
+            placeholder="~/Code"
           />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup title="Application · this device">
+      <SettingsGroup title="Date & time">
         <SettingRow
-          label="Mobile devices"
-          description="Pair Dovo on iPhone or Android with your computers using a pairing code."
+          label="Time format"
+          description={`Example: ${formatDateTime(new Date(2026, 8, 25, 21, 30))}`}
         >
-          <Button variant="outline" onClick={() => host.navigate({ viewId: 'runtime' })}>
-            Pair a device
-          </Button>
+          <Segmented
+            label="Time format"
+            value={preferences.timeFormat}
+            options={[
+              ['auto', 'Automatic'],
+              ['12h', '12-hour'],
+              ['24h', '24-hour'],
+            ]}
+            onChange={(timeFormat) => updateAppPreferences({ timeFormat })}
+          />
         </SettingRow>
-        <LicenseSettingsRow />
+      </SettingsGroup>
+      <SettingsGroup
+        title="Confirmations"
+        description="Choose when Dovo asks before changing a task."
+      >
+        {(
+          [
+            [
+              'confirmArchive',
+              'Confirm before archiving a task',
+              'Archived tasks can be restored from Archived tasks.',
+            ],
+            [
+              'confirmStop',
+              'Confirm before stopping a running task',
+              'Ends the current turn and pauses queued messages.',
+            ],
+            ['confirmUnpin', 'Unpin confirmation', 'Ask before removing a task from Pinned.'],
+            [
+              'confirmDelete',
+              'Delete confirmation',
+              'Ask before permanently deleting a task and its conversation.',
+            ],
+          ] as const
+        ).map(([key, label, description]) => (
+          <SettingRow key={key} label={label} description={description}>
+            <Toggle
+              label={label}
+              checked={preferences[key]}
+              onChange={(value) => updateAppPreferences({ [key]: value })}
+            />
+          </SettingRow>
+        ))}
+      </SettingsGroup>
+      <SettingsGroup title="Application">
         <SettingRow
           label="Background activity"
-          description="Balanced pauses refreshes in hidden windows. Reduced also slows overview refreshes while visible."
+          description="Balanced pauses refreshes in hidden windows. Reduced also slows refreshes while visible."
         >
           <Segmented
             label="Background activity"
@@ -395,7 +248,7 @@ function GeneralBehaviorRows() {
         {host.appInfo && (
           <SettingRow
             label="Quit shortcut"
-            description="Hold requires holding the shortcut for 600 ms. Two quick presses also quit."
+            description="Hold for 600 ms or press twice quickly to quit in Hold mode."
           >
             <Segmented
               label="Quit shortcut"
@@ -410,10 +263,18 @@ function GeneralBehaviorRows() {
           </SettingRow>
         )}
         <SettingRow
-          label="Text generation model"
-          description="Choose the harness, model and reasoning for task titles and dictation on each computer."
+          label="Mobile devices"
+          description="Pair Dovo on your phone with a computer using a pairing code."
         >
-          <Button variant="outline" onClick={() => host.navigate({ viewId: 'agents' })}>
+          <Button variant="outline" onClick={() => host.navigate({ viewId: 'runtime' })}>
+            Pair a device
+          </Button>
+        </SettingRow>
+        <SettingRow
+          label="Text generation model"
+          description="Choose the model for task titles and dictation on each computer."
+        >
+          <Button variant="outline" onClick={() => host.navigate({ viewId: 'text-generation' })}>
             Configure text generation
           </Button>
         </SettingRow>
@@ -426,20 +287,6 @@ function GeneralBehaviorRows() {
           </Button>
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup title="Projects · this device">
-        <SettingRow
-          label="Add project starts in"
-          description="Starting folder on the selected computer. Leave empty to use its default."
-        >
-          <Input
-            aria-label="Add project starts in"
-            className="max-w-64"
-            value={preferences.addProjectStartsIn}
-            onChange={(event) => updateAppPreferences({ addProjectStartsIn: event.target.value })}
-            placeholder="~/Code"
-          />
-        </SettingRow>
-      </SettingsGroup>
-    </>
+    </SettingsPage>
   )
 }

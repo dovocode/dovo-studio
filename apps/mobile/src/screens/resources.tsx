@@ -6,6 +6,7 @@ import {
   scopeEditorValue,
   scopeEditorDefaults,
   scopedSettingsResultSchema,
+  resourceOrigin,
   type SettingsScope,
 } from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
@@ -32,6 +33,7 @@ import { styles } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { ResourceEditor } from '../resources/editor'
 import { CatalogPicker } from '../resources/catalog-picker'
+import { SettingSource } from '../runtime/preferences/setting-source'
 export default function ResourcesScreen() {
   return (
     <View style={styles.screen}>
@@ -184,9 +186,9 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
     >
       <ScreenHeader title="MCP servers & skills" />
       <Text style={styles.muted}>
-        Global → Environment → Project → Environment + project. Matching names override earlier
-        scopes; agent entries apply last. Shared credentials must reference host environment
-        variables. Changes apply on the next turn.
+        Global → Computer → Project → Project on computer. Matching names override earlier scopes;
+        agent entries apply last. Shared credentials must reference host environment variables.
+        Changes apply on the next turn.
       </Text>
       {!scope ? (
         <Text style={styles.muted}>Add a project or custom agent first.</Text>
@@ -198,28 +200,52 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
               {inherited.mcpServers
                 .filter((server) => !resources.mcpServers.some((item) => item.name === server.name))
                 .map((server) => (
-                  <Action
-                    key={`mcp:${server.name}`}
-                    secondary
-                    label={`Override MCP · ${server.name}${server.enabled ? '' : ' · Disabled'}`}
-                    disabled={!connected || busy}
-                    onPress={() =>
-                      setEditing({ kind: 'mcp', value: server, replaceName: server.name })
-                    }
-                  />
+                  <View key={`mcp:${server.name}`} style={{ gap: 4 }}>
+                    <SettingSource
+                      label={server.name}
+                      source={resourceOrigin(
+                        snapshot?.defaults,
+                        scope.repository,
+                        scope.scope ?? 'environment',
+                        'mcpServers',
+                        server.name,
+                      )}
+                      overridden={false}
+                    />
+                    <Action
+                      secondary
+                      label={`Override MCP · ${server.name}${server.enabled ? '' : ' · Disabled'}`}
+                      disabled={!connected || busy}
+                      onPress={() =>
+                        setEditing({ kind: 'mcp', value: server, replaceName: server.name })
+                      }
+                    />
+                  </View>
                 ))}
               {inherited.skills
                 .filter((skill) => !resources.skills.some((item) => item.name === skill.name))
                 .map((skill) => (
-                  <Action
-                    key={`skill:${skill.name}`}
-                    secondary
-                    label={`Override skill · ${skill.name}${skill.enabled ? '' : ' · Disabled'}`}
-                    disabled={!connected || busy}
-                    onPress={() =>
-                      act(() => save((value) => ({ ...value, skills: [...value.skills, skill] })))
-                    }
-                  />
+                  <View key={`skill:${skill.name}`} style={{ gap: 4 }}>
+                    <SettingSource
+                      label={skill.name}
+                      source={resourceOrigin(
+                        snapshot?.defaults,
+                        scope.repository,
+                        scope.scope ?? 'environment',
+                        'skills',
+                        skill.name,
+                      )}
+                      overridden={false}
+                    />
+                    <Action
+                      secondary
+                      label={`Override skill · ${skill.name}${skill.enabled ? '' : ' · Disabled'}`}
+                      disabled={!connected || busy}
+                      onPress={() =>
+                        act(() => save((value) => ({ ...value, skills: [...value.skills, skill] })))
+                      }
+                    />
+                  </View>
                 ))}
             </View>
           )}
@@ -284,6 +310,9 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                 <Text style={styles.muted}>
                   {server.transport === 'stdio' ? server.command : server.url}
                 </Text>
+                {scope.scope && (
+                  <SettingSource label={server.name} source={scope.scope} overridden />
+                )}
                 <View style={styles.row}>
                   <Action
                     label={`Edit MCP ${server.name}`}
@@ -298,7 +327,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                     }
                   />
                   <Action
-                    label={`Remove MCP ${server.name}`}
+                    label={`${inherited?.mcpServers.some((entry) => entry.name === server.name) ? 'Reset' : 'Remove'} MCP ${server.name}`}
                     secondary
                     disabled={!connected || busy}
                     onPress={() =>
@@ -373,6 +402,9 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                   />
                 </View>
                 <Text style={styles.muted}>{skill.description}</Text>
+                {scope.scope && (
+                  <SettingSource label={skill.name} source={scope.scope} overridden />
+                )}
                 <View style={styles.row}>
                   <Action
                     label={`Edit skill ${skill.name}`}
@@ -387,7 +419,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                     }
                   />
                   <Action
-                    label={`Remove skill ${skill.name}`}
+                    label={`${inherited?.skills.some((entry) => entry.name === skill.name) ? 'Reset' : 'Remove'} skill ${skill.name}`}
                     secondary
                     disabled={!connected || busy}
                     onPress={() =>

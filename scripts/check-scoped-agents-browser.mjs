@@ -3,12 +3,12 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
-const controls = `import {cloneElement,isValidElement,useState} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)?cloneElement(children,{'aria-label':label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children})=><span>{children}</span>;export const styles={row:{}};export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}};export const Dialog=({children})=><div role="dialog">{children}</div>;export const DialogContent=View;export const DialogDescription=Text;export const DialogHeader=View;export const DialogTitle=Text;export const Sheet=({children,title})=><div role="dialog">{title}{children}</div>;export const AgentAvatar=()=>null;export const agentIconChoices={};export const PageHeader=({title})=><h1>{title}</h1>;export const ScreenHeader=PageHeader;export const TaskDefaultSettings=()=> <p>Default agent settings</p>;export const HarnessLabel=({agent})=><span>{agent.provider}</span>;export const ModelLabel=({agent})=><span>{agent.model}</span>;`
+const controls = `import {cloneElement,isValidElement,useState} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)&&children.type!=='div'?cloneElement(children,{'aria-label':label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children})=><span>{children}</span>;export const styles={row:{}};export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}};export const Dialog=({children})=><div role="dialog">{children}</div>;export const DialogContent=View;export const DialogDescription=Text;export const DialogHeader=View;export const DialogTitle=Text;export const Sheet=({children,title})=><div role="dialog">{title}{children}</div>;export const AgentAvatar=()=>null;export const agentIconChoices={};export const PageHeader=({title})=><h1>{title}</h1>;export const ScreenHeader=PageHeader;export const TaskDefaultSettings=()=> <p>Default agent settings</p>;export const HarnessLabel=({agent})=><span>{agent.provider}</span>;export const ModelLabel=({agent})=><span>{agent.model}</span>;`
 const state = `export {useState as useApplicationState} from 'react';`
 const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
-    const core = `import {createContext,useContext} from 'react';export {selectableAccessModes,supportsAccess,agentSchema} from '@dovo/protocol';export {SettingsTargetProvider,useSettingsTarget} from '${root}/packages/studio-core/src/settings-target.tsx';export const providers={codex:{name:'Codex'},claude:{name:'Claude'},opencode:{name:'OpenCode'},acp:{name:'ACP'},cursor:{name:'Cursor SDK'}};const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,workspace:entry.snapshot.workspace,snapshot:entry.snapshot,connected:entry.connected,request:window.requests[profile.id]}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
+    const core = `import {createContext,useContext} from 'react';export {selectableAccessModes,supportsAccess,agentSchema} from '@dovo/protocol';export {SettingsTargetProvider,useSettingsTarget,useSettingsDraft} from '${root}/packages/studio-core/src/settings-target.tsx';export const useStudioHost=()=>({navigate:target=>window.navigation=target});export const providers={codex:{name:'Codex'},claude:{name:'Claude'},opencode:{name:'OpenCode'},acp:{name:'ACP'},cursor:{name:'Cursor SDK'}};const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,activeRuntimeId:profile.id,workspace:entry.snapshot.workspace,snapshot:entry.snapshot,connected:entry.connected,request:window.requests[profile.id]}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
     const native = `import {createContext,useContext} from 'react';import {Effect} from 'effect';const Scope=createContext(null);export const useRuntime=()=>useContext(Scope)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const entry=window.sources.find(entry=>entry.profile.id===runtimeId);return <Scope.Provider value={{...window.runtime,profile:entry.profile,snapshot:entry.snapshot,connected:entry.connected,callEffect:window.effects[runtimeId]}}><div data-owner={runtimeId}>{children}</div></Scope.Provider>};`
     const mocks = {
       '@dovo/studio-core': core,
@@ -24,10 +24,11 @@ try {
       'react-native':
         controls + `export const Alert={alert:(title,message,buttons)=>buttons.at(-1).onPress()};`,
       '@dovo/client-runtime': `import {Effect} from 'effect';export const runClientEffect=Effect.runPromise;`,
+      'expo-router': `export const router={push:()=>{}};`,
       'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
       '@dovo/studio-ui':
         controls +
-        `export {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`,
+        `export {SettingSource} from '${root}/packages/studio-ui/src/setting-source.tsx';export {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`,
     }
     const built = await build({
       stdin: {
@@ -82,8 +83,9 @@ try {
     page.on('dialog', (dialog) => dialog.accept())
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
+    if (mobile) await page.getByRole('button', { name: 'Change scope', exact: true }).click()
     const project = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
-    const environment = page.getByLabel(mobile ? 'Environment' : 'Settings environment', {
+    const environment = page.getByLabel(mobile ? 'Computer' : 'Settings computer', {
       exact: true,
     })
     await (
@@ -102,6 +104,10 @@ try {
     await page
       .getByRole('button', { name: mobile ? 'Save agent' : 'Save configuration', exact: true })
       .click()
+    if (mobile)
+      await page
+        .getByRole('button', { name: 'More actions for Project writer', exact: true })
+        .click()
     await page.getByRole('button', { name: 'Reset', exact: true }).waitFor()
     assert.deepEqual(
       await page.evaluate(() => ({
@@ -127,11 +133,11 @@ try {
     ).waitFor()
     assert.deepEqual(await page.evaluate(() => window.writes.at(-1).after.agents), [])
     await page
-      .getByRole('button', { name: mobile ? 'New configuration' : 'Add provider', exact: true })
+      .getByRole('button', { name: mobile ? 'New configuration' : 'Add profile', exact: true })
       .click()
     const editor = mobile ? page : page.getByRole('dialog')
     if (!mobile) {
-      await editor.getByRole('button', { name: 'Claude', exact: true }).click()
+      await editor.getByRole('button', { name: 'Claude Code', exact: true }).click()
       await editor.getByRole('button', { name: 'Next', exact: true }).click()
     }
     await editor.getByLabel('Name', { exact: true }).fill('Research')
@@ -154,10 +160,10 @@ try {
     ).waitFor()
     assert.equal(await page.evaluate(() => window.writes.at(-1).after.agents[0].provider), 'claude')
     await page
-      .getByRole('button', { name: mobile ? 'New configuration' : 'Add provider', exact: true })
+      .getByRole('button', { name: mobile ? 'New configuration' : 'Add profile', exact: true })
       .click()
     if (mobile) await editor.getByLabel('Provider', { exact: true }).selectOption('cursor')
-    else await editor.getByRole('button', { name: 'Cursor SDK', exact: true }).click()
+    else await editor.getByRole('button', { name: 'Cursor', exact: true }).click()
     if (!mobile) await editor.getByRole('button', { name: 'Next', exact: true }).click()
     await editor.getByLabel('Name', { exact: true }).fill('Cursor worker')
     if (!mobile) await editor.getByRole('button', { name: 'Next', exact: true }).click()
@@ -185,6 +191,7 @@ try {
         .count(),
       0,
     )
+    await editor.getByText('Connection & account', { exact: true }).click()
     await editor.getByText(/Cursor desktop login is separate/).waitFor()
     await editor
       .getByRole('button', { name: mobile ? 'Save agent' : 'Add configuration', exact: true })
@@ -211,6 +218,7 @@ try {
       assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Research')
       assert.equal(await page.getByRole('dialog').count(), 0)
       const writesBefore = await page.evaluate(() => window.writes.length)
+      await page.getByText('Connection & account', { exact: true }).click()
       const env = page.getByRole('textbox', { name: /^Environment variables/ })
       await env.fill('INVALID LINE')
       await page.getByRole('button', { name: 'Save configuration', exact: true }).click()
@@ -241,6 +249,15 @@ try {
       await navigation.getByRole('button', { name: /Cursor worker/ }).click()
       assert.equal((await confirmation).message(), 'Discard unsaved configuration changes?')
       assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Cursor worker')
+    }
+    if (!mobile) {
+      await project.selectOption('')
+      await page.getByText('Provider installations · this computer', { exact: true }).click()
+      await page.getByRole('button', { name: 'Configure titles & dictation', exact: true }).click()
+      assert.deepEqual(await page.evaluate(() => window.navigation), {
+        viewId: 'text-generation',
+        entityId: 'linux',
+      })
     }
     assert.deepEqual(errors, [])
     await page.close()

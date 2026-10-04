@@ -7,6 +7,7 @@ import { startRuntime } from '../../index'
 import {
   decode,
   defaultTaskHarness,
+  builtInAgentPresets,
   mcpServerSchema,
   scopedSettingsResultSchema,
   type SettingsScope,
@@ -61,6 +62,57 @@ async function fixture() {
     },
   }
 }
+
+it('exposes built-in profiles before setup, saves only overrides and keeps existing task launches intact', async () => {
+  const f = await fixture()
+  try {
+    const read = async (scope: SettingsScope) => {
+      const response = await f.call('settings/read', { scope, includeAgents: true })
+      expect(response.status).toBe(200)
+      return decode(scopedSettingsResultSchema, await response.json())
+    }
+    const baseline = builtInAgentPresets().find((agent) => agent.provider === 'claude')!
+    const initial = await read('global')
+    expect(initial.value.agents).toEqual([])
+    expect(initial.inherited.agents).toEqual(builtInAgentPresets())
+    expect(f.runtime.services.store.get().agents).toEqual([])
+    const save = async (scope: SettingsScope, agents: typeof initial.value.agents) => {
+      const previous = await read(scope)
+      const response = await f.call('settings/save', {
+        scope,
+        includeAgents: true,
+        before: previous.value,
+        after: { ...previous.value, agents },
+      })
+      expect(response.status).toBe(200)
+    }
+    await save('global', [{ ...baseline, model: 'shared-model' }])
+    const task = f.runtime.services.tasks.create({
+      title: 'Built-in launch',
+      repositoryId: 'project',
+      agentId: baseline.id,
+      objective: '',
+    })
+    expect(task.harness).toMatchObject({ provider: 'claude', model: 'shared-model' })
+    await save('environment', [{ ...baseline, model: 'computer-model' }])
+    expect(
+      f.runtime.services.store.agentsFor('project').find((agent) => agent.id === baseline.id)
+        ?.model,
+    ).toBe('computer-model')
+    await save('environment', [])
+    expect(
+      f.runtime.services.store.agentsFor('project').find((agent) => agent.id === baseline.id)
+        ?.model,
+    ).toBe('shared-model')
+    await save('global', [])
+    expect(
+      f.runtime.services.store.agentsFor('project').find((agent) => agent.id === baseline.id),
+    ).toEqual(baseline)
+    expect(f.runtime.services.store.task(task.id).harness?.model).toBe('shared-model')
+  } finally {
+    await f.close()
+  }
+})
 
 it('shares global and remote project settings across runtimes while preserving local overrides and reset revisions', async () => {
   const a = await fixture(),
@@ -317,12 +369,14 @@ it('inherits named configurations through four scopes, syncs by Git remote, and 
     await saveAgents('environment', 'environment')
     await saveAgents('project', 'project')
     await saveAgents('environment-project', 'local-project')
-    expect(a.runtime.services.store.agentsFor('project')).toMatchObject([
-      { id: 'writer', model: 'local-project' },
-    ])
-    expect((await readAgents('environment-project')).inherited.agents).toMatchObject([
-      { id: 'writer', model: 'project' },
-    ])
+    expect(
+      a.runtime.services.store.agentsFor('project').find((agent) => agent.id === 'writer'),
+    ).toMatchObject({ id: 'writer', model: 'local-project' })
+    expect(
+      (await readAgents('environment-project')).inherited.agents?.find(
+        (agent) => agent.id === 'writer',
+      ),
+    ).toMatchObject({ id: 'writer', model: 'project' })
     const previous = await readAgents('environment-project')
     expect(
       (
@@ -335,9 +389,9 @@ it('inherits named configurations through four scopes, syncs by Git remote, and 
         })
       ).status,
     ).toBe(200)
-    expect(a.runtime.services.store.agentsFor('project')).toMatchObject([
-      { id: 'writer', model: 'project' },
-    ])
+    expect(
+      a.runtime.services.store.agentsFor('project').find((agent) => agent.id === 'writer'),
+    ).toMatchObject({ id: 'writer', model: 'project' })
     const shared = a.runtime.services.defaults.get().scopedSettings?.shared
     expect((await b.call('settings/sync', { shared })).status).toBe(200)
     await b.read('project')

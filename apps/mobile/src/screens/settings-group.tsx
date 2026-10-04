@@ -15,11 +15,20 @@ export function SettingsGroup({
 }) {
   return (
     <View style={{ gap: 6 }}>
-      {title && <Text style={[styles.muted, { paddingHorizontal: 10 }]}>{title}</Text>}
+      {title && (
+        <Text
+          style={[
+            styles.muted,
+            { paddingHorizontal: 10, fontSize: 12, fontWeight: '600', letterSpacing: 0.4 },
+          ]}
+        >
+          {title}
+        </Text>
+      )}
       <View
         style={{
           backgroundColor: colors.surface,
-          borderRadius: 10,
+          borderRadius: 14,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: colors.border,
           overflow: 'hidden',

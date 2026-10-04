@@ -1,6 +1,7 @@
 import { ScrollView, View } from 'react-native'
 import { ScopedSettings } from '../runtime/preferences/settings-target'
-import { TaskDefaultSettings } from '../runtime/preferences/task-default-settings'
+import { router } from 'expo-router'
+import { Action } from '../ui/controls/action'
 import { useRuntime } from '../runtime/connection/provider'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
@@ -16,12 +17,20 @@ export default function AgentsScreen() {
       <ScopedSettings>
         {({ scope, repository }) => (
           <>
-            <TaskDefaultSettings scope={scope} repository={repository} inline />
             <ScopedAgents scope={scope} repository={repository} />
+            <View style={[styles.card, { gap: 8 }]}>
+              <Text style={styles.text}>Default agent for new tasks</Text>
+              <Text style={styles.muted}>Choose a profile and permissions in Task defaults.</Text>
+              <Action
+                secondary
+                label="Open task defaults"
+                onPress={() => router.push('/settings/task-defaults')}
+              />
+            </View>
             {scope === 'environment' && <EnvironmentTools />}
             {(scope === 'global' || scope === 'project') && (
               <Text style={styles.muted}>
-                Choose an environment to manage installations, accounts, titles and dictation.
+                Choose a computer to manage installations, accounts, titles and dictation.
               </Text>
             )}
           </>
@@ -36,7 +45,7 @@ function EnvironmentTools() {
     <View style={{ gap: 12 }}>
       {connected ? (
         <>
-          <Text style={styles.text}>Environment tools</Text>
+          <Text style={styles.text}>Installations & text generation · this computer</Text>
           <HarnessUpdates />
           <AcpRegistrySettings />
           <TitleSettings />

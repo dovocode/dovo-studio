@@ -9,6 +9,9 @@ import {
   resolveScopedSettings,
   settingsAtScope,
   sharedProjectKey,
+  settingsTargetAtScope,
+  taskBehaviorOrigin,
+  resourceOrigin,
 } from './scoped-settings'
 import { resourceSettingsSchema } from '../../shared/resources'
 
@@ -65,6 +68,85 @@ it('resolves all four scopes field by field, including explicit empty commands a
     resolveTaskDefaults(runtime, { ...project, gitIdentity: 'github.com/team/fork' }).setupCommand,
   ).toBe('environment')
   expect(settingsAtScope(runtime, project, 'global').taskDefaults?.setupCommand).toBe('global')
+})
+
+it('moves between explicit scope levels without choosing an unavailable shared or local project', () => {
+  const folder = { ...project, id: 'folder', gitIdentity: undefined, kind: 'folder' as const }
+  const sources = [
+    {
+      profile: { id: 'mac' },
+      connected: true,
+      snapshot: { workspace: { repositories: [folder] } },
+    },
+    {
+      profile: { id: 'linux' },
+      connected: true,
+      snapshot: { workspace: { repositories: [project] } },
+    },
+  ]
+  const empty = { environmentId: '', projectId: '' }
+  expect(settingsTargetAtScope(sources, empty, 'global')).toEqual(empty)
+  expect(settingsTargetAtScope(sources, empty, 'environment', 'mac')).toEqual({
+    environmentId: 'mac',
+    projectId: '',
+  })
+  const shared = settingsTargetAtScope(sources, empty, 'project', 'mac')!
+  expect(shared).toEqual({ environmentId: '', projectId: 'git:github.com/team/repo' })
+  expect(settingsTargetAtScope(sources, shared, 'environment-project', 'mac')).toEqual({
+    environmentId: 'linux',
+    projectId: shared.projectId,
+  })
+  expect(settingsTargetAtScope(sources.slice(0, 1), empty, 'project')).toBeUndefined()
+  expect(settingsTargetAtScope([], empty, 'environment')).toBeUndefined()
+})
+
+it('labels lifecycle and named resource sources using the same precedence as effective values', () => {
+  const runtime = decode(runtimeDefaultsSchema, {
+    scopedSettings: {
+      environment: {
+        taskBehavior: { quotaResume: false },
+        resources: {
+          mcpServers: [],
+          skills: [
+            {
+              name: 'review',
+              description: 'Review code',
+              content: 'Computer review',
+              enabled: false,
+            },
+          ],
+        },
+      },
+      shared: [
+        {
+          key: 'global',
+          updatedAt: 1,
+          changeId: 'one',
+          value: { taskBehavior: { quotaResume: true } },
+        },
+      ],
+    },
+  })
+  expect(taskBehaviorOrigin(runtime, project, 'environment-project', {}, 'quotaResume')).toEqual({
+    source: 'environment',
+    overridden: false,
+  })
+  expect(
+    taskBehaviorOrigin(
+      runtime,
+      project,
+      'environment-project',
+      { quotaResume: false },
+      'quotaResume',
+    ),
+  ).toEqual({ source: 'environment-project', overridden: true })
+  expect(taskBehaviorOrigin(runtime, project, 'global', {}, 'continueAfterRestart', true)).toEqual({
+    source: 'computer-default',
+    overridden: false,
+  })
+  expect(resourceOrigin(runtime, project, 'environment-project', 'skills', 'review')).toBe(
+    'environment',
+  )
 })
 
 it('keeps resets as newer entries so offline copies cannot resurrect removed settings', () => {

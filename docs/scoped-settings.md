@@ -1,30 +1,33 @@
-# Scoped project and environment settings
+# Scoped project and computer settings
 
 Task defaults, lifecycle policies and agent launch settings, MCP servers, managed skills, hooks and
 saved prompts inherit in this order:
 
 1. **Global** — shared with connected paired environments.
-2. **Environment** — overrides for one computer/runtime.
+2. **Computer** — overrides for one computer/runtime.
 3. **Project** — shared for checkouts with the same canonical Git remote identity.
-4. **Environment + project** — overrides for one checkout on one environment.
+4. **Project on computer** — overrides for one checkout on one environment.
 
-The **General** (desktop/web), **Task defaults**, **Agents** and **MCP & skills** settings pages
-share a project/environment target header on desktop and mobile. Choose **All projects** or a
-project, then **Shared across environments** or one computer. These two choices select one of the
-four levels above; shared settings are synced defaults, not a bulk edit of each computer’s
-overrides. The target stays selected when switching between these pages. A project missing from the
+The **Task defaults**, **Agents** and **MCP, skills & hooks** pages share a project/computer target
+selector on desktop and mobile. The four levels are visible in order and can be selected directly.
+Choose **All projects** or a project, then **All computers · shared** or one computer. These choices
+select one of the four levels above; shared settings synchronize defaults rather than bulk-editing
+each computer’s overrides. The target stays selected between these pages. A project missing from the
 selected computer cannot be edited until another target is chosen. Local folders are offered only
-with a specific environment.
+with a specific computer.
 
-Task defaults show **Inheritance & overrides**, with the effective source for each setting and an
-individual reset control. Resets are saved using **Save defaults**. Unset task fields inherit; an
-empty setup command disables inherited setup. The agent configuration is selected and reset as a
-complete group so models and account settings cannot accidentally cross providers. Saved prompts can
-be edited here on both platforms. Computer and project detail panels retain their local scope
-picker. App-only preferences and host installation settings remain outside the shared target.
+Each task setting shows its effective source beside the control. **Set here** identifies an override
+at the selected level; **Inherited** identifies the earlier level or Dovo default. Individual Reset
+controls use the earlier value, and changes are saved using **Save defaults**. Unset task fields
+inherit; an empty setup command disables inherited setup. Agent launch settings are selected and
+reset as a complete group so models and account settings cannot cross providers. Choosing an agent
+profile copies its launch settings and access into the defaults. Saved prompts can be edited here on
+both platforms. Computer and project detail panels retain their local scope picker. Device
+preferences save automatically outside the shared target; computer installations and text generation
+remain specific to their computer.
 
 Existing environment defaults stay environment-specific. Existing project defaults, tools and
-prompts stay at Environment + project. Existing conversations keep their copied launch defaults.
+prompts stay at Project on computer. Existing conversations keep their copied launch defaults.
 Resource changes take effect on the next turn; custom-agent resources apply after the four settings
 scopes.
 
@@ -63,23 +66,33 @@ used offline after installation. Arbitrary local skill folders remain environmen
 **Use instructions only** to explicitly share a copy without supporting files. Shared settings never
 copy another computer’s skill filesystem path.
 
-## Named agent configurations
+## Agent profiles
 
-The **Agents** screen uses the same target header as task defaults and project tools. Reusable
-configurations inherit by stable ID through Global → Environment → Project → Environment + project.
-Choose **Override** on an inherited row to customize it at the selected target, or **Reset** to
-remove the override. Duplicate creates a separate ID. Removing a configuration preserves copies
-already used by threads. Existing environment configurations and older global presets remain
-available until their corresponding scope is edited; an explicit empty configuration list prevents
-legacy entries from returning.
+The **Agents** screen includes built-in Codex, Claude Code, OpenCode, Cursor, GitHub Copilot,
+Hermes, Grok Build and Muse profiles before any configuration is saved. They use the provider’s
+normal model defaults and the installation and login on the selected computer. A profile does not
+install a CLI or log in automatically. ACP agents are added from the registry or configured
+manually.
+
+Profiles inherit by stable ID through Global → Computer → Project → Project on computer. Saving an
+inherited profile creates an override at the selected level; Reset reveals the earlier profile,
+including the built-in baseline. Only overrides are stored. Duplicate creates a separate ID.
+Removing a configuration preserves copies already used by threads. Existing computer configurations
+and older global presets remain available until their corresponding scope is edited; an explicit
+empty configuration list prevents legacy entries from returning.
+
+Models, access and instructions appear first. Connection paths, arguments, environment variables and
+account settings are in **Connection & account**. Provider diagnostics and installations are
+separate from the common editing flow. Narrow web layouts use a searchable profile picker; native
+mobile rows put secondary actions behind More actions.
 
 Each configuration includes its harness, model, access, instructions, connection and optional tools.
-MCP & skills lists configurations owned by the selected scope alongside its project tools. Shared
-configurations follow the same credential and local-file restrictions as shared project tools;
-installed ACP configurations require an environment target. Launchers on both platforms resolve the
-selected project's effective configurations and copy the chosen launch settings into the thread.
-Favorites and provider checks belong to the connected environment. Installations, titles and
-dictation are shown when editing that environment for all projects.
+MCP, skills & hooks lists configurations owned by the selected scope alongside its project tools.
+Shared configurations follow the same credential and local-file restrictions as shared project
+tools; installed ACP configurations require an environment target. Launchers on both platforms
+resolve the selected project's effective configurations and copy the chosen launch settings into the
+thread. Favorites and provider checks belong to the connected environment. Installations are shown
+when editing a computer for all projects. Titles & dictation has a dedicated computer-specific page.
 
 Named configurations and default/tool settings compare and save independently, preserving concurrent
 changes to the other category. Conflicting edits to configurations still require a reload. Older

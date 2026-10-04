@@ -2,16 +2,18 @@ import { useEffect, useState } from 'react'
 import {
   runtimePreferencesSchema,
   scopedSettingsResultSchema,
+  taskBehaviorOrigin,
   type Repository,
   type ScopedSettingsValue,
   type SettingsScope,
   type TaskBehavior,
 } from '@dovo/protocol'
-import { useWorkspace } from '@dovo/studio-core'
+import { useSettingsDraft, useWorkspace } from '@dovo/studio-core'
 import { SettingsGroup, SettingRow } from './settings-layout'
 import { ChoicePicker } from './choice-picker'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
+import { SettingSource } from './setting-source'
 
 const fields = [
   [
@@ -61,6 +63,10 @@ export function TaskBehaviorSettings({
   const [saved, setSaved] = useState(false)
   const [legacy, setLegacy] = useState<typeof runtimePreferencesSchema.Type | null>(null)
   const [retry, setRetry] = useState(0)
+  useSettingsDraft(
+    !!loaded && JSON.stringify(draft) !== JSON.stringify(loaded.value.taskBehavior ?? {}),
+    busy,
+  )
   function load() {
     return request(
       '/api/agents/settings/read',
@@ -156,9 +162,32 @@ export function TaskBehaviorSettings({
         </p>
       )}
       <fieldset disabled={!supported || !connected || !loaded || busy}>
-        <SettingsGroup title="Task lifecycle · scoped">
+        <SettingsGroup
+          title="Task lifecycle"
+          description="These rules apply to existing tasks too. Inherit follows the earlier level; Off explicitly overrides On."
+        >
           {fields.map(([key, label, description]) => (
-            <SettingRow key={key} label={label} description={description}>
+            <SettingRow
+              key={key}
+              label={label}
+              description={description}
+              source={
+                <SettingSource
+                  label={label}
+                  origin={taskBehaviorOrigin(
+                    snapshot?.defaults,
+                    repository,
+                    scope,
+                    draft,
+                    key,
+                    key === 'continueAfterRestart' ||
+                      key === 'settleMerged' ||
+                      key === 'settleClosed',
+                  )}
+                  onReset={() => change({ ...draft, [key]: undefined })}
+                />
+              }
+            >
               <ChoicePicker
                 aria-label={label}
                 value={draft[key] === undefined ? 'inherit' : draft[key] ? 'on' : 'off'}
@@ -174,7 +203,20 @@ export function TaskBehaviorSettings({
           ))}
           <SettingRow
             label="Days of inactivity before settling"
-            description={`Inherits ${inherited?.inactiveDays ?? 3} days. Clear to reset this override.`}
+            description={`Effective: ${draft.inactiveDays ?? inherited?.inactiveDays ?? 3} days. Applies when automatic settling is on.`}
+            source={
+              <SettingSource
+                label="Days of inactivity before settling"
+                origin={taskBehaviorOrigin(
+                  snapshot?.defaults,
+                  repository,
+                  scope,
+                  draft,
+                  'inactiveDays',
+                )}
+                onReset={() => change({ ...draft, inactiveDays: undefined })}
+              />
+            }
           >
             <Input
               aria-label="Days of inactivity before settling"
@@ -182,6 +224,7 @@ export function TaskBehaviorSettings({
               min={1}
               max={365}
               className="w-24"
+              placeholder={String(inherited?.inactiveDays ?? 3)}
               value={draft.inactiveDays ?? ''}
               onChange={(event) => {
                 const value = event.target.value

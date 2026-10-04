@@ -5,12 +5,23 @@ export const agentsExtension = defineStudioExtension(
     {
       id: 'resources',
       navigationGroup: 'settings',
-      title: 'Resources & hooks',
+      title: 'MCP, skills & hooks',
       icon: 'agents',
       order: 3,
       settingsSection: 'agents',
       keywords: 'mcp servers skills tools registry integrations hooks formatting checks',
       load: () => import('./resources/view'),
+    },
+    {
+      id: 'text-generation',
+      navigationGroup: 'settings',
+      title: 'Titles & dictation',
+      icon: 'agents',
+      order: 2.2,
+      settingsSection: 'agents',
+      keywords:
+        'text generation title dictation utility speech transcription models reasoning computer',
+      load: () => import('./text-generation-view'),
     },
     {
       id: 'agents',

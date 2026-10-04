@@ -12,6 +12,7 @@ import {
   type SettingsScope,
 } from '../../workspace.js'
 import type { RuntimeDefaults } from './runtime-setup.js'
+import { builtInAgentPresets } from '../../tasks/agent-presets.js'
 
 export const scopedSettingsReadSchema = mutableStruct({
   includeAgents: Schema.optional(Schema.Boolean),
@@ -112,9 +113,15 @@ export const settingsScopes: readonly SettingsScope[] = [
 ]
 export const settingsScopeLabels: Record<SettingsScope, string> = {
   global: 'Global',
-  environment: 'Environment',
+  environment: 'Computer',
   project: 'Project',
-  'environment-project': 'Environment + project',
+  'environment-project': 'Project on computer',
+}
+export const settingsScopeDescriptions: Record<SettingsScope, string> = {
+  global: 'All projects on all computers',
+  environment: 'All projects on one computer',
+  project: 'One project across computers',
+  'environment-project': 'One project on one computer',
 }
 export function resolveScopedSettings(
   runtime: RuntimeDefaults | undefined,
@@ -294,6 +301,43 @@ export function settingsProjectChoices(
   return [...projects.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
 
+/** Explicitly move to a level, preserving the current project/computer when they fit. */
+export function settingsTargetAtScope<T extends SettingsTargetSource>(
+  sources: readonly T[],
+  target: SettingsTarget,
+  scope: SettingsScope,
+  activeId?: string | null,
+): SettingsTarget | undefined {
+  if (scope === 'global') return { environmentId: '', projectId: '' }
+  const source =
+    sources.find((entry) => entry.profile.id === target.environmentId) ??
+    sources.find((entry) => entry.profile.id === activeId) ??
+    sources[0]
+  if (scope === 'environment')
+    return source ? { environmentId: source.profile.id, projectId: '' } : undefined
+  if (scope === 'project') {
+    const projects = settingsProjectChoices(sources, '')
+    const project = projects.find((entry) => entry.id === target.projectId) ?? projects[0]
+    return project ? { environmentId: '', projectId: project.id } : undefined
+  }
+  const candidates = [source, ...sources.filter((entry) => entry !== source)].filter(
+    (entry): entry is T => !!entry,
+  )
+  const matching = candidates.find((entry) =>
+    settingsProjectChoices([entry], entry.profile.id).some(
+      (project) => project.id === target.projectId,
+    ),
+  )
+  const computer =
+    matching ?? candidates.find((entry) => settingsProjectChoices([entry], entry.profile.id).length)
+  if (!computer) return undefined
+  const projects = settingsProjectChoices([computer], computer.profile.id)
+  return {
+    environmentId: computer.profile.id,
+    projectId: projects.find((entry) => entry.id === target.projectId)?.id ?? projects[0].id,
+  }
+}
+
 const taskDefaultFields = [
   { key: 'harness', label: 'Agent, model & instructions' },
   { key: 'permission', label: 'Permissions' },
@@ -326,6 +370,51 @@ export function taskDefaultOrigins(
   })
 }
 
+export function taskBehaviorOrigin(
+  runtime: RuntimeDefaults | undefined,
+  repository: Repository | undefined,
+  scope: SettingsScope,
+  draft: NonNullable<ScopedSettingsValue['taskBehavior']>,
+  key: keyof NonNullable<ScopedSettingsValue['taskBehavior']>,
+  computerFallback = false,
+) {
+  let source: SettingsScope | 'built-in' | 'computer-default' = computerFallback
+    ? 'computer-default'
+    : 'built-in'
+  for (const level of settingsScopes) {
+    if (level === scope) {
+      if (draft[key] !== undefined) source = level
+      break
+    }
+    if (
+      settingsAtScope(scopeEditorDefaults(runtime), repository, level).taskBehavior?.[key] !==
+      undefined
+    )
+      source = level
+  }
+  return { source, overridden: draft[key] !== undefined }
+}
+
+export function resourceOrigin(
+  runtime: RuntimeDefaults | undefined,
+  repository: Repository | undefined,
+  before: SettingsScope,
+  kind: 'mcpServers' | 'skills' | 'hooks',
+  name: string,
+) {
+  let source: SettingsScope | 'built-in' = 'built-in'
+  for (const level of settingsScopes) {
+    if (level === before) break
+    if (
+      settingsAtScope(scopeEditorDefaults(runtime), repository, level).resources?.[kind]?.some(
+        (entry) => entry.name === name,
+      )
+    )
+      source = level
+  }
+  return source
+}
+
 /** Legacy environment configurations retain their identity; more specific scopes override by ID. */
 export function scopedAgentEntries(
   runtime: RuntimeDefaults | undefined,
@@ -333,7 +422,9 @@ export function scopedAgentEntries(
   legacy: readonly Agent[],
   before?: SettingsScope,
 ) {
-  const result = new Map<string, { agent: Agent; scope: SettingsScope }>()
+  const result = new Map<string, { agent: Agent; scope: SettingsScope | 'built-in' }>(
+    builtInAgentPresets().map((agent) => [agent.id, { agent, scope: 'built-in' }]),
+  )
   for (const scope of settingsScopes) {
     if (scope === before) break
     const fallback =
@@ -351,7 +442,9 @@ export function scopedAgentEntries(
     ])
       result.set(agent.id, { agent, scope })
   }
-  return [...result.values()]
+  return [...result.values()].sort(
+    (a, b) => Number(a.scope === 'built-in') - Number(b.scope === 'built-in'),
+  )
 }
 export function resolveScopedAgents(
   runtime: RuntimeDefaults | undefined,

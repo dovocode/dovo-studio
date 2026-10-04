@@ -37,6 +37,16 @@ export function NotificationSettingsRows() {
     <>
       <SettingsGroup title="Tasks and automations">
         <SettingRow
+          label="In-app notifications"
+          description="Show an alert when another task finishes, fails or needs input while Dovo has focus."
+        >
+          <Toggle
+            label="In-app notifications"
+            checked={preferences.inAppNotifications}
+            onChange={(inAppNotifications) => updateAppPreferences({ inAppNotifications })}
+          />
+        </SettingRow>
+        <SettingRow
           label="When a task needs your input"
           description="A question or approval is waiting while Dovo is in the background."
         >
@@ -95,7 +105,11 @@ export function NotificationSettingsRows() {
 
 export default function NotificationSettings() {
   return (
-    <SettingsPage title="Notifications" description="Alerts on this device.">
+    <SettingsPage
+      local
+      title="Notifications"
+      description="Choose which task events need your attention."
+    >
       <NotificationSettingsRows />
     </SettingsPage>
   )

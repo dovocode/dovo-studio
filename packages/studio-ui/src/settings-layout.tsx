@@ -6,44 +6,76 @@ export function SettingsPage({
   title,
   description,
   children,
+  local = false,
 }: {
   title: string
   description: string
   children: ReactNode
+  local?: boolean
 }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title={title} description={description} />
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <PageHeader title={title} description={description}>
+        {local && (
+          <span className="rounded-md border bg-muted/40 px-2.5 py-1 text-[11px] text-muted-foreground">
+            This device · saved automatically
+          </span>
+        )}
+      </PageHeader>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
         <div className="mx-auto max-w-3xl space-y-6">{children}</div>
       </div>
     </section>
   )
 }
-export function SettingsGroup({ title, children }: { title: string; children: ReactNode }) {
+export function SettingsGroup({
+  title,
+  description,
+  children,
+}: {
+  title: string
+  description?: string
+  children: ReactNode
+}) {
   return (
-    <section className="space-y-2">
-      <h2 className="text-xs font-medium text-muted-foreground">{title}</h2>
-      <div className="divide-y rounded-lg border">{children}</div>
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
+        {description && (
+          <p className="mt-1 break-words text-xs leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        )}
+      </div>
+      <div className="divide-y rounded-xl border bg-card/30">{children}</div>
     </section>
   )
 }
 export function SettingRow({
   label,
   description,
+  source,
   children,
 }: {
   label: string
   description?: ReactNode
+  source?: ReactNode
   children: ReactNode
 }) {
   return (
-    <div className="flex flex-col items-stretch justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center">
+    <div className="flex flex-col items-stretch justify-between gap-3 px-4 py-4 sm:flex-row sm:items-center sm:gap-6">
       <div className="min-w-0 flex-1">
-        <p className="text-sm">{label}</p>
-        {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+        <p className="text-[0.8125rem] font-medium">{label}</p>
+        {description && (
+          <p className="mt-1 break-words text-xs leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        )}
+        {source && <div className="mt-2">{source}</div>}
       </div>
-      <div className="max-w-full sm:shrink-0">{children}</div>
+      <div className="flex w-full max-w-full items-center justify-end sm:w-auto sm:min-w-36 sm:max-w-[50%] sm:shrink-0">
+        {children}
+      </div>
     </div>
   )
 }

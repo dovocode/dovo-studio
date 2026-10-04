@@ -4,7 +4,7 @@ import { SettingRow, SettingsGroup, SettingsPage, Segmented } from './layout'
 export default function AppearanceSettings() {
   const { theme, textSize, motion, chatWidth } = useAppPreferences()
   return (
-    <SettingsPage title="Appearance" description="How Dovo looks on this device.">
+    <SettingsPage local title="Appearance" description="How Dovo looks on this device.">
       <SettingsGroup title="Theme">
         <SettingRow
           label="Color scheme"

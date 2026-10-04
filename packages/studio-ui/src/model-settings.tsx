@@ -25,6 +25,7 @@ export function ModelSettings({
   modes = true,
   preferences = {},
   onPreference,
+  layout,
 }: {
   agent: Agent
   onChange: (agent: Agent) => void
@@ -33,6 +34,7 @@ export function ModelSettings({
   preferences?: RuntimeDefaults['modelPreferences']
   onPreference?: (key: string, change: { favorite?: boolean; disabled?: boolean }) => Promise<void>
   modes?: boolean
+  layout?: 'settings'
 }) {
   const [catalog, setCatalog] = useApplicationState<ModelCatalog | null>(null),
     [error, setError] = useApplicationState(''),
@@ -108,45 +110,7 @@ export function ModelSettings({
     })
   return (
     <div className="grid gap-3">
-      {onPreference && (
-        <details>
-          <summary className="cursor-pointer text-xs text-muted-foreground">
-            Model visibility & favorites
-          </summary>
-          <div className="mt-2 max-h-60 overflow-y-auto">
-            {allModels.map((model) => {
-              const key = preferenceKey(model.id)
-              const preference = preferences[key]
-              const save = (change: { favorite?: boolean; disabled?: boolean }) =>
-                void onPreference(key, change).catch((error: unknown) =>
-                  setError(error instanceof Error ? error.message : String(error)),
-                )
-              return (
-                <div key={model.id} className="flex items-center gap-2 py-1 text-xs">
-                  <span className="min-w-0 flex-1 truncate">{model.name}</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-pressed={!!preference?.favorite}
-                    onClick={() => save({ favorite: !preference?.favorite })}
-                  >
-                    {preference?.favorite ? '★' : '☆'} Favorite
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-pressed={!preference?.disabled}
-                    onClick={() => save({ disabled: !preference?.disabled })}
-                  >
-                    {preference?.disabled ? 'Enable' : 'Disable'}
-                  </Button>
-                </div>
-              )
-            })}
-          </div>
-        </details>
-      )}
-      <FormField label="Model">
+      <FormField label="Model" layout={layout}>
         <ChoicePicker
           aria-label="Model"
           className="h-9 rounded-md border bg-background px-2 text-xs"
@@ -178,6 +142,7 @@ export function ModelSettings({
         />
       )}
       <FormField
+        layout={layout}
         label={agent.provider === 'opencode' ? 'Reasoning / model variant' : 'Reasoning level'}
       >
         <ChoicePicker
@@ -205,7 +170,7 @@ export function ModelSettings({
       {modes && agent.provider === 'acp' && catalog?.acp && (
         <>
           {!!catalog.acp.modes.length && (
-            <FormField label="ACP mode">
+            <FormField label="ACP mode" layout={layout}>
               <ChoicePicker
                 aria-label="ACP mode"
                 className="h-9 rounded-md border bg-background px-2 text-xs"
@@ -227,7 +192,7 @@ export function ModelSettings({
           {catalog.acp.configOptions.map((option) => {
             const value = agent.acpConfig?.[option.id] ?? option.currentValue
             return (
-              <FormField key={option.id} label={option.name}>
+              <FormField key={option.id} label={option.name} layout={layout}>
                 {option.options.length ? (
                   <ChoicePicker
                     aria-label={`ACP ${option.name}`}
@@ -282,7 +247,7 @@ export function ModelSettings({
       )}
       {modes && agent.provider === 'codex' && (
         <>
-          <FormField label="Speed">
+          <FormField label="Speed" layout={layout}>
             <ChoicePicker
               aria-label="Service tier"
               value={serviceTierValue(agent.serviceTier)}
@@ -307,7 +272,7 @@ export function ModelSettings({
                   (tier) => tier.id === serviceTierValue(agent.serviceTier),
                 )?.description}
           </p>
-          <FormField label="Daybreak">
+          <FormField label="Daybreak" layout={layout}>
             <ChoicePicker
               aria-label="Daybreak mode"
               value={agent.cyberAccessProgram ?? ''}
@@ -364,6 +329,44 @@ export function ModelSettings({
           Refresh models
         </Button>
       </div>
+      {onPreference && (
+        <details>
+          <summary className="cursor-pointer text-xs text-muted-foreground">
+            Model visibility & favorites
+          </summary>
+          <div className="mt-2 max-h-60 overflow-y-auto">
+            {allModels.map((model) => {
+              const key = preferenceKey(model.id)
+              const preference = preferences[key]
+              const save = (change: { favorite?: boolean; disabled?: boolean }) =>
+                void onPreference(key, change).catch((error: unknown) =>
+                  setError(error instanceof Error ? error.message : String(error)),
+                )
+              return (
+                <div key={model.id} className="flex items-center gap-2 py-1 text-xs">
+                  <span className="min-w-0 flex-1 truncate">{model.name}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={!!preference?.favorite}
+                    onClick={() => save({ favorite: !preference?.favorite })}
+                  >
+                    {preference?.favorite ? '★' : '☆'} Favorite
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={!preference?.disabled}
+                    onClick={() => save({ disabled: !preference?.disabled })}
+                  >
+                    {preference?.disabled ? 'Enable' : 'Disable'}
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        </details>
+      )}
       {error && (
         <p role="alert" className="text-xs text-destructive">
           {error} Custom model entry is still available.

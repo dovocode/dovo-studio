@@ -20,7 +20,8 @@ provider setup, and feature manual. The guides below focus on particular workflo
 - [Automations](automations.md): triggers, execution, reviews, and recovery.
 - [Scoped settings](scoped-settings.md): global, environment, shared project and local project
   inheritance.
-- [General settings](general-settings.md): scoped task lifecycle policies and device preferences.
+- [General settings](general-settings.md): organized device preferences, task defaults and lifecycle
+  policies.
 - [Chat interactions](chat-interactions.md): queues, steering, questions, and approvals.
 - [Usage and limits](usage.md): account windows, CLI history, pricing, refresh, and caching.
 - [Codex modes](codex-modes.md): supported Codex reasoning and speed choices.

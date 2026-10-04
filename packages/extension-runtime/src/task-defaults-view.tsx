@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useSettingsTarget } from '@dovo/studio-core'
-import { TaskDefaultSettings, SettingsScopePage } from '@dovo/studio-ui'
+import { TaskDefaultSettings, TaskBehaviorSettings, SettingsScopePage } from '@dovo/studio-ui'
 
 export default function TaskDefaultsView({ entityId }: { entityId?: string }) {
   const { setTarget } = useSettingsTarget()
@@ -10,10 +10,13 @@ export default function TaskDefaultsView({ entityId }: { entityId?: string }) {
   return (
     <SettingsScopePage
       title="Task defaults"
-      description="Defaults for new tasks, agent configuration and saved prompts."
+      description="Agent, workspace and lifecycle defaults for your tasks."
     >
       {({ scope, repository }) => (
-        <TaskDefaultSettings inline repository={repository} scope={scope} />
+        <>
+          <TaskDefaultSettings inline repository={repository} scope={scope} />
+          <TaskBehaviorSettings scope={scope} repository={repository} />
+        </>
       )}
     </SettingsScopePage>
   )

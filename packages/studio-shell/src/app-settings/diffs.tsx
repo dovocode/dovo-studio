@@ -7,6 +7,26 @@ export function DiffSettingsRows() {
     <>
       <SettingsGroup title="Conversation">
         <SettingRow
+          label="Hide whitespace changes"
+          description="Hide files whose only changes are whitespace."
+        >
+          <Toggle
+            label="Hide whitespace changes"
+            checked={preferences.hideWhitespaceChanges}
+            onChange={(hideWhitespaceChanges) => updateAppPreferences({ hideWhitespaceChanges })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Proactive panels"
+          description="Open linked pull requests first, otherwise open Changes for edits to at least 3 files or 50 lines."
+        >
+          <Toggle
+            label="Proactive panels"
+            checked={preferences.proactivePanels}
+            onChange={(proactivePanels) => updateAppPreferences({ proactivePanels })}
+          />
+        </SettingRow>
+        <SettingRow
           label="Collapse changed files by default"
           description="Keep turn checkpoints compact. Each card can still be expanded."
         >
@@ -74,7 +94,11 @@ export function DiffSettingsRows() {
 
 export default function DiffSettings() {
   return (
-    <SettingsPage title="Diffs" description="How changes appear on this device.">
+    <SettingsPage
+      local
+      title="Review & diffs"
+      description="How you review code changes on this device."
+    >
       <DiffSettingsRows />
     </SettingsPage>
   )

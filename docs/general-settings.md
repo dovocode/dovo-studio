@@ -1,12 +1,24 @@
 # General settings
 
-General combines scoped task defaults and lifecycle policy with grouped app preferences.
+General contains device preferences for organization, navigation, confirmations and background
+activity. Changes save automatically on this device. Agent and task configuration have dedicated
+pages, with links from General.
 
-The target selector edits one inheritance layer: **Global → Environment → Project → Environment +
-project**. Shared layers synchronize to paired computers; a shared project uses its canonical Git
-remote identity. An unset value inherits the earlier layers. Selecting **Off** explicitly overrides
-an inherited **On**. Local folders use the checkout-specific environment scope. Device preferences
-are labeled separately and stay on the device.
+The settings navigation groups **This app**, **Agents**, **Tasks & projects**, **Computers** and
+**History**. Search matches page names and their controls. Conversation contains composer, follow-up
+and response preferences; Notifications contains alerts; Review & diffs contains review behavior;
+Updates & about contains application and provider update preferences and notices. Titles & dictation
+has its own computer-specific page.
+
+## Task defaults
+
+Task defaults contains new-task launch and workspace defaults, saved prompts and lifecycle policy.
+Its scope selector shows **Global → Computer → Project → Project on computer**. Each control shows
+where its value comes from and offers Reset when an override is present. Shared layers synchronize
+to paired computers; a shared project uses its canonical Git remote identity. An unset value
+inherits the earlier layers. Selecting **Off** explicitly overrides an inherited **On**. Local
+folders use the checkout-specific computer scope. Switching scope or leaving an edited settings page
+asks before discarding unsaved changes.
 
 ## Lifecycle
 
@@ -32,12 +44,11 @@ runtimes must update before scoped lifecycle controls become editable.
 
 ## App preferences
 
-General exposes organization, notifications, conversation, diffs, confirmations and updates. New
-behavior includes project grouping/order, Working, in-app alerts, completed-paragraph streaming,
-slash-menu skills, rendered Markdown composer preview, composer collapse while reading older
-messages, whitespace-only file filtering, proactive review panels, starting folder, provider-version
-checks and desktop quit-shortcut controls. `$` still finds skills when slash-menu skills are
-disabled. The composer stores and sends plain Markdown.
+The app preference pages expose project grouping/order, Working, in-app alerts, completed-paragraph
+streaming, slash-menu skills, rendered Markdown composer preview, composer collapse while reading
+older messages, whitespace-only file filtering, proactive review panels, starting folder,
+provider-version checks and desktop quit-shortcut controls. `$` still finds skills when slash-menu
+skills are disabled. The composer stores and sends plain Markdown.
 
 Reduced background activity slows overview refreshes to two minutes. Balanced keeps the existing
 30-second visible-window cadence; input preview retains its faster refresh. Provider diagnostics
@@ -45,7 +56,7 @@ inspect the selected computer; SDK updates remain part of Dovo updates. The nati
 available when the shortcut is disabled. Hold mode waits 600 ms or accepts two presses within 500
 ms.
 
-Text generation links to the existing per-computer Titles & dictation editor. Version and
-release-track controls use the existing desktop update bridge. Mobile-specific driving, speech,
-widgets and battery preferences retain their native settings. Mobile task defaults can edit scoped
-lifecycle policy, and quota continuations can be cancelled on either client.
+General links to the per-computer Titles & dictation editor. Version and release-track controls use
+the existing desktop update bridge. Mobile-specific driving, speech, widgets and battery preferences
+retain their native settings. Mobile task defaults can edit scoped lifecycle policy, and quota
+continuations can be cancelled on either client.

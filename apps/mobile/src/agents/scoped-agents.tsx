@@ -8,6 +8,7 @@ import {
   scopedSettingsResultSchema,
   settingsScopeLabels,
   scopedAgentEntries,
+  builtInAgentDefinition,
   type Agent,
   type Repository,
   type SettingsScope,
@@ -36,6 +37,7 @@ export function ScopedAgents({
   const [loadError, setLoadError] = useApplicationState('')
   const [diagnostics, setDiagnostics] = useApplicationState('')
   const [editing, setEditing] = useApplicationState<Agent | null>(null)
+  const [expandedId, setExpandedId] = useApplicationState('')
   useEffect(() => {
     if (!connected || !snapshot?.scopedAgentsSupported) return
     let current = true
@@ -94,9 +96,10 @@ export function ScopedAgents({
     )
   return (
     <View style={[styles.card, { gap: 12 }]}>
-      <Text style={styles.text}>Named configurations</Text>
+      <Text style={[styles.text, { fontWeight: '600' }]}>Agent profiles</Text>
       <Text style={styles.muted}>
-        Override inherited configurations here. Reset to use the earlier level.
+        Built-in providers use your computer’s installation and login. Save an override here, or
+        reset to the earlier level.
       </Text>
       <Action
         label="New configuration"
@@ -119,8 +122,10 @@ export function ScopedAgents({
             <Text style={styles.text}>{agent.name}</Text>
             <Text style={styles.muted}>
               {local
-                ? settingsScopeLabels[scope]
-                : `Inherited · ${origin ? settingsScopeLabels[origin] : 'Earlier scope'}`}{' '}
+                ? `Set here · ${settingsScopeLabels[scope]}`
+                : origin === 'built-in'
+                  ? 'Built-in · provider defaults'
+                  : `Inherited · ${origin ? settingsScopeLabels[origin] : 'Earlier scope'}`}{' '}
               · <HarnessLabel agent={agent} /> · <ModelLabel agent={agent} />
             </Text>
             <View style={[styles.row, { flexWrap: 'wrap' }]}>
@@ -133,78 +138,90 @@ export function ScopedAgents({
               />
               <Action
                 secondary
-                label="Duplicate"
-                disabled={!connected || busy}
-                onPress={() =>
-                  setEditing({ ...agent, id: randomUUID(), name: `${agent.name} copy` })
-                }
+                icon="more"
+                label={`More actions for ${agent.name}`}
+                disabled={busy}
+                onPress={() => setExpandedId(expandedId === agent.id ? '' : agent.id)}
               />
-              <Action
-                secondary
-                icon="star"
-                label={
-                  snapshot?.defaults?.modelPreferences?.[`agent:${agent.id}`]?.favorite
-                    ? 'Unfavorite'
-                    : 'Favorite'
-                }
-                disabled={!connected || busy}
-                onPress={() =>
-                  act(() =>
-                    runClientEffect(
-                      callEffect(
-                        '/api/agents/models/preference',
-                        {
-                          key: `agent:${agent.id}`,
-                          favorite:
-                            !snapshot?.defaults?.modelPreferences?.[`agent:${agent.id}`]?.favorite,
-                        },
-                        runtimeDefaultsSchema,
-                      ),
-                    ),
-                  )
-                }
-              />
-              <Action
-                secondary
-                icon="info"
-                label="Check provider"
-                disabled={!connected || busy}
-                onPress={() =>
-                  act(async () => {
-                    const result = await runClientEffect(
-                      callEffect(
-                        '/api/agents/probe',
-                        { id: agent.id, repositoryId: repository?.id, settingsScope: scope },
-                        responses.provider,
-                      ),
-                    )
-                    setDiagnostics(
-                      `${agent.name}: ${result.available ? 'Available' : 'Unavailable'} · ${result.detail}`,
-                    )
-                  })
-                }
-              />
-              {local && (
-                <Action
-                  secondary
-                  icon={reset ? 'reopen' : 'trash'}
-                  label={reset ? 'Reset' : 'Delete'}
-                  disabled={!connected || busy}
-                  onPress={() => {
-                    const remove = () =>
-                      act(() => save(own.filter((entry) => entry.id !== agent.id)))
-                    if (reset) remove()
-                    else
-                      Alert.alert(
-                        'Delete configuration?',
-                        'Existing threads keep their configuration.',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Delete', style: 'destructive', onPress: remove },
-                        ],
+              {expandedId === agent.id && (
+                <>
+                  <Action
+                    secondary
+                    label="Duplicate"
+                    disabled={!connected || busy}
+                    onPress={() =>
+                      setEditing({ ...agent, id: randomUUID(), name: `${agent.name} copy` })
+                    }
+                  />
+                  <Action
+                    secondary
+                    icon="star"
+                    label={
+                      snapshot?.defaults?.modelPreferences?.[`agent:${agent.id}`]?.favorite
+                        ? 'Unfavorite'
+                        : 'Favorite'
+                    }
+                    disabled={!connected || busy}
+                    onPress={() =>
+                      act(() =>
+                        runClientEffect(
+                          callEffect(
+                            '/api/agents/models/preference',
+                            {
+                              key: `agent:${agent.id}`,
+                              favorite:
+                                !snapshot?.defaults?.modelPreferences?.[`agent:${agent.id}`]
+                                  ?.favorite,
+                            },
+                            runtimeDefaultsSchema,
+                          ),
+                        ),
                       )
-                  }}
-                />
+                    }
+                  />
+                  <Action
+                    secondary
+                    icon="info"
+                    label="Check provider"
+                    disabled={!connected || busy}
+                    onPress={() =>
+                      act(async () => {
+                        const result = await runClientEffect(
+                          callEffect(
+                            '/api/agents/probe',
+                            { id: agent.id, repositoryId: repository?.id, settingsScope: scope },
+                            responses.provider,
+                          ),
+                        )
+                        setDiagnostics(
+                          `${agent.name}: ${result.available ? 'Available' : 'Unavailable'} · ${result.detail}`,
+                        )
+                      })
+                    }
+                  />
+                  {local && (
+                    <Action
+                      secondary
+                      icon={reset ? 'reopen' : 'trash'}
+                      label={reset ? 'Reset' : 'Delete'}
+                      disabled={!connected || busy}
+                      onPress={() => {
+                        const remove = () =>
+                          act(() => save(own.filter((entry) => entry.id !== agent.id)))
+                        if (reset) remove()
+                        else
+                          Alert.alert(
+                            'Delete configuration?',
+                            'Existing threads keep their configuration.',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Delete', style: 'destructive', onPress: remove },
+                            ],
+                          )
+                      }}
+                    />
+                  )}
+                </>
               )}
             </View>
           </View>
@@ -220,6 +237,7 @@ export function ScopedAgents({
           original={editing}
           creating={!agents.some((agent) => agent.id === editing.id)}
           scopeLabel={settingsScopeLabels[scope]}
+          fixedProvider={!!builtInAgentDefinition(editing.id)}
           onClose={() => setEditing(null)}
           onSave={(agent) => save([...own.filter((entry) => entry.id !== agent.id), agent])}
         />

@@ -75,7 +75,7 @@ export default function KeyboardShortcuts() {
   return (
     <SettingsPage
       title="Keyboard shortcuts"
-      description="Change how messages send in General → Composer."
+      description="Change how messages send in Conversation → Writing & follow-ups."
     >
       {groups.map(([title, rows]) => (
         <SettingsGroup key={title} title={title}>

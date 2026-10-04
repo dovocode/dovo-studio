@@ -25,6 +25,7 @@ import {
 } from '@dovo/studio-core'
 import { Button, ErrorBoundary, TooltipProvider, useCompactLayout } from '@dovo/studio-ui'
 import { SettingsNav } from './settings-nav'
+import { useConfirmSettingsNavigation } from '@dovo/studio-core'
 import { appSettingsExtension } from './app-extension'
 import { useAppearance } from './appearance'
 import { useTaskNotifications, type NotificationTarget } from './task-notifications'
@@ -175,9 +176,25 @@ function WorkbenchContent({
   const [switchError, setSwitchError] = useApplicationState('')
   const [switching, setSwitching] = useApplicationState(false)
   // Start with a fresh composer; explicit navigation still opens existing threads.
-  const [target, navigate] = useApplicationState<StudioNavigation>(() => ({
+  const [target, updateTarget] = useApplicationState<StudioNavigation>(() => ({
     viewId: extensions[0]?.views[0]?.id ?? '',
   }))
+  const confirmSettingsNavigation = useConfirmSettingsNavigation()
+  const settingsNavigation = useRef({ target, extensions })
+  settingsNavigation.current = { target, extensions }
+  const navigate = useCallback(
+    (next: StudioNavigation) => {
+      const { target, extensions } = settingsNavigation.current
+      if (target.viewId === next.viewId && target.entityId === next.entityId) return
+      const leavingSettings = extensions.some((extension) =>
+        extension.views.some(
+          (view) => view.navigationGroup === 'settings' && view.id === target.viewId,
+        ),
+      )
+      if (!leavingSettings || confirmSettingsNavigation()) updateTarget(next)
+    },
+    [updateTarget, confirmSettingsNavigation],
+  )
   useEffect(() => {
     if (target.viewId === 'tasks' && target.entityId)
       updateAppPreferences({ lastThreadId: target.entityId })
@@ -468,7 +485,9 @@ function WorkbenchContent({
             }}
           >
             {/* Settings get a grouped sidebar with search; other views use the full area. */}
-            <div className="flex min-h-0 min-w-0 flex-1">
+            <div
+              className={`flex min-h-0 min-w-0 flex-1 ${inSettings ? 'flex-col md:flex-row' : ''}`}
+            >
               {inSettings && (
                 <SettingsNav
                   views={settingsViews}
