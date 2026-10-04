@@ -1,13 +1,24 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Animated, PanResponder, Pressable, View } from 'react-native'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Pressable, View } from 'react-native'
+import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated'
+import { scheduleOnRN } from 'react-native-worklets'
 import { Icon, type IconName } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
 import { colors } from '../../ui/theme'
+import { fullSwipe, swipeTarget, swipeTranslation } from './task-swipe-motion'
 
 type SwipeAction = { label: string; icon: IconName; disabled?: boolean; run: () => void }
 const actionWidth = 80
+const spring = { damping: 24, stiffness: 260, mass: 0.8, overshootClamping: true }
+// Only one row should keep its actions revealed at a time.
+let closeRevealedRow: (() => void) | undefined
 
-/** Horizontal intent leaves vertical list scrolling and row long presses alone. */
 export function TaskSwipeActions({
   children,
   enabled,
@@ -19,113 +30,156 @@ export function TaskSwipeActions({
   primary: SwipeAction
   secondary?: SwipeAction
 }) {
-  const translation = useRef(new Animated.Value(0)).current
-  const offset = useRef(0)
-  const width = useRef(320)
-  const start = useRef(0)
+  const translation = useSharedValue(0)
+  const start = useSharedValue(0)
+  const width = useSharedValue(320)
+  const armed = useSharedValue(false)
   const revealedWidth = actionWidth * (secondary ? 2 : 1)
-  const latest = useRef({ enabled, primary, revealedWidth })
-  latest.current = { enabled, primary, revealedWidth }
+  const primaryDisabled = !!primary.disabled
   const [open, setOpen] = useState(false)
-  const animate = (target: number) => {
-    offset.current = target
-    setOpen(target !== 0)
-    Animated.spring(translation, {
-      toValue: target,
-      useNativeDriver: true,
-      overshootClamping: true,
-    }).start()
-  }
-  const responder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) =>
-          latest.current.enabled &&
-          Math.abs(gesture.dx) > 12 &&
-          Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5 &&
-          (gesture.dx < 0 || offset.current < 0),
-        onPanResponderGrant: () => {
-          translation.stopAnimation()
-          start.current = offset.current
-        },
-        onPanResponderMove: (_, gesture) =>
-          translation.setValue(Math.max(-width.current, Math.min(0, start.current + gesture.dx))),
-        onPanResponderRelease: (_, gesture) => {
-          if (!latest.current.enabled) {
-            animate(0)
-            return
-          }
-          const position = start.current + gesture.dx
-          if (
-            position <= -Math.max(latest.current.revealedWidth + 32, width.current * 0.65) &&
-            !latest.current.primary.disabled
-          ) {
-            animate(0)
-            latest.current.primary.run()
-          } else
-            animate(
-              position < -latest.current.revealedWidth / 2 || gesture.vx < -0.5
-                ? -latest.current.revealedWidth
-                : 0,
-            )
-        },
-        onPanResponderTerminate: () => animate(0),
-      }),
-    [translation],
-  )
+  const latest = useRef({ enabled, primary })
+  latest.current = { enabled, primary }
+  const close = useCallback(() => {
+    translation.value = withSpring(0, spring)
+    armed.value = false
+    setOpen(false)
+    if (closeRevealedRow === close) closeRevealedRow = undefined
+  }, [translation, armed])
+  const begin = useCallback(() => {
+    if (closeRevealedRow !== close) closeRevealedRow?.()
+    closeRevealedRow = close
+  }, [close])
+  const commit = useCallback(() => {
+    close()
+    if (latest.current.enabled && !latest.current.primary.disabled) latest.current.primary.run()
+  }, [close])
   useEffect(() => {
-    if (!enabled || offset.current !== 0) {
-      translation.stopAnimation()
-      translation.setValue(0)
-      offset.current = 0
-      setOpen(false)
+    close()
+    return () => {
+      if (closeRevealedRow === close) closeRevealedRow = undefined
+      cancelAnimation(translation)
     }
-    return () => translation.stopAnimation()
-  }, [enabled, revealedWidth, translation])
+  }, [enabled, revealedWidth, close, translation])
+
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(enabled)
+        .activeOffsetX([-12, 12])
+        .failOffsetY([-8, 8])
+        .onStart(() => {
+          cancelAnimation(translation)
+          start.value = translation.value
+          scheduleOnRN(begin)
+        })
+        .onUpdate((event) => {
+          const position = start.value + event.translationX
+          translation.value = swipeTranslation(position, revealedWidth, width.value)
+          armed.value =
+            !primaryDisabled && fullSwipe(position, event.velocityX, width.value, revealedWidth)
+        })
+        .onEnd((event) => {
+          const position = start.value + event.translationX
+          if (
+            !primaryDisabled &&
+            fullSwipe(position, event.velocityX, width.value, revealedWidth)
+          ) {
+            translation.value = withSpring(0, spring)
+            scheduleOnRN(commit)
+          } else {
+            const target = swipeTarget(position, event.velocityX, revealedWidth)
+            translation.value = withSpring(target, { ...spring, velocity: event.velocityX })
+            scheduleOnRN(setOpen, target !== 0)
+          }
+          armed.value = false
+        })
+        .onFinalize((_event, success) => {
+          if (!success) {
+            translation.value = withSpring(0, spring)
+            armed.value = false
+            scheduleOnRN(close)
+          }
+        }),
+    [
+      enabled,
+      primaryDisabled,
+      revealedWidth,
+      translation,
+      start,
+      width,
+      armed,
+      begin,
+      commit,
+      close,
+    ],
+  )
+  const rowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translation.value }] }))
+  const actionsStyle = useAnimatedStyle(() => ({
+    width: Math.max(revealedWidth, -translation.value),
+  }))
+  const primaryStyle = useAnimatedStyle(() => ({
+    backgroundColor: armed.value ? colors.accent : colors.elevated,
+  }))
   return (
     <View
       onLayout={(event) => {
-        width.current = event.nativeEvent.layout.width
+        width.value = event.nativeEvent.layout.width
       }}
       style={{ borderRadius: 12, overflow: 'hidden' }}
     >
-      <View
+      <Animated.View
         pointerEvents={open ? 'auto' : 'none'}
         accessibilityElementsHidden={!open}
         importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
-        style={{ position: 'absolute', right: 0, top: 3, bottom: 3, flexDirection: 'row' }}
+        style={[
+          { position: 'absolute', right: 0, top: 3, bottom: 3, flexDirection: 'row' },
+          actionsStyle,
+        ]}
       >
-        {(secondary ? [secondary, primary] : [primary]).map((action, index) => (
-          <Pressable
-            key={index}
-            accessibilityRole="button"
-            accessibilityLabel={action.label}
-            accessibilityState={{ disabled: action.disabled }}
-            disabled={action.disabled || !enabled}
-            onPress={() => {
-              animate(0)
-              action.run()
-            }}
-            style={{
-              width: actionWidth,
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              backgroundColor: index ? colors.elevated : colors.surface,
-              opacity: action.disabled ? 0.4 : 1,
-            }}
+        {(secondary ? [secondary, primary] : [primary]).map((action) => (
+          <Animated.View
+            key={action.label}
+            style={[
+              action === primary ? { flex: 1 } : { width: actionWidth },
+              action === primary ? primaryStyle : { backgroundColor: colors.surface },
+            ]}
           >
-            <Icon name={action.icon} size={22} color={colors.accent} />
-            <Text style={{ color: colors.text, fontSize: 12 }}>{action.label}</Text>
-          </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+              accessibilityState={{ disabled: action.disabled || !enabled }}
+              disabled={action.disabled || !enabled}
+              onPress={() => {
+                close()
+                action.run()
+              }}
+              style={({ pressed }) => ({
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                opacity: action.disabled ? 0.4 : pressed ? 0.6 : 1,
+              })}
+            >
+              <Icon name={action.icon} size={22} color={colors.text} />
+              <Text style={{ color: colors.text, fontSize: 12 }}>{action.label}</Text>
+            </Pressable>
+          </Animated.View>
         ))}
-      </View>
-      <Animated.View
-        {...responder.panHandlers}
-        style={{ transform: [{ translateX: translation }] }}
-      >
-        {children}
       </Animated.View>
+      <GestureDetector gesture={pan}>
+        <Animated.View style={rowStyle}>
+          {children}
+          {open && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close thread actions"
+              onPress={close}
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+            />
+          )}
+        </Animated.View>
+      </GestureDetector>
     </View>
   )
 }

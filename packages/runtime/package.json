@@ -46,7 +46,7 @@
     "mdast-util-from-adf": "^2.2.0",
     "mdast-util-gfm": "^3.1.0",
     "mdast-util-to-markdown": "^2.1.2",
-    "node-pty": "^1.1.0",
+    "node-pty": "1.2.0-beta.15",
     "playwright": "^1.63.0",
     "protobufjs": "^8.8.0",
     "semver": "^7.8.5",
