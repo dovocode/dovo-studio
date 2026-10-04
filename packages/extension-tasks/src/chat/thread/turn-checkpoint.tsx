@@ -217,7 +217,6 @@ export function TurnCheckpoint({
                         { additions: 0, deletions: 0 },
                       )}
                   />
-                  <span className="tabular-nums">{paths.length}</span>
                 </summary>
                 <div className="ml-5 border-l pl-2">
                   {paths.map((path) => (
