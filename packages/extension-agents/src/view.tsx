@@ -7,13 +7,19 @@ import { TitleSettings } from './title-settings'
 export default function AgentsView() {
   return (
     <SettingsScopePage
+      wide
       title="Agents"
       description="Default agent and reusable configurations, inherited across environments and projects."
     >
       {({ scope, repository }) => (
         <>
-          <TaskDefaultSettings scope={scope} repository={repository} inline />
           <ScopedAgents scope={scope} repository={repository} />
+          <details className="rounded-xl border p-4">
+            <summary className="cursor-pointer text-sm font-medium">Task defaults</summary>
+            <div className="mt-4">
+              <TaskDefaultSettings scope={scope} repository={repository} inline />
+            </div>
+          </details>
           {scope === 'environment' && <EnvironmentTools />}
           {(scope === 'global' || scope === 'project') && (
             <p className="text-xs text-muted-foreground">

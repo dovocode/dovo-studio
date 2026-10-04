@@ -24,7 +24,7 @@ app.on('browser-window-created', (_event, window) => {
         const commands=await call('/api/commands/read',{});await call('/api/commands/save',{...commands.settings,codex:${JSON.stringify(path + '/scripts/fixtures/codex.cjs')}});
         const button = (label) => [...document.querySelectorAll('button')].find(b=>b.innerText.trim()===label || b.getAttribute('aria-label')===label || b.title===label);
         await wait(()=>button('Settings'));button('Settings').click();await wait(()=>button('Agents')); button('Agents').click();
-        await wait(()=>button('Configure')); button('Configure').click();
+        await wait(()=>button('Model'));
         await wait(()=>button('Model')&&!document.body.innerText.includes('Loading provider models'));
         button('Model').click(); await wait(()=>document.querySelector('[role="listbox"]'));
         const choice = [...document.querySelectorAll('[role="option"]')].find(o=>o.dataset.value&&o.dataset.value!=='__custom__');
@@ -37,11 +37,10 @@ app.on('browser-window-created', (_event, window) => {
         const effortId=effort.dataset.value;effort.click();await wait(()=>!document.querySelector('[role="listbox"]'));
         await new Promise(r=>setTimeout(r,100));
         button('Save configuration').click();
-        await wait(()=>!document.querySelector('[role="dialog"]'));
+        await wait(()=>document.body.innerText.includes('saved at'));
         let saved;
         for(let i=0;i<50;i++){saved=(await snapshot()).workspace.agents.find(a=>a.model===modelId && a.reasoning===effortId);if(saved)break;await new Promise(r=>setTimeout(r,100))}
         if(!saved)throw new Error('Agent model/reasoning did not persist');
-        button('Configure').click();
         await wait(()=>button('Model')?.dataset.value===modelId && button('Reasoning level')?.dataset.value===effortId);
         return {model: modelId, reasoning: effortId, persisted: true, dummyChats: 0};
       })()`)

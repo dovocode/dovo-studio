@@ -31,7 +31,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import Agents from '${root}/${mobile ? 'apps/mobile/src/screens/agents' : 'packages/extension-agents/src/view'}.tsx';import {SettingsTargetProvider} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences' : 'packages/studio-core/src'}/settings-target.tsx';window.crypto.randomUUID=()=>Math.random().toString(36).slice(2);const writer={id:'writer',name:'Writer',provider:'codex',model:'gpt-6.1-sol',reasoning:'',instructions:'Inherited instructions',permission:'ask',endpoint:''};const repo={id:'mac-repo',name:'Project',path:'/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=['mac','linux'].map(id=>({profile:{id,name:id,connection:{address:'http://'+id+'.local',token:'test'}},name:id,scope:id,connected:true,snapshot:{scopedAgentsSupported:true,defaults:{scopedSettings:{environment:{},shared:[{key:'global',updatedAt:1,changeId:'a',value:{agents:[writer]}}]}},workspace:{agents:[],repositories:[{...repo,id:id+'-repo'}]}}}));window.writes=[];window.docs={};window.requests={};window.effects={};for(const source of window.sources){const id=source.profile.id;window.requests[id]=async(path,input)=>{const key=id+':'+input.scope+':'+(input.repositoryId||'');if(path.endsWith('/read'))return {value:window.docs[key]??(input.scope==='global'?{agents:[writer]}:{agents:[]}),inherited:input.scope==='global'?{}:{agents:[writer]},projectKey:input.repositoryId?'project:github.com/team/repo':undefined};if(path.endsWith('/save')){window.writes.push({host:id,...input});window.docs[key]=input.after;return {value:input.after,inherited:input.scope==='global'?{}:{agents:[writer]}}}throw Error(path)};window.effects[id]=(path,input)=>Effect.tryPromise(()=>window.requests[id](path,input));}window.runtime={overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',refreshRuntimes:async()=>{}};createRoot(document.getElementById('app')).render(<SettingsTargetProvider><Agents/></SettingsTargetProvider>);`,
+        contents: `import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import Agents from '${root}/${mobile ? 'apps/mobile/src/screens/agents' : 'packages/extension-agents/src/view'}.tsx';import {SettingsTargetProvider} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences' : 'packages/studio-core/src'}/settings-target.tsx';window.crypto.randomUUID=()=>Math.random().toString(36).slice(2);const writer={id:'writer',name:'Writer',provider:'codex',model:'gpt-6.1-sol',reasoning:'',instructions:'Inherited instructions',permission:'ask',endpoint:''};const repo={id:'mac-repo',name:'Project',path:'/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=['mac','linux'].map(id=>({profile:{id,name:id,connection:{address:'http://'+id+'.local',token:'test'}},name:id,scope:id,connected:true,snapshot:{scopedAgentsSupported:true,defaults:{scopedSettings:{environment:{},shared:[{key:'global',updatedAt:1,changeId:'a',value:{agents:[writer]}}]}},workspace:{agents:[],repositories:[{...repo,id:id+'-repo'}]}}}));window.writes=[];window.docs={};window.requests={};window.effects={};for(const source of window.sources){const id=source.profile.id;window.requests[id]=async(path,input)=>{const key=id+':'+input.scope+':'+(input.repositoryId||'');if(path.endsWith('/read'))return {value:window.docs[key]??(input.scope==='global'?{agents:[writer]}:{agents:[]}),inherited:input.scope==='global'?{}:{agents:[writer]},projectKey:input.repositoryId?'project:github.com/team/repo':undefined};if(path.endsWith('/save')){if(window.rejectSave)throw Error('Save rejected');window.writes.push({host:id,...input});window.docs[key]=input.after;return {value:input.after,inherited:input.scope==='global'?{}:{agents:[writer]}}}throw Error(path)};window.effects[id]=(path,input)=>Effect.tryPromise(()=>window.requests[id](path,input));}window.runtime={overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',refreshRuntimes:async()=>{}};createRoot(document.getElementById('app')).render(<SettingsTargetProvider><Agents/></SettingsTargetProvider>);`,
         loader: 'tsx',
         resolveDir: root,
       },
@@ -86,10 +86,17 @@ try {
     const environment = page.getByLabel(mobile ? 'Environment' : 'Settings environment', {
       exact: true,
     })
-    await page.getByRole('button', { name: 'Configure', exact: true }).waitFor()
+    await (
+      mobile
+        ? page.getByRole('button', { name: 'Configure', exact: true })
+        : page
+            .getByRole('navigation', { name: 'Provider configurations' })
+            .getByRole('button', { name: /Writer/ })
+    ).waitFor()
     await project.selectOption('git:github.com/team/repo')
     await environment.selectOption('linux')
-    await page.getByRole('button', { name: 'Override', exact: true }).click()
+    if (mobile) await page.getByRole('button', { name: 'Override', exact: true }).click()
+    else await page.getByLabel('Name', { exact: true }).waitFor()
     assert.equal(await page.getByLabel('Configuration scope', { exact: true }).count(), 0)
     await page.getByLabel('Name', { exact: true }).fill('Project writer')
     await page
@@ -113,30 +120,57 @@ try {
       },
     )
     await page.getByRole('button', { name: 'Reset', exact: true }).click()
-    await page.getByRole('button', { name: 'Override', exact: true }).waitFor()
+    await (
+      mobile
+        ? page.getByRole('button', { name: 'Override', exact: true })
+        : page.getByText(/Saving creates an override/)
+    ).waitFor()
     assert.deepEqual(await page.evaluate(() => window.writes.at(-1).after.agents), [])
-    await page.getByRole('button', { name: 'New configuration', exact: true }).click()
-    await page.getByLabel('Name', { exact: true }).fill('Research')
-    await page.getByLabel('Provider', { exact: true }).selectOption('claude')
     await page
-      .getByRole('button', { name: mobile ? 'Save agent' : 'Save configuration', exact: true })
+      .getByRole('button', { name: mobile ? 'New configuration' : 'Add provider', exact: true })
       .click()
-    await page.getByText('Research', { exact: true }).waitFor()
+    const editor = mobile ? page : page.getByRole('dialog')
+    if (!mobile) {
+      await editor.getByRole('button', { name: 'Claude', exact: true }).click()
+      await editor.getByRole('button', { name: 'Next', exact: true }).click()
+    }
+    await editor.getByLabel('Name', { exact: true }).fill('Research')
+    if (mobile) await editor.getByLabel('Provider', { exact: true }).selectOption('claude')
+    else {
+      await editor.getByRole('button', { name: 'Next', exact: true }).click()
+      await editor.getByRole('button', { name: 'Back', exact: true }).click()
+      assert.equal(await editor.getByLabel('Name', { exact: true }).inputValue(), 'Research')
+      await editor.getByRole('button', { name: 'Next', exact: true }).click()
+    }
+    await editor
+      .getByRole('button', { name: mobile ? 'Save agent' : 'Add configuration', exact: true })
+      .click()
+    await (
+      mobile
+        ? page.getByText('Research', { exact: true })
+        : page
+            .getByRole('navigation', { name: 'Provider configurations' })
+            .getByRole('button', { name: /Research/ })
+    ).waitFor()
     assert.equal(await page.evaluate(() => window.writes.at(-1).after.agents[0].provider), 'claude')
-    await page.getByRole('button', { name: 'New configuration', exact: true }).click()
-    await page.getByLabel('Name', { exact: true }).fill('Cursor worker')
-    await page.getByLabel('Access', { exact: true }).selectOption('ask')
-    await page.getByLabel('Provider', { exact: true }).selectOption('cursor')
-    assert.equal(await page.getByLabel('Access', { exact: true }).inputValue(), 'read-only')
+    await page
+      .getByRole('button', { name: mobile ? 'New configuration' : 'Add provider', exact: true })
+      .click()
+    if (mobile) await editor.getByLabel('Provider', { exact: true }).selectOption('cursor')
+    else await editor.getByRole('button', { name: 'Cursor SDK', exact: true }).click()
+    if (!mobile) await editor.getByRole('button', { name: 'Next', exact: true }).click()
+    await editor.getByLabel('Name', { exact: true }).fill('Cursor worker')
+    if (!mobile) await editor.getByRole('button', { name: 'Next', exact: true }).click()
+    assert.equal(await editor.getByLabel('Access', { exact: true }).inputValue(), 'read-only')
     assert.deepEqual(
-      await page
+      await editor
         .getByLabel('Access', { exact: true })
         .locator('option')
         .evaluateAll((rows) => rows.map((row) => row.value)),
       ['read-only', 'auto', 'full-access'],
     )
     assert.equal(
-      await page
+      await editor
         .getByLabel(mobile ? 'Executable path · blank uses default' : 'Connection / executable', {
           exact: true,
         })
@@ -144,18 +178,24 @@ try {
       0,
     )
     assert.equal(
-      await page
+      await editor
         .getByLabel(mobile ? 'Arguments · one per line' : 'Executable arguments (one per line)', {
           exact: true,
         })
         .count(),
       0,
     )
-    await page.getByText(/Cursor desktop login is separate/).waitFor()
-    await page
-      .getByRole('button', { name: mobile ? 'Save agent' : 'Save configuration', exact: true })
+    await editor.getByText(/Cursor desktop login is separate/).waitFor()
+    await editor
+      .getByRole('button', { name: mobile ? 'Save agent' : 'Add configuration', exact: true })
       .click()
-    await page.getByText('Cursor worker', { exact: true }).waitFor()
+    await (
+      mobile
+        ? page.getByText('Cursor worker', { exact: true })
+        : page
+            .getByRole('navigation', { name: 'Provider configurations' })
+            .getByRole('button', { name: /Cursor worker/ })
+    ).waitFor()
     assert.deepEqual(
       await page.evaluate(() => {
         const agent = window.writes
@@ -165,6 +205,43 @@ try {
       }),
       { provider: 'cursor', permission: 'read-only' },
     )
+    if (!mobile) {
+      const navigation = page.getByRole('navigation', { name: 'Provider configurations' })
+      await navigation.getByRole('button', { name: /Research/ }).click()
+      assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Research')
+      assert.equal(await page.getByRole('dialog').count(), 0)
+      const writesBefore = await page.evaluate(() => window.writes.length)
+      const env = page.getByRole('textbox', { name: /^Environment variables/ })
+      await env.fill('INVALID LINE')
+      await page.getByRole('button', { name: 'Save configuration', exact: true }).click()
+      await page.getByRole('alert').waitFor()
+      assert.equal(await page.evaluate(() => window.writes.length), writesBefore)
+      await env.fill('EXAMPLE=value')
+      await page.getByLabel('Instructions', { exact: true }).fill('Updated instructions')
+      await page.evaluate(() => (window.rejectSave = true))
+      await page.getByRole('button', { name: 'Save configuration', exact: true }).click()
+      await page.getByRole('alert').filter({ hasText: 'Save rejected' }).waitFor()
+      assert.equal(
+        await page.getByLabel('Instructions', { exact: true }).inputValue(),
+        'Updated instructions',
+      )
+      assert.equal(await page.evaluate(() => window.writes.length), writesBefore)
+      await page.evaluate(() => (window.rejectSave = false))
+      await page.getByRole('button', { name: 'Save configuration', exact: true }).click()
+      await page.getByRole('status').filter({ hasText: 'Research saved' }).waitFor()
+      assert.deepEqual(
+        await page.evaluate(() => {
+          const agent = window.writes.at(-1).after.agents.find((agent) => agent.name === 'Research')
+          return { instructions: agent.instructions, env: agent.env }
+        }),
+        { instructions: 'Updated instructions', env: { EXAMPLE: 'value' } },
+      )
+      await page.getByLabel('Instructions', { exact: true }).fill('Unsaved changes')
+      const confirmation = page.waitForEvent('dialog')
+      await navigation.getByRole('button', { name: /Cursor worker/ }).click()
+      assert.equal((await confirmation).message(), 'Discard unsaved configuration changes?')
+      assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Cursor worker')
+    }
     assert.deepEqual(errors, [])
     await page.close()
     console.log(
