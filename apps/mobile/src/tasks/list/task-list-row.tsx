@@ -86,9 +86,8 @@ export function TaskListRow({
     repository = runtime?.snapshot?.workspace.repositories.find(
       (repo) => repo.id === task.repositoryId,
     ),
-    agent = resolveTaskAgent(task, runtime?.snapshot?.workspace.agents ?? []),
-    turn = task.turns?.at(-1)
-  const executionDevice = turn ? (turn.runtimeHost ?? 'Unknown device') : row.runtimeName
+    agent = resolveTaskAgent(task, runtime?.snapshot?.workspace.agents ?? [])
+  const executionDevice = row.runtimeName
   const { modelName, catalog } = useCachedModelCatalog(agent, runtime?.profile)
   const providerName = agent
     ? ((task.harness

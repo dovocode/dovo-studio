@@ -20,13 +20,10 @@ const repository = decode(repositorySchema, {
 })
 function overview(host: string, connected = true): RuntimeOverview {
   return {
-    profile: runtimeProfile(
-      {
-        address: `http://${host}:51464`,
-        token: `${host}-device-credential`,
-      },
-      host,
-    ),
+    profile: runtimeProfile({
+      address: `http://${host}:51464`,
+      token: `${host}-device-credential`,
+    }),
     snapshot: decode(snapshotSchema, {
       revision: 1,
       owner: false,

@@ -1,4 +1,5 @@
 import {
+  runtimeHasCustomName,
   mergeSharedSettings,
   pendingSharedSettings,
   sharedSettingsSyncSchema,
@@ -573,6 +574,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           )
         const next = {
           ...runtimeProfile(value, name || previous?.name),
+          nameIsCustom: name?.trim() ? true : previous ? runtimeHasCustomName(previous) : false,
           ...(previous ? { id: previous.id } : {}),
         }
         if (previous && !sameRuntimeConnection(previous.connection, next.connection))
@@ -660,6 +662,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               ? {
                   ...item,
                   name: name.trim(),
+                  nameIsCustom: true,
                 }
               : item,
           ),

@@ -9,7 +9,7 @@ const mocks = {
   '../../runtime/connection/provider': `export const useRuntime=()=>({activeId:window.runtimeId??'computer',legacyDraftRuntimeId:null});`,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../ui/theme': `export const styles={chatText:{}};`,
-  '../../ui/controls/field': `import {useRef,useImperativeHandle,useEffect} from 'react';export function Field({value,defaultValue,inputRef,onChangeText,onSelectionChange,editable,label}){const input=useRef();useEffect(()=>{window.mounts++},[]);useImperativeHandle(inputRef,()=>({setNativeProps:props=>{window.writes.push(props.text);input.current.value=props.text}}),[]);return <textarea ref={input} aria-label={label} value={value} defaultValue={defaultValue} disabled={!editable} onChange={e=>onChangeText(e.target.value)} onSelect={e=>onSelectionChange({nativeEvent:{selection:{start:e.target.selectionStart,end:e.target.selectionEnd}}})}/>;}`,
+  '../../ui/controls/field': `import {useRef,useImperativeHandle,useEffect} from 'react';export function Field({value,defaultValue,inputRef,onChangeText,onSelectionChange,editable,label}){const input=useRef();useEffect(()=>{window.mounts++},[]);useImperativeHandle(inputRef,()=>({clear:()=>{window.clears++;window.writes.push('');input.current.value=''},setNativeProps:props=>{window.writes.push(props.text);if(props.text!==defaultValue)input.current.value=props.text}}),[]);return <textarea ref={input} aria-label={label} value={value} defaultValue={defaultValue} disabled={!editable} onChange={e=>onChangeText(e.target.value)} onSelect={e=>onSelectionChange({nativeEvent:{selection:{start:e.target.selectionStart,end:e.target.selectionEnd}}})}/>;}`,
 }
 const built = await build({
   stdin: {
@@ -17,7 +17,7 @@ const built = await build({
 import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState,useCallback} from 'react';
 import {ComposerField} from '${root}/apps/mobile/src/tasks/composer/composer-field.tsx';
 import {useDraft} from '${root}/apps/mobile/src/tasks/draft/use-draft.ts';
-window.mounts=0;window.writes=[];window.storageText=()=>localStorage.getItem('dovo.draft.computer.task');
+window.mounts=0;window.writes=[];window.clears=0;window.storageText=()=>localStorage.getItem('dovo.draft.computer.task');
 function App(){const draft=useDraft('task','Recovered draft');const [echo,setEcho]=useState(null);const [sending,setSending]=useState(false);const [stream,setStream]=useState(0);const type=useCallback(text=>draft.update(text,'keyboard'),[draft.update]);const select=useCallback(()=>{},[]);window.draft=draft;window.echo=text=>flushSync(()=>setEcho(text));window.stream=()=>flushSync(()=>setStream(n=>n+1));window.switchRuntime=id=>{window.runtimeId=id;flushSync(()=>setStream(n=>n+1))};window.apply=text=>flushSync(()=>{setEcho(null);setSending(false);draft.update(text)});window.send=()=>flushSync(()=>{setEcho(null);setSending(true)});window.fail=()=>flushSync(()=>setSending(false));return <div data-stream={stream}><ComposerField key={draft.key} value={echo??(sending?'':draft.text)} revision={JSON.stringify([draft.revision,sending])} onChangeText={type} onSelectionChange={select} editable={draft.ready} showOptions placeholder="Message"/></div>};
 createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -109,6 +109,14 @@ try {
   )
   assert.equal(await input.inputValue(), '')
   assert.equal(await page.evaluate(() => window.mounts), 3)
+  // Start empty, then type natively: another empty text prop is a no-op in Fabric.
+  await input.fill('Fresh message')
+  const cleared = await page.evaluate(() => window.clears)
+  await page.evaluate(() => window.send())
+  assert.equal(await input.inputValue(), '')
+  assert.equal(await page.evaluate(() => window.clears), cleared + 1)
+  await page.evaluate(() => window.fail())
+  assert.equal(await input.inputValue(), 'Fresh message')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile composer: rapid middle-of-draft typing, 100 stale acknowledgements and stream updates preserve text, caret and persistence; external edits, send clearing, failed-send restoration and computer switching pass.',

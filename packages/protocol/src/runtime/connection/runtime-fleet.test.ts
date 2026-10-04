@@ -9,6 +9,7 @@ import {
   runtimeProfile,
   runtimeRegistrySchema,
   runtimeComputerName,
+  runtimeHasCustomName,
   upsertRuntime,
 } from './runtime-fleet'
 import type { RuntimeOverview, RuntimeRegistry } from './runtime-fleet'
@@ -99,15 +100,34 @@ const json = (value: unknown, status = 200) =>
   })
 afterEach(() => vi.unstubAllGlobals())
 describe('Saved runtimes', () => {
-  it('uses the reported computer name even for a named external connection and cached offline data', () => {
-    expect(runtimeComputerName(overview)).toBe('reported-hostname')
+  it('preserves custom names online and offline, using the reported name for automatic labels', () => {
+    expect(runtimeComputerName(overview)).toBe('Mac')
     const offline = { ...overview, connected: false }
-    expect(runtimeComputerName(offline)).toBe('reported-hostname')
+    expect(runtimeComputerName(offline)).toBe('Mac')
     expect(runtimeComputerName({ profile, snapshot: null })).toBe('Mac')
     expect(runtimeComputerName({ profile, snapshot: { runtimeHost: '  ' } })).toBe('Mac')
-    expect(runtimeComputerName({ profile, snapshot: { runtimeHost: '  My computer  ' } })).toBe(
-      'My computer',
-    )
+    const automatic = runtimeProfile(profile.connection)
+    expect(
+      runtimeComputerName({ profile: automatic, snapshot: { runtimeHost: '  My computer  ' } }),
+    ).toBe('My computer')
+    const legacyCustom = { id: profile.id, name: profile.name, connection: profile.connection }
+    const legacyAutomatic = { ...legacyCustom, name: 'one.local' }
+    expect(runtimeComputerName({ profile: legacyCustom, snapshot })).toBe('Mac')
+    expect(runtimeComputerName({ profile: legacyAutomatic, snapshot })).toBe('reported-hostname')
+    expect(runtimeHasCustomName(legacyCustom)).toBe(true)
+    expect(runtimeHasCustomName(legacyAutomatic)).toBe(false)
+    const explicitlyNamedHost = runtimeProfile(profile.connection, 'one.local')
+    expect(runtimeComputerName({ profile: explicitlyNamedHost, snapshot })).toBe('one.local')
+    const saved = upsertRuntime({ version: 1, activeId: null, profiles: [] }, automatic)
+    expect(saved.profiles[0].nameIsCustom).toBe(false)
+    const renamed = { ...automatic, name: 'Work computer', nameIsCustom: true }
+    const changedAddress = {
+      ...renamed,
+      connection: { ...renamed.connection, address: 'http://new.example.com' },
+    }
+    expect(
+      runtimeComputerName({ profile: upsertRuntime(saved, changedAddress).profiles[0], snapshot }),
+    ).toBe('Work computer')
     expect(runtimeComputerName({})).toBe('Unknown computer')
   })
   it('normalizes origins, replaces credentials without duplicate devices and removes active selection safely', () => {
@@ -200,7 +220,7 @@ describe('Runtime dashboard', () => {
     expect(new Set(entries.map((entry) => entry.key)).size).toBe(2)
     expect(entries[0]).toMatchObject({
       runtimeId: other.id,
-      runtimeName: 'reported-hostname',
+      runtimeName: 'Linux',
       needsInput: true,
       online: false,
       projectName: 'Other project',

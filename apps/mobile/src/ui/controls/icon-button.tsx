@@ -111,7 +111,10 @@ export function IconButton(props: IconButtonProps) {
     variant = 'plain',
     color,
   } = props
-  if (Platform.OS === 'ios')
+  // The filled Send/Stop control belongs to the TextInput's React Native responder tree.
+  // A SwiftUI button can blur the input on touch-down, moving the composer before touch-up
+  // and cancelling the press. Keep native SwiftUI controls for the other toolbar buttons.
+  if (Platform.OS === 'ios' && variant !== 'filled')
     return (
       // React Native owns this control's frame and keyboard avoidance.
       <Host

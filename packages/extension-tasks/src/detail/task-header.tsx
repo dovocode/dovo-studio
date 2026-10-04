@@ -3,7 +3,7 @@ import { RepositoryActions } from '@dovo/extension-scm/repository-actions'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useCallback, useEffect, useRef } from 'react'
 import { useLiveRefresh } from './live-refresh'
-import { canChangeTaskCheckout } from '@dovo/protocol'
+import { canChangeTaskCheckout, runtimeComputerName } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
 import { TaskPullLinkDialog } from '../dialogs/task-pull-link-dialog'
@@ -94,7 +94,7 @@ export function TaskHeader({
   bottomTerminalOpen: boolean
   onBottomTerminal: () => void
 }) {
-  const { workspace, snapshot, connected, request } = useWorkspace()
+  const { workspace, snapshot, connected, request, runtimes, activeRuntimeId } = useWorkspace()
   const updates = useRuntimeReleaseCheck()
   const serverUpdate = runtimeUpdate(snapshot, updates.releases)
   const host = useStudioHost()
@@ -199,7 +199,10 @@ export function TaskHeader({
     else if (primary === 'Open PR') openPull(linkedPulls[0]!.url)
     else setGitOpen(true)
   }
-  const executionHost = task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost
+  const executionHost = runtimeComputerName({
+    profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
+    snapshot: { runtimeHost: task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost },
+  })
   const needsInput =
     !!snapshot?.questions.some((request) => request.taskId === task.id) ||
     !!snapshot?.approvals.some((request) => request.taskId === task.id)
