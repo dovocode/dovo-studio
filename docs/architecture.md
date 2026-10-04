@@ -132,9 +132,11 @@ Clients negotiate `history=paged` for selected-task snapshots and sync tickets. 
 bounded by ten user requests, 75 messages and an approximate byte budget. Whole oversized messages
 remain accessible; files are never removed to fit a page. Authenticated `POST /api/tasks/history`
 loads earlier pages with stable message-ID cursors. Loaded history is separate from live workspace
-and draft state, and live versions win on overlap. Budget totals, search, bookmarks, copy and
-checkpoint review retain access to older history. Legacy clients receive full history until they opt
-in.
+and draft state, and live versions win on overlap. Desktop, web and mobile fill a recent window of
+500 messages in bounded pages, then load older pages automatically when scrolling back. Old turns
+remain deferred or virtualized; a retry control appears if loading fails. Mobile caches the latest
+500 messages for offline reopening. Budget totals, search, bookmarks, copy and checkpoint review
+retain access to older history. Legacy clients receive full history until they opt in.
 
 Auditing and history persistence skip unchanged task and message objects. Replaceable tool progress
 is coalesced for 50 ms with bounded buffering; terminal and boundary events flush it. Raw transport

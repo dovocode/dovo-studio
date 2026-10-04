@@ -380,7 +380,7 @@ load a fresh snapshot. Mobile closes the stream in the background and resumes on
 stopping the agent. Foreground streaming stays active; visible working durations keep seconds.
 Backgrounding pauses fleet refreshes, terminal sockets/retries, local activity polling and UI
 clocks. Widgets update only when their visible contents change. Snapshot and conversation caches
-batch writes and flush when leaving the foreground; the recent 200-message cache is preserved. Other
+batch writes and flush when leaving the foreground; the recent 500-message cache is preserved. Other
 computers’ task snapshots still refresh every 30 seconds while foregrounded, but their aggregate PR
 counts refresh every five minutes (or on manual refresh); open PR screens keep their normal updates.
 Unchanged Live Activities refresh every three minutes with a five-minute stale date, while changed

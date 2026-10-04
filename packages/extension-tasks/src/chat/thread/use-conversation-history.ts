@@ -8,6 +8,7 @@ import {
 import { useWorkspace } from '@dovo/studio-core'
 
 const emptyPages: ConversationPage[] = []
+const recentMessageCount = 500
 export function useConversationHistory<
   T extends Pick<Task, 'id' | 'messages' | 'turns' | 'historyBefore' | 'historyRevision'>,
 >(live: T) {
@@ -34,7 +35,7 @@ export function useConversationHistory<
   const previous = useRef({ scope, live })
   const latest = useRef(live)
   latest.current = live
-  const refill = useRef(0)
+  const refill = useRef(recentMessageCount)
 
   useEffect(() => {
     generation.current++
@@ -48,7 +49,7 @@ export function useConversationHistory<
   useEffect(() => {
     active.current = scope
     const before = previous.current
-    if (before.scope !== scope) refill.current = 0
+    if (before.scope !== scope) refill.current = recentMessageCount
     previous.current = { scope, live }
     const beforeIds = new Set(before.live.messages.map((message) => message.id))
     const gap =
@@ -56,12 +57,15 @@ export function useConversationHistory<
       !!live.historyBefore &&
       !live.messages.some((message) => beforeIds.has(message.id))
     if (before.scope === scope && ((before.live.historyRevision ?? 0) !== revision || gap)) {
-      refill.current = new Set(
-        [
-          ...(loaded.scope === scope ? loaded.pages.flatMap((page) => page.messages) : []),
-          ...before.live.messages,
-        ].map((message) => message.id),
-      ).size
+      refill.current = Math.max(
+        recentMessageCount,
+        new Set(
+          [
+            ...(loaded.scope === scope ? loaded.pages.flatMap((page) => page.messages) : []),
+            ...before.live.messages,
+          ].map((message) => message.id),
+        ).size,
+      )
       generation.current++
       pending.current = null
       setLoaded({ scope, revision, pages: [] })

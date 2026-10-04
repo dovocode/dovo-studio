@@ -8,6 +8,23 @@ it('retires callbacks after every physical execution, including hook repair atte
   const db = openDatabase(':memory:')
   try {
     const store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'thread',
+          title: 'Test',
+          agentId: 'agent',
+          repositoryId: '',
+          status: 'running',
+          createdAt: '',
+          draft: '',
+          messages: [],
+          files: [],
+          example: false,
+        },
+      ],
+    }))
     const input: AgentRun = {
       agent: {
         id: 'agent',

@@ -289,9 +289,7 @@ async function checkPendingWindowGap(page) {
       before: 'm450',
     }),
   )
-  await page.waitForFunction(
-    () => !window.historyState.busy && window.historyState.task.messages.length === 52,
-  )
+  await page.waitForFunction(() => window.historyState.task.messages.length === 52)
   const current = await page.evaluate(() =>
     window.historyState.task.messages.map((message) => Number(message.id.slice(1))),
   )
@@ -367,6 +365,73 @@ async function checkMobileRestoreRace(page) {
   if (await page.evaluate(() => window.failedRestoreWrites))
     throw new Error('Failed offline restore overwrote saved history')
 }
+async function checkConversationScroll(browser) {
+  const built = await build({
+    stdin: {
+      contents: `
+import {createRoot} from 'react-dom/client';import {useState,useEffect} from 'react';
+import {Conversation,ConversationContent,ConversationHistory,useConversationHistory} from './packages/studio-ui/src/components/ai-elements/conversation.tsx';
+function Inspector(){const {ready,scrollRef}=useConversationHistory();useEffect(()=>{window.scrollReady=ready;window.scroller=scrollRef.current});return null}
+function App(){const [older,setOlder]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState(false);window.setScrollError=setError;
+const load=()=>{window.scrollLoads++;setBusy(true);window.resolveScrollPage=()=>{setOlder(n=>n+10);setBusy(false)}};
+return <Conversation style={{height:400}}><ConversationHistory onLoadEarlier={!busy&&!error?load:undefined}><ConversationContent>
+{Array.from({length:20+older},(_,i)=>i-older).map(i=><div key={i} id={'row-'+i} style={{height:100}}>Message {i}</div>)}<Inspector/>
+</ConversationContent></ConversationHistory></Conversation>}
+window.scrollLoads=0;createRoot(document.getElementById('app')).render(<App/>);`,
+      loader: 'tsx',
+      resolveDir: root,
+    },
+    plugins: [
+      {
+        name: 'scroll-state',
+        setup(builder) {
+          builder.onResolve({ filter: /^@dovo\/studio-core\/state$/ }, () => ({
+            path: 'state',
+            namespace: 'scroll',
+          }))
+          builder.onLoad({ filter: /.*/, namespace: 'scroll' }, () => ({
+            contents: "export {useState as useApplicationState} from 'react'",
+            resolveDir: `${root}packages/studio-ui`,
+            loader: 'js',
+          }))
+        },
+      },
+    ],
+    nodePaths: [`${root}packages/studio-ui/node_modules`],
+    bundle: true,
+    write: false,
+    format: 'iife',
+    platform: 'browser',
+    jsx: 'automatic',
+    define: { 'process.env.NODE_ENV': '"production"' },
+  })
+  const page = await browser.newPage()
+  page.setDefaultTimeout(10000)
+  await page.setContent('<div id="app"></div>')
+  await page.addScriptTag({ content: built.outputFiles[0].text })
+  await page.waitForFunction(() => window.scrollReady && window.scroller.scrollTop >= 1500)
+  if (await page.evaluate(() => window.scrollLoads))
+    throw new Error('History paging fired before scrolling back')
+  await page.evaluate(() => {
+    window.scroller.scrollTop = 700
+  })
+  await page.waitForFunction(() => window.scrollLoads === 1)
+  const before = await page.locator('#row-7').boundingBox()
+  await page.evaluate(() => window.resolveScrollPage())
+  await page.waitForFunction(() => !!document.getElementById('row--10'))
+  const after = await page.locator('#row-7').boundingBox()
+  if (Math.abs(after.y - before.y) > 2) throw new Error('Older history moved the visible message')
+  if ((await page.evaluate(() => window.scrollLoads)) !== 1)
+    throw new Error('Paging continued after leaving the history boundary')
+  await page.evaluate(() => window.setScrollError(true))
+  await page.evaluate(() => {
+    window.scroller.scrollTop = 0
+  })
+  await page.waitForTimeout(50)
+  if ((await page.evaluate(() => window.scrollLoads)) !== 1)
+    throw new Error('History errors caused automatic retries')
+  await page.close()
+}
 async function checkProductionPaging(browser) {
   const built = await build({
     stdin: {
@@ -417,7 +482,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
               contents = "export {useState as useApplicationState} from 'react'"
             else if (args.path === '@dovo/studio-core')
               contents =
-                "export * from '@dovo/protocol';export const useWorkspace=()=>window.connection"
+                "export * from '@dovo/protocol';export const useWorkspace=()=>window.connection;export const useAppPreferences=()=>({collapseComposerOnScroll:false});export const formatDateTime=()=>''"
             else if (args.path === '@dovo/studio-ui') contents = 'export const Button=()=>null'
             else if (args.path.endsWith('chat-thread'))
               contents = `
@@ -459,7 +524,6 @@ return <div>{h.hasMore&&<button onClick={()=>h.load()}>Load earlier messages</bu
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  await page.getByRole('button', { name: 'Load earlier messages' }).click()
   await page.waitForFunction(() => window.productionHistory.task.messages.length === 4)
   await page.evaluate(() => {
     window.productionRevision = 8
@@ -554,27 +618,27 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
         window.saved = saved
         window.setLive({
           id: 'large',
-          messages: [398, 399].map((id) => ({
+          messages: [998, 999].map((id) => ({
             id: `m${id}`,
             role: 'assistant',
             text: `Message ${id}`,
           })),
           turns: [],
-          historyBefore: 'm398',
+          historyBefore: 'm998',
         })
       })
       await page.waitForFunction(
-        () => window.historyState.task.messages.length >= 200 && !window.historyState.busy,
+        () => window.historyState.task.messages.length >= 500 && !window.historyState.busy,
       )
       const count = await page.evaluate(() => window.requests)
-      if (count !== 5) throw new Error('Mobile did not automatically fetch four bounded pages')
+      if (count !== 11) throw new Error('Mobile did not automatically fetch ten bounded pages')
       await page.evaluate(() =>
         window.setLive((old) => ({
           ...old,
-          messages: [...old.messages, { id: 'm400', role: 'assistant', text: 'Streaming' }],
+          messages: [...old.messages, { id: 'm1000', role: 'assistant', text: 'Streaming' }],
         })),
       )
-      await page.waitForFunction(() => window.historyState.task.messages.at(-1)?.id === 'm400')
+      await page.waitForFunction(() => window.historyState.task.messages.at(-1)?.id === 'm1000')
       if ((await page.evaluate(() => window.requests)) !== count)
         throw new Error('Streaming fetched redundant history')
       await page.evaluate(() => {
@@ -582,14 +646,14 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
         window.setLive({ id: 'other', messages: [], turns: [] })
       })
       await page.waitForFunction(
-        () => window.saved.get('conversation:large')?.messages.length === 200,
+        () => window.saved.get('conversation:large')?.messages.length === 500,
       )
       await page.evaluate(() => {
         window.initial = { id: 'large', messages: [], turns: [] }
         window.restart()
       })
-      await page.waitForFunction(() => window.historyState.task.messages.length === 200)
-      if ((await page.evaluate(() => window.historyState.task.messages.at(-1)?.id)) !== 'm400')
+      await page.waitForFunction(() => window.historyState.task.messages.length === 500)
+      if ((await page.evaluate(() => window.historyState.task.messages.at(-1)?.id)) !== 'm1000')
         throw new Error('Offline reopen lost the latest reply')
       if ((await page.evaluate(() => window.requests)) !== count)
         throw new Error('Offline cache restore fetched network history')
@@ -608,46 +672,46 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
         window.connection = { ...window.connection, connected: true }
         window.setLive({
           id: 'large',
-          messages: [700, 701].map((id) => ({
+          messages: [1700, 1701].map((id) => ({
             id: `m${id}`,
             role: 'assistant',
             text: `Message ${id}`,
           })),
           turns: [],
-          historyBefore: 'm700',
+          historyBefore: 'm1700',
         })
       })
       await page.waitForFunction(
-        () => !window.historyState.busy && window.historyState.task.messages[0]?.id === 'm500',
+        () => !window.historyState.busy && window.historyState.task.messages[0]?.id === 'm1200',
       )
-      if ((await page.evaluate(() => window.requests)) !== count + 4)
+      if ((await page.evaluate(() => window.requests)) !== count + 10)
         throw new Error('Reconnect failed to refill a gap in cached history')
       await page.evaluate(() => window.background('background'))
       await page.waitForFunction(
-        () => window.saved.get('conversation:large')?.messages.at(-1)?.id === 'm701',
+        () => window.saved.get('conversation:large')?.messages.at(-1)?.id === 'm1701',
       )
       await page.evaluate(() => {
         window.initial = {
           id: 'large',
-          messages: [690, 691].map((id) => ({
+          messages: [1690, 1691].map((id) => ({
             id: `m${id}`,
             role: 'assistant',
             text: `Message ${id}`,
           })),
           turns: [],
-          historyBefore: 'm690',
+          historyBefore: 'm1690',
         }
         window.restart()
       })
       await page.waitForFunction(
         () =>
           !window.historyState.busy &&
-          window.historyState.task.messages.length >= 200 &&
-          window.historyState.task.messages.at(-1)?.id === 'm691',
+          window.historyState.task.messages.length >= 500 &&
+          window.historyState.task.messages.at(-1)?.id === 'm1691',
       )
       if (
         await page.evaluate(() =>
-          window.historyState.task.messages.some((message) => Number(message.id.slice(1)) > 691),
+          window.historyState.task.messages.some((message) => Number(message.id.slice(1)) > 1691),
         )
       )
         throw new Error('Cache resurrected messages removed by a rewind')
@@ -666,7 +730,7 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
       await page.waitForFunction(
         () => !window.historyState.busy && window.historyState.error.includes('did not advance'),
       )
-      if ((await page.evaluate(() => window.requests)) !== count + 6)
+      if ((await page.evaluate(() => window.requests)) !== count + 12)
         throw new Error('Invalid history cursor triggered an automatic retry loop')
       if (errors.length) throw new Error(errors.join('\n'))
       await checkLiveDeletion(page)
@@ -677,9 +741,7 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
       await page.close()
       continue
     }
-    if ((await page.evaluate(() => window.requests)) !== 0) {
-      throw new Error(`${file}: desktop history unexpectedly prefetched`)
-    }
+    await page.waitForFunction(() => window.requests === 1 && window.historyState.busy)
     await page.evaluate(() => {
       window.historyState.load()
     })
@@ -701,7 +763,6 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
           { id: 'm1', role: 'assistant', text: 'm1' },
         ],
         turns: [],
-        before: 'm0',
       }),
     )
     await page.waitForFunction(
@@ -718,9 +779,10 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
     await page.waitForFunction(
       () => window.historyState.task.messages.find((m) => m.id === 'm1')?.bookmarked,
     )
-    await page.evaluate(() => {
-      window.historyState.load()
-    })
+    await page.evaluate(() =>
+      window.setLive((old) => ({ ...old, historyBefore: 'm3', historyRevision: 1 })),
+    )
+    await page.waitForFunction(() => window.historyState.busy)
     await page.evaluate(() => {
       window.connection = {
         ...window.connection,
@@ -774,11 +836,40 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
     await checkExpandedRevision(page)
     await checkWindowGap(page)
     await checkPendingWindowGap(page)
+    await page.evaluate(() => {
+      window.desktopFillRequests = 0
+      window.connection.request = async (_path, { before }) => {
+        window.desktopFillRequests++
+        const end = Number(before.slice(1)),
+          start = Math.max(0, end - 50)
+        return {
+          messages: Array.from({ length: end - start }, (_, i) => ({
+            id: `m${start + i}`,
+            role: 'assistant',
+            text: 'Older',
+          })),
+          turns: [],
+          ...(start ? { before: `m${start}` } : {}),
+        }
+      }
+      window.setLive({
+        id: 'desktop-large',
+        messages: [998, 999].map((i) => ({ id: `m${i}`, role: 'assistant', text: 'Recent' })),
+        turns: [],
+        historyBefore: 'm998',
+      })
+    })
+    await page.waitForFunction(
+      () => !window.historyState.busy && window.historyState.task.messages.length >= 500,
+    )
+    if ((await page.evaluate(() => window.desktopFillRequests)) !== 10)
+      throw new Error('Desktop did not fill a bounded recent window')
     await page.close()
   }
   await checkProductionPaging(browser)
+  await checkConversationScroll(browser)
   console.log(
-    'History checks passed: 200-message loading, offline restoration, background saves, reconnect gaps, rewinds, live and older deletions, revision invalidation, cursor errors and host isolation.',
+    'History checks passed: 500-message loading, offline restoration, background saves, reconnect gaps, rewinds, live and older deletions, revision invalidation, cursor errors and host isolation.',
   )
 } finally {
   await browser.close()
