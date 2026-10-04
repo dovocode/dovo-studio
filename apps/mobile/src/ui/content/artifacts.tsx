@@ -7,6 +7,7 @@ import * as Sharing from 'expo-sharing'
 import * as Crypto from 'expo-crypto'
 import {
   artifactFile,
+  artifactFormatLabels,
   artifactListSchema,
   artifactLinkLabel,
   artifactPreviewHtml,
@@ -25,6 +26,7 @@ import { Icon, type IconName } from '../controls/icon'
 import { IconButton } from '../controls/icon-button'
 import { colors, styles } from '../theme'
 import { openAppLink } from './open-link'
+import { ArtifactFormatIcon } from './artifact-presentation'
 
 export const ArtifactCard = memo(function ArtifactCard({
   reference,
@@ -53,13 +55,16 @@ export const ArtifactCard = memo(function ArtifactCard({
           opacity: pressed ? 0.7 : 1,
         })}
       >
-        <Icon name="artifact" size={22} />
-        <View style={{ flex: 1 }}>
-          <Text numberOfLines={2}>{reference.title}</Text>
+        <ArtifactFormatIcon format={reference.format} />
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text numberOfLines={2} style={{ fontWeight: '600' }}>
+            {reference.title}
+          </Text>
           <Text style={styles.muted}>
-            {reference.format} · Version {reference.revision} · Open artifact
+            {artifactFormatLabels[reference.format]} · Version {reference.revision}
           </Text>
         </View>
+        <Icon name="external" size={16} color={colors.muted} />
       </Pressable>
       {open && (
         <ArtifactBrowser
@@ -124,6 +129,7 @@ export function ArtifactBrowser({
   const [links, setLinks] = useState<ArtifactLink[]>([])
   const [id, setId] = useState(initialId)
   const link = links.find((item) => item.url === id)
+  const metadata = items?.find((item) => item.id === id)
   const [revision, setRevision] = useState<number>()
   const [versions, setVersions] = useState<ArtifactMetadata[]>([])
   const [reload, setReload] = useState(0)
@@ -167,7 +173,7 @@ export function ArtifactBrowser({
     let disposed = false
     setVersions([])
     setPreviewError('')
-    if (!id || link || !connected) return
+    if (!id || !metadata || !connected) return
     void Promise.all([
       read('/api/artifacts/read', { taskId, id, revision }, artifactResponseSchema),
       read('/api/artifacts/versions', { taskId, id }, artifactVersionsSchema),
@@ -184,7 +190,7 @@ export function ArtifactBrowser({
     return () => {
       disposed = true
     }
-  }, [read, taskId, id, link?.url, revision, connected, reload, selection])
+  }, [read, taskId, id, metadata?.revision, revision, connected, reload, selection])
   const share = async () => {
     if (!artifact || sharing) return
     setSharing(true)
@@ -205,8 +211,47 @@ export function ArtifactBrowser({
   return (
     <SafeModal animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <View style={{ padding: 16, gap: 10 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4 }}>
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingTop: 18,
+            paddingBottom: 14,
+            gap: 16,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {metadata ? (
+              <ArtifactFormatIcon format={metadata.format} />
+            ) : (
+              <Icon name="artifactList" color={colors.muted} />
+            )}
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text numberOfLines={2} style={{ fontSize: 18, fontWeight: '600' }}>
+                {link?.title ?? artifact?.title ?? metadata?.title ?? 'Thread artifacts'}
+              </Text>
+              <Text style={styles.muted}>
+                {link
+                  ? artifactLinkLabel(link.provider)
+                  : metadata
+                    ? artifactFormatLabels[metadata.format]
+                    : 'Saved in this thread'}
+                {artifact &&
+                  ` · Version ${artifact.revision}${revision === undefined ? ' · Latest' : ''}`}
+              </Text>
+            </View>
+          </View>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              gap: 4,
+              paddingVertical: 6,
+              borderRadius: 14,
+              backgroundColor: colors.surface,
+            }}
+          >
             <ArtifactAction
               icon="artifactList"
               caption="Files"
@@ -255,15 +300,16 @@ export function ArtifactBrowser({
               onPress={onClose}
             />
           </View>
-          <Text numberOfLines={2} style={{ fontSize: 18, fontWeight: '600' }}>
-            {link?.title ?? artifact?.title ?? 'Thread artifacts'}
-          </Text>
           {!!error && <Text style={styles.error}>{error}</Text>}
           {!error && (!items || (!!id && !link && !artifact)) && <ActivityIndicator />}
           {items?.length === 0 && links.length === 0 && (
-            <Text style={styles.muted}>
-              No artifacts yet. Create an artifact or share a Claude artifact or ChatGPT Site link.
-            </Text>
+            <View style={{ alignItems: 'center', gap: 8, paddingVertical: 32 }}>
+              <Icon name="artifactList" size={32} color={colors.muted} />
+              <Text style={{ fontWeight: '600' }}>No artifacts yet</Text>
+              <Text style={[styles.muted, { textAlign: 'center' }]}>
+                Ask your agent to create a document, an interactive preview or a graphic.
+              </Text>
+            </View>
           )}
         </View>
         {picker ? (
@@ -283,7 +329,23 @@ export function ArtifactBrowser({
               <Pressable
                 key={`${item.id}:${item.revision}`}
                 accessibilityRole="button"
-                style={{ padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}
+                accessibilityState={{
+                  selected: picker === 'artifacts' ? item.id === id : item.revision === revision,
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: 16,
+                  borderWidth: 1,
+                  borderColor: (
+                    picker === 'artifacts' ? item.id === id : item.revision === revision
+                  )
+                    ? colors.accent
+                    : colors.border,
+                  backgroundColor: colors.surface,
+                  borderRadius: 12,
+                }}
                 onPress={() => {
                   if (picker === 'artifacts') {
                     setId(item.id)
@@ -293,10 +355,17 @@ export function ArtifactBrowser({
                   setPicker(undefined)
                 }}
               >
-                <Text>{picker === 'artifacts' ? item.title : `Version ${item.revision}`}</Text>
-                <Text style={styles.muted}>
-                  {item.format} · {new Date(item.updatedAt).toLocaleString()}
-                </Text>
+                <ArtifactFormatIcon format={item.format} />
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text>{picker === 'artifacts' ? item.title : `Version ${item.revision}`}</Text>
+                  <Text style={styles.muted}>
+                    {artifactFormatLabels[item.format]} ·{' '}
+                    {new Date(item.updatedAt).toLocaleString()}
+                  </Text>
+                </View>
+                {(picker === 'artifacts' ? item.id === id : item.revision === revision) && (
+                  <Icon name="check" color={colors.accent} />
+                )}
               </Pressable>
             ))}
             {picker === 'artifacts' &&
@@ -323,9 +392,21 @@ export function ArtifactBrowser({
               ))}
           </ScrollView>
         ) : link ? (
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+          <ScrollView
+            contentContainerStyle={{
+              padding: 24,
+              gap: 16,
+              flexGrow: 1,
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            <Icon name="external" size={36} color={colors.muted} />
+            <Text style={{ fontWeight: '600', fontSize: 18 }}>{link.title}</Text>
             <Text style={styles.muted}>{artifactLinkLabel(link.provider)}</Text>
-            <Text selectable>{link.url}</Text>
+            <Text selectable style={[styles.muted, { textAlign: 'center' }]}>
+              {link.url}
+            </Text>
             <Action
               label={`Open ${artifactLinkLabel(link.provider)}`}
               onPress={() => {
@@ -338,7 +419,9 @@ export function ArtifactBrowser({
         ) : (
           artifact &&
           (source || artifact.format === 'code' || artifact.format === 'markdown' ? (
-            <ScrollView contentContainerStyle={{ padding: 16 }}>
+            <ScrollView
+              contentContainerStyle={{ padding: source || artifact.format === 'code' ? 20 : 24 }}
+            >
               {!source && artifact.format === 'markdown' ? (
                 <Markdown text={artifact.content} />
               ) : (
@@ -347,6 +430,7 @@ export function ArtifactBrowser({
                   style={{
                     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                     fontSize: 13,
+                    lineHeight: 22,
                   }}
                 >
                   {artifact.content}

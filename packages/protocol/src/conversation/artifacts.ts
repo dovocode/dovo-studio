@@ -98,6 +98,12 @@ export const artifactVersionsSchema = mutableStruct({
 export type Artifact = Schema.Schema.Type<typeof artifactSchema>
 export type ArtifactMetadata = Schema.Schema.Type<typeof artifactMetadataSchema>
 export type ArtifactReference = Schema.Schema.Type<typeof artifactReferenceSchema>
+export const artifactFormatLabels: Record<ArtifactReference['format'], string> = {
+  markdown: 'Document',
+  html: 'Interactive',
+  svg: 'Graphic',
+  code: 'Code',
+}
 export type ArtifactCreate = Schema.Schema.Type<typeof artifactCreateSchema>
 export type ArtifactUpdate = Schema.Schema.Type<typeof artifactUpdateSchema>
 const artifactEnvelopeSchema = mutableStruct({ artifacts: mutableArray(artifactReferenceSchema) })

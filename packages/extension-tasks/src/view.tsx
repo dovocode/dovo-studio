@@ -5,7 +5,7 @@ import { ResizableSidebar } from './detail/resizable-sidebar'
 import { readTaskListViewState, saveTaskListViewState } from './list/task-list-view-state'
 import { useCachedTask } from '@dovo/studio-core'
 import { watchRuntimeTask } from '@dovo/protocol'
-import type { Task } from '@dovo/protocol'
+import type { ArtifactReference, Task } from '@dovo/protocol'
 import { PullDetail } from '@dovo/extension-scm/pull-detail'
 import { threadPullPreview } from './detail/thread-pull-preview'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -138,6 +138,11 @@ export default function TasksView({ entityId }: StudioViewProps) {
   } | null>(null)
   const threadKey = taskCollectionKey(activeRuntimeId, task?.id ?? selectedId)
   const [threadSurfaces, setThreadSurfaces] = useApplicationState<Record<string, TaskSurface>>({})
+  const [artifactSelection, setArtifactSelection] = useState<{
+    threadKey: string
+    id: string
+    openId: string
+  }>()
   const surface = threadSurfaces[threadKey] ?? 'chat'
   const toolsExpanded = surface !== 'chat' && surface !== 'terminal'
   const fileViewer = surface === 'files' || surface === 'changes'
@@ -243,6 +248,15 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const [pullPreviews, setPullPreviews] = useApplicationState<
     Record<string, { repositoryId: string; number: number }>
   >({})
+  const openArtifact = (reference: ArtifactReference) => {
+    const key = taskCollectionKey(activeRuntimeId, reference.taskId)
+    setArtifactSelection({ threadKey: key, id: reference.id, openId: randomUUID() })
+    if (reference.taskId !== task?.id) {
+      setSelectedId(reference.taskId)
+      setSplitId(task?.id ?? '')
+      setThreadSurfaces((current) => ({ ...current, [key]: 'artifacts' }))
+    } else selectSurface('artifacts', compact)
+  }
   const openPullPreview = (target: Task, url: string) => {
     const preview = threadPullPreview(
       githubPullTarget(url)?.url ?? url,
@@ -797,6 +811,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                           onReview={() => selectSurface(hasDiff ? 'changes' : 'files')}
                           onTerminal={showTerminal}
                           onPullLink={(url) => openPullPreview(task, url)}
+                          onArtifact={openArtifact}
                           onBrowser={(url) => {
                             setBrowserLink({ taskId: task.id, id: randomUUID(), url })
                             selectSurface('browser')
@@ -837,11 +852,23 @@ export default function TasksView({ entityId }: StudioViewProps) {
                     </ResizablePanelGroup>
                   </div>
                   <ResizableSidebar
-                    key={fileViewer ? 'viewer' : 'tools'}
-                    preference={fileViewer ? 'viewerSidebarWidth' : 'toolsSidebarWidth'}
+                    key={fileViewer || surface === 'artifacts' ? 'viewer' : 'tools'}
+                    preference={
+                      fileViewer || surface === 'artifacts'
+                        ? 'viewerSidebarWidth'
+                        : 'toolsSidebarWidth'
+                    }
                     side="right"
                     label="tools sidebar"
-                    maxFraction={fileViewer && !viewerDocked ? 1 : fileViewer ? 0.5 : 0.48}
+                    maxFraction={
+                      fileViewer && !viewerDocked
+                        ? 1
+                        : surface === 'artifacts'
+                          ? 0.6
+                          : fileViewer
+                            ? 0.5
+                            : 0.48
+                    }
                     maxWidth={fileViewer && !viewerDocked ? 640 : 960}
                     reservedWidth={fileViewer && !viewerDocked ? 72 : 0}
                     resizable={!compact && surface !== 'chat' && !(fileViewer && viewerExpanded)}
@@ -946,9 +973,18 @@ export default function TasksView({ entityId }: StudioViewProps) {
                           panes.current.artifacts = element
                         }}
                         tabIndex={-1}
-                        className="min-h-0 min-w-0 flex-1 overflow-y-auto"
+                        className="min-h-0 min-w-0 flex-1 overflow-hidden"
                       >
-                        <ThreadArtifacts key={threadKey} taskId={task.id} />
+                        <ThreadArtifacts
+                          key={`${threadKey}:${artifactSelection?.threadKey === threadKey ? artifactSelection.openId : ''}`}
+                          taskId={task.id}
+                          initialId={
+                            artifactSelection?.threadKey === threadKey
+                              ? artifactSelection.id
+                              : undefined
+                          }
+                          onClose={() => selectSurface('chat', true)}
+                        />
                       </div>
                     )}
                     {surface === 'projects' && (
@@ -1118,6 +1154,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       historyLoaded={splitHistoryLoaded}
                       historyError={splitHistoryError}
                       onPullLink={(url) => openPullPreview(splitTask, url)}
+                      onArtifact={openArtifact}
                       key={`split:${splitTask.id}`}
                       task={splitTask}
                       visible
