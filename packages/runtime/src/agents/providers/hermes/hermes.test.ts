@@ -16,7 +16,20 @@ afterEach(async () => {
     directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
   )
 })
-async function fixture() {
+const defaultCatalog = {
+  model: 'a',
+  provider: 'nous',
+  providers: [
+    {
+      slug: 'nous',
+      name: 'Nous',
+      authenticated: true,
+      models: ['a', 'b'],
+      capabilities: { a: { reasoning: false }, b: { reasoning: true } },
+    },
+  ],
+}
+async function fixture(catalog: unknown = defaultCatalog) {
   const f = await providerFixture(
     'hermes',
     String.raw`
@@ -27,7 +40,7 @@ let prompt=''; event('gateway.ready');
 createInterface({input:process.stdin}).on('line',line=>{
  const value=JSON.parse(line);messages.push(value);writeFileSync(process.env.TEST_RECORD,JSON.stringify(messages));
  const p=value.params||{};
- if(value.method==='model.options')return reply(value.id,{model:'a',provider:'nous',providers:[{slug:'nous',name:'Nous',authenticated:true,models:['a','b'],capabilities:{a:{reasoning:false},b:{reasoning:true}}}]});
+ if(value.method==='model.options')return reply(value.id,JSON.parse(process.env.TEST_CATALOG));
  if(value.method==='session.create'||value.method==='session.resume')return reply(value.id,{session_id:'runtime',stored_session_id:'stored'});
  if(value.method==='session.steer'){event('message.delta',{text:p.text});reply(value.id,{status:'queued'});event('message.complete',{text:'Hello '+p.text,status:'complete'});return}
  if(value.method==='session.compress')return reply(value.id,{status:'compressed',usage:{context_used:12,context_max:1000}});
@@ -45,6 +58,7 @@ createInterface({input:process.stdin}).on('line',line=>{
  reply(value.id,{});
 });`,
   )
+  f.run.agent.env = { ...f.run.agent.env, TEST_CATALOG: JSON.stringify(catalog) }
   directories.push(f.cwd)
   const adapter = createHermesAdapter()
   adapters.push(adapter)
@@ -120,9 +134,15 @@ it('uses native sessions, separate message boundaries, tools and final response 
   expect(f.sessions).toEqual(['stored'])
   expect(f.events.map((event) => event.name)).toContain('tool.complete')
   const wire = await f.messages()
+  expect(wire.find((frame) => frame.method === 'session.create')?.params).toEqual({
+    cwd: f.cwd,
+    source: 'dovo',
+    close_on_disconnect: true,
+    hidden: false,
+  })
   expect(wire.find((frame) => frame.method === 'config.set')?.params).toMatchObject({
     key: 'model',
-    value: 'nous:b',
+    value: 'b --provider nous --session',
     scope: 'session',
   })
   expect(wire.some((frame) => frame.method === 'initialize')).toBe(false)
@@ -134,6 +154,72 @@ it('discovers provider-qualified native models and per-model reasoning', async (
     { id: 'nous:a', reasoning: [] },
     { id: 'nous:b', reasoning: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }] },
   ])
+})
+it('sends custom endpoint models without the picker hostname and retains their colon suffix', async () => {
+  const f = await fixture({
+    provider: 'custom',
+    model: 'deepseek-v4.1-flash:dev',
+    providers: [
+      {
+        slug: 'llm-proxy.dovo.dev',
+        name: 'Electron Hub',
+        is_current: true,
+        authenticated: true,
+        models: ['deepseek-v4.1-flash:dev'],
+      },
+    ],
+  })
+  const catalog = await hermesModels(f.run.agent)
+  expect(catalog.models[0]).toMatchObject({
+    id: 'llm-proxy.dovo.dev:deepseek-v4.1-flash:dev',
+    name: 'deepseek-v4.1-flash:dev',
+    isDefault: true,
+  })
+  await f.adapter.run({
+    ...f.run,
+    sessionId: 'stored',
+    agent: { ...f.run.agent, model: catalog.models[0].id },
+  })
+  expect((await f.messages()).find((frame) => frame.method === 'config.set')?.params).toMatchObject(
+    {
+      key: 'model',
+      value: 'deepseek-v4.1-flash:dev --provider custom --session',
+      scope: 'session',
+    },
+  )
+})
+it('keeps duplicate models on distinct named endpoints and handles colon-containing provider keys', async () => {
+  const f = await fixture({
+    provider: 'custom:other',
+    model: 'qwen:4b',
+    providers: [
+      { slug: 'local', name: 'Local', models: ['qwen:4b'] },
+      { slug: 'custom:other', name: 'Other', aliases: ['custom:other'], models: ['qwen:4b'] },
+    ],
+  })
+  const catalog = await hermesModels(f.run.agent)
+  expect(catalog.models.map((model) => model.id)).toEqual(['local:qwen:4b', 'custom:other:qwen:4b'])
+  await f.adapter.run({ ...f.run, agent: { ...f.run.agent, model: 'local:qwen:4b' } })
+  expect((await f.messages()).find((frame) => frame.method === 'config.set')?.params).toMatchObject(
+    {
+      value: 'qwen:4b --provider local --session',
+    },
+  )
+  await f.adapter.run({ ...f.run, agent: { ...f.run.agent, model: 'custom:other:qwen:4b' } })
+  expect((await f.messages()).find((frame) => frame.method === 'config.set')?.params).toMatchObject(
+    {
+      value: 'qwen:4b --provider custom:other --session',
+    },
+  )
+})
+it('leaves manually entered colon-containing model IDs intact', async () => {
+  const f = await fixture()
+  await f.adapter.run({ ...f.run, agent: { ...f.run.agent, model: 'deepseek-v4.1-flash:dev' } })
+  expect((await f.messages()).find((frame) => frame.method === 'config.set')?.params).toMatchObject(
+    {
+      value: 'deepseek-v4.1-flash:dev --session',
+    },
+  )
 })
 it('retains a gateway across turns but refreshes its scoped MCP configuration on changes', async () => {
   vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)

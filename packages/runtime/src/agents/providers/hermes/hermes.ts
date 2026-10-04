@@ -29,6 +29,8 @@ const catalogSchema = mutableStruct({
       models: mutableArray(Schema.String),
       unavailable_models: Schema.optional(mutableArray(Schema.String)),
       authenticated: Schema.optional(Schema.Boolean),
+      is_current: Schema.optional(Schema.Boolean),
+      aliases: Schema.optional(mutableArray(Schema.String)),
       capabilities: Schema.optional(
         Schema.mutable(
           Schema.Record({
@@ -42,14 +44,27 @@ const catalogSchema = mutableStruct({
 })
 const reasoning = ['low', 'medium', 'high'].map((id) => ({ id, name: id }))
 type Connection = ReturnType<typeof openHermesConnection>
+type Catalog = typeof catalogSchema.Type
+async function modelOptions(connection: Connection, signal?: AbortSignal): Promise<Catalog> {
+  return decode(catalogSchema, await connection.request('model.options', {}, signal, 30000))
+}
+function modelValue(catalog: Catalog, selected: string) {
+  for (const provider of catalog.providers) {
+    const model = provider.models.find((model) => `${provider.slug}:${model}` === selected)
+    if (model === undefined) continue
+    // Picker slugs (including endpoint hostnames) are identities, not model-ID prefixes.
+    // Hermes' model setter uses /model syntax; keep the model intact and the switch session-only.
+    const route = provider.is_current && catalog.provider ? catalog.provider : provider.slug
+    return `${model} --provider ${route} --session`
+  }
+  // Manually entered model IDs may contain colons themselves, e.g. Ollama tags or :dev.
+  return `${selected} --session`
+}
 export async function hermesModels(agent: AgentDiscovery): Promise<ModelCatalog> {
   const connection = openHermesConnection(agent, homedir())
   try {
     await connection.ready()
-    const catalog = decode(
-      catalogSchema,
-      await connection.request('model.options', {}, undefined, 30000),
-    )
+    const catalog = await modelOptions(connection)
     return {
       models: catalog.providers
         .filter((provider) => provider.authenticated !== false)
@@ -58,7 +73,11 @@ export async function hermesModels(agent: AgentDiscovery): Promise<ModelCatalog>
             id: `${provider.slug}:${model}`,
             name: model,
             description: provider.name,
-            isDefault: provider.slug === catalog.provider && model === catalog.model,
+            isDefault:
+              (provider.is_current === true ||
+                provider.slug === catalog.provider ||
+                provider.aliases?.includes(catalog.provider ?? '') === true) &&
+              model === catalog.model,
             hidden: provider.unavailable_models?.includes(model),
             reasoning: provider.capabilities?.[model]?.reasoning === false ? [] : reasoning,
           })),
@@ -275,7 +294,6 @@ export function createHermesAdapter(): AgentAdapter {
                 ? { session_id: run.sessionId, omit_messages: true, close_on_disconnect: true }
                 : {
                     cwd: run.cwd,
-                    cwd_explicit: true,
                     source: 'dovo',
                     close_on_disconnect: true,
                     hidden: !!run.ephemeral,
@@ -302,13 +320,14 @@ export function createHermesAdapter(): AgentAdapter {
               30000,
             )
           if (run.agent.model) {
+            const value = modelValue(await modelOptions(connection, run.signal), run.agent.model)
             const selected = object(
               await connection.request(
                 'config.set',
                 {
                   session_id: owned.session,
                   key: 'model',
-                  value: run.agent.model,
+                  value,
                   scope: 'session',
                 },
                 run.signal,
