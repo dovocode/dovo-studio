@@ -2,6 +2,7 @@ import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
 import { stageWorkspace } from './stage-workspace.mjs'
 import { releaseVariant } from './release-variant.mjs'
+import { copyPreparedRuntime } from './prepared-runtime.mjs'
 import { mkdtemp, cp, mkdir, writeFile, chmod, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
@@ -24,24 +25,28 @@ try {
   const source = join(stage, 'source'),
     archive = join(stage, 'archive')
   const server = join(archive, 'libexec/server')
-  await stageWorkspace(root, source)
   await mkdir(join(archive, 'libexec'), { recursive: true })
-  deploy(
-    [
-      '--config.allow-unused-patches=true',
-      '--config.node-linker=hoisted',
-      '--config.shared-workspace-lockfile=false',
-      '--filter',
-      '@dovo/api',
-      'deploy',
-      '--prod',
-      '--legacy',
-      windows ? join(stage, 'deployed') : server,
-    ],
-    source,
-  )
-  // Materialize pnpm junctions before archiving; ZIPs must not reference the build machine.
-  if (windows) await cp(join(stage, 'deployed'), server, { recursive: true, dereference: true })
+  if (process.env.DOVO_PREPARED_RUNTIME) {
+    await copyPreparedRuntime(root, server)
+  } else {
+    await stageWorkspace(root, source)
+    deploy(
+      [
+        '--config.allow-unused-patches=true',
+        '--config.node-linker=hoisted',
+        '--config.shared-workspace-lockfile=false',
+        '--filter',
+        '@dovo/api',
+        'deploy',
+        '--prod',
+        '--legacy',
+        windows ? join(stage, 'deployed') : server,
+      ],
+      source,
+    )
+    // Materialize pnpm junctions before archiving; ZIPs must not reference the build machine.
+    if (windows) await cp(join(stage, 'deployed'), server, { recursive: true, dereference: true })
+  }
   await cp(process.execPath, join(archive, 'libexec', nodeName))
   await chmod(join(archive, 'libexec', nodeName), 0o755)
   const runtimeRequire = createRequire(

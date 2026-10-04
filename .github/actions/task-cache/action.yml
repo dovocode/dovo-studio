@@ -1,0 +1,16 @@
+name: Cache build and typecheck tasks
+description: Restore content-validated Vite Task results after dependencies are installed.
+inputs:
+  node:
+    description: Exact Node version from setup-build.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v4
+      with:
+        path: node_modules/.vite/task-cache
+        # Vite Task validates source, dependencies and outputs; the Actions key only scopes tools.
+        key: vite-task-v1-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-node-${{ inputs.node }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          vite-task-v1-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-node-${{ inputs.node }}-${{ hashFiles('pnpm-lock.yaml') }}-

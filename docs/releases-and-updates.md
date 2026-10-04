@@ -51,10 +51,22 @@ matching server archive, registers the user service, and uses the same command f
    update feed. Inspect the artifacts and publish the draft only after native installation tests.
 5. On an older install, exercise download, Later, restart/install and retained runtime data.
 
-Check and release jobs cache pnpm downloads, Node headers and Electron packaging tools. Download
-caches are separated by job, operating system, architecture and Node version; lockfile changes can
-reuse compatible downloads. Each release still builds, packages and signs fresh artifacts. Check
-runs its tests against the packages already built earlier in the job.
+Check runs the full build, lint, typechecks and test suite on Linux, with separate macOS and Windows
+native/process tests. New pushes cancel superseded Check runs. Release jobs install and build once
+per native platform, deploy one private production runtime, then package desktop and server in
+parallel. The extracted Windows server still exercises setup, start, status and stop.
+
+Both workflows cache the pnpm package store and registry metadata. Metadata entries refresh daily;
+frozen-lockfile supply-chain checks remain enabled. Release jobs also cache Node headers and
+Electron packaging downloads, separated by job, operating system, architecture and Node version.
+Build and typecheck tasks use Vite Task's content-validated cache, scoped to exact Node versions and
+lockfiles. Tests, packaging, signing and notarization always run. The desktop content stamp accepts
+restored outputs with old timestamps and rejects outputs that differ from the current sources.
+
+To inspect local cache hits, repeat `pnpm build` or `pnpm typecheck`, then run
+`pnpm exec vp run --last-details`. Compare warm GitHub job timings as well as restore/save costs
+before changing package-store caching; large native stores can take longer to restore than small
+task results. Cold runs after dependency or toolchain updates remain necessary.
 
 Merging into `main` builds and publishes `vX.Y.Z-nightly.N` automatically after all platform
 artifacts pass verification. Nightly releases are GitHub prereleases and do not replace the latest
@@ -71,6 +83,12 @@ tools. Only macOS publishing with `--publish` requires a Developer ID identity a
 credentials. The workflow uses native GitHub-hosted ARM runners; repository/plan eligibility must
 allow those runner labels. Unsigned Windows installers may show SmartScreen prompts.
 
+To reproduce the shared release staging locally, set `DOVO_PREPARED_RUNTIME` to a new absolute
+directory, run `pnpm run package:prepare-runtime`, then `pnpm run package:platform` with the same
+environment. Keep `DOVO_RELEASE_VERSION` and `DOVO_RELEASE_CHANNEL` consistent across both commands.
+The prepared runtime is checked against compiled inputs, release version, Node, OS and architecture;
+it is private staging within one build, rather than a persistent dependency cache.
+
 The signed macOS job uses macOS 26 and Xcode 26.2 for the Icon Composer asset. Its preflight
 compiles the real icon and verifies both `Assets.car` and the legacy `.icns` output; checking the
 compiler version alone does not detect incompatible host frameworks. The pnpm patch for
@@ -80,7 +98,9 @@ replacing the patch with an upstream fix.
 
 On macOS, local packaging uses an available Developer ID Application identity so updates keep the
 same Keychain identity. Set `CSC_NAME` to select a specific identity. Without one, local builds fall
-back to ad hoc signing and macOS may ask for Keychain access again after an update.
+back to ad hoc signing and macOS may ask for Keychain access again after an update. Set
+`CSC_IDENTITY_AUTO_DISCOVERY=false` for a local ad hoc verification build without selecting a saved
+identity; published updates still require the Developer ID.
 
 ## Local iPhone updates
 

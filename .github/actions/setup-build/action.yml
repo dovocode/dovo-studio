@@ -4,6 +4,13 @@ inputs:
   architecture:
     description: Node architecture; defaults to the runner's native architecture.
     required: false
+  packaging:
+    description: Restore Electron and native packaging downloads for release jobs.
+    default: 'false'
+outputs:
+  node:
+    description: Exact Node version for compatible task cache entries.
+    value: ${{ steps.downloads.outputs.node }}
 runs:
   using: composite
   steps:
@@ -18,8 +25,17 @@ runs:
       id: downloads
       shell: bash
       run: node "$GITHUB_WORKSPACE/scripts/ci/build-cache.mjs"
-    # A server job must not save a header-only archive under the desktop tools key.
+    # The package store does not include registry metadata or lockfile-policy verification.
+    # Refresh the immutable entry daily; pnpm still enforces its own metadata expiry and policies.
+    - name: Cache pnpm metadata
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.downloads.outputs.metadata }}
+        key: pnpm-metadata-v1-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-${{ steps.downloads.outputs.pnpm }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}-${{ steps.downloads.outputs.day }}
+        restore-keys: |
+          pnpm-metadata-v1-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-${{ steps.downloads.outputs.pnpm }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}-
     - uses: actions/cache@v4
+      if: inputs.packaging == 'true'
       with:
         path: ${{ steps.downloads.outputs.directory }}
         key: build-downloads-v1-${{ github.job }}-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-node-${{ steps.downloads.outputs.node }}-${{ hashFiles('pnpm-lock.yaml') }}

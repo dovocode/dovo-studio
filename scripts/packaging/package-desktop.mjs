@@ -3,19 +3,10 @@ import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
 import { stageWorkspace } from './stage-workspace.mjs'
 import { desktopMiseArchive } from './desktop-mise-archive.mjs'
+import { verifyDesktopBuild } from './desktop-build-stamp.mjs'
+import { copyPreparedRuntime } from './prepared-runtime.mjs'
 import { releaseVariant } from './release-variant.mjs'
-import {
-  mkdtemp,
-  cp,
-  mkdir,
-  readFile,
-  readdir,
-  stat,
-  writeFile,
-  chmod,
-  rm,
-  realpath,
-} from 'node:fs/promises'
+import { mkdtemp, cp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -36,31 +27,14 @@ const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
 // A stable signing identity keeps macOS Keychain access consistent across local installs.
 const macSigningIdentity =
   process.env.CSC_NAME ||
-  (process.platform === 'darwin'
+  (process.platform === 'darwin' && process.env.CSC_IDENTITY_AUTO_DISCOVERY !== 'false'
     ? execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], {
         encoding: 'utf8',
       }).match(/"(Developer ID Application: [^"]+)"/)?.[1]
     : undefined)
 
-// The installer copies the built renderer as is. Refuse a build older than its sources, so a direct
-// run (without `pnpm package:desktop`, which builds first) cannot ship a stale interface.
-async function newest(directory) {
-  let latest = 0
-  for (const entry of await readdir(directory, { withFileTypes: true, recursive: true })) {
-    if (!entry.isFile() || /\.test\.[jt]sx?$/.test(entry.name)) continue
-    latest = Math.max(latest, (await stat(join(entry.parentPath, entry.name))).mtimeMs)
-  }
-  return latest
-}
-const renderer = await stat(join(root, 'apps/desktop/dist/index.html')).catch(() => undefined)
-const sources = await Promise.all(
-  [
-    join(root, 'apps/desktop/src'),
-    ...(await readdir(join(root, 'packages'))).map((name) => join(root, 'packages', name, 'src')),
-  ].map((directory) => newest(directory).catch(() => 0)),
-)
-if (!renderer || renderer.mtimeMs < Math.max(...sources))
-  throw new Error('The desktop build is older than its sources. Run `pnpm build` first.')
+// Content verification accepts cache restores while still rejecting stale or mixed outputs.
+await verifyDesktopBuild(root)
 const platform =
   process.platform === 'darwin'
     ? Platform.MAC
@@ -83,20 +57,22 @@ try {
     application = join(stage, 'application')
   const source = join(stage, 'source')
   await stageWorkspace(root, source)
-  deploy(
-    [
-      '--config.allow-unused-patches=true',
-      '--config.node-linker=hoisted',
-      '--config.shared-workspace-lockfile=false',
-      '--filter',
-      '@dovo/api',
-      'deploy',
-      '--prod',
-      '--legacy',
-      runtime,
-    ],
-    source,
-  )
+  if (process.env.DOVO_PREPARED_RUNTIME) await copyPreparedRuntime(root, runtime)
+  else
+    deploy(
+      [
+        '--config.allow-unused-patches=true',
+        '--config.node-linker=hoisted',
+        '--config.shared-workspace-lockfile=false',
+        '--filter',
+        '@dovo/api',
+        'deploy',
+        '--prod',
+        '--legacy',
+        runtime,
+      ],
+      source,
+    )
   await mkdir(join(runtime, 'bin'))
   await cp(process.execPath, join(runtime, 'bin', nodeName))
   await chmod(join(runtime, 'bin', nodeName), 0o755)

@@ -102,6 +102,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-build
+        id: setup
+        with:
+          packaging: 'true'
       - name: Verify native macOS icon toolchain
         run: node scripts/packaging/mac-icon-toolchain.mjs
       - name: Verify Apple signing secrets
@@ -117,7 +120,13 @@ jobs:
             test -n "${!name}" || { echo "::error::Missing $name secret"; exit 1; }
           done
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @dovo/api... --filter @dovo/desktop... -r build
+      - uses: ./.github/actions/task-cache
+        with:
+          node: ${{ steps.setup.outputs.node }}
+      - run: pnpm exec vp run --cache --filter @dovo/api... --filter @dovo/desktop... build
+      - run: pnpm run package:prepare-runtime
+        env:
+          DOVO_PREPARED_RUNTIME: ${{ runner.temp }}/dovo-prepared-runtime
       - name: Build signed update artifacts into a draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -131,7 +140,13 @@ jobs:
         run: |
           # Signing scans the bundled Node runtime and its dependency tree concurrently.
           ulimit -n 65536
-          node scripts/packaging/package-desktop.mjs --publish
+          pnpm run package:platform -- --publish
+      - uses: actions/upload-artifact@v4
+        with:
+          compression-level: 0
+          name: server-macos-26
+          if-no-files-found: error
+          path: release/Dovo-Server-*
       - name: Verify Mac signature and notarization
         env:
           APP_NAME: ${{ needs.draft.outputs.app_name }}
@@ -144,7 +159,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.draft.outputs.tag }}
         run: gh release upload "$TAG" release/*-mise-*.tar.gz --clobber
-  desktop:
+  platform:
     needs: draft
     if: ${{ needs.draft.outputs.build == 'true' }}
     strategy:
@@ -169,8 +184,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-build
+        id: setup
         with:
           architecture: ${{ matrix.arch }}
+          packaging: 'true'
       - name: Verify native architecture
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
@@ -182,9 +199,15 @@ jobs:
           sudo apt-get install -y rpm ruby-dev build-essential libarchive-tools
           sudo gem install --no-document fpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @dovo/api... --filter @dovo/desktop... -r build
-      - name: Build unsigned desktop packages
-        run: pnpm run package:desktop:artifacts
+      - uses: ./.github/actions/task-cache
+        with:
+          node: ${{ steps.setup.outputs.node }}
+      - run: pnpm exec vp run --cache --filter @dovo/api... --filter @dovo/desktop... build
+      - run: pnpm run package:prepare-runtime
+        env:
+          DOVO_PREPARED_RUNTIME: ${{ runner.temp }}/dovo-prepared-runtime
+      - name: Build unsigned desktop and server packages
+        run: pnpm run package:platform
       - uses: actions/upload-artifact@v4
         with:
           compression-level: 0
@@ -198,47 +221,6 @@ jobs:
             release/*.blockmap
             release/latest*.yml
             release/nightly*.yml
-  server:
-    needs: draft
-    if: ${{ needs.draft.outputs.build == 'true' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [macos-15, ubuntu-24.04, ubuntu-24.04-arm, windows-2025, windows-11-arm]
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    env:
-      DOVO_RELEASE_VERSION: ${{ needs.draft.outputs.version }}
-      DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-build
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @dovo/api... -r build
-      - run: pnpm run package:server
-      - name: Test extracted Windows server and launcher
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $archive = (Get-ChildItem release/Dovo-Server-*.zip).FullName
-          $destination = Join-Path $env:RUNNER_TEMP 'Dovo Server Extracted'
-          Expand-Archive -LiteralPath $archive -DestinationPath $destination
-          $name = if ($env:DOVO_RELEASE_CHANNEL -eq 'nightly') { 'dovo-server-nightly.cmd' } else { 'dovo-server.cmd' }
-          $launcher = Join-Path $destination "bin/$name"
-          $data = Join-Path $env:RUNNER_TEMP 'Dovo Server Smoke Data'
-          & $launcher --help
-          if ($LASTEXITCODE -ne 0) { throw 'Extracted launcher failed' }
-          & $launcher setup --data-dir $data --host 127.0.0.1 --port 51465
-          if ($LASTEXITCODE -ne 0) { throw 'Server setup failed' }
-          try {
-            & $launcher start --data-dir $data
-            if ($LASTEXITCODE -ne 0) { throw 'Server start failed' }
-            $status = & $launcher status --data-dir $data --json | ConvertFrom-Json
-            if (!$status.running -or !$status.managed) { throw 'Server is not healthy and managed' }
-          } finally {
-            & $launcher stop --data-dir $data
-            if ($LASTEXITCODE -ne 0) { throw 'Server stop failed' }
-          }
       - uses: actions/upload-artifact@v4
         with:
           compression-level: 0
@@ -246,7 +228,7 @@ jobs:
           if-no-files-found: error
           path: release/Dovo-Server-*
   upload:
-    needs: [draft, server, desktop]
+    needs: [draft, mac, platform]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4

@@ -5,14 +5,21 @@ on:
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
-    runs-on: macos-15
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-build
+        id: setup
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/task-cache
+        with:
+          node: ${{ steps.setup.outputs.node }}
       - run: pnpm build
       - run: pnpm check
       - run: pnpm typecheck
@@ -41,17 +48,22 @@ jobs:
       - run: pnpm test:thread-startup:browser
       - run: pnpm test:settings-target:browser
       - run: pnpm test:subagent-grouping:browser
-  # Runtime storage, delegation, restart and API lifecycle suites on Linux.
-  runtime-linux:
-    runs-on: ubuntu-24.04
+  # The full suite above covers Linux. Keep real macOS native/process behavior exercised too.
+  runtime-mac:
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-build
+        id: setup
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @dovo/api... -r build
+      - uses: ./.github/actions/task-cache
+        with:
+          node: ${{ steps.setup.outputs.node }}
+      - run: pnpm exec vp run --cache --filter @dovo/api... build
+      - run: node --test scripts/packaging/desktop-build-stamp.test.mjs scripts/packaging/prepared-runtime.test.mjs
       - run: >-
-          pnpm exec vp test --maxWorkers=4
+          pnpm exec vp test --maxWorkers=3
           apps/api/src
           packages/runtime/src/services.test.ts
           packages/runtime/src/storage
@@ -61,6 +73,14 @@ jobs:
           packages/runtime/src/agents/tasks/restart-recovery.test.ts
           packages/runtime/src/scm/tasks/pending-checkouts.test.ts
           packages/runtime/src/http/task-lifecycle.test.ts
+          packages/runtime/src/http/server-updates.test.ts
+          packages/runtime/src/agents/execution/stop-owned-child
+          packages/runtime/src/agents/providers/hermes
+          packages/runtime/src/agents/providers/acp/acp-connection.test.ts
+          packages/runtime/src/agents/providers/codex/codex-modes.test.ts
+          packages/runtime/src/agents/configuration/acp-installations.test.ts
+          packages/runtime/src/previews/physical-device-startup.test.ts
+          apps/desktop/electron
   # Windows shell selection, launcher and server lifecycle suites.
   windows:
     runs-on: windows-2025
@@ -68,8 +88,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-build
+        id: setup
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @dovo/api... -r build
+      - uses: ./.github/actions/task-cache
+        with:
+          node: ${{ steps.setup.outputs.node }}
+      - run: pnpm exec vp run --cache --filter @dovo/api... build
+      - run: node --test scripts/packaging/desktop-build-stamp.test.mjs scripts/packaging/prepared-runtime.test.mjs
       - run: >-
           pnpm exec vp test --maxWorkers=4
           packages/runtime/src/terminal
