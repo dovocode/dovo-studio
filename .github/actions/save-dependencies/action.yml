@@ -1,0 +1,24 @@
+name: Save installed dependencies
+description: Save the package store early, avoiding compression if another job has already saved it.
+inputs:
+  store:
+    description: Content-addressable store path from setup-build.
+    required: true
+  key:
+    description: Primary cache key from setup-build.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check for a concurrent dependency cache save
+      id: existing
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ inputs.store }}
+        key: ${{ inputs.key }}
+        lookup-only: true
+    - uses: actions/cache/save@v4
+      if: steps.existing.outputs.cache-hit != 'true'
+      with:
+        path: ${{ inputs.store }}
+        key: ${{ inputs.key }}

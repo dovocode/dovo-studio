@@ -17,6 +17,10 @@ jobs:
       - uses: ./.github/actions/setup-build
         id: setup
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/save-dependencies
+        with:
+          store: ${{ steps.setup.outputs.store }}
+          key: ${{ steps.setup.outputs.store-key }}
       - uses: ./.github/actions/task-cache
         with:
           node: ${{ steps.setup.outputs.node }}
@@ -34,7 +38,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-build
+        id: setup
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/save-dependencies
+        with:
+          store: ${{ steps.setup.outputs.store }}
+          key: ${{ steps.setup.outputs.store-key }}
       # The history harness bundles against the published protocol entry point.
       - run: pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build
       - run: pnpm --filter @dovo/runtime exec playwright install --with-deps chromium
@@ -56,6 +65,10 @@ jobs:
       - uses: ./.github/actions/setup-build
         id: setup
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/save-dependencies
+        with:
+          store: ${{ steps.setup.outputs.store }}
+          key: ${{ steps.setup.outputs.store-key }}
       - uses: ./.github/actions/task-cache
         with:
           node: ${{ steps.setup.outputs.node }}
@@ -90,6 +103,10 @@ jobs:
       - uses: ./.github/actions/setup-build
         id: setup
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/save-dependencies
+        with:
+          store: ${{ steps.setup.outputs.store }}
+          key: ${{ steps.setup.outputs.store-key }}
       - uses: ./.github/actions/task-cache
         with:
           node: ${{ steps.setup.outputs.node }}

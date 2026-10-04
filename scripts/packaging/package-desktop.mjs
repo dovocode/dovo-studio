@@ -1,7 +1,7 @@
 import { verifyMacIconToolchain } from './mac-icon-toolchain.mjs'
 import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
-import { stageWorkspace } from './stage-workspace.mjs'
+import { stageDesktopWorkspace } from './stage-workspace.mjs'
 import { desktopMiseArchive } from './desktop-mise-archive.mjs'
 import { verifyDesktopBuild } from './desktop-build-stamp.mjs'
 import { copyPreparedRuntime } from './prepared-runtime.mjs'
@@ -56,7 +56,7 @@ try {
   const runtime = join(stage, 'runtime'),
     application = join(stage, 'application')
   const source = join(stage, 'source')
-  await stageWorkspace(root, source)
+  const dependencies = await stageDesktopWorkspace(root, source)
   if (process.env.DOVO_PREPARED_RUNTIME) await copyPreparedRuntime(root, runtime)
   else
     deploy(
@@ -118,13 +118,7 @@ try {
       license: 'UNLICENSED',
       type: 'module',
       main: 'dist-electron/main.js',
-      dependencies: {
-        ws: JSON.parse(await readFile(join(root, 'apps/desktop/package.json'), 'utf8')).dependencies
-          .ws,
-        'electron-updater': JSON.parse(
-          await readFile(join(root, 'apps/desktop/package.json'), 'utf8'),
-        ).dependencies['electron-updater'],
-      },
+      dependencies,
     }),
   )
   if (process.argv.includes('--publish') && process.platform === 'darwin' && !macSigningIdentity)

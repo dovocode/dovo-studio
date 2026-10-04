@@ -11,6 +11,12 @@ outputs:
   node:
     description: Exact Node version for compatible task cache entries.
     value: ${{ steps.downloads.outputs.node }}
+  store:
+    description: pnpm content-addressable store path.
+    value: ${{ steps.downloads.outputs.store }}
+  store-key:
+    description: Immutable dependency cache key to save after installation.
+    value: ${{ steps.store.outputs.cache-primary-key }}
 runs:
   using: composite
   steps:
@@ -19,12 +25,22 @@ runs:
       with:
         node-version: '24'
         architecture: ${{ inputs.architecture }}
-        cache: pnpm
-        cache-dependency-path: pnpm-lock.yaml
     - name: Configure native download caches
       id: downloads
       shell: bash
-      run: node "$GITHUB_WORKSPACE/scripts/ci/build-cache.mjs"
+      run: |
+        node "$GITHUB_WORKSPACE/scripts/ci/build-cache.mjs"
+        echo "store=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+    # Store entries are content-addressed: a changed lockfile can reuse unchanged packages.
+    # Save explicitly after install so release jobs can avoid a duplicate archive at cleanup.
+    - name: Restore pnpm store
+      id: store
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.downloads.outputs.store }}
+        key: node-cache-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          node-cache-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-pnpm-
     # The package store does not include registry metadata or lockfile-policy verification.
     # Refresh the immutable entry daily; pnpm still enforces its own metadata expiry and policies.
     - name: Cache pnpm metadata
@@ -34,6 +50,7 @@ runs:
         key: pnpm-metadata-v1-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-${{ steps.downloads.outputs.pnpm }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}-${{ steps.downloads.outputs.day }}
         restore-keys: |
           pnpm-metadata-v1-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-${{ steps.downloads.outputs.pnpm }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}-
+          pnpm-metadata-v1-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-${{ steps.downloads.outputs.pnpm }}-
     - uses: actions/cache@v4
       if: inputs.packaging == 'true'
       with:

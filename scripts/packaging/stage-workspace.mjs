@@ -34,3 +34,17 @@ export async function stageWorkspace(root, target) {
         await cp(join(root, relative, 'dist'), join(target, relative, 'dist'), { recursive: true })
     }
 }
+
+// The renderer and Electron main/preload are bundled. Only these host dependencies
+// are declared by the packaged app; deploying renderer workspaces wastes hundreds of packages.
+export async function stageDesktopWorkspace(root, target) {
+  await stageWorkspace(root, target)
+  const file = join(target, 'apps/desktop/package.json')
+  const manifest = JSON.parse(await readFile(file, 'utf8'))
+  const dependencies = {
+    ws: manifest.dependencies.ws,
+    'electron-updater': manifest.dependencies['electron-updater'],
+  }
+  await writeFile(file, JSON.stringify({ ...manifest, dependencies }, null, 2))
+  return dependencies
+}
