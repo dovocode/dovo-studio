@@ -27,6 +27,10 @@ export async function providerFixture(provider: Agent['provider'], code: string)
     prompt: 'hello',
     signal: new AbortController().signal,
     onText: (text) => output.push(text),
+    onTextReplace: (text, previousLength) => {
+      const previous = output.join('')
+      output.splice(0, output.length, previous.slice(0, previous.length - previousLength) + text)
+    },
     onSession: (id) => sessions.push(id),
     onActivity: () => {},
     onEvent: (name, value) => events.push({ name, value }),

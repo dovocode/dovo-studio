@@ -38,6 +38,8 @@ export interface AgentRun {
   onPromptAccepted?: () => void
   onSession: (id: string) => void
   onText: (text: string) => void
+  /** Replace the last `previousLength` characters emitted by this execution with canonical text. */
+  onTextReplace?: (text: string, previousLength: number) => void
   onTextBoundary?: () => void
   onActivity: (text: string) => void
   onEvent?: (name: string, payload: unknown) => void

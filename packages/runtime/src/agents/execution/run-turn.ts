@@ -430,6 +430,14 @@ ${
         }
         let buffer = '',
           timer: ReturnType<typeof setTimeout> | undefined
+        // A provider segment can span assistant messages when the user steers a live turn.
+        const textOwners: Array<{ messageId: string; length: number }> = []
+        const ownText = (length: number) => {
+          if (!length) return
+          const previous = textOwners.at(-1)
+          if (previous?.messageId === assistantId) previous.length += length
+          else textOwners.push({ messageId: assistantId, length })
+        }
         const progress = new ProgressBuffer((error) => {
           flushError = error
           controller.abort(new TurnStoreFailure(error))
@@ -758,6 +766,7 @@ ${
                   if (!acceptsProviderEvents()) return
                   acceptPrompt()
                   buffer += text
+                  ownText(text.length)
                   if (!timer)
                     timer = setTimeout(() => {
                       try {
@@ -767,6 +776,44 @@ ${
                         controller.abort(new TurnStoreFailure(error))
                       }
                     }, 100)
+                },
+                onTextReplace: (text, previousLength) => {
+                  if (!acceptsProviderEvents()) return
+                  if (
+                    !Number.isSafeInteger(previousLength) ||
+                    previousLength < 0 ||
+                    previousLength > textOwners.reduce((sum, owner) => sum + owner.length, 0)
+                  )
+                    throw new Error('Provider text replacement exceeds its streamed output')
+                  acceptPrompt()
+                  flush()
+                  const removed = new Map<string, number>()
+                  let remaining = previousLength
+                  while (remaining) {
+                    const owner = textOwners.at(-1)
+                    if (!owner) throw new Error('Provider text replacement lost its message owner')
+                    const length = Math.min(remaining, owner.length)
+                    removed.set(owner.messageId, (removed.get(owner.messageId) ?? 0) + length)
+                    owner.length -= length
+                    remaining -= length
+                    if (!owner.length) textOwners.pop()
+                  }
+                  this.store.updateTask(id, (task) => ({
+                    ...task,
+                    messages: task.messages.map((message) => {
+                      const length = removed.get(message.id) ?? 0
+                      if (!length && message.id !== assistantId) return message
+                      const end = message.text.length - length
+                      return {
+                        ...message,
+                        text: message.text.slice(0, end) + (message.id === assistantId ? text : ''),
+                        ...(message.textBreaks
+                          ? { textBreaks: message.textBreaks.filter((offset) => offset <= end) }
+                          : {}),
+                      }
+                    }),
+                  }))
+                  ownText(text.length)
                 },
                 onTextBoundary: () => {
                   if (!acceptsProviderEvents()) return

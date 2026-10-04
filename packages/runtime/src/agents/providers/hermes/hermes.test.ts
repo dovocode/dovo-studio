@@ -29,7 +29,10 @@ const defaultCatalog = {
     },
   ],
 }
-async function fixture(catalog: unknown = defaultCatalog) {
+async function fixture(
+  catalog: unknown = defaultCatalog,
+  events?: Array<{ type: string; payload?: Record<string, unknown> }>,
+) {
   const f = await providerFixture(
     'hermes',
     String.raw`
@@ -46,7 +49,9 @@ createInterface({input:process.stdin}).on('line',line=>{
  if(value.method==='session.compress')return reply(value.id,{status:'compressed',usage:{context_used:12,context_max:1000}});
  if(value.method==='session.interrupt'){reply(value.id,{});return}
  if(value.method==='prompt.submit'){
-  prompt=p.text;reply(value.id,{status:'streaming'});event('message.start');event('message.delta',{text:'Hello '});
+  prompt=p.text;reply(value.id,{status:'streaming'});
+  if(process.env.TEST_EVENTS){for(const frame of JSON.parse(process.env.TEST_EVENTS))event(frame.type,frame.payload);return}
+  event('message.start');event('message.delta',{text:'Hello '});
   if(prompt==='hold')return;
   if(prompt==='fail'){event('message.complete',{text:'Hello ',status:'error',error:'Provider failed'});return}
   if(prompt==='approval'){send({id:'a-1',method:'approval',params:{session_id:'runtime',tool_name:'terminal',description:'Run command',command:'pwd'}});return}
@@ -58,7 +63,11 @@ createInterface({input:process.stdin}).on('line',line=>{
  reply(value.id,{});
 });`,
   )
-  f.run.agent.env = { ...f.run.agent.env, TEST_CATALOG: JSON.stringify(catalog) }
+  f.run.agent.env = {
+    ...f.run.agent.env,
+    TEST_CATALOG: JSON.stringify(catalog),
+    ...(events ? { TEST_EVENTS: JSON.stringify(events) } : {}),
+  }
   directories.push(f.cwd)
   const adapter = createHermesAdapter()
   adapters.push(adapter)
@@ -146,6 +155,71 @@ it('uses native sessions, separate message boundaries, tools and final response 
     scope: 'session',
   })
   expect(wire.some((frame) => frame.method === 'initialize')).toBe(false)
+})
+it.each([
+  {
+    streamed: ' \nSent "I love you ❤️" on WhatsApp. \n',
+    final: 'Sent "I love you ❤️" on WhatsApp.',
+  },
+  { streamed: 'Confrmed.', final: 'Confirmed.' },
+  { streamed: 'Draft response.', final: 'A revised final answer.' },
+  { streamed: 'Done.', final: 'Done. More details.' },
+  { streamed: 'Keep this reply.', final: ' \n' },
+  { streamed: '', final: 'A non-streamed reply.' },
+])('settles canonical text without failing ($streamed → $final)', async ({ streamed, final }) => {
+  const f = await fixture(defaultCatalog, [
+    { type: 'message.start' },
+    { type: 'message.delta', payload: { text: streamed } },
+    { type: 'message.complete', payload: { text: final, status: 'complete' } },
+  ])
+  await f.adapter.run(f.run)
+  expect(f.output.join('')).toBe(final.trim() ? final : streamed)
+})
+it('reconciles interim text before sealing it and preserves progress before the final reply', async () => {
+  const f = await fixture(defaultCatalog, [
+    { type: 'message.start' },
+    { type: 'message.delta', payload: { text: ' \nPlanning. \n' } },
+    { type: 'message.interim', payload: { text: 'Planning.', already_streamed: true } },
+    { type: 'tool.start', payload: { tool_id: 't', name: 'terminal', args: { command: 'pwd' } } },
+    { type: 'tool.complete', payload: { tool_id: 't', name: 'terminal', result: {} } },
+    { type: 'message.delta', payload: { text: 'A draft final.' } },
+    { type: 'message.complete', payload: { text: 'The final answer.', status: 'complete' } },
+  ])
+  const boundary = vi.fn<() => void>(() => expect(f.output.join('')).toBe('Planning.'))
+  await f.adapter.run({ ...f.run, onTextBoundary: boundary })
+  expect(boundary).toHaveBeenCalledOnce()
+  expect(f.output.join('')).toBe('Planning.The final answer.')
+  expect(f.events.map((event) => event.name)).toContain('tool.complete')
+})
+it.each([false, true])(
+  'does not duplicate previewed final text (active stream=%s)',
+  async (active) => {
+    const f = await fixture(defaultCatalog, [
+      { type: 'message.start' },
+      { type: 'message.delta', payload: { text: ' \nDone. \n' } },
+      ...(active
+        ? []
+        : [{ type: 'message.interim', payload: { text: 'Done.', already_streamed: true } }]),
+      {
+        type: 'message.complete',
+        payload: { text: 'Done.', status: 'complete', response_previewed: true },
+      },
+    ])
+    await f.adapter.run(f.run)
+    expect(f.output.join('')).toBe('Done.')
+  },
+)
+it('preserves a real provider failure after reconciling its text', async () => {
+  const f = await fixture(defaultCatalog, [
+    { type: 'message.start' },
+    { type: 'message.delta', payload: { text: 'Draft failure.' } },
+    {
+      type: 'message.complete',
+      payload: { text: 'Final failure.', status: 'error', error: 'Provider unavailable' },
+    },
+  ])
+  await expect(f.adapter.run(f.run)).rejects.toThrow('Provider unavailable')
+  expect(f.output.join('')).toBe('Final failure.')
 })
 it('discovers provider-qualified native models and per-model reasoning', async () => {
   const f = await fixture()

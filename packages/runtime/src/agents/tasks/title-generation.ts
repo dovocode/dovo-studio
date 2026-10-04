@@ -467,6 +467,13 @@ export class TitleGeneration {
                   controller.abort(new Error(`The ${config.label} model returned too much text`))
                 else output += chunk
               },
+              onTextReplace: (text, previousLength) => {
+                if (controller.signal.aborted) return
+                const replacement = output.slice(0, output.length - previousLength) + text
+                if (replacement.length > config.limit)
+                  controller.abort(new Error(`The ${config.label} model returned too much text`))
+                else output = replacement
+              },
               approve: async () => false,
               ask: async () => null,
             }),

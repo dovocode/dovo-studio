@@ -1698,6 +1698,153 @@ it('flushes streamed text at provider boundaries and retains them on the assista
   expect(reply).toMatchObject({ text: 'Progress.Final answer.', textBreaks: [9, 22] })
 })
 
+it.each([false, true])(
+  'replaces only the current provider text and preserves sealed progress and tools (flushed=%s)',
+  async (flushed) => {
+    const s = await setup()
+    const draft = ' \nDraft ❤️. \n'
+    let taskId = ''
+    const waitForFlushedText = () =>
+      waitForTask(() =>
+        expect(s.store.task(taskId).messages.at(-1)?.text).toBe('Progress.' + draft),
+      )
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        run.onText('Progress.')
+        run.onTextBoundary?.()
+        run.onEvent?.('item/started', {
+          item: { type: 'commandExecution', id: 'tool', command: 'pwd', status: 'inProgress' },
+        })
+        run.onText(draft)
+        if (flushed) await waitForFlushedText()
+        run.onTextReplace?.('Final ❤️.', draft.length)
+        run.onText(' Draft suffix.')
+        run.onTextReplace?.('Final ❤️. Confirmed.', 'Final ❤️. Draft suffix.'.length)
+        run.onEvent?.('item/completed', {
+          item: { type: 'commandExecution', id: 'tool', command: 'pwd', status: 'completed' },
+        })
+      },
+    })
+    const task = s.tasks.create({
+      title: 'Canonical response',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Finalize text',
+    })
+    taskId = task.id
+    await (
+      await s.tasks.start(task.id)
+    ).done
+    const finished = s.store.task(task.id)
+    const reply = finished.messages.find((message) => message.role === 'assistant')
+    expect(finished.status).toBe('review')
+    expect(finished.error).toBeUndefined()
+    expect(finished.turns?.at(-1)?.status).toBe('completed')
+    expect(reply).toMatchObject({ text: 'Progress.Final ❤️. Confirmed.', textBreaks: [9] })
+    const tools = recentTools(s.activity.list('', 'tool', 0, task.id).events)
+    expect(tools).toMatchObject([{ status: 'completed' }])
+    expect(JSON.parse(tools[0]!.payload)).toMatchObject({ toolId: 'tool' })
+    expect(conversationToolsByMessage(finished, tools).get(reply!.id)).toHaveLength(1)
+  },
+)
+
+it('keeps steering input and tool ownership when canonical text replaces a segment across messages', async () => {
+  const s = await setup()
+  let current: AgentRun | undefined
+  let release = () => {}
+  const completed = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      current = run
+      run.onText('Earlier progress.')
+      run.onTextBoundary?.()
+      run.onText('Old draft.')
+      run.onEvent?.('item/started', {
+        item: {
+          type: 'commandExecution',
+          id: 'original-tool',
+          command: 'pwd',
+          status: 'inProgress',
+        },
+      })
+      run.onSteer?.(async () => {})
+      await completed
+      run.onText('New draft.')
+      run.onTextReplace?.('Canonical answer.', 'Old draft.New draft.'.length)
+      run.onEvent?.('item/completed', {
+        item: {
+          type: 'commandExecution',
+          id: 'original-tool',
+          command: 'pwd',
+          status: 'completed',
+        },
+      })
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Steered response',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Original request',
+  })
+  const execution = await s.tasks.start(task.id)
+  try {
+    await waitForTask(() => expect(current).toBeDefined())
+    await s.tasks.steer(task.id, 'steering-input', 'A clarification')
+  } finally {
+    release()
+    await execution.done
+  }
+  const finished = s.store.task(task.id)
+  expect(finished.status).toBe('review')
+  expect(finished.messages.map((message) => message.text)).toEqual([
+    'Original request',
+    'Earlier progress.',
+    'A clarification',
+    'Canonical answer.',
+  ])
+  expect(finished.messages[1]?.textBreaks).toEqual([17])
+  expect(conversationTurns(finished)).toHaveLength(1)
+  const tools = recentTools(s.activity.list('', 'tool', 0, task.id).events)
+  expect(tools).toMatchObject([{ status: 'completed' }])
+  expect(JSON.parse(tools[0]!.payload)).toMatchObject({ toolId: 'original-tool' })
+  expect(conversationToolsByMessage(finished, tools).get(finished.messages[1]!.id)).toHaveLength(1)
+  expect(conversationToolsByMessage(finished, tools).has(finished.messages[3]!.id)).toBe(false)
+})
+
+it('rejects replacements that would erase text outside the provider execution', async () => {
+  const s = await setup()
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      run.onText('Keep this.')
+      run.onTextReplace?.('Invalid replacement.', 1000)
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Invalid replacement',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Keep user input',
+  })
+  await expect((await s.tasks.start(task.id)).done).rejects.toThrow(
+    'Provider text replacement exceeds its streamed output',
+  )
+  const finished = s.store.task(task.id)
+  expect(finished).toMatchObject({
+    status: 'failed',
+    error: 'Provider text replacement exceeds its streamed output',
+  })
+  expect(finished.messages.map((message) => message.text)).toEqual([
+    'Keep user input',
+    'Keep this.',
+  ])
+})
+
 it('retains separate subscription quotas and identifies a reading that arrives before account metadata', async () => {
   const s = await setup()
   let number = 0

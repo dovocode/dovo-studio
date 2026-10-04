@@ -174,13 +174,10 @@ export function createHermesAdapter(): AgentAdapter {
       void completed.catch(() => {})
       const questions = new Map<string, AbortController>()
       const reconcile = (value: string, previewed = false) => {
-        if (previewed || !value) return
+        if (!value.trim() || (previewed && !segment)) return
         if (value.startsWith(segment)) run.onText(value.slice(segment.length))
-        else if (!segment) run.onText(value)
-        else
-          throw new Error(
-            'Hermes replaced already streamed text; the final response cannot be appended safely',
-          )
+        else if (run.onTextReplace) run.onTextReplace(value, segment.length)
+        else throw new Error('This Hermes consumer does not support finalized text replacement')
         segment = value
       }
       const accept = () => {

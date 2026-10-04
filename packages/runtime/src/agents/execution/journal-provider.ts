@@ -25,6 +25,7 @@ export function journalProvider(
       store.providerActions.transition(actionId, 'dispatched')
       let open = true
       let acknowledged = false
+      let emittedLength = 0
       const active = () => open && acceptsProviderEvents()
       const acknowledge = () => {
         if (active() && !acknowledged) {
@@ -44,9 +45,25 @@ export function journalProvider(
           onText: (text) => {
             if (active()) {
               input.onText(text)
+              emittedLength += text.length
               acknowledge()
             }
           },
+          onTextReplace: input.onTextReplace
+            ? (text, previousLength) => {
+                if (active()) {
+                  if (
+                    !Number.isSafeInteger(previousLength) ||
+                    previousLength < 0 ||
+                    previousLength > emittedLength
+                  )
+                    throw new Error('Provider text replacement exceeds its streamed output')
+                  input.onTextReplace?.(text, previousLength)
+                  emittedLength += text.length - previousLength
+                  acknowledge()
+                }
+              }
+            : undefined,
           onTextBoundary: () => {
             if (active()) input.onTextBoundary?.()
           },
