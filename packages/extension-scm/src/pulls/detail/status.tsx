@@ -42,7 +42,7 @@ export function PullStatus({ detail }: { detail: PullDetail }) {
     return priority(a.status) - priority(b.status)
   })
   return (
-    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+    <div className="grid items-start gap-4 @4xl/pr-detail:grid-cols-[minmax(0,1fr)_220px]">
       <section className="rounded-xl border">
         <h3 className="border-b px-4 py-3 text-sm font-medium">
           Checks <span className="text-muted-foreground">{checks.length}</span>

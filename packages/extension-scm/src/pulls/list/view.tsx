@@ -1,9 +1,8 @@
 import { githubPullTarget, type PullSummary } from '@dovo/protocol'
 import { AddPullsToThread } from './add-to-thread'
-import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { ChoicePicker } from '@dovo/studio-ui'
 import { useEffect, useRef } from 'react'
+import { Plug, Plus, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
 import {
   comparePulls,
   matchesPull,
@@ -20,6 +19,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  PageHeader,
+  ChoicePicker,
 } from '@dovo/studio-ui'
 import { usePulls } from './use-pulls'
 import { PullRow } from './row'
@@ -91,7 +92,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
   const creatingSource = sources.find(
     (source) => source.key === creating?.key && source.scope === creating.scope,
   )
-  const pulls = pages
+  const filteredPulls = pages
     .flatMap((page) =>
       page.pulls.map((pull) => ({
         ...pull,
@@ -102,15 +103,18 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
     .filter(
       (p) =>
         (state === 'all' || p.state === state) &&
-        (personal !== 'authored' || p.viewerIsAuthor === true) &&
-        (personal !== 'review' || p.viewerReviewRequested === true) &&
-        (personal !== 'assigned' || p.viewerIsAssigned === true) &&
-        (personal !== 'involved' || p.viewerIsInvolved === true) &&
         (draft === 'all' || p.draft === (draft === 'draft')) &&
         (!attention || pullNeedsAttention(p)) &&
         matchesPull(p, `${p.repositoryName} ${p.source.runtimeName}`, search),
     )
     .sort((a, b) => comparePulls(a, b, sort === 'attention'))
+  const pulls = filteredPulls.filter(
+    (pull) =>
+      (personal !== 'authored' || pull.viewerIsAuthor === true) &&
+      (personal !== 'review' || pull.viewerReviewRequested === true) &&
+      (personal !== 'assigned' || pull.viewerIsAssigned === true) &&
+      (personal !== 'involved' || pull.viewerIsInvolved === true),
+  )
   const personalField =
     personal === 'authored'
       ? 'viewerIsAuthor'
@@ -165,6 +169,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
     setAdding([...new Map(chosen.map((item) => [item.url, item])).values()])
   }
   const selectStyle = 'h-8 w-auto max-w-52 rounded-md border bg-background px-2 text-xs'
+  const activeFilters = Number(draft !== 'all') + Number(attention)
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       {opening && (
@@ -180,10 +185,110 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
       <div className="flex min-h-0 min-w-0 flex-1">
         <nav
           aria-label="Pull request sidebar"
-          className={`${selected ? 'hidden md:block' : 'block'} w-full shrink-0 overflow-y-auto border-r md:w-[22rem] lg:w-[26rem]`}
+          className={`@container/pr-list min-h-0 min-w-0 flex-col ${selected ? 'hidden w-full shrink-0 border-r md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
         >
           <>
             <PageHeader title="Pull requests">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-8"
+                aria-label="Refresh pull requests"
+                title="Refresh pull requests"
+                disabled={!connected || busy}
+                onClick={refresh}
+              >
+                <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Connections"
+                title="Source control connections"
+                disabled={!sources.some((source) => source.connected)}
+                onClick={() => setPicking('connections')}
+              >
+                <Plug className="size-3.5" />
+                <span className="hidden @xl/pr-list:inline">Connections</span>
+              </Button>
+              <Button
+                size="sm"
+                aria-label="Create pull request"
+                disabled={!sources.some((source) => source.connected)}
+                onClick={() => setPicking('create')}
+              >
+                <Plus className="size-3.5" /> Create
+              </Button>
+            </PageHeader>
+            <div
+              className="flex shrink-0 gap-1 overflow-x-auto border-b px-3 [scrollbar-width:none]"
+              aria-label="Personal pull request filters"
+            >
+              {(
+                [
+                  { id: 'all', label: 'All PRs', count: filteredPulls.length },
+                  {
+                    id: 'authored',
+                    label: 'Authored by me',
+                    count: filteredPulls.filter((pull) => pull.viewerIsAuthor).length,
+                  },
+                  {
+                    id: 'review',
+                    label: 'Review requests',
+                    count: filteredPulls.filter((pull) => pull.viewerReviewRequested).length,
+                  },
+                  {
+                    id: 'assigned',
+                    label: 'Assigned to me',
+                    count: filteredPulls.filter((pull) => pull.viewerIsAssigned).length,
+                  },
+                  {
+                    id: 'involved',
+                    label: 'Involves me',
+                    count: filteredPulls.filter((pull) => pull.viewerIsInvolved).length,
+                  },
+                ] as const
+              ).map((item) => (
+                <Button
+                  key={item.id}
+                  size="sm"
+                  variant="ghost"
+                  aria-label={item.label}
+                  aria-pressed={personal === item.id}
+                  title={`${item.count} in loaded, filtered results`}
+                  className={`h-10 shrink-0 rounded-none border-b-2 px-2.5 text-xs hover:bg-transparent ${personal === item.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'}`}
+                  onClick={() => {
+                    setPersonal(item.id)
+                    setMarked([])
+                  }}
+                >
+                  {item.label}
+                  <span
+                    aria-hidden
+                    className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
+                  >
+                    {item.count}
+                  </span>
+                </Button>
+              ))}
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b p-3">
+              <div className="relative min-w-40 flex-1 basis-full @xl/pr-list:basis-40">
+                <Search
+                  aria-hidden
+                  className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
+                />
+                <Input
+                  aria-label="Search pull requests"
+                  className="h-8 pl-8 text-xs"
+                  placeholder="Search PRs, branches, people…"
+                  value={search}
+                  onChange={(event) => {
+                    setMarked([])
+                    setSearch(event.target.value)
+                  }}
+                />
+              </div>
               <ChoicePicker
                 aria-label="PR repository"
                 className={selectStyle}
@@ -201,63 +306,51 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                   </option>
                 ))}
               </ChoicePicker>
-            </PageHeader>
-            <div
-              className="flex flex-wrap gap-1 border-b px-3 pb-3"
-              aria-label="Personal pull request filters"
-            >
-              {(
-                [
-                  { id: 'all', label: 'All PRs' },
-                  { id: 'authored', label: 'Authored by me' },
-                  { id: 'assigned', label: 'Assigned to me' },
-                  { id: 'involved', label: 'Involves me' },
-                  { id: 'review', label: 'Review requests' },
-                ] as const
-              ).map((item) => (
-                <Button
-                  key={item.id}
-                  size="sm"
-                  variant={personal === item.id ? 'secondary' : 'ghost'}
-                  aria-pressed={personal === item.id}
-                  onClick={() => {
-                    setPersonal(item.id)
-                    setMarked([])
-                  }}
-                >
-                  {item.label}
-                </Button>
-              ))}
+              <ChoicePicker
+                aria-label="PR state"
+                className={selectStyle}
+                value={state}
+                onValueChange={(selection) => {
+                  setMarked([])
+                  setState(selection)
+                  setSelected(null)
+                }}
+              >
+                {['open', 'closed', 'merged', 'all'].map((value) => (
+                  <option key={value} value={value}>
+                    {value === 'all'
+                      ? 'All states'
+                      : value.charAt(0).toUpperCase() + value.slice(1)}
+                  </option>
+                ))}
+              </ChoicePicker>
+              <ChoicePicker
+                aria-label="PR sort"
+                className={selectStyle}
+                value={sort}
+                onValueChange={setSort}
+              >
+                <option value="attention">Attention first</option>
+                <option value="updated">Recently updated</option>
+              </ChoicePicker>
               <Button
                 size="sm"
-                variant="ghost"
+                variant={activeFilters ? 'secondary' : 'outline'}
+                aria-label="Filters"
                 aria-expanded={filtersOpen}
+                aria-controls="pr-list-filters"
                 onClick={() => setFiltersOpen((value) => !value)}
               >
+                <SlidersHorizontal className="size-3.5" />
                 Filters
+                {!!activeFilters && <span className="tabular-nums">{activeFilters}</span>}
               </Button>
             </div>
-            <div hidden={!filtersOpen} className="shrink-0 space-y-3 border-b p-3">
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" disabled={!connected || busy} onClick={refresh}>
-                  Refresh
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={!sources.some((source) => source.connected)}
-                  onClick={() => setPicking('connections')}
-                >
-                  Connections
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={!sources.some((source) => source.connected)}
-                  onClick={() => setPicking('create')}
-                >
-                  Create
-                </Button>
-              </div>
+            <div
+              id="pr-list-filters"
+              hidden={!filtersOpen}
+              className="shrink-0 space-y-3 border-b p-3"
+            >
               {!!pulls.length && (
                 <div
                   className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
@@ -289,39 +382,6 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
               )}
 
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {connected
-                    ? `${pulls.length} across devices${pages.some((page) => page.hasMore) ? ' · more available' : ''}`
-                    : 'Offline'}
-                </span>
-                <Input
-                  aria-label="Search pull requests"
-                  className="ml-auto h-9 min-w-40 max-w-full flex-1 text-sm sm:max-w-72"
-                  placeholder="Search PRs, branches, people…"
-                  value={search}
-                  onChange={(e) => {
-                    setMarked([])
-                    setSearch(e.target.value)
-                  }}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <ChoicePicker
-                  aria-label="PR state"
-                  className={selectStyle}
-                  value={state}
-                  onValueChange={(selection) => {
-                    setMarked([])
-                    setState(selection)
-                    setSelected(null)
-                  }}
-                >
-                  {['open', 'closed', 'merged', 'all'].map((s) => (
-                    <option key={s} value={s}>
-                      {s === 'all' ? 'All states' : s.charAt(0).toUpperCase() + s.slice(1)}
-                    </option>
-                  ))}
-                </ChoicePicker>
                 <ChoicePicker
                   aria-label="PR draft status"
                   className={selectStyle}
@@ -335,15 +395,6 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                   <option value="draft">Drafts</option>
                   <option value="ready">Ready</option>
                 </ChoicePicker>
-                <ChoicePicker
-                  aria-label="PR sort"
-                  className={selectStyle}
-                  value={sort}
-                  onValueChange={setSort}
-                >
-                  <option value="attention">Attention first</option>
-                  <option value="updated">Recently updated</option>
-                </ChoicePicker>
                 <Button
                   size="sm"
                   variant={attention ? 'secondary' : 'ghost'}
@@ -356,10 +407,27 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                 >
                   Needs attention
                 </Button>
+                {!!activeFilters && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setMarked([])
+                      setDraft('all')
+                      setAttention(false)
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                )}
               </div>
             </div>
           </>
-          <div className="p-2">
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            <p className="px-3 py-2 text-xs text-muted-foreground" role="status">
+              {pulls.length} loaded pull request{pulls.length === 1 ? '' : 's'}
+              {pages.some((page) => page.hasMore) ? ' · more available' : ''}
+            </p>
             {filtersOpen && personal !== 'all' && (
               <p className="mb-3 px-2 text-xs text-muted-foreground">
                 Personal filters use each computer’s connected forge account. Involves me includes
@@ -397,10 +465,10 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
               </p>
             )}
             {!selected && !!pulls.length && (
-              <div className="mb-2 hidden items-center gap-3 px-10 py-2 text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground lg:flex">
+              <div className="hidden items-center gap-3 border-b py-2 pl-10 pr-12 text-[0.625rem] font-medium text-muted-foreground @4xl/pr-list:flex">
                 <span className="flex-1">Pull request</span>
                 <span className="w-44">Checks & review</span>
-                <span className="w-24 text-right">Updated</span>
+                <span className="w-22 text-right">Updated</span>
               </div>
             )}
             {!!marked.length && (
@@ -412,7 +480,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
               </div>
             )}
             <div
-              className="space-y-1"
+              className="divide-y divide-border/50"
               onKeyDown={(event) => {
                 if (event.key === 'Escape') setMarked([])
               }}
@@ -421,7 +489,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                 <PullRow
                   key={JSON.stringify([p.source.key, p.number])}
                   pull={p}
-                  compact
+                  compact={!!selected}
                   repository={`${p.repositoryName} · ${p.source.runtimeName}${p.source.connected ? '' : ' · Offline'}`}
                   selected={
                     marked.includes(rowKey(p)) ||
@@ -476,11 +544,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
               Back to PRs
             </Button>
           </div>
-        ) : (
-          <div className="hidden min-w-0 flex-1 items-center justify-center p-8 text-sm text-muted-foreground md:flex">
-            Select a pull request to view its conversation and changes.
-          </div>
-        )}
+        ) : null}
       </div>
       {adding && <AddPullsToThread pulls={adding} onClose={() => setAdding(null)} />}
       {picking && (

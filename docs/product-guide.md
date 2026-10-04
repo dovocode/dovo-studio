@@ -579,13 +579,15 @@ workspace. Device commands and activity open from each computer’s settings. Ch
 inside creation or connection setup. See
 [unified collections](design/source-navigation.md#unified-collections).
 
-PR details have Overview, Files, Activity, and Checks sections on desktop and mobile, with review
-and check summaries. Switching sections preserves viewed files and in-progress diff feedback for the
-current head commit. Mobile keeps state tabs above the list and secondary filters in a sheet; its
-native More menu opens secondary actions, including task creation in a sheet. Returning to the list
-restores its scroll position. Web and desktop use `@pierre/diffs` for syntax-highlighted unified or
-split patches, a collapsible file tree, viewed markers, and feedback grouped by file. Mobile uses
-its native diff renderer. GitHub patch omissions are explicit; remote patches are read-only.
+Desktop and web PR details have Overview, Changes and Checks tabs, with a persistent title, branch
+context and review/check summaries. Overview includes the description, activity and comment editor.
+Mobile keeps Overview, Files, Activity and Checks sections. Switching sections preserves viewed
+files and in-progress diff feedback for the current head commit. Mobile keeps state tabs above the
+list and secondary filters in a sheet; its native More menu opens secondary actions, including task
+creation in a sheet. Returning to the list restores its scroll position. Web and desktop use
+`@pierre/diffs` for syntax-highlighted unified or split patches, a collapsible file tree, viewed
+markers, and feedback grouped by file. Mobile uses its native diff renderer. GitHub patch omissions
+are explicit; remote patches are read-only.
 
 **Start task from PR** lets you select an agent and review/address-feedback objective, then create a
 draft or create and run. The task includes the description, comments, source URL and pinned head and

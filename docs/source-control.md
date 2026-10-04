@@ -101,8 +101,9 @@ dirty worktrees.
 
 ### Pull request workspace
 
-Desktop and web keep the PR list, repository picker and personal views alongside an open PR.
-Additional filters, refresh, creation and connection controls live under **Filters**. Personal views
+Desktop and web show a full-width PR list until a PR opens, then keep a compact list alongside its
+details. Search, repository, state and sort controls stay visible, with refresh, creation and
+connection actions in the header. Draft and attention filters live under **Filters**. Personal views
 use each computer's authenticated forge account. **Involves me** includes authorship, assignment and
 review participation reported by the forge. GitHub also includes conversation participants. Gitea
 and Forgejo include requested reviewers and assignees. Bitbucket includes reviewers and
@@ -111,8 +112,11 @@ assignee field, so **Assigned to me** applies to GitHub, Gitea and Forgejo. Filt
 pages; load more to expand results. Missing identity or relationship data is reported rather than
 treated as a match.
 
-**Overview** combines the description, discussion, checks and a Markdown comment composer.
-**Changes** shows stacked file cards, a searchable directory tree and local reviewed-file progress.
-Selecting a tree entry scrolls to its card. Review decisions remain tied to the commit captured when
-the review form opens. Review/comment editors provide formatting insertion and a rendered preview;
-submissions still use Markdown and the existing forge capability and revision checks.
+**Overview** combines the description, discussion and a Markdown comment composer, with review
+decisions, reviewers, assignees and labels alongside them on wide layouts. The title, branches and
+review/check summaries remain visible across sections. **Checks** shows check output, annotations
+and pipeline runs for the PR head commit. **Changes** shows stacked file cards, a searchable
+directory tree and local reviewed-file progress. Selecting a tree entry scrolls to its card. Review
+decisions remain tied to the commit captured when the review form opens. Review/comment editors
+provide formatting insertion and a rendered preview; submissions still use Markdown and the existing
+forge capability and revision checks.
