@@ -19,6 +19,7 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { ModelSettings } from '../../agents/model-settings'
+import { useHarnessAvailability } from '../../agents/use-harness-availability'
 import { Sheet } from '../../ui/layout/sheet'
 import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
@@ -66,11 +67,13 @@ export function HarnessSettings({
   )
   const custom = selection.startsWith('agent:')
   const installations = snapshot?.acpInstallations ?? []
+  const availability = useHarnessAvailability(task.repositoryId, agents)
   const choices = taskHarnessChoices(
     task,
     agents,
     installations,
     snapshot?.defaults?.modelPreferences,
+    availability.available,
   )
   const lockedProvider = lockedTaskProvider(task, agents)
   const providerLocked = !canChangeTaskProvider(task)
@@ -84,6 +87,7 @@ export function HarnessSettings({
         row
         label="Agent"
         value={selection}
+        selectedLabel={agent.name}
         disabled={controlsDisabled || !choices.length}
         items={choices}
         onChange={(value) => {
@@ -94,6 +98,17 @@ export function HarnessSettings({
           setAgent(next)
         }}
       />
+      {(availability.loading || availability.error || !choices.length) && (
+        <Text style={styles.muted}>
+          {availability.loading
+            ? 'Checking available providers…'
+            : availability.error
+              ? `Could not check available providers: ${availability.error}`
+              : !choices.length
+                ? 'No providers available on this runtime. Configure agents in Settings.'
+                : ''}
+        </Text>
+      )}
       <Text style={styles.muted}>
         {custom
           ? `${agent.name} uses its saved instructions, skills and MCP servers. Model and access changes apply only to this task.`

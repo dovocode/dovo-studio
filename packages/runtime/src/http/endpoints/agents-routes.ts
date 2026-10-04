@@ -22,6 +22,8 @@ import { readFile, stat, writeFile } from 'node:fs/promises'
 import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
 import { searchRegistry } from '../../agents/catalogs/registry.js'
 import { ModelCatalogCache } from '../../agents/catalogs/model-cache.js'
+import { HarnessAvailabilityCache } from '../../agents/catalogs/harness-availability.js'
+import { harnessAvailabilityCandidates } from '@dovo/protocol'
 import { searchSkills, installCatalogSkill } from '../../agents/catalogs/skills.js'
 import { importSkill, testMcpServer } from '../../agents/configuration/resources.js'
 import { attachmentIdsSchema } from '@dovo/protocol'
@@ -38,6 +40,7 @@ import { HttpError } from '../../errors.js'
 import { body } from '../support/body.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 const modelCaches = new WeakMap<object, ModelCatalogCache>()
+const availabilityCaches = new WeakMap<object, HarnessAvailabilityCache>()
 export function agentsRoute(request: IncomingMessage, path: string) {
   return routeProgram(
     Effect.gen(function* () {
@@ -45,6 +48,29 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       const publicDefaults = (value: unknown) =>
         decode(runtimeDefaultsSchema, s.store.publicValue(value))
       const method = request.method
+      if (method === 'POST' && path === '/api/agents/availability') {
+        const { repositoryId } = decode(
+          mutableStruct({ repositoryId: Schema.optional(idSchema) }),
+          yield* serviceResult(body(request)),
+        )
+        let cache = availabilityCaches.get(s.db)
+        if (!cache) {
+          cache = new HarnessAvailabilityCache()
+          availabilityCaches.set(s.db, cache)
+        }
+        const checker = cache
+        return yield* serviceResult(
+          Promise.all(
+            harnessAvailabilityCandidates(
+              s.store.agentsFor(repositoryId),
+              s.acpInstallations.list(),
+            ).map(async ({ id, agent }) => ({
+              id,
+              available: await checker.check(agent, s.agents),
+            })),
+          ),
+        )
+      }
       if (
         method === 'POST' &&
         [

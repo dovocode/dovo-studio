@@ -32,6 +32,7 @@
     "test:turn-grouping:browser": "node scripts/check-turn-grouping-browser.mjs",
     "test:thread-streaming:browser": "node scripts/check-thread-streaming-browser.mjs",
     "test:composer-send:browser": "node scripts/check-composer-send-browser.mjs",
+    "test:composer-providers:browser": "node scripts/check-composer-providers-browser.mjs",
     "test:thread-startup:browser": "node scripts/check-thread-startup-browser.mjs",
     "test:mobile-notifications:browser": "node scripts/check-mobile-notifications-browser.mjs",
     "test:pull-links:browser": "node scripts/check-pull-links-browser.mjs && node scripts/check-thread-pull-links-browser.mjs",

@@ -16,6 +16,7 @@ export {
 
 export * from './tasks/models.js'
 export * from './tasks/acp-harness.js'
+export * from './tasks/harness-availability.js'
 
 export * from './shared/commands.js'
 

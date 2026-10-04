@@ -32,6 +32,7 @@ export function taskHarnessChoices(
   agents: Agent[],
   installations: readonly AcpInstallation[] = [],
   preferences: RuntimeDefaults['modelPreferences'] = {},
+  available?: ReadonlySet<string>,
 ) {
   const unlocked = canChangeTaskProvider(task)
   const provider = lockedTaskProvider(task, agents)
@@ -56,6 +57,7 @@ export function taskHarnessChoices(
     })),
   ]
     .filter((choice) => {
+      if (available && !available.has(choice.id)) return false
       if (unlocked) return true
       if (choice.provider !== provider) return false
       if (installationId === undefined) return true

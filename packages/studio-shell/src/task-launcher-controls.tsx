@@ -65,6 +65,7 @@ export function TaskLauncherControls({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <ComposerModelPicker
+          repositoryId={repository.id}
           value={value}
           disabled={disabled}
           agents={agents}

@@ -18,6 +18,8 @@ import * as Popover from '@radix-ui/react-popover'
 import { cn } from './lib/utils'
 import { HarnessIcon } from './harness-icon'
 import { useHarnessCatalog } from './harness-catalog'
+import { useHarnessAvailability } from './use-harness-availability'
+import { harnessChoiceId, acpHarnessChoiceId } from '@dovo/protocol'
 import { modelPreferenceKey, runtimeDefaultsSchema, type RuntimeDefaults } from '@dovo/protocol'
 const favoritesKey = 'dovo:model-favorites'
 type PickerItem = {
@@ -39,6 +41,7 @@ export function ComposerModelPicker({
   onUseHarness,
   lockedProvider,
   lockedInstallationId,
+  repositoryId,
 }: {
   agents: readonly Agent[]
   selectedAgent?: Agent
@@ -46,6 +49,7 @@ export function ComposerModelPicker({
   onUseHarness: (harness: TaskHarness) => Promise<boolean>
   lockedProvider?: TaskHarness['provider']
   lockedInstallationId?: string
+  repositoryId?: string
   value: TaskHarness
   disabled: boolean
   onChange: (next: TaskHarness) => Promise<boolean>
@@ -54,6 +58,7 @@ export function ComposerModelPicker({
   const { snapshot, request } = useWorkspace()
   const installations = snapshot?.acpInstallations ?? []
   const [open, setOpen] = useApplicationState(false)
+  const availability = useHarnessAvailability(repositoryId, open, agents)
   const [provider, setProvider] = useApplicationState(value.provider)
   const [installationId, setInstallationId] = useApplicationState(value.acpInstallationId)
   const [mode, setMode] = useApplicationState<'models' | 'favorites' | 'agents'>('models')
@@ -84,6 +89,12 @@ export function ComposerModelPicker({
     item.agent
       ? `agent:${item.id}`
       : modelPreferenceKey(item.provider, item.id, item.installationId)
+  const itemAvailable = (item: PickerItem) =>
+    availability.available.has(
+      item.agent
+        ? `agent:${item.agent.id}`
+        : harnessChoiceId({ provider: item.provider, acpInstallationId: item.installationId }),
+    )
   const savePreference = async (
     key: string,
     change: { favorite?: boolean; disabled?: boolean },
@@ -105,19 +116,47 @@ export function ComposerModelPicker({
       setStorageError(error instanceof Error ? error.message : String(error))
     }
   }
-  const activeProvider = lockedProvider ?? provider
+  const availableProviders = providerSchema.literals.filter(
+    (p) =>
+      availability.available.has(`harness:${p}`) &&
+      (!lockedProvider || p === lockedProvider) &&
+      (p !== 'acp' || lockedInstallationId === undefined || lockedInstallationId === ''),
+  )
+  const availableInstallations = installations.filter(
+    (installation) =>
+      availability.available.has(acpHarnessChoiceId(installation.id)) &&
+      (!lockedProvider || lockedProvider === 'acp') &&
+      (lockedInstallationId === undefined || lockedInstallationId === installation.id),
+  )
+  const selectedAvailable = availability.available.has(
+    harnessChoiceId({ provider, acpInstallationId: installationId }),
+  )
+  const activeProvider =
+    lockedProvider ??
+    (selectedAvailable
+      ? provider
+      : (availableProviders[0] ?? (availableInstallations.length ? 'acp' : provider)))
+  const activeInstallationId = selectedAvailable
+    ? installationId
+    : activeProvider === 'acp'
+      ? availableInstallations[0]?.id
+      : undefined
   const selectedHarness =
     activeProvider === value.provider &&
-    (activeProvider !== 'acp' || installationId === value.acpInstallationId)
+    (activeProvider !== 'acp' || activeInstallationId === value.acpInstallationId)
       ? value
-      : activeProvider === 'acp' && installationId
+      : activeProvider === 'acp' && activeInstallationId
         ? {
             ...defaultTaskHarness('acp'),
-            acpInstallationId: installationId,
+            acpInstallationId: activeInstallationId,
             permission: value.permission,
           }
         : { ...defaultTaskHarness(activeProvider), permission: value.permission }
-  const { catalog, loading, error } = useHarnessCatalog(selectedHarness, open && mode === 'models')
+  const harnessAvailable = availability.available.has(harnessChoiceId(selectedHarness))
+  const { catalog, loading, error } = useHarnessCatalog(
+    selectedHarness,
+    open && mode === 'models' && harnessAvailable,
+  )
   const selectedCatalog = useHarnessCatalog(value, true)
   const listId = useId()
   const items: PickerItem[] = !open
@@ -195,6 +234,7 @@ export function ComposerModelPicker({
           ]
   const filtered = items.filter(
     (item) =>
+      itemAvailable(item) &&
       ((mode === 'models' && manageModels) || !preferences[itemKey(item)]?.disabled) &&
       (!lockedProvider || item.provider === lockedProvider) &&
       (lockedInstallationId === undefined ||
@@ -210,6 +250,7 @@ export function ComposerModelPicker({
   const choose = async (item: (typeof items)[number]) => {
     if (
       disabled ||
+      !itemAvailable(item) ||
       preferences[itemKey(item)]?.disabled ||
       (lockedProvider && item.provider !== lockedProvider) ||
       (lockedInstallationId !== undefined &&
@@ -320,83 +361,67 @@ export function ComposerModelPicker({
               <Bot className="size-4" />
             </Button>
             <div className="my-1 w-full border-t" />
-            {providerSchema.literals
-              .filter(
-                (p) =>
-                  (!lockedProvider || p === lockedProvider) &&
-                  (p !== 'acp' ||
-                    lockedInstallationId === undefined ||
-                    lockedInstallationId === ''),
-              )
-              .map((p) => (
-                <Button
-                  key={p}
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label={`${providers[p].short} models`}
-                  aria-pressed={mode === 'models' && p === activeProvider && !installationId}
-                  title={providers[p].short}
-                  className={cn(
-                    'size-9',
-                    mode === 'models' &&
-                      p === activeProvider &&
-                      !installationId &&
-                      'bg-accent text-primary ring-1 ring-inset ring-primary/50',
-                  )}
-                  onClick={() => {
-                    setProvider(p)
-                    setInstallationId(undefined)
-                    setMode('models')
-                    setActive(0)
-                    setQuery('')
-                  }}
-                >
-                  <HarnessIcon provider={p} className="size-4" />
-                </Button>
-              ))}
-            {installations.length > 0 && (!lockedProvider || lockedProvider === 'acp') && (
-              <div className="my-1 w-full border-t" />
-            )}
-            {installations
-              .filter(
-                (installation) =>
-                  (!lockedProvider || lockedProvider === 'acp') &&
-                  (lockedInstallationId === undefined || lockedInstallationId === installation.id),
-              )
-              .map((installation) => (
-                <Button
-                  key={installation.id}
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label={`${installation.name} models`}
-                  aria-pressed={
-                    mode === 'models' &&
+            {availableProviders.map((p) => (
+              <Button
+                key={p}
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={`${providers[p].short} models`}
+                aria-pressed={mode === 'models' && p === activeProvider && !activeInstallationId}
+                title={providers[p].short}
+                className={cn(
+                  'size-9',
+                  mode === 'models' &&
+                    p === activeProvider &&
+                    !activeInstallationId &&
+                    'bg-accent text-primary ring-1 ring-inset ring-primary/50',
+                )}
+                onClick={() => {
+                  setProvider(p)
+                  setInstallationId(undefined)
+                  setMode('models')
+                  setActive(0)
+                  setQuery('')
+                }}
+              >
+                <HarnessIcon provider={p} className="size-4" />
+              </Button>
+            ))}
+            {availableInstallations.length > 0 && <div className="my-1 w-full border-t" />}
+            {availableInstallations.map((installation) => (
+              <Button
+                key={installation.id}
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={`${installation.name} models`}
+                aria-pressed={
+                  mode === 'models' &&
+                  activeProvider === 'acp' &&
+                  activeInstallationId === installation.id
+                }
+                title={installation.name}
+                className={cn(
+                  'size-9',
+                  mode === 'models' &&
                     activeProvider === 'acp' &&
-                    installationId === installation.id
-                  }
-                  title={installation.name}
-                  className={cn(
-                    'size-9',
-                    mode === 'models' &&
-                      activeProvider === 'acp' &&
-                      installationId === installation.id &&
-                      'bg-accent text-primary ring-1 ring-inset ring-primary/50',
-                  )}
-                  onClick={() => {
-                    setProvider('acp')
-                    setInstallationId(installation.id)
-                    setMode('models')
-                    setActive(0)
-                    setQuery('')
-                  }}
-                >
-                  <span className="text-[10px] font-semibold uppercase">
-                    {installation.name.slice(0, 2)}
-                  </span>
-                </Button>
-              ))}
+                    activeInstallationId === installation.id &&
+                    'bg-accent text-primary ring-1 ring-inset ring-primary/50',
+                )}
+                onClick={() => {
+                  setProvider('acp')
+                  setInstallationId(installation.id)
+                  setMode('models')
+                  setActive(0)
+                  setQuery('')
+                }}
+              >
+                <span className="text-[10px] font-semibold uppercase">
+                  {installation.name.slice(0, 2)}
+                </span>
+              </Button>
+            ))}
             <Button
               type="button"
               size="icon"
@@ -448,28 +473,31 @@ export function ComposerModelPicker({
                 }}
               />
             </div>
-            {selectedAgent && mode !== 'agents' && activeProvider === selectedAgent.provider && (
-              <div className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-accent/30 px-2 py-1.5">
-                <span className="min-w-0 truncate text-xs text-muted-foreground">
-                  For {selectedAgent.name}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 shrink-0 px-2 text-xs"
-                  disabled={disabled}
-                  onClick={async () => {
-                    if (await onUseHarness(selectedHarness)) setOpen(false)
-                  }}
-                >
-                  Use{' '}
-                  {acpHarnessName(selectedHarness, installations) ??
-                    providers[activeProvider].short}{' '}
-                  directly
-                </Button>
-              </div>
-            )}
+            {selectedAgent &&
+              harnessAvailable &&
+              mode !== 'agents' &&
+              activeProvider === selectedAgent.provider && (
+                <div className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-accent/30 px-2 py-1.5">
+                  <span className="min-w-0 truncate text-xs text-muted-foreground">
+                    For {selectedAgent.name}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 shrink-0 px-2 text-xs"
+                    disabled={disabled}
+                    onClick={async () => {
+                      if (await onUseHarness(selectedHarness)) setOpen(false)
+                    }}
+                  >
+                    Use{' '}
+                    {acpHarnessName(selectedHarness, installations) ??
+                      providers[activeProvider].short}{' '}
+                    directly
+                  </Button>
+                </div>
+              )}
             {mode === 'models' && (
               <Button
                 size="sm"
@@ -559,13 +587,17 @@ export function ComposerModelPicker({
               })}
               {!filtered.length && (
                 <p className="p-6 text-center text-xs text-muted-foreground">
-                  {mode === 'agents'
-                    ? agents.length
-                      ? 'No matching configurations.'
-                      : 'Create configurations in Settings → Agents.'
-                    : mode === 'favorites'
-                      ? 'Star models to keep them here.'
-                      : 'No models found.'}
+                  {availability.loading
+                    ? 'Checking available providers…'
+                    : !availability.available.size
+                      ? 'No providers available on this runtime. Configure agents in Settings.'
+                      : mode === 'agents'
+                        ? agents.length
+                          ? 'No matching configurations.'
+                          : 'Create configurations in Settings → Agents.'
+                        : mode === 'favorites'
+                          ? 'Star models to keep them here.'
+                          : 'No models found.'}
                 </p>
               )}
               {mode === 'models' && catalog?.models.some((model) => model.hidden) && (
@@ -589,6 +621,11 @@ export function ComposerModelPicker({
             {loading && mode === 'models' && (
               <p role="status" className="p-2 text-xs text-muted-foreground">
                 Loading provider models…
+              </p>
+            )}
+            {availability.error && (
+              <p role="alert" className="p-2 text-xs text-destructive">
+                Could not check available providers: {availability.error}
               </p>
             )}
             {((mode === 'models' && error) || storageError) && (

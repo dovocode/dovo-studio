@@ -43,6 +43,19 @@ const sent = {
     },
   ],
 }
+it('only offers confirmed available providers and configurations, preserving provider locks', () => {
+  const available = new Set(['harness:claude', 'agent:builder', 'agent:reviewer'])
+  expect(taskHarnessChoices(draft, agents, [], {}, available).map((choice) => choice.id)).toEqual([
+    'harness:claude',
+    'agent:builder',
+    'agent:reviewer',
+  ])
+  expect(taskHarnessChoices(sent, agents, [], {}, available).map((choice) => choice.id)).toEqual([
+    'agent:builder',
+  ])
+  expect(taskHarnessChoices(draft, agents, [], {}, new Set())).toEqual([])
+  expect(taskHarnessSelection(sent)).toBe('harness:codex')
+})
 it('offers all providers and custom agents before the first input', () => {
   expect(taskHarnessChoices(draft, agents).map((choice) => choice.id)).toEqual([
     'harness:codex',

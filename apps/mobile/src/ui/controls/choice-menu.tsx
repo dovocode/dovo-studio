@@ -24,7 +24,8 @@ export function ChoiceMenu(props: ChoiceProps) {
   const [width, setWidth] = useApplicationState<number | undefined>(undefined)
   const { fontScale } = useWindowDimensions()
   const height = Math.max(44, Math.ceil(22 * fontScale + 16))
-  const selected = props.items.find((item) => item.id === props.value)?.name ?? 'Choose…'
+  const selected =
+    props.items.find((item) => item.id === props.value)?.name ?? props.selectedLabel ?? 'Choose…'
   return (
     <View
       onLayout={({ nativeEvent }) => setWidth(Math.floor(nativeEvent.layout.width))}

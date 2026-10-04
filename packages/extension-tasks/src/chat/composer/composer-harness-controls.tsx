@@ -129,6 +129,7 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
   return (
     <>
       <ComposerModelPicker
+        repositoryId={task.repositoryId}
         agents={agents}
         selectedAgent={customAgent}
         value={value}

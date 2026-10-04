@@ -12,6 +12,9 @@ import {
   type Repository,
 } from '@dovo/protocol'
 import { ModelSettings } from '../../agents/model-settings'
+import { useHarnessAvailability } from '../../agents/use-harness-availability'
+import { Text } from '../../ui/content/text'
+import { styles } from '../../ui/theme'
 import { Choice } from '../../ui/controls/choice'
 import { taskHarnessChoices, taskHarnessSelection, selectedTaskHarness } from './harness-choices'
 
@@ -32,16 +35,19 @@ export function TaskLauncherControls({
   const task = createLauncherTask(snapshot, repository, selection, '', 'launcher-selection')
   const agents = resolveScopedAgents(snapshot.defaults, repository, snapshot.workspace.agents)
   const agent = { ...harness, id: selection.agentId ?? 'launcher', name: selection.name }
+  const availability = useHarnessAvailability(repository.id, agents)
   return (
     <View style={{ gap: 12 }}>
       <Choice
         label="Agent"
         value={taskHarnessSelection(task)}
+        selectedLabel={selection.name}
         items={taskHarnessChoices(
           task,
           agents,
           snapshot.acpInstallations,
           snapshot.defaults?.modelPreferences,
+          availability.available,
         )}
         disabled={disabled}
         onChange={(id) => {
@@ -59,6 +65,15 @@ export function TaskLauncherControls({
             })
         }}
       />
+      {(availability.loading || availability.error || !availability.available.size) && (
+        <Text style={styles.muted}>
+          {availability.loading
+            ? 'Checking available providers…'
+            : availability.error
+              ? `Could not check available providers: ${availability.error}`
+              : 'No providers available on this runtime. Configure agents in Settings.'}
+        </Text>
+      )}
       <ModelSettings
         agent={agent}
         disabled={disabled}

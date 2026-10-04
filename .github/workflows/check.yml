@@ -37,6 +37,7 @@ jobs:
       - run: pnpm test:shared-storage:browser
       - run: pnpm test:remote-browser-recovery:browser
       - run: pnpm test:composer-send:browser
+      - run: pnpm test:composer-providers:browser
       - run: pnpm test:thread-startup:browser
       - run: pnpm test:settings-target:browser
       - run: pnpm test:subagent-grouping:browser

@@ -9,6 +9,7 @@ import { ChoiceMenu } from './choice-menu'
 export type ChoiceProps = {
   label: string
   value: string
+  selectedLabel?: string
   items: Array<{
     id: string
     name: string
@@ -23,6 +24,7 @@ export type ChoiceProps = {
 export function Choice({
   label,
   value,
+  selectedLabel,
   items,
   onChange,
   disabled = false,
@@ -153,6 +155,7 @@ export function Choice({
               {...{
                 label,
                 value,
+                selectedLabel,
                 items,
                 onChange,
                 disabled,
@@ -172,7 +175,7 @@ export function Choice({
                 accessibilityLabel={label}
                 accessibilityRole="button"
                 accessibilityValue={{
-                  text: items.find((item) => item.id === value)?.name ?? value,
+                  text: items.find((item) => item.id === value)?.name ?? selectedLabel ?? value,
                 }}
                 accessibilityState={{
                   disabled,
@@ -205,7 +208,9 @@ export function Choice({
                     },
                   ]}
                 >
-                  {items.find((item) => item.id === value)?.name ?? (value || 'Choose…')}
+                  {items.find((item) => item.id === value)?.name ??
+                    selectedLabel ??
+                    (value || 'Choose…')}
                 </Text>
                 <Icon name="down" size={13} color={colors.muted} />
               </Pressable>
