@@ -46,7 +46,12 @@ it('uses the native bootstrap contract for modern launchers', async () => {
 it('resolves the old installer shim and pip console script to their own Python', async () => {
   const { home, command } = await installation()
   const python = join(home, 'hermes agent', 'venv', 'bin', 'python')
-  const agent = { provider: 'hermes' as const, endpoint: command, model: '' }
+  const agent = {
+    provider: 'hermes' as const,
+    endpoint: command,
+    model: '',
+    env: { PYTHONHOME: '/foreign-python', PYTHONPATH: '/foreign-modules' },
+  }
   await writeFile(
     command,
     `#!/usr/bin/env bash\nunset PYTHONPATH\nunset PYTHONHOME\nexec "${python}" "${join(home, 'hermes')}" "$@"\n`,
@@ -54,7 +59,11 @@ it('resolves the old installer shim and pip console script to their own Python',
   expect(hermesLaunch(agent)).toMatchObject({
     command: python,
     args: ['-u', '-P', '-m', 'tui_gateway.entry'],
+    env: { PYTHONHOME: '', PYTHONPATH: '' },
   })
+  expect(
+    hermesLaunch({ ...agent, env: { ...agent.env, HERMES_PYTHON_SRC_ROOT: '/source' } }).env,
+  ).toMatchObject({ PYTHONHOME: '', PYTHONPATH: '/source' })
   await writeFile(command, `#!${python}\nfrom hermes_cli.main import main\n`)
   expect(hermesLaunch(agent).command).toBe(python)
   await writeFile(command, '#!/bin/sh\nexec "$HERMES_PYTHON" "$HERMES_ENTRYPOINT" "$@"\n')

@@ -87,6 +87,9 @@ export function hermesLaunch(agent: AgentDiscovery) {
         : ['--run-module', 'tui_gateway.entry'],
     env: {
       ...agent.env,
+      // Bypassing the installer shim must preserve its environment cleanup.
+      // Inherited Python settings can otherwise break or shadow Hermes' venv.
+      ...(interpreter ? { PYTHONHOME: '', PYTHONPATH: '' } : {}),
       ...(agent.env?.HERMES_PYTHON_SRC_ROOT
         ? { PYTHONPATH: agent.env.HERMES_PYTHON_SRC_ROOT }
         : {}),

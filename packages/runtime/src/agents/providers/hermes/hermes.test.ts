@@ -62,6 +62,9 @@ for (const legacy of [false, true]) {
         ? ['-u', '-P', '-m', 'tui_gateway.entry']
         : ['--run-module', 'tui_gateway.entry']
       const script =
+        (legacy
+          ? "if (process.env.PYTHONHOME || process.env.PYTHONPATH) throw new Error('Installer environment cleanup was bypassed');\n"
+          : '') +
         `if (JSON.stringify(process.argv.slice(2)) !== ${JSON.stringify(JSON.stringify(expected))}) throw new Error('Incorrect Hermes gateway arguments');\n` +
         (await readFile(f.script, 'utf8'))
       if (legacy) {
@@ -79,7 +82,12 @@ for (const legacy of [false, true]) {
         ...f.run.agent,
         endpoint: '',
         args: [],
-        env: { ...f.run.agent.env, HOME: f.cwd, PATH: '' },
+        env: {
+          ...f.run.agent.env,
+          HOME: f.cwd,
+          PATH: '',
+          ...(legacy ? { PYTHONHOME: '/foreign-python', PYTHONPATH: '/foreign-modules' } : {}),
+        },
       }
       expect(await f.adapter.probe?.(agent)).toMatchObject({ provider: 'hermes', available: true })
       expect((await hermesModels(agent)).models.map((model) => model.id)).toEqual([
