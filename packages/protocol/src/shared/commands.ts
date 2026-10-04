@@ -55,8 +55,21 @@ export const commandsSchema = mutableStruct({
   acp: Schema.optionalWith(executable, {
     default: () => '',
   }),
+  cua: Schema.optionalWith(executable, { default: () => '' }),
+  cuaEnabled: Schema.optionalWith(Schema.Boolean, { default: () => false }),
 })
 export type CommandSettings = Schema.Schema.Type<typeof commandsSchema>
+export const cuaCheckRequest = mutableStruct({ path: executable })
+export const cuaCheckResponse = mutableStruct({
+  path: Schema.NullOr(Schema.String),
+  available: Schema.Boolean,
+  version: Schema.NullOr(Schema.String),
+  detail: Schema.String,
+  daemon: Schema.NullOr(Schema.String),
+  permissions: Schema.NullOr(Schema.String),
+  platform: Schema.String,
+})
+export type CuaCheck = Schema.Schema.Type<typeof cuaCheckResponse>
 export const commandSettingsResponse = mutableStruct({
   settings: commandsSchema,
   defaultShell: Schema.String,
@@ -120,6 +133,7 @@ export const commandFields = [
   { id: 'copilot', label: 'Copilot executable', placeholder: 'copilot' },
   { id: 'grok', label: 'Grok Build executable', placeholder: 'grok' },
   { id: 'muse', label: 'Muse executable', placeholder: 'muse' },
+  { id: 'cua', label: 'Cua Driver executable', placeholder: 'Automatic: cua-driver' },
   {
     id: 'acp',
     label: 'ACP executable',

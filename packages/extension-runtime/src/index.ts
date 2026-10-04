@@ -36,7 +36,7 @@ export const runtimeExtension = defineStudioExtension(
       icon: 'runtime',
       order: 3.8,
       settingsSection: 'coding',
-      keywords: 'codex claude gh git az path executable shell login terminal',
+      keywords: 'codex claude gh git az path executable shell login terminal cua computer use',
       load: () => import('./commands-view'),
     },
     {
