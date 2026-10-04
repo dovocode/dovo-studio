@@ -251,3 +251,22 @@ it('separates failed tools and execution boundaries from adjacent successful too
   ])
   expect(new Set(groups.map((block) => block.key)).size).toBe(4)
 })
+
+it('keeps a tool group disclosure stable when new activity events update the same tool', () => {
+  const tool = {
+    id: 'start-event',
+    status: 'running',
+    time: turn.startedAt,
+    kind: 'tool',
+    scope: 'task',
+    summary: 'Command',
+    payload: '{}',
+    turnId: turn.id,
+    textOffset: 0,
+  }
+  const before = threadTimeline('', [tool])
+  const after = threadTimeline('', [{ ...tool, id: 'completion-event', status: 'completed' }])
+  expect(before[0]?.kind === 'activity' && before[0].key).toBe(
+    after[0]?.kind === 'activity' && after[0].key,
+  )
+})

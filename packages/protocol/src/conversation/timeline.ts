@@ -196,11 +196,12 @@ export function threadTimeline(
     })
     let current: Tool[] = []
     let segment = 'start'
+    let sequence = 0
     const flush = () => {
       if (current.length)
         blocks.push({
           kind: 'activity',
-          key: `activity:${current[0]!.id}:${segment}`,
+          key: `activity:${Math.min(...current.map((tool) => tool.textOffset ?? offset))}:${segment}:${sequence++}`,
           offset,
           tools: current,
         })
@@ -213,7 +214,6 @@ export function threadTimeline(
         current.push(entry.tool)
         if (failed) {
           flush()
-          segment = entry.tool.id
         }
       } else {
         flush()
