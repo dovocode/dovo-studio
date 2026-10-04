@@ -1,6 +1,10 @@
 import { BrowserWindow, dialog, shell } from 'electron'
 import { previewUrl } from '@dovo/protocol'
 
+export async function openExternalLink(raw: string) {
+  await shell.openExternal(previewUrl(raw))
+}
+
 export async function offerLink(
   parent: BrowserWindow,
   raw: string,

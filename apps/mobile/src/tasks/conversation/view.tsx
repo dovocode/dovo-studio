@@ -286,7 +286,18 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
       const part = message.content[index]
       if (part.type === 'tool-call') {
         const first = index
-        while (index + 1 < end && message.content[index + 1].type === 'tool-call') index++
+        while (index + 1 < end) {
+          const current = message.content[index]
+          const next = message.content[index + 1]
+          if (
+            current.type !== 'tool-call' ||
+            next.type !== 'tool-call' ||
+            current.isError ||
+            next.isError
+          )
+            break
+          index++
+        }
         elements.push(
           <WorkGroup key={part.toolCallId} startIndex={first} endIndex={index}>
             {Array.from({ length: index - first + 1 }, (_, offset) => (
@@ -334,7 +345,15 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
           )}
         </Pressable>
       )}
-      {open ? renderRange(0, end) : finalIndex >= 0 && renderRange(finalIndex, finalIndex + 1)}
+      {open
+        ? renderRange(0, end)
+        : message.content
+            .slice(0, end)
+            .flatMap((part, index) =>
+              index === finalIndex || (part.type === 'tool-call' && part.isError)
+                ? renderRange(index, index + 1)
+                : [],
+            )}
     </>
   )
 }
@@ -351,7 +370,11 @@ function Message() {
       [presentation?.groupId],
     ),
   )
+  const hasFailure = useAuiState((state) =>
+    state.message.content.some((part) => part.type === 'tool-call' && part.isError),
+  )
   const showContent =
+    hasFailure ||
     user ||
     !presentation?.groupTurn ||
     !(collapsed ?? presentation.groupTurn.status === 'completed') ||

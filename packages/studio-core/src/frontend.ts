@@ -47,6 +47,7 @@ export interface StudioHostApi {
   /** Opens a known GitHub PR in native details; false leaves normal link handling. */
   openPullLink?: (url: string) => boolean
   chooseLink?: (url: string) => Promise<boolean>
+  openExternalLink?: (url: string) => Promise<void>
   pickDirectory?: (runtimeAddress: string) => Promise<string | null>
   navigate: (target: StudioNavigation) => void
   registerCommand: (command: StudioCommand) => () => void

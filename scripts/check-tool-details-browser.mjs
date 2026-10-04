@@ -4,7 +4,7 @@ import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
 const built = await build({
   stdin: {
     contents: `
-import {createRoot} from 'react-dom/client';
+import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {ApplicationStateProvider} from '@dovo/studio-core/state';
 import {updateAppPreferences} from '@dovo/studio-core';
 import {TaskActivity} from './src/chat/thread/task-activity.tsx';
@@ -12,7 +12,7 @@ const payload=JSON.stringify({event:{item:{type:'command_execution',command:'ech
 const tools=[{id:'command',summary:'Command',status:'completed',time:'2026-10-02T12:00:00Z',payload}];
 updateAppPreferences({toolActivity:'expanded',showToolDetails:false});
 window.setDetails=enabled=>updateAppPreferences({showToolDetails:enabled});
-createRoot(document.getElementById('app')).render(<ApplicationStateProvider><TaskActivity tools={tools}/></ApplicationStateProvider>);
+window.hideWork=()=>updateAppPreferences({toolActivity:'hidden'});function App(){const[failed,setFailed]=useState(false);window.failTool=()=>setFailed(true);return <TaskActivity tools={failed?tools.map(tool=>({...tool,status:'failed'})):tools}/>};createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -51,6 +51,10 @@ try {
   await page.waitForFunction(() => !document.body.textContent.includes('OUTPUT-ONLY-WHEN-ENABLED'))
   await absent()
   await page.getByText('echo command-visible', { exact: true }).last().waitFor()
+  await page.evaluate(() => window.hideWork())
+  await page.getByRole('region', { name: 'Task tool activity' }).waitFor({ state: 'hidden' })
+  await page.evaluate(() => window.failTool())
+  await page.getByText(/1 failed/).waitFor()
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Commands remain visible; tool output and raw details mount only when settings enable them and unmount immediately when disabled.',
