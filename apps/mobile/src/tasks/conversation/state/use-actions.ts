@@ -47,9 +47,9 @@ export function useConversationActions(task: Task) {
     runtimeId: activeId ?? '',
     taskId: task.id,
   }
-  const updateDraft = (text: string) => {
+  const updateDraft = (text: string, source?: 'keyboard') => {
     sendAttempts.textChanged(scope, text)
-    storedDraft.update(text)
+    storedDraft.update(text, source)
   }
   const dictation = useComposerDictation({
     draft: {
@@ -71,6 +71,12 @@ export function useConversationActions(task: Task) {
   })
   const draft = {
     ...storedDraft,
+    revision: JSON.stringify([
+      storedDraft.revision,
+      pendingMessage?.taskId === task.id && pendingMessage.state === 'sending'
+        ? pendingMessage.message.id
+        : null,
+    ]),
     text: sendingDraft(
       storedDraft.text,
       pendingMessage?.taskId === task.id ? pendingMessage : null,

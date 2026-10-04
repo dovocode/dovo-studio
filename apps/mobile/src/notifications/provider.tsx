@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { AppState, Platform } from 'react-native'
 import { requireOptionalNativeModule } from 'expo'
@@ -157,7 +158,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
                 )
                 if (!status.configured || !status.registered || status.error) {
                   errors.push(
-                    `${entry.profile.name}: ${status.error ?? 'Push registration is not ready.'}`,
+                    `${runtimeComputerName(entry)}: ${status.error ?? 'Push registration is not ready.'}`,
                   )
                   continue
                 }
@@ -171,7 +172,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
               registered.set(entry.profile.id, { key, at: Date.now() })
             } catch {
               errors.push(
-                `${entry.profile.name}: configure the push relay and update this runtime to enable notifications.`,
+                `${runtimeComputerName(entry)}: configure the push relay and update this runtime to enable notifications.`,
               )
             }
           }

@@ -2,7 +2,7 @@ import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { Keyboard } from 'react-native'
 import { useDictation } from './use-dictation'
 import { DictationDraftEdit, type DraftSelection } from './dictation-draft'
@@ -20,7 +20,7 @@ export function useComposerDictation({
 }: {
   draft: {
     text: string
-    update: (text: string) => void
+    update: (text: string, source?: 'keyboard') => void
   }
   cleanup: (text: string) => Effect.Effect<string, Error>
   connected: boolean
@@ -111,6 +111,19 @@ export function useComposerDictation({
       void clean(transaction, transcript, raw)
     },
   })
+  const speechRef = useRef(speech)
+  speechRef.current = speech
+  const update = useCallback(
+    (text: string, source?: 'keyboard') => {
+      edit.current?.invalidate()
+      edit.current = null
+      setState(null)
+      speechRef.current.clearError()
+      currentText.current = text
+      latest.current.draft.update(text, source)
+    },
+    [setState],
+  )
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -133,11 +146,7 @@ export function useComposerDictation({
         }),
       )
     },
-    update: (text: string) => {
-      reset()
-      speech.clearError()
-      write(text)
-    },
+    update,
     reset,
     keepOriginal: () => {
       if (state?.status === 'done' && currentText.current === state.cleaned) write(state.raw)

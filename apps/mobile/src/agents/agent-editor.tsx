@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { changeAgentProvider, changeAgentConnection, agentConnectionValue } from '@dovo/protocol'
 import { parseAgentEnvironment, formatAgentEnvironment } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -28,7 +29,7 @@ export function AgentEditor({
   onSave: (agent: Agent) => Promise<void>
   scopeLabel?: string
 }) {
-  const { connected, profile } = useRuntime(),
+  const { connected, profile, snapshot } = useRuntime(),
     { busy, error, act } = useAction(),
     [draft, setDraft] = useApplicationState(original)
   const [environment, setEnvironment] = useApplicationState(formatAgentEnvironment(original.env))
@@ -43,7 +44,7 @@ export function AgentEditor({
   }
   return (
     <Sheet
-      title={`${creating ? 'New' : 'Edit'} agent · ${scopeLabel ?? profile?.name ?? 'Computer'}`}
+      title={`${creating ? 'New' : 'Edit'} agent · ${scopeLabel ?? runtimeComputerName({ profile, snapshot })}`}
       busy={busy}
       onClose={onClose}
     >

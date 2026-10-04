@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { openAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { Effect, Schema } from 'effect'
@@ -586,7 +587,10 @@ function WorkItemContent({
             ? `Issue ${issueLabel(selected)}`
             : `Run #${pipeline?.run.number ?? selected}`
         }
-        subtitle={[jiraSource?.name || jiraSource?.project || repository?.name, profile?.name]
+        subtitle={[
+          jiraSource?.name || jiraSource?.project || repository?.name,
+          runtimeComputerName({ profile, snapshot }),
+        ]
           .filter(Boolean)
           .join(' · ')}
         leading={

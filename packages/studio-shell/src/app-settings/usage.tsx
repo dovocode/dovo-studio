@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { UsagePrices } from './usage-prices'
 import { useUsageData } from './use-usage-data'
 import { ResetCredits } from './reset-credits'
@@ -120,7 +121,7 @@ export default function UsageSettings() {
                   id: entry.profile.id,
                   sourceId: histories[entry.profile.id]?.sourceId,
                   records: histories[entry.profile.id]?.records,
-                  computer: entry.profile.name,
+                  computer: runtimeComputerName(entry),
                   tasks: entry.snapshot.workspace.tasks,
                 },
               ]
@@ -143,7 +144,7 @@ export default function UsageSettings() {
   )
   const limits = accountPlanLimits(
     hosts.map((entry) => ({
-      computer: entry.profile.name,
+      computer: runtimeComputerName(entry),
       sourceId: entry.profile.id,
       connected: entry.connected,
       limits: entry.snapshot?.workspace.planLimits ?? [],
@@ -176,7 +177,7 @@ export default function UsageSettings() {
             <option value="all">All computers</option>
             {runtimes.map((entry) => (
               <option key={entry.profile.id} value={entry.profile.id}>
-                {entry.profile.name}
+                {runtimeComputerName(entry)}
                 {entry.connected ? '' : ' · Offline'}
               </option>
             ))}
@@ -195,7 +196,7 @@ export default function UsageSettings() {
         (entry) =>
           notices[entry.profile.id] && (
             <p key={entry.profile.id} role="status" className="text-xs text-muted-foreground">
-              {entry.profile.name}: {notices[entry.profile.id]}
+              {runtimeComputerName(entry)}: {notices[entry.profile.id]}
             </p>
           ),
       )}

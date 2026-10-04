@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -30,7 +31,7 @@ export function JiraProjectForm({
   onSaved?: () => void
   onBusyChange: (busy: boolean) => void
 }) {
-  const { read, connected, profile, callEffect, readEffect } = useRuntime()
+  const { read, connected, profile, snapshot, callEffect, readEffect } = useRuntime()
   const [name, setName] = useApplicationState(initial?.name ?? '')
   const [site, setSite] = useApplicationState(initial?.site ?? '')
   const [project, setProject] = useApplicationState(initial?.project ?? '')
@@ -167,7 +168,9 @@ export function JiraProjectForm({
           gap: 4,
         }}
       >
-        <Text style={styles.muted}>Signed-in account on {profile?.name ?? 'this computer'}</Text>
+        <Text style={styles.muted}>
+          Signed-in account on {runtimeComputerName({ profile, snapshot })}
+        </Text>
         <Text selectable style={styles.text}>
           {projects?.site ?? initial?.site ?? 'Checking Jira account…'}
         </Text>
@@ -195,7 +198,8 @@ export function JiraProjectForm({
             {loadError}
           </Text>
           <Text style={styles.muted}>
-            On {profile?.name ?? 'this computer'}, sign in with acli jira auth login, then retry.
+            On {runtimeComputerName({ profile, snapshot })}, sign in with acli jira auth login, then
+            retry.
           </Text>
           <Action
             secondary

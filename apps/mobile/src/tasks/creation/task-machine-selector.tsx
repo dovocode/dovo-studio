@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { View } from 'react-native'
 import { canChangeTaskCheckout, taskMachineDraft, taskSchema, type Task } from '@dovo/protocol'
@@ -56,13 +57,13 @@ export function TaskMachineSelector({
           targets.length
             ? targets.map(({ entry, repository, key }) => ({
                 id: key,
-                name: `${entry.profile.name}${entry.connected ? '' : ' · Offline'} · ${repository.branch} · ${repository.path}`,
+                name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'} · ${repository.branch} · ${repository.path}`,
                 disabled: !entry.connected,
               }))
             : [
                 {
                   id: value,
-                  name: runtime.profile?.name ?? runtime.snapshot?.runtimeHost ?? 'This machine',
+                  name: runtimeComputerName(runtime),
                 },
               ]
         }

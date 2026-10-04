@@ -18,7 +18,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TaskWidgetProvider} from '${root}/apps/mobile/src/widgets/provider.tsx';import {LiveActivityProvider} from '${root}/apps/mobile/src/live-activities/provider.tsx';import {TerminalSession} from '${root}/apps/mobile/src/terminal/terminal-session.tsx';import {useForegroundInterval} from '${root}/apps/mobile/src/runtime/state/app-active.ts';import {decode,snapshotSchema,taskSchema,runtimeProfile} from '@dovo/protocol';window.controllers=0;window.activitySyncs=0;window.activityDisposals=0;window.pollers=0;window.pollStops=0;window.writes=[];window.commands=[];window.starts=0;window.stops=0;window.ticks=0;window.tickets=0;const task=decode(taskSchema,{id:'task',title:'Build',repositoryId:'',agentId:'',status:'running',createdAt:new Date().toISOString(),messages:[],files:[],draft:'',example:false});const profile=runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'});window.runtime={ready:true,connection:profile.connection,call:async()=>{window.tickets++;return {ticket:'test'}},overviews:[{profile,connected:true,lastSeen:null,error:null,pulls:null,pullError:null,snapshot:decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',repositories:[],agents:[],tasks:[task],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]})}]};function Clock(){useForegroundInterval(()=>window.ticks++,50);return null}const node=createRoot(document.getElementById('app'));const render=()=>flushSync(()=>node.render(<LiveActivityProvider><TaskWidgetProvider><Clock/><TerminalSession id="terminal"/></TaskWidgetProvider></LiveActivityProvider>));window.renderUpdates=render;window.unmount=()=>flushSync(()=>node.unmount());render();`,
+    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TaskWidgetProvider} from '${root}/apps/mobile/src/widgets/provider.tsx';import {updateMobilePreferences} from '${root}/apps/mobile/src/runtime/preferences/app-preferences.ts';import {LiveActivityProvider,useLiveActivities} from '${root}/apps/mobile/src/live-activities/provider.tsx';import {TerminalSession} from '${root}/apps/mobile/src/terminal/terminal-session.tsx';import {useForegroundInterval} from '${root}/apps/mobile/src/runtime/state/app-active.ts';import {decode,snapshotSchema,taskSchema,runtimeProfile} from '@dovo/protocol';window.controllers=0;window.activitySyncs=0;window.activityDisposals=0;window.pollers=0;window.pollStops=0;window.writes=[];window.commands=[];window.starts=0;window.stops=0;window.ticks=0;window.tickets=0;const task=decode(taskSchema,{id:'task',title:'Build',repositoryId:'',agentId:'',status:'running',createdAt:new Date().toISOString(),messages:[],files:[],draft:'',example:false});const profile=runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'});window.runtime={ready:true,connection:profile.connection,call:async()=>{window.tickets++;return {ticket:'test'}},overviews:[{profile,connected:true,lastSeen:null,error:null,pulls:null,pullError:null,snapshot:decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',repositories:[],agents:[],tasks:[task],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]})}]};function Clock(){window.setActivities=useLiveActivities().setEnabled;window.setWidgets=value=>updateMobilePreferences({widgetUpdates:value});useForegroundInterval(()=>window.ticks++,50);return null}const node=createRoot(document.getElementById('app'));const render=()=>flushSync(()=>node.render(<LiveActivityProvider><TaskWidgetProvider><Clock/><TerminalSession id="terminal"/></TaskWidgetProvider></LiveActivityProvider>));window.renderUpdates=render;window.unmount=()=>flushSync(()=>node.unmount());render();`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -111,14 +111,38 @@ try {
   })
   await page.waitForFunction(() => window.writes.length === 3)
   assert.equal(await page.evaluate(() => window.writes.at(-1).items[0].title), 'B')
+  // Disabled native surfaces own no recurring work, even as task status keeps changing.
+  await page.evaluate(() => {
+    window.setActivities(false)
+    window.setWidgets(false)
+  })
+  await page.waitForFunction(() => window.pollStops === 3)
+  await page.waitForTimeout(350)
+  const disabledSyncs = await page.evaluate(() => window.activitySyncs)
+  await page.evaluate(() => {
+    for (let i = 0; i < 20; i++) {
+      window.runtime.overviews[0].snapshot.workspace.tasks[0].title = 'Disabled ' + i
+      window.renderUpdates()
+    }
+  })
+  await page.waitForTimeout(1200)
+  assert.equal(await page.evaluate(() => window.activitySyncs), disabledSyncs)
+  assert.equal(await page.evaluate(() => window.pollers), 3)
+  assert.equal(await page.evaluate(() => window.writes.length), 3)
+  await page.evaluate(() => {
+    window.setActivities(true)
+    window.setWidgets(true)
+  })
+  await page.waitForFunction(() => window.pollers === 4 && window.writes.length === 4)
+  assert.equal(await page.evaluate(() => window.writes.at(-1).items[0].title), 'Disabled 19')
   await page.evaluate(() => window.unmount())
   await page.waitForFunction(() => window.activityDisposals === 1)
   assert.equal(await page.evaluate(() => window.controllers), 1)
-  assert.equal(await page.evaluate(() => window.pollStops), 3)
+  assert.equal(await page.evaluate(() => window.pollStops), 4)
   assert.equal(await page.evaluate(() => window.stops), 2)
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile energy: unchanged streams produce no widget writes; background timers and terminals stop; foreground resumes promptly.',
+    'Mobile energy: unchanged streams produce no widget writes; background timers and terminals stop; foreground resumes promptly; disabling widgets and activities stops their work and re-enabling restores the latest state.',
   )
 } finally {
   await browser.close()

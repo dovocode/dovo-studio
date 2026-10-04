@@ -76,6 +76,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
     },
     [setCaret],
   )
+  const type = useCallback((text: string) => draft.update(text, 'keyboard'), [draft.update])
   const meter = contextMeter(task)
   const { callEffect: commandCall } = useRuntime()
   const commandAction = useAction()
@@ -306,6 +307,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
               }}
             >
               <ComposerField
+                key={draft.key}
                 onFocus={focus}
                 onBlur={blur}
                 onSelectionChange={select}
@@ -319,7 +321,8 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                         : 'Ask a follow-up…'
                 }
                 value={draft.text}
-                onChangeText={draft.update}
+                revision={draft.revision}
+                onChangeText={type}
                 editable={draft.ready && !busy && !dictation.active && !task.archived}
                 showOptions={showOptions}
               />

@@ -15,6 +15,7 @@ import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
 import { colors, styles } from '../ui/theme'
 import { SettingsGroup } from './settings-group'
+import { useLiveActivities } from '../live-activities/provider'
 
 const tabs = [
   { id: 'tasks', name: 'Tasks' },
@@ -26,6 +27,7 @@ const speechRates = [1, 1.25, 1.5, 1.75, 2] as const
 
 export default function GeneralScreen() {
   const preferences = useMobilePreferences()
+  const activity = useLiveActivities()
   const { setView } = useTaskListView()
   const [recognitionLanguages, setRecognitionLanguages] = useState<string[]>([])
   const [voices, setVoices] = useState<Voice[]>([])
@@ -61,6 +63,39 @@ export default function GeneralScreen() {
     <View style={styles.screen}>
       <ScreenHeader title="General" />
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: 8, gap: 24 }]}>
+        <SettingsGroup
+          title="Battery & background activity"
+          footer="The open computer updates live. Less frequent checks of other computers reduce network activity. Connections pause while the app is in the background; push notifications are managed separately. Disabled widgets keep their last saved snapshot."
+        >
+          <View style={{ padding: 12 }}>
+            <Choice
+              label="Other computer refresh"
+              value={preferences.computerRefresh}
+              items={[
+                { id: 'normal', name: 'Every 30 seconds' },
+                { id: 'reduced', name: 'Every 2 minutes' },
+                { id: 'manual', name: 'When I refresh' },
+              ]}
+              onChange={(value) => {
+                if (value === 'normal' || value === 'reduced' || value === 'manual')
+                  updateMobilePreferences({ computerRefresh: value })
+              }}
+            />
+          </View>
+          <SwitchRow
+            label="Update widgets"
+            value={preferences.widgetUpdates}
+            onValueChange={(widgetUpdates) => updateMobilePreferences({ widgetUpdates })}
+          />
+          {activity.supported && (
+            <SwitchRow
+              label="Live Activities"
+              value={activity.enabled}
+              onValueChange={activity.setEnabled}
+            />
+          )}
+          {!!activity.error && <Text style={styles.error}>{activity.error}</Text>}
+        </SettingsGroup>
         <SettingsGroup
           title="Driving"
           footer="Bigger text, only Tasks and Settings, and chats without tool details. The screen stays on while a task runs. Also on the car button in Tasks. Use dictation and keep your eyes on the road."

@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useForegroundInterval } from '../runtime/state/app-active'
 import { UsagePrices } from './usage-prices'
 import { useUsageData } from './use-usage-data'
@@ -78,7 +79,7 @@ export default function UsageScreen() {
                   id: entry.profile.id,
                   sourceId: histories[entry.profile.id]?.sourceId,
                   records: histories[entry.profile.id]?.records,
-                  computer: entry.profile.name,
+                  computer: runtimeComputerName(entry),
                   tasks: entry.snapshot.workspace.tasks,
                 },
               ]
@@ -101,7 +102,7 @@ export default function UsageScreen() {
   )
   const limits = accountPlanLimits(
     hosts.map((entry) => ({
-      computer: entry.profile.name,
+      computer: runtimeComputerName(entry),
       sourceId: entry.profile.id,
       connected: entry.connected,
       limits: entry.snapshot?.workspace.planLimits ?? [],
@@ -146,7 +147,7 @@ export default function UsageScreen() {
                   { id: 'all', name: 'All computers' },
                   ...overviews.map((entry) => ({
                     id: entry.profile.id,
-                    name: `${entry.profile.name}${entry.connected ? '' : ' · Offline'}`,
+                    name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`,
                   })),
                 ]}
                 onChange={setComputer}
@@ -161,7 +162,7 @@ export default function UsageScreen() {
                 (entry) =>
                   notices[entry.profile.id] && (
                     <Text key={entry.profile.id} style={styles.muted}>
-                      {entry.profile.name}: {notices[entry.profile.id]}
+                      {runtimeComputerName(entry)}: {notices[entry.profile.id]}
                     </Text>
                   ),
               )}

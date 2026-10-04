@@ -16,8 +16,8 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
   const { activeId, legacyDraftRuntimeId } = useRuntime()
   const key = `dovo.draft.${encodeURIComponent(activeId ?? '')}.${taskId}`
   const migrateLegacy = !!activeId && activeId === legacyDraftRuntimeId
-  // TextInput changes must batch with React Native's own native-event state.
-  const [text, setText] = useState(''),
+  // Only external edits are sent back to the native input; keyboard edits already live there.
+  const [{ text, revision }, setDraft] = useState({ text: '', revision: 0 }),
     [loadedKey, setLoadedKey] = useApplicationState<string | null>(null),
     [submission, setSubmission] = useApplicationState<DraftRecord['submission']>(undefined),
     [error, setError] = useApplicationState('')
@@ -37,11 +37,11 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
     setLoadedKey(null)
     setSubmission(undefined)
     // Wait for the durable delivery record rather than flashing a server's stale pre-send draft.
-    setText('')
+    setDraft((previous) => ({ text: '', revision: previous.revision + 1 }))
     setError('')
     const receive = (value: string) => {
       edited = true
-      setText(value)
+      setDraft((previous) => ({ text: value, revision: previous.revision + 1 }))
     }
     listener.current = receive
     const unsubscribe = drafts.subscribe(key, receive)
@@ -69,7 +69,9 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
         Effect.tap((hydration) =>
           Effect.sync(() => {
             if (disposed) return
-            if (hydration.text !== undefined) setText(hydration.text)
+            const hydrated = hydration.text
+            if (hydrated !== undefined)
+              setDraft((previous) => ({ text: hydrated, revision: previous.revision + 1 }))
             setLoadedKey(key)
             setError(hydration.error)
           }),
@@ -107,10 +109,13 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
     return () => subscription.remove()
   }, [key])
   const update = useCallback(
-    (value: string) => {
+    (value: string, source?: 'keyboard') => {
       if (activeKey.current === key) {
         editedKey.current = key
-        setText(value)
+        setDraft((previous) => ({
+          text: value,
+          revision: previous.revision + (source === 'keyboard' ? 0 : 1),
+        }))
       }
       void runClientEffect(
         // Own edits are already in React state. Persistence must not echo an older
@@ -124,10 +129,12 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
         ),
       )
     },
-    [key, setText, setError],
+    [key, setError],
   )
   return {
     text: loadedKey === key ? text : '',
+    revision,
+    key,
     update,
     ready: loadedKey === key,
     submission: loadedKey === key ? submission : undefined,

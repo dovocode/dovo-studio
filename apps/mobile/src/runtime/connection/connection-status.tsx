@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { useEffect, type ReactNode } from 'react'
 import { Alert, View } from 'react-native'
@@ -85,7 +86,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
             return (
               <View key={`saved:${entry.profile.id}`} style={{ gap: 6 }}>
                 <Text style={styles.title}>
-                  {entry.profile.name} · {status.pending} saved actions
+                  {runtimeComputerName(entry)} · {status.pending} saved actions
                 </Text>
                 {!!status.error && (
                   <Text selectable style={styles.error}>
@@ -120,7 +121,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
           })}
           {unavailable.map((entry) => (
             <View key={entry.profile.id} style={{ gap: 6 }}>
-              <Text style={styles.title}>{entry.profile.name}</Text>
+              <Text style={styles.title}>{runtimeComputerName(entry)}</Text>
               <Text selectable style={styles.muted}>
                 {entry.profile.connection.address}
               </Text>

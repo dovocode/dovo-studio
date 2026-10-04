@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useMemo } from 'react'
 import type { Repository, RuntimeProfile } from '@dovo/protocol'
 import { useWorkspace } from './provider'
@@ -19,10 +20,7 @@ export function useRepositorySources() {
       const repositories = active
         ? workspace.repositories
         : (entry.snapshot?.workspace.repositories ?? [])
-      const runtimeName =
-        entry.profile.name === new URL(entry.profile.connection.address).hostname
-          ? (entry.snapshot?.runtimeHost ?? entry.profile.name)
-          : entry.profile.name
+      const runtimeName = runtimeComputerName(entry)
       return repositories
         .filter((repository) => !repository.kind)
         .map((repository) => ({

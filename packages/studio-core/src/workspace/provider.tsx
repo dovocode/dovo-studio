@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import {
   mergeSharedSettings,
   pendingSharedSettings,
@@ -1589,7 +1590,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         .catch((error: unknown) => {
           failedPresetRequests.current.set(entry.profile.id, fingerprint)
           setPresetSyncError(
-            `${entry.profile.name}: ${error instanceof Error ? error.message : String(error)}`,
+            `${runtimeComputerName(entry)}: ${error instanceof Error ? error.message : String(error)}`,
           )
         })
         .finally(() => presetRequests.current.delete(entry.profile.id))

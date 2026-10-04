@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { projectMachineGroups } from '@dovo/protocol'
 import { Pressable, View } from 'react-native'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -96,7 +97,7 @@ export function ProjectThreadFilter({
           </Pressable>
           {groups
             .filter((group) =>
-              `${group.name} ${group.identity ?? ''} ${group.entries.map(({ entry }) => entry.profile.name).join(' ')}`
+              `${group.name} ${group.identity ?? ''} ${group.entries.map(({ entry }) => runtimeComputerName(entry)).join(' ')}`
                 .toLowerCase()
                 .includes(query.trim().toLowerCase()),
             )
@@ -148,7 +149,7 @@ export function ProjectThreadFilter({
               </View>
             ))}
           {!groups.some((group) =>
-            `${group.name} ${group.identity ?? ''} ${group.entries.map(({ entry }) => entry.profile.name).join(' ')}`
+            `${group.name} ${group.identity ?? ''} ${group.entries.map(({ entry }) => runtimeComputerName(entry)).join(' ')}`
               .toLowerCase()
               .includes(query.trim().toLowerCase()),
           ) && <Text style={styles.muted}>No matching projects.</Text>}
@@ -160,7 +161,7 @@ export function ProjectThreadFilter({
             <RuntimeScope key={`${entry.profile.id}:${repository.id}`} runtimeId={entry.profile.id}>
               <View style={{ gap: 8 }}>
                 <Text style={styles.text}>
-                  {entry.profile.name}
+                  {runtimeComputerName(entry)}
                   {entry.connected ? '' : ' · Offline'}
                 </Text>
                 <Text style={styles.muted}>{repository.path}</Text>

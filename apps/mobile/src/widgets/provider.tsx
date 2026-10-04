@@ -5,9 +5,11 @@ import { requireOptionalNativeModule } from 'expo'
 import { aggregateRuntimeTasks } from '@dovo/protocol'
 import { useAppActive } from '../runtime/state/app-active'
 import { useRuntime } from '../runtime/connection/provider'
+import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 
 export function TaskWidgetProvider({ children }: { children: ReactNode }) {
   const { overviews } = useRuntime()
+  const { widgetUpdates } = useMobilePreferences()
   const active = useAppActive()
   const [supported] = useApplicationState(
     () => Platform.OS === 'ios' && !!requireOptionalNativeModule('ExpoWidgets'),
@@ -22,7 +24,9 @@ export function TaskWidgetProvider({ children }: { children: ReactNode }) {
     waiting: 0,
     items: [],
   })
-  const rows = (active && supported ? aggregateRuntimeTasks(overviews, Date.now(), true) : [])
+  const rows = (
+    active && supported && widgetUpdates ? aggregateRuntimeTasks(overviews, Date.now(), true) : []
+  )
     .filter(
       (row) =>
         !row.task.archived &&
@@ -41,7 +45,7 @@ export function TaskWidgetProvider({ children }: { children: ReactNode }) {
   }
   const fingerprint = JSON.stringify(latest.current)
   useEffect(() => {
-    if (!active || !supported) return
+    if (!active || !supported || !widgetUpdates) return
     if (written.current === fingerprint) return
     // Streaming text does not change the widget. Coalesce bursts of actual status changes.
     let disposed = false
@@ -58,6 +62,6 @@ export function TaskWidgetProvider({ children }: { children: ReactNode }) {
       disposed = true
       clearTimeout(timer)
     }
-  }, [active, supported, fingerprint])
+  }, [active, supported, fingerprint, widgetUpdates])
   return children
 }

@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -58,7 +59,7 @@ export default function RepositoriesScreen() {
         {overviews.map((entry) => (
           <RuntimeScope key={clientScopeKey(entry.profile.connection)} runtimeId={entry.profile.id}>
             <Text style={styles.muted}>
-              {entry.profile.name}
+              {runtimeComputerName(entry)}
               {entry.connected ? '' : ' · Offline'}
             </Text>
             {entry.snapshot?.workspace.repositories.map((repository) => (
@@ -71,7 +72,7 @@ export default function RepositoriesScreen() {
   )
 }
 function AddProject({ onClose }: { onClose: () => void }) {
-  const { profile, connected, connection, callEffect } = useRuntime(),
+  const { profile, snapshot, connected, connection, callEffect } = useRuntime(),
     { busy, error, act } = useAction(),
     [name, setName] = useApplicationState(''),
     [path, setPath] = useApplicationState(''),
@@ -114,7 +115,7 @@ function AddProject({ onClose }: { onClose: () => void }) {
         />
       ) : (
         <>
-          <Text style={styles.muted}>{profile?.name}</Text>
+          <Text style={styles.muted}>{runtimeComputerName({ profile, snapshot })}</Text>
           <View style={styles.row}>
             <Action
               label="Local path"

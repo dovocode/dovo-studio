@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { projectMachineGroups } from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
@@ -64,7 +65,7 @@ export function ProjectMachinePicker({
           return (
             <Action
               key={entry.profile.id}
-              label={`${entry.profile.name}${entry.connected ? '' : ' · Offline'}`}
+              label={`${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`}
               disabled={!entry.connected || !repository}
               onPress={() => {
                 if (repository)
@@ -86,7 +87,7 @@ export function ProjectMachinePicker({
       {groups
         .filter((group) =>
           group.entries.some(({ repository, entry }) =>
-            `${group.identity ?? ''} ${repository.name} ${repository.path} ${entry.profile.name}`
+            `${group.identity ?? ''} ${repository.name} ${repository.path} ${runtimeComputerName(entry)}`
               .toLowerCase()
               .includes(normalizedQuery),
           ),
@@ -140,7 +141,7 @@ export function ProjectMachinePicker({
                   <Text numberOfLines={1} style={styles.muted}>
                     {devices > 1
                       ? `${devices} machines · ${online} online · Choose where to run`
-                      : `${choice?.entry.profile.name ?? 'Device'} · ${choice?.repository.branch ?? ''}`}
+                      : `${choice ? runtimeComputerName(choice.entry) : 'Device'} · ${choice?.repository.branch ?? ''}`}
                   </Text>
                   {!preferred && <Text style={styles.muted}>Offline</Text>}
                 </View>
@@ -153,7 +154,7 @@ export function ProjectMachinePicker({
                     <Pressable
                       key={`${runtimeId}:${repository.id}`}
                       accessibilityRole="button"
-                      accessibilityLabel={`Run ${group.name} on ${entry.profile.name}${available ? '' : ', unavailable'}`}
+                      accessibilityLabel={`Run ${group.name} on ${runtimeComputerName(entry)}${available ? '' : ', unavailable'}`}
                       disabled={!available}
                       onPress={() => setSelection({ runtimeId, repositoryId: repository.id })}
                       style={({ pressed }) => ({
@@ -170,7 +171,7 @@ export function ProjectMachinePicker({
                     >
                       <Icon name="device" size={17} color={colors.muted} />
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.text}>{entry.profile.name}</Text>
+                        <Text style={styles.text}>{runtimeComputerName(entry)}</Text>
                         <Text style={styles.muted}>
                           {repository.branch || 'Project checkout'}
                           {available ? '' : ` · ${repository.gitIdentityError || 'Offline'}`}
@@ -186,7 +187,7 @@ export function ProjectMachinePicker({
       {!!groups.length &&
         !groups.some((group) =>
           group.entries.some(({ repository, entry }) =>
-            `${group.identity ?? ''} ${repository.name} ${repository.path} ${entry.profile.name}`
+            `${group.identity ?? ''} ${repository.name} ${repository.path} ${runtimeComputerName(entry)}`
               .toLowerCase()
               .includes(normalizedQuery),
           ),

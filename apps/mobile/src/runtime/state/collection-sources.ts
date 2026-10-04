@@ -1,10 +1,12 @@
 import type { Repository, RuntimeOverview, RuntimeProfile } from '@dovo/protocol'
+import { runtimeComputerName } from '@dovo/protocol'
 
 export type ProjectSource = {
   key: string
   profile: RuntimeProfile
   repository: Repository
   connected: boolean
+  computerName: string
 }
 
 export const projectSourceKey = (runtimeId: string, repositoryId: string) =>
@@ -19,6 +21,7 @@ export function collectionSources(overviews: RuntimeOverview[]): ProjectSource[]
         profile: entry.profile,
         repository,
         connected: entry.connected,
+        computerName: runtimeComputerName(entry),
       })),
   )
 }
@@ -26,10 +29,10 @@ export function collectionSources(overviews: RuntimeOverview[]): ProjectSource[]
 // Live snapshots update every second. Reload collections only when their actual source changes.
 export const collectionSourceIdentity = (sources: ProjectSource[]) =>
   JSON.stringify(
-    sources.map(({ key, profile, repository, connected }) => ({
+    sources.map(({ key, profile, repository, connected, computerName }) => ({
       key,
       connection: profile.connection,
-      name: profile.name,
+      name: computerName,
       connected,
       repository: {
         id: repository.id,

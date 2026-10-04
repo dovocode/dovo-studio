@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useRef, useState } from 'react'
 import {
@@ -128,7 +129,7 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
             >
               {sources.map((source) => (
                 <option key={source.profile.id} value={source.profile.id}>
-                  {source.profile.name}
+                  {runtimeComputerName(source)}
                 </option>
               ))}
             </ChoicePicker>

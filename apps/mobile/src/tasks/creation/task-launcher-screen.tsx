@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { TaskLauncherControls } from './task-launcher-controls'
 import { useEffect, useRef } from 'react'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -30,7 +31,7 @@ import { colors, styles } from '../../ui/theme'
 import { taskHref } from '../../shell/task-route'
 
 export function TaskLauncherScreen() {
-  const { ready, profiles, activeId, readRuntime, refreshRuntime } = useRuntime()
+  const { ready, profiles, activeId, readRuntime, refreshRuntime, overviews } = useRuntime()
   const params = useLocalSearchParams<{ text?: string }>()
   const [runtimeId, setRuntimeId] = useApplicationState(activeId ?? '')
   const [snapshot, setSnapshot] = useApplicationState<RuntimeSnapshot | null>(null)
@@ -164,7 +165,13 @@ export function TaskLauncherScreen() {
               <Choice
                 label="Server"
                 value={runtimeId}
-                items={profiles.map((profile) => ({ id: profile.id, name: profile.name }))}
+                items={profiles.map((profile) => ({
+                  id: profile.id,
+                  name: runtimeComputerName({
+                    profile,
+                    snapshot: overviews.find((entry) => entry.profile.id === profile.id)?.snapshot,
+                  }),
+                }))}
                 onChange={setRuntimeId}
                 disabled={locked}
               />

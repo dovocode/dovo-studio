@@ -117,7 +117,7 @@ export default function SettingsScreen() {
         <SettingsGroup title="This app">
           <SettingsRow
             title="General"
-            subtitle="Launch tab, sorting, time, conversation and merging"
+            subtitle="Battery, background activity and app preferences"
             icon="settings"
             onPress={() => router.push('/settings/general')}
           />

@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useState } from 'react'
 import {
@@ -128,13 +129,19 @@ function Profiles({
     </div>
   )
 }
-function RemoteProfiles({ profile }: { profile: RuntimeProfile }) {
+function RemoteProfiles({
+  profile,
+  computerName,
+}: {
+  profile: RuntimeProfile
+  computerName: string
+}) {
   const catalog = useRemoteBrowserProfiles(profile)
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          Profiles and saved logins stay on {profile.name}.
+          Profiles and saved logins stay on {computerName}.
         </p>
         <Button
           size="sm"
@@ -220,11 +227,15 @@ export default function BrowserSettings() {
               >
                 {runtimes.map((entry) => (
                   <option key={entry.profile.id} value={entry.profile.id}>
-                    {entry.profile.name}
+                    {runtimeComputerName(entry)}
                   </option>
                 ))}
               </ChoicePicker>
-              <RemoteProfiles key={runtime.profile.id} profile={runtime.profile} />
+              <RemoteProfiles
+                key={runtime.profile.id}
+                profile={runtime.profile}
+                computerName={runtimeComputerName(runtime)}
+              />
             </>
           ) : (
             <p className="text-sm text-muted-foreground">

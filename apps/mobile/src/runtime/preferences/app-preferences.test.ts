@@ -101,6 +101,32 @@ it('defaults changed files to collapsed and restores an expanded preference', as
   })
 })
 
+it('restores battery choices independently and preserves defaults for older or invalid records', async () => {
+  storage.getItem = async () =>
+    JSON.stringify({ computerRefresh: 'obsolete', widgetUpdates: false, taskSort: 'title' })
+  let saved = ''
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences()).toMatchObject({
+    computerRefresh: 'normal',
+    widgetUpdates: false,
+    taskSort: 'title',
+  })
+  preferences.updateMobilePreferences({ computerRefresh: 'manual', widgetUpdates: true })
+  await vi.waitFor(() => expect(saved).not.toBe(''))
+  storage.getItem = async () => saved
+  const reopened = await loadPreferences()
+  await reopened.preferencesReady
+  expect(reopened.readMobilePreferences()).toMatchObject({
+    computerRefresh: 'manual',
+    widgetUpdates: true,
+    taskSort: 'title',
+  })
+})
+
 it('merges shared scope edits with offline cached scopes that arrive during preference hydration', async () => {
   let resolveGet: (value: string) => void = () => {}
   storage.getItem = () =>

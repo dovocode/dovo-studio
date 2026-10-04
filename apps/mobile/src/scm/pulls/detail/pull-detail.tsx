@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { CreatePull } from '../list/create-pull'
 import { pullHeadBranch, pullStackLabel } from '@dovo/protocol'
 import { pullHref } from '../../../shell/source-route'
@@ -88,7 +89,7 @@ export function PullDetail({
         title={`PR #${number}`}
         subtitle={[
           snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId)?.name,
-          profile?.name,
+          runtimeComputerName({ profile, snapshot }),
         ]
           .filter(Boolean)
           .join(' · ')}

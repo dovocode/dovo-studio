@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { projectMachineGroups } from '@dovo/protocol'
 import { TaskDefaultSettings } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -58,12 +59,11 @@ export function ProjectsMenu({
     if (adding && adding.runtimeId !== activeRuntimeId) setAdding(null)
     if (managing && managing.runtimeId !== activeRuntimeId) setManaging(null)
   }, [activeRuntimeId, adding, managing])
+  const activeComputer = runtimes.find((entry) => entry.profile.id === activeRuntimeId)
   const sources = [
     {
       runtimeId: activeRuntimeId,
-      name:
-        runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile.name ??
-        'This computer',
+      name: activeComputer ? runtimeComputerName(activeComputer) : 'This computer',
       repositories: workspace.repositories,
       online: connected || !activeRuntimeId,
     },
@@ -72,7 +72,7 @@ export function ProjectsMenu({
           .filter((entry) => entry.profile.id !== activeRuntimeId)
           .map((entry) => ({
             runtimeId: entry.profile.id,
-            name: entry.profile.name,
+            name: runtimeComputerName(entry),
             repositories: entry.snapshot?.workspace.repositories ?? [],
             online: entry.connected,
           }))

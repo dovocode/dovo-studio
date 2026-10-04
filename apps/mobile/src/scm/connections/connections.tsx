@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
@@ -57,7 +58,7 @@ export default function SourceControlSettings() {
             }}
           >
             <Text style={styles.text}>
-              {entry.profile.name}
+              {runtimeComputerName(entry)}
               {entry.connected ? '' : ' · Offline'}
             </Text>
             <ConnectionsContent />

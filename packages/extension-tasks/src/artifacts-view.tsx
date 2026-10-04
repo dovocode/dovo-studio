@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import {
   artifactLibrarySchema,
@@ -8,7 +9,7 @@ import { useWorkspace, WorkspaceScope } from '@dovo/studio-core'
 import { Button, Input } from '@dovo/studio-ui'
 import { ArtifactCard } from './chat/artifacts'
 
-type Entry = { profile: RuntimeProfile; artifact: ArtifactLibraryEntry }
+type Entry = { profile: RuntimeProfile; computerName: string; artifact: ArtifactLibraryEntry }
 export default function ArtifactsView() {
   const { runtimes, readRuntime } = useWorkspace()
   const [loaded, setLoaded] = useState<{ identity: string; entries: Entry[]; errors: string[] }>()
@@ -24,7 +25,7 @@ export default function ArtifactsView() {
   const identity = JSON.stringify(
     sources.map((runtime) => [
       runtime.profile.id,
-      runtime.profile.name,
+      runtimeComputerName(runtime),
       runtime.profile.connection.address,
       runtime.profile.connection.token,
       runtime.connected,
@@ -33,14 +34,18 @@ export default function ArtifactsView() {
   const load = useEffectEvent(() =>
     Promise.allSettled(
       sources.map(async (runtime) => {
-        if (!runtime.connected) throw new Error(`${runtime.profile.name}: offline`)
+        if (!runtime.connected) throw new Error(`${runtimeComputerName(runtime)}: offline`)
         const result = await readRuntime(
           runtime.profile,
           '/api/artifacts/library',
           {},
           artifactLibrarySchema,
         )
-        return result.artifacts.map((artifact): Entry => ({ profile: runtime.profile, artifact }))
+        return result.artifacts.map((artifact): Entry => ({
+          profile: runtime.profile,
+          computerName: runtimeComputerName(runtime),
+          artifact,
+        }))
       }),
     ),
   )
@@ -66,9 +71,9 @@ export default function ArtifactsView() {
   const errors = loaded?.identity === identity ? loaded.errors : []
   const query = search.trim().toLowerCase()
   const visible = entries.filter(
-    ({ profile, artifact }) =>
+    ({ computerName, artifact }) =>
       (state === 'all' || artifact.threadState === state) &&
-      `${artifact.title} ${artifact.threadTitle} ${profile.name} ${artifact.format}`
+      `${artifact.title} ${artifact.threadTitle} ${computerName} ${artifact.format}`
         .toLowerCase()
         .includes(query),
   )
@@ -124,12 +129,12 @@ export default function ArtifactsView() {
           </p>
         )}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {visible.map(({ profile, artifact }) => (
+          {visible.map(({ profile, computerName, artifact }) => (
             <WorkspaceScope key={`${profile.id}:${artifact.id}`} profile={profile}>
               <article>
                 <ArtifactCard reference={artifact} />
                 <p className="text-xs text-muted-foreground">
-                  {profile.name} · {artifact.threadTitle} · {artifact.threadState}
+                  {computerName} · {artifact.threadTitle} · {artifact.threadState}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {artifact.deleteAt

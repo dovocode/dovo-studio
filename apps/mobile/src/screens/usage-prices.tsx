@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { Schema } from 'effect'
@@ -114,7 +115,7 @@ function PriceForm({
       const failures = results.flatMap((result, index) =>
         result.status === 'rejected'
           ? [
-              `${hosts[index].profile.name}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+              `${runtimeComputerName(hosts[index])}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
             ]
           : [],
       )

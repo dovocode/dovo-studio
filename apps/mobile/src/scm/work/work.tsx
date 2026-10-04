@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { router } from 'expo-router'
 import { useDeferredValue, useEffect, useRef } from 'react'
@@ -110,7 +111,7 @@ export function WorkScreen({
       return (
         matchesWorkItem(row, query) ||
         (!!query.trim() &&
-          [workSourceName(page.source), page.source.profile.name].some((value) =>
+          [workSourceName(page.source), page.source.computerName].some((value) =>
             value.toLowerCase().includes(query.trim().toLowerCase()),
           ))
       )
@@ -299,7 +300,7 @@ export function WorkScreen({
         renderItem={({ item: { page, row } }) => (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`${row.title}, ${'state' in row ? row.state : row.status}, ${workSourceName(page.source)}, ${page.source.profile.name}`}
+            accessibilityLabel={`${row.title}, ${'state' in row ? row.state : row.status}, ${workSourceName(page.source)}, ${page.source.computerName}`}
             testID={`Work item ${row.id}`}
             onPress={() => choose(page, row)}
             style={({ pressed }) => ({
@@ -401,7 +402,7 @@ export function WorkScreen({
               {page.options?.provider === 'jira'
                 ? `Jira · ${(page.source.kind === 'jira' ? page.source.jiraSource.project : '') ?? ''} · `
                 : ''}
-              {page.source.profile.name}
+              {page.source.computerName}
               {!page.source.connected ? ' · Offline · Saved' : page.stale ? ' · Saved' : ''}
             </Text>
           </Pressable>
@@ -469,7 +470,7 @@ export function WorkScreen({
                 >
                   {!!page.error && (
                     <Text accessibilityRole="alert" style={styles.error}>
-                      {workSourceName(page.source)} · {page.source.profile.name}: {page.error}
+                      {workSourceName(page.source)} · {page.source.computerName}: {page.error}
                     </Text>
                   )}
                   {!!(mode === 'issues'
@@ -506,7 +507,7 @@ export function WorkScreen({
               },
               ...sources.map((source) => ({
                 id: source.key,
-                name: `${workSourceName(source)} · ${source.profile.name}`,
+                name: `${workSourceName(source)} · ${source.computerName}`,
               })),
             ]}
           />
@@ -576,7 +577,7 @@ export function WorkScreen({
                   >
                     <Action
                       secondary
-                      label={`${workSourceName(source)} · ${source.profile.name}`}
+                      label={`${workSourceName(source)} · ${source.computerName}`}
                       disabled={!source.connected}
                       onPress={() =>
                         setJiraConnection({
@@ -605,7 +606,7 @@ export function WorkScreen({
                 <Action
                   key={entry.profile.id}
                   secondary
-                  label={`Add Jira · ${entry.profile.name}`}
+                  label={`Add Jira · ${runtimeComputerName(entry)}`}
                   disabled={!entry.connected}
                   onPress={() =>
                     setJiraConnection({
@@ -638,7 +639,7 @@ export function WorkScreen({
               <Action
                 key={page.source.key}
                 secondary
-                label={`${workSourceName(page.source)} · ${page.source.profile.name}`}
+                label={`${workSourceName(page.source)} · ${page.source.computerName}`}
                 onPress={() => setFormSource(page.source)}
               />
             ))}

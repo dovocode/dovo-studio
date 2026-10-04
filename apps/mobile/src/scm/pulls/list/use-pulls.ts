@@ -74,7 +74,7 @@ export function usePulls(repositoryId: string, state: string) {
       sourceKey: entry.key,
       sourceIdentity: projectContentIdentity(entry),
       runtimeId: entry.profile.id,
-      runtimeName: entry.profile.name,
+      runtimeName: entry.computerName,
       connected: entry.connected,
       repositoryId: entry.repository.id,
       name: entry.repository.name,
@@ -335,7 +335,7 @@ export function usePulls(repositoryId: string, state: string) {
             ? [
                 {
                   ...page,
-                  runtimeName: entry.profile.name,
+                  runtimeName: entry.computerName,
                   name: entry.repository.name,
                   connected: entry.connected,
                 },

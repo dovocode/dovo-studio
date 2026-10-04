@@ -515,7 +515,7 @@ function PullsContent({
               },
               ...collectionSources(overviews).map((source) => ({
                 id: source.key,
-                name: `${source.repository.name} · ${source.profile.name}`,
+                name: `${source.repository.name} · ${source.computerName}`,
               })),
             ]}
           />

@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AppState, View } from 'react-native'
 import {
@@ -85,7 +86,7 @@ export function ComputerUpdates() {
               <View style={[styles.row, { justifyContent: 'space-between' }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.text}>
-                    {entry.profile.name} · {desktop ? 'Desktop' : 'Server'}
+                    {runtimeComputerName(entry)} · {desktop ? 'Desktop' : 'Server'}
                   </Text>
                   <Text style={styles.muted}>
                     {release.installed ?? 'Version unknown'}
@@ -97,7 +98,7 @@ export function ComputerUpdates() {
                   </Text>
                 </View>
                 <Switch
-                  accessibilityLabel={`Select ${entry.profile.name} for update`}
+                  accessibilityLabel={`Select ${runtimeComputerName(entry)} for update`}
                   value={state.selected.includes(id)}
                   disabled={
                     !!state.busy.length ||

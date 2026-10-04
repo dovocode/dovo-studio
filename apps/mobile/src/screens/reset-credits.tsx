@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { Choice } from '../ui/controls/choice'
 import { useRef, useState } from 'react'
 import { Alert, View } from 'react-native'
@@ -91,7 +92,10 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
           label="Server for reset"
           value={profile?.id ?? ''}
           disabled={busy}
-          items={sources.map((source) => ({ id: source.profile.id, name: source.profile.name }))}
+          items={sources.map((source) => ({
+            id: source.profile.id,
+            name: runtimeComputerName(source),
+          }))}
           onChange={(id) => {
             setRuntimeId(id)
             setCredits(null)

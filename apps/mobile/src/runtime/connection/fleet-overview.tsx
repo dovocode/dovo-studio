@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../../ui/content/text'
@@ -53,7 +54,7 @@ export function FleetOverview({
         : undefined
       : entries.find((entry) => entry.profile.id === source)
   const compactSummary = sourceEntry
-    ? `${sourceEntry.profile.name} · ${status(sourceEntry)}`
+    ? `${runtimeComputerName(sourceEntry)} · ${status(sourceEntry)}`
     : `${entries.length} computers · ${entries.filter((entry) => entry.connected).length} online`
   if (!entries.length) return null
   const summary = (entry: RuntimeOverview, compact: boolean) => (
@@ -61,7 +62,7 @@ export function FleetOverview({
       key={entry.profile.id}
       testID={`Runtime summary ${entry.profile.id}`}
       accessibilityRole="button"
-      accessibilityLabel={`${entry.profile.name}, ${status(entry)}, ${activity(entry)}`}
+      accessibilityLabel={`${runtimeComputerName(entry)}, ${status(entry)}, ${activity(entry)}`}
       accessibilityHint="Show device activity and connection details."
       onPress={() => setSelected(entry.profile.id)}
       style={({ pressed }) => ({
@@ -96,7 +97,7 @@ export function FleetOverview({
             },
           ]}
         >
-          {entry.profile.name}
+          {runtimeComputerName(entry)}
         </Text>
         <Text
           style={[
@@ -175,7 +176,7 @@ export function FleetOverview({
       )}
       {(open || detail) && (
         <Sheet
-          title={detail?.profile.name ?? 'Your computers'}
+          title={(detail ? runtimeComputerName(detail) : undefined) ?? 'Your computers'}
           onClose={() => {
             setOpen(false)
             setSelected('')
@@ -197,7 +198,7 @@ export function FleetOverview({
                 key={entry.profile.id}
                 testID={`Runtime summary ${entry.profile.id}`}
                 accessibilityRole="button"
-                accessibilityLabel={`${entry.profile.name}, ${status(entry)}, ${activity(entry)}`}
+                accessibilityLabel={`${runtimeComputerName(entry)}, ${status(entry)}, ${activity(entry)}`}
                 onPress={() => setSelected(entry.profile.id)}
                 style={({ pressed }) => [
                   styles.listItem,
@@ -221,7 +222,7 @@ export function FleetOverview({
                     gap: 3,
                   }}
                 >
-                  <Text style={styles.text}>{entry.profile.name}</Text>
+                  <Text style={styles.text}>{runtimeComputerName(entry)}</Text>
                   <Text style={styles.muted}>
                     {status(entry)} · {activity(entry)}
                   </Text>

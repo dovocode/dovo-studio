@@ -1,5 +1,5 @@
-import { memo, useCallback } from 'react'
-import type { TextInputProps } from 'react-native'
+import { memo, useCallback, useLayoutEffect, useRef } from 'react'
+import type { TextInput, TextInputProps } from 'react-native'
 import { Field } from '../../ui/controls/field'
 import { styles } from '../../ui/theme'
 import type { DraftSelection } from './dictation-draft'
@@ -8,14 +8,36 @@ import type { DraftSelection } from './dictation-draft'
 export const ComposerField = memo(function ComposerField({
   showOptions,
   onSelectionChange,
+  value = '',
+  revision,
+  onChangeText,
   ...props
 }: Pick<
   TextInputProps,
   'value' | 'onChangeText' | 'onFocus' | 'onBlur' | 'editable' | 'placeholder'
 > & {
   showOptions: boolean
+  revision: string
   onSelectionChange: (selection: DraftSelection) => void
 }) {
+  const input = useRef<TextInput>(null)
+  const initial = useRef(value)
+  const nativeText = useRef(value)
+  const appliedRevision = useRef(revision)
+  useLayoutEffect(() => {
+    if (appliedRevision.current === revision) return
+    appliedRevision.current = revision
+    if (nativeText.current === value) return
+    nativeText.current = value
+    input.current?.setNativeProps({ text: value })
+  }, [value, revision])
+  const type = useCallback(
+    (text: string) => {
+      nativeText.current = text
+      onChangeText?.(text)
+    },
+    [onChangeText],
+  )
   const select = useCallback<NonNullable<TextInputProps['onSelectionChange']>>(
     ({ nativeEvent }) => onSelectionChange(nativeEvent.selection),
     [onSelectionChange],
@@ -23,6 +45,9 @@ export const ComposerField = memo(function ComposerField({
   return (
     <Field
       {...props}
+      inputRef={input}
+      defaultValue={initial.current}
+      onChangeText={type}
       label="Message"
       hideLabel
       // iOS can still revise text/selection through spellcheck and smart spacing

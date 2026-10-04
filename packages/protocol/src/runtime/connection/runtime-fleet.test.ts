@@ -8,6 +8,7 @@ import {
   removeRuntime,
   runtimeProfile,
   runtimeRegistrySchema,
+  runtimeComputerName,
   upsertRuntime,
 } from './runtime-fleet'
 import type { RuntimeOverview, RuntimeRegistry } from './runtime-fleet'
@@ -98,6 +99,17 @@ const json = (value: unknown, status = 200) =>
   })
 afterEach(() => vi.unstubAllGlobals())
 describe('Saved runtimes', () => {
+  it('uses the reported computer name even for a named external connection and cached offline data', () => {
+    expect(runtimeComputerName(overview)).toBe('reported-hostname')
+    const offline = { ...overview, connected: false }
+    expect(runtimeComputerName(offline)).toBe('reported-hostname')
+    expect(runtimeComputerName({ profile, snapshot: null })).toBe('Mac')
+    expect(runtimeComputerName({ profile, snapshot: { runtimeHost: '  ' } })).toBe('Mac')
+    expect(runtimeComputerName({ profile, snapshot: { runtimeHost: '  My computer  ' } })).toBe(
+      'My computer',
+    )
+    expect(runtimeComputerName({})).toBe('Unknown computer')
+  })
   it('normalizes origins, replaces credentials without duplicate devices and removes active selection safely', () => {
     const empty: RuntimeRegistry = {
       version: 1,
@@ -188,7 +200,7 @@ describe('Runtime dashboard', () => {
     expect(new Set(entries.map((entry) => entry.key)).size).toBe(2)
     expect(entries[0]).toMatchObject({
       runtimeId: other.id,
-      runtimeName: 'Linux',
+      runtimeName: 'reported-hostname',
       needsInput: true,
       online: false,
       projectName: 'Other project',

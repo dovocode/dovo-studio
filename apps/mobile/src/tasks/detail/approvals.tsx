@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { responses } from '@dovo/protocol'
@@ -15,7 +16,7 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
         .map((item) => (
           <View key={item.id} style={styles.card}>
             <Text style={styles.muted}>
-              Permission request · {profile?.name ?? snapshot?.runtimeHost ?? 'Connected computer'}
+              Permission request · {runtimeComputerName({ profile, snapshot })}
             </Text>
             <Text
               style={[

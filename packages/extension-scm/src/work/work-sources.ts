@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useMemo } from 'react'
 import {
   useRepositorySources,
@@ -40,10 +41,7 @@ export function useIssueSources(includeJira: boolean): WorkSource[] {
           const active = entry.profile.id === activeRuntimeId
           const saved = active ? workspace : entry.snapshot?.workspace
           const sources = saved?.jiraSources ?? []
-          const runtimeName =
-            entry.profile.name === new URL(entry.profile.connection.address).hostname
-              ? (entry.snapshot?.runtimeHost ?? entry.profile.name)
-              : entry.profile.name
+          const runtimeName = runtimeComputerName(entry)
           return sources.map((jira) => ({
             profile: entry.profile,
             jira,

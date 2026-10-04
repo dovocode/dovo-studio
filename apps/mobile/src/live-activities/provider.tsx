@@ -27,7 +27,7 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
   )
   // Native activity reads only need to follow visible state, not assistant text tokens.
   const activityRevision = JSON.stringify(
-    (active && supported ? overviews : []).map((source) => {
+    (active && supported && enabled ? overviews : []).map((source) => {
       const snapshot = source.snapshot
       const tasks = snapshot?.workspace.tasks ?? []
       const running = tasks.filter((task) => task.status === 'running' && !task.archived)
@@ -104,6 +104,17 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
           const value = latest.current
           yield* controller.sync(value.overviews, value.readRuntimeEffect, enabledRef.current)
         }).pipe(Effect.uninterruptible)
+        const retireActivities = () =>
+          void commands.run(
+            sync.pipe(
+              Effect.catchAll(() =>
+                Effect.sync(() => {
+                  if (!disposed)
+                    setError('Live Activities could not be stopped. Try again when connected.')
+                }),
+              ),
+            ),
+          )
         // Keep one controller for this app session, but own no polling worker in the background.
         // This preserves registrations and avoids recreating an activity during a quick resume.
         let polling: ReturnType<typeof startPolling> | undefined
@@ -117,7 +128,8 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
           void stopped.finally(() => stopping.delete(stopped))
         }
         const resume = () => {
-          if (disposed || polling || AppState.currentState !== 'active') return
+          if (disposed || polling || !enabledRef.current || AppState.currentState !== 'active')
+            return
           retryAfter = 0
           polling = startPolling(sync, {
             interval: 30_000,
@@ -130,8 +142,18 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
             },
           })
         }
-        refresh.current = () => polling?.refresh()
+        refresh.current = () => {
+          if (enabledRef.current) {
+            resume()
+            polling?.refresh()
+          } else {
+            pause()
+            // Retire existing activities once, then own no recurring worker while disabled.
+            retireActivities()
+          }
+        }
         resume()
+        if (!enabledRef.current) retireActivities()
         yield* Effect.addFinalizer(() =>
           Effect.promise(async () => {
             pause()

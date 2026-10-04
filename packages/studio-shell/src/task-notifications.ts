@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import type { InputPreviewBridge, InputPreviewItem } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
 import { readAppPreferences, useAppPreferences, useWorkspace } from '@dovo/studio-core'
@@ -121,7 +122,7 @@ export function useTaskNotifications(
       ])
         items.push({
           runtimeId: entry.profile.id,
-          runtimeName: entry.profile.name,
+          runtimeName: runtimeComputerName(entry),
           taskTitle:
             snapshot.workspace.tasks.find((task) => task.id === request.value.taskId)?.title ??
             'Task',

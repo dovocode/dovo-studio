@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { TaskLauncherControls } from './task-launcher-controls'
 import { useEffect, useRef, useState } from 'react'
 import { useAppPreferences, useWorkspace, useStudioHost, WorkspaceScope } from '@dovo/studio-core'
@@ -58,7 +59,7 @@ export function TaskLauncher({ bridge }: { bridge: TaskLauncherBridge }) {
 }
 
 export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
-  const { runtimeRegistry, activeRuntimeId, readRuntime } = useWorkspace()
+  const { runtimeRegistry, activeRuntimeId, readRuntime, runtimes } = useWorkspace()
   const [open, setOpen] = useState(true)
   const [runtimeId, setRuntimeId] = useState(activeRuntimeId ?? '')
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null)
@@ -198,7 +199,10 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
               >
                 {runtimeRegistry.profiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
-                    {profile.name}
+                    {runtimeComputerName({
+                      profile,
+                      snapshot: runtimes.find((entry) => entry.profile.id === profile.id)?.snapshot,
+                    })}
                   </option>
                 ))}
               </select>

@@ -123,6 +123,16 @@ export type RuntimeOverview = {
   /** The runtime rejected this device's token: it was revoked or the runtime was reset. */
   unauthorized?: boolean
 }
+/** Display the computer's reported name; the connection label is a fallback for older hosts. */
+export function runtimeComputerName({
+  profile,
+  snapshot,
+}: {
+  profile?: Pick<RuntimeProfile, 'name'> | null
+  snapshot?: Pick<RuntimeSnapshot, 'runtimeHost'> | null
+}) {
+  return snapshot?.runtimeHost?.trim() || profile?.name || 'Unknown computer'
+}
 /** A 401 means the saved pairing no longer works; polling again cannot fix it. */
 export function isUnauthorizedRuntimeError(error: unknown) {
   return error instanceof RuntimeRequestError && error.status === 401
@@ -299,10 +309,7 @@ export function aggregateRuntimeTasks(
       .map((task) => ({
         key: JSON.stringify([profile.id, task.id]),
         runtimeId: profile.id,
-        runtimeName:
-          profile.name !== new URL(profile.connection.address).hostname
-            ? profile.name
-            : snapshot.runtimeHost || profile.name,
+        runtimeName: runtimeComputerName(entry),
         task,
         projectName: projects.get(task.repositoryId) ?? 'No project',
         needsInput: needsInput.has(task.id),

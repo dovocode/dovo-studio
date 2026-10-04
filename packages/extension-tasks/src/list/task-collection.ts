@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import type { RuntimeOverview, RuntimeSnapshot, Task, Workspace } from '@dovo/studio-core'
 
 export type TaskSource = {
@@ -20,10 +21,7 @@ export type TaskEntry = {
 export const taskCollectionKey = (runtimeId: string | null, entityId: string) =>
   JSON.stringify([runtimeId, entityId])
 
-const taskRuntimeName = (entry: RuntimeOverview) =>
-  entry.profile.name === new URL(entry.profile.connection.address).hostname
-    ? (entry.snapshot?.runtimeHost ?? entry.profile.name)
-    : entry.profile.name
+const taskRuntimeName = runtimeComputerName
 
 // Keep unsent local edits authoritative while retaining every other computer's cached work.
 export function taskSources({

@@ -45,7 +45,7 @@ const runtime = (address: string, name: string): RuntimeOverview => ({
     },
     name,
   ),
-  snapshot,
+  snapshot: { ...snapshot, runtimeHost: name === 'Mac' ? 'Mac computer' : 'Linux computer' },
   connected: true,
   lastSeen: null,
   error: null,
@@ -88,6 +88,7 @@ it('keeps approvals, cached state and device labels scoped to the owning compute
     connected: false,
     snapshot: {
       ...snapshot,
+      runtimeHost: 'Linux computer',
       approvals: [
         {
           id: 'approval',
@@ -111,8 +112,8 @@ it('keeps approvals, cached state and device labels scoped to the owning compute
   expect(
     entries.map((entry) => [entry.source.name, entry.needsInput, entry.source.online]),
   ).toEqual([
-    ['Mac', false, true],
-    ['Linux', true, false],
+    ['Mac computer', false, true],
+    ['Linux computer', true, false],
   ])
 })
 it('retains settled and snoozed threads for filters and omits samples and unhydrated runtimes', () => {
@@ -203,6 +204,7 @@ it('groups every delegated generation under its parent without removing child na
         ...linux,
         snapshot: {
           ...snapshot,
+          runtimeHost: 'Linux computer',
           workspace: { ...snapshot.workspace, tasks: [{ ...child, delegation: undefined }] },
         },
       },
@@ -211,7 +213,7 @@ it('groups every delegated generation under its parent without removing child na
   const entries = collectTasks(sources)
   expect(entries.map((entry) => entry.task.id)).toEqual([task.id, 'child', 'nested', 'child'])
   expect(mainTaskEntries(entries).map((entry) => [entry.source.name, entry.task.id])).toEqual([
-    ['Mac', task.id],
-    ['Linux', 'child'],
+    ['Mac computer', task.id],
+    ['Linux computer', 'child'],
   ])
 })

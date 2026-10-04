@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -30,7 +31,7 @@ export default function JobsScreen() {
           flow,
           snapshot: entry.snapshot!,
           runtimeId: entry.profile.id,
-          runtimeName: entry.profile.name,
+          runtimeName: runtimeComputerName(entry),
           connected: entry.connected,
           key: JSON.stringify([entry.profile.id, flow.id]),
         }))

@@ -52,6 +52,19 @@ function overview(host: string, connected = true): RuntimeOverview {
     pullError: null,
   }
 }
+it('labels sources with the computer name without changing saved connection names or content ownership', () => {
+  const entry = overview('vpn.example.com', false)
+  const withName = { ...entry, snapshot: { ...entry.snapshot!, runtimeHost: 'My workstation' } }
+  const original = collectionSources([entry])[0]
+  const source = collectionSources([withName])[0]
+  expect(source.computerName).toBe('My workstation')
+  expect(source.profile.name).toBe('vpn.example.com')
+  expect(source.profile).toBe(entry.profile)
+  expect(retainProjectPages([{ source: original, items: ['cached'] }], [source])).toEqual([
+    { source, items: ['cached'] },
+  ])
+  expect(collectionSourceIdentity([source])).not.toBe(collectionSourceIdentity([original]))
+})
 it('keeps identical project IDs separate across computers, including saved offline work', () => {
   const first = overview('laptop'),
     second = overview('workstation', false)

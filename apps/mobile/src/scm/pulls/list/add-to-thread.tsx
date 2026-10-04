@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { responses, type PullSummary } from '@dovo/protocol'
@@ -32,7 +33,7 @@ export function AddPullsToThread({
         })),
     )
     .filter(({ task, runtime, project }) =>
-      `${task.title} ${project} ${runtime.profile.name}`
+      `${task.title} ${project} ${runtimeComputerName(runtime)}`
         .toLowerCase()
         .includes(search.toLowerCase()),
     )
@@ -101,7 +102,7 @@ export function AddPullsToThread({
             >
               <Text numberOfLines={2}>{thread.task.title}</Text>
               <Text style={{ color: colors.muted }}>
-                {thread.project} · {thread.runtime.profile.name}
+                {thread.project} · {runtimeComputerName(thread.runtime)}
                 {thread.runtime.connected ? '' : ' · Offline'}
               </Text>
             </Pressable>

@@ -42,6 +42,7 @@
     "test:mobile-models:browser": "node scripts/check-mobile-models-browser.mjs",
     "test:mobile-thread-rendering:browser": "node scripts/check-mobile-thread-rendering.mjs",
     "test:conversation-history:browser": "node scripts/check-conversation-history-browser.mjs",
+    "test:mobile-composer:browser": "node scripts/check-mobile-composer-browser.mjs",
     "test:mobile-energy:browser": "node scripts/check-mobile-energy-browser.mjs",
     "test:linked-projects:browser": "node scripts/check-linked-projects-browser.mjs",
     "test:settings-target:browser": "node scripts/check-settings-target-browser.mjs",

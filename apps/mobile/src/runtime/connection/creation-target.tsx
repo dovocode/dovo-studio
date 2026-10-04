@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import type { ReactNode } from 'react'
 import type { RuntimeProfile } from '@dovo/protocol'
@@ -48,7 +49,7 @@ export function CreationTarget({
       {overviews.map((entry) => (
         <View key={entry.profile.id}>
           <Action
-            label={entry.profile.name}
+            label={runtimeComputerName(entry)}
             secondary
             disabled={!entry.connected || !entry.snapshot}
             onPress={() => setTarget(entry.profile)}

@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { ActivityIndicator, FlatList, Pressable, View } from 'react-native'
 import {
@@ -14,7 +15,7 @@ import { Icon } from '../ui/controls/icon'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { colors, styles } from '../ui/theme'
 
-type Entry = { profile: RuntimeProfile; artifact: ArtifactLibraryEntry }
+type Entry = { profile: RuntimeProfile; computerName: string; artifact: ArtifactLibraryEntry }
 export default function ArtifactsScreen() {
   const { overviews, readRuntime } = useRuntime()
   const { focused } = useNavigation()
@@ -31,7 +32,7 @@ export default function ArtifactsScreen() {
   const identity = JSON.stringify(
     sources.map((entry) => [
       entry.profile.id,
-      entry.profile.name,
+      runtimeComputerName(entry),
       entry.profile.connection.address,
       entry.profile.connection.token,
       entry.connected,
@@ -40,14 +41,18 @@ export default function ArtifactsScreen() {
   const load = useEffectEvent(() =>
     Promise.allSettled(
       sources.map(async (entry) => {
-        if (!entry.connected) throw new Error(`${entry.profile.name}: offline`)
+        if (!entry.connected) throw new Error(`${runtimeComputerName(entry)}: offline`)
         const result = await readRuntime(
           entry.profile,
           '/api/artifacts/library',
           {},
           artifactLibrarySchema,
         )
-        return result.artifacts.map((artifact): Entry => ({ profile: entry.profile, artifact }))
+        return result.artifacts.map((artifact): Entry => ({
+          profile: entry.profile,
+          computerName: runtimeComputerName(entry),
+          artifact,
+        }))
       }),
     ),
   )
@@ -73,8 +78,8 @@ export default function ArtifactsScreen() {
   const entries = loaded?.identity === identity ? loaded.entries : []
   const errors = loaded?.identity === identity ? loaded.errors : []
   const search = query.trim().toLowerCase()
-  const visible = entries.filter(({ artifact, profile }) =>
-    `${artifact.title} ${artifact.threadTitle} ${artifact.format} ${profile.name}`
+  const visible = entries.filter(({ artifact, computerName }) =>
+    `${artifact.title} ${artifact.threadTitle} ${artifact.format} ${computerName}`
       .toLowerCase()
       .includes(search),
   )
@@ -141,7 +146,7 @@ export default function ArtifactsScreen() {
             <View style={{ flex: 1, gap: 4 }}>
               <Text numberOfLines={2}>{item.artifact.title}</Text>
               <Text numberOfLines={1} style={styles.muted}>
-                {item.artifact.threadTitle} · {item.profile.name}
+                {item.artifact.threadTitle} · {item.computerName}
               </Text>
               <Text style={styles.muted}>
                 {item.artifact.format} · {item.artifact.threadState} · v{item.artifact.revision}

@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -146,7 +147,7 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
         }}
       >
         <Text numberOfLines={1} style={styles.muted}>
-          {profile?.name ?? snapshot?.runtimeHost ?? 'Connected computer'}
+          {runtimeComputerName({ profile, snapshot })}
         </Text>
         <View
           style={{

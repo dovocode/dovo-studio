@@ -1,4 +1,5 @@
 import type { JiraSource, RuntimeOverview, RuntimeProfile } from '@dovo/protocol'
+import { runtimeComputerName } from '@dovo/protocol'
 import {
   collectionSources,
   projectContentIdentity,
@@ -13,6 +14,7 @@ export type WorkSource =
       profile: RuntimeProfile
       jiraSource: JiraSource
       connected: boolean
+      computerName: string
     }
 
 export const jiraSourceKey = (runtimeId: string, sourceId: string) =>
@@ -39,7 +41,7 @@ export const workSourceIdentity = (sources: WorkSource[]) =>
     sources.map((source) => [
       workSourceContentIdentity(source),
       source.connected,
-      source.profile.name,
+      source.computerName,
       workSourceName(source),
     ]),
   )
@@ -60,6 +62,7 @@ export function workSources(
         profile: entry.profile,
         jiraSource,
         connected: entry.connected,
+        computerName: runtimeComputerName(entry),
       })),
     ),
     ...projects,

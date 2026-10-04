@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { router } from 'expo-router'
@@ -42,7 +43,9 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
       }}
     >
       <Text style={styles.muted}>
-        {[task?.title, profile?.name, project].filter(Boolean).join(' · ')}
+        {[task?.title, runtimeComputerName({ profile, snapshot }), project]
+          .filter(Boolean)
+          .join(' · ')}
       </Text>
       <QuestionForm
         key={pending.id}

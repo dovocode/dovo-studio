@@ -188,6 +188,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [legacyDraftRuntimeId, setLegacyDraftRuntimeId] = useApplicationState<string | null>(null)
   const [previews, setPreviews] = useApplicationState<OptimisticTask[]>([])
   const [appActive, setAppActive] = useApplicationState(AppState.currentState === 'active')
+  const { computerRefresh } = useMobilePreferences()
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) =>
       setAppActive(state === 'active'),
@@ -905,13 +906,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [ready, profile, appActive, refreshProfileEffect, updateEntry, mutations])
   useEffect(() => {
-    if (!ready || !appActive) return
+    if (!ready || !appActive || computerRefresh === 'manual') return
     const polling = startPolling(
       Effect.suspend(() =>
         AppState.currentState === 'active' ? refreshAllEffect(false) : Effect.void,
       ),
       {
-        interval: 30000,
+        interval: computerRefresh === 'reduced' ? 120000 : 30000,
         onError: (error) => setStorageError(String(error)),
       },
     )
@@ -922,7 +923,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       void polling.stop()
       subscription.remove()
     }
-  }, [ready, appActive, registry.profiles, refreshAllEffect])
+  }, [ready, appActive, registry.profiles, refreshAllEffect, computerRefresh])
   const refresh = useCallback(
     (...args: Parameters<typeof refreshEffect>) => runClientEffect(refreshEffect(...args)),
     [refreshEffect],

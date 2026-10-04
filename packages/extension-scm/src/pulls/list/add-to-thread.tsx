@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace } from '@dovo/studio-core'
 import { responses, type PullSummary } from '@dovo/protocol'
@@ -34,7 +35,7 @@ export function AddPullsToThread({
         }))
     })
     .filter(({ task, runtime, project }) =>
-      `${task.title} ${project} ${runtime.profile.name}`
+      `${task.title} ${project} ${runtimeComputerName(runtime)}`
         .toLowerCase()
         .includes(search.toLowerCase()),
     )
@@ -99,7 +100,7 @@ export function AddPullsToThread({
               <span className="min-w-0">
                 <span className="block truncate">{thread.task.title}</span>
                 <span className="block text-xs text-muted-foreground">
-                  {thread.project} · {thread.runtime.profile.name}
+                  {thread.project} · {runtimeComputerName(thread.runtime)}
                   {thread.runtime.connected ? '' : ' · Offline'}
                 </span>
               </span>

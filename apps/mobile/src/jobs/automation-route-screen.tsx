@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/state/application-state'
 import { useLocalSearchParams } from 'expo-router'
 import { ScrollView, View } from 'react-native'
@@ -29,7 +30,7 @@ function AutomationDetail({ automationId }: { automationId: string }) {
     <View style={styles.screen}>
       <ScreenHeader
         title={flow?.name ?? 'Automation unavailable'}
-        subtitle={profile?.name}
+        subtitle={runtimeComputerName({ profile, snapshot })}
         leading={
           <IconButton
             label="Back to automations"

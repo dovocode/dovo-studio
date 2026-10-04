@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { createContext, useContext, type ReactNode } from 'react'
 import { View } from 'react-native'
 import {
@@ -65,7 +66,7 @@ export function ScopedSettings({
               : []),
             ...overviews.map((entry) => ({
               id: entry.profile.id,
-              name: `${entry.profile.name === new URL(entry.profile.connection.address).hostname ? (entry.snapshot?.runtimeHost ?? entry.profile.name) : entry.profile.name}${entry.connected ? '' : ' · Offline'}`,
+              name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`,
             })),
           ]}
           onChange={(environmentId) => setTarget({ ...target, environmentId })}

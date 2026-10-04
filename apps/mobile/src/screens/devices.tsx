@@ -1,3 +1,4 @@
+import { runtimeComputerName } from '@dovo/protocol'
 import { ComputerUpdates } from './computer-updates'
 import { TaskDefaultSettings } from '../runtime/preferences/task-default-settings'
 import { RuntimePreferences } from '../runtime/connection/runtime-preferences'
@@ -127,7 +128,7 @@ export default function DevicesScreen() {
             {overviews.map((entry, index) => (
               <SettingsRow
                 key={entry.profile.id}
-                title={entry.profile.name}
+                title={runtimeComputerName(entry)}
                 subtitle={
                   entry.connected
                     ? 'Online'
@@ -140,7 +141,7 @@ export default function DevicesScreen() {
                 icon="device"
                 tint={entry.connected ? colors.accent : colors.muted}
                 last={index === overviews.length - 1}
-                label={`Manage ${entry.profile.name}`}
+                label={`Manage ${runtimeComputerName(entry)}`}
                 testID={
                   entry.connected && entry.profile.id === activeId
                     ? 'Connected computer'
@@ -181,7 +182,7 @@ export default function DevicesScreen() {
                 <Action
                   key={profile.id}
                   secondary
-                  label={`Update ${profile.name}`}
+                  label={`Update ${runtimeComputerName({ profile, snapshot: overviews.find((entry) => entry.profile.id === profile.id)?.snapshot })}`}
                   onPress={() => setPairTarget(profile.id)}
                 />
               ))}
@@ -285,7 +286,11 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
   const [panel, setPanel] = useApplicationState<'commands' | 'activity' | null>(null)
   if (!profile) return null
   return (
-    <Sheet title={profile.name} busy={busy || pairingBusy} onClose={onClose}>
+    <Sheet
+      title={runtimeComputerName({ profile, snapshot })}
+      busy={busy || pairingBusy}
+      onClose={onClose}
+    >
       {changingAddress ? (
         <>
           <Action
@@ -398,7 +403,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
             onPress={() =>
               // Undoing this needs a fresh pairing code from the computer, so confirm first.
               Alert.alert(
-                `Forget ${profile.name}?`,
+                `Forget ${runtimeComputerName({ profile, snapshot })}?`,
                 'This phone’s access is removed from the computer too. Connecting again needs a new pairing code. Work on the computer continues.',
                 [
                   { text: 'Cancel', style: 'cancel' },
