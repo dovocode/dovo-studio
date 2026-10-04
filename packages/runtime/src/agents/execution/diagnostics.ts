@@ -10,6 +10,7 @@ import { Schema } from 'effect'
 import type { AgentDiscovery, CommandSettings } from '@dovo/protocol'
 import { exec, processEnvironment } from '../../process.js'
 import type { AdapterDiagnostic } from '@dovo/protocol'
+import { hermesExecutable } from '../providers/hermes/hermes-launch.js'
 export type { AdapterDiagnostic } from '@dovo/protocol'
 interface Check {
   id: string
@@ -144,12 +145,12 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
   ]
   result.push({
     id: 'hermes',
-    name: 'Hermes gateway Python',
+    name: 'Hermes CLI',
     provider: 'hermes',
     kind: 'executable',
-    inspect: executable(settings.hermes),
+    inspect: () => executable(hermesExecutable(settings.hermes))(),
     guidance:
-      'Update Hermes using its original installer (hermes update). Configure providers with hermes model; Dovo uses the native gateway; select the Python executable from the Hermes environment.',
+      'Update Hermes using its original installer (hermes update). Configure providers with hermes model. Select the hermes executable; Dovo uses its native gateway. Explicit Python interpreter overrides remain supported.',
     documentationUrl:
       'https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration/',
   })
@@ -217,7 +218,7 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
     configured.add(`${agent.provider}\0${command}`)
     result.push({
       id: `${agent.provider}-executable-${result.length}`,
-      name: `${agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : agent.provider === 'hermes' ? 'Hermes gateway Python' : agent.provider === 'copilot' ? 'Copilot' : agent.provider === 'grok' ? 'Grok Build' : agent.provider === 'muse' ? 'Muse Code' : 'ACP'} executable (${command})`,
+      name: `${agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : agent.provider === 'hermes' ? 'Hermes' : agent.provider === 'copilot' ? 'Copilot' : agent.provider === 'grok' ? 'Grok Build' : agent.provider === 'muse' ? 'Muse Code' : 'ACP'} executable (${command})`,
       provider: agent.provider,
       kind: 'executable',
       ...(agent.provider === 'claude'
@@ -229,7 +230,10 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
               packageName: '@openai/codex',
             }
           : {}),
-      inspect: executable(command),
+      inspect:
+        agent.provider === 'hermes'
+          ? () => executable(hermesExecutable(command, processEnvironment(agent.env)))()
+          : executable(command),
       guidance:
         agent.provider === 'hermes'
           ? 'Update this Hermes executable using its original installer (hermes update). Provider credentials use hermes model.'

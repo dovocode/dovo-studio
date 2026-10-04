@@ -218,7 +218,7 @@ HTTPS/WSS runtime endpoint, supplied by your local reverse proxy; browsers block
 | Codex       | `codex` on PATH, or executable path in Agent settings; authenticated Codex login                                                                           |
 | OpenCode    | Installed OpenCode CLI; a blank URL starts an authenticated local server automatically. Explicit URLs use an existing server; models use `provider/model`  |
 | Claude      | User-installed Claude CLI on the runtime host; bundled Agent SDK; Claude login or `ANTHROPIC_API_KEY`                                                      |
-| Hermes      | Installed Hermes Python environment; native gateway; configure credentials with `hermes model`                                                             |
+| Hermes      | Installed `hermes` CLI; native gateway; configure credentials with `hermes model`                                                                          |
 | Copilot     | Installed and authenticated Copilot CLI; Dovo bundles the official SDK                                                                                     |
 | Grok Build  | Installed Grok Build CLI; `grok login` or `XAI_API_KEY`; official ACP interface                                                                            |
 | Cursor      | Bundled official Cursor SDK; select a model and set `CURSOR_API_KEY` or use the SDK’s saved browser login on the runtime; Cursor desktop login is separate |

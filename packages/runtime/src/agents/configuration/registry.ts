@@ -83,6 +83,7 @@ export class AgentRegistry {
       endpoint: expandHome(
         (agent.provider !== 'opencode' ? agent.executablePath : undefined) ||
           agent.endpoint ||
+          (agent.provider === 'hermes' ? agent.env?.HERMES_PYTHON : undefined) ||
           (agent.provider === 'opencode' ? '' : this.settings()[agent.provider]),
       ),
     }

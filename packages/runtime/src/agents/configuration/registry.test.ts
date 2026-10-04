@@ -8,6 +8,21 @@ import type { AgentAdapter } from '../execution/types.js'
 import { decode, commandsSchema } from '@dovo/protocol'
 
 afterEach(() => vi.restoreAllMocks())
+it('uses the Hermes launcher by default and preserves explicit Python overrides', () => {
+  const registry = new AgentRegistry()
+  const agent = { provider: 'hermes' as const, endpoint: '', model: '' }
+  expect(registry.configure(agent).endpoint).toBe('hermes')
+  expect(registry.configure({ ...agent, env: { HERMES_PYTHON: '/env/bin/python' } }).endpoint).toBe(
+    '/env/bin/python',
+  )
+  expect(
+    registry.configure({
+      ...agent,
+      endpoint: '/home/agentic/.local/bin/hermes',
+      env: { HERMES_PYTHON: '/env/bin/python' },
+    }).endpoint,
+  ).toBe('/home/agentic/.local/bin/hermes')
+})
 it('resolves each managed ACP independently while preserving custom executables', async () => {
   const resolve = vi.fn<(id: string) => AcpLaunch>((id) => {
     if (id === 'missing') throw new Error('ACP installation not found')

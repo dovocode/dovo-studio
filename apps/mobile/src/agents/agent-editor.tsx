@@ -77,8 +77,8 @@ export function AgentEditor({
       {draft.provider === 'hermes' && (
         <Text style={styles.muted}>
           Uses Hermes on the runtime computer, including its memory and skills. Configure its
-          provider with hermes model. Select the Python executable from its environment to launch
-          the native Hermes gateway.
+          provider with hermes model. Select its hermes executable to launch the native Hermes
+          gateway.
         </Text>
       )}
       {draft.provider !== 'cursor' && (

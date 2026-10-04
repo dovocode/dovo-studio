@@ -158,7 +158,7 @@ export function HarnessSettings({
           <Field
             label={
               agent.provider === 'hermes'
-                ? 'Hermes Python executable'
+                ? 'Hermes executable'
                 : agent.provider === 'acp'
                   ? 'ACP executable'
                   : agent.provider === 'opencode'

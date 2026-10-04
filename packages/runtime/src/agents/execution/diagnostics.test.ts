@@ -44,7 +44,7 @@ it('checks the installed adapters without contacting an update registry or runni
   )
   const diagnostics = await checkAdapterUpdates(settings)
   expect(run.mock.calls).toEqual(
-    ['codex', 'python3', 'copilot', 'grok', 'muse', 'claude', 'opencode'].map((command) => [
+    ['codex', 'hermes', 'copilot', 'grok', 'muse', 'claude', 'opencode'].map((command) => [
       command,
       ['--version'],
       expect.objectContaining({ timeout: 5000, env: { PATH: '/bin' } }),
@@ -173,7 +173,7 @@ it('checks configured agent executables and deduplicates a shared installation',
   )
   expect(run.mock.calls.map(([command]) => command)).toEqual([
     'codex',
-    'python3',
+    'hermes',
     'copilot',
     'grok',
     'muse',

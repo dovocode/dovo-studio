@@ -101,7 +101,7 @@ export function createHermesAdapter(): AgentAdapter {
         return {
           provider: 'hermes',
           available: false,
-          detail: `Select the Python executable from your Hermes environment. ${error instanceof Error ? error.message : String(error)}`,
+          detail: `Install or update Hermes on this runtime and select its hermes executable. An explicit Hermes Python interpreter is also supported. ${error instanceof Error ? error.message : String(error)}`,
         }
       } finally {
         await connection.close()

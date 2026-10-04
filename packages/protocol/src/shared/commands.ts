@@ -47,7 +47,7 @@ export const commandsSchema = mutableStruct({
     default: () => '',
   }),
   hermes: Schema.optionalWith(minValue(executable, 1), {
-    default: () => 'python3',
+    default: () => 'hermes',
   }),
   copilot: Schema.optionalWith(minValue(executable, 1), { default: () => 'copilot' }),
   grok: Schema.optionalWith(minValue(executable, 1), { default: () => 'grok' }),
@@ -114,8 +114,8 @@ export const commandFields = [
   },
   {
     id: 'hermes',
-    label: 'Hermes Python executable',
-    placeholder: 'python3',
+    label: 'Hermes executable',
+    placeholder: 'hermes',
   },
   { id: 'copilot', label: 'Copilot executable', placeholder: 'copilot' },
   { id: 'grok', label: 'Grok Build executable', placeholder: 'grok' },

@@ -50,6 +50,47 @@ createInterface({input:process.stdin}).on('line',line=>{
   adapters.push(adapter)
   return { ...f, adapter }
 }
+for (const legacy of [false, true]) {
+  it.runIf(process.platform !== 'win32')(
+    `discovers, probes and runs an installed ${legacy ? 'legacy' : 'modern'} Hermes outside PATH`,
+    async () => {
+      const f = await fixture()
+      const bin = join(f.cwd, '.local', 'bin'),
+        command = join(bin, 'hermes')
+      await mkdir(bin, { recursive: true })
+      const expected = legacy
+        ? ['-u', '-P', '-m', 'tui_gateway.entry']
+        : ['--run-module', 'tui_gateway.entry']
+      const script =
+        `if (JSON.stringify(process.argv.slice(2)) !== ${JSON.stringify(JSON.stringify(expected))}) throw new Error('Incorrect Hermes gateway arguments');\n` +
+        (await readFile(f.script, 'utf8'))
+      if (legacy) {
+        const python = join(bin, 'python3')
+        await writeFile(python, `#!${process.execPath}\n${script}`, { mode: 0o755 })
+        await writeFile(
+          command,
+          `#!/bin/sh\nunset PYTHONPATH\nunset PYTHONHOME\nexec "${python}" "${join(f.cwd, 'hermes')}" "$@"\n`,
+          { mode: 0o755 },
+        )
+      } else {
+        await writeFile(command, `#!${process.execPath}\n${script}`, { mode: 0o755 })
+      }
+      const agent = {
+        ...f.run.agent,
+        endpoint: '',
+        args: [],
+        env: { ...f.run.agent.env, HOME: f.cwd, PATH: '' },
+      }
+      expect(await f.adapter.probe?.(agent)).toMatchObject({ provider: 'hermes', available: true })
+      expect((await hermesModels(agent)).models.map((model) => model.id)).toEqual([
+        'nous:a',
+        'nous:b',
+      ])
+      await f.adapter.run({ ...f.run, agent })
+      expect(f.output.join('')).toBe('Hello Done.')
+    },
+  )
+}
 it('uses native sessions, separate message boundaries, tools and final response without duplication', async () => {
   const f = await fixture(),
     boundary = vi.fn<() => void>()

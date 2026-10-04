@@ -201,8 +201,9 @@ export function AgentEditor({
             {agent.provider === 'hermes' && (
               <p className="text-xs text-muted-foreground">
                 Uses Hermes installed on this computer, including its memory and skills. Configure
-                its provider with <code>hermes model</code>. Select the Python executable from its
-                environment; Dovo launches the native Hermes gateway.
+                its provider with <code>hermes model</code>. Select its <code>hermes</code>{' '}
+                executable; Dovo launches the native Hermes gateway using that installation's
+                environment.
               </p>
             )}
             {agent.provider !== 'cursor' && (

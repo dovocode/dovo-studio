@@ -10,11 +10,17 @@ SDK; its Python `AIAgent` is an in-process interface. The gateway retains native
 skills, tool events, questions, approvals, steering and compression.
 
 Install and authenticate Hermes on the runtime host using its own installer and `hermes model`. Set
-**Hermes Python executable** to the Python executable from that installation's virtual environment.
-Dovo defaults to `python3 -u -P -m tui_gateway.entry`. That environment must be able to import
-Hermes' `tui_gateway` package. For source installations, set the agent environment variable
-`HERMES_PYTHON_SRC_ROOT` to the Hermes checkout directory when the modules aren't installed.
-Optional arguments replace the default gateway arguments; leave them empty for the normal launch.
+**Hermes executable** to the installed `hermes` command, for example
+`/home/agentic/.local/bin/hermes`. Dovo searches the runtime's PATH and `~/.local/bin` by default,
+then launches `hermes --run-module tui_gateway.entry`. The current Hermes launcher selects and
+bootstraps its own Python environment. For older installer shims and Python console scripts, Dovo
+resolves the launcher's own interpreter and starts `python -u -P -m tui_gateway.entry` in that
+environment instead. It does not use the runtime machine's unrelated system Python.
+
+Explicit Python interpreter paths and `HERMES_PYTHON` overrides remain supported. These use
+`python -u -P -m tui_gateway.entry`; that environment must be able to import Hermes' gateway. For
+source installations, set `HERMES_PYTHON_SRC_ROOT` to the Hermes checkout when needed. Optional
+arguments replace the default gateway arguments; leave them empty for the normal launch.
 
 An agent's configuration directory sets `HERMES_HOME`. Without an override, existing credentials,
 memory, skills and the session database stay in their original home. Dovo does not rewrite the

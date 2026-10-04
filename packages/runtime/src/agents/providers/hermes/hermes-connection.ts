@@ -11,21 +11,7 @@ import { JsonLineReader, JsonLineWriter } from '../codex/codex-transport.js'
 import { stopOwnedChild } from '../../execution/stop-owned-child.js'
 import { processEnvironment } from '../../../process.js'
 import type { AgentDiscovery } from '@dovo/protocol'
-
-/** The native gateway is a Python module in the user's Hermes environment. */
-export function hermesLaunch(agent: AgentDiscovery) {
-  return {
-    command: agent.endpoint || agent.env?.HERMES_PYTHON || 'python3',
-    args: agent.args?.length ? agent.args : ['-u', '-P', '-m', 'tui_gateway.entry'],
-    env: {
-      ...agent.env,
-      ...(agent.env?.HERMES_PYTHON_SRC_ROOT
-        ? { PYTHONPATH: agent.env.HERMES_PYTHON_SRC_ROOT }
-        : {}),
-      PYTHONUNBUFFERED: '1',
-    },
-  }
-}
+import { hermesLaunch } from './hermes-launch.js'
 
 export function openHermesConnection(
   agent: AgentDiscovery,
