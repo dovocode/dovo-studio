@@ -140,7 +140,8 @@ export function ConversationRail({
         onKeyDown={(event) => {
           if (event.key === 'Escape') setHovered(null)
         }}
-        className="absolute bottom-6 left-0 top-6 hidden w-12 flex-col items-start justify-center overflow-visible py-1 md:flex"
+        className="absolute bottom-6 top-6 hidden w-12 flex-col items-start justify-center overflow-visible py-1 md:flex"
+        style={{ left: 'max(0px, calc((100% - var(--chat-max, 48rem)) / 2))' }}
       >
         {items.map((item, index) => (
           <Tooltip key={item.id} open={hovered === item.id} disableHoverableContent>
