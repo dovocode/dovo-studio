@@ -62,3 +62,14 @@ it('does not dispatch a new sidebar tab for cancellation or an external choice',
   expect(internal).not.toHaveBeenCalled()
   expect(fixture.external).toHaveBeenCalledOnce()
 })
+
+it('opens an explicitly chosen external HTTP link without another chooser and rejects unsafe schemes', async () => {
+  const { openExternalLink } = await import('./links')
+  await openExternalLink('http://runtime.local/thread')
+  expect(fixture.external).toHaveBeenCalledWith('http://runtime.local/thread')
+  expect(fixture.answer).not.toHaveBeenCalled()
+  await expect(openExternalLink('javascript:alert(1)')).rejects.toThrow(
+    'Use an HTTP or HTTPS address.',
+  )
+  expect(fixture.external).toHaveBeenCalledOnce()
+})

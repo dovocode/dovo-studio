@@ -18,10 +18,10 @@ const initial={id:'thread',title:'Thread',status:'done',messages:[
 {id:'steer',turnId:'attempt',role:'user',text:'Clarification',createdAt:'2026-10-03T10:00:10Z'},
 {id:'after',turnId:'attempt',role:'assistant',text:'Linking works on right-click or long-press.Final answer.',textBreaks:[43,56],createdAt:'2026-10-03T10:00:11Z'}],turns:[turn],files:[],draft:''};
 const events=[{id:'last',time:'2026-10-03T10:00:50Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'last',status:'completed',textOffset:56,event:{item:{type:'commandExecution',command:'git diff'}}})},{id:'command',time:'2026-10-03T10:00:20Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'command',status:'completed',textOffset:35,event:{item:{type:'commandExecution',command:'git status'}}})},{id:'prior',time:'2026-10-03T10:00:05Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'before',toolId:'prior',status:'completed',textOffset:13,event:{item:{type:'commandExecution',command:'pnpm test'}}})}];
-export function App(){const[task,setTask]=useState(initial),[collapsedTurns,setCollapsed]=useState({});window.setTask=setTask;const presentation=conversationPresentation(task);const messages=conversationMessages(task,events);const value={task,presentation,messages,events,tools:recentTools(events),collapsedTurns,toggleTurn:id=>setCollapsed(old=>({...old,[id]:!(old[id]??presentation.get('before').groupTurn.status==='completed')})),workspace:{tasks:[task]},connected:true,request:async()=>({ok:true}),history:{hasMore:false,busy:false,error:'',setBookmark:()=>{}},legacyEvents:[],activityError:'',followRequest:0};return <Context.Provider value={value}>CONTENT</Context.Provider>}
+window.events=events;export function App(){const[task,setTask]=useState(initial),[collapsedTurns,setCollapsed]=useState({});window.setTask=setTask;const presentation=conversationPresentation(task);const messages=conversationMessages(task,events);const value={task,presentation,messages,events,tools:recentTools(events),collapsedTurns,toggleTurn:id=>setCollapsed(old=>({...old,[id]:!(old[id]??presentation.get('before').groupTurn.status==='completed')})),workspace:{tasks:[task]},connected:true,request:async()=>({ok:true}),history:{hasMore:false,busy:false,error:'',setBookmark:()=>{}},legacyEvents:[],activityError:'',followRequest:0};return <Context.Provider value={value}>CONTENT</Context.Provider>}
 `
 const ui = `
-export const Conversation=({children,...props})=><div {...props}>{children}</div>;
+export * as ContextMenu from '@radix-ui/react-context-menu';export const Conversation=({children,...props})=><div {...props}>{children}</div>;
 export const ConversationContent=({children})=><div>{children}</div>,ConversationHistory=ConversationContent;
 export const Message=({children,id})=><div id={id}>{children}</div>,MessageContent=ConversationContent;
 export const MessageResponse=({children})=><p data-prose>{children}</p>;
@@ -31,7 +31,7 @@ export const ConversationRail=()=>null,ConversationScrollButton=()=>null;
 async function bundle(mobile) {
   const mocks = {
     'fixture-projection': `export * from '@dovo/protocol';export {conversationMessages} from '${root}/apps/mobile/src/tasks/conversation/state/messages.ts';`,
-    '@dovo/studio-core': `export * from '@dovo/protocol';export {useFixture as useWorkspace} from 'fixture';export const useStudioHost=()=>({});export const formatDateTime=()=>'';`,
+    '@dovo/studio-core': `export * from '@dovo/protocol';export {useFixture as useWorkspace} from 'fixture';export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({responseStreaming:'tokens'});export const completedStreamingText=text=>text;`,
     '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
     '@dovo/studio-ui': ui,
     './use-conversation-history': `export const useConversationHistory=task=>({task,hasMore:false,busy:false,error:'',setBookmark:()=>{}});`,
@@ -194,6 +194,31 @@ try {
     )
     await page.getByRole('button', { name: 'Turn failed' }).waitFor()
     assert.equal(await page.getByText('Final answer.', { exact: true }).count(), 1)
+    await page.evaluate(() =>
+      window.setTask((task) => ({
+        ...task,
+        status: 'done',
+        turns: task.turns.map((turn) => ({ ...turn, status: 'completed' })),
+        messages: task.messages.map((message) =>
+          message.id === 'after' ? { ...message, text: '' } : message,
+        ),
+      })),
+    )
+    const finished = page.getByRole('button', { name: /Worked for/ })
+    await finished.waitFor()
+    if ((await finished.getAttribute('aria-expanded')) === 'true') await finished.click()
+    assert.equal(await page.getByText('First update.', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('Second update.', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('Clarification', { exact: true }).count(), 1)
+    await page.evaluate(() => {
+      window.events[2] = {
+        ...window.events[2],
+        payload: JSON.stringify({ ...JSON.parse(window.events[2].payload), status: 'failed' }),
+      }
+      window.setTask((task) => ({ ...task }))
+    })
+    await page.locator('[data-tools]').waitFor()
+    assert.equal(await page.locator('[data-tools]').count(), 1)
     assert.deepEqual(errors, [])
     await page.close()
   }

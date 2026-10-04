@@ -197,3 +197,57 @@ it('preserves the initiating time across replacement executions and opens failed
     startedAt: turn.startedAt,
   })
 })
+
+it('starts a new group for an independent promptless logical run, but retains resumed attempts', () => {
+  const next = {
+    ...turn,
+    id: 'wake',
+    runId: 'wake',
+    assistantId: 'wake-reply',
+    startedAt: '2026-10-03T11:00:00Z',
+  }
+  const task = {
+    messages: [
+      ...messages,
+      { id: 'wake-reply', role: 'assistant' as const, turnId: 'wake', text: 'Background result' },
+    ],
+    turns: [turn, next],
+  }
+  expect(conversationTurns(task).map((group) => group.id)).toEqual(['request', 'wake-reply'])
+  expect(conversationTurns({ ...task, turns: [turn, { ...next, runId: 'run' }] })).toHaveLength(1)
+})
+
+it('does not promote previous commentary when the terminal assistant message has no answer', () => {
+  const task = {
+    messages: messages.map((message) =>
+      message.id === 'after' ? { ...message, text: '' } : message,
+    ),
+    turns: [turn],
+  }
+  expect(
+    [...conversationPresentation(task)].filter(([, item]) => item.final).map(([id]) => id),
+  ).toEqual(['after'])
+})
+
+it('separates failed tools and execution boundaries from adjacent successful tools', () => {
+  const tools = ['completed', 'failed', 'completed', 'completed'].map((status, index) => ({
+    id: String(index),
+    status,
+    time: turn.startedAt,
+    startedAt: turn.startedAt,
+    kind: 'tool',
+    scope: 'task',
+    summary: 'Command',
+    payload: '{}',
+    turnId: index === 3 ? 'replacement' : 'attempt',
+    textOffset: 0,
+  }))
+  const groups = threadTimeline('', tools).filter((block) => block.kind === 'activity')
+  expect(groups.map((block) => block.tools.map((tool) => tool.id))).toEqual([
+    ['0'],
+    ['1'],
+    ['2'],
+    ['3'],
+  ])
+  expect(new Set(groups.map((block) => block.key)).size).toBe(4)
+})

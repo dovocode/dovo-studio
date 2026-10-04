@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('dovo', {
     },
   },
   chooseLink: (url: string): Promise<boolean> => ipcRenderer.invoke('links:choose', url),
+  openExternalLink: (url: string): Promise<void> => ipcRenderer.invoke('links:external', url),
   appInfo: ipcRenderer.sendSync('app:info'),
   platform:
     process.platform === 'darwin' || process.platform === 'win32' ? process.platform : 'linux',

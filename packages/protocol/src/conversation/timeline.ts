@@ -53,11 +53,17 @@ export function conversationTurns(task: Conversation): ConversationTurn[] {
   const groups: ConversationTurn[] = []
   let currentRun: string | undefined
   for (const message of task.messages) {
-    const run = runs.get(message.id)
-    if (!groups.length || (message.role === 'user' && (!run || run !== currentRun))) {
+    const owner = owners.get(message.id)
+    const run = message.role === 'user' ? runs.get(message.id) : owner?.runId
+    if (
+      !groups.length ||
+      (message.role === 'user' && (!run || run !== currentRun)) ||
+      (message.role === 'assistant' && run && currentRun && run !== currentRun)
+    ) {
       currentRun = run
       groups.push({ id: message.id, messages: [], status: 'waiting' })
     }
+    if (run) currentRun = run
     const group = groups[groups.length - 1]!
     group.messages.push(message)
     const turn = owners.get(message.id)
@@ -98,7 +104,7 @@ export function conversationPresentation(task: Conversation) {
   >()
   for (const group of conversationTurns(task)) {
     const assistants = group.messages.filter((message) => message.role === 'assistant')
-    const final = assistants.filter((message) => message.text.trim()).at(-1) ?? assistants.at(-1)
+    const final = assistants.at(-1)
     for (const message of group.messages)
       result.set(message.id, {
         groupId: group.id,
@@ -194,15 +200,22 @@ export function threadTimeline(
       if (current.length)
         blocks.push({
           kind: 'activity',
-          key: `activity:${Math.min(...current.map((tool) => tool.textOffset ?? offset))}:${segment}`,
+          key: `activity:${current[0]!.id}:${segment}`,
           offset,
           tools: current,
         })
       current = []
     }
     for (const entry of entries) {
-      if (entry.kind === 'tool') current.push(entry.tool)
-      else {
+      if (entry.kind === 'tool') {
+        const failed = ['failed', 'error', 'cancelled', 'interrupted'].includes(entry.tool.status)
+        if (failed || (current.length && current[0]?.turnId !== entry.tool.turnId)) flush()
+        current.push(entry.tool)
+        if (failed) {
+          flush()
+          segment = entry.tool.id
+        }
+      } else {
         flush()
         blocks.push({ kind: 'compaction', offset, event: entry.event })
         segment = entry.event.at

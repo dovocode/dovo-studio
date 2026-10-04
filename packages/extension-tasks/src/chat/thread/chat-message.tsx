@@ -67,7 +67,10 @@ export const ChatMessage = memo(function ChatMessage({
     [message.role, message.text, message.textBreaks, tools, compactions],
   )
   const finalIndex = timeline ? finalReplyIndex(timeline, !final || turn?.status === 'running') : -1
-  if (message.role === 'assistant' && !workOpen && !final && !footer) return null
+  const hasFailure = tools.some((tool) =>
+    ['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status),
+  )
+  if (message.role === 'assistant' && !workOpen && !final && !footer && !hasFailure) return null
   const ownsFooter = turn?.assistantId === message.id && (workOpen || footer)
   const showContent =
     !!message.text ||
@@ -113,7 +116,14 @@ export const ChatMessage = memo(function ChatMessage({
               </MessageContent>
             )}
             {timeline.map((block, index) =>
-              !workOpen && index !== finalIndex ? null : block.kind === 'activity' ? (
+              !workOpen &&
+              index !== finalIndex &&
+              !(
+                block.kind === 'activity' &&
+                block.tools.some((tool) =>
+                  ['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status),
+                )
+              ) ? null : block.kind === 'activity' ? (
                 <TaskActivity key={block.key} status={turn?.status} tools={block.tools} />
               ) : block.kind === 'compaction' ? (
                 <p

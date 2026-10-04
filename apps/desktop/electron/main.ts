@@ -12,7 +12,7 @@ import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { registerUpdates } from './updates.js'
 import { registerRemoteUpdates } from './remote-updates.js'
 import { registerBrowser } from './browser.js'
-import { offerLink } from './links.js'
+import { offerLink, openExternalLink } from './links.js'
 import {
   startLocalRuntime,
   stopLocalRuntime,
@@ -196,6 +196,11 @@ ipcMain.handle('links:choose', async (event, url: unknown) => {
   const window = BrowserWindow.fromWebContents(event.sender)
   if (!window || typeof url !== 'string') return false
   return offerLink(window, url, () => {})
+})
+ipcMain.handle('links:external', async (event, url: unknown) => {
+  requireTrustedRenderer(event, rendererPath)
+  if (typeof url !== 'string') throw new Error('Expected a link URL')
+  await openExternalLink(url)
 })
 
 let activateSelectedRuntime = false

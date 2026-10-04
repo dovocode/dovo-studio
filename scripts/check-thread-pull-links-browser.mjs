@@ -9,12 +9,12 @@ import {createContext,useContext} from 'react';
 export * from '@dovo/protocol';
 export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);
 export const useRuntime=useWorkspace;export const useConversationSelector=select=>{const value=useWorkspace();return select({task:value.workspace.tasks[0],actions:{threadScope:JSON.stringify([value.connection.address,value.connection.token,value.workspace.tasks[0].id])}})};
-export const useStudioHost=()=>({openPullLink:url=>{window.opened.push(url);return true}});
+export const useStudioHost=()=>({openExternalLink:async url=>{window.external.push(url)},openPullLink:url=>{window.opened.push(url);return true}});
 `
 const fixture = `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {Effect} from 'effect';import {addTaskPullLinks} from '@dovo/protocol';import {Context} from '@dovo/studio-core';
-window.writes=[];window.opened=[];window.alerts=[];window.fail=false;
+window.writes=[];window.opened=[];window.external=[];window.alerts=[];window.fail=false;
 const url='https://github.com/foreign/project/pull/42/files#note';
 const initial={id:'thread',title:'Thread',repositoryId:'original-project',status:'draft',messages:[{id:'m',role:'assistant',text:url}],files:[],draft:'',example:false};
 function App(){const[task,setTask]=useState(initial),[connected,setConnected]=useState(true),[runtime,setRuntime]=useState('http://runtime.local');window.setTask=setTask;window.connect=setConnected;window.runtime=setRuntime;
@@ -51,7 +51,7 @@ async function bundle(mobile) {
   const ui = `${root}/packages/studio-ui/src/components`
   if (!mobile)
     mocks['@dovo/studio-ui'] =
-      `export {Button} from '${ui}/ui/button.tsx';export {IconButton} from '${ui}/icon-button.tsx';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${ui}/ui/dialog.tsx';export const Conversation=({children,...props})=><div {...props}>{children}</div>;export const ConversationContent=({children})=><div>{children}</div>;export const ConversationHistory=ConversationContent;export const ConversationRail=()=>null;export const ConversationScrollButton=()=>null;`
+      `export * as ContextMenu from '@radix-ui/react-context-menu';export {Button} from '${ui}/ui/button.tsx';export {IconButton} from '${ui}/icon-button.tsx';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${ui}/ui/dialog.tsx';export const Conversation=({children,...props})=><div {...props}>{children}</div>;export const ConversationContent=({children})=><div>{children}</div>;export const ConversationHistory=ConversationContent;export const ConversationRail=()=>null;export const ConversationScrollButton=()=>null;`
   const entry = mobile
     ? `import {ThreadMarkdown} from '${root}/apps/mobile/src/tasks/conversation/components/thread-markdown.tsx';${fixture.replace('CONTENT', '<><ThreadMarkdown text={url} variant="chat"/><ThreadMarkdown text={"See "+url+"."} plainText/></>')}`
     : `import {ChatThread} from '${root}/packages/extension-tasks/src/chat/thread/chat-thread.tsx';${fixture.replace('CONTENT', '<ChatThread task={task}/>')}`
@@ -104,6 +104,8 @@ try {
       window.opened = []
     })
     await link.click({ button: 'right' })
+    if (!mobile)
+      await page.getByRole('menuitem', { name: 'Link to this thread', exact: true }).click()
     await page.getByRole('dialog').waitFor()
     assert.equal(await page.evaluate(() => window.writes.length), 0)
     await page.getByRole('button', { name: 'Link to this thread', exact: true }).click()
@@ -114,11 +116,18 @@ try {
     assert.equal(write.input.pulls[0].url, 'https://github.com/foreign/project/pull/42')
     assert.equal(await page.evaluate(() => window.writes.length), 1)
     await link.click({ button: 'right' })
-    assert.ok(
-      await page.getByRole('button', { name: 'Already linked to this thread' }).isDisabled(),
-    )
-    await page.getByRole(mobile ? 'button' : 'link', { name: 'Open PR', exact: true }).click()
-    await page.getByRole('dialog').waitFor({ state: 'hidden' })
+    if (mobile) {
+      assert.ok(
+        await page.getByRole('button', { name: 'Already linked to this thread' }).isDisabled(),
+      )
+      await page.getByRole('button', { name: 'Open PR', exact: true }).click()
+      await page.getByRole('dialog').waitFor({ state: 'hidden' })
+    } else {
+      assert.ok(
+        await page.getByRole('menuitem', { name: 'Already linked to this thread' }).isDisabled(),
+      )
+      await page.getByRole('menuitem', { name: 'Open PR details', exact: true }).click()
+    }
     assert.deepEqual(await page.evaluate(() => window.opened), [
       'https://github.com/foreign/project/pull/42',
     ])
@@ -127,6 +136,8 @@ try {
       window.connect(false)
     })
     await link.click({ button: 'right' })
+    if (!mobile)
+      await page.getByRole('menuitem', { name: 'Link to this thread', exact: true }).click()
     assert.ok(
       await page.getByRole('button', { name: 'Link to this thread', exact: true }).isDisabled(),
     )
@@ -136,6 +147,8 @@ try {
       window.setTask((task) => ({ ...task, archivedAt: 'now' }))
     })
     await link.click({ button: 'right' })
+    if (!mobile)
+      await page.getByRole('menuitem', { name: 'Link to this thread', exact: true }).click()
     assert.ok(
       await page.getByRole('button', { name: 'Link to this thread', exact: true }).isDisabled(),
     )
@@ -145,6 +158,8 @@ try {
       window.fail = true
     })
     await link.click({ button: 'right' })
+    if (!mobile)
+      await page.getByRole('menuitem', { name: 'Link to this thread', exact: true }).click()
     await page.getByRole('button', { name: 'Link to this thread', exact: true }).click()
     await page.getByText('Link failed', { exact: true }).waitFor()
     await page.evaluate(() => {
@@ -161,6 +176,47 @@ try {
       assert.ok(
         await page.getByRole('button', { name: 'Already linked to this thread' }).isDisabled(),
       )
+    }
+    if (!mobile) {
+      await page.evaluate(() => {
+        window.copied = []
+        Object.defineProperty(navigator, 'clipboard', {
+          value: { writeText: async (url) => window.copied.push(url) },
+          configurable: true,
+        })
+        window.setTask((task) => ({
+          ...task,
+          messages: [
+            {
+              id: 'ordinary',
+              role: 'assistant',
+              text: 'http://runtime.local/docs?tab=one#section',
+            },
+          ],
+        }))
+      })
+      await page.locator('#app').dispatchEvent('contextmenu')
+      assert.equal(await page.getByRole('menu').count(), 0)
+      const ordinary = page.getByRole('link', { name: 'Thread PR', exact: true })
+      await ordinary.click({ button: 'right' })
+      assert.equal(await page.getByRole('menuitem', { name: 'Open PR details' }).count(), 0)
+      await page.getByRole('menuitem', { name: 'Copy link', exact: true }).click()
+      assert.deepEqual(await page.evaluate(() => window.copied), [
+        'http://runtime.local/docs?tab=one#section',
+      ])
+      await ordinary.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Open in default browser', exact: true }).click()
+      assert.deepEqual(await page.evaluate(() => window.external), [
+        'http://runtime.local/docs?tab=one#section',
+      ])
+      await page.evaluate(() => {
+        navigator.clipboard.writeText = async () => {
+          throw new Error('Clipboard denied')
+        }
+      })
+      await ordinary.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Copy link', exact: true }).click()
+      await page.getByRole('alert').filter({ hasText: 'Clipboard denied' }).waitFor()
     }
     assert.deepEqual(errors, [])
     await page.close()

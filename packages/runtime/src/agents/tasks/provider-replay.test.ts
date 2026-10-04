@@ -340,6 +340,8 @@ it('replays native Codex steering with exact provider turn correlation into the 
   await waitForRuntime(async () =>
     expect((await r.rows()).some((row) => row.method === 'turn/start')).toBe(true),
   )
+  // A logged turn/start request precedes provider admission and native steering registration.
+  await waitForRuntime(() => expect(s.store.task(r.task.id).runAttempt?.promptAccepted).toBe(true))
   const token = s.store.task(r.task.id).activeRunId
   expect(s.store.task(r.task.id).status).toBe('running')
   await runClientEffect(s.tasks.steerEffect(r.task.id, 'native-steer', 'Focus on tests', [], token))

@@ -191,7 +191,14 @@ export function TaskActivity({
     running.filter((entry) => entry.presentation.kind !== 'reasoning').at(-1) ?? running.at(-1)
   if (!tools.length && !error && !turn) return null
   // Replies only: the agent's text stays, its steps are hidden (errors still show).
-  if (toolActivity === 'hidden' && !error && !apps.length && !artifacts.length) return null
+  if (
+    toolActivity === 'hidden' &&
+    !error &&
+    !apps.length &&
+    !artifacts.length &&
+    !entries.some((entry) => entry.state === 'failed' || entry.state === 'stopped')
+  )
+    return null
   const outcome = taskActivityOutcome(
     entries.filter((entry) => entry.presentation.kind !== 'reasoning').map((entry) => entry.state),
   )

@@ -62,7 +62,10 @@ vi.mock('./browser.js', () => ({
     dispose: async () => {},
   })),
 }))
-vi.mock('./links.js', () => ({ offerLink: vi.fn<(...args: unknown[]) => Promise<void>>() }))
+vi.mock('./links.js', () => ({
+  offerLink: vi.fn<(...args: unknown[]) => Promise<void>>(),
+  openExternalLink: vi.fn<(url: string) => Promise<void>>(),
+}))
 vi.mock('./connection-storage.js', () => ({
   registerConnectionStorage: vi.fn<(...args: unknown[]) => void>(),
 }))

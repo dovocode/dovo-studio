@@ -40,6 +40,7 @@ type WorkbenchProps = {
   pickDirectory?: StudioHostApi['pickDirectory']
   browser?: StudioHostApi['browser']
   chooseLink?: StudioHostApi['chooseLink']
+  openExternalLink?: StudioHostApi['openExternalLink']
   desktopPlatform?: DesktopPlatform
   inputPreview?: InputPreviewBridge
   taskLauncher?: StudioHostApi['taskLauncher']
@@ -128,6 +129,7 @@ function WorkbenchContent({
   pickDirectory,
   browser,
   chooseLink,
+  openExternalLink,
   appInfo,
   desktopPlatform,
   updates,
@@ -243,6 +245,7 @@ function WorkbenchContent({
       pickDirectory,
       browser,
       chooseLink,
+      openExternalLink,
       openPullLink,
       appInfo,
       updates,
@@ -253,6 +256,7 @@ function WorkbenchContent({
       pickDirectory,
       browser,
       chooseLink,
+      openExternalLink,
       openPullLink,
       appInfo,
       updates,

@@ -9,6 +9,7 @@ import {
 } from '@dovo/protocol'
 import { TurnWork } from './turn-work'
 import { PullLinkActions } from './pull-link-actions'
+import { ThreadLinkMenu } from './thread-link-menu'
 import { conversationTurns, conversationTurnLabel } from './conversation-turns'
 import { useThreadSearch } from './use-thread-search'
 import {
@@ -288,228 +289,242 @@ export function ChatThread({
           {linkError}
         </p>
       )}
-      <Conversation
-        key={task.id}
-        onContextMenuCapture={(event) => {
-          const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
-          if (anchor instanceof HTMLAnchorElement && selectPull(anchor.href)) {
-            event.preventDefault()
-            event.stopPropagation()
-          }
-        }}
-        onClickCapture={(event) => {
-          if (
-            event.button !== 0 ||
-            event.metaKey ||
-            event.ctrlKey ||
-            event.shiftKey ||
-            event.altKey
+      <ThreadLinkMenu
+        key={linkScope}
+        onBrowser={onBrowser}
+        onPullLink={(url) => onPullLink?.(url) || openPullLink?.(url) || false}
+        onLinkPull={
+          fullTask
+            ? (url) => {
+                selectPull(url)
+              }
+            : undefined
+        }
+        linked={(url) => {
+          const pull = threadPullLink(url)
+          return (
+            !!pull &&
+            (fullTask?.pullRequest?.url === pull.url ||
+              !!fullTask?.linkedPullRequests?.some((item) => item.url === pull.url))
           )
-            return
-          const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
-          if (
-            !(anchor instanceof HTMLAnchorElement) ||
-            !/^https?:\/\//i.test(anchor.href) ||
-            (!onPullLink && !openPullLink && (!chooseLink || !onBrowser))
-          )
-            return
-          if (onPullLink?.(anchor.href) || openPullLink?.(anchor.href)) {
-            event.preventDefault()
-            event.stopPropagation()
-            return
-          }
-          if (!chooseLink || !onBrowser) return
-          event.preventDefault()
-          event.stopPropagation()
-          const url = anchor.href
-          setLinkError('')
-          void chooseLink(url)
-            .then((internal) => {
-              if (internal) onBrowser(url)
-            })
-            .catch((cause: unknown) =>
-              setLinkError(cause instanceof Error ? cause.message : String(cause)),
-            )
         }}
       >
-        <ConversationHistory
-          onLoadEarlier={
-            history.hasMore && !history.busy && !history.error && connected
-              ? () => void history.load()
-              : undefined
-          }
+        <Conversation
+          key={task.id}
+          onClickCapture={(event) => {
+            if (
+              event.button !== 0 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            )
+              return
+            const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
+            if (
+              !(anchor instanceof HTMLAnchorElement) ||
+              !/^https?:\/\//i.test(anchor.href) ||
+              (!onPullLink && !openPullLink && (!chooseLink || !onBrowser))
+            )
+              return
+            if (onPullLink?.(anchor.href) || openPullLink?.(anchor.href)) {
+              event.preventDefault()
+              event.stopPropagation()
+              return
+            }
+            if (!chooseLink || !onBrowser) return
+            event.preventDefault()
+            event.stopPropagation()
+            const url = anchor.href
+            setLinkError('')
+            void chooseLink(url)
+              .then((internal) => {
+                if (internal) onBrowser(url)
+              })
+              .catch((cause: unknown) =>
+                setLinkError(cause instanceof Error ? cause.message : String(cause)),
+              )
+          }}
         >
-          <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-12 md:pr-5">
-            {history.busy && (
-              <p role="status" className="text-xs text-muted-foreground">
-                Loading earlier messages…
-              </p>
-            )}
-            {history.hasMore && !!history.error && (
-              <Button
-                variant="ghost"
-                disabled={history.busy || !connected}
-                onClick={() => void history.load()}
-              >
-                Retry loading earlier messages
-              </Button>
-            )}
-            {search.error && (
-              <p role="alert" className="text-xs text-destructive">
-                Could not search older history: {search.error}
-              </p>
-            )}
-            {history.error && (
-              <p role="alert" className="text-xs text-destructive">
-                {history.error}
-              </p>
-            )}
-            {!!bookmarks.length && (
-              <nav
-                aria-label="Bookmarked replies"
-                className="flex flex-wrap gap-1 rounded-md border p-2"
-              >
-                {bookmarks.map((message, index) => (
-                  <Button
-                    key={message.id}
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 max-w-52 truncate text-xs"
-                    onClick={() => {
-                      const id = `message-${task.id}-${message.id}`
-                      setBookmarkJump(id)
-                      document
-                        .getElementById(id)
-                        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                    }}
-                    title={message.text.slice(0, 180)}
-                  >
-                    <Star className="size-3 fill-current" /> {index + 1}.{' '}
-                    {message.text.slice(0, 32)}
-                  </Button>
-                ))}
-              </nav>
-            )}
-            {!task.messages.length && !task.queue?.length && (
-              <div className="py-8 text-center">
-                <h2 className="text-base font-medium">What would you like to work on?</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Describe a change or ask a question.
+          <ConversationHistory
+            onLoadEarlier={
+              history.hasMore && !history.busy && !history.error && connected
+                ? () => void history.load()
+                : undefined
+            }
+          >
+            <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-12 md:pr-5">
+              {history.busy && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  Loading earlier messages…
                 </p>
-              </div>
-            )}
-            {groups.map((group, groupIndex) => (
-              <section
-                key={group.id}
-                id={`turn-${task.id}-${group.id}`}
-                aria-label={`User request · ${conversationTurnLabel(group.status)}`}
-                className="flex min-w-0 flex-col gap-3"
-                style={
-                  group.status === 'completed'
-                    ? {
-                        contentVisibility: 'auto',
-                        containIntrinsicSize: 'auto 240px',
-                      }
-                    : undefined
-                }
-              >
-                <DeferredTurn
-                  immediate={
-                    groupIndex >= groups.length - 2 ||
-                    group.status === 'running' ||
-                    group.messages.some(
-                      (message) =>
-                        message.id === selectedMatch?.id ||
-                        `message-${task.id}-${message.id}` === revealMessage ||
-                        `message-${task.id}-${message.id}` === bookmarkJump,
-                    )
+              )}
+              {history.hasMore && !!history.error && (
+                <Button
+                  variant="ghost"
+                  disabled={history.busy || !connected}
+                  onClick={() => void history.load()}
+                >
+                  Retry loading earlier messages
+                </Button>
+              )}
+              {search.error && (
+                <p role="alert" className="text-xs text-destructive">
+                  Could not search older history: {search.error}
+                </p>
+              )}
+              {history.error && (
+                <p role="alert" className="text-xs text-destructive">
+                  {history.error}
+                </p>
+              )}
+              {!!bookmarks.length && (
+                <nav
+                  aria-label="Bookmarked replies"
+                  className="flex flex-wrap gap-1 rounded-md border p-2"
+                >
+                  {bookmarks.map((message, index) => (
+                    <Button
+                      key={message.id}
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 max-w-52 truncate text-xs"
+                      onClick={() => {
+                        const id = `message-${task.id}-${message.id}`
+                        setBookmarkJump(id)
+                        document
+                          .getElementById(id)
+                          ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                      }}
+                      title={message.text.slice(0, 180)}
+                    >
+                      <Star className="size-3 fill-current" /> {index + 1}.{' '}
+                      {message.text.slice(0, 32)}
+                    </Button>
+                  ))}
+                </nav>
+              )}
+              {!task.messages.length && !task.queue?.length && (
+                <div className="py-8 text-center">
+                  <h2 className="text-base font-medium">What would you like to work on?</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Describe a change or ask a question.
+                  </p>
+                </div>
+              )}
+              {groups.map((group, groupIndex) => (
+                <section
+                  key={group.id}
+                  id={`turn-${task.id}-${group.id}`}
+                  aria-label={`User request · ${conversationTurnLabel(group.status)}`}
+                  className="flex min-w-0 flex-col gap-3"
+                  style={
+                    group.status === 'completed'
+                      ? {
+                          contentVisibility: 'auto',
+                          containIntrinsicSize: 'auto 240px',
+                        }
+                      : undefined
                   }
                 >
-                  {() => {
-                    const firstAssistant = group.messages.find(
-                      (message) => message.role === 'assistant',
-                    )
-                    const finalAssistant =
-                      group.messages
-                        .filter((message) => message.role === 'assistant' && message.text.trim())
-                        .at(-1) ??
-                      group.messages.filter((message) => message.role === 'assistant').at(-1)
-                    const render = (open: boolean, header?: ReactNode) =>
-                      group.messages.map((message) => {
-                        const turn = turns.get(message.id)
-                        return (
-                          <Fragment key={message.id}>
-                            {message.id === firstAssistant?.id && header}
-                            <ChatMessage
-                              workOpen={open}
-                              footer={
-                                message.id ===
-                                group.messages
-                                  .filter((message) => message.role === 'assistant')
-                                  .at(-1)?.id
-                              }
-                              final={
-                                group.status !== 'running' && message.id === finalAssistant?.id
-                              }
-                              taskId={task.id}
-                              message={message}
-                              turn={turn}
-                              tools={activityGroups.byMessage.get(message.id) ?? emptyTools}
-                              summaryTools={
-                                turn
-                                  ? (activityGroups.byTurn.get(turn.id) ?? emptyTools)
-                                  : emptyTools
-                              }
-                              compactions={compactionsByMessage.get(message.id) ?? emptyCompactions}
-                              highlighted={selectedMatch?.id === message.id}
-                              pending={pending?.message.id === message.id ? pending : null}
-                              taskRunning={task.status === 'running'}
-                              latestTurnId={lastTurn?.id}
-                              connected={connected}
-                              request={request}
-                              onTerminal={onTerminal}
-                              onBookmark={history.setBookmark}
-                            />
-                          </Fragment>
-                        )
-                      })
-                    return group.turn ? (
-                      <TurnWork
-                        turn={group.turn}
-                        reveal={group.messages.some(
-                          (message) =>
-                            message.id === selectedMatch?.id ||
-                            `message-${task.id}-${message.id}` === revealMessage ||
-                            `message-${task.id}-${message.id}` === bookmarkJump,
-                        )}
-                      >
-                        {render}
-                      </TurnWork>
-                    ) : (
-                      render(true)
-                    )
-                  }}
-                </DeferredTurn>
-              </section>
-            ))}
-            <TaskActivity
-              tools={activityGroups.unassigned}
-              status={
-                task.status === 'running'
-                  ? 'running'
-                  : task.status === 'failed'
-                    ? 'failed'
-                    : task.status === 'cancelled'
-                      ? 'cancelled'
-                      : 'completed'
-              }
-              error={activity.error}
-            />
-          </ConversationContent>
-        </ConversationHistory>
-        <ConversationRail items={markers} />
-        <ConversationScrollButton />
-      </Conversation>
+                  <DeferredTurn
+                    immediate={
+                      groupIndex >= groups.length - 2 ||
+                      group.status === 'running' ||
+                      group.messages.some(
+                        (message) =>
+                          message.id === selectedMatch?.id ||
+                          `message-${task.id}-${message.id}` === revealMessage ||
+                          `message-${task.id}-${message.id}` === bookmarkJump,
+                      )
+                    }
+                  >
+                    {() => {
+                      const firstAssistant = group.messages.find(
+                        (message) => message.role === 'assistant',
+                      )
+                      const finalAssistant = group.messages
+                        .filter((message) => message.role === 'assistant')
+                        .at(-1)
+                      const render = (open: boolean, header?: ReactNode) =>
+                        group.messages.map((message) => {
+                          const turn = turns.get(message.id)
+                          return (
+                            <Fragment key={message.id}>
+                              {message.id === firstAssistant?.id && header}
+                              <ChatMessage
+                                workOpen={open}
+                                footer={
+                                  message.id ===
+                                  group.messages
+                                    .filter((message) => message.role === 'assistant')
+                                    .at(-1)?.id
+                                }
+                                final={
+                                  group.status !== 'running' && message.id === finalAssistant?.id
+                                }
+                                taskId={task.id}
+                                message={message}
+                                turn={turn}
+                                tools={activityGroups.byMessage.get(message.id) ?? emptyTools}
+                                summaryTools={
+                                  turn
+                                    ? (activityGroups.byTurn.get(turn.id) ?? emptyTools)
+                                    : emptyTools
+                                }
+                                compactions={
+                                  compactionsByMessage.get(message.id) ?? emptyCompactions
+                                }
+                                highlighted={selectedMatch?.id === message.id}
+                                pending={pending?.message.id === message.id ? pending : null}
+                                taskRunning={task.status === 'running'}
+                                latestTurnId={lastTurn?.id}
+                                connected={connected}
+                                request={request}
+                                onTerminal={onTerminal}
+                                onBookmark={history.setBookmark}
+                              />
+                            </Fragment>
+                          )
+                        })
+                      return group.turn ? (
+                        <TurnWork
+                          turn={group.turn}
+                          reveal={group.messages.some(
+                            (message) =>
+                              message.id === selectedMatch?.id ||
+                              `message-${task.id}-${message.id}` === revealMessage ||
+                              `message-${task.id}-${message.id}` === bookmarkJump,
+                          )}
+                        >
+                          {render}
+                        </TurnWork>
+                      ) : (
+                        render(true)
+                      )
+                    }}
+                  </DeferredTurn>
+                </section>
+              ))}
+              <TaskActivity
+                tools={activityGroups.unassigned}
+                status={
+                  task.status === 'running'
+                    ? 'running'
+                    : task.status === 'failed'
+                      ? 'failed'
+                      : task.status === 'cancelled'
+                        ? 'cancelled'
+                        : 'completed'
+                }
+                error={activity.error}
+              />
+            </ConversationContent>
+          </ConversationHistory>
+          <ConversationRail items={markers} />
+          <ConversationScrollButton />
+        </Conversation>
+      </ThreadLinkMenu>
       {pull && fullTask && (
         <PullLinkActions
           key={`${linkScope}:${pull.url}`}
