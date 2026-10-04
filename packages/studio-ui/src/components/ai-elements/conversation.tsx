@@ -33,8 +33,14 @@ export function ConversationContent({
 }
 const HistoryReady = createContext(true)
 /** Mount the latest content before allowing old turns to enter the render window. */
-export function ConversationHistory({ children }: { children: ReactNode }) {
-  const { scrollToBottom } = useStickToBottomContext()
+export function ConversationHistory({
+  children,
+  onLoadEarlier,
+}: {
+  children: ReactNode
+  onLoadEarlier?: () => void
+}) {
+  const { scrollToBottom, scrollRef } = useStickToBottomContext()
   const [ready, setReady] = useState(false)
   useEffect(() => {
     let disposed = false
@@ -45,6 +51,16 @@ export function ConversationHistory({ children }: { children: ReactNode }) {
       disposed = true
     }
   }, [scrollToBottom])
+  useEffect(() => {
+    const root = scrollRef.current
+    if (!ready || !onLoadEarlier || !root) return
+    const loadNearStart = () => {
+      if (root.scrollTop <= 800) onLoadEarlier()
+    }
+    root.addEventListener('scroll', loadNearStart, { passive: true })
+    loadNearStart()
+    return () => root.removeEventListener('scroll', loadNearStart)
+  }, [ready, onLoadEarlier, scrollRef])
   return <HistoryReady.Provider value={ready}>{children}</HistoryReady.Provider>
 }
 export function useConversationHistory() {

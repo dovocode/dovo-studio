@@ -537,6 +537,10 @@ export function Conversation() {
         initialNumToRender={8}
         maxToRenderPerBatch={6}
         windowSize={7}
+        onEndReached={() => {
+          if (history.hasMore && !history.busy && !history.error && connected) void history.load()
+        }}
+        onEndReachedThreshold={2}
         ref={list}
         onScrollToIndexFailed={({ index, averageItemLength }) => {
           if (scroll.following) {
@@ -608,10 +612,11 @@ export function Conversation() {
         }
         ListFooterComponent={
           <View style={{ padding: 12, alignItems: 'center' }}>
-            {history.hasMore && (
+            {history.busy && <ActivityIndicator size="small" color={colors.muted} />}
+            {history.hasMore && !!history.error && (
               <IconButton
                 icon="history"
-                label={history.busy ? 'Loading earlier messages…' : 'Load earlier messages'}
+                label="Retry loading earlier messages"
                 variant="plain"
                 color={colors.accent}
                 disabled={history.busy || !connected}

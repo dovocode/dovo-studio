@@ -332,15 +332,26 @@ export function ChatThread({
             )
         }}
       >
-        <ConversationHistory>
+        <ConversationHistory
+          onLoadEarlier={
+            history.hasMore && !history.busy && !history.error && connected
+              ? () => void history.load()
+              : undefined
+          }
+        >
           <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-12 md:pr-5">
-            {history.hasMore && (
+            {history.busy && (
+              <p role="status" className="text-xs text-muted-foreground">
+                Loading earlier messages…
+              </p>
+            )}
+            {history.hasMore && !!history.error && (
               <Button
                 variant="ghost"
                 disabled={history.busy || !connected}
                 onClick={() => void history.load()}
               >
-                {history.busy ? 'Loading earlier messages…' : 'Load earlier messages'}
+                Retry loading earlier messages
               </Button>
             )}
             {search.error && (

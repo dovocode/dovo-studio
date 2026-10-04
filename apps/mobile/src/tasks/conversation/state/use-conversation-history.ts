@@ -9,6 +9,7 @@ import {
 import { useRuntime } from '../../../runtime/connection/provider'
 
 const emptyPages: ConversationPage[] = []
+const recentMessageCount = 500
 export function useConversationHistory<
   T extends Pick<Task, 'id' | 'messages' | 'turns' | 'historyBefore' | 'historyRevision'>,
 >(live: T) {
@@ -37,7 +38,7 @@ export function useConversationHistory<
   const previous = useRef({ scope, live })
   const latest = useRef(live)
   latest.current = live
-  const refill = useRef(200)
+  const refill = useRef(recentMessageCount)
 
   useEffect(() => {
     generation.current++
@@ -51,7 +52,7 @@ export function useConversationHistory<
   useEffect(() => {
     active.current = scope
     const before = previous.current
-    if (before.scope !== scope) refill.current = 200
+    if (before.scope !== scope) refill.current = recentMessageCount
     previous.current = { scope, live }
     const beforeIds = new Set(before.live.messages.map((message) => message.id))
     const gap =
@@ -60,7 +61,7 @@ export function useConversationHistory<
       !live.messages.some((message) => beforeIds.has(message.id))
     if (before.scope === scope && ((before.live.historyRevision ?? 0) !== revision || gap)) {
       refill.current = Math.max(
-        200,
+        recentMessageCount,
         new Set(
           [...loaded.pages.flatMap((page) => page.messages), ...before.live.messages].map(
             (message) => message.id,
@@ -193,7 +194,7 @@ export function useConversationHistory<
       )
         return
       // Persist a bounded recent window without rewriting large JSON on each token.
-      const messages = current.task.messages.slice(-200)
+      const messages = current.task.messages.slice(-recentMessageCount)
       const ids = new Set(messages.map((message) => message.id))
       const page: ConversationPage = {
         messages,
