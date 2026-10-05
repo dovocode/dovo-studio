@@ -6,7 +6,7 @@ import { useApplicationState } from '../../runtime/state/application-state'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Choice } from '../../ui/controls/choice'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 export function WorktreeBasePicker({
   repositoryId,
@@ -19,6 +19,8 @@ export function WorktreeBasePicker({
   fromOrigin?: boolean
   onChange: (value: string) => void
 }) {
+  const { styles } = useTheme()
+
   const { callEffect } = useRuntime()
   const [data, setData] = useApplicationState<Schema.Schema.Type<typeof branchesSchema> | null>(
     null,

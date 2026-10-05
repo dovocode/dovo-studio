@@ -4,7 +4,7 @@ import { Text } from '../../../ui/content/text'
 import { pullFilePatch, type PullDetail } from '@dovo/protocol'
 import { Choice } from '../../../ui/controls/choice'
 import { Action } from '../../../ui/controls/action'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { DiffView } from '../../../tasks/preview/diff-view'
 import { PullComments } from './pull-comments'
 import type { PullActionTarget } from '../list/pull-actions'
@@ -19,6 +19,8 @@ export function PullChanges({
   onAction?: (target: PullActionTarget) => void
   onLineComment?: (path: string) => void
 }) {
+  const { colors, styles } = useTheme()
+
   const { height } = useWindowDimensions()
   const [selected, setSelected] = useApplicationState(detail.files[0]?.path ?? ''),
     [viewed, setViewed] = useApplicationState<Set<string>>(new Set())
@@ -82,7 +84,7 @@ export function PullChanges({
         {file.previousPath ? `Renamed from ${file.previousPath} · ` : ''}
         <Text
           style={{
-            color: '#8ad5b0',
+            color: colors.success,
           }}
         >
           {file.additions === null ? '' : `+${file.additions}`}

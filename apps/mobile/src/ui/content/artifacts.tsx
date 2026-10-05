@@ -24,7 +24,7 @@ import { Markdown } from './markdown'
 import { Action } from '../controls/action'
 import { Icon, type IconName } from '../controls/icon'
 import { IconButton } from '../controls/icon-button'
-import { colors, styles } from '../theme'
+import { useTheme } from '../theme'
 import { openAppLink } from './open-link'
 import { ArtifactFormatIcon } from './artifact-presentation'
 
@@ -33,6 +33,8 @@ export const ArtifactCard = memo(function ArtifactCard({
 }: {
   reference: ArtifactReference
 }) {
+  const { colors, styles } = useTheme()
+
   const { activeId, snapshot } = useRuntime()
   const [open, setOpen] = useState(false)
   if (!snapshot?.artifactsEnabled) return null
@@ -92,6 +94,8 @@ function ArtifactAction({
   disabled?: boolean
   selected?: boolean
 }) {
+  const { colors } = useTheme()
+
   return (
     <View style={{ width: 44, alignItems: 'center' }}>
       <IconButton
@@ -124,6 +128,8 @@ export function ArtifactBrowser({
   initialId?: string
   onClose: () => void
 }) {
+  const { colors, styles } = useTheme()
+
   const { read, connected } = useRuntime()
   const [items, setItems] = useState<ArtifactMetadata[]>()
   const [links, setLinks] = useState<ArtifactLink[]>([])

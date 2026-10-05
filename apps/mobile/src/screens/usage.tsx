@@ -23,12 +23,14 @@ import { useRuntime } from '../runtime/connection/provider'
 import { Choice } from '../ui/controls/choice'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { SettingsGroup } from './settings-group'
 
 const periods = { day: 1, week: 7, month: 30, quarter: 90 } as const
 
 const Row = memo(function Row({ row, first }: { row: UsageRow; first: boolean }) {
+  const { colors, styles } = useTheme()
+
   const tokens = row.tokenTurns ? ` · ${formatUsageTokens(row.tokens)} tokens` : ''
   return (
     <View
@@ -61,6 +63,8 @@ const Row = memo(function Row({ row, first }: { row: UsageRow; first: boolean })
 
 /** Agent time, turns and tokens across saved computers. */
 export default function UsageScreen() {
+  const { colors, styles } = useTheme()
+
   const { overviews } = useRuntime()
   const [computer, setComputer] = useState('all')
   const [view, setView] = useState<'costs' | 'tokens' | 'limits'>('costs')

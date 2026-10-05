@@ -1,6 +1,6 @@
 import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../../../ui/content/text'
-import { colors } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 export function PullTabs({
   value,
   items,
@@ -10,6 +10,8 @@ export function PullTabs({
   items: Array<{ id: string; name: string }>
   onChange: (id: string) => void
 }) {
+  const { colors } = useTheme()
+
   return (
     <ScrollView
       horizontal
@@ -18,7 +20,12 @@ export function PullTabs({
       contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 4 }}
     >
       <View
-        style={{ flexDirection: 'row', padding: 2, borderRadius: 12, backgroundColor: '#ffffff08' }}
+        style={{
+          flexDirection: 'row',
+          padding: 2,
+          borderRadius: 12,
+          backgroundColor: colors.surface,
+        }}
       >
         {items.map((item) => (
           <Pressable
@@ -35,9 +42,9 @@ export function PullTabs({
               justifyContent: 'center',
               borderRadius: 10,
               backgroundColor: pressed
-                ? '#ffffff30'
+                ? colors.elevated
                 : item.id === value
-                  ? '#ffffff20'
+                  ? colors.selection
                   : 'transparent',
             })}
           >

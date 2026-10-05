@@ -28,7 +28,7 @@ import {
 import { useRuntime } from '../../runtime/connection/provider'
 import { useNavigation } from '../../shell/navigation'
 import { Text } from '../../ui/content/text'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { Action } from '../../ui/controls/action'
 import { IconButton } from '../../ui/controls/icon-button'
 import { ScreenHeader } from '../../ui/layout/screen-header'
@@ -87,6 +87,8 @@ function WorkItemContent({
   expectedURL,
   onBack,
 }: WorkItemProps) {
+  const { colors, styles } = useTheme()
+
   const { read, connected, snapshot, profile, readCache, readEffect } = useRuntime()
   const { focused } = useNavigation()
   const repository = snapshot?.workspace.repositories.find((item) => item.id === repositoryId)

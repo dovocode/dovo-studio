@@ -24,7 +24,7 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { Action } from '../../../ui/controls/action'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { Icon } from '../../../ui/controls/icon'
 import { PullComments } from './pull-comments'
 import { PullChanges } from './pull-changes'
@@ -47,6 +47,8 @@ export function PullDetail({
   number: number
   onBack: () => void
 }) {
+  const { colors, styles } = useTheme()
+
   const { connected, snapshot, profile, readCache } = useRuntime()
   const body = useRef<ScrollView>(null)
   const { detail, error, setError, busy, refreshing, refresh, invalidate } = usePullDetail(

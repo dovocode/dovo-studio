@@ -1,6 +1,6 @@
 import { Alert, Pressable } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { colors } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 export type WorkMenuAction = { label: string; onPress: () => void; disabled?: boolean }
 export function WorkMenu({
   actions,
@@ -9,6 +9,8 @@ export function WorkMenu({
   actions: WorkMenuAction[]
   label?: string
 }) {
+  const { colors } = useTheme()
+
   return (
     <Pressable
       testID={label}

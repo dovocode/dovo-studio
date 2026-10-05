@@ -6,7 +6,7 @@ import { SearchField } from '../../ui/controls/field'
 import { Action } from '../../ui/controls/action'
 import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { AddProject } from '../../screens/repositories'
 
@@ -29,6 +29,8 @@ export function FolderPicker({
   allowMachineChange?: boolean
   onMoving?: (moving: boolean) => void
 }) {
+  const { colors, styles } = useTheme()
+
   const runtime = useRuntime()
   const [open, setOpen] = useApplicationState(false)
   const [machine, setMachine] = useApplicationState<string | null>(null)

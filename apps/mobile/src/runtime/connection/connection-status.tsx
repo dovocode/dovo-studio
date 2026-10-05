@@ -11,11 +11,13 @@ import { Pill } from '../../ui/controls/pill'
 import { Sheet } from '../../ui/layout/sheet'
 import { useAction } from '../../ui/controls/use-action'
 import { formatDateTime } from '../../ui/content/format-date'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 /** Floating connection indicator: one quiet pill instead of a full-width banner. Tap to
  * reconnect; if the computer is still unreachable, the next tap explains why. */
 export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
+  const { styles } = useTheme()
+
   const runtime = useRuntime()
   const { busy, act } = useAction()
   const [visible, setVisible] = useApplicationState(false)

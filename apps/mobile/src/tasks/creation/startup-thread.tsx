@@ -1,14 +1,11 @@
 import { useState } from 'react'
 import { View } from 'react-native'
-import { randomUUID } from 'expo-crypto'
 import { resolveTaskDefaults, taskMachineDraft, type Task } from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
-import { useNavigation } from '../../shell/navigation'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
-import { styles } from '../../ui/theme'
-import { Composer } from '../composer/composer'
-import { ConversationProvider } from '../conversation/state/provider'
+import { useTheme } from '../../ui/theme'
+import { TaskDetail } from '../detail/task-detail'
 import { saveRuntimeDraft } from '../draft/use-draft'
 import { FolderPicker } from './folder-picker'
 import { TemporaryTaskRuntime } from './temporary-task-runtime'
@@ -16,20 +13,33 @@ import { TemporaryTaskRuntime } from './temporary-task-runtime'
 export function StartupThread({
   onCommit,
   onBrowse,
+  onNewThread,
+  taskId,
+  runtimeId: initialRuntimeId,
 }: {
   onCommit: (runtimeId: string, taskId: string) => void
   onBrowse: () => void
+  onNewThread: () => void
+  taskId: string
+  runtimeId: string
 }) {
+  const { styles } = useTheme()
+
   const runtime = useRuntime()
-  const { focused } = useNavigation()
-  const [selection, setSelection] = useState<{ runtimeId: string; task: Task } | null>(null)
+  const [selection, setSelection] = useState<{ runtimeId: string; task: Task } | null>(() => {
+    const task = runtime.overviews
+      .find((entry) => entry.profile.id === initialRuntimeId)
+      ?.snapshot?.workspace.tasks.find((item) => item.id === taskId)
+    return task ? { runtimeId: initialRuntimeId, task } : null
+  })
   const selected =
+    runtime.overviews.find((entry) => entry.profile.id === initialRuntimeId) ??
     runtime.overviews.find((entry) => entry.connected && entry.profile.id === runtime.activeId) ??
     runtime.overviews.find((entry) => entry.connected)
   const runtimeId = selection?.runtimeId ?? selected?.profile.id ?? ''
   const entry = runtime.overviews.find((item) => item.profile.id === runtimeId)
   const repository = entry?.snapshot?.workspace.repositories.find((item) => item.kind === 'scratch')
-  const [id] = useState(randomUUID)
+  const [id] = useState(() => taskId)
   const task: Task | null =
     selection?.task ??
     (repository
@@ -63,46 +73,27 @@ export function StartupThread({
           task={task}
           onCommit={(created) => onCommit(runtimeId, created.id)}
         >
-          {(draft) => (
-            <ConversationProvider
+          {(draft, temporary) => (
+            <TaskDetail
               task={draft}
-              visible={focused}
-              temporary
-              openCheckpoint={() => {}}
-              openTerminal={() => {}}
-            >
-              <View style={{ flex: 1 }}>
-                <View
-                  style={{
-                    flex: 1,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: 24,
-                  }}
-                >
-                  <Text style={styles.title}>What would you like to work on?</Text>
-                  <Text style={styles.muted}>Describe a change or ask a question.</Text>
-                  <Action label="Browse tasks" secondary onPress={onBrowse} />
-                </View>
-                <Composer
-                  task={draft}
-                  onSelectRemote={async (targetId, target, text) => {
-                    const destination = runtime.overviews.find(
-                      (item) => item.profile.id === targetId,
-                    )
-                    if (!destination?.connected) throw new Error('This computer is offline.')
-                    const next = taskMachineDraft(
-                      { ...draft, draft: text },
-                      target,
-                      destination.snapshot?.defaults,
-                    )
-                    await saveRuntimeDraft(targetId, next.id, text)
-                    setSelection({ runtimeId: targetId, task: next })
-                  }}
-                />
-              </View>
-            </ConversationProvider>
+              onBack={onBrowse}
+              startup={{
+                temporary,
+                onBrowse,
+                onNewThread,
+                onSelectRemote: async (targetId, target, text) => {
+                  const destination = runtime.overviews.find((item) => item.profile.id === targetId)
+                  if (!destination?.connected) throw new Error('This computer is offline.')
+                  const next = taskMachineDraft(
+                    { ...draft, draft: text },
+                    target,
+                    destination.snapshot?.defaults,
+                  )
+                  await saveRuntimeDraft(targetId, next.id, text)
+                  setSelection({ runtimeId: targetId, task: next })
+                },
+              }}
+            />
           )}
         </TemporaryTaskRuntime>
       ) : (

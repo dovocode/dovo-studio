@@ -40,11 +40,13 @@ import { Icon } from '../ui/controls/icon'
 import { IconButton } from '../ui/controls/icon-button'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { useAction } from '../ui/controls/use-action'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 type TaskListItem =
   | { kind: 'group'; key: string; name: string; count: number }
   | { kind: 'task'; entry: RuntimeTask }
 export default function TasksScreen({ archived = false }: { archived?: boolean }) {
+  const { colors, styles } = useTheme()
+
   const { navigate, focused } = useNavigation(),
     { refreshAll, overviews, profiles, activeId, selectRuntimeEffect, readRuntime, ready } =
       useRuntime(),
@@ -690,6 +692,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
 
 /** First run: one clear step instead of a settings list full of disabled rows. */
 function Welcome() {
+  const { colors, styles } = useTheme()
+
   return (
     <View style={styles.screen}>
       <ScreenHeader title="Tasks" />

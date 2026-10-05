@@ -25,7 +25,7 @@ import { useRuntime } from '../runtime/connection/provider'
 import { Choice } from '../ui/controls/choice'
 import { Field } from '../ui/controls/field'
 import { Action } from '../ui/controls/action'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 export function ModelSettings({
   agent,
   onChange,
@@ -37,6 +37,8 @@ export function ModelSettings({
   disabled?: boolean
   onChange: (agent: Agent) => void
 }) {
+  const { styles } = useTheme()
+
   const { connected, callEffect, snapshot, profile, refresh: refreshRuntime } = useRuntime()
   const { catalog, error: discoveryError, loading, canDiscover, refresh } = useModelCatalog(agent)
   const [error, setError] = useApplicationState('')

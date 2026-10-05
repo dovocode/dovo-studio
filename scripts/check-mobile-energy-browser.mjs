@@ -9,7 +9,7 @@ const mocks = {
   '../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
   '../runtime/state/application-state': `import {useState,useRef} from 'react';export const useApplicationState=initial=>{const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]};`,
   '../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
-  '../ui/theme': `export const styles={};`,
+  '../ui/theme': `export const useTheme=()=>({styles:{}});`,
   './tasks-widget': `export default {updateSnapshot:props=>window.writes.push(structuredClone(props))};`,
   'react-native-webview': `import {forwardRef,useImperativeHandle,useEffect} from 'react';export const WebView=forwardRef((props,ref)=>{useImperativeHandle(ref,()=>({injectJavaScript:code=>window.commands.push(code)}));useEffect(()=>props.onMessage({nativeEvent:{data:JSON.stringify({type:'ready'})}}),[]);return null});`,
   '@react-native-async-storage/async-storage': `export default {getItem:async()=>"true",setItem:async()=>{}};`,

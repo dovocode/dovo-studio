@@ -9,7 +9,7 @@ import { FlatList, Keyboard, View } from 'react-native'
 import { router } from 'expo-router'
 import { Text } from '../ui/content/text'
 import { useRuntime } from '../runtime/connection/provider'
-import { styles, colors } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { CreationTarget } from '../runtime/connection/creation-target'
 import { SearchField } from '../ui/controls/field'
 import { AutomationEditor } from '../jobs/automation-editor'
@@ -19,6 +19,8 @@ import { useListScroll } from '../ui/layout/use-list-scroll'
 import { automationHref } from '../shell/source-route'
 import { useNavigation } from '../shell/navigation'
 export default function JobsScreen() {
+  const { colors, styles } = useTheme()
+
   const { overviews, refreshAll } = useRuntime()
   const connected = overviews.some((entry) => entry.connected)
   const [refreshing, setRefreshing] = useApplicationState(false)

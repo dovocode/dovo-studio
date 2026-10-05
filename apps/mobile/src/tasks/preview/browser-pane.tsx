@@ -18,7 +18,7 @@ import { Field } from '../../ui/controls/field'
 import { Action } from '../../ui/controls/action'
 import { IconButton } from '../../ui/controls/icon-button'
 import { Choice } from '../../ui/controls/choice'
-import { styles, colors } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import { RemoteBrowser } from './remote-browser'
 import { PhysicalControls } from './physical-controls'
@@ -36,6 +36,8 @@ function PreviewPane({
   onExpand,
   initialMode,
 }: PreviewProps & { initialMode: 'remote' | 'devices' }) {
+  const { styles } = useTheme()
+
   const { profile, snapshot } = useRuntime()
   const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>(initialMode)
   const [reloadToken, setReloadToken] = useApplicationState(0)
@@ -129,6 +131,8 @@ function BrowserContent({
   expanded: boolean
   reloadToken: number
 }) {
+  const { colors, styles } = useTheme()
+
   const { profile, connected, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
   const [input, setInput] = useApplicationState(addresses.get(scope) ?? 'http://localhost:3000'),

@@ -9,7 +9,7 @@ import {
   shapes,
 } from '@expo/ui/swift-ui/modifiers'
 import { isSnoozed, latestCompletedTaskTurn } from '@dovo/protocol'
-import { colors } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { snoozeOptions } from '../detail/use-task-lifecycle'
 import type { TaskRowMenuProps } from './task-row-menu'
 
@@ -21,11 +21,13 @@ export function TaskRowMenu({
   onOpen,
   onDetails,
 }: TaskRowMenuProps) {
+  const { colors, mode: appearanceMode } = useTheme()
+
   const unavailable = !actions.enabled || actions.busy
   return (
     <Host
       ignoreSafeArea="all"
-      colorScheme="dark"
+      colorScheme={appearanceMode}
       style={{ width: 44, height: 44, alignSelf: 'center', flexShrink: 0 }}
     >
       <Menu

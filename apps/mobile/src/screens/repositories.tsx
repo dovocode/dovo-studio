@@ -15,13 +15,15 @@ import { addRepositorySchema, repositorySchema } from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { Action } from '../ui/controls/action'
 import { Field } from '../ui/controls/field'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { CreationTarget } from '../runtime/connection/creation-target'
 import { clientScopeKey } from '@dovo/client-runtime'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { IconButton } from '../ui/controls/icon-button'
 export default function RepositoriesScreen() {
+  const { styles } = useTheme()
+
   const { navigate } = useNavigation()
   const { overviews } = useRuntime()
   const [adding, setAdding] = useApplicationState(false)
@@ -80,6 +82,8 @@ export function AddProject({
   initialSource?: 'local' | 'github'
   onAdded?: (repository: import('@dovo/protocol').Repository) => void
 }) {
+  const { styles } = useTheme()
+
   const { profile, snapshot, connected, connection, callEffect } = useRuntime(),
     { busy, error, act } = useAction(),
     [name, setName] = useApplicationState(''),

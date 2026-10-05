@@ -7,7 +7,7 @@ import { RuntimeScope, useRuntime } from './provider'
 import { Sheet } from '../../ui/layout/sheet'
 import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 /** Explicit execution targeting belongs to creation, not collection navigation. */
 export function CreationTarget({
@@ -21,6 +21,8 @@ export function CreationTarget({
   onClose: () => void
   children: (runtimeId: string) => ReactNode
 }) {
+  const { styles } = useTheme()
+
   const { overviews } = useRuntime()
   const available = overviews.filter((entry) => entry.connected && entry.snapshot)
   const [target, setTarget] = useApplicationState<RuntimeProfile | null>(() =>

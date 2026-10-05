@@ -285,6 +285,9 @@ importers:
       '@dovo/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@dovo/studio-core':
+        specifier: workspace:*
+        version: link:../../packages/studio-core
       '@effect-atom/atom-react':
         specifier: 0.7.0
         version: 0.7.0(@effect/experimental@0.61.1(@effect/platform@0.97.2(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.2(effect@3.22.1))(@effect/rpc@0.76.2(@effect/platform@0.97.2(effect@3.22.1))(effect@3.22.1))(effect@3.22.1)(react@19.2.3)(scheduler@0.27.0)

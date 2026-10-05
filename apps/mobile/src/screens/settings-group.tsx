@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import { Icon } from '../ui/controls/icon'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 
 export function SettingsGroup({
   title,
@@ -13,6 +13,8 @@ export function SettingsGroup({
   footer?: string
   children: ReactNode
 }) {
+  const { colors, styles } = useTheme()
+
   return (
     <View style={{ gap: 6 }}>
       {title && (
@@ -45,7 +47,7 @@ export function SettingsRow({
   title,
   subtitle,
   icon,
-  tint = colors.accent,
+  tint,
   onPress,
   label,
   testID,
@@ -64,6 +66,8 @@ export function SettingsRow({
   selected?: boolean
   last?: boolean
 }) {
+  const { colors, styles } = useTheme()
+  const iconTint = tint ?? colors.accent
   return (
     <Pressable
       testID={testID ?? label ?? title}
@@ -80,7 +84,7 @@ export function SettingsRow({
         gap: 8,
         minHeight: subtitle ? 56 : 44,
         opacity: disabled ? 0.45 : 1,
-        backgroundColor: pressed ? '#ffffff12' : 'transparent',
+        backgroundColor: pressed ? colors.selection : 'transparent',
       })}
     >
       <View
@@ -90,10 +94,10 @@ export function SettingsRow({
           borderRadius: 6,
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: `${tint}20`,
+          backgroundColor: `${iconTint}20`,
         }}
       >
-        <Icon name={icon} size={16} color={tint} />
+        <Icon name={icon} size={16} color={iconTint} />
       </View>
       <View
         style={{

@@ -2,7 +2,7 @@ import { useApplicationState } from '../../runtime/state/application-state'
 import { Icon } from './icon'
 import { Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native'
 import { Text } from '../content/text'
-import { styles, colors } from '../theme'
+import { useTheme } from '../theme'
 import { Sheet, useInsideSheet } from '../layout/sheet'
 import { SearchField } from './field'
 import { ChoiceMenu } from './choice-menu'
@@ -32,6 +32,8 @@ export function Choice({
   compact = false,
   row = false,
 }: ChoiceProps) {
+  const { colors, styles } = useTheme()
+
   const [open, setOpen] = useApplicationState(false),
     [search, setSearch] = useApplicationState('')
   const { fontScale } = useWindowDimensions()
@@ -67,11 +69,7 @@ export function Choice({
                 minHeight: 48,
                 padding: 12,
                 opacity: disabled || item.disabled ? 0.45 : 1,
-                backgroundColor: pressed
-                  ? '#ffffff20'
-                  : item.id === value
-                    ? '#ffffff12'
-                    : undefined,
+                backgroundColor: pressed || item.id === value ? colors.selection : undefined,
                 borderRadius: 8,
               },
             ]}
@@ -193,7 +191,7 @@ export function Choice({
                     paddingVertical: compactControl ? 8 : 12,
                     minHeight: 44,
                     borderRadius: 12,
-                    backgroundColor: pressed ? '#ffffff14' : 'transparent',
+                    backgroundColor: pressed ? colors.selection : 'transparent',
                   },
                 ]}
               >

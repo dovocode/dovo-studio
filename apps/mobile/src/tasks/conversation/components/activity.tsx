@@ -5,7 +5,7 @@ import { Pressable, View } from 'react-native'
 import { activitySummary, toolPresentation, type Task } from '@dovo/protocol'
 import { Text } from '../../../ui/content/text'
 import { Icon } from '../../../ui/controls/icon'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import {
   activityIdentity,
   activityOutcome,
@@ -22,6 +22,8 @@ export function TaskActivity({
   events: ToolEvents
   error: string
 }) {
+  const { colors, styles } = useTheme()
+
   const { toolActivity } = useMobilePreferences()
   const [open, setOpen] = useApplicationState(toolActivity === 'expanded')
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { useForegroundInterval } from '../../runtime/state/app-active'
+import { TaskEmptyState } from '../creation/task-empty-state'
 import { formatTurnDuration } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
 import { CheckpointFiles } from './components/checkpoint-files'
@@ -39,7 +40,7 @@ import {
 } from './state/provider'
 import { ThreadMarkdown } from './components/thread-markdown'
 import { MessageAttachments } from './components/message-attachments'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
 import { ToolActivityRow, ReasoningActivity } from './components/tool-activity-row'
@@ -62,9 +63,13 @@ function AttachmentPart({ data }: DataMessagePartProps<unknown>) {
   return <MessageAttachments taskId={taskId} files={decode(mutableArray(attachmentSchema), data)} />
 }
 function TurnSummaryPart({ data }: DataMessagePartProps<unknown>) {
+  const { styles } = useTheme()
+
   return <Text style={[styles.muted, { fontSize: 12 }]}>{decode(Schema.String, data)}</Text>
 }
 function CompactionPart({ data }: DataMessagePartProps<unknown>) {
+  const { styles } = useTheme()
+
   const item = decode(
     mutableStruct({ at: Schema.String, trigger: Schema.Literal('manual', 'auto') }),
     data,
@@ -98,6 +103,8 @@ function CheckpointRow({
   openCheckpoint: (turnId: string, path?: string) => void
   turn: TaskTurn | undefined
 }) {
+  const { colors, styles } = useTheme()
+
   const { collapseChangedFiles } = useMobilePreferences()
   const [expanded, setExpanded] = useApplicationState<boolean | null>(null)
   const showFiles = expanded ?? !collapseChangedFiles
@@ -147,8 +154,8 @@ function CheckpointRow({
           </Text>
           {!!turn?.checkpoint?.files.some((file) => !file.preview) && (
             <>
-              <Text style={{ color: '#34d399', fontSize: 12 }}>+{totals.additions}</Text>
-              <Text style={{ color: '#fb7185', fontSize: 12 }}>-{totals.deletions}</Text>
+              <Text style={{ color: colors.success, fontSize: 12 }}>+{totals.additions}</Text>
+              <Text style={{ color: colors.error, fontSize: 12 }}>-{totals.deletions}</Text>
             </>
           )}
         </Pressable>
@@ -213,6 +220,8 @@ function WorkGroup(props: Parameters<typeof ConversationWorkGroup>[0]) {
   return useCarMode() ? null : <ConversationWorkGroup {...props} />
 }
 function WorkingIndicator({ turn }: { turn: TaskTurn }) {
+  const { colors, styles } = useTheme()
+
   const [now, setNow] = useApplicationState(Date.now())
   useForegroundInterval(() => setNow(Date.now()), 1000)
   const seconds = Math.max(0, Math.floor((now - Date.parse(turn.startedAt)) / 1000))
@@ -250,6 +259,8 @@ const userParts = {
   Text: UserText,
 }
 function AssistantParts({ footer = false }: { footer?: boolean }) {
+  const { colors, styles } = useTheme()
+
   const message = useAuiState((state) => state.message)
   const presentation = useConversationPresentation(message.id)
   const turn = presentation?.groupTurn
@@ -343,6 +354,8 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
   )
 }
 function Message() {
+  const { colors, styles } = useTheme()
+
   const pendingMessage = usePendingConversationMessage()
   const id = useAuiState((state) => state.message.id)
   const user = useAuiState((state) => state.message.role === 'user')
@@ -447,7 +460,9 @@ const renderConversationMessage = ({
   item: { message: ThreadMessage; index: number }
 }) => <ConversationMessageCell index={item.index} />
 const messageKey = (item: { message: ThreadMessage; index: number }) => item.message.id
-export function Conversation() {
+export function Conversation({ onBrowse }: { onBrowse?: () => void }) {
+  const { colors, styles } = useTheme()
+
   const history = useConversationSelector((value) => value.history)
   const task = useConversationSelector((value) => value.task)
   const legacyEvents = useConversationSelector((value) => value.legacyEvents)
@@ -460,6 +475,14 @@ export function Conversation() {
   const { activeId, connected } = useRuntime()
   const messages = useAuiState((state) => state.thread.messages)
   const messageCount = messages.length
+  const emptyDraft =
+    task.status === 'draft' &&
+    !messageCount &&
+    !task.queue?.length &&
+    !task.turns?.length &&
+    !history.hasMore &&
+    !history.error &&
+    !activityError
   const newestFirst = useMemo(
     () => messages.map((message, index) => ({ message, index })).reverse(),
     [messages],
@@ -585,6 +608,7 @@ export function Conversation() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.content,
+          emptyDraft && { flexGrow: 1 },
           {
             paddingTop: !connected || !following ? 44 : 8,
             paddingHorizontal: 20,
@@ -593,30 +617,12 @@ export function Conversation() {
           },
         ]}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Icon name="chat" size={24} color={colors.muted} />
-            <Text
-              style={[
-                styles.title,
-                {
-                  textAlign: 'center',
-                  fontSize: 20,
-                },
-              ]}
-            >
-              What are we building?
-            </Text>
-            <Text
-              style={[
-                styles.muted,
-                {
-                  textAlign: 'center',
-                },
-              ]}
-            >
-              Describe a change or ask a question.
-            </Text>
-          </View>
+          emptyDraft ? (
+            // FlatList applies its inversion and measurement props to this native view.
+            <View style={{ flex: 1 }}>
+              <TaskEmptyState onBrowse={onBrowse} />
+            </View>
+          ) : null
         }
         ListFooterComponent={
           <View style={{ padding: 12, alignItems: 'center' }}>

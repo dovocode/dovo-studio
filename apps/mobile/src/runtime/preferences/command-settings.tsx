@@ -23,8 +23,10 @@ import { useRuntime } from '../connection/provider'
 import { Field } from '../../ui/controls/field'
 import { Action } from '../../ui/controls/action'
 import { useAction } from '../../ui/controls/use-action'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 export function CommandSettings({ computerUse = false }: { computerUse?: boolean }) {
+  const { styles } = useTheme()
+
   const { read, connected, callEffect, readEffect } = useRuntime()
   const { busy, error, act } = useAction()
   const [settings, setSettings] = useApplicationState<Settings | null>(null)

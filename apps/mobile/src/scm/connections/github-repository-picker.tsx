@@ -13,7 +13,7 @@ import {
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 export function GithubRepositoryPicker({
   onSelect,
   onClose,
@@ -21,6 +21,8 @@ export function GithubRepositoryPicker({
   onSelect: (repository: GithubRepositoryChoice) => void
   onClose: () => void
 }) {
+  const { styles } = useTheme()
+
   const { call, connected, callEffect } = useRuntime()
   const [load, setLoad] = useApplicationState({
     page: 1,

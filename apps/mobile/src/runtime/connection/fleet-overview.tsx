@@ -4,7 +4,7 @@ import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { aggregateRuntimeTasks, runtimeReachability, type RuntimeOverview } from '@dovo/protocol'
 import { useNavigation } from '../../shell/navigation'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { Sheet } from '../../ui/layout/sheet'
 import { formatDateTime } from '../../ui/content/format-date'
@@ -42,6 +42,8 @@ export function FleetOverview({
   compact?: boolean
   source?: string
 }) {
+  const { colors, styles } = useTheme()
+
   const { navigate } = useNavigation()
   const [viewportWidth, setViewportWidth] = useApplicationState(0)
   const [selected, setSelected] = useApplicationState('')

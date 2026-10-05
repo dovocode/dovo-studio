@@ -23,7 +23,7 @@ import { Field } from '../../../ui/controls/field'
 import { Choice } from '../../../ui/controls/choice'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
-import { styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 export function CreatePull({
   repositoryId: initial,
   initialParent,
@@ -35,6 +35,8 @@ export function CreatePull({
   onClose: () => void
   onCreated: (repositoryId: string, number: number) => void
 }) {
+  const { styles } = useTheme()
+
   const { read: call, connected, snapshot, callEffect } = useRuntime()
   const repos = snapshot?.workspace.repositories ?? []
   const [repositoryId, setRepository] = useApplicationState(initial || repos[0]?.id || '')

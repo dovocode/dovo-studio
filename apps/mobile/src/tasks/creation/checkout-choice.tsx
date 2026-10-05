@@ -1,7 +1,7 @@
 import { Pressable, View } from 'react-native'
 import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 export function CheckoutChoice({
   value,
@@ -14,6 +14,8 @@ export function CheckoutChoice({
   branch?: string
   onChange: (value: 'main' | 'worktree' | 'existing') => void
 }) {
+  const { colors, styles } = useTheme()
+
   return (
     <View style={{ gap: 8 }} accessibilityLabel="Working directory">
       {(['main', 'worktree', 'existing'] as const).map((mode) => {

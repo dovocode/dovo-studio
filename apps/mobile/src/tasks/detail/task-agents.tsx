@@ -6,9 +6,11 @@ import { ScrollView, View, Pressable } from 'react-native'
 import { subagentElapsed, subagentMetadata, indexTaskSubagents, type Task } from '@dovo/protocol'
 import { useMemo } from 'react'
 import { Text } from '../../ui/content/text'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { useRuntime } from '../../runtime/connection/provider'
 export function TaskAgents({ task }: { task: Task }) {
+  const { colors, styles } = useTheme()
+
   const { connected, profile, snapshot } = useRuntime()
   const { navigate } = useNavigation()
   const [now, setNow] = useApplicationState(Date.now)

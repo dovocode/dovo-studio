@@ -22,7 +22,7 @@ export function TemporaryTaskRuntime({
 }: {
   task: Task
   onCommit: (task: Task) => void
-  children: (task: Task) => ReactNode
+  children: (task: Task, temporary: boolean) => ReactNode
 }) {
   const runtime = useRuntime()
   const committedCallback = useRef(onCommit)
@@ -30,7 +30,10 @@ export function TemporaryTaskRuntime({
   const [draft, setDraft] = useState(task)
   const current = useRef(draft)
   const creation = useRef<Promise<unknown> | null>(null)
-  const committed = useRef(false)
+  const [temporary, setTemporary] = useState(
+    () => !runtime.snapshot?.workspace.tasks.some((item) => item.id === task.id),
+  )
+  const committed = useRef(!temporary)
   const notified = useRef(false)
   const mounted = useRef(true)
   useEffect(() => {
@@ -78,6 +81,7 @@ export function TemporaryTaskRuntime({
               })
             await creation.current
             committed.current = true
+            if (mounted.current) setTemporary(false)
           }
           const result = await runClientEffect(
             (needsTask || committed.current ? rootCall : rootRead)(path, input, schema, method),
@@ -121,7 +125,7 @@ export function TemporaryTaskRuntime({
         call: request,
       }}
     >
-      {children(visibleTask)}
+      {children(visibleTask, temporary)}
     </RuntimeContext.Provider>
   )
 }

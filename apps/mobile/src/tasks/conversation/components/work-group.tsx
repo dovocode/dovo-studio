@@ -8,7 +8,7 @@ import { Schema } from 'effect'
 import { useAuiState } from '@assistant-ui/react-native'
 import { useConversationTurn } from '../state/provider'
 import { Text } from '../../../ui/content/text'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { Icon } from '../../../ui/controls/icon'
 import { activityOutcome } from '../state/tool-events'
 import { artifactReferences } from '@dovo/protocol'
@@ -29,6 +29,8 @@ export function ConversationWorkGroup({
   startIndex: number
   endIndex: number
 }>) {
+  const { colors, styles } = useTheme()
+
   const message = useAuiState((state) => state.message)
   const id = message.id
   const groupEvents = message.content.slice(startIndex, endIndex + 1).flatMap((part) => {

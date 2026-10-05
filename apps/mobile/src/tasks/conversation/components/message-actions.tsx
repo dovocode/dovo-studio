@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AccessibilityInfo, ActionSheetIOS, Alert, Platform, Pressable, View } from 'react-native'
 import { Icon } from '../../../ui/controls/icon'
 import { Text } from '../../../ui/content/text'
-import { colors } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { copyText, shareText } from '../../../ui/content/clipboard'
 import {
   modelDisplayName,
@@ -35,6 +35,8 @@ export function MessageActions({
   user: boolean
   messageId?: string
 }) {
+  const { colors } = useTheme()
+
   const [feedback, setFeedback] = useState<Feedback>('')
   const blocks = useMemo(() => (user ? [] : fencedCodeBlocks(text)), [text, user])
   const commands = useMemo(
@@ -352,6 +354,8 @@ function ActionButton(props: {
   onPress: () => void
   onLongPress: () => void
 }) {
+  const { colors } = useTheme()
+
   return (
     <Pressable
       testID={props.testID}

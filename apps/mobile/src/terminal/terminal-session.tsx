@@ -10,8 +10,10 @@ import { Schema } from 'effect'
 import { responses } from '@dovo/protocol'
 import terminalHtml from '../../assets/terminal.json'
 import { useRuntime } from '../runtime/connection/provider'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 export function TerminalSession({ id }: { id: string }) {
+  const { styles } = useTheme()
+
   const { call, connection } = useRuntime(),
     view = useRef<WebView>(null),
     [error, setError] = useApplicationState(''),

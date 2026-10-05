@@ -1,8 +1,10 @@
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 export function ConnectionHelp({ pairing = false }: { pairing?: boolean }) {
+  const { styles } = useTheme()
+
   return (
     <View style={{ gap: 16 }}>
       <View style={{ gap: 5 }}>

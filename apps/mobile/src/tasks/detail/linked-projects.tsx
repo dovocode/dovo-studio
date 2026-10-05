@@ -7,7 +7,7 @@ import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 export function LinkedCheckoutEditor({
   value,
@@ -18,6 +18,8 @@ export function LinkedCheckoutEditor({
   onChange: (links: LinkedCheckout[]) => void
   disabled?: boolean
 }) {
+  const { styles } = useTheme()
+
   const latest = useRef({ value, onChange })
   useLayoutEffect(() => {
     latest.current = { value, onChange }
@@ -71,6 +73,8 @@ function LinkedFields({
   onChange: (link: LinkedCheckout) => void
   onRemove: () => void
 }) {
+  const { styles } = useTheme()
+
   const { snapshot, call } = useRuntime()
   const projects = snapshot?.workspace.repositories.filter((repo) => repo.kind !== 'scratch') ?? []
   const [worktrees, setWorktrees] = useState<Array<{ path: string; branch: string }>>([])
@@ -215,6 +219,8 @@ function LinkedFields({
 }
 
 export function LinkedProjects({ task }: { task: Task }) {
+  const { styles } = useTheme()
+
   const { call, connected } = useRuntime()
   const [links, setLinks] = useState(task.linkedCheckouts ?? [])
   const [before, setBefore] = useState(task.linkedCheckouts ?? [])

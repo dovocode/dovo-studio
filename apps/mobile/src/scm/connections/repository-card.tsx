@@ -9,7 +9,7 @@ import { Schema } from 'effect'
 import { responses, type Repository, type ChangedFile } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import { Field } from '../../ui/controls/field'
 import { useNavigation } from '../../shell/navigation'
@@ -20,6 +20,8 @@ export function RepositoryCard({
   repository: Repository
   taskId?: string
 }) {
+  const { styles } = useTheme()
+
   const { openWork } = useNavigation()
   const { connected, callEffect } = useRuntime(),
     { busy, error, act } = useAction(),

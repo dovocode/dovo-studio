@@ -11,7 +11,7 @@ import {
 import { Action } from '../../../ui/controls/action'
 import { Icon } from '../../../ui/controls/icon'
 import { Text } from '../../../ui/content/text'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { formatDateTime } from '../../../ui/content/format-date'
 import { useNavigation } from '../../../shell/navigation'
 function usePipelineNow(active: boolean) {
@@ -21,11 +21,13 @@ function usePipelineNow(active: boolean) {
   return now
 }
 export function WorkSignal({ status, emphasis = false }: { status: string; emphasis?: boolean }) {
+  const { colors, styles } = useTheme()
+
   const signal = pipelineSignal(status)
   const color = {
-    success: '#8ad5b0',
+    success: colors.success,
     danger: colors.error,
-    warning: '#e7c681',
+    warning: colors.warning,
     info: colors.accent,
     neutral: colors.muted,
   }[signal.tone]
@@ -50,6 +52,8 @@ function date(value?: string) {
   return Number.isNaN(parsed.getTime()) ? undefined : formatDateTime(parsed)
 }
 function Metadata({ label, value }: { label: string; value?: string }) {
+  const { styles } = useTheme()
+
   return value ? (
     <View
       style={{
@@ -85,6 +89,8 @@ function Metadata({ label, value }: { label: string; value?: string }) {
   ) : null
 }
 function Errors({ errors }: { errors?: string[] }) {
+  const { styles } = useTheme()
+
   return errors?.length ? (
     <View
       style={{
@@ -100,6 +106,8 @@ function Errors({ errors }: { errors?: string[] }) {
   ) : null
 }
 export function PipelineRunInfo({ run }: { run: ForgePipeline }) {
+  const { styles } = useTheme()
+
   const now = usePipelineNow(pipelineSignal(run.status).phase === 'active' && !!run.startedAt)
   const duration = pipelineDuration(run, now)
   return (
@@ -133,6 +141,8 @@ export function PipelineRunInfo({ run }: { run: ForgePipeline }) {
   )
 }
 export function PipelineRunDetails({ run }: { run: ForgePipeline }) {
+  const { colors, styles } = useTheme()
+
   const [expanded, setExpanded] = useApplicationState(false)
   return (
     <View
@@ -215,6 +225,8 @@ function PipelineJob({
   onOpen: (url: string) => void
   now: number
 }) {
+  const { colors, styles } = useTheme()
+
   const failed = pipelineSignal(job.status).tone === 'danger' || !!job.errors?.length
   const [expanded, setExpanded] = useApplicationState(failed)
   useEffect(() => {
@@ -351,6 +363,8 @@ export function PipelineJobs({
   hasMore: boolean
   onOpen: (url: string) => void
 }) {
+  const { styles } = useTheme()
+
   const now = usePipelineNow(
     jobs.some(
       (job) =>

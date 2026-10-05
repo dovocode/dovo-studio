@@ -7,9 +7,11 @@ import { View } from 'react-native'
 import { responses } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { QuestionForm } from '../composer/question-form'
 export function TaskQuestions({ taskId, questionId }: { taskId: string; questionId?: string }) {
+  const { styles } = useTheme()
+
   const { snapshot, profile, connected, callEffect } = useRuntime()
   const questions = snapshot?.questions.filter((q) => q.taskId === taskId) ?? []
   const pending = questionId

@@ -18,7 +18,7 @@ import { Sheet } from '../ui/layout/sheet'
 import { Action } from '../ui/controls/action'
 import { Field } from '../ui/controls/field'
 import { Choice } from '../ui/controls/choice'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import type { ResourceSelection } from './editor'
 export function CatalogPicker({
@@ -32,6 +32,8 @@ export function CatalogPicker({
   onClose: () => void
   onSelect: (entry: ResourceSelection) => void
 }) {
+  const { styles } = useTheme()
+
   const { call, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   const [query, setQuery] = useApplicationState(''),

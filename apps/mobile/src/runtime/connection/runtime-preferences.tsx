@@ -16,13 +16,15 @@ import { useAction } from '../../ui/controls/use-action'
 import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 type Preferences = typeof runtimePreferencesSchema.Type
 
 /** Preferences stored on the computer itself, shared by every device that manages it. Grouped
  * like the desktop pages: Running tasks, Worktrees and Activity. */
 export function RuntimePreferences() {
+  const { styles } = useTheme()
+
   const { connected, readEffect, callEffect } = useRuntime()
   const [value, setValue] = useApplicationState<Preferences | null>(null)
   const [loadError, setLoadError] = useApplicationState('')
@@ -263,6 +265,8 @@ export function RuntimePreferences() {
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
+  const { styles } = useTheme()
+
   return (
     <View style={{ gap: 6 }}>
       <Text accessibilityRole="header" style={[styles.muted, { paddingHorizontal: 4 }]}>

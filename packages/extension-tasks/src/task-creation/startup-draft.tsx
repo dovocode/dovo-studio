@@ -9,6 +9,7 @@ import {
 import { Button } from '@dovo/studio-ui'
 import { ComposerWorkspace } from '../chat/composer/composer-workspace'
 import { Composer } from '../chat/composer/composer'
+import { TaskEmptyState } from './task-empty-state'
 import type { TaskSource } from '../list/task-collection'
 import type { Repository } from '@dovo/studio-core'
 
@@ -78,15 +79,7 @@ function StartupComposer({
   if (!task) return null
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-        <h2 className="text-base font-medium">What would you like to work on?</h2>
-        <p className="text-sm text-muted-foreground">Describe a change or ask a question.</p>
-        {onBrowse && (
-          <Button variant="outline" onClick={onBrowse}>
-            Browse tasks
-          </Button>
-        )}
-      </div>
+      <TaskEmptyState onBrowse={onBrowse} />
       <Composer
         task={task}
         temporary

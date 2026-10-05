@@ -4,10 +4,12 @@ import { router, type ErrorBoundaryProps } from 'expo-router'
 import { Text } from '../content/text'
 import { Action } from '../controls/action'
 import { Icon } from '../controls/icon'
-import { colors, styles } from '../theme'
+import { useTheme } from '../theme'
 
 /** A failing screen must never blank or close the app; its tab stays usable. */
 export function RouteError({ error, retry }: ErrorBoundaryProps) {
+  const { colors, styles } = useTheme()
+
   useEffect(() => {
     console.error('Screen failed to render', error)
   }, [error])

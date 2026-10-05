@@ -8,12 +8,18 @@ import {
   frame,
   shapes,
 } from '@expo/ui/swift-ui/modifiers'
-import { colors } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import type { PullMenuProps } from './pull-menu'
 
 export function PullMenu(props: PullMenuProps) {
+  const { colors, mode: appearanceMode } = useTheme()
+
   return (
-    <Host ignoreSafeArea="all" colorScheme="dark" style={{ width: 44, height: 44, flexShrink: 0 }}>
+    <Host
+      ignoreSafeArea="all"
+      colorScheme={appearanceMode}
+      style={{ width: 44, height: 44, flexShrink: 0 }}
+    >
       <Menu
         testID="PR actions"
         label={

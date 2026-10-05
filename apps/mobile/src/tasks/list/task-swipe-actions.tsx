@@ -10,7 +10,7 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets'
 import { Icon, type IconName } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
-import { colors } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { fullSwipe, swipeTarget, swipeTranslation } from './task-swipe-motion'
 
 type SwipeAction = { label: string; icon: IconName; disabled?: boolean; run: () => void }
@@ -30,6 +30,8 @@ export function TaskSwipeActions({
   primary: SwipeAction
   secondary?: SwipeAction
 }) {
+  const { colors } = useTheme()
+
   const translation = useSharedValue(0)
   const start = useSharedValue(0)
   const width = useSharedValue(320)

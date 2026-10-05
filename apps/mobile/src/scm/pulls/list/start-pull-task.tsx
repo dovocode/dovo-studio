@@ -5,7 +5,7 @@ import { pullTaskResponse, type PullDetail } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { useNavigation } from '../../../shell/navigation'
 import { Action } from '../../../ui/controls/action'
-import { styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { useAction } from '../../../ui/controls/use-action'
 import { Sheet } from '../../../ui/layout/sheet'
 export function StartPullTask({
@@ -19,6 +19,8 @@ export function StartPullTask({
   onBack: () => void
   stackAction?: 'update'
 }) {
+  const { styles } = useTheme()
+
   const { connected, callEffect } = useRuntime(),
     { navigate } = useNavigation(),
     { busy, error, act } = useAction()

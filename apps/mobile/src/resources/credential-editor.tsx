@@ -3,7 +3,7 @@ import { View } from 'react-native'
 import { Field } from '../ui/controls/field'
 import { Text } from '../ui/content/text'
 import { Action } from '../ui/controls/action'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 export function CredentialEditor({
   fields,
   onChange,
@@ -13,6 +13,8 @@ export function CredentialEditor({
   onChange: (fields: CredentialField[]) => void
   disabled: boolean
 }) {
+  const { styles } = useTheme()
+
   const change = (index: number, patch: Partial<CredentialField>) =>
     onChange(fields.map((field, i) => (i === index ? { ...field, ...patch } : field)))
   return (

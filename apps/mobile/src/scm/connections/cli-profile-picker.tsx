@@ -15,7 +15,7 @@ import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 export function CliProfilePicker({
   provider,
   baseUrl,
@@ -33,6 +33,8 @@ export function CliProfilePicker({
   onChange: (value: string) => void
   disabled: boolean
 }) {
+  const { styles } = useTheme()
+
   const { read, connected, snapshot, readEffect } = useRuntime()
   const repositories = snapshot?.workspace.repositories ?? []
   const [repositoryId, setRepositoryId] = useApplicationState(

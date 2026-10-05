@@ -24,7 +24,7 @@ import { Sheet } from '../../ui/layout/sheet'
 import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { Action } from '../../ui/controls/action'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import {
   harnessNames,
@@ -44,6 +44,8 @@ export function HarnessSettings({
   inline?: boolean
   onBusyChange?: (busy: boolean) => void
 }) {
+  const { styles } = useTheme()
+
   const { snapshot, connected, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   useEffect(() => {

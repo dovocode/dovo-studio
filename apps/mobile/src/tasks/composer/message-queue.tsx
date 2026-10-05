@@ -9,10 +9,12 @@ import { Action } from '../../ui/controls/action'
 import { Sheet } from '../../ui/layout/sheet'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { useTaskConversation } from '../conversation/state/provider'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 export function MessageQueue({ task }: { task: Task }) {
+  const { colors, styles } = useTheme()
+
   const { connected, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   const { actions } = useTaskConversation()

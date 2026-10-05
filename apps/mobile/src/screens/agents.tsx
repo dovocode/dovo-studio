@@ -5,12 +5,14 @@ import { Action } from '../ui/controls/action'
 import { useRuntime } from '../runtime/connection/provider'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { ScopedAgents } from '../agents/scoped-agents'
 import { HarnessUpdates } from '../agents/harness-updates'
 import { AcpRegistrySettings } from '../agents/acp-registry'
 import { TitleSettings } from '../agents/title-settings'
 export default function AgentsScreen() {
+  const { styles } = useTheme()
+
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <ScreenHeader title="Agents" />
@@ -40,6 +42,8 @@ export default function AgentsScreen() {
   )
 }
 function EnvironmentTools() {
+  const { styles } = useTheme()
+
   const { connected } = useRuntime()
   return (
     <View style={{ gap: 12 }}>

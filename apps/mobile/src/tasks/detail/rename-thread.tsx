@@ -7,9 +7,11 @@ import { Field } from '../../ui/controls/field'
 import { Action } from '../../ui/controls/action'
 import { useAction } from '../../ui/controls/use-action'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 export function RenameThread({ task, onClose }: { task: Task; onClose: () => void }) {
+  const { styles } = useTheme()
+
   const { connected, callEffect } = useRuntime()
   const [title, setTitle] = useApplicationState(task.title)
   const { act, busy, error } = useAction()

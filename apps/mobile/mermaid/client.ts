@@ -5,18 +5,38 @@ function report(message: unknown) {
   if (native && typeof native.postMessage === 'function')
     native.postMessage(JSON.stringify(message))
 }
-mermaid.initialize({
-  startOnLoad: false,
-  securityLevel: 'strict',
-  theme: 'dark',
-  suppressErrorRendering: true,
-  maxTextSize: 50000,
-  maxEdges: 500,
-})
+type DiagramColors = {
+  text: string
+  surface: string
+  border: string
+  muted: string
+  background: string
+  selection: string
+  elevated: string
+}
 let generation = 0
-async function renderDiagram(chart: string) {
+async function renderDiagram(chart: string, colors: DiagramColors) {
   const attempt = ++generation
   try {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'base',
+      themeVariables: {
+        primaryColor: colors.surface,
+        primaryTextColor: colors.text,
+        primaryBorderColor: colors.border,
+        lineColor: colors.muted,
+        textColor: colors.text,
+        secondaryColor: colors.selection,
+        tertiaryColor: colors.elevated,
+        edgeLabelBackground: colors.background,
+      },
+      suppressErrorRendering: true,
+      maxTextSize: 50000,
+      maxEdges: 500,
+    })
+    document.documentElement.style.color = colors.text
     const { svg } = await mermaid.render(`diagram-${attempt}`, chart)
     if (attempt !== generation) return
     diagram.innerHTML = svg

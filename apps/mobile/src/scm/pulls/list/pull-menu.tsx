@@ -3,7 +3,7 @@ import { Pressable } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import { Action } from '../../../ui/controls/action'
 import { Sheet } from '../../../ui/layout/sheet'
-import { colors } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import type { PullActionTarget } from './pull-actions'
 import type { PullActionOption } from './pull-action-options'
 export type PullMenuProps = {
@@ -18,6 +18,8 @@ export type PullMenuProps = {
   actionDisabled: boolean
 }
 export function PullMenu(props: PullMenuProps) {
+  const { colors } = useTheme()
+
   const [open, setOpen] = useApplicationState(false)
   const choose = (action: () => void) => {
     setOpen(false)

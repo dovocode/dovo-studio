@@ -60,7 +60,7 @@ import {
   MessageCirclePlus,
   type LucideIcon,
 } from 'lucide-react-native'
-import { colors } from '../theme'
+import { useTheme } from '../theme'
 const icons = {
   agents: Users,
   expand: Maximize2,
@@ -127,12 +127,14 @@ export type IconName = keyof typeof icons
 export function Icon({
   name,
   size = 20,
-  color = colors.text,
+  color,
 }: {
   name: IconName
   size?: number
   color?: string
 }) {
+  const { colors } = useTheme()
+
   const Glyph = icons[name]
-  return <Glyph size={size} color={color} strokeWidth={2} accessible={false} />
+  return <Glyph size={size} color={color ?? colors.text} strokeWidth={2} accessible={false} />
 }

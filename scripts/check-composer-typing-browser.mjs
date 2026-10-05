@@ -35,8 +35,8 @@ window.controller = controller;
         }))
         builder.onLoad({ filter: /.*/, namespace: 'editor-environment' }, ({ path }) => ({
           contents: path.endsWith('studio-core')
-            ? `const workspace = {connected:false,request:()=>Promise.reject(new Error('Unexpected discovery'))}; export const useWorkspace = () => workspace;`
-            : `import React from 'react'; export const cn = (...values) => values.filter(Boolean).join(' '); export const PromptInputTextarea = React.forwardRef((props, ref) => React.createElement('textarea', {...props,ref}));`,
+            ? `const workspace = {connected:false,request:()=>Promise.reject(new Error('Unexpected discovery'))}; export const useWorkspace = () => workspace; export const useAppPreferences=()=>({sendWith:'enter'}); export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes';`
+            : `export {cn} from '../studio-ui/src/lib/utils'; export {ComposerTextarea} from '../studio-ui/src/composer-surface';`,
           resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
           loader: 'js',
         }))

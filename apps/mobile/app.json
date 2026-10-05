@@ -5,7 +5,7 @@
     "version": "0.0.9",
     "icon": "./assets/icon.png",
     "orientation": "default",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "jsEngine": "hermes",
     "scheme": "dovo",

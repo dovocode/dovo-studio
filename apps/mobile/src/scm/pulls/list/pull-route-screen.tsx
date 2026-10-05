@@ -5,11 +5,13 @@ import { backToCollection } from '../../../shell/source-route'
 import { Action } from '../../../ui/controls/action'
 import { ScreenHeader } from '../../../ui/layout/screen-header'
 import { Text } from '../../../ui/content/text'
-import { styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { PullDetail } from '../detail/pull-detail'
 import { pullRouteNumber } from './pull-route-number'
 
 export function PullRouteScreen() {
+  const { styles } = useTheme()
+
   const params = useLocalSearchParams<{
     runtimeId: string
     repositoryId: string

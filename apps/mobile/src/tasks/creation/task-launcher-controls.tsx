@@ -14,7 +14,7 @@ import {
 import { ModelSettings } from '../../agents/model-settings'
 import { useHarnessAvailability } from '../../agents/use-harness-availability'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { Choice } from '../../ui/controls/choice'
 import { taskHarnessChoices, taskHarnessSelection, selectedTaskHarness } from './harness-choices'
 
@@ -31,6 +31,8 @@ export function TaskLauncherControls({
   repository: Repository
   disabled: boolean
 }) {
+  const { styles } = useTheme()
+
   const harness = selection.harness ?? defaultTaskHarness(selection.provider)
   const task = createLauncherTask(snapshot, repository, selection, '', 'launcher-selection')
   const agents = resolveScopedAgents(snapshot.defaults, repository, snapshot.workspace.agents)

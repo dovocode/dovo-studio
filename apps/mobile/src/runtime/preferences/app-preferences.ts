@@ -1,4 +1,5 @@
 import { mergeSharedSettings, sharedSettingsSchema } from '@dovo/protocol'
+import { studioThemeIds } from '@dovo/studio-core/themes'
 import { useSyncExternalStore } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Schema } from 'effect'
@@ -10,8 +11,10 @@ import {
   mutableStruct,
 } from '@dovo/protocol'
 
-/** Settings → General on this phone only. Never synced to computers. */
+/** Local preferences for this phone. Never synced to computers. */
 const schema = mutableStruct({
+  theme: Schema.Literal('system', 'light', 'dark'),
+  themePalette: Schema.Literal(...studioThemeIds),
   sharedScopedSettings: sharedSettingsSchema,
   globalModelPreferencesUpdatedAt: Schema.Number,
   globalModelPreferences: Schema.NullOr(modelPreferencesSchema),
@@ -40,6 +43,8 @@ const schema = mutableStruct({
 })
 export type MobilePreferences = Schema.Schema.Type<typeof schema>
 const defaults: MobilePreferences = {
+  theme: 'dark',
+  themePalette: 'dovo',
   sharedScopedSettings: [],
   globalModelPreferencesUpdatedAt: 0,
   globalModelPreferences: null,

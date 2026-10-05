@@ -25,12 +25,14 @@ import { Choice } from '../ui/controls/choice'
 import { Field } from '../ui/controls/field'
 import { Sheet } from '../ui/layout/sheet'
 import { Text } from '../ui/content/text'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { ModelSettings } from './model-settings'
 import { AcpRegistry } from './acp-registry'
 
 export function Setup() {
+  const { styles } = useTheme()
+
   const { snapshot, connected } = useRuntime()
   const [open, setOpen] = useApplicationState(false)
   const defaults = snapshot?.defaults
@@ -64,6 +66,8 @@ export function Setup() {
   )
 }
 function SetupForm({ onClose }: { onClose: () => void }) {
+  const { colors, styles } = useTheme()
+
   const { snapshot, connected, callEffect } = useRuntime()
   const installations = snapshot?.acpInstallations ?? []
   const { act, busy, error } = useAction()

@@ -9,7 +9,7 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 export function SavedFilePreview({
   file,
@@ -22,6 +22,8 @@ export function SavedFilePreview({
   turnId?: string
   checkoutId?: string
 }) {
+  const { styles } = useTheme()
+
   const { call } = useRuntime()
   const key = JSON.stringify([taskId, turnId, checkoutId, file.path])
   const [result, setResult] = useState<{

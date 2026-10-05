@@ -2,7 +2,7 @@ import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { isSnoozed, latestCompletedTaskTurn, type Task } from '@dovo/protocol'
 import { Action } from '../../ui/controls/action'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { chooseSnoozeDuration, useTaskLifecycle } from './use-task-lifecycle'
 export function LifecycleActions({
   task,
@@ -15,6 +15,8 @@ export function LifecycleActions({
   onDeleted?: () => void
   runtimeId?: string
 }) {
+  const { styles } = useTheme()
+
   const {
     enabled,
     busy,

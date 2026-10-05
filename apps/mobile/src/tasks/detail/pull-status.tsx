@@ -13,10 +13,12 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
-import { colors } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 /** The task's pull request state and checks; failing checks can be handed to the agent. */
 function PrimaryPullStatus({ task }: { task: Task }) {
+  const { colors } = useTheme()
+
   const { connected, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
   const status = task.pullStatus
@@ -24,7 +26,7 @@ function PrimaryPullStatus({ task }: { task: Task }) {
   const failing = status.state === 'open' && status.checks === 'failed'
   const color =
     status.state === 'merged'
-      ? '#c4b5fd'
+      ? colors.syntaxKeyword
       : status.state === 'closed' || failing
         ? colors.error
         : status.checks === 'passed'
@@ -88,6 +90,8 @@ function PrimaryPullStatus({ task }: { task: Task }) {
 }
 
 export function PullStatus({ task }: { task: Task }) {
+  const { colors } = useTheme()
+
   const [expanded, setExpanded] = useApplicationState(false)
   const [linkError, setLinkError] = useApplicationState('')
   const links = (task.linkedPullRequests ?? []).filter(

@@ -3,7 +3,7 @@ import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { ScrollView } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { NewTask } from './new-task'
 import { FolderPicker } from './folder-picker'
 
@@ -16,6 +16,8 @@ export function ProjectMachinePicker({
   onCreated: (runtimeId: string, taskId: string) => void
   onCancel: () => void
 }) {
+  const { styles } = useTheme()
+
   const { overviews, activeId } = useRuntime()
   const [machine, setMachine] = useApplicationState<string | null>(null)
   const runtimeId = machine ?? activeId ?? overviews[0]?.profile.id ?? ''

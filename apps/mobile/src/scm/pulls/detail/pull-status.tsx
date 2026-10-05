@@ -10,25 +10,31 @@ import {
   type PullSignal,
 } from '@dovo/protocol'
 import { Icon, type IconName } from '../../../ui/controls/icon'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme, type MobileColors } from '../../../ui/theme'
 import { Markdown } from '../../../ui/content/markdown'
-export function pullSignalColor(signal: PullSignal) {
+export function pullSignalColor(signal: PullSignal, colors: MobileColors) {
   return signal.tone === 'danger'
     ? colors.error
     : signal.tone === 'positive'
-      ? '#8ad5b0'
+      ? colors.success
       : signal.tone === 'warning'
-        ? '#e7c681'
+        ? colors.warning
         : signal.tone === 'accent'
-          ? '#c8b0f7'
+          ? colors.accent
           : colors.muted
 }
 export function Signal({ signal, emphasis = false }: { signal: PullSignal; emphasis?: boolean }) {
+  const { colors, styles } = useTheme()
+
   return (
     <Text
       style={[
         styles.muted,
-        { color: pullSignalColor(signal), flexShrink: 1, fontWeight: emphasis ? '600' : '400' },
+        {
+          color: pullSignalColor(signal, colors),
+          flexShrink: 1,
+          fontWeight: emphasis ? '600' : '400',
+        },
       ]}
     >
       {signal.label}
@@ -36,8 +42,10 @@ export function Signal({ signal, emphasis = false }: { signal: PullSignal; empha
   )
 }
 export function PullCommentLabel({ comment }: { comment: PullComment }) {
+  const { colors, styles } = useTheme()
+
   const signal = pullCommentSignal(comment)
-  const color = pullSignalColor(signal)
+  const color = pullSignalColor(signal, colors)
   const icon: IconName =
     comment.kind === 'inline'
       ? 'changes'
@@ -68,6 +76,8 @@ export function PullStatus({
   detail: PullDetail
   onOpen: (url: string) => void
 }) {
+  const { colors, styles } = useTheme()
+
   const reviews = latestPullReviews(detail.comments)
   const checks = [...detail.checks].sort((a, b) => {
     const priority = (status: string) =>

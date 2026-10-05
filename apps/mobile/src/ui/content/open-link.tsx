@@ -8,7 +8,7 @@ import { Alert, Linking, View } from 'react-native'
 import { Action } from '../controls/action'
 import WebView from 'react-native-webview'
 import { Text } from './text'
-import { colors } from '../theme'
+import { useTheme } from '../theme'
 
 let openPull: ((url: string) => boolean) | undefined
 let showInternal: ((url: string) => void) | undefined
@@ -40,6 +40,8 @@ export function openAppLink(url: string, external = false): Promise<void> {
 }
 
 export function LinkBrowser() {
+  const { colors } = useTheme()
+
   const { overviews, profile } = useRuntime()
   useEffect(() => {
     openPull = (url) => {

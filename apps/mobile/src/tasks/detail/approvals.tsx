@@ -4,9 +4,11 @@ import { Text } from '../../ui/content/text'
 import { responses } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 export function TaskApprovals({ taskId }: { taskId: string }) {
+  const { styles } = useTheme()
+
   const { snapshot, connected, profile, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
   return (

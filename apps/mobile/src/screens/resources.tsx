@@ -29,12 +29,14 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { Sheet } from '../ui/layout/sheet'
 import { SettingsGroup, SettingsRow } from './settings-group'
 import { Action } from '../ui/controls/action'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { ResourceEditor } from '../resources/editor'
 import { CatalogPicker } from '../resources/catalog-picker'
 import { SettingSource } from '../runtime/preferences/setting-source'
 export default function ResourcesScreen() {
+  const { styles } = useTheme()
+
   return (
     <View style={styles.screen}>
       <ScreenHeader title="MCP servers & skills" />
@@ -55,6 +57,8 @@ function ComputerResources({
   selectedScope: SettingsScope
   repositoryId?: string
 }) {
+  const { styles } = useTheme()
+
   const { snapshot, connected } = useRuntime()
   const [selected, setSelected] = useApplicationState('')
   const scopes = resourceScopeChoices(
@@ -102,6 +106,8 @@ function ComputerResources({
   )
 }
 function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
+  const { styles } = useTheme()
+
   const { snapshot, connected, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   const [catalog, setCatalog] = useApplicationState<'mcp' | 'skill' | null>(null)

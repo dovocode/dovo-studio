@@ -1,5 +1,5 @@
 import { useAppActive, useForegroundInterval } from '../../../runtime/state/app-active'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -12,7 +12,7 @@ import {
 import { preparationElapsed, type TaskPreparation } from '@dovo/protocol'
 import { Text } from '../../../ui/content/text'
 import { Icon } from '../../../ui/controls/icon'
-import { colors } from '../../../ui/theme'
+import { useTheme, type MobileColors } from '../../../ui/theme'
 import { Action } from '../../../ui/controls/action'
 
 const monospace = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
@@ -46,6 +46,8 @@ export function PreparationProgress({
   retrying?: boolean
   retryError?: string
 }) {
+  const { colors } = useTheme()
+  const local = useMemo(() => preparationStyles(colors), [colors])
   const { failed } = preparation
   const appActive = useAppActive()
   const reduceMotion = useReduceMotion() || failed || !appActive
@@ -199,78 +201,80 @@ export function PreparationProgress({
   )
 }
 
-const local = StyleSheet.create({
-  card: {
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    overflow: 'hidden',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-  },
-  title: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '600' },
-  elapsed: { color: colors.muted, fontSize: 12, fontVariant: ['tabular-nums'] },
-  steps: { paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
-  step: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  marker: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
-  done: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(138, 213, 176, 0.15)',
-  },
-  pending: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: colors.muted,
-    opacity: 0.6,
-  },
-  stepText: { flex: 1, minHeight: 20, justifyContent: 'center', gap: 2 },
-  label: { color: colors.muted, fontSize: 14, lineHeight: 20 },
-  activeLabel: { color: colors.text, fontWeight: '600' },
-  doneLabel: { textDecorationLine: 'line-through' },
-  detail: { color: colors.muted, fontSize: 12, fontFamily: monospace },
-  track: { height: 3, backgroundColor: colors.elevated, overflow: 'hidden' },
-  hidden: { display: 'none' },
-  failedCard: { borderColor: 'rgba(255, 152, 152, 0.4)' },
-  failedMarker: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 152, 152, 0.15)',
-  },
-  failedLabel: { color: colors.error, fontWeight: '600' },
-  failure: {
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-    paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-  error: { color: colors.error, fontSize: 12, lineHeight: 17 },
-  hint: { color: colors.muted, fontSize: 12 },
-  fill: { position: 'absolute', top: 0, bottom: 0, left: 0, backgroundColor: colors.accent },
-  sweep: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: colors.accent,
-    opacity: 0.45,
-  },
-})
+function preparationStyles(colors: MobileColors) {
+  return StyleSheet.create({
+    card: {
+      marginHorizontal: 16,
+      marginVertical: 8,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      overflow: 'hidden',
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingTop: 12,
+    },
+    title: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '600' },
+    elapsed: { color: colors.muted, fontSize: 12, fontVariant: ['tabular-nums'] },
+    steps: { paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+    step: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    marker: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
+    done: {
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(138, 213, 176, 0.15)',
+    },
+    pending: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      borderWidth: 1,
+      borderColor: colors.muted,
+      opacity: 0.6,
+    },
+    stepText: { flex: 1, minHeight: 20, justifyContent: 'center', gap: 2 },
+    label: { color: colors.muted, fontSize: 14, lineHeight: 20 },
+    activeLabel: { color: colors.text, fontWeight: '600' },
+    doneLabel: { textDecorationLine: 'line-through' },
+    detail: { color: colors.muted, fontSize: 12, fontFamily: monospace },
+    track: { height: 3, backgroundColor: colors.elevated, overflow: 'hidden' },
+    hidden: { display: 'none' },
+    failedCard: { borderColor: 'rgba(255, 152, 152, 0.4)' },
+    failedMarker: {
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255, 152, 152, 0.15)',
+    },
+    failedLabel: { color: colors.error, fontWeight: '600' },
+    failure: {
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingBottom: 12,
+      paddingTop: 10,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    error: { color: colors.error, fontSize: 12, lineHeight: 17 },
+    hint: { color: colors.muted, fontSize: 12 },
+    fill: { position: 'absolute', top: 0, bottom: 0, left: 0, backgroundColor: colors.accent },
+    sweep: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      left: 0,
+      backgroundColor: colors.accent,
+      opacity: 0.45,
+    },
+  })
+}

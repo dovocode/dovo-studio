@@ -10,7 +10,7 @@ import { Schema, Effect } from 'effect'
 import { remoteBrowserTicketSchema, responses } from '@dovo/protocol'
 import { remoteBrowserHtml } from '@dovo/protocol/browser-viewer'
 import { useRuntime } from '../../runtime/connection/provider'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 const bridgeSchema = mutableStruct({
   channel: Schema.Literal('dovo-browser'),
   type: Schema.Literal('ready', 'reconnect', 'close'),
@@ -26,6 +26,8 @@ export function RemoteBrowser({
   expanded?: boolean
   reloadToken?: number
 }) {
+  const { styles } = useTheme()
+
   const { connection, readEffect } = useRuntime()
   const web = useRef<WebView>(null)
   const [generation, setGeneration] = useApplicationState(0)

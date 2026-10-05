@@ -7,7 +7,7 @@ import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
 import { Sheet } from '../../ui/layout/sheet'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 export function JiraIssueProject({
   sourceId,
@@ -18,6 +18,8 @@ export function JiraIssueProject({
   issueId: string
   disabled: boolean
 }) {
+  const { styles } = useTheme()
+
   const { snapshot, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
   const [open, setOpen] = useApplicationState(false)

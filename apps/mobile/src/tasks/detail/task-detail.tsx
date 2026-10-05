@@ -37,13 +37,13 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ComponentProps } from 'react'
 import { Text } from '../../ui/content/text'
 import { type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Sheet } from '../../ui/layout/sheet'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { ScreenHeader, type HeaderAction } from '../../ui/layout/screen-header'
 import { Composer } from '../composer/composer'
 import { TaskReview } from './task-review'
@@ -59,21 +59,36 @@ import { ProjectInstructions } from './project-instructions'
 import { ReviewFindings } from '../conversation/components/review-findings'
 import { randomUUID } from 'expo-crypto'
 import { ArtifactBrowser } from '../../ui/content/artifacts'
+type StartupControls = {
+  temporary: boolean
+  onBrowse: () => void
+  onNewThread: () => void
+  onSelectRemote: NonNullable<ComponentProps<typeof Composer>['onSelectRemote']>
+}
 export function TaskDetail({
   task,
   onBack,
   questionId,
+  startup,
 }: {
   task: Task
   onBack: () => void
   questionId?: string
+  startup?: StartupControls
 }) {
+  const { styles } = useTheme()
+
   const { profile, snapshot, connected, refresh, readCache } = useRuntime()
   const { focused } = useNavigation()
+  const [locallyCreated] = useState(() => !!startup?.temporary)
   useEffect(() => {
-    if (profile && focused) return watchRuntimeTask(profile.connection, task.id)
-  }, [profile?.connection, task.id, focused])
-  const loaded = !snapshot?.detailTaskIds || snapshot.detailTaskIds.includes(task.id)
+    if (profile && focused && !startup?.temporary)
+      return watchRuntimeTask(profile.connection, task.id)
+  }, [profile?.connection, task.id, focused, startup?.temporary])
+  // A locally created thread already has its complete empty transcript. Keep its mounted
+  // conversation while the runtime starts publishing detailed snapshots.
+  const loaded =
+    locallyCreated || !snapshot?.detailTaskIds || snapshot.detailTaskIds.includes(task.id)
   const [cacheError, setCacheError] = useState<{
     cache: typeof readCache
     id: string
@@ -124,6 +139,7 @@ export function TaskDetail({
       task={!loaded && available ? cachedThread(task, cached.task) : task}
       onBack={onBack}
       questionId={questionId}
+      startup={startup}
     />
   )
 }
@@ -131,11 +147,15 @@ function TaskDetailContent({
   task,
   onBack,
   questionId,
+  startup,
 }: {
   task: Task
   onBack: () => void
   questionId?: string
+  startup?: StartupControls
 }) {
+  const { colors, styles } = useTheme()
+
   const { focused, navigate } = useNavigation()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
@@ -411,159 +431,172 @@ function TaskDetailContent({
       <ScreenHeader
         title={task.title}
         titleContent={
-          <View
-            accessibilityLabel={[task.title, subtitle, status].join('. ')}
-            style={{
-              minHeight: 44,
-              justifyContent: 'center',
-              width: Math.max(80, width - 244),
-              minWidth: 0,
-            }}
-          >
-            <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>
-              {task.title}
-            </Text>
-            <Text
-              testID="Task device subtitle"
-              accessibilityLabel={subtitle}
-              numberOfLines={1}
-              style={{ color: colors.muted, fontSize: 11, lineHeight: 15 }}
+          startup?.temporary ? undefined : (
+            <View
+              accessibilityLabel={[task.title, subtitle, status].join('. ')}
+              style={{
+                minHeight: 44,
+                justifyContent: 'center',
+                width: Math.max(80, width - 244),
+                minWidth: 0,
+              }}
             >
-              {subtitle} · {status}
-            </Text>
-          </View>
+              <Text
+                numberOfLines={1}
+                style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}
+              >
+                {task.title}
+              </Text>
+              <Text
+                testID="Task device subtitle"
+                accessibilityLabel={subtitle}
+                numberOfLines={1}
+                style={{ color: colors.muted, fontSize: 11, lineHeight: 15 }}
+              >
+                {subtitle} · {status}
+              </Text>
+            </View>
+          )
         }
         hidden={(pane === 'browser' || pane === 'devices') && expandedPreview}
         gestureEnabled={pane !== 'browser' && pane !== 'devices'}
         onBack={pane === 'browser' || pane === 'devices' ? onBack : undefined}
         leading={<Action secondary label="Back" onPress={onBack} />}
-        buttons={(
-          [
-            'chat',
-            ...(hasDiff ? ['diff' as const] : []),
-            'terminal',
-            'browser',
-            'devices',
-            'agents',
-          ] as const
-        )
-          .map((tab): HeaderAction => ({
-            label:
-              tab === 'chat'
-                ? 'Chat'
-                : tab === 'diff'
-                  ? `Changes (${task.files.length})`
-                  : tab === 'terminal'
-                    ? 'Terminal'
-                    : tab === 'agents'
-                      ? 'Agents'
-                      : tab === 'devices'
-                        ? 'Devices'
-                        : 'Browser',
-            icon:
-              tab === 'diff'
-                ? 'changes'
-                : tab === 'browser'
-                  ? 'web'
-                  : tab === 'devices'
-                    ? 'device'
-                    : tab,
-            selected: pane === tab,
-            // Car mode keeps changes and terminals in the menu, out of sight.
-            overflow:
-              car || tab === 'chat' || tab === 'browser' || tab === 'devices' || tab === 'agents',
-            onPress: () => {
-              Keyboard.dismiss()
-              setCheckpoint('')
-              setExpandedPreview(false)
-              if (tab === 'terminal') setTerminalId('')
-              setPane(tab)
-            },
-          }))
-          .concat(
-            projectActions,
-            conversationActions,
-            compactActions,
-            branchActions,
-            worktreeActions,
-            moveActions,
-            [
-              ...(snapshot?.artifactsEnabled
-                ? [
+        buttons={
+          startup?.temporary
+            ? [{ label: 'New thread', icon: 'add', onPress: startup.onNewThread }]
+            : (
+                [
+                  'chat',
+                  ...(hasDiff ? ['diff' as const] : []),
+                  'terminal',
+                  'browser',
+                  'devices',
+                  'agents',
+                ] as const
+              )
+                .map((tab): HeaderAction => ({
+                  label:
+                    tab === 'chat'
+                      ? 'Chat'
+                      : tab === 'diff'
+                        ? `Changes (${task.files.length})`
+                        : tab === 'terminal'
+                          ? 'Terminal'
+                          : tab === 'agents'
+                            ? 'Agents'
+                            : tab === 'devices'
+                              ? 'Devices'
+                              : 'Browser',
+                  icon:
+                    tab === 'diff'
+                      ? 'changes'
+                      : tab === 'browser'
+                        ? 'web'
+                        : tab === 'devices'
+                          ? 'device'
+                          : tab,
+                  selected: pane === tab,
+                  // Car mode keeps changes and terminals in the menu, out of sight.
+                  overflow:
+                    car ||
+                    tab === 'chat' ||
+                    tab === 'browser' ||
+                    tab === 'devices' ||
+                    tab === 'agents',
+                  onPress: () => {
+                    Keyboard.dismiss()
+                    setCheckpoint('')
+                    setExpandedPreview(false)
+                    if (tab === 'terminal') setTerminalId('')
+                    setPane(tab)
+                  },
+                }))
+                .concat(
+                  projectActions,
+                  conversationActions,
+                  compactActions,
+                  branchActions,
+                  worktreeActions,
+                  moveActions,
+                  [
+                    ...(snapshot?.artifactsEnabled
+                      ? [
+                          {
+                            label: 'Artifacts',
+                            icon: 'artifact' as const,
+                            overflow: true,
+                            onPress: () => setArtifactsOpen(true),
+                          },
+                        ]
+                      : []),
                     {
-                      label: 'Artifacts',
-                      icon: 'artifact' as const,
+                      label: 'Linked projects',
+                      icon: 'projects',
                       overflow: true,
-                      onPress: () => setArtifactsOpen(true),
+                      onPress: () => {
+                        Keyboard.dismiss()
+                        setLinkingProjects(true)
+                      },
                     },
-                  ]
-                : []),
-              {
-                label: 'Linked projects',
-                icon: 'projects',
-                overflow: true,
-                onPress: () => {
-                  Keyboard.dismiss()
-                  setLinkingProjects(true)
-                },
-              },
-              {
-                label: 'Rename thread',
-                icon: 'edit',
-                overflow: true,
-                disabled: !connected,
-                onPress: () => setRenaming(true),
-              },
-              {
-                label: task.pinned ? 'Unpin task' : 'Pin task',
-                icon: task.pinned ? 'unpin' : 'pin',
-                overflow: true,
-                disabled: !lifecycle.enabled || lifecycle.busy,
-                onPress: lifecycle.togglePinned,
-              },
-              {
-                label: task.archived ? 'Reopen task' : 'Settle task',
-                icon: 'check',
-                overflow: true,
-                disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
-                onPress: lifecycle.toggleSettled,
-              },
-              {
-                label: task.archivedAt ? 'Restore thread' : 'Archive thread',
-                icon: 'archive',
-                overflow: true,
-                disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
-                onPress: lifecycle.toggleArchived,
-              },
-              {
-                label: 'Delete thread…',
-                icon: 'trash',
-                overflow: true,
-                disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
-                onPress: lifecycle.deleteThread,
-              },
-              ...(task.sessionId
-                ? [
                     {
-                      label: 'New session',
-                      icon: 'newChat' as const,
+                      label: 'Rename thread',
+                      icon: 'edit',
                       overflow: true,
-                      disabled: !connected || newSession.busy || task.status === 'running',
-                      onPress: () =>
-                        newSession.act(() =>
-                          callEffect('/api/tasks/new-session', { id: task.id }, responses.ok),
-                        ),
+                      disabled: !connected,
+                      onPress: () => setRenaming(true),
                     },
-                  ]
-                : []),
-              {
-                label: 'Edit project instructions',
-                icon: 'settings',
-                overflow: true,
-                onPress: () => setEditingInstructions(true),
-              },
-            ] satisfies HeaderAction[],
-          )}
+                    {
+                      label: task.pinned ? 'Unpin task' : 'Pin task',
+                      icon: task.pinned ? 'unpin' : 'pin',
+                      overflow: true,
+                      disabled: !lifecycle.enabled || lifecycle.busy,
+                      onPress: lifecycle.togglePinned,
+                    },
+                    {
+                      label: task.archived ? 'Reopen task' : 'Settle task',
+                      icon: 'check',
+                      overflow: true,
+                      disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
+                      onPress: lifecycle.toggleSettled,
+                    },
+                    {
+                      label: task.archivedAt ? 'Restore thread' : 'Archive thread',
+                      icon: 'archive',
+                      overflow: true,
+                      disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
+                      onPress: lifecycle.toggleArchived,
+                    },
+                    {
+                      label: 'Delete thread…',
+                      icon: 'trash',
+                      overflow: true,
+                      disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
+                      onPress: lifecycle.deleteThread,
+                    },
+                    ...(task.sessionId
+                      ? [
+                          {
+                            label: 'New session',
+                            icon: 'newChat' as const,
+                            overflow: true,
+                            disabled: !connected || newSession.busy || task.status === 'running',
+                            onPress: () =>
+                              newSession.act(() =>
+                                callEffect('/api/tasks/new-session', { id: task.id }, responses.ok),
+                              ),
+                          },
+                        ]
+                      : []),
+                    {
+                      label: 'Edit project instructions',
+                      icon: 'settings',
+                      overflow: true,
+                      onPress: () => setEditingInstructions(true),
+                    },
+                  ] satisfies HeaderAction[],
+                )
+        }
       />
       {task.workItem && (
         <View
@@ -603,6 +636,7 @@ function TaskDetailContent({
       <ConversationProvider
         key={task.id}
         task={task}
+        temporary={startup?.temporary}
         visible={focused && pane === 'chat' && !linkingProjects && !renaming}
         openTerminal={(id) => {
           setTerminalId(id)
@@ -620,7 +654,7 @@ function TaskDetailContent({
             display: pane === 'chat' ? 'flex' : 'none',
           }}
         >
-          <Conversation />
+          <Conversation onBrowse={startup?.onBrowse} />
           {preparation ? (
             <PreparationProgress
               preparation={preparation}
@@ -744,6 +778,7 @@ function TaskDetailContent({
           <Composer
             key={task.id}
             task={task}
+            onSelectRemote={startup?.temporary ? startup.onSelectRemote : undefined}
             onAsk={() => {
               Keyboard.dismiss()
               setAsking(true)

@@ -13,7 +13,7 @@ import { useTaskListView } from '../tasks/list/task-list-view'
 import { Choice } from '../ui/controls/choice'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { SettingsGroup } from './settings-group'
 import { useLiveActivities } from '../live-activities/provider'
 
@@ -26,6 +26,8 @@ const tabs = [
 const speechRates = [1, 1.25, 1.5, 1.75, 2] as const
 
 export default function GeneralScreen() {
+  const { colors, styles } = useTheme()
+
   const preferences = useMobilePreferences()
   const activity = useLiveActivities()
   const { setView } = useTaskListView()
@@ -342,6 +344,8 @@ function SwitchRow({
   value: boolean
   onValueChange: (value: boolean) => void
 }) {
+  const { colors, styles } = useTheme()
+
   return (
     <View
       style={{

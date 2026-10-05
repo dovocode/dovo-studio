@@ -2,7 +2,7 @@ import { Pressable } from 'react-native'
 import { Text } from '../content/text'
 import { IconButton } from './icon-button'
 import type { IconName } from './icon'
-import { colors } from '../theme'
+import { useTheme } from '../theme'
 const actionIcons: Readonly<Partial<Record<string, IconName>>> = {
   'New terminal': 'add',
   'Create PR': 'add',
@@ -104,6 +104,8 @@ type ActionProps = {
   icon?: IconName
 }
 export function Action(props: ActionProps) {
+  const { colors } = useTheme()
+
   const icon = props.icon ?? (props.wide ? undefined : actionIcon(props.label))
   if (icon)
     return (
@@ -133,6 +135,8 @@ function TextAction({
   secondary = false,
   wide = false,
 }: ActionProps) {
+  const { colors } = useTheme()
+
   const danger = destructive.test(label)
   return (
     <Pressable
@@ -154,7 +158,7 @@ function TextAction({
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: 12,
-        backgroundColor: secondary ? 'transparent' : danger ? colors.error : colors.accent,
+        backgroundColor: secondary ? 'transparent' : danger ? colors.error : colors.action,
         opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >
@@ -162,7 +166,13 @@ function TextAction({
         style={{
           fontSize: 15,
           fontWeight: '600',
-          color: secondary ? (danger ? colors.error : colors.accent) : colors.onAccent,
+          color: secondary
+            ? danger
+              ? colors.error
+              : colors.accent
+            : danger
+              ? colors.onError
+              : colors.onAccent,
           textAlign: 'center',
         }}
       >

@@ -11,7 +11,7 @@ import * as Sharing from 'expo-sharing'
 import { attachmentReadSchema, isImageAttachment, responses, type Attachment } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { Action } from '../../../ui/controls/action'
-import { styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 export function MessageAttachments({
   taskId,
   files = [],
@@ -25,6 +25,8 @@ export function MessageAttachments({
   disabled?: boolean
   onBusy?: (busy: boolean) => void
 }) {
+  const { styles } = useTheme()
+
   const { connected, callEffect } = useRuntime()
   const [preview, setPreview] = useApplicationState<{
       attachment: Attachment

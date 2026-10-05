@@ -14,7 +14,7 @@ const mocks = {
   '../../ui/controls/choice': `export const Choice=({label,value,onChange,items,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id} disabled={item.disabled}>{item.name}</option>)}</select>;`,
   '../../ui/controls/icon': `export const Icon=()=>null;`,
   '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
-  '../../ui/theme': `export const styles={},colors={};`,
+  '../../ui/theme': `export const useTheme=()=>({styles:{},colors:{}});`,
   '../../screens/repositories': `import {useRuntime} from '../../runtime/connection/provider';export const AddProject=({initialSource,onClose,onAdded})=>{const runtime=useRuntime();window.addScope=runtime.scope;return <div role="dialog" aria-label="Add project"><span>{initialSource}</span><button onClick={()=>{onAdded({id:'added',name:'Added',path:'/added'});onClose()}}>Add</button></div>;};`,
   './new-task': `export const NewTask=({repositoryId})=><span>Draft {repositoryId}</span>;`,
 }

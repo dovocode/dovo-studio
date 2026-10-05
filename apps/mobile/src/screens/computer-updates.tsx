@@ -12,10 +12,12 @@ import { useRuntime } from '../runtime/connection/provider'
 import { Text } from '../ui/content/text'
 import { Action } from '../ui/controls/action'
 import { Switch } from '../ui/controls/switch'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { SettingsGroup } from './settings-group'
 
 export function ComputerUpdates() {
+  const { styles } = useTheme()
+
   const { overviews, refreshRuntime } = useRuntime()
   const targets = runtimeUpgradeTargets(overviews)
   const current = useRef({ overviews: targets, refreshRuntime })
@@ -165,6 +167,8 @@ export function ComputerUpdates() {
   )
 }
 function ReleaseNotes({ notes }: { notes: string }) {
+  const { styles } = useTheme()
+
   const [open, setOpen] = useState(false)
   return (
     <View style={{ gap: 8 }}>

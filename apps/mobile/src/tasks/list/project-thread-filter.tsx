@@ -10,7 +10,7 @@ import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
 import { Sheet } from '../../ui/layout/sheet'
 import { Text } from '../../ui/content/text'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 export function ProjectThreadFilter({
   value,
@@ -22,6 +22,8 @@ export function ProjectThreadFilter({
   /** Match the compact computer selector in the task list. */
   compact?: boolean
 }) {
+  const { colors, styles } = useTheme()
+
   const { overviews } = useRuntime()
   const [open, setOpen] = useApplicationState(false)
   const [query, setQuery] = useApplicationState('')

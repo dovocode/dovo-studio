@@ -12,7 +12,7 @@ import { pairingAddress, runtimeRequest, runtimeRequestEffect, responses } from 
 import { useRuntime } from './provider'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { useAction } from '../../ui/controls/use-action'
 import { ConnectionHelp } from './connection-help'
@@ -29,6 +29,8 @@ export function PairComputer({
   invitation?: PairingInvitation
   onBusyChange?: (busy: boolean) => void
 }) {
+  const { colors, styles } = useTheme()
+
   const { connect, cancelPairing } = useRuntime(),
     { busy, error, act } = useAction(),
     [address, setAddress] = useApplicationState(invitation?.address ?? ''),
@@ -325,6 +327,8 @@ export function PairComputer({
   )
 }
 function Step({ number, children }: { number: number; children: ReactNode }) {
+  const { colors, styles } = useTheme()
+
   return (
     <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
       <View
@@ -355,6 +359,8 @@ function Disclosure({
   open: boolean
   onToggle: () => void
 }) {
+  const { colors, styles } = useTheme()
+
   return (
     <Pressable
       testID={testID}

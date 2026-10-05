@@ -11,10 +11,12 @@ import { Effect } from 'effect'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
 import { Action } from '../ui/controls/action'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { SettingsGroup } from './settings-group'
 import { useLiveActivities } from '../live-activities/provider'
 export default function AppUpdates() {
+  const { styles } = useTheme()
+
   const activity = useLiveActivities()
   const notifications = usePushNotifications()
   const [release, setRelease] = useApplicationState<RuntimeRelease | null>(null)

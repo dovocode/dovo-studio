@@ -15,7 +15,7 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { Text } from '../../../ui/content/text'
-import { colors } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 
 const filesSchema = mutableStruct({ files: mutableArray(Schema.String) })
 type Suggestion = {
@@ -48,6 +48,8 @@ export function FileMentions({
   /** The project's saved prompts, inserted with "#" (edited on the desktop). */
   prompts?: readonly SavedPrompt[]
 }) {
+  const { colors } = useTheme()
+
   const { call, connected } = useRuntime()
   const [files, setFiles] = useState<string[]>([])
   const mention = composerMention(text, caret)

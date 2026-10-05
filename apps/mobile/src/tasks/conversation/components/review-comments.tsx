@@ -8,10 +8,12 @@ import { Action } from '../../../ui/controls/action'
 import { Sheet } from '../../../ui/layout/sheet'
 import { Icon } from '../../../ui/controls/icon'
 import { Text } from '../../../ui/content/text'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 
 /** Review comments left on the computer that the agent has not received yet. */
 export function ReviewComments({ task }: { task: Task }) {
+  const { colors, styles } = useTheme()
+
   const { connected, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
   const [open, setOpen] = useApplicationState(false)

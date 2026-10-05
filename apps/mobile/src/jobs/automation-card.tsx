@@ -10,7 +10,7 @@ import { automationIssues, responses, type Automation } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { Action } from '../ui/controls/action'
 import { IconButton } from '../ui/controls/icon-button'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { triggerSummary, linearNodes } from './linear-flow'
 import { RunProgress } from './run-progress'
@@ -18,6 +18,8 @@ import { automationRuns } from './automation-summary'
 import { automationStarts } from './automation-starts'
 import { useNavigation } from '../shell/navigation'
 export function AutomationCard({ flow, onEdit }: { flow: Automation; onEdit: () => void }) {
+  const { colors, styles } = useTheme()
+
   const { snapshot, connected, activeId, callEffect } = useRuntime()
   const { focused } = useNavigation()
   const { busy, error, act } = useAction()

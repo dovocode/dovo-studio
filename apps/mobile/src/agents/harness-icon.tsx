@@ -1,6 +1,6 @@
 import { harnessIconData, type TaskHarness } from '@dovo/protocol'
 import Svg, { Path } from 'react-native-svg'
-import { colors } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 export function HarnessIcon({
   provider,
   size = 14,
@@ -8,6 +8,8 @@ export function HarnessIcon({
   provider: TaskHarness['provider']
   size?: number
 }) {
+  const { colors } = useTheme()
+
   const data = harnessIconData[provider]
   return (
     <Svg

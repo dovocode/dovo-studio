@@ -16,11 +16,13 @@ import {
 import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from './text'
 import { openAppLink } from './open-link'
-import { colors, styles } from '../theme'
+import { useTheme } from '../theme'
 import html from '../../../../../packages/studio-ui/mcp-apps/host.json'
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)) : {}
 export const McpAppView = memo(function McpAppView({ reference }: { reference: McpAppReference }) {
+  const { colors, styles } = useTheme()
+
   const { call, connected, activeId } = useRuntime()
   const view = useRef<WebView>(null)
   const [app, setApp] = useState<McpApp>()

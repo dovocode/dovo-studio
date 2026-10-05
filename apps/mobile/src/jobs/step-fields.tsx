@@ -23,7 +23,7 @@ import {
 import type { AutomationData, Workspace } from '@dovo/protocol'
 import { Choice } from '../ui/controls/choice'
 import { Field } from '../ui/controls/field'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 
 export function StepFields({
   data,
@@ -36,6 +36,8 @@ export function StepFields({
   disabled: boolean
   onChange: (patch: Partial<AutomationData>) => void
 }) {
+  const { styles } = useTheme()
+
   const { snapshot } = useRuntime()
   const agents = resolveScopedAgents(
     snapshot?.defaults,

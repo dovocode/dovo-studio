@@ -18,7 +18,7 @@ import { useRuntime } from '../runtime/connection/provider'
 import { useApplicationState } from '../runtime/state/application-state'
 import { Action } from '../ui/controls/action'
 import { Text } from '../ui/content/text'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { AgentEditor } from './agent-editor'
 import { HarnessLabel, ModelLabel } from './model-label'
@@ -29,6 +29,8 @@ export function ScopedAgents({
   scope: SettingsScope
   repository?: Repository
 }) {
+  const { styles } = useTheme()
+
   const { snapshot, callEffect, connected } = useRuntime()
   const { busy, error, act } = useAction()
   const [settings, setSettings] = useApplicationState<

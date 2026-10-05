@@ -16,7 +16,7 @@ import { isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-ef
 import { Platform, Pressable, View } from 'react-native'
 import { Icon, type IconName } from './icon'
 import { NativeIcon } from './native-icon'
-import { colors } from '../theme'
+import { useTheme } from '../theme'
 
 type IconButtonProps = {
   label: string
@@ -42,6 +42,8 @@ export function NativeIconButton({
   variant = 'plain',
   color,
 }: IconButtonProps) {
+  const { colors } = useTheme()
+
   const glass = isGlassEffectAPIAvailable() && isLiquidGlassAvailable()
   return (
     <Button
@@ -63,8 +65,8 @@ export function NativeIconButton({
         controlSize('large'),
         tint(
           variant === 'filled'
-            ? colors.text
-            : (color ?? (prominent ? '#007aff' : selected ? colors.accent : colors.text)),
+            ? colors.action
+            : (color ?? (prominent ? colors.action : selected ? colors.accent : colors.text)),
         ),
         frame({ width: size, height: size }),
         contentShape(shapes.circle(), ['interaction', 'accessibility']),
@@ -79,14 +81,14 @@ export function NativeIconButton({
         size={icon === 'stop' ? 18 : 20}
         color={
           variant === 'filled'
-            ? colors.background
+            ? colors.onAccent
             : (color ?? (selected ? colors.accent : colors.text))
         }
         modifiers={[
           ...(variant === 'filled'
             ? [
                 frame({ width: size - 12, height: size - 12 }),
-                background(disabled ? '#48484a' : colors.text, shapes.circle()),
+                background(colors.action, shapes.circle()),
               ]
             : []),
           frame({
@@ -100,6 +102,8 @@ export function NativeIconButton({
 }
 
 export function IconButton(props: IconButtonProps) {
+  const { colors, mode: appearanceMode } = useTheme()
+
   const {
     label,
     icon,
@@ -119,7 +123,7 @@ export function IconButton(props: IconButtonProps) {
       // React Native owns this control's frame and keyboard avoidance.
       <Host
         ignoreSafeArea="all"
-        colorScheme="dark"
+        colorScheme={appearanceMode}
         style={{ width: size, height: size, flexShrink: 0 }}
       >
         <NativeIconButton {...props} />
@@ -141,7 +145,11 @@ export function IconButton(props: IconButtonProps) {
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor:
-          variant !== 'glass' ? 'transparent' : prominent && !disabled ? '#007aff' : colors.surface,
+          variant !== 'glass'
+            ? 'transparent'
+            : prominent && !disabled
+              ? colors.action
+              : colors.surface,
         opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >
@@ -154,7 +162,7 @@ export function IconButton(props: IconButtonProps) {
                 borderRadius: size,
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: disabled ? '#48484a' : colors.text,
+                backgroundColor: colors.action,
               }
             : undefined
         }
@@ -164,8 +172,8 @@ export function IconButton(props: IconButtonProps) {
           size={icon === 'stop' ? 18 : 20}
           color={
             variant === 'filled'
-              ? colors.background
-              : (color ?? (prominent ? '#ffffff' : selected ? colors.accent : colors.text))
+              ? colors.onAccent
+              : (color ?? (prominent ? colors.onAccent : selected ? colors.accent : colors.text))
           }
         />
       </View>

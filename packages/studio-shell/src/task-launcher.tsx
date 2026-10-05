@@ -15,8 +15,12 @@ import {
   DialogTitle,
   DialogDescription,
   Button,
+  ComposerSurface,
+  ComposerTextarea,
+  ComposerSubmit,
+  ComposerWorkspaceBar,
 } from '@dovo/studio-ui'
-import { ArrowUpRight } from 'lucide-react'
+import { ChevronDown, Folder, Monitor } from 'lucide-react'
 import {
   launcherDefaultAgent,
   type LauncherAgent,
@@ -61,6 +65,7 @@ export function TaskLauncher({ bridge }: { bridge: TaskLauncherBridge }) {
 export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
   const { runtimeRegistry, activeRuntimeId, readRuntime, runtimes } = useWorkspace()
   const [open, setOpen] = useState(true)
+  const input = useRef<HTMLTextAreaElement>(null)
   const [runtimeId, setRuntimeId] = useState(activeRuntimeId ?? '')
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null)
   const [repositoryId, setRepositoryId] = useState('')
@@ -157,7 +162,8 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
     (entry) => entry.id === repositoryId,
   )
   const selectedProfile = runtimeRegistry.profiles.find((profile) => profile.id === runtimeId)
-  const selectClass = 'h-10 w-full rounded-lg border bg-background px-3 text-sm disabled:opacity-50'
+  const selectClass =
+    'h-7 min-w-0 max-w-48 appearance-none bg-transparent pr-5 text-[0.6875rem] outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50'
   return (
     <Dialog
       open={open}
@@ -170,6 +176,10 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
     >
       <DialogContent
         className="max-w-[calc(100vw-24px)] max-h-[calc(100vh-24px)] overflow-y-auto gap-5 rounded-2xl p-6"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          input.current?.focus()
+        }}
         onEscapeKeyDown={(event) => {
           if (busy) event.preventDefault()
         }}
@@ -180,16 +190,85 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
             Choose an agent and model, then send an idea to any of your computers.
           </DialogDescription>
         </DialogHeader>
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void dispatch()
-          }}
-        >
-          <div className="grid grid-cols-2 gap-3">
-            <label className="space-y-1.5 text-xs text-muted-foreground">
-              Server
+        <div>
+          <ComposerSurface
+            onSubmit={(event) => {
+              event.preventDefault()
+              void dispatch()
+            }}
+            controls={
+              selection &&
+              loadedRuntimeId === runtimeId &&
+              selectedProfile &&
+              selectedRepository ? (
+                <WorkspaceScope key={runtimeId} profile={selectedProfile}>
+                  <TaskLauncherControls
+                    repository={selectedRepository}
+                    selection={selection}
+                    onChange={setSelection}
+                    disabled={locked || loading}
+                  />
+                </WorkspaceScope>
+              ) : (
+                <span role="status" className="px-2 text-xs text-muted-foreground">
+                  {loading ? 'Loading agent settings…' : 'Choose a computer and project below'}
+                </span>
+              )
+            }
+            actions={
+              <ComposerSubmit
+                busy={busy}
+                aria-label={attempt.current ? 'Retry dispatch' : 'Start task'}
+                title={busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start task'}
+                disabled={
+                  busy ||
+                  (!attempt.current &&
+                    (!snapshot ||
+                      loading ||
+                      !repositoryId ||
+                      !selection ||
+                      loadedRuntimeId !== runtimeId ||
+                      !text.trim()))
+                }
+              />
+            }
+            error={error}
+          >
+            <ComposerTextarea
+              ref={input}
+              autoFocus
+              aria-label="Task prompt"
+              placeholder="What would you like to build or fix?"
+              value={text}
+              maxLength={120000}
+              disabled={locked}
+              onChange={(event) => setText(event.target.value)}
+            />
+          </ComposerSurface>
+          <ComposerWorkspaceBar>
+            <label className="relative flex min-w-0 items-center gap-1.5 px-2">
+              <Folder className="size-3 shrink-0" />
+              <select
+                aria-label="Project"
+                className={selectClass}
+                value={repositoryId}
+                disabled={locked || loading || !snapshot}
+                onChange={(event) => setRepositoryId(event.target.value)}
+              >
+                <option value="" disabled>
+                  {loading ? 'Loading projects…' : 'Choose a project'}
+                </option>
+                {snapshot?.workspace.repositories.map((repository) => (
+                  <option key={repository.id} value={repository.id}>
+                    {repository.kind === 'scratch' ? 'No project' : repository.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 size-3" />
+            </label>
+            <span className="h-4 border-l border-border/60" aria-hidden="true" />
+            <label className="relative flex min-w-0 items-center gap-1.5 px-2">
+              <Monitor className="size-3 shrink-0" />
               <select
                 aria-label="Server"
                 className={selectClass}
@@ -197,6 +276,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
                 disabled={locked}
                 onChange={(event) => setRuntimeId(event.target.value)}
               >
+                {!runtimeRegistry.profiles.length && <option value="">Connect a computer</option>}
                 {runtimeRegistry.profiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
                     {runtimeComputerName({
@@ -206,92 +286,21 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
                   </option>
                 ))}
               </select>
+              <ChevronDown className="pointer-events-none absolute right-2 size-3" />
             </label>
-            <label className="space-y-1.5 text-xs text-muted-foreground">
-              Project
-              <select
-                aria-label="Project"
-                className={selectClass}
-                value={repositoryId}
-                disabled={locked || loading}
-                onChange={(event) => setRepositoryId(event.target.value)}
-              >
-                <option value="" disabled>
-                  {loading ? 'Loading projects…' : 'Choose a project'}
-                </option>
-                {snapshot?.workspace.repositories.map((repository) => (
-                  <option key={repository.id} value={repository.id}>
-                    {repository.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {selection && loadedRuntimeId === runtimeId && selectedProfile && selectedRepository && (
-            <WorkspaceScope key={runtimeId} profile={selectedProfile}>
-              <TaskLauncherControls
-                repository={selectedRepository}
-                selection={selection}
-                onChange={setSelection}
-                disabled={locked || loading}
-              />
-            </WorkspaceScope>
-          )}
-          <textarea
-            autoFocus
-            aria-label="Task prompt"
-            placeholder="What would you like to work on?"
-            className="min-h-36 w-full resize-y rounded-xl border bg-muted/30 p-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            value={text}
-            maxLength={120000}
-            disabled={locked}
-            onChange={(event) => setText(event.target.value)}
-            onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                event.preventDefault()
-                void dispatch()
-              }
-            }}
-          />
-          {error && (
-            <p role="alert" className="text-xs text-destructive">
-              {error}
-            </p>
-          )}
+          </ComposerWorkspaceBar>
           {error && !attempt.current && !loading && (
             <Button
               type="button"
               size="sm"
               variant="outline"
+              className="mt-3"
               onClick={() => setRefresh((value) => value + 1)}
             >
               Retry server connection
             </Button>
           )}
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs text-muted-foreground">
-              {attempt.current
-                ? 'Retry keeps the same task and message.'
-                : '⌘ / Ctrl + Enter to dispatch'}
-            </span>
-            <Button
-              type="submit"
-              disabled={
-                busy ||
-                (!attempt.current &&
-                  (!snapshot ||
-                    loading ||
-                    !repositoryId ||
-                    !selection ||
-                    loadedRuntimeId !== runtimeId ||
-                    !text.trim()))
-              }
-            >
-              {busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start task'}
-              <ArrowUpRight size={15} />
-            </Button>
-          </div>
-        </form>
+        </div>
       </DialogContent>
     </Dialog>
   )

@@ -2,7 +2,7 @@ import type { Automation, RuntimeSnapshot } from '@dovo/protocol'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import { Icon } from '../ui/controls/icon'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { triggerSummary } from './linear-flow'
 import { automationRuns, automationRunSummary } from './automation-summary'
 
@@ -21,6 +21,8 @@ export function AutomationRow({
   runtimeName?: string
   online?: boolean
 }) {
+  const { colors, styles } = useTheme()
+
   const { latest } = automationRuns(flow.id, snapshot.runs)
   const summary = latest
     ? automationRunSummary(

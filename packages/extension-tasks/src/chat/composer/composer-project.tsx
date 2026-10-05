@@ -82,7 +82,7 @@ export function ComposerProject({
     }
   }
   const matchesSearch = (item: Repository) =>
-    `${item.kind === 'scratch' ? 'Chat' : item.name} ${item.path}`
+    `${item.kind === 'scratch' ? 'No project' : item.name} ${item.path}`
       .toLowerCase()
       .includes(query.trim().toLowerCase())
   const addingProfile = store.runtimeRegistry.profiles.find(
@@ -114,7 +114,7 @@ export function ComposerProject({
             variant="ghost"
             disabled={locked}
             aria-label="Task project"
-            className="h-7 min-w-0 gap-1.5 rounded-lg bg-muted/50 px-2 text-xs font-normal"
+            className="h-7 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal"
           >
             {repository?.kind === 'scratch' ? (
               <MessageCircle className="size-3.5" />
@@ -122,7 +122,9 @@ export function ComposerProject({
               <Folder className="size-3.5" />
             )}
             <span className="max-w-32 truncate">
-              {repository?.kind === 'scratch' ? 'Chat' : (repository?.name ?? 'Choose folder')}
+              {repository?.kind === 'scratch'
+                ? 'No project'
+                : (repository?.name ?? 'Choose folder')}
             </span>
             <Monitor className="size-3.5" />
             <span className="max-w-28 truncate">{current?.name ?? 'This machine'}</span>
@@ -204,7 +206,7 @@ export function ComposerProject({
                             <Folder className="size-4" />
                           )}
                           <span className="flex-1 truncate">
-                            {item.kind === 'scratch' ? 'Chat' : item.name}
+                            {item.kind === 'scratch' ? 'No project' : item.name}
                           </span>
                           {source.runtimeId === store.activeRuntimeId &&
                             item.id === task.repositoryId && <Check className="size-4" />}

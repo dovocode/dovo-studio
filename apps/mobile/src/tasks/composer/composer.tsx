@@ -27,7 +27,7 @@ import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
 import { ComposerField } from './composer-field'
 import { Sheet } from '../../ui/layout/sheet'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
 import type { DraftSelection } from './dictation-draft'
@@ -50,6 +50,8 @@ export function Composer({
   onAsk?: () => void
   onSelectRemote?: (runtimeId: string, repository: Repository, text: string) => Promise<void>
 }) {
+  const { colors, styles } = useTheme()
+
   const insets = useSafeAreaInsets()
   const { actions, send, stop } = useTaskConversation()
   const {
@@ -310,6 +312,94 @@ export function Composer({
           </View>
         </Pressable>
       )}
+      {checkoutEditable && (
+        <View testID="Task setup" style={{ gap: 4, marginBottom: 4 }}>
+          <TaskMachineSelector
+            task={task}
+            text={draft.text}
+            disabled={busy || !draft.ready || attaching || dictation.active}
+            onMoving={setMachineMoving}
+            onSelectRemote={onSelectRemote}
+            onProjectChange={async (repository) => {
+              if (repository.id === task.repositoryId) return
+              const id = repository.id
+              const defaults = resolveTaskDefaults(snapshot?.defaults, repository)
+              await patch({
+                repositoryId: { before: task.repositoryId, after: id },
+                agentId: { before: task.agentId, after: '' },
+                agentOverrides: { before: task.agentOverrides ?? null, after: null },
+                harness: { before: task.harness ?? null, after: defaults.harness },
+                execution: { before: task.execution ?? null, after: defaults.execution },
+                setupCommand: {
+                  before: task.setupCommand ?? null,
+                  after: defaults.setupCommand ?? null,
+                },
+                worktreeFromOrigin: {
+                  before: task.worktreeFromOrigin ?? null,
+                  after: defaults.worktreeFromOrigin,
+                },
+                existingWorktreePath: { before: task.existingWorktreePath ?? null, after: null },
+                worktreeBaseBranch: { before: task.worktreeBaseBranch ?? null, after: null },
+              })
+            }}
+          />
+          {hasGit && !dictation.active && (
+            <Pressable
+              testID="Checkout & branch"
+              accessibilityRole="button"
+              accessibilityLabel="Checkout & branch"
+              accessibilityValue={{
+                text: task.existingWorktreePath
+                  ? 'Existing worktree'
+                  : task.execution === 'worktree'
+                    ? 'New worktree'
+                    : 'Local checkout',
+              }}
+              accessibilityState={{
+                disabled: busy,
+              }}
+              disabled={busy}
+              onPress={() => {
+                Keyboard.dismiss()
+                setCheckout(true)
+              }}
+              style={({ pressed }) => ({
+                minWidth: 44,
+                minHeight: 44,
+                alignSelf: 'flex-start',
+                paddingHorizontal: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                opacity: pressed || busy ? 0.5 : 1,
+              })}
+            >
+              <Icon
+                name={task.execution === 'worktree' ? 'changes' : 'folder'}
+                size={14}
+                color={colors.muted}
+              />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.muted,
+                  {
+                    flexShrink: 1,
+                    fontSize: 13,
+                  },
+                ]}
+              >
+                {task.existingWorktreePath
+                  ? 'Existing'
+                  : task.execution === 'worktree'
+                    ? 'Worktree'
+                    : 'Local'}
+              </Text>
+              <Icon name="down" size={10} color={colors.muted} />
+            </Pressable>
+          )}
+        </View>
+      )}
       <Glass
         style={{
           borderRadius: 26,
@@ -506,61 +596,6 @@ export function Composer({
                     {meter.short}
                   </Text>
                 )}
-              {showOptions && checkoutEditable && hasGit && !dictation.active && (
-                <Pressable
-                  testID="Checkout & branch"
-                  accessibilityRole="button"
-                  accessibilityLabel="Checkout & branch"
-                  accessibilityValue={{
-                    text: task.existingWorktreePath
-                      ? 'Existing worktree'
-                      : task.execution === 'worktree'
-                        ? 'New worktree'
-                        : 'Local checkout',
-                  }}
-                  accessibilityState={{
-                    disabled: busy,
-                  }}
-                  disabled={busy}
-                  onPress={() => {
-                    Keyboard.dismiss()
-                    setCheckout(true)
-                  }}
-                  style={({ pressed }) => ({
-                    minWidth: 44,
-                    minHeight: 44,
-                    maxWidth: '55%',
-                    flexShrink: 1,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 4,
-                    opacity: pressed || busy ? 0.5 : 1,
-                  })}
-                >
-                  <Icon
-                    name={task.execution === 'worktree' ? 'changes' : 'folder'}
-                    size={14}
-                    color={colors.muted}
-                  />
-                  <Text
-                    numberOfLines={1}
-                    style={[
-                      styles.muted,
-                      {
-                        flexShrink: 1,
-                        fontSize: 13,
-                      },
-                    ]}
-                  >
-                    {task.existingWorktreePath
-                      ? 'Existing'
-                      : task.execution === 'worktree'
-                        ? 'Worktree'
-                        : 'Local'}
-                  </Text>
-                  <Icon name="down" size={10} color={colors.muted} />
-                </Pressable>
-              )}
             </View>
             <IconButton
               variant="plain"
@@ -703,37 +738,6 @@ export function Composer({
             />
           )}
         </View>
-      )}
-      {checkoutEditable && (
-        <TaskMachineSelector
-          task={task}
-          text={draft.text}
-          disabled={busy || !draft.ready || attaching || dictation.active}
-          onMoving={setMachineMoving}
-          onSelectRemote={onSelectRemote}
-          onProjectChange={async (repository) => {
-            if (repository.id === task.repositoryId) return
-            const id = repository.id
-            const defaults = resolveTaskDefaults(snapshot?.defaults, repository)
-            await patch({
-              repositoryId: { before: task.repositoryId, after: id },
-              agentId: { before: task.agentId, after: '' },
-              agentOverrides: { before: task.agentOverrides ?? null, after: null },
-              harness: { before: task.harness ?? null, after: defaults.harness },
-              execution: { before: task.execution ?? null, after: defaults.execution },
-              setupCommand: {
-                before: task.setupCommand ?? null,
-                after: defaults.setupCommand ?? null,
-              },
-              worktreeFromOrigin: {
-                before: task.worktreeFromOrigin ?? null,
-                after: defaults.worktreeFromOrigin,
-              },
-              existingWorktreePath: { before: task.existingWorktreePath ?? null, after: null },
-              worktreeBaseBranch: { before: task.worktreeBaseBranch ?? null, after: null },
-            })
-          }}
-        />
       )}
       {checkout && checkoutEditable && hasGit && (
         <Sheet title="Checkout & branch" onClose={() => setCheckout(false)}>

@@ -23,7 +23,7 @@ import { Action } from '../ui/controls/action'
 import { Choice } from '../ui/controls/choice'
 import { SearchField, Field } from '../ui/controls/field'
 import { Text } from '../ui/content/text'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { TerminalSession } from '../terminal/terminal-session'
 
@@ -53,6 +53,8 @@ export function AcpRegistry({
   management?: boolean
   showRegistry?: boolean
 }) {
+  const { styles } = useTheme()
+
   const { callEffect, connected } = useRuntime()
   const [catalog, setCatalog] = useApplicationState<AcpRegistryResponse | null>(null)
   const [installations, setInstallations] = useApplicationState<AcpInstallation[]>([])
@@ -345,6 +347,8 @@ function AcpAuthentication({
   installation: AcpInstallation
   agent: Agent
 }) {
+  const { styles } = useTheme()
+
   const { callEffect, connected } = useRuntime()
   const [methods, setMethods] = useApplicationState<Schema.Schema.Type<
     typeof acpInspectionSchema

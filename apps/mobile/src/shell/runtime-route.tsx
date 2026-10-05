@@ -4,7 +4,7 @@ import { useRuntime } from '../runtime/connection/provider'
 import { Action } from '../ui/controls/action'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { useNavigation } from './navigation'
 import { backToCollection } from './source-route'
@@ -26,6 +26,8 @@ export function RuntimeRoute({
   backTo: '/issues' | '/pulls' | '/settings/automations'
   children: ReactNode
 }) {
+  const { colors, styles } = useTheme()
+
   const { ready, activeId, profiles, snapshot, refresh, connected } = useRuntime()
   const { focused, navigate } = useNavigation()
   const { busy, error, act } = useAction()

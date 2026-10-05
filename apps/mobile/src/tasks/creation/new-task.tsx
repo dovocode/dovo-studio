@@ -15,7 +15,7 @@ import { Schema, Effect } from 'effect'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 export function NewTask({
   initial,
   repositoryId: selectedRepositoryId,
@@ -27,6 +27,8 @@ export function NewTask({
   onCreated: (id: string) => void
   onCancel: () => void
 }) {
+  const { styles } = useTheme()
+
   const { snapshot, call, connected, profile } = useRuntime()
   const [repositoryId, setRepositoryId] = useApplicationState(
     selectedRepositoryId ?? initial?.repositoryId ?? '',

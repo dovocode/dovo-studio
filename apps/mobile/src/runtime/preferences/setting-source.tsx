@@ -2,7 +2,7 @@ import { View } from 'react-native'
 import { settingsScopeLabels, type SettingsScope } from '@dovo/protocol'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 export function SettingSource({
   source,
@@ -17,6 +17,8 @@ export function SettingSource({
   disabled?: boolean
   onReset?: () => void
 }) {
+  const { colors, styles } = useTheme()
+
   const name =
     source === 'built-in'
       ? 'Dovo default'

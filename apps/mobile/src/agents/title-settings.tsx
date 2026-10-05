@@ -24,9 +24,11 @@ import { ModelSettings } from './model-settings'
 import { Choice } from '../ui/controls/choice'
 import { Field } from '../ui/controls/field'
 import { Action } from '../ui/controls/action'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 export function TitleSettings() {
+  const { styles } = useTheme()
+
   const { call, connected, snapshot, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   const [settings, setSettings] = useApplicationState<TitleGenerationSettings | undefined>(

@@ -6,7 +6,7 @@ import { parsePairingInvitation, type PairingInvitation } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 
 export function PairingScanner({
@@ -16,6 +16,8 @@ export function PairingScanner({
   onScanned: (invitation: PairingInvitation) => void
   onClose: () => void
 }) {
+  const { colors, styles } = useTheme()
+
   const [permission, requestPermission, refreshPermission] = useCameraPermissions()
   const [active, setActive] = useApplicationState(AppState.currentState === 'active')
   const [scanError, setScanError] = useApplicationState('')

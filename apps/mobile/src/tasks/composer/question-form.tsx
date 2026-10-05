@@ -14,7 +14,7 @@ import {
 } from '@dovo/protocol'
 import { QuestionField } from './question-field'
 import { Action } from '../../ui/controls/action'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 export function QuestionForm({
   request,
   connected,
@@ -24,6 +24,8 @@ export function QuestionForm({
   connected: boolean
   onAnswer: (answers: QuestionAnswers | null) => Promise<void>
 }) {
+  const { styles } = useTheme()
+
   const [drafts, setDrafts] = useApplicationState<Record<string, QuestionDraft>>(() =>
       Object.fromEntries(
         request.prompt.questions.map((q) => [

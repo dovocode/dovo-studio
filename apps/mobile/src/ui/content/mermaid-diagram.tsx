@@ -5,13 +5,15 @@ import { decodeResult, mutableStruct } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Text } from './text'
-import { colors, styles } from '../theme'
+import { useTheme } from '../theme'
 import html from '../../../assets/mermaid.json'
 const response = Schema.Union(
   mutableStruct({ height: Schema.Number.pipe(Schema.finite(), Schema.nonNegative()) }),
   mutableStruct({ error: Schema.String }),
 )
 export const MermaidDiagram = memo(function MermaidDiagram({ chart }: { chart: string }) {
+  const { colors, styles } = useTheme()
+
   const view = useRef<WebView>(null)
   const [ready, setReady] = useApplicationState(false)
   const [height, setHeight] = useApplicationState(160)
@@ -23,8 +25,10 @@ export const MermaidDiagram = memo(function MermaidDiagram({ chart }: { chart: s
   }
   useEffect(() => {
     if (ready)
-      view.current?.injectJavaScript(`window.renderDiagram(${JSON.stringify(chart)});true;`)
-  }, [chart, ready])
+      view.current?.injectJavaScript(
+        `window.renderDiagram(${JSON.stringify(chart)},${JSON.stringify(colors)});true;`,
+      )
+  }, [chart, colors, ready])
   return (
     <View
       style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 10, overflow: 'hidden' }}

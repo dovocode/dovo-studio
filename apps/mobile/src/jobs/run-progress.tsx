@@ -7,7 +7,7 @@ import { useRuntime } from '../runtime/connection/provider'
 import { useNavigation } from '../shell/navigation'
 import { Action } from '../ui/controls/action'
 import { Icon } from '../ui/controls/icon'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { formatDateTime } from '../ui/content/format-date'
 import { automationRunSummary } from './automation-summary'
@@ -18,6 +18,8 @@ export function RunProgress({
   run: JobRun
   anotherActive?: boolean
 }) {
+  const { colors, styles } = useTheme()
+
   const { snapshot, connected, callEffect } = useRuntime()
   const { navigate, focused } = useNavigation()
   const { busy, error, act } = useAction()

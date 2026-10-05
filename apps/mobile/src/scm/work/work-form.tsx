@@ -19,7 +19,7 @@ import {
 import { useRuntime } from '../../runtime/connection/provider'
 import { useNavigation } from '../../shell/navigation'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { Choice } from '../../ui/controls/choice'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
@@ -47,6 +47,8 @@ export function WorkForm({
   onClose: () => void
   onDone: (message: string, result?: ForgeWorkResult) => void
 }) {
+  const { styles } = useTheme()
+
   const { read, connected, readEffect } = useRuntime()
   const { focused } = useNavigation()
   const [issue] = useApplicationState(initialIssue)

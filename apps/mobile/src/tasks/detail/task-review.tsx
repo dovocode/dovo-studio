@@ -15,7 +15,7 @@ import { responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import { DiffView } from '../preview/diff-view'
 import { PullStatus } from './pull-status'
@@ -26,6 +26,8 @@ export function TaskReview({
   initialCheckpoint?: string
   initialPath?: string
 }) {
+  const { styles } = useTheme()
+
   const task = useConversationSelector((value) => value.task)
   const { call, connected, callEffect, snapshot } = useRuntime(),
     { busy, error, act } = useAction()
@@ -367,6 +369,8 @@ const commitSchema = mutableStruct({
 })
 /** Commit everything in the task's checkout, with a message the title model can write. */
 function CommitSection({ task }: { task: Task }) {
+  const { styles } = useTheme()
+
   const { connected, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
   const [message, setMessage] = useApplicationState('')

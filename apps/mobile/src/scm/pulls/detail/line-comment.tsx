@@ -11,7 +11,7 @@ import { Field } from '../../../ui/controls/field'
 import { Choice } from '../../../ui/controls/choice'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
-import { styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 export function LineComment({
   repositoryId,
   detail,
@@ -25,6 +25,8 @@ export function LineComment({
   onClose: () => void
   onDone: () => void
 }) {
+  const { styles } = useTheme()
+
   const { connected, callEffect } = useRuntime()
   const [headSha] = useApplicationState(detail.pull.headSha),
     [line, setLine] = useApplicationState(''),

@@ -14,7 +14,7 @@ import { useRuntime } from '../runtime/connection/provider'
 import { Action } from '../ui/controls/action'
 import { Choice } from '../ui/controls/choice'
 import { Field } from '../ui/controls/field'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 export function AgentEditor({
   original,
@@ -31,6 +31,8 @@ export function AgentEditor({
   scopeLabel?: string
   fixedProvider?: boolean
 }) {
+  const { styles } = useTheme()
+
   const { connected, profile, snapshot } = useRuntime(),
     { busy, error, act } = useAction(),
     [draft, setDraft] = useApplicationState(original)

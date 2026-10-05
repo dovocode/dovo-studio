@@ -15,7 +15,7 @@ const mocks = {
   '../ui/controls/choice': `export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
   '../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   '../ui/controls/field': `export const Field=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;`,
-  '../ui/theme': `export const styles={};`,
+  '../ui/theme': `export const useTheme=()=>({styles:{}});`,
 }
 const built = await build({
   alias: {

@@ -40,7 +40,7 @@ import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { Action } from '../../ui/controls/action'
 import { Switch } from '../../ui/controls/switch'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { ModelSettings } from '../../agents/model-settings'
 import { SettingSource } from './setting-source'
 import { useSettingsDraft } from './settings-target'
@@ -85,6 +85,8 @@ function TaskDefaultSettingsForm({
   onDirtyChange?: (dirty: boolean) => void
   onSavingChange?: (saving: boolean) => void
 }) {
+  const { styles } = useTheme()
+
   const { connected, call, snapshot } = useRuntime()
   const { busy, error, act } = useAction()
   const [setup, setSetup] = useApplicationState<{ defaults: RuntimeDefaults } | null>(null)

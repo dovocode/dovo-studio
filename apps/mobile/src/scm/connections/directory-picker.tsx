@@ -13,7 +13,7 @@ import { Field, SearchField } from '../../ui/controls/field'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
 import { Choice } from '../../ui/controls/choice'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 type Props = {
   initialPath: string
   onSelect: (path: string) => void
@@ -32,6 +32,8 @@ export function DirectoryPicker(props: Props) {
   return <DirectoryBrowser key={clientScopeKey(connection)} {...props} />
 }
 function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
+  const { colors, styles } = useTheme()
+
   const { read, connected, profile, snapshot, readEffect } = useRuntime()
   const requests = useRef(new RequestScope())
   const editingPath = useRef(false)

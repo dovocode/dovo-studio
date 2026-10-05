@@ -9,7 +9,7 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 export function BranchPicker({
   repositoryId,
   taskId,
@@ -19,6 +19,8 @@ export function BranchPicker({
   taskId?: string
   onChanged?: () => void
 }) {
+  const { styles } = useTheme()
+
   const { connected, callEffect } = useRuntime()
   const [open, setOpen] = useApplicationState(false),
     [data, setData] = useApplicationState<Schema.Schema.Type<typeof branchesSchema> | null>(null),

@@ -2,7 +2,7 @@ import { Pressable } from 'react-native'
 import { Text } from '../../ui/content/text'
 import type { Task } from '@dovo/protocol'
 import type { TaskLifecycle } from '../detail/use-task-lifecycle'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 export type TaskRowMenuProps = {
   task: Task
@@ -14,6 +14,8 @@ export type TaskRowMenuProps = {
 }
 
 export function TaskRowMenu({ task, testID, disabled, onDetails }: TaskRowMenuProps) {
+  const { colors, styles } = useTheme()
+
   return (
     <Pressable
       testID={testID}

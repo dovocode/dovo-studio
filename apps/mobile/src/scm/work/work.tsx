@@ -24,7 +24,7 @@ import {
 import { useNavigation } from '../../shell/navigation'
 import { issueHref, jiraIssueHref, pipelineHref } from '../../shell/source-route'
 import { Text } from '../../ui/content/text'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { formatShortDate } from '../../ui/content/format-date'
 import { Choice } from '../../ui/controls/choice'
 import { Action } from '../../ui/controls/action'
@@ -54,6 +54,8 @@ export function WorkScreen({
   pullNumber?: string
   onBack?: () => void
 }) {
+  const { colors, styles } = useTheme()
+
   const { overviews, activeId } = useRuntime()
   const { focused, workTarget } = useNavigation()
   const [state, setState] = useApplicationState('all')

@@ -11,10 +11,12 @@ import { useRuntime } from '../../../runtime/connection/provider'
 import { useAction } from '../../../ui/controls/use-action'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 
 /** The agent's own review as a list; fix one finding or all of them. */
 export function ReviewFindings({ task, onOpen }: { task: Task; onOpen: () => void }) {
+  const { colors, styles } = useTheme()
+
   const { connected, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
   const findings = reviewFindings(task)

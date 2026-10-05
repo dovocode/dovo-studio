@@ -1,26 +1,25 @@
 import type { ReactNode } from 'react'
-import { ActivityIndicator, Pressable, type TextStyle, type ViewStyle } from 'react-native'
+import { ActivityIndicator, Pressable, type ViewStyle } from 'react-native'
 import { Text } from '../content/text'
 import { Icon, type IconName } from './icon'
-import { colors } from '../theme'
+import { useTheme, type MobileColors } from '../theme'
 
-export const pillStyle = (pressed: boolean): ViewStyle => ({
+const pillStyle = (pressed: boolean, colors: MobileColors): ViewStyle => ({
   flexDirection: 'row',
   alignItems: 'center',
   gap: 10,
   minHeight: 38,
   paddingHorizontal: 18,
   borderRadius: 19,
-  backgroundColor: pressed ? '#232326' : '#1a1a1c',
+  backgroundColor: pressed ? colors.selection : colors.surface,
   borderWidth: 1,
-  borderColor: '#2c2c2f',
+  borderColor: colors.border,
   // Lift off the conversation without a glow.
   shadowColor: '#000',
   shadowOpacity: 0.35,
   shadowRadius: 10,
   shadowOffset: { width: 0, height: 4 },
 })
-export const pillText: TextStyle = { color: colors.text, fontSize: 16, lineHeight: 20 }
 
 /** Floating status capsule above the composer or tab bar: solid, hairline-bordered and short. */
 export function Pill({
@@ -42,6 +41,7 @@ export function Pill({
   testID?: string
   children?: ReactNode
 }) {
+  const { colors } = useTheme()
   return (
     <Pressable
       testID={testID}
@@ -52,14 +52,14 @@ export function Pill({
       disabled={busy}
       onPress={onPress}
       onLongPress={onLongPress}
-      style={({ pressed }) => pillStyle(pressed)}
+      style={({ pressed }) => pillStyle(pressed, colors)}
     >
       {busy ? (
         <ActivityIndicator size="small" color={colors.text} />
       ) : (
         icon && <Icon name={icon} size={16} color={colors.text} />
       )}
-      <Text numberOfLines={1} style={pillText}>
+      <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, lineHeight: 20 }}>
         {label}
       </Text>
       {children}

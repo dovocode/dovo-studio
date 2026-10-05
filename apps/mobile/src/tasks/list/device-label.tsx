@@ -2,7 +2,7 @@ import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import type { Task } from '@dovo/protocol'
 import { Icon } from '../../ui/controls/icon'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 export function DeviceLabel({
   task,
@@ -13,6 +13,8 @@ export function DeviceLabel({
   runtimeHost?: string
   compact?: boolean
 }) {
+  const { colors, styles } = useTheme()
+
   const turn = task.turns?.at(-1)
   const host = runtimeHost ?? turn?.runtimeHost
   const prefix = turn ? (turn.status === 'running' ? 'Running on' : 'Last ran on') : 'Runs on'

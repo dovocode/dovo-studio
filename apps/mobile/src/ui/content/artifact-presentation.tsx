@@ -1,16 +1,14 @@
 import { View } from 'react-native'
 import type { ArtifactReference } from '@dovo/protocol'
 import { Icon, type IconName } from '../controls/icon'
+import { useTheme } from '../theme'
 
 const presentation = {
-  markdown: { icon: 'artifact', color: '#e7c681', background: '#e7c68112' },
-  html: { icon: 'web', color: '#93c5fd', background: '#93c5fd12' },
-  svg: { icon: 'preview', color: '#c4b5fd', background: '#c4b5fd12' },
-  code: { icon: 'code', color: '#8ad5b0', background: '#8ad5b012' },
-} satisfies Record<
-  ArtifactReference['format'],
-  { icon: IconName; color: string; background: string }
->
+  markdown: 'artifact',
+  html: 'web',
+  svg: 'preview',
+  code: 'code',
+} satisfies Record<ArtifactReference['format'], IconName>
 
 export function ArtifactFormatIcon({
   format,
@@ -19,7 +17,14 @@ export function ArtifactFormatIcon({
   format: ArtifactReference['format']
   large?: boolean
 }) {
-  const { icon, color, background } = presentation[format]
+  const { colors } = useTheme()
+  const icon = presentation[format]
+  const color = {
+    markdown: colors.warning,
+    html: colors.syntaxFunction,
+    svg: colors.syntaxKeyword,
+    code: colors.success,
+  }[format]
   return (
     <View
       style={{
@@ -28,7 +33,7 @@ export function ArtifactFormatIcon({
         borderRadius: large ? 16 : 12,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: background,
+        backgroundColor: `${color}12`,
       }}
     >
       <Icon name={icon} color={color} size={large ? 28 : 22} />

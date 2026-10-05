@@ -7,9 +7,11 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 export function ProjectIconSettings({ repository }: { repository: Repository }) {
+  const { styles } = useTheme()
+
   const { call, refresh, connected } = useRuntime()
   const { busy, error, act } = useAction()
   const save = (data?: string) =>

@@ -10,8 +10,10 @@ import { useRuntime } from '../connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
 import { formatDateTime } from '../../ui/content/format-date'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 export function ActivityLog() {
+  const { styles } = useTheme()
+
   const { showToolDetails } = useMobilePreferences()
   const { readEffect, connected } = useRuntime(),
     [query, setQuery] = useApplicationState(''),

@@ -1099,7 +1099,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
               </div>
             ) : (
               <div className="flex h-full min-h-0 flex-col">
-                {!compact && <header className="studio-task-thread-header">Tasks</header>}
+                {!compact && <header className="studio-task-thread-header">New task</header>}
                 <div className="min-h-0 flex-1">
                   <StartupDraft
                     key={draftVersion}

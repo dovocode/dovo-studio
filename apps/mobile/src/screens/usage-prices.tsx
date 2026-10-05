@@ -8,7 +8,7 @@ import { Action } from '../ui/controls/action'
 import { Choice } from '../ui/controls/choice'
 import { Field } from '../ui/controls/field'
 import { Text } from '../ui/content/text'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 const fields = ['input', 'output', 'cacheRead', 'cacheWrite'] as const
 const labels = {
   input: 'Input',
@@ -28,6 +28,8 @@ export function UsagePrices({
   histories: Record<string, UsageHistoryResult>
   onSaved: () => void
 }) {
+  const { styles } = useTheme()
+
   const [open, setOpen] = useState(false),
     [model, setModel] = useState('')
   const selected = rows.find((row) => row.key === model) ?? rows[0]
@@ -77,6 +79,8 @@ function PriceForm({
   histories: Record<string, UsageHistoryResult>
   onSaved: () => void
 }) {
+  const { styles } = useTheme()
+
   const { overviews, readRuntime } = useRuntime()
   const hosts = overviews.filter(
     (entry) => (computer === 'all' || entry.profile.id === computer) && entry.connected,

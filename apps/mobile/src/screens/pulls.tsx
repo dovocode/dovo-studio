@@ -28,7 +28,7 @@ import { usePulls } from '../scm/pulls/list/use-pulls'
 import { Choice } from '../ui/controls/choice'
 import { SearchField } from '../ui/controls/field'
 import { Action } from '../ui/controls/action'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { formatShortDate } from '../ui/content/format-date'
 import { Icon } from '../ui/controls/icon'
 import { CreationTarget } from '../runtime/connection/creation-target'
@@ -50,6 +50,8 @@ function PullsContent({
   repositoryId: string
   setRepository: (id: string) => void
 }) {
+  const { colors, styles } = useTheme()
+
   const { overviews, cacheForRuntime } = useRuntime()
   const { focused } = useNavigation()
   const listOffset = useRef(0)
@@ -386,7 +388,7 @@ function PullsContent({
               <Icon
                 name={p.stack ? 'stack' : 'pulls'}
                 size={14}
-                color={pullSignalColor(pullState(p))}
+                color={pullSignalColor(pullState(p), colors)}
               />
               <Text
                 numberOfLines={1}

@@ -2,7 +2,7 @@ import { Keyboard, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { toggleQuestionChoice, type AgentQuestion, type QuestionDraft } from '@dovo/protocol'
 import { Field } from '../../ui/controls/field'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 export function QuestionField({
   question: q,
   draft,
@@ -14,6 +14,8 @@ export function QuestionField({
   onChange: (value: QuestionDraft) => void
   disabled: boolean
 }) {
+  const { colors, styles } = useTheme()
+
   return (
     <View style={{ gap: 6 }}>
       <Text style={[styles.text, { fontWeight: '600', fontSize: 13 }]}>

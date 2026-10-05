@@ -5,11 +5,13 @@ import { useApplicationState } from '../runtime/state/application-state'
 import { SettingsGroup, SettingsRow } from './settings-group'
 import { SearchField } from '../ui/controls/field'
 import { Text } from '../ui/content/text'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useRuntime } from '../runtime/connection/provider'
 import { ScreenHeader } from '../ui/layout/screen-header'
 
 export default function SettingsScreen() {
+  const { colors, styles } = useTheme()
+
   const { profiles, overviews } = useRuntime()
   const [query, setQuery] = useApplicationState('')
   const archived = overviews.reduce(
@@ -24,6 +26,14 @@ export default function SettingsScreen() {
       title: 'This app',
       footer: 'Preferences on this device save automatically.',
       items: [
+        {
+          title: 'Appearance',
+          subtitle: 'Color scheme and desktop theme palettes',
+          icon: 'preview',
+          path: '/settings/appearance',
+          local: true,
+          keywords: 'theme system light dark colors palette display',
+        },
         {
           title: 'General',
           subtitle: 'Organization, conversation, speech and battery',

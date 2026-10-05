@@ -1,5 +1,6 @@
 import { useConversationHistory } from './use-conversation-history'
 import { ChatMessage } from './chat-message'
+import { TaskEmptyState } from '../../task-creation/task-empty-state'
 import { DeferredTurn } from './deferred-turn'
 import {
   threadPullLink,
@@ -234,6 +235,17 @@ export function ChatThread({
     return byTurn
   }, [task.compactions, task.turns])
   const groups = useMemo(() => conversationTurns(task), [task.messages, task.turns])
+  const emptyDraft =
+    task.status === 'draft' &&
+    !task.messages.length &&
+    !task.queue?.length &&
+    !task.turns?.length &&
+    !task.historyBefore &&
+    !task.compactions?.length &&
+    !activity.tools.length &&
+    !activity.error &&
+    !history.error &&
+    !search.error
   const markers = useMemo(
     () =>
       groups.map((group) => {
@@ -403,7 +415,13 @@ export function ChatThread({
                 : undefined
             }
           >
-            <ConversationContent className="mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-16 md:pr-5">
+            <ConversationContent
+              className={
+                emptyDraft
+                  ? 'mx-auto h-full w-full max-w-[var(--chat-max)] gap-0 p-0'
+                  : 'mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-16 md:pr-5'
+              }
+            >
               {history.busy && (
                 <p role="status" className="text-xs text-muted-foreground">
                   Loading earlier messages…
@@ -454,14 +472,7 @@ export function ChatThread({
                   ))}
                 </nav>
               )}
-              {!task.messages.length && !task.queue?.length && (
-                <div className="py-8 text-center">
-                  <h2 className="text-base font-medium">What would you like to work on?</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Describe a change or ask a question.
-                  </p>
-                </div>
-              )}
+              {emptyDraft && <TaskEmptyState />}
               {groups.map((group, groupIndex) => (
                 <section
                   key={group.id}

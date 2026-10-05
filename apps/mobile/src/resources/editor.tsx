@@ -18,7 +18,7 @@ import { Sheet } from '../ui/layout/sheet'
 import { Action } from '../ui/controls/action'
 import { Choice } from '../ui/controls/choice'
 import { Field } from '../ui/controls/field'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 export type ResourceSelection =
   | {
@@ -50,6 +50,8 @@ export function ResourceEditor({
   onClose: () => void
   onSave: (selection: ResourceSelection) => Promise<void>
 }) {
+  const { styles } = useTheme()
+
   const { connected, callEffect } = useRuntime(),
     { act, busy, error, fieldError } = useAction()
   const [server, setServer] = useApplicationState<McpServer>(

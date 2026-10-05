@@ -6,7 +6,7 @@ import { Sheet } from '../../../ui/layout/sheet'
 import { SearchField } from '../../../ui/controls/field'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
-import { colors } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { FlatList, Pressable, View } from 'react-native'
 
 export function AddPullsToThread({
@@ -16,6 +16,8 @@ export function AddPullsToThread({
   pulls: PullSummary[]
   onClose: () => void
 }) {
+  const { colors } = useTheme()
+
   const { overviews, readRuntime, refreshRuntime } = useRuntime()
   const [search, setSearch] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)

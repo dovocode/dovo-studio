@@ -5,7 +5,7 @@ import { pullCommentSignal, type PullComment, type ForgeCapabilities } from '@do
 import type { PullActionTarget } from '../list/pull-actions'
 import { Action } from '../../../ui/controls/action'
 import { Icon } from '../../../ui/controls/icon'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { formatShortDateTime } from '../../../ui/content/format-date'
 import { PullCommentLabel } from './pull-status'
 export function PullComments({
@@ -21,6 +21,8 @@ export function PullComments({
   onAction?: (target: PullActionTarget) => void
   capabilities?: ForgeCapabilities
 }) {
+  const { colors, styles } = useTheme()
+
   return (
     <View style={{ gap: 12, minWidth: 0 }}>
       {!comments.length && <Text style={styles.muted}>No discussion yet.</Text>}

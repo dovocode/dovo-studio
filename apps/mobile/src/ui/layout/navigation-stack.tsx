@@ -1,8 +1,10 @@
 import { Stack } from 'expo-router'
 import { Platform } from 'react-native'
-import { colors } from '../theme'
+import { useTheme } from '../theme'
 
 export function NavigationStack({ title }: { title: string }) {
+  const { colors } = useTheme()
+
   return (
     <Stack
       screenOptions={{

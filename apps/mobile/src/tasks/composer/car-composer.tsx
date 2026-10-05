@@ -4,11 +4,13 @@ import type { Task } from '@dovo/protocol'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 /** Car mode: speech first. One large button starts and finishes dictation, the transcript
  * stays readable at a glance, and sending is a single large target. */
 export function CarComposer({ task, onType }: { task: Task; onType: () => void }) {
+  const { colors, styles } = useTheme()
+
   const insets = useSafeAreaInsets()
   const { actions, send, stop } = useTaskConversation()
   const { draft, dictation, canSend, connected, stopping, busy, error, act } = actions
@@ -63,9 +65,9 @@ export function CarComposer({ task, onType }: { task: Task; onType: () => void }
           justifyContent: 'center',
           gap: 14,
           paddingHorizontal: 20,
-          backgroundColor: listening ? colors.accent : colors.elevated,
+          backgroundColor: listening ? colors.action : colors.elevated,
           borderWidth: 1,
-          borderColor: listening ? colors.accent : colors.border,
+          borderColor: listening ? colors.action : colors.border,
           opacity: pressed ? 0.7 : !listening && !canDictate ? 0.5 : 1,
         })}
       >
@@ -157,6 +159,8 @@ function CarButton({
   disabled?: boolean
   secondary?: boolean
 }) {
+  const { colors } = useTheme()
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -170,7 +174,7 @@ function CarButton({
         borderRadius: 30,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: secondary ? colors.surface : colors.accent,
+        backgroundColor: secondary ? colors.surface : colors.action,
         borderWidth: secondary ? 1 : 0,
         borderColor: colors.border,
         opacity: disabled ? 0.4 : pressed ? 0.7 : 1,

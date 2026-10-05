@@ -45,6 +45,13 @@ export { SettingsPage, SettingsGroup, SettingRow, Segmented, Toggle } from './se
 export { PageHeader } from './page-header'
 
 export { ComposerModelPicker } from './composer-model-picker'
+export { ComposerSettingsControls } from './composer-settings-controls'
+export {
+  ComposerSurface,
+  ComposerTextarea,
+  ComposerSubmit,
+  ComposerWorkspaceBar,
+} from './composer-surface'
 export { useHarnessCatalog, useModelLabel } from './harness-catalog'
 
 export { HarnessFields } from './harness-fields'

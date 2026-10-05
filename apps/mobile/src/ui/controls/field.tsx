@@ -1,10 +1,12 @@
 import { TextInput, View, type TextInputProps } from 'react-native'
 import { Text } from '../content/text'
-import { colors, styles } from '../theme'
+import { useTheme } from '../theme'
 import { Icon } from './icon'
 import type { Ref } from 'react'
 
 export function SearchField({ label, style, ...props }: TextInputProps & { label: string }) {
+  const { colors } = useTheme()
+
   return (
     <View
       style={{
@@ -61,6 +63,8 @@ export function Field({
   hint?: string
   inputRef?: Ref<TextInput>
 }) {
+  const { colors, styles } = useTheme()
+
   return (
     <View style={{ gap: 6 }}>
       {!hideLabel && <Text style={styles.muted}>{label}</Text>}

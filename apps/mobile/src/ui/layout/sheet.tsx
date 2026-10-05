@@ -24,7 +24,7 @@ import {
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
 import { Text } from '../content/text'
 import { Action } from '../controls/action'
-import { colors, styles } from '../theme'
+import { useTheme } from '../theme'
 const SheetContext = createContext(false)
 export function useInsideSheet() {
   return useContext(SheetContext)
@@ -44,6 +44,8 @@ export function Sheet({
   scrollable?: boolean
   footer?: ReactNode
 }) {
+  const { colors, styles, mode: appearanceMode } = useTheme()
+
   const [presented, setPresented] = useApplicationState(true)
   const [keyboard, setKeyboard] = useApplicationState(false)
   const closed = useRef(false)
@@ -73,7 +75,7 @@ export function Sheet({
   if (Platform.OS === 'ios')
     return (
       <Host
-        colorScheme="dark"
+        colorScheme={appearanceMode}
         seedColor={colors.accent}
         style={{
           position: 'absolute',

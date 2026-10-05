@@ -16,10 +16,12 @@ import { Icon } from '../ui/controls/icon'
 import { Choice } from '../ui/controls/choice'
 import { Action } from '../ui/controls/action'
 import { ScreenHeader } from '../ui/layout/screen-header'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 
 type Entry = { profile: RuntimeProfile; computerName: string; artifact: ArtifactLibraryEntry }
 export default function ArtifactsScreen() {
+  const { colors, styles } = useTheme()
+
   const { overviews, readRuntime } = useRuntime()
   const { focused } = useNavigation()
   const [query, setQuery] = useState('')

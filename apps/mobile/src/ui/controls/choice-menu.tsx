@@ -16,11 +16,13 @@ import {
   shapes,
 } from '@expo/ui/swift-ui/modifiers'
 import { useWindowDimensions, View } from 'react-native'
-import { colors } from '../theme'
+import { useTheme } from '../theme'
 import type { ChoiceProps } from './choice'
 
 /** Short choices stay anchored to their control instead of opening another sheet. */
 export function ChoiceMenu(props: ChoiceProps) {
+  const { colors, mode: appearanceMode } = useTheme()
+
   const [width, setWidth] = useApplicationState<number | undefined>(undefined)
   const { fontScale } = useWindowDimensions()
   const height = Math.max(44, Math.ceil(22 * fontScale + 16))
@@ -39,7 +41,7 @@ export function ChoiceMenu(props: ChoiceProps) {
     >
       <Host
         ignoreSafeArea="all"
-        colorScheme="dark"
+        colorScheme={appearanceMode}
         style={{
           width: '100%',
           height,

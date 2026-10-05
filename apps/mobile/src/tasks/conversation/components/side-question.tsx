@@ -9,11 +9,13 @@ import { Field } from '../../../ui/controls/field'
 import { ThreadMarkdown } from './thread-markdown'
 import { Sheet } from '../../../ui/layout/sheet'
 import { Text } from '../../../ui/content/text'
-import { styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { useTaskConversation } from '../state/provider'
 const savedSchema = mutableStruct({ id: Schema.String })
 const answerSchema = mutableStruct({ answer: Schema.String })
 export function SideQuestion({ task, onClose }: { task: Task; onClose: () => void }) {
+  const { styles } = useTheme()
+
   const { connected, call, callEffect } = useRuntime()
   const { actions } = useTaskConversation()
   const { act, busy, error } = useAction()

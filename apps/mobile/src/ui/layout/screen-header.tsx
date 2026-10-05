@@ -10,7 +10,7 @@ import type { IconName } from '../controls/icon'
 import { iconAssets } from '../controls/icon-assets'
 import { IconButton } from '../controls/icon-button'
 import { Text } from '../content/text'
-import { colors } from '../theme'
+import { useTheme } from '../theme'
 
 /** Android/web: a screen inside a stack can show a back arrow in its own header. iOS uses the
  * native navigation bar's back button instead. */
@@ -49,6 +49,8 @@ export function ScreenHeader({
   gestureEnabled?: boolean
   hidden?: boolean
 }) {
+  const { colors } = useTheme()
+
   const title = appChannel ? `${screenTitle} · ${appChannel}` : screenTitle
   const navigation = useContext(NavigationContext)
   const inSheet = useInsideSheet()

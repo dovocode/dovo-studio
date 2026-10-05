@@ -5,13 +5,14 @@ import type { ChangedFile } from '@dovo/protocol'
 import { fileStats, checkpointFolders } from '../../files/stats'
 import { Text } from '../../../ui/content/text'
 import { Icon } from '../../../ui/controls/icon'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 
 function Amounts({ additions, deletions }: { additions: number; deletions: number }) {
+  const { colors } = useTheme()
   return (
     <>
-      <Text style={{ color: '#34d399', fontSize: 12 }}>+{additions}</Text>
-      <Text style={{ color: '#fb7185', fontSize: 12 }}>-{deletions}</Text>
+      <Text style={{ color: colors.success, fontSize: 12 }}>+{additions}</Text>
+      <Text style={{ color: colors.error, fontSize: 12 }}>-{deletions}</Text>
     </>
   )
 }
@@ -24,6 +25,8 @@ export function CheckpointFiles({
   omitted: string[]
   onOpen: (path: string) => void
 }) {
+  const { colors, styles } = useTheme()
+
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const entries = checkpointFiles({ files, omitted })
   const byPath = new Map(entries.map((file) => [file.path, file]))

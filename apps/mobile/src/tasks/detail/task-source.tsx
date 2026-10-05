@@ -9,8 +9,10 @@ import { useNavigation } from '../../shell/navigation'
 import { Action } from '../../ui/controls/action'
 import { IconButton } from '../../ui/controls/icon-button'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () => void }) {
+  const { styles } = useTheme()
+
   const { openWork } = useNavigation()
   const [error, setError] = useApplicationState('')
   const source = task.workItem

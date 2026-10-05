@@ -9,7 +9,7 @@ import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { Sheet } from '../../ui/layout/sheet'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 const readSchema = mutableStruct({ text: Schema.String, version: Schema.String })
 const previewSchema = mutableStruct({ diff: Schema.String, changed: Schema.Boolean })
@@ -21,6 +21,8 @@ export function ProjectInstructions({
   repositoryId: string
   onClose: () => void
 }) {
+  const { styles } = useTheme()
+
   const { call, connected } = useRuntime()
   const [name, setName] = useApplicationState<'AGENTS.md' | 'CLAUDE.md'>('AGENTS.md')
   const [text, setText] = useApplicationState('')

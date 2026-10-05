@@ -19,11 +19,13 @@ import { Text } from '../ui/content/text'
 import { Sheet } from '../ui/layout/sheet'
 import { Action } from '../ui/controls/action'
 import { Field } from '../ui/controls/field'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { SettingsGroup, SettingsRow } from './settings-group'
 import { ScreenHeader } from '../ui/layout/screen-header'
 export default function DevicesScreen() {
+  const { colors, styles } = useTheme()
+
   const { profiles, overviews, activeId, error: runtimeError } = useRuntime()
   const [adding, setAdding] = useApplicationState(false)
   // Saved before pairing completes: by then the new computer is already in the list.
@@ -269,6 +271,8 @@ export default function DevicesScreen() {
   )
 }
 function ComputerSettings({ onClose }: { onClose: () => void }) {
+  const { colors, styles } = useTheme()
+
   const {
     profile,
     snapshot,

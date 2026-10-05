@@ -9,7 +9,7 @@ import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 export function PhysicalControls({
   taskId,
@@ -20,6 +20,8 @@ export function PhysicalControls({
   device: PreviewDevice
   onClose: () => void
 }) {
+  const { styles } = useTheme()
+
   const { profile, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   const [apps, setApps] = useApplicationState<

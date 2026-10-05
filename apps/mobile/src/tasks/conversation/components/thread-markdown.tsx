@@ -9,7 +9,7 @@ import { Markdown } from '../../../ui/content/markdown'
 import { openAppLink } from '../../../ui/content/open-link'
 import { Text } from '../../../ui/content/text'
 import { Sheet } from '../../../ui/layout/sheet'
-import { styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { useConversationSelector } from '../state/provider'
 
 // Encode Markdown syntax and whitespace so a user message stays literal, while PR URLs
@@ -34,6 +34,8 @@ export function ThreadMarkdown({
 }: Omit<ComponentProps<typeof Markdown>, 'onLinkLongPress'> & {
   plainText?: boolean
 }) {
+  const { styles } = useTheme()
+
   const scope = useConversationSelector((value) => value.actions.threadScope)
   const hasPullLink = useMemo(
     () =>
@@ -96,6 +98,8 @@ function ThreadPullActions({
   pull: NonNullable<ReturnType<typeof threadPullLink>>
   onClose: () => void
 }) {
+  const { styles } = useTheme()
+
   const task = useConversationSelector((value) => value.task)
   const { connected, callEffect } = useRuntime()
   const action = useAction()

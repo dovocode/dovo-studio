@@ -34,7 +34,7 @@ import { TaskRowMenu } from './task-row-menu'
 import { TaskSwipeActions } from './task-swipe-actions'
 import { isSnoozed } from '@dovo/protocol'
 import { chooseSnoozeDuration, useTaskLifecycle } from '../detail/use-task-lifecycle'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { showTaskDone, taskRowStatus } from './task-row-status'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
 
@@ -82,6 +82,8 @@ export function TaskListRow({
   selectionActive?: boolean
   selected?: boolean
 }) {
+  const { colors, styles } = useTheme()
+
   const task = row.task,
     repository = runtime?.snapshot?.workspace.repositories.find(
       (repo) => repo.id === task.repositoryId,
@@ -222,7 +224,7 @@ export function TaskListRow({
                 numberOfLines={1}
                 style={{
                   flex: 1,
-                  color: actions.unread ? colors.text : '#b8bac2',
+                  color: actions.unread ? colors.text : colors.muted,
                   fontSize: 17,
                   lineHeight: 22,
                   fontWeight: '500',

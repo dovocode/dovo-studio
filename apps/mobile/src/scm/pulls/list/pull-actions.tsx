@@ -19,7 +19,7 @@ import { Choice } from '../../../ui/controls/choice'
 import { Field } from '../../../ui/controls/field'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { PullActionOption } from './pull-action-options'
 export type PullActionTarget = {
@@ -39,6 +39,8 @@ export function PullActionSheet({
   onClose: () => void
   onDone: () => void
 }) {
+  const { styles } = useTheme()
+
   const { connected, callEffect } = useRuntime()
   const [headSha] = useApplicationState(detail.pull.headSha)
   const [title, setTitle] = useApplicationState(detail.pull.title),
@@ -277,6 +279,8 @@ export function PullPrimaryAction({
   onAction: (target: PullActionTarget) => void
   disabled: boolean
 }) {
+  const { colors, styles } = useTheme()
+
   const insets = useSafeAreaInsets()
   if (!option) return null
   return (

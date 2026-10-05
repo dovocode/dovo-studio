@@ -20,12 +20,14 @@ import { Choice } from '../ui/controls/choice'
 import { Action } from '../ui/controls/action'
 import { Icon } from '../ui/controls/icon'
 import { IconButton } from '../ui/controls/icon-button'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { linearNodes, newAutomationNode, withLinearNodes, scheduleChoices } from './linear-flow'
 import { StepFields } from './step-fields'
 import { useNavigation } from '../shell/navigation'
 export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose: () => void }) {
+  const { colors, styles } = useTheme()
+
   const { snapshot, connected, callEffect } = useRuntime()
   const { focused } = useNavigation()
   const focus = useRef(focused)

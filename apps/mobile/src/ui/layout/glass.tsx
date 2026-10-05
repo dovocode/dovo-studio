@@ -5,7 +5,7 @@ import { useApplicationState } from '../../runtime/state/application-state'
 import { useEffect, type ReactNode } from 'react'
 import { AccessibilityInfo, Platform, View, type StyleProp, type ViewStyle } from 'react-native'
 import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect'
-import { colors } from '../theme'
+import { useTheme } from '../theme'
 export function Glass({
   children,
   style,
@@ -17,6 +17,8 @@ export function Glass({
   interactive?: boolean
   tinted?: boolean
 }) {
+  const { colors, mode: appearanceMode } = useTheme()
+
   const [reduced, setReduced] = useApplicationState(true)
   useEffect(() => {
     let active = true
@@ -44,7 +46,7 @@ export function Glass({
     }
   }, [])
   const opaqueStyle = {
-    backgroundColor: tinted ? '#344467' : colors.surface,
+    backgroundColor: tinted ? colors.selection : colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   }
@@ -53,10 +55,10 @@ export function Glass({
   if (Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable())
     return (
       <GlassView
-        colorScheme="dark"
+        colorScheme={appearanceMode}
         glassEffectStyle={reduced ? 'none' : 'regular'}
         isInteractive={interactive}
-        tintColor={tinted ? '#6177b855' : undefined}
+        tintColor={tinted ? `${colors.accent}55` : undefined}
         style={[reduced && opaqueStyle, style]}
       >
         {children}

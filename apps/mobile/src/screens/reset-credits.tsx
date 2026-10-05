@@ -8,8 +8,10 @@ import type { Schema } from 'effect'
 import { useRuntime } from '../runtime/connection/provider'
 import { Action } from '../ui/controls/action'
 import { Text } from '../ui/content/text'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: string } }) {
+  const { styles } = useTheme()
+
   const { overviews, readRuntime, refreshRuntime } = useRuntime()
   const sources = overviews.flatMap((entry) => {
     const limit = entry.snapshot?.workspace.planLimits?.find(

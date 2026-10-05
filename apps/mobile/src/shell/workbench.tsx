@@ -36,7 +36,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { SafeAreaView as NativeSafeAreaView } from 'react-native-screens/experimental'
 import { useRuntime } from '../runtime/connection/provider'
 import { createMobileExtensions } from './extensions'
-import { colors, styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 const SceneContext = createContext<{
   scenes: Record<string, ReactNode>
   navigations: Record<Tab, StudioNavigation>
@@ -44,6 +44,8 @@ const SceneContext = createContext<{
   error: string
 } | null>(null)
 function WorkbenchNotices() {
+  const { styles } = useTheme()
+
   const context = useContext(SceneContext)
   return (
     <>
@@ -129,6 +131,8 @@ export function WorkbenchDetailRoute({
   )
 }
 export function Workbench() {
+  const { colors, styles } = useTheme()
+
   const runtime = useRuntime(),
     [extensions] = useApplicationState(createMobileExtensions)
   const [work, setWork] = useApplicationState<{

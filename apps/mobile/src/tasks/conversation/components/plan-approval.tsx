@@ -5,10 +5,12 @@ import { useRuntime } from '../../../runtime/connection/provider'
 import { useAction } from '../../../ui/controls/use-action'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 
 /** After a plan-mode reply: approve with one tap, or reply with changes. */
 export function PlanApproval({ task }: { task: Task }) {
+  const { colors, styles } = useTheme()
+
   const { connected, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
   if (!planAwaitingApproval(task)) return null

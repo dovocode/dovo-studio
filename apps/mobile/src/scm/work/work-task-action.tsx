@@ -17,7 +17,7 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { useNavigation } from '../../shell/navigation'
 import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { WorkMenu } from './work-menu'
 import { Sheet } from '../../ui/layout/sheet'
 import { Choice } from '../../ui/controls/choice'
@@ -40,6 +40,8 @@ export function WorkTaskAction({
       }
   disabled: boolean
 }) {
+  const { styles } = useTheme()
+
   const { snapshot, activeId, callEffect, refreshEffect } = useRuntime()
   const { navigate, focused } = useNavigation()
   const [busy, setBusy] = useApplicationState(false)

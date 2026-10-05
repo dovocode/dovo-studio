@@ -1,5 +1,6 @@
-import { router, useLocalSearchParams } from 'expo-router'
+import { Redirect, router, useLocalSearchParams } from 'expo-router'
 import { useState } from 'react'
+import { randomUUID } from 'expo-crypto'
 import { ActivityIndicator, Keyboard, View } from 'react-native'
 import { useRuntime } from '../../runtime/connection/provider'
 import { StartupThread } from '../creation/startup-thread'
@@ -9,7 +10,7 @@ import { useRouteComputer } from '../../shell/use-route-computer'
 import { Action } from '../../ui/controls/action'
 import { ScreenHeader } from '../../ui/layout/screen-header'
 import { Text } from '../../ui/content/text'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import { TaskDetail } from './task-detail'
 
@@ -20,7 +21,17 @@ function backToTasks() {
 }
 
 export function TaskRouteScreen() {
-  const params = useLocalSearchParams<{ runtimeId: string; taskId: string; questionId?: string }>()
+  const { colors, styles } = useTheme()
+
+  const params = useLocalSearchParams<{
+    runtimeId: string
+    taskId: string
+    questionId?: string
+    draft?: string
+  }>()
+  // This route owns the draft and its live conversation for the whole screen lifetime.
+  // Clearing the creation flag updates the URL, without replacing the page or its composer.
+  const [startup] = useState(() => params.draft === 'true')
   const { ready, activeId, profiles, snapshot, refresh, connected } = useRuntime()
   const { focused, navigate } = useNavigation()
   const { busy, error, act } = useAction()
@@ -31,6 +42,16 @@ export function TaskRouteScreen() {
     activeId === params.runtimeId
       ? snapshot?.workspace.tasks.find((task) => task.id === params.taskId)
       : undefined
+  if (startup)
+    return (
+      <StartupThread
+        taskId={params.taskId}
+        runtimeId={params.runtimeId}
+        onBrowse={backToTasks}
+        onNewThread={() => router.push('/new', { withAnchor: true })}
+        onCommit={(runtimeId, taskId) => router.setParams({ runtimeId, taskId, draft: undefined })}
+      />
+    )
   if (task)
     return (
       <TaskDetail
@@ -98,9 +119,14 @@ export function TaskRouteScreen() {
 }
 
 export function NewTaskScreen() {
-  const [draftVersion, setDraftVersion] = useState(0)
-  const { ready, overviews } = useRuntime()
+  const { colors, styles } = useTheme()
+
+  const [id] = useState(randomUUID)
+  const { ready, overviews, activeId } = useRuntime()
   const { navigate } = useNavigation()
+  const owner =
+    overviews.find((entry) => entry.connected && entry.profile.id === activeId) ??
+    overviews.find((entry) => entry.connected)
   if (!ready)
     return (
       <>
@@ -108,7 +134,7 @@ export function NewTaskScreen() {
         <ActivityIndicator style={{ flex: 1 }} color={colors.accent} />
       </>
     )
-  if (!overviews.some((entry) => entry.connected))
+  if (!owner)
     return (
       <View style={styles.content}>
         <ScreenHeader title="New thread" />
@@ -118,23 +144,6 @@ export function NewTaskScreen() {
         <Action label="Back" secondary onPress={backToTasks} />
       </View>
     )
-  return (
-    <>
-      <ScreenHeader
-        title="New thread"
-        buttons={[
-          {
-            label: 'New thread',
-            icon: 'add',
-            onPress: () => setDraftVersion((value) => value + 1),
-          },
-        ]}
-      />
-      <StartupThread
-        key={draftVersion}
-        onBrowse={backToTasks}
-        onCommit={(runtimeId, id) => router.replace(taskHref(runtimeId, id))}
-      />
-    </>
-  )
+  const href = taskHref(owner.profile.id, id)
+  return <Redirect href={{ ...href, params: { ...href.params, draft: 'true' } }} />
 }

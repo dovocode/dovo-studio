@@ -19,7 +19,7 @@ import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 export function JiraProjectForm({
   initial,
   onClose,
@@ -31,6 +31,8 @@ export function JiraProjectForm({
   onSaved?: () => void
   onBusyChange: (busy: boolean) => void
 }) {
+  const { styles } = useTheme()
+
   const { read, connected, profile, snapshot, callEffect, readEffect } = useRuntime()
   const [name, setName] = useApplicationState(initial?.name ?? '')
   const [site, setSite] = useApplicationState(initial?.site ?? '')

@@ -26,10 +26,12 @@ import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
 import { Text } from '../../ui/content/text'
 import { ScreenHeader } from '../../ui/layout/screen-header'
-import { colors, styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { taskHref } from '../../shell/task-route'
 
 export function TaskLauncherScreen() {
+  const { colors, styles } = useTheme()
+
   const { ready, profiles, activeId, readRuntime, refreshRuntime } = useRuntime()
   const params = useLocalSearchParams<{ text?: string }>()
   const [runtimeId, setRuntimeId] = useApplicationState(activeId ?? '')

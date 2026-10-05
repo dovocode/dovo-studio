@@ -9,7 +9,7 @@ import { canChangeTaskCheckout, responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { Action } from '../ui/controls/action'
 import { IconButton } from '../ui/controls/icon-button'
-import { styles } from '../ui/theme'
+import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { TerminalSession } from './terminal-session'
 export function TerminalPane({
@@ -21,6 +21,8 @@ export function TerminalPane({
   selected: string
   onSelect: (id: string) => void
 }) {
+  const { colors, styles } = useTheme()
+
   const { snapshot, connected, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
   const [savedGroups, setGroups] = useApplicationState<TerminalGroup[]>([])
@@ -185,7 +187,7 @@ export function TerminalPane({
                   minWidth: 0,
                   minHeight: 0,
                   borderWidth: (group?.sessions.length ?? 0) > 1 ? 1 : 0,
-                  borderColor: '#ffffff20',
+                  borderColor: colors.border,
                 }}
               >
                 {group && group.sessions.length > 1 && (

@@ -1,8 +1,10 @@
 import { ScrollView } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { colors } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 // Android fallback: upstream react-native-diffs 1.0.3 only implements the iOS renderer.
 export function DiffView({ patch }: { patch: string }) {
+  const { colors } = useTheme()
+
   return (
     <ScrollView horizontal style={{ flex: 1 }}>
       <ScrollView>
@@ -12,14 +14,14 @@ export function DiffView({ patch }: { patch: string }) {
             selectable
             style={{
               color: line.startsWith('+')
-                ? '#a8dfb2'
+                ? colors.success
                 : line.startsWith('-')
-                  ? '#ffabab'
+                  ? colors.error
                   : colors.text,
               backgroundColor: line.startsWith('+')
-                ? '#152a20'
+                ? `${colors.success}15`
                 : line.startsWith('-')
-                  ? '#321d23'
+                  ? `${colors.error}15`
                   : colors.background,
               fontFamily: 'monospace',
               fontSize: 12,

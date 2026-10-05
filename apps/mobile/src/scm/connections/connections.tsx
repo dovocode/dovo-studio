@@ -26,7 +26,7 @@ import { Field } from '../../ui/controls/field'
 import { Choice } from '../../ui/controls/choice'
 import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import { SettingsGroup, SettingsRow } from '../../screens/settings-group'
 import { DirectoryPicker } from './directory-picker'
 const defaults: Record<ForgeProvider, string> = {
@@ -40,6 +40,8 @@ const ok = mutableStruct({
   ok: Schema.Boolean,
 })
 export default function SourceControlSettings() {
+  const { styles } = useTheme()
+
   const { overviews } = useRuntime()
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -69,6 +71,8 @@ export default function SourceControlSettings() {
   )
 }
 function ConnectionsContent() {
+  const { styles } = useTheme()
+
   const { read, connected, snapshot, readCache, callEffect, readEffect } = useRuntime()
   const [connections, setConnections] = useApplicationState<ForgeConnection[]>([]),
     [error, setError] = useApplicationState(''),
@@ -268,6 +272,8 @@ function ConnectionForm({
   onDone: () => void
   onRemove?: () => void
 }) {
+  const { styles } = useTheme()
+
   const { connected, callEffect } = useRuntime()
   const [provider, setProvider] = useApplicationState<ForgeProvider>(initial?.provider ?? 'github'),
     [name, setName] = useApplicationState(initial?.name ?? 'GitHub'),
@@ -518,6 +524,8 @@ function ProjectConnection({
   onClose: () => void
   onDone: () => void
 }) {
+  const { styles } = useTheme()
+
   const { snapshot, connected, readEffect, callEffect } = useRuntime()
   const project = snapshot?.workspace.repositories.find((repo) => repo.id === projectId)
   const [connectionId, setConnection] = useApplicationState(

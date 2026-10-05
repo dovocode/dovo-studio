@@ -13,7 +13,7 @@ import { toolPresentation } from '@dovo/protocol'
 import { Text } from '../../../ui/content/text'
 import { Icon, type IconName } from '../../../ui/controls/icon'
 import { ThreadMarkdown } from './thread-markdown'
-import { colors, styles } from '../../../ui/theme'
+import { useTheme } from '../../../ui/theme'
 import { activityIdentity, pendingActivity, type TaskToolEvent } from '../state/tool-events'
 export const activityIcon = (kind: ReturnType<typeof toolPresentation>['kind']): IconName =>
   kind === 'computer'
@@ -42,6 +42,8 @@ export function ToolActivityRow({
   event: TaskToolEvent
   compact?: boolean
 }) {
+  const { colors, styles } = useTheme()
+
   const [open, setOpen] = useApplicationState(false)
   const { showToolDetails } = useMobilePreferences()
   const detail = toolPresentation(event.payload, event.summary, event.inputPayload)
@@ -163,6 +165,8 @@ export function ToolActivityRow({
   )
 }
 export function ReasoningActivity({ events }: { events: TaskToolEvent[] }) {
+  const { colors, styles } = useTheme()
+
   const [open, setOpen] = useApplicationState(false)
   if (!events.length) return null
   const active = events.some((event) => pendingActivity(event.status))

@@ -17,7 +17,7 @@ import { RuntimeScope, useRuntime } from '../connection/provider'
 import { Choice } from '../../ui/controls/choice'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
-import { styles, colors } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 
 const Context = createContext<{
   target: SettingsTarget
@@ -64,6 +64,8 @@ export function ScopedSettings({
 }: {
   children: (selection: { scope: SettingsScope; repository?: Repository }) => ReactNode
 }) {
+  const { colors, styles } = useTheme()
+
   const context = useContext(Context)
   if (!context) throw new Error('SettingsTargetProvider is required')
   const { target, setTarget } = context
@@ -108,11 +110,7 @@ export function ScopedSettings({
                   borderRadius: 10,
                   borderWidth: 1,
                   borderColor: selected ? colors.accent : colors.border,
-                  backgroundColor: selected
-                    ? `${colors.accent}14`
-                    : pressed
-                      ? '#ffffff10'
-                      : undefined,
+                  backgroundColor: selected || pressed ? colors.selection : undefined,
                   opacity: next ? 1 : 0.4,
                 })}
               >
