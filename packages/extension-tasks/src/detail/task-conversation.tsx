@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { LoaderCircle, GitFork, Folder } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -67,6 +67,12 @@ export function TaskConversation({
 }) {
   const { collapseComposerOnScroll } = useAppPreferences()
   const [composerCollapsed, setComposerCollapsed] = useState(false)
+  const composer = useRef<HTMLDivElement>(null)
+  const readingHistory = useCallback(() => {
+    // Typing and focus expansion resize the viewport; they must never collapse the editor.
+    if (collapseComposerOnScroll && !composer.current?.contains(document.activeElement))
+      setComposerCollapsed(true)
+  }, [collapseComposerOnScroll])
   const [managePullTask, setManagePullTask] = useState<string | null>(null)
   const [pending, setPending] = useApplicationState<PendingMessage | null>(null)
   const { id, messages, queue, turns, status, compactions } = task
@@ -143,23 +149,10 @@ export function TaskConversation({
       </div>
     )
   return (
-    <div
-      data-task-conversation={task.id}
-      className="flex h-full min-h-0 flex-col"
-      onScrollCapture={(event) => {
-        if (
-          !collapseComposerOnScroll ||
-          !(event.target instanceof HTMLElement) ||
-          !event.target.closest('[role="log"]')
-        )
-          return
-        const element = event.target
-        if (element.scrollHeight - element.clientHeight - element.scrollTop > 120)
-          setComposerCollapsed(true)
-      }}
-    >
+    <div data-task-conversation={task.id} className="flex h-full min-h-0 flex-col">
       <ArtifactOpenContext value={onArtifact}>
         <ChatThread
+          onReadingHistory={readingHistory}
           onManagePulls={() => setManagePullTask(task.id)}
           task={displayedTask}
           onTerminal={onTerminal}
@@ -241,7 +234,7 @@ export function TaskConversation({
       <ReviewFindings task={task} className="px-5 pb-2" onOpen={onReview} />
       <ReviewCommentsTray task={task} className="px-5 pb-2" />
       <MessageQueue task={queueTask} pending={visiblePending} />
-      <div onFocusCapture={() => setComposerCollapsed(false)}>
+      <div ref={composer} onFocusCapture={() => setComposerCollapsed(false)}>
         <Composer
           collapsed={collapseComposerOnScroll && composerCollapsed}
           key={task.id}

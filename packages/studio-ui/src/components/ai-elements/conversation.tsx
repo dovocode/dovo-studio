@@ -18,7 +18,7 @@ export function Conversation({ className, ...props }: ComponentProps<typeof Stic
     <StickToBottom
       className={cn('relative flex-1 overflow-y-hidden', className)}
       initial="instant"
-      resize="smooth"
+      resize="instant"
       role="log"
       defaultChecked
       {...props}
@@ -36,11 +36,13 @@ const HistoryReady = createContext(true)
 export function ConversationHistory({
   children,
   onLoadEarlier,
+  onReadingHistory,
 }: {
   children: ReactNode
   onLoadEarlier?: () => void
+  onReadingHistory?: () => void
 }) {
-  const { scrollToBottom, scrollRef } = useStickToBottomContext()
+  const { scrollToBottom, scrollRef, escapedFromLock } = useStickToBottomContext()
   const [ready, setReady] = useState(false)
   useEffect(() => {
     let disposed = false
@@ -51,6 +53,26 @@ export function ConversationHistory({
       disposed = true
     }
   }, [scrollToBottom])
+  // Content observation alone misses viewport changes caused by the composer or panels.
+  useEffect(() => {
+    const root = scrollRef.current
+    if (!root) return
+    const observer = new ResizeObserver(() => {
+      void scrollToBottom({ animation: 'instant', preserveScrollPosition: true })
+    })
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [scrollRef, scrollToBottom])
+  useEffect(() => {
+    const root = scrollRef.current
+    if (!escapedFromLock || !onReadingHistory || !root) return
+    const reading = () => {
+      if (root.scrollHeight - root.clientHeight - root.scrollTop > 120) onReadingHistory()
+    }
+    root.addEventListener('scroll', reading, { passive: true })
+    reading()
+    return () => root.removeEventListener('scroll', reading)
+  }, [escapedFromLock, onReadingHistory, scrollRef])
   useEffect(() => {
     const root = scrollRef.current
     if (!ready || !onLoadEarlier || !root) return

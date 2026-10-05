@@ -49,6 +49,7 @@ export function ChatThread({
   revealMessage,
   onRevealHandled,
   onManagePulls,
+  onReadingHistory,
 }: {
   task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'> & {
     historyBefore: Task['historyBefore']
@@ -62,6 +63,7 @@ export function ChatThread({
   revealMessage?: string
   onRevealHandled?: () => void
   onManagePulls?: () => void
+  onReadingHistory?: () => void
 }) {
   const history = useConversationHistory(liveTask)
   const task = history.task
@@ -394,6 +396,7 @@ export function ChatThread({
           }}
         >
           <ConversationHistory
+            onReadingHistory={onReadingHistory}
             onLoadEarlier={
               history.hasMore && !history.busy && !history.error && connected
                 ? () => void history.load()

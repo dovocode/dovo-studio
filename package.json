@@ -32,6 +32,7 @@
     "test:artifacts:browser": "node scripts/check-artifacts-browser.mjs",
     "test:windows-runtime:browser": "node scripts/check-windows-runtime-browser.mjs",
     "test:turn-grouping:browser": "node scripts/check-turn-grouping-browser.mjs",
+    "test:thread-scroll:browser": "node scripts/check-thread-scroll-browser.mjs",
     "test:thread-streaming:browser": "node scripts/check-thread-streaming-browser.mjs",
     "test:composer-send:browser": "node scripts/check-composer-send-browser.mjs",
     "test:composer-providers:browser": "node scripts/check-composer-providers-browser.mjs",
