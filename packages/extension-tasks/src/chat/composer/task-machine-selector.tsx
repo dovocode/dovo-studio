@@ -3,7 +3,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace, useStudioHost } from '@dovo/studio-core'
 import { canChangeTaskCheckout, taskMachineDraft, taskSchema, type Task } from '@dovo/protocol'
 import { Button, DropdownMenu } from '@dovo/studio-ui'
-import { Monitor, ChevronDown } from 'lucide-react'
+import { Check, Monitor, ChevronDown } from 'lucide-react'
 import { taskSources } from '../../list/task-collection'
 
 export function TaskMachineSelector({
@@ -23,16 +23,19 @@ export function TaskMachineSelector({
   const repository = store.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const scratch = repository?.kind === 'scratch'
   const identity = scratch ? 'scratch' : repository?.gitIdentity
-  const targets = sources.flatMap((source) =>
-    source.workspace.repositories
-      .filter(
-        (repo) =>
-          !!identity &&
-          (scratch ? repo.kind === 'scratch' : repo.gitIdentity === identity) &&
-          (source.runtimeId !== store.activeRuntimeId || repo.id === task.repositoryId),
-      )
-      .map((repo) => ({ source, repository: repo })),
-  )
+  const targets = sources.flatMap((source) => {
+    const matching = source.workspace.repositories.filter(
+      (repo) =>
+        !!identity &&
+        (scratch ? repo.kind === 'scratch' : repo.gitIdentity === identity) &&
+        (source.runtimeId !== store.activeRuntimeId || repo.id === task.repositoryId),
+    )
+    const fallback = identity
+      ? source.workspace.repositories.find((repo) => repo.kind === 'scratch')
+      : undefined
+    const repositories = matching.length ? matching : fallback ? [fallback] : []
+    return repositories.map((repo) => ({ source, repository: repo }))
+  })
   const machineCount = new Set(targets.map(({ source }) => source.runtimeId)).size
   const current = sources.find((source) => source.runtimeId === store.activeRuntimeId)
   const editable = canChangeTaskCheckout(task) && !task.archivedAt
@@ -54,13 +57,19 @@ export function TaskMachineSelector({
             type="button"
             variant="ghost"
             className="h-6 gap-1 px-2 text-[0.625rem] font-normal"
-            disabled={disabled || !editable || busy}
+            disabled={
+              disabled ||
+              !editable ||
+              busy ||
+              !!task.draftAttachments?.length ||
+              !!task.pullRequest ||
+              !!task.workItem
+            }
             title={`Runs on ${current?.name ?? 'this machine'}`}
             aria-label="Task machine"
           >
             <Monitor className="size-3" />
             <span className="max-w-28 truncate">{current?.name ?? 'This machine'}</span>
-            {machineCount > 1 && <span className="text-muted-foreground">+{machineCount - 1}</span>}
             {editable && <ChevronDown className="size-3" />}
           </Button>
         </DropdownMenu.Trigger>
@@ -96,8 +105,8 @@ export function TaskMachineSelector({
                       '/api/tasks/draft-receive',
                       {
                         task: draft,
-                        gitIdentity: scratch ? '' : identity,
-                        projectKind: scratch ? 'scratch' : undefined,
+                        gitIdentity: target.kind === 'scratch' ? '' : identity,
+                        projectKind: target.kind === 'scratch' ? 'scratch' : undefined,
                       },
                       taskSchema,
                     )
@@ -127,14 +136,22 @@ export function TaskMachineSelector({
                     })
                 }}
               >
-                {source.name}
+                <span className="flex items-center gap-2">
+                  <Monitor className="size-3" />
+                  {source.name}
+                  {source.runtimeId === store.activeRuntimeId && (
+                    <Check className="ml-auto size-3" />
+                  )}
+                </span>
                 {!source.online
                   ? ' · Offline'
                   : source.runtimeId === store.activeRuntimeId
                     ? ' · Current'
                     : ''}
                 <span className="block truncate text-[0.625rem] text-muted-foreground">
-                  {target.path}
+                  {target.kind === 'scratch'
+                    ? 'Chat · choose a folder on this machine'
+                    : target.path}
                 </span>
               </DropdownMenu.Item>
             ))}

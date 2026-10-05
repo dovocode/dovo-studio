@@ -6,8 +6,9 @@ import {
   useWorkspace,
   type Task,
 } from '@dovo/studio-core'
-import { Button } from '@dovo/studio-ui'
-import { Folder, Monitor } from 'lucide-react'
+import { Button, DropdownMenu } from '@dovo/studio-ui'
+import { Check, ChevronDown, Monitor } from 'lucide-react'
+import { ComposerProject } from '../chat/composer/composer-project'
 import { Composer } from '../chat/composer/composer'
 import { taskSources } from '../list/task-collection'
 
@@ -41,20 +42,12 @@ export function StartupDraft({
     )
   return (
     <TemporaryTaskWorkspace key={task.id} task={task} onCommit={onCommit}>
-      <StartupComposer taskId={task.id} onProject={onProject} onBrowse={onBrowse} />
+      <StartupComposer taskId={task.id} onBrowse={onBrowse} />
     </TemporaryTaskWorkspace>
   )
 }
 
-function StartupComposer({
-  taskId,
-  onProject,
-  onBrowse,
-}: {
-  taskId: string
-  onProject: () => void
-  onBrowse?: () => void
-}) {
+function StartupComposer({ taskId, onBrowse }: { taskId: string; onBrowse?: () => void }) {
   const store = useWorkspace()
   const [error, setError] = useState('')
   const [switching, setSwitching] = useState(false)
@@ -78,40 +71,56 @@ function StartupComposer({
         onPending={() => {}}
         workspaceControls={
           <div className="relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[744px] items-center gap-2 rounded-b-xl border border-t-0 bg-muted/15 px-2 pb-1.5 pt-4 text-muted-foreground">
-            <Monitor className="size-3" />
-            <select
-              aria-label="Environment"
-              disabled={switching}
-              value={store.activeRuntimeId ?? ''}
-              className="max-w-48 bg-transparent text-xs"
-              onChange={(event) => {
-                setSwitching(true)
-                setError('')
-                void store
-                  .switchRuntime(event.target.value)
-                  .catch((cause: unknown) => setError(String(cause)))
-                  .finally(() => setSwitching(false))
-              }}
-            >
-              {sources.map((source) => (
-                <option
-                  key={source.runtimeId ?? 'local'}
-                  value={source.runtimeId ?? ''}
-                  disabled={!source.online}
+            <ComposerProject task={task} disabled={switching} />
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <Button
+                  variant="ghost"
+                  aria-label="Environment"
+                  disabled={switching}
+                  className="h-7 gap-1.5 px-2 text-xs font-normal"
                 >
-                  {source.name}
-                  {source.online ? '' : ' · Offline'}
-                </option>
-              ))}
-            </select>
-            <Button
-              variant="ghost"
-              className="h-6 gap-1.5 px-2 text-xs font-normal"
-              onClick={onProject}
-            >
-              <Folder className="size-3" />
-              Temporary task · Choose project
-            </Button>
+                  <Monitor className="size-3.5" />
+                  <span className="max-w-48 truncate">
+                    {sources.find((source) => source.runtimeId === store.activeRuntimeId)?.name ??
+                      'This machine'}
+                  </span>
+                  <ChevronDown className="size-3" />
+                </Button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                  className="z-50 min-w-56 rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
+                >
+                  {sources.map((source) => (
+                    <DropdownMenu.Item
+                      key={source.runtimeId ?? 'local'}
+                      disabled={!source.online || switching}
+                      className="flex items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:opacity-40"
+                      onSelect={() => {
+                        if (source.runtimeId === store.activeRuntimeId) return
+                        setSwitching(true)
+                        setError('')
+                        void store
+                          .switchRuntime(source.runtimeId ?? '')
+                          .catch((cause: unknown) => setError(String(cause)))
+                          .finally(() => setSwitching(false))
+                      }}
+                    >
+                      <Monitor className="size-3.5" />
+                      <span className="flex-1">
+                        {source.name}
+                        {source.online ? '' : ' · Offline'}
+                      </span>
+                      {source.runtimeId === store.activeRuntimeId && <Check className="size-3.5" />}
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
             {error && (
               <p role="alert" className="text-xs text-destructive">
                 {error}

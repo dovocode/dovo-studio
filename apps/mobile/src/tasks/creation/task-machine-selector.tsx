@@ -26,38 +26,46 @@ export function TaskMachineSelector({
   const repository = runtime.snapshot?.workspace.repositories.find(
     (repo) => repo.id === task.repositoryId,
   )
-  const identity = repository?.gitIdentity
-  const targets = runtime.overviews.flatMap((entry) =>
-    (entry.snapshot?.workspace.repositories ?? [])
-      .filter(
-        (repo) =>
-          identity &&
-          repo.gitIdentity === identity &&
-          (entry.profile.id !== runtime.activeId || repo.id === task.repositoryId),
-      )
-      .map((repository) => ({
-        entry,
-        repository,
-        key: JSON.stringify([entry.profile.id, repository.id]),
-      })),
-  )
+  const scratch = repository?.kind === 'scratch'
+  const identity = scratch ? 'scratch' : repository?.gitIdentity
+  const targets = runtime.overviews.flatMap((entry) => {
+    const repositories = entry.snapshot?.workspace.repositories ?? []
+    const matching = repositories.filter(
+      (repo) =>
+        identity &&
+        (scratch ? repo.kind === 'scratch' : repo.gitIdentity === identity) &&
+        (entry.profile.id !== runtime.activeId || repo.id === task.repositoryId),
+    )
+    const fallback = identity ? repositories.find((repo) => repo.kind === 'scratch') : undefined
+    return (matching.length ? matching : fallback ? [fallback] : []).map((repository) => ({
+      entry,
+      repository,
+      key: JSON.stringify([entry.profile.id, repository.id]),
+    }))
+  })
   const value = JSON.stringify([runtime.activeId, task.repositoryId])
   const editable = canChangeTaskCheckout(task) && !task.archivedAt
-  // With no other computer holding this project there is nothing to choose.
-  if (targets.length < 2 && !error) return null
   return (
     <View style={{ gap: 4 }}>
       <Choice
         compact
         row
-        label={`Run on${targets.length > 1 ? ` · ${targets.length} checkouts` : ''}`}
+        label="Machine"
+        selectedLabel={runtimeComputerName(runtime)}
         value={value}
-        disabled={disabled || busy || !editable}
+        disabled={
+          disabled ||
+          busy ||
+          !editable ||
+          !!task.draftAttachments?.length ||
+          !!task.pullRequest ||
+          !!task.workItem
+        }
         items={
           targets.length
             ? targets.map(({ entry, repository, key }) => ({
                 id: key,
-                name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'} · ${repository.branch} · ${repository.path}`,
+                name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}${repository.kind === 'scratch' && !scratch ? ' · Chat, choose a folder' : ''}`,
                 disabled: !entry.connected,
               }))
             : [
@@ -84,7 +92,11 @@ export function TaskMachineSelector({
               await runtime.readRuntime(
                 target.entry.profile,
                 '/api/tasks/draft-receive',
-                { task: next, gitIdentity: identity },
+                {
+                  task: next,
+                  gitIdentity: target.repository.kind === 'scratch' ? '' : identity,
+                  projectKind: target.repository.kind === 'scratch' ? 'scratch' : undefined,
+                },
                 taskSchema,
               )
               await saveRuntimeDraft(target.entry.profile.id, task.id, text)
@@ -100,7 +112,8 @@ export function TaskMachineSelector({
                   id: task.id,
                   repositoryId: task.repositoryId,
                   draft: task.draft,
-                  gitIdentity: identity,
+                  gitIdentity: scratch ? '' : identity,
+                  projectKind: scratch ? 'scratch' : undefined,
                 },
                 Schema.Struct({ ok: Schema.Boolean }),
               )

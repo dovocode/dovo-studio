@@ -1,4 +1,5 @@
 import { runtimeComputerName } from '@dovo/protocol'
+import { FolderPicker } from './folder-picker'
 import { TaskLauncherControls } from './task-launcher-controls'
 import { useEffect, useRef } from 'react'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -66,7 +67,10 @@ export function TaskLauncherScreen() {
           setRepositoryId((id) =>
             next.workspace.repositories.some((repository) => repository.id === id)
               ? id
-              : (next.workspace.repositories[0]?.id ?? ''),
+              : (next.workspace.repositories.find((repository) => repository.kind === 'scratch')
+                  ?.id ??
+                next.workspace.repositories[0]?.id ??
+                ''),
           )
           setLoadedRuntimeId(runtimeId)
           void refreshRuntime(profile).catch((cause: unknown) => setError(String(cause)))
@@ -163,7 +167,7 @@ export function TaskLauncherScreen() {
           ) : (
             <>
               <Choice
-                label="Server"
+                label="Machine"
                 value={runtimeId}
                 items={profiles.map((profile) => ({
                   id: profile.id,
@@ -175,16 +179,33 @@ export function TaskLauncherScreen() {
                 onChange={setRuntimeId}
                 disabled={locked}
               />
-              <Choice
-                label="Project"
-                value={repositoryId}
-                items={(snapshot?.workspace.repositories ?? []).map((repository) => ({
-                  id: repository.id,
-                  name: repository.name,
-                }))}
-                onChange={setRepositoryId}
-                disabled={locked || loading}
-              />
+              <RuntimeScope runtimeId={runtimeId}>
+                <FolderPicker
+                  key={runtimeId}
+                  value={repositoryId}
+                  repositories={snapshot?.workspace.repositories ?? []}
+                  disabled={locked || loading || loadedRuntimeId !== runtimeId}
+                  onChange={setRepositoryId}
+                  onAdded={(repository) =>
+                    setSnapshot((current) =>
+                      current
+                        ? {
+                            ...current,
+                            workspace: {
+                              ...current.workspace,
+                              repositories: [
+                                ...current.workspace.repositories.filter(
+                                  (item) => item.id !== repository.id,
+                                ),
+                                repository,
+                              ],
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                />
+              </RuntimeScope>
               {loading && <ActivityIndicator color={colors.accent} />}
               {selection && snapshot && selectedRepository && loadedRuntimeId === runtimeId && (
                 <RuntimeScope runtimeId={runtimeId}>

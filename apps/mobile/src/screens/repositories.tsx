@@ -71,12 +71,20 @@ export default function RepositoriesScreen() {
     </View>
   )
 }
-function AddProject({ onClose }: { onClose: () => void }) {
+export function AddProject({
+  onClose,
+  initialSource = 'local',
+  onAdded,
+}: {
+  onClose: () => void
+  initialSource?: 'local' | 'github'
+  onAdded?: (repository: import('@dovo/protocol').Repository) => void
+}) {
   const { profile, snapshot, connected, connection, callEffect } = useRuntime(),
     { busy, error, act } = useAction(),
     [name, setName] = useApplicationState(''),
     [path, setPath] = useApplicationState(''),
-    [source, setSource] = useApplicationState<'local' | 'github'>('local'),
+    [source, setSource] = useApplicationState<'local' | 'github'>(initialSource),
     [repository, setRepository] = useApplicationState(''),
     [directory, setDirectory] = useApplicationState(''),
     [picker, setPicker] = useApplicationState<'directory' | 'github' | null>(null)
@@ -214,7 +222,12 @@ function AddProject({ onClose }: { onClose: () => void }) {
                     return yield* Effect.fail(
                       new Error(validationMessages(parsed.error)[0] ?? 'Invalid repository'),
                     )
-                  yield* callEffect('/api/scm/repositories/add', input, repositorySchema)
+                  const added = yield* callEffect(
+                    '/api/scm/repositories/add',
+                    input,
+                    repositorySchema,
+                  )
+                  onAdded?.(added)
                   onClose()
                   setName('')
                   setPath('')

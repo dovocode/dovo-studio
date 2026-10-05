@@ -1,4 +1,4 @@
-import { useAppPreferences, projectActivity } from '@dovo/studio-core'
+import { useAppPreferences, projectActivity, useWorkspace } from '@dovo/studio-core'
 import { projectMachineGroups } from '@dovo/protocol'
 import {
   Button,
@@ -9,7 +9,7 @@ import {
   Input,
 } from '@dovo/studio-ui'
 import { ChevronRight, Folder, Monitor } from 'lucide-react'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { taskCollectionKey, type TaskSource } from '../list/task-collection'
 
 type ProjectSelectionDialogProps = {
@@ -38,11 +38,18 @@ export function ProjectSelectionDialog({
   onSelect,
 }: ProjectSelectionDialogProps) {
   const preferences = useAppPreferences()
+  const { activeRuntimeId } = useWorkspace()
+  const [machine, setMachine] = useState<string | null | undefined>(undefined)
+  useEffect(() => {
+    if (!open) setMachine(undefined)
+  }, [open])
+  const selectedMachine = machine === undefined ? activeRuntimeId : machine
+  const machineSources = sources.filter((source) => source.runtimeId === selectedMachine)
   const projectGroups = useMemo(
     () =>
       open
         ? projectMachineGroups(
-            sources.flatMap((source) =>
+            machineSources.flatMap((source) =>
               source.workspace.repositories
                 .filter((repository) =>
                   noProject ? repository.kind === 'scratch' : repository.kind !== 'scratch',
@@ -72,12 +79,25 @@ export function ProjectSelectionDialog({
             )
           })
         : [],
-    [sources, open, noProject, preferences.projectGrouping, preferences.projectOrder],
+    [
+      sources,
+      selectedMachine,
+      open,
+      noProject,
+      preferences.projectGrouping,
+      preferences.projectOrder,
+    ],
   )
   const normalizedProjectQuery = projectQuery.trim().toLowerCase()
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(value) => {
+        if (!value) setMachine(undefined)
+        onOpenChange(value)
+      }}
+    >
       <DialogContent className="max-w-md">
         <DialogTitle>{noProject ? 'New task without a project' : 'New task'}</DialogTitle>
         <DialogDescription>
@@ -90,16 +110,37 @@ export function ProjectSelectionDialog({
             {error}
           </p>
         )}
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Monitor className="size-4" />
+          <select
+            aria-label="New thread machine"
+            value={selectedMachine ?? ''}
+            disabled={busy}
+            className="min-w-0 flex-1 bg-transparent"
+            onChange={(event) => setMachine(event.target.value || null)}
+          >
+            {sources.map((source) => (
+              <option
+                key={source.runtimeId ?? 'local'}
+                value={source.runtimeId ?? ''}
+                disabled={!source.online}
+              >
+                {source.name}
+                {source.online ? '' : ' · Offline'}
+              </option>
+            ))}
+          </select>
+        </label>
         {!noProject && (
           <Input
-            aria-label="Search projects and devices"
-            placeholder="Search projects or devices…"
+            aria-label="Search folders"
+            placeholder="Search folders…"
             value={projectQuery}
             onChange={(event) => onProjectQueryChange(event.target.value)}
           />
         )}
         {noProject &&
-          sources.flatMap((source) =>
+          machineSources.flatMap((source) =>
             source.workspace.repositories
               .filter((repository) => repository.kind === 'scratch')
               .map((repository) => (
@@ -178,7 +219,7 @@ export function ProjectSelectionDialog({
             })}
           {!noProject &&
             projectQuery &&
-            !sources.some((source) =>
+            !machineSources.some((source) =>
               source.workspace.repositories.some((repository) =>
                 `${repository.gitIdentity ?? ''} ${repository.name} ${repository.path} ${source.name}`
                   .toLowerCase()
@@ -190,7 +231,7 @@ export function ProjectSelectionDialog({
               </p>
             )}
           {!noProject &&
-            !sources.some((source) =>
+            !machineSources.some((source) =>
               source.workspace.repositories.some((repository) => repository.kind !== 'scratch'),
             ) && (
               <p className="py-4 text-sm text-muted-foreground">

@@ -28,13 +28,15 @@ import {
 function RepositoryDialogContent({
   onClose,
   projectLabels = false,
+  initialSource = 'local',
 }: {
   onClose: () => void
   projectLabels?: boolean
+  initialSource?: 'local' | 'github' | 'forge'
 }) {
   const { setWorkspace, connection, connected, request } = useWorkspace()
   const { pickDirectory } = useStudioHost()
-  const [source, setSource] = useApplicationState<'local' | 'github' | 'forge'>('local')
+  const [source, setSource] = useApplicationState<'local' | 'github' | 'forge'>(initialSource)
   const [name, setName] = useApplicationState('')
   const { addProjectStartsIn } = useAppPreferences()
   const [path, setPath] = useApplicationState('')
@@ -335,7 +337,11 @@ function RepositoryDialogContent({
     </Dialog>
   )
 }
-export function RepositoryDialog(props: { onClose: () => void; projectLabels?: boolean }) {
+export function RepositoryDialog(props: {
+  onClose: () => void
+  projectLabels?: boolean
+  initialSource?: 'local' | 'github' | 'forge'
+}) {
   const { connection } = useWorkspace()
   return <RepositoryDialogContent key={clientScopeKey(connection)} {...props} />
 }

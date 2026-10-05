@@ -1,3 +1,4 @@
+import { FolderPicker } from './folder-picker'
 import { runtimeComputerName } from '@dovo/protocol'
 import { createDraftCreation } from './draft-creation'
 import { nativeEffect } from '../../runtime/state/native-effect'
@@ -135,13 +136,10 @@ export function NewTask({
       <Text style={styles.muted}>On {runtimeComputerName({ profile, snapshot })}</Text>
       {!requested && (
         <>
-          <Choice
-            label="Project"
+          <FolderPicker
             value={repositoryId}
-            items={(snapshot?.workspace.repositories ?? []).map((repository) => ({
-              id: repository.id,
-              name: repository.name,
-            }))}
+            repositories={snapshot?.workspace.repositories ?? []}
+            disabled={!connected}
             onChange={(value) => {
               setRepositoryId(value)
               setTemplateId('')
