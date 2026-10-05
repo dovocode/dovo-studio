@@ -131,11 +131,11 @@ export function Toggle({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-5 w-9 shrink-0 rounded-full p-0 transition-colors disabled:opacity-40 ${checked ? 'bg-primary' : 'bg-muted-foreground/35'}`}
+      className={`relative h-5 w-9 shrink-0 rounded-full p-0 transition-colors disabled:opacity-40 ${checked ? 'bg-action' : 'bg-muted-foreground/35'}`}
     >
       <span
-        className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow transition-transform ${
-          checked ? 'translate-x-4' : 'translate-x-0'
+        className={`absolute left-0.5 top-0.5 size-4 rounded-full shadow transition-transform ${
+          checked ? 'translate-x-4 bg-action-foreground' : 'translate-x-0 bg-foreground'
         }`}
       />
     </button>

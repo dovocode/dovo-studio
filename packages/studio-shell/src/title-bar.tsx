@@ -1,8 +1,9 @@
 import { useStudioHost } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
-import { Layers2, Monitor, Search } from 'lucide-react'
+import { Monitor, Search } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@dovo/studio-ui'
+import dovoLogo from './assets/dovo-logo.png'
 export type DesktopPlatform = 'darwin' | 'win32' | 'linux'
 export function TitleBar({
   platform,
@@ -40,7 +41,7 @@ export function TitleBar({
       data-window-focused={!platform || focused}
     >
       <div className="studio-titlebar-brand">
-        <Layers2 size={15} strokeWidth={1.6} aria-hidden="true" />
+        <img src={dovoLogo} width={24} height={24} alt="" className="shrink-0" draggable={false} />
         <span className="studio-titlebar-name">Dovo Studio</span>
         {appInfo && appInfo.channel !== 'stable' && (
           <span className="rounded border px-1.5 text-[10px] text-muted-foreground">

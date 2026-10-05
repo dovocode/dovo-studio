@@ -23,6 +23,7 @@ import {
   Globe,
   Files,
   FileCode2,
+  Shapes,
   GitBranch,
   GitPullRequest,
   MessageSquare,
@@ -562,7 +563,7 @@ export function TaskHeader({
                   ['files', 'Files', Files, 0],
                   ['projects', 'Linked projects', FolderSymlink, task.linkedCheckouts?.length ?? 0],
                   ...(snapshot?.artifactsEnabled
-                    ? [['artifacts', 'Artifacts', FileCode2, 0] as const]
+                    ? [['artifacts', 'Artifacts', Shapes, 0] as const]
                     : []),
                   ...(hasDiff ? [['changes', 'Diff', FileCode2, task.files.length] as const] : []),
                   ['agents', 'Agents', Bot, task.subagents?.length ?? 0],

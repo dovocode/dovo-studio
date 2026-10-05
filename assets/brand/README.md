@@ -5,7 +5,8 @@ iOS; the transparent squircle variant is used for macOS. Both were generated usi
 image generation tool, then resized into platform assets with `sips`/`iconutil`.
 
 Regenerate export sizes on macOS with `node scripts/generate-app-icons.mjs`. Source PNGs stay here;
-exported assets are committed so builds do not require image generation or macOS export tools.
+exported assets are committed so builds do not require image generation or macOS export tools. The
+same exporter creates the 96px shared title-bar logo for web and desktop.
 
 Generation prompt:
 

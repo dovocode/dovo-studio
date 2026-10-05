@@ -1,7 +1,8 @@
 import { fileStats, FileIcon, DiffAmounts } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useCallback, useEffect, useMemo, useRef, useDeferredValue } from 'react'
-import { getFiletypeFromFileName, preloadHighlighter } from '@pierre/diffs'
+import { getFiletypeFromFileName } from '@pierre/diffs'
+import { preloadStudioHighlighter } from '@dovo/studio-ui/code-themes'
 import { Editor } from '@pierre/diffs/edit'
 import {
   EditProvider,
@@ -49,10 +50,7 @@ function HighlightedFile({
   const diffs = useDiffOptions()
   useEffect(() => {
     let active = true
-    void preloadHighlighter({
-      themes: ['pierre-dark', 'pierre-light'],
-      langs: [getFiletypeFromFileName(path)],
-    }).then(
+    void preloadStudioHighlighter(getFiletypeFromFileName(path)).then(
       () => {
         if (active) setReady(true)
       },

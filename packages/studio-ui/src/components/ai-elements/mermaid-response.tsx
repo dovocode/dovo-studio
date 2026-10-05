@@ -2,8 +2,6 @@ import { useMemo, type ComponentProps } from 'react'
 import { useResolvedTheme } from '@dovo/studio-core'
 import { Streamdown } from 'streamdown'
 import { mermaid } from '@streamdown/mermaid'
-import { code } from '@streamdown/code'
-const plugins = { code, mermaid }
 function DiagramError({ chart }: { chart: string }) {
   return (
     <div className="rounded-lg border p-3">
@@ -18,6 +16,7 @@ function DiagramError({ chart }: { chart: string }) {
 }
 export default function MermaidResponse(props: ComponentProps<typeof Streamdown>) {
   const theme = useResolvedTheme()
+  const plugins = useMemo(() => ({ ...props.plugins, mermaid }), [props.plugins])
   const options = useMemo(
     () => ({
       config: {

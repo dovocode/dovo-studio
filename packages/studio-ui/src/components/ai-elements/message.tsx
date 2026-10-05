@@ -2,12 +2,12 @@
 import { memo, lazy, Suspense, useCallback, useMemo, type HTMLAttributes } from 'react'
 import { resolveMarkdownLink } from '@dovo/protocol'
 import { Streamdown } from 'streamdown'
-import { code } from '@streamdown/code'
+import { createCodePlugin } from '@streamdown/code'
+import { studioSyntaxTheme, useAppPreferences } from '@dovo/studio-core'
 import { cn } from '../../lib/utils'
 import { IconButton } from '../icon-button'
 import { markdownPluginsForLinks } from './markdown-plugins'
 const MermaidResponse = lazy(() => import('./mermaid-response'))
-const markdownPlugins = { code }
 const markdownControls = {
   code: { copy: true, download: false },
   table: false,
@@ -33,7 +33,7 @@ export function MessageContent({ className, ...props }: HTMLAttributes<HTMLDivEl
   return (
     <div
       className={cn(
-        'flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm group-[.is-user]:ml-auto group-[.is-user]:rounded-2xl group-[.is-user]:bg-[#151515] group-[.is-user]:px-4 group-[.is-user]:py-2.5 group-[.is-user]:text-white',
+        'flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm group-[.is-user]:ml-auto group-[.is-user]:rounded-2xl group-[.is-user]:bg-secondary group-[.is-user]:px-4 group-[.is-user]:py-2.5 group-[.is-user]:text-foreground',
         className,
       )}
       {...props}
@@ -51,6 +51,15 @@ export const MessageResponse = memo(function MessageResponse({
   baseURL?: string
   fileBaseURL?: string
 }) {
+  const { themePalette } = useAppPreferences()
+  const markdownPlugins = useMemo(
+    () => ({
+      code: createCodePlugin({
+        themes: [studioSyntaxTheme(themePalette, 'light'), studioSyntaxTheme(themePalette, 'dark')],
+      }),
+    }),
+    [themePalette],
+  )
   const urlTransform = useCallback(
     (url: string) => resolveMarkdownLink(url, baseURL, fileBaseURL) ?? '',
     [baseURL, fileBaseURL],

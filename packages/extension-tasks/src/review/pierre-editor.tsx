@@ -1,7 +1,8 @@
 import { useDiffOptions } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
-import { parseDiffFromFile, preloadHighlighter, getFiletypeFromFileName } from '@pierre/diffs'
+import { parseDiffFromFile, getFiletypeFromFileName } from '@pierre/diffs'
+import { preloadStudioHighlighter } from '@dovo/studio-ui/code-themes'
 import { Editor } from '@pierre/diffs/edit'
 import {
   EditProvider,
@@ -45,10 +46,7 @@ export function PierreEditor({
   useEffect(() => {
     let cancelled = false
     // Prepare syntax resources before mounting the imperative diff renderer.
-    preloadHighlighter({
-      themes: ['pierre-dark', 'pierre-light'],
-      langs: [getFiletypeFromFileName(file.path)],
-    })
+    preloadStudioHighlighter(getFiletypeFromFileName(file.path))
       .then(() => {
         if (!cancelled) setReady(true)
       })

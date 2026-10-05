@@ -572,7 +572,7 @@ export function Composer({
                 className={
                   task.status === 'running'
                     ? 'h-8 w-auto gap-1.5 rounded-md bg-muted px-2 text-[0.6875rem] text-foreground hover:bg-accent'
-                    : 'size-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-35'
+                    : 'size-8 rounded-full bg-action text-action-foreground hover:bg-action/90 disabled:opacity-35'
                 }
                 title={
                   steerFirst

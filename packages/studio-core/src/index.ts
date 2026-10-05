@@ -194,8 +194,10 @@ export {
   useAppPreferences,
   useDiffOptions,
   useResolvedTheme,
+  useStudioTheme,
   type AppPreferences,
 } from './preferences'
+export * from './themes'
 
 export { LauncherWorkspaceProvider } from './workspace/launcher-provider'
 

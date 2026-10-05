@@ -1,20 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, MessageCircleQuestion, ShieldCheck, X, Wifi, WifiOff } from 'lucide-react'
-import { useAppPreferences } from '@dovo/studio-core'
+import { useAppearance } from '@dovo/studio-shell'
 import { Button, QuestionForm } from '@dovo/studio-ui'
 import type { InputPreview, InputPreviewBridge, InputPreviewAnswer } from '@dovo/protocol'
 export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
-  const { theme } = useAppPreferences()
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: light)')
-    const apply = () => {
-      document.documentElement.dataset.theme =
-        theme === 'system' ? (media.matches ? 'light' : 'dark') : theme
-    }
-    apply()
-    media.addEventListener('change', apply)
-    return () => media.removeEventListener('change', apply)
-  }, [theme])
+  useAppearance()
   const [state, setState] = useState<InputPreview | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)

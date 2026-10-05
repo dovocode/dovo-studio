@@ -5,7 +5,8 @@ import { fileStats, FileIcon, DiffAmounts } from '../../files/presentation'
 import { responses, useDiffOptions, useWorkspace, useAppPreferences } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo } from 'react'
-import { getFiletypeFromFileName, parseDiffFromFile, preloadHighlighter } from '@pierre/diffs'
+import { getFiletypeFromFileName, parseDiffFromFile } from '@pierre/diffs'
+import { preloadStudioHighlighter } from '@dovo/studio-ui/code-themes'
 import { FileDiff } from '@pierre/diffs/react'
 import { BookmarkCheck, ChevronRight, Folder, Undo2 } from 'lucide-react'
 import type { ChangedFile, TaskTurn } from '@dovo/studio-core'
@@ -39,10 +40,7 @@ export function CheckpointDiff({ file }: { file: ChangedFile }) {
   )
   useEffect(() => {
     let active = true
-    void preloadHighlighter({
-      themes: ['pierre-dark', 'pierre-light'],
-      langs: [getFiletypeFromFileName(file.path)],
-    })
+    void preloadStudioHighlighter(getFiletypeFromFileName(file.path))
       .then(() => {
         if (active) setReady(true)
       })

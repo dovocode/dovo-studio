@@ -21,6 +21,8 @@
   --color-popover-foreground: var(--foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-action: var(--action);
+  --color-action-foreground: var(--action-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--foreground);
   --color-muted: var(--muted);
@@ -28,7 +30,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--foreground);
   --color-destructive: var(--destructive);
-  --color-destructive-foreground: #361919;
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--border);
   --color-ring: var(--ring);
@@ -39,20 +41,26 @@
 }
 :root {
   color-scheme: dark;
-  --background: #0a0a0a;
-  --foreground: #e8e9ed;
-  --card: #111111;
-  --popover: #191919;
-  --primary: #a5b4fc;
-  --primary-foreground: #111525;
-  --secondary: #181818;
+  --background: #080808;
+  --foreground: #ededed;
+  --card: #101010;
+  --popover: #101010;
+  --primary: #7cc9ff;
+  --primary-foreground: #080808;
+  --secondary: #102432;
+  --muted-foreground: #a1a1a1;
+  --border: #282828;
+  --sidebar: #0c0c0c;
   --muted: #101010;
-  --muted-foreground: #a0a1a8;
-  --accent: #222222;
-  --destructive: #f19b9b;
-  --border: #242424;
-  --ring: #a5b4fc;
-  --sidebar: #080808;
+  --accent: #102432;
+  --ring: #7cc9ff;
+  --action: #ededed;
+  --action-foreground: #080808;
+  --selection: #102432;
+  --signal: #bcefff;
+  --pink: #7cc9ff;
+  --destructive: #ff7e97;
+  --destructive-foreground: #341520;
   font-family:
     Inter,
     ui-sans-serif,
@@ -63,23 +71,29 @@
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
-/* Settings → Appearance. Dark stays the default; light swaps the same design tokens. */
+/* Dovo fallback before React mounts; Appearance applies the selected palette before paint. */
 :root[data-theme='light'] {
   color-scheme: light;
   --background: #ffffff;
-  --foreground: #16171a;
-  --card: #f7f7f8;
+  --foreground: #151515;
+  --card: #ffffff;
   --popover: #ffffff;
-  --primary: #4f5bd5;
+  --primary: #0965b5;
   --primary-foreground: #ffffff;
-  --secondary: #f0f0f2;
-  --muted: #f3f3f5;
-  --muted-foreground: #5f6068;
-  --accent: #ebebee;
-  --destructive: #c93a3a;
-  --border: #e3e3e6;
-  --ring: #4f5bd5;
-  --sidebar: #f7f7f8;
+  --secondary: #e7f3ff;
+  --muted-foreground: #666666;
+  --border: #dddddd;
+  --sidebar: #f7f7f7;
+  --muted: #ffffff;
+  --accent: #e7f3ff;
+  --ring: #0965b5;
+  --action: #151515;
+  --action-foreground: #ffffff;
+  --selection: #e7f3ff;
+  --signal: #006a83;
+  --pink: #0965b5;
+  --destructive: #ba2549;
+  --destructive-foreground: #ffffff;
 }
 /* Text size scales rem-based spacing and type together, like a browser zoom for the UI. */
 /* Appearance → Motion: reduce animation when the user or the OS asks for it. */
@@ -160,14 +174,14 @@ textarea {
   caret-color: var(--foreground);
 }
 ::selection {
-  background: #a5b4fc33;
+  background: color-mix(in srgb, var(--primary) 25%, transparent);
 }
 ::-webkit-scrollbar {
   width: 7px;
   height: 7px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #383838;
+  background: color-mix(in srgb, var(--muted-foreground) 35%, var(--background));
   border-radius: 6px;
 }
 ::-webkit-scrollbar-corner {
@@ -189,7 +203,7 @@ textarea {
   justify-content: space-between;
   gap: 20px;
   padding-inline: 16px 10px;
-  border-bottom: 1px solid #ffffff09;
+  border-bottom: 1px solid var(--border);
   background: var(--sidebar);
   user-select: none;
 }
@@ -313,7 +327,7 @@ textarea {
 .studio-titlebar-section {
   overflow: hidden;
   margin-left: 4px;
-  border-left: 1px solid #ffffff14;
+  border-left: 1px solid var(--border);
   padding-left: 12px;
   color: var(--muted-foreground);
   text-overflow: ellipsis;
@@ -335,7 +349,7 @@ textarea {
   -webkit-app-region: no-drag;
 }
 .studio-titlebar .studio-titlebar-button:hover {
-  background: #ffffff09;
+  background: var(--accent);
   color: var(--foreground);
 }
 .studio-titlebar-button kbd {
@@ -403,11 +417,11 @@ textarea {
   color: var(--muted-foreground);
 }
 .studio-navigation .studio-navigation-item:hover {
-  background: #ffffff08;
+  background: var(--accent);
   color: var(--foreground);
 }
 .studio-navigation .studio-navigation-item[aria-current='page'] {
-  background: #a5b4fc12;
+  background: var(--selection);
   color: var(--primary);
   box-shadow: inset 2px 0 var(--primary);
 }
@@ -559,15 +573,15 @@ textarea {
 }
 .studio-markdown input[type='checkbox'] {
   margin-right: 0.45em;
-  accent-color: #83b9f5;
+  accent-color: var(--primary);
 }
 .studio-markdown :is(a, [data-streamdown='link']) {
-  color: #91bdf1;
+  color: var(--primary);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .studio-markdown :is(a, [data-streamdown='link']):hover {
-  color: #bed8f8;
+  color: color-mix(in srgb, var(--primary) 80%, var(--foreground));
 }
 .studio-markdown blockquote {
   border-left: 3px solid var(--ring);
@@ -814,8 +828,8 @@ a:focus-visible {
 }
 
 .studio-composer:focus-within {
-  border-color: #a5b4fc80;
-  box-shadow: 0 0 0 2px #a5b4fc0c;
+  border-color: color-mix(in srgb, var(--primary) 65%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
 .studio-tools-navigation {
@@ -823,7 +837,7 @@ a:focus-visible {
   border-left: 1px solid var(--border);
 }
 .studio-tools-navigation .studio-navigation-item[aria-pressed='true'] {
-  background: #a5b4fc12;
+  background: var(--selection);
   color: var(--primary);
   box-shadow: inset -2px 0 var(--primary);
 }

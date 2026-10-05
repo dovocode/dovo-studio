@@ -31,7 +31,8 @@ const built = await build({
   target: 'es2022',
 })
 const mocks = {
-  '@dovo/studio-core': `import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
+  // The real markdown renderer now follows the selected Studio palette.
+  '@dovo/studio-core': `export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo'});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
   '@dovo/studio-ui': `
 import React from 'react';import {Button} from '${uiRoot}components/ui/button.tsx';
 export {Button};export {cn} from '${uiRoot}lib/utils.ts';
@@ -267,6 +268,14 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       'Closed cards must not fetch artifact bodies',
     )
     if (ui.platform === 'desktop') {
+      assert.equal(
+        await view
+          .getByRole('button', { name: 'Artifacts', exact: true })
+          .locator('svg.lucide-shapes')
+          .count(),
+        1,
+        'Artifacts use their own Shapes icon',
+      )
       await view.getByRole('button', { name: 'Open artifact Counter', exact: true }).click()
       await view.frameLocator('iframe').frameLocator('iframe').locator('#interactive').waitFor()
       assert.equal(await view.getByRole('dialog').count(), 0, 'Thread cards must open beside chat')

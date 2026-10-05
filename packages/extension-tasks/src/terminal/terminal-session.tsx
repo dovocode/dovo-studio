@@ -1,27 +1,56 @@
 import { startReconnecting, startSocketHeartbeat } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { responses, useWorkspace } from '@dovo/studio-core'
+import { responses, useWorkspace, useStudioTheme, useResolvedTheme } from '@dovo/studio-core'
 export function TerminalSession({ id, active }: { id: string; active: boolean }) {
   const { connection, request } = useWorkspace(),
     container = useRef<HTMLDivElement>(null),
     [error, setError] = useApplicationState('')
+  const colors = useStudioTheme()
+  const mode = useResolvedTheme()
+  const terminalTheme = useMemo(
+    () => ({
+      background: colors.card,
+      foreground: colors.foreground,
+      cursor: colors.primary,
+      cursorAccent: colors.background,
+      selectionBackground: colors.selection,
+      black: colors.background,
+      brightBlack: colors['muted-foreground'],
+      red: mode === 'dark' ? '#ff7e97' : '#ba2549',
+      brightRed: mode === 'dark' ? '#ff7e97' : '#ba2549',
+      green: mode === 'dark' ? '#4deb8c' : '#14753c',
+      brightGreen: mode === 'dark' ? '#4deb8c' : '#14753c',
+      yellow: mode === 'dark' ? '#ffd36a' : '#956100',
+      brightYellow: mode === 'dark' ? '#ffd36a' : '#956100',
+      blue: colors.primary,
+      brightBlue: colors.primary,
+      magenta: colors.pink,
+      brightMagenta: colors.pink,
+      cyan: colors.signal,
+      brightCyan: colors.signal,
+      white: colors.foreground,
+      brightWhite: colors.foreground,
+    }),
+    [colors, mode],
+  )
+  const themeRef = useRef(terminalTheme)
+  themeRef.current = terminalTheme
+  const terminalRef = useRef<Terminal | null>(null)
   useEffect(() => {
     if (!container.current || !connection) return
     let socket: WebSocket | undefined
     const terminal = new Terminal({
         fontSize: 12,
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        theme: {
-          background: '#0d0e10',
-          foreground: '#d4d4d8',
-        },
+        theme: themeRef.current,
         scrollback: 5000,
       }),
       fit = new FitAddon()
     terminal.loadAddon(fit)
+    terminalRef.current = terminal
     terminal.open(container.current)
     const resize = () => {
       if (container.current?.clientWidth && container.current.clientHeight) {
@@ -116,8 +145,12 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
       input.dispose()
       observer.disconnect()
       terminal.dispose()
+      terminalRef.current = null
     }
   }, [id, connection, request])
+  useEffect(() => {
+    if (terminalRef.current) terminalRef.current.options.theme = terminalTheme
+  }, [terminalTheme])
   return (
     <div className={active ? 'relative min-h-0 flex-1' : 'hidden'}>
       <div ref={container} className="h-full p-2" />

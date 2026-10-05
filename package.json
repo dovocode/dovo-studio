@@ -46,6 +46,7 @@
     "test:pull-workspace:browser": "node scripts/check-pull-workspace-browser.mjs",
     "test:pull-links:browser": "node scripts/check-pull-links-browser.mjs && node scripts/check-thread-pull-links-browser.mjs",
     "test:general-settings:browser": "node scripts/check-general-settings-browser.mjs",
+    "test:appearance:browser": "node scripts/check-appearance-browser.mjs",
     "test:scoped-settings:browser": "node scripts/check-scoped-settings-browser.mjs",
     "test:mobile-models:browser": "node scripts/check-mobile-models-browser.mjs",
     "test:mobile-thread-rendering:browser": "node scripts/check-mobile-thread-rendering.mjs",

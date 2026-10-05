@@ -32,6 +32,7 @@ it('keeps valid saved choices, fills in new defaults and ignores invalid values'
   // The invalid field falls back alone; the valid saved theme survives.
   expect(readAppPreferences()).toMatchObject({
     theme: 'light',
+    themePalette: 'dovo',
     lastThreadId: 'saved-thread',
     threadSidebarWidth: 280,
     toolsSidebarWidth: 420,
@@ -43,7 +44,9 @@ it('keeps valid saved choices, fills in new defaults and ignores invalid values'
 })
 
 it('moves desktop preferences from browser storage to the settings bridge', async () => {
-  const local = storage({ 'dovo.app-preferences.v1': JSON.stringify({ theme: 'light' }) })
+  const local = storage({
+    'dovo.app-preferences.v1': JSON.stringify({ theme: 'light', themePalette: 'claude' }),
+  })
   vi.stubGlobal('localStorage', local)
   let saved: unknown = null
   vi.stubGlobal('dovo', {
@@ -56,7 +59,7 @@ it('moves desktop preferences from browser storage to the settings bridge', asyn
   expect(readAppPreferences().theme).toBe('light')
   expect(local.values.has('dovo.app-preferences.v1')).toBe(false)
   updateAppPreferences({ textSize: 'large' })
-  expect(saved).toMatchObject({ theme: 'light', textSize: 'large' })
+  expect(saved).toMatchObject({ theme: 'light', themePalette: 'claude', textSize: 'large' })
 })
 
 it('persists updates and notifies subscribers', async () => {
@@ -66,6 +69,35 @@ it('persists updates and notifies subscribers', async () => {
   updateAppPreferences({ textSize: 'large', notifyDone: true })
   expect(readAppPreferences()).toMatchObject({ textSize: 'large', notifyDone: true, theme: 'dark' })
   expect(JSON.parse(local.values.get('dovo.app-preferences.v1') ?? '{}')).toMatchObject({
+    textSize: 'large',
+  })
+})
+
+it('persists a palette independently of color scheme and restores it on reopening', async () => {
+  vi.stubGlobal('localStorage', storage())
+  const { updateAppPreferences } = await import('./preferences')
+  updateAppPreferences({ themePalette: 'vscode', theme: 'system' })
+  updateAppPreferences({ theme: 'light' })
+  vi.resetModules()
+  const { readAppPreferences } = await import('./preferences')
+  expect(readAppPreferences()).toMatchObject({ themePalette: 'vscode', theme: 'light' })
+})
+
+it('falls back from an unknown palette without losing other saved preferences', async () => {
+  vi.stubGlobal(
+    'localStorage',
+    storage({
+      'dovo.app-preferences.v1': JSON.stringify({
+        themePalette: 'removed',
+        theme: 'system',
+        textSize: 'large',
+      }),
+    }),
+  )
+  const { readAppPreferences } = await import('./preferences')
+  expect(readAppPreferences()).toMatchObject({
+    themePalette: 'dovo',
+    theme: 'system',
     textSize: 'large',
   })
 })

@@ -4,6 +4,7 @@ import {
   MessageCircleQuestion,
   Files,
   FileCode2,
+  Shapes,
   Globe,
   Smartphone,
   FolderSymlink,
@@ -31,7 +32,7 @@ export function TaskTools({
         [
           ['files', 'Files', Files],
           ['projects', 'Linked projects', FolderSymlink],
-          ...(artifactsEnabled ? [['artifacts', 'Artifacts', FileCode2] as const] : []),
+          ...(artifactsEnabled ? [['artifacts', 'Artifacts', Shapes] as const] : []),
           ...(hasDiff ? [['changes', 'Diff', FileCode2] as const] : []),
           ['agents', 'Agents', Bot],
           ['side-chats', 'Side chats', MessageCircleQuestion],

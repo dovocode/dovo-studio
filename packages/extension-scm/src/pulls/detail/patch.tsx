@@ -1,10 +1,11 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ChoicePicker } from '@dovo/studio-ui'
+import { preloadStudioHighlighter } from '@dovo/studio-ui/code-themes'
 import { selectedPatchCode } from './selected-code'
 import { LineCommentForm } from '@dovo/studio-ui'
 import { reviewPatch } from './review-patch'
 import { useEffect, useMemo } from 'react'
-import { getFiletypeFromFileName, parsePatchFiles, preloadHighlighter } from '@pierre/diffs'
+import { getFiletypeFromFileName, parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { PullDetail } from '@dovo/studio-core'
 import { forgeLabels, pullFilePatch, type ForgeProvider, useDiffOptions } from '@dovo/studio-core'
@@ -77,10 +78,7 @@ export function PullPatch({
     let stopped = false
     setReady(false)
     setError('')
-    void preloadHighlighter({
-      themes: ['pierre-dark', 'pierre-light'],
-      langs: [getFiletypeFromFileName(file.path)],
-    })
+    void preloadStudioHighlighter(getFiletypeFromFileName(file.path))
       .then(() => {
         if (!stopped) setReady(true)
       })

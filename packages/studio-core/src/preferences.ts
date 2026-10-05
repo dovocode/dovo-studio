@@ -1,6 +1,7 @@
 import { sharedSettingsSchema } from '@dovo/protocol'
 import { useMemo, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
+import { studioThemeIds, studioSyntaxTheme, studioThemes } from './themes'
 import {
   modelPreferencesSchema,
   agentPresetSchema,
@@ -36,6 +37,7 @@ const schema = mutableStruct({
   backgroundActivity: Schema.Literal('balanced', 'reduced'),
   quitShortcut: Schema.Literal('immediate', 'hold', 'disabled'),
   theme: Schema.Literal('dark', 'light', 'system'),
+  themePalette: Schema.Literal(...studioThemeIds),
   textSize: Schema.Literal('small', 'default', 'large'),
   sendWith: Schema.Literal('enter', 'mod-enter'),
   followUp: Schema.Literal('queue', 'steer'),
@@ -102,6 +104,7 @@ export const defaultAppPreferences: AppPreferences = {
   backgroundActivity: 'balanced',
   quitShortcut: 'immediate',
   theme: 'dark',
+  themePalette: 'dovo',
   textSize: 'default',
   sendWith: 'enter',
   followUp: 'queue',
@@ -241,9 +244,16 @@ export function useResolvedTheme(): 'dark' | 'light' {
   return theme === 'system' ? system : theme
 }
 
+export function useStudioTheme() {
+  const { themePalette } = useAppPreferences()
+  const mode = useResolvedTheme()
+  return studioThemes[themePalette][mode]
+}
+
 /** Settings → Diffs, as options for the Pierre diff renderer. */
 export function useDiffOptions() {
-  const { diffOverflow, diffHighlight, diffLineNumbers, diffLayout } = useAppPreferences()
+  const { diffOverflow, diffHighlight, diffLineNumbers, diffLayout, themePalette } =
+    useAppPreferences()
   const theme = useResolvedTheme()
   // Stable identity: diff views memoize on these options and re-render when they change.
   return useMemo(
@@ -251,14 +261,14 @@ export function useDiffOptions() {
       ({
         defaultSplit: diffLayout === 'split',
         options: {
-          theme: theme === 'light' ? 'pierre-light' : 'pierre-dark',
+          theme: studioSyntaxTheme(themePalette, theme).name,
           themeType: theme,
           overflow: diffOverflow,
           lineDiffType: diffHighlight,
           disableLineNumbers: !diffLineNumbers,
         },
       }) as const,
-    [diffOverflow, diffHighlight, diffLineNumbers, diffLayout, theme],
+    [diffOverflow, diffHighlight, diffLineNumbers, diffLayout, theme, themePalette],
   )
 }
 
