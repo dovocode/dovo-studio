@@ -22,6 +22,7 @@ export function IssueDetail({
   onTransition,
   onComment,
   onMore,
+  preview = false,
 }: {
   detail: ForgeIssueDetail
   provider?: ForgeWorkOptions['provider']
@@ -35,10 +36,23 @@ export function IssueDetail({
   onTransition: () => void
   onComment: () => void
   onMore: () => void
+  preview?: boolean
 }) {
   const { issue, comments, next, discussionNotice } = detail
+  const taskLinks = (
+    <WorkTaskLinks
+      key={JSON.stringify([jiraSourceId, repositoryId, issue.url])}
+      repositoryId={repositoryId}
+      jiraSourceId={jiraSourceId}
+      source={issue}
+      disabled={busy || stale}
+    />
+  )
   return (
-    <article className="mx-auto max-w-4xl space-y-5" aria-label="Issue details">
+    <article
+      className="@container/issue-detail mx-auto max-w-4xl space-y-5"
+      aria-label="Issue details"
+    >
       <header className="space-y-3">
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-foreground">
@@ -57,7 +71,7 @@ export function IssueDetail({
           </a>
         </div>
         <h2 className="break-words text-xl font-semibold leading-snug">{issue.title}</h2>
-        <dl className="grid grid-cols-2 gap-3 rounded-md border bg-card p-3 text-xs sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-3 rounded-md border bg-card p-3 text-xs @2xl/issue-detail:grid-cols-4">
           <div>
             <dt className="text-muted-foreground">Assigned to</dt>
             <dd className="mt-1 break-words">
@@ -117,14 +131,18 @@ export function IssueDetail({
               Edit details
             </Button>
           )}
+          {preview && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!connected || busy || stale}
+              onClick={onComment}
+            >
+              Comment
+            </Button>
+          )}
         </div>
-        <WorkTaskLinks
-          key={JSON.stringify([jiraSourceId, repositoryId, issue.url])}
-          repositoryId={repositoryId}
-          jiraSourceId={jiraSourceId}
-          source={issue}
-          disabled={busy || stale}
-        />
+        {!preview && taskLinks}
       </header>
       {notice && (
         <p role="status" className="text-xs text-muted-foreground">
@@ -182,6 +200,14 @@ export function IssueDetail({
         <Button disabled={busy || !connected} onClick={onMore}>
           More comments
         </Button>
+      )}
+      {preview && (
+        <details className="border-t pt-4 text-xs">
+          <summary className="w-fit cursor-pointer py-1.5 text-muted-foreground hover:text-foreground">
+            Dovo project and linked tasks
+          </summary>
+          <div className="pt-3">{taskLinks}</div>
+        </details>
       )}
     </article>
   )

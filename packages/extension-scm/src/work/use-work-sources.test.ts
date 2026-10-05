@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { reusableOptions } from './use-work-sources'
+import { reusableOptions } from './work-source-page'
 
 it('reuses fresh options only for the same scope and mode without a forced refresh', () => {
   const options = { issues: true }

@@ -1,11 +1,11 @@
 # Issues, pipelines and Jira
 
-Open **Issues** on desktop/web or the native **Issues** tab on mobile. Browse code-host issues and
-independent Jira sources across all saved computers. A Jira source does not require a Dovo project
-or a cloned repository. Opening an item selects its host and uses that computer’s accounts.
-Pipelines are part of **PRs → select a PR → Checks**, with runs scoped to the PR’s exact head
-commit. They no longer have a main-menu item or a project shortcut. Existing run links from
-investigation tasks still open their details.
+Open **Issues** for code-host issues or **Jira** for independent Jira sources on desktop/web. The
+native **Issues** tab on mobile includes both. Browse sources across all saved computers. A Jira
+source does not require a Dovo project or a cloned repository. Opening an item selects its host and
+uses that computer’s accounts. Pipelines are part of **PRs → select a PR → Checks**, with runs
+scoped to the PR’s exact head commit. They no longer have a main-menu item or a project shortcut.
+Existing run links from investigation tasks still open their details.
 
 ## From source to task
 
@@ -36,12 +36,15 @@ is referenced without automatically closing it.
 
 Issue and run lists expose people, labels, branches, commits and update times when available. Issue
 text search queries supported providers, including Jira issue keys, beyond the initially loaded
-page. State filters and sorting apply to loaded results. Older runtimes without server-side search
-keep local filtering. Search-specific cached pages are kept separate. Refresh keeps loaded content
-visible and prevents writes until it is current. On mobile, the Issues tab preserves its selected
-source, detail and filters independently. Pipeline screens are reached from PR checks and retain
-their originating PR on Back. Opening another computer does not reset collection filters. Details
-remain scoped to their owning computer and issue source.
+page. Code-host overview state filters and sorting apply to loaded results. Jira's **Open issues**,
+**All issues** and **Done issues** query the source before pagination; Open includes every status
+outside Jira's Done category. Selecting a Jira source also limits collection requests to that
+source. Project-link filters apply to loaded results. Older runtimes without server-side search keep
+local text filtering. Query- and state-specific cached pages are kept separate. Refresh keeps loaded
+content and pagination depth visible and prevents writes until details are current. On mobile, the
+Issues tab preserves its selected source, detail and filters independently. Pipeline screens are
+reached from PR checks and retain their originating PR on Back. Opening another computer does not
+reset collection filters. Details remain scoped to their owning computer and issue source.
 
 ## Choosing project folders
 
@@ -121,15 +124,31 @@ Other providers can still change between the preflight read and mutation.
 
 ## Independent Jira sources
 
-Choose **Sources** in Issues to connect or manage Jira. Dovo discovers the signed-in `acli`
-account’s Jira Cloud site and projects. Pick a Jira project and choose **Connect Jira**. No Dovo
-project, code host or local checkout is required. Manual site/key entry remains available. Sign-in
-or discovery errors offer a retry action; source failures remain visible in the issue list.
+Choose **Sources** in Jira to connect or manage Jira, or **Connect Jira** on an unconnected
+overview. Dovo discovers the signed-in `acli` account’s Jira Cloud site and projects. Pick a Jira
+project and choose **Connect Jira**. No Dovo project, code host or local checkout is required.
+Manual site/key entry remains available. Sign-in or discovery errors offer a retry action; source
+failures remain visible in the issue list.
 
 Each source belongs to the computer whose CLI account accesses it. The runtime verifies the
 signed-in site and project, accepting Atlassian’s OAuth gateway URLs in API metadata while rejecting
 a different active site. Sources are available beside native GitHub, Gitea, Forgejo and Azure issue
-trackers; connecting Jira does not replace a repository's native issues or pipelines.
+trackers on mobile, and have their own Jira overview on desktop/web; connecting Jira does not
+replace a repository's native issues or pipelines.
+
+The desktop/web overview groups compact issue rows by source and computer, with exact status,
+priority and assignee visible. **Jira order · per source** preserves Jira's own ordering within each
+group instead of implying a cross-source update-time sort. Selecting an issue opens a preview beside
+the retained list. Use Up/Down from an issue row to browse adjacent results, Enter to open and
+Escape or **Close preview** to return focus to the issue. Search, source, loaded pages and list
+scroll stay with the collection. At narrow widths, the preview fills the content area while
+retaining the list behind it; closing restores the list. Native mobile keeps its existing detail
+routes.
+
+The preview offers **Change status**, **Edit details** and **Comment** using the same fresh-detail
+and revision checks as full issue details. Successful changes refresh the collection without
+discarding loaded pages. **Dovo project and linked tasks** remains a secondary disclosure. Source
+sync times describe the oldest fetch among loaded pages, not the issue's last update.
 
 Open a Jira issue to optionally choose a **Dovo project**. Select **Not linked** to remove that
 association. These links live in Dovo and never modify Jira, its project, or the issue. Linked tasks

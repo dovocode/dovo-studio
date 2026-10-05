@@ -4,7 +4,7 @@ import { WorkForm } from './work-form'
 import { IssueDetail } from './issue-detail'
 import { formatDate } from './format-date'
 import { PipelineDetail as PipelineDetailView, PipelineState } from './pipeline-detail'
-import { ArrowLeft, GitBranch, Search, CircleDot, MoreHorizontal, RefreshCw } from 'lucide-react'
+import { ArrowLeft, X, GitBranch, Search, CircleDot, MoreHorizontal, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Effect, Schema } from 'effect'
 import {
@@ -53,6 +53,8 @@ export function WorkContent({
   request,
   connected,
   onBack,
+  preview = false,
+  onChanged,
 }: {
   repositoryId?: string
   jiraSourceId?: string
@@ -66,6 +68,8 @@ export function WorkContent({
   request: ReturnType<typeof useWorkspace>['request']
   connected: boolean
   onBack?: () => void
+  preview?: boolean
+  onChanged?: () => void
 }) {
   const [options, setOptions] = useApplicationState<ForgeWorkOptions | undefined>(undefined)
   const [rows, setRows] = useApplicationState<Array<ForgeIssue | ForgePipeline>>([])
@@ -366,6 +370,7 @@ export function WorkContent({
       setMessage(message + ' Offline details could not be cleared.')
     }
     reload((v) => v + 1)
+    onChanged?.()
   }
   const moreDetail = async () => {
     if (pending.current || busy || !connected) return
@@ -451,7 +456,8 @@ export function WorkContent({
                 variant="ghost"
                 onClick={() => (onBack ? onBack() : setSelected(''))}
               >
-                <ArrowLeft className="size-4" /> Back to {mode}
+                {preview ? <X className="size-4" /> : <ArrowLeft className="size-4" />}
+                {preview ? 'Close preview' : `Back to ${mode}`}
               </Button>
               <span className="mr-auto min-w-0 flex-1 truncate text-xs text-muted-foreground">
                 {repositoryName}
@@ -732,6 +738,7 @@ export function WorkContent({
         {issue && selected === issue.issue.id && (
           <IssueDetail
             detail={issue}
+            preview={preview}
             provider={options?.provider}
             repositoryId={repositoryId}
             jiraSourceId={jiraSourceId}
