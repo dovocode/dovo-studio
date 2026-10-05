@@ -336,9 +336,9 @@ large text with **Send** and **Clear**, and **Type instead** opens the regular c
 preferences stay on the phone. Each computer’s page under Settings → Devices groups its settings the
 same way as desktop: Running tasks, Worktrees, Activity and Task defaults.
 
-When Tasks is the launch destination, the app opens a new thread composer. Use **Browse tasks**
-to open the saved thread list, or **+ New thread** to start fresh. Choose a computer and folder in
-the composer; an untouched composer does not create a saved task.
+When Tasks is the launch destination, the app opens a new thread composer. Use **Browse tasks** to
+open the saved thread list, or **+ New thread** to start fresh. Choose a computer and folder in the
+composer; an untouched composer does not create a saved task.
 
 ### Mobile walkthrough
 
