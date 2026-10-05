@@ -22,7 +22,7 @@ const built = await build({
   stdin: {
     contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Context} from '../../runtime/connection/provider';import {ProjectMachinePicker} from './src/tasks/creation/project-machine-picker';import {TaskMachineSelector} from './src/tasks/creation/task-machine-selector';
-function Transfer({scratch}){const repository={id:'origin',name:'Origin',path:'/origin',kind:scratch?'scratch':undefined,gitIdentity:scratch?undefined:'github.com/test/repo'};const origin={id:'a',name:'Selected',connection:{address:'http://a'}};const destination={id:'b',name:'Other',connection:{address:'http://b'}};const task={id:'task',title:'Draft',createdAt:'2026-10-05T00:00:00Z',repositoryId:'origin',agentId:'',status:'draft',messages:[],files:[],draft:'Persisted',example:false};return <Context.Provider value={{activeId:'a',profile:origin,snapshot:{workspace:{repositories:[repository]}},overviews:[{profile:origin,connected:true,snapshot:{workspace:{repositories:[repository]}}},{profile:destination,connected:true,snapshot:{workspace:{repositories:[{id:'destination-chat',kind:'scratch',name:'Chat',path:'/scratch'}]}}}],readRuntime:async(profile,path,input)=>{window.requests.push({runtimeId:profile.id,path,input});return input.task??{ok:true}},refreshRuntime:async()=>{}}}><TaskMachineSelector task={task} text="Current draft" disabled={false} onMoving={()=>{}}/></Context.Provider>};
+function Transfer({scratch}){const repository={id:'origin',name:'Origin',path:'/origin',kind:scratch?'scratch':undefined,gitIdentity:scratch?undefined:'github.com/test/repo'};const origin={id:'a',name:'Selected',connection:{address:'http://a'}};const destination={id:'b',name:'Other',connection:{address:'http://b'}};const task={id:'task',title:'Draft',createdAt:'2026-10-05T00:00:00Z',repositoryId:'origin',agentId:'',status:'draft',messages:[],files:[],draft:'Persisted',example:false};return <Context.Provider value={{activeId:'a',profile:origin,snapshot:{workspace:{repositories:[repository]}},overviews:[{profile:origin,connected:true,snapshot:{workspace:{repositories:[repository]}}},{profile:destination,connected:true,snapshot:{workspace:{repositories:[{id:'destination-chat',kind:'scratch',name:'Chat',path:'/scratch'}]}}}],readRuntime:async(profile,path,input)=>{window.requests.push({runtimeId:profile.id,path,input});return input.task??{ok:true}},refreshRuntime:async()=>{}}}><TaskMachineSelector task={task} text="Current draft" disabled={false} onMoving={()=>{}} onProjectChange={async()=>{}}/></Context.Provider>};
 function App(){const [mode,setMode]=useState('picker');window.transfer=scratch=>{window.requests=[];window.navigation=null;setMode(scratch?'scratch':'repo')};if(mode!=='picker')return <Transfer scratch={mode==='scratch'}/>;return <Context.Provider value={{activeId:'a',overviews:[{profile:{id:'a',name:'Selected machine',connection:{address:'http://a'}},connected:true,snapshot:{workspace:{repositories:[{id:'chat',kind:'scratch',name:'Temporary',path:'/scratch'},{id:'local',name:'Local folder',path:'/local'},{id:'broken',name:'Broken folder',path:'/broken',gitIdentityError:'Invalid'}]}}},{profile:{id:'b',name:'Other machine',connection:{address:'http://b'}},connected:true,snapshot:{workspace:{repositories:[{id:'remote',name:'Remote folder',path:'/remote'}]}}}]}}><ProjectMachinePicker onCreated={()=>{}} onCancel={()=>{}}/></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: new URL('../apps/mobile/', import.meta.url).pathname,
@@ -60,7 +60,6 @@ try {
     await page.addScriptTag({ content: built.outputFiles[0].text })
   }
   await load()
-  assert.equal(await page.getByLabel('Machine').inputValue(), 'a')
   await page.getByRole('button', { name: 'Folder', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: 'Chat', exact: true }).count(), 1)
   assert.equal(
@@ -72,16 +71,18 @@ try {
   await page.getByRole('button', { name: 'Local folder', exact: true }).click()
   assert.equal(await page.getByText('Draft local').count(), 1)
   await load()
-  await page.getByLabel('Machine').selectOption('b')
   await page.getByRole('button', { name: 'Folder', exact: true }).click()
+  await page.getByRole('button', { name: 'Other machine', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: 'Local folder', exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Remote folder', exact: true }).count(), 1)
-  await page.getByRole('button', { name: 'Add GitHub repository', exact: true }).click()
+  await page.getByRole('button', { name: 'Add project', exact: true }).click()
   assert.equal(await page.evaluate(() => window.addScope), 'b')
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   assert.equal(await page.getByText('Draft added').count(), 1)
   await page.evaluate(() => window.transfer(false))
-  await page.getByLabel('Machine').selectOption(JSON.stringify(['b', 'destination-chat']))
+  await page.getByRole('button', { name: 'Folder', exact: true }).click()
+  await page.getByRole('button', { name: 'Other', exact: true }).click()
+  await page.getByRole('button', { name: 'Chat', exact: true }).click()
   await page.waitForFunction(() => window.navigation)
   assert.deepEqual(
     await page.evaluate(() =>
@@ -101,7 +102,9 @@ try {
   assert.deepEqual(await page.evaluate(() => window.savedDraft), ['b', 'task', 'Current draft'])
   await load()
   await page.evaluate(() => window.transfer(true))
-  await page.getByLabel('Machine').selectOption(JSON.stringify(['b', 'destination-chat']))
+  await page.getByRole('button', { name: 'Folder', exact: true }).click()
+  await page.getByRole('button', { name: 'Other', exact: true }).click()
+  await page.getByRole('button', { name: 'Chat', exact: true }).click()
   await page.waitForFunction(() => window.navigation)
   assert.deepEqual(
     await page.evaluate(() =>

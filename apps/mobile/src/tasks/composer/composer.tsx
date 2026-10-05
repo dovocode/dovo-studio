@@ -1,4 +1,3 @@
-import { FolderPicker } from '../creation/folder-picker'
 import { resolveTaskDefaults } from '@dovo/protocol'
 import { checkpointCanUndo } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
@@ -598,7 +597,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
                   <IconButton
                     variant="plain"
                     icon="changes"
-                    label="Start in fork"
+                    label="Fork"
                     disabled={!canSend || busy}
                     onPress={startFork}
                   />
@@ -696,46 +695,34 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
           )}
         </View>
       )}
-      {checkoutEditable && !task.pullRequest && !task.workItem && (
-        <FolderPicker
-          repositories={snapshot?.workspace.repositories ?? []}
-          value={task.repositoryId}
-          disabled={
-            busy || !connected || attaching || !!task.draftAttachments?.length || dictation.active
-          }
-          onChange={(id, added) => {
-            const repository =
-              added ?? snapshot?.workspace.repositories.find((item) => item.id === id)
-            if (!repository || id === task.repositoryId) return
-            const defaults = resolveTaskDefaults(snapshot?.defaults, repository)
-            act(() =>
-              patch({
-                repositoryId: { before: task.repositoryId, after: id },
-                agentId: { before: task.agentId, after: '' },
-                agentOverrides: { before: task.agentOverrides ?? null, after: null },
-                harness: { before: task.harness ?? null, after: defaults.harness },
-                execution: { before: task.execution ?? null, after: defaults.execution },
-                setupCommand: {
-                  before: task.setupCommand ?? null,
-                  after: defaults.setupCommand ?? null,
-                },
-                worktreeFromOrigin: {
-                  before: task.worktreeFromOrigin ?? null,
-                  after: defaults.worktreeFromOrigin,
-                },
-                existingWorktreePath: { before: task.existingWorktreePath ?? null, after: null },
-                worktreeBaseBranch: { before: task.worktreeBaseBranch ?? null, after: null },
-              }),
-            )
-          }}
-        />
-      )}
       {checkoutEditable && (
         <TaskMachineSelector
           task={task}
           text={draft.text}
           disabled={busy || !draft.ready || attaching || dictation.active}
           onMoving={setMachineMoving}
+          onProjectChange={async (repository) => {
+            if (repository.id === task.repositoryId) return
+            const id = repository.id
+            const defaults = resolveTaskDefaults(snapshot?.defaults, repository)
+            await patch({
+              repositoryId: { before: task.repositoryId, after: id },
+              agentId: { before: task.agentId, after: '' },
+              agentOverrides: { before: task.agentOverrides ?? null, after: null },
+              harness: { before: task.harness ?? null, after: defaults.harness },
+              execution: { before: task.execution ?? null, after: defaults.execution },
+              setupCommand: {
+                before: task.setupCommand ?? null,
+                after: defaults.setupCommand ?? null,
+              },
+              worktreeFromOrigin: {
+                before: task.worktreeFromOrigin ?? null,
+                after: defaults.worktreeFromOrigin,
+              },
+              existingWorktreePath: { before: task.existingWorktreePath ?? null, after: null },
+              worktreeBaseBranch: { before: task.worktreeBaseBranch ?? null, after: null },
+            })
+          }}
         />
       )}
       {checkout && checkoutEditable && hasGit && (

@@ -29,10 +29,12 @@ function RepositoryDialogContent({
   onClose,
   projectLabels = false,
   initialSource = 'local',
+  onAdded,
 }: {
   onClose: () => void
   projectLabels?: boolean
   initialSource?: 'local' | 'github' | 'forge'
+  onAdded?: (repository: import('@dovo/protocol').Repository) => void
 }) {
   const { setWorkspace, connection, connected, request } = useWorkspace()
   const { pickDirectory } = useStudioHost()
@@ -148,7 +150,8 @@ function RepositoryDialogContent({
                 if (!parsed.success)
                   throw new Error(validationMessages(parsed.error)[0] ?? 'Invalid repository')
                 if (connection) {
-                  await request('/api/scm/repositories/add', input, repositorySchema)
+                  const added = await request('/api/scm/repositories/add', input, repositorySchema)
+                  onAdded?.(added)
                 } else if (parsed.data.source === 'local') {
                   const draft = decode(repositorySchema, {
                     id: randomUUID(),
@@ -162,6 +165,7 @@ function RepositoryDialogContent({
                       ? w.repositories
                       : [...w.repositories, draft],
                   }))
+                  onAdded?.(draft)
                 } else {
                   throw new Error('Connect to a runtime before cloning a repository')
                 }
@@ -341,6 +345,7 @@ export function RepositoryDialog(props: {
   onClose: () => void
   projectLabels?: boolean
   initialSource?: 'local' | 'github' | 'forge'
+  onAdded?: (repository: import('@dovo/protocol').Repository) => void
 }) {
   const { connection } = useWorkspace()
   return <RepositoryDialogContent key={clientScopeKey(connection)} {...props} />

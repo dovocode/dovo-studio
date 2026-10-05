@@ -1,5 +1,6 @@
+import type { TaskSource } from '../../list/task-collection'
+import type { Repository } from '@dovo/studio-core'
 import { ComposerProject } from './composer-project'
-import { TaskMachineSelector } from './task-machine-selector'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Schema } from 'effect'
 import { Check, ChevronDown, Folder, GitBranch, GitFork } from 'lucide-react'
@@ -18,10 +19,12 @@ export function ComposerWorkspace({
   task,
   disabled,
   onMachineMoving,
+  onSelectRemote,
 }: {
   task: Task
   disabled: boolean
   onMachineMoving: (moving: boolean) => void
+  onSelectRemote?: (source: TaskSource, repository: Repository) => Promise<void>
 }) {
   const { workspace, setWorkspace, request, connected } = useWorkspace()
   const editable = canChangeTaskCheckout(task)
@@ -66,16 +69,24 @@ export function ComposerWorkspace({
   if (repository?.kind)
     return (
       <div className="mx-auto flex w-[calc(100%-24px)] max-w-[744px] items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
-        <ComposerProject task={task} disabled={disabled} />
-        <TaskMachineSelector task={task} disabled={disabled} onMoving={onMachineMoving} />
+        <ComposerProject
+          task={task}
+          disabled={disabled}
+          onMoving={onMachineMoving}
+          onSelectRemote={onSelectRemote}
+        />
         <Folder className="size-3" />{' '}
         {repository.kind === 'scratch' ? 'No project · private thread folder' : 'Project folder'}
       </div>
     )
   return (
     <div className="relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[744px] flex-wrap items-center gap-x-2 gap-y-1 rounded-b-xl border border-t-0 bg-muted/15 px-2 pb-1.5 pt-4 text-muted-foreground">
-      <ComposerProject task={task} disabled={disabled} />
-      <TaskMachineSelector task={task} disabled={disabled} onMoving={onMachineMoving} />
+      <ComposerProject
+        task={task}
+        disabled={disabled}
+        onMoving={onMachineMoving}
+        onSelectRemote={onSelectRemote}
+      />
       <span className="h-4 border-l border-border/60" aria-hidden="true" />
       {editable ? (
         <DropdownMenu.Root>
@@ -92,7 +103,7 @@ export function ComposerWorkspace({
               {task.existingWorktreePath
                 ? 'Existing worktree'
                 : task.execution === 'worktree'
-                  ? 'Worktree'
+                  ? 'New worktree'
                   : 'Local checkout'}
               <ChevronDown className="size-3" />
             </Button>

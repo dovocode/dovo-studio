@@ -296,22 +296,22 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           mutableStruct({
             task: taskSchema,
             gitIdentity: Schema.String,
-            projectKind: Schema.optional(Schema.Literal('scratch')),
+            projectKind: Schema.optional(Schema.Literal('scratch', 'folder')),
           }),
           yield* serviceResult(body(request)),
         )
         const repo = s.store.get().repositories.find((repo) => repo.id === input.task.repositoryId)
         if (
           !repo ||
-          (input.projectKind === 'scratch'
-            ? repo.kind !== 'scratch'
+          (input.projectKind
+            ? repo.kind !== input.projectKind
             : !input.gitIdentity ||
               (yield* serviceResult(s.git.repositoryIdentity(repo.path, true))) !==
                 input.gitIdentity)
         )
           throw new HttpError(
             409,
-            'The destination no longer has the same Git repository. Refresh projects and try again.',
+            'The destination project changed. Refresh projects and try again.',
           )
         if (
           !canChangeTaskCheckout(input.task) ||
@@ -348,31 +348,25 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             draft: Schema.String,
             repositoryId: idSchema,
             gitIdentity: Schema.String,
-            projectKind: Schema.optional(Schema.Literal('scratch')),
+            projectKind: Schema.optional(Schema.Literal('scratch', 'folder')),
           }),
           yield* serviceResult(body(request)),
         )
         const repo = s.store.get().repositories.find((repo) => repo.id === input.repositoryId)
         if (
           !repo ||
-          (input.projectKind === 'scratch'
-            ? repo.kind !== 'scratch'
+          (input.projectKind
+            ? repo.kind !== input.projectKind
             : !input.gitIdentity ||
               (yield* serviceResult(s.git.repositoryIdentity(repo.path, true))) !==
                 input.gitIdentity)
         )
-          throw new HttpError(
-            409,
-            'The source Git repository changed. Both drafts have been preserved.',
-          )
+          throw new HttpError(409, 'The source project changed. Both drafts have been preserved.')
         const currentRepo = s.store
           .get()
           .repositories.find((entry) => entry.id === input.repositoryId)
         if (currentRepo?.path !== repo.path || currentRepo.kind !== repo.kind)
-          throw new HttpError(
-            409,
-            'The source Git repository changed. Both drafts have been preserved.',
-          )
+          throw new HttpError(409, 'The source project changed. Both drafts have been preserved.')
         const task = s.store.task(input.id)
         if (
           task.draft !== input.draft ||

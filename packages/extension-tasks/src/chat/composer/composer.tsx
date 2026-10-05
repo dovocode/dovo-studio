@@ -519,7 +519,7 @@ export function Composer({
                       type="button"
                       variant="ghost"
                       className="h-8 gap-1.5 px-2 text-[0.6875rem]"
-                      aria-label="Start in fork"
+                      aria-label="Fork"
                       title="Continue this conversation in a new worktree from the latest commit"
                       disabled={
                         !connected ||
@@ -531,7 +531,7 @@ export function Composer({
                       }
                       onClick={() => void startFork()}
                     >
-                      <GitBranchPlus className="size-3.5" /> Start in fork
+                      <GitBranchPlus className="size-3.5" /> Fork
                     </Button>
                   )}
                 <Button

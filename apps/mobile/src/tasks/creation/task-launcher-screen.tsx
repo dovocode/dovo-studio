@@ -1,4 +1,3 @@
-import { runtimeComputerName } from '@dovo/protocol'
 import { FolderPicker } from './folder-picker'
 import { TaskLauncherControls } from './task-launcher-controls'
 import { useEffect, useRef } from 'react'
@@ -24,7 +23,6 @@ import {
 import { useRuntime, RuntimeScope } from '../../runtime/connection/provider'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Action } from '../../ui/controls/action'
-import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { Text } from '../../ui/content/text'
 import { ScreenHeader } from '../../ui/layout/screen-header'
@@ -32,7 +30,7 @@ import { colors, styles } from '../../ui/theme'
 import { taskHref } from '../../shell/task-route'
 
 export function TaskLauncherScreen() {
-  const { ready, profiles, activeId, readRuntime, refreshRuntime, overviews } = useRuntime()
+  const { ready, profiles, activeId, readRuntime, refreshRuntime } = useRuntime()
   const params = useLocalSearchParams<{ text?: string }>()
   const [runtimeId, setRuntimeId] = useApplicationState(activeId ?? '')
   const [snapshot, setSnapshot] = useApplicationState<RuntimeSnapshot | null>(null)
@@ -166,27 +164,18 @@ export function TaskLauncherScreen() {
             </>
           ) : (
             <>
-              <Choice
-                label="Machine"
-                value={runtimeId}
-                items={profiles.map((profile) => ({
-                  id: profile.id,
-                  name: runtimeComputerName({
-                    profile,
-                    snapshot: overviews.find((entry) => entry.profile.id === profile.id)?.snapshot,
-                  }),
-                }))}
-                onChange={setRuntimeId}
-                disabled={locked}
-              />
               <RuntimeScope runtimeId={runtimeId}>
                 <FolderPicker
                   key={runtimeId}
                   value={repositoryId}
                   repositories={snapshot?.workspace.repositories ?? []}
-                  disabled={locked || loading || loadedRuntimeId !== runtimeId}
-                  onChange={setRepositoryId}
-                  onAdded={(repository) =>
+                  disabled={locked}
+                  onChange={(id, _repository, machineId) => {
+                    setRuntimeId(machineId)
+                    setRepositoryId(id)
+                  }}
+                  onAdded={(repository, machineId) =>
+                    machineId === loadedRuntimeId &&
                     setSnapshot((current) =>
                       current
                         ? {

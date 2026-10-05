@@ -1,10 +1,8 @@
-import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { ScrollView } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
-import { Choice } from '../../ui/controls/choice'
 import { styles } from '../../ui/theme'
 import { NewTask } from './new-task'
 import { FolderPicker } from './folder-picker'
@@ -33,42 +31,23 @@ export function ProjectMachinePicker({
         />
       </RuntimeScope>
     )
-  const scratch = entry?.snapshot?.workspace.repositories.find(
-    (repository) => repository.kind === 'scratch',
-  )
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>New thread</Text>
       <Text style={styles.muted}>Choose where to work. Nothing runs until your first message.</Text>
-      <Choice
-        label="Machine"
-        value={runtimeId}
-        onChange={setMachine}
-        items={overviews.map((item) => ({
-          id: item.profile.id,
-          name: runtimeComputerName(item),
-          disabled: !item.connected,
-        }))}
-      />
-      {noProject ? (
-        <Action
-          label="Chat"
-          disabled={!entry?.connected || !scratch}
-          onPress={() => {
-            if (scratch) setRepositoryId(scratch.id)
-          }}
-        />
-      ) : (
-        entry && (
-          <RuntimeScope key={runtimeId} runtimeId={runtimeId}>
-            <FolderPicker
-              repositories={entry.snapshot?.workspace.repositories ?? []}
-              value=""
-              disabled={!entry.connected}
-              onChange={setRepositoryId}
-            />
-          </RuntimeScope>
-        )
+      {entry && (
+        <RuntimeScope key={runtimeId} runtimeId={runtimeId}>
+          <FolderPicker
+            chatOnly={noProject}
+            repositories={entry.snapshot?.workspace.repositories ?? []}
+            value=""
+            disabled={!entry.connected}
+            onChange={(id, _repository, machineId) => {
+              setMachine(machineId)
+              setRepositoryId(id)
+            }}
+          />
+        </RuntimeScope>
       )}
       <Action secondary label="Cancel" onPress={onCancel} />
     </ScrollView>

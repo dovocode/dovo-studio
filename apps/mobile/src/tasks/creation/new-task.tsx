@@ -137,6 +137,7 @@ export function NewTask({
       {!requested && (
         <>
           <FolderPicker
+            allowMachineChange={false}
             value={repositoryId}
             repositories={snapshot?.workspace.repositories ?? []}
             disabled={!connected}

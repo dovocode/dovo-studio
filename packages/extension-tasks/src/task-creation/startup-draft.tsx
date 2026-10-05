@@ -6,11 +6,11 @@ import {
   useWorkspace,
   type Task,
 } from '@dovo/studio-core'
-import { Button, DropdownMenu } from '@dovo/studio-ui'
-import { Check, ChevronDown, Monitor } from 'lucide-react'
-import { ComposerProject } from '../chat/composer/composer-project'
+import { Button } from '@dovo/studio-ui'
+import { ComposerWorkspace } from '../chat/composer/composer-workspace'
 import { Composer } from '../chat/composer/composer'
-import { taskSources } from '../list/task-collection'
+import type { TaskSource } from '../list/task-collection'
+import type { Repository } from '@dovo/studio-core'
 
 export function StartupDraft({
   onProject,
@@ -22,7 +22,15 @@ export function StartupDraft({
   onBrowse?: () => void
 }) {
   const store = useWorkspace()
-  const repository = store.workspace.repositories.find((item) => item.kind === 'scratch')
+  const [selection, setSelection] = useState<{
+    runtimeId: string | null
+    repositoryId: string
+  } | null>(null)
+  const repository = store.workspace.repositories.find((item) =>
+    selection?.runtimeId === store.activeRuntimeId
+      ? item.id === selection.repositoryId
+      : item.kind === 'scratch',
+  )
   const task = useMemo(
     () =>
       createTask({
@@ -42,17 +50,31 @@ export function StartupDraft({
     )
   return (
     <TemporaryTaskWorkspace key={task.id} task={task} onCommit={onCommit}>
-      <StartupComposer taskId={task.id} onBrowse={onBrowse} />
+      <StartupComposer
+        taskId={task.id}
+        onBrowse={onBrowse}
+        onSelectRemote={async (source, target) => {
+          await store.refreshRuntimes()
+          setSelection({ runtimeId: source.runtimeId, repositoryId: target.id })
+          await store.switchRuntime(source.runtimeId ?? '')
+        }}
+      />
     </TemporaryTaskWorkspace>
   )
 }
 
-function StartupComposer({ taskId, onBrowse }: { taskId: string; onBrowse?: () => void }) {
+function StartupComposer({
+  taskId,
+  onBrowse,
+  onSelectRemote,
+}: {
+  taskId: string
+  onBrowse?: () => void
+  onSelectRemote: (source: TaskSource, repository: Repository) => Promise<void>
+}) {
   const store = useWorkspace()
-  const [error, setError] = useState('')
   const [switching, setSwitching] = useState(false)
   const task = store.workspace.tasks.find((item) => item.id === taskId)
-  const sources = taskSources(store)
   if (!task) return null
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -70,63 +92,12 @@ function StartupComposer({ taskId, onBrowse }: { taskId: string; onBrowse?: () =
         temporary
         onPending={() => {}}
         workspaceControls={
-          <div className="relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[744px] items-center gap-2 rounded-b-xl border border-t-0 bg-muted/15 px-2 pb-1.5 pt-4 text-muted-foreground">
-            <ComposerProject task={task} disabled={switching} />
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <Button
-                  variant="ghost"
-                  aria-label="Environment"
-                  disabled={switching}
-                  className="h-7 gap-1.5 px-2 text-xs font-normal"
-                >
-                  <Monitor className="size-3.5" />
-                  <span className="max-w-48 truncate">
-                    {sources.find((source) => source.runtimeId === store.activeRuntimeId)?.name ??
-                      'This machine'}
-                  </span>
-                  <ChevronDown className="size-3" />
-                </Button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  side="top"
-                  align="start"
-                  sideOffset={8}
-                  className="z-50 min-w-56 rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
-                >
-                  {sources.map((source) => (
-                    <DropdownMenu.Item
-                      key={source.runtimeId ?? 'local'}
-                      disabled={!source.online || switching}
-                      className="flex items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:opacity-40"
-                      onSelect={() => {
-                        if (source.runtimeId === store.activeRuntimeId) return
-                        setSwitching(true)
-                        setError('')
-                        void store
-                          .switchRuntime(source.runtimeId ?? '')
-                          .catch((cause: unknown) => setError(String(cause)))
-                          .finally(() => setSwitching(false))
-                      }}
-                    >
-                      <Monitor className="size-3.5" />
-                      <span className="flex-1">
-                        {source.name}
-                        {source.online ? '' : ' · Offline'}
-                      </span>
-                      {source.runtimeId === store.activeRuntimeId && <Check className="size-3.5" />}
-                    </DropdownMenu.Item>
-                  ))}
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
-            {error && (
-              <p role="alert" className="text-xs text-destructive">
-                {error}
-              </p>
-            )}
-          </div>
+          <ComposerWorkspace
+            task={task}
+            disabled={switching}
+            onMachineMoving={setSwitching}
+            onSelectRemote={onSelectRemote}
+          />
         }
       />
     </div>

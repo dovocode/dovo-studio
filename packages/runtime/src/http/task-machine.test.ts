@@ -109,62 +109,64 @@ it('receives drafts idempotently, verifies Git identity, and never starts a chec
   ).toBe(409)
 })
 
-it('moves temporary drafts only between scratch projects', async () => {
-  const f = await fixture()
-  cleanups.push(f.cleanup)
-  const token = 'scratch-machine-owner-token-at-least-32-characters'
-  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
-  cleanups.push(() => runtime.close())
-  const s = runtime.services
-  s.store.update(() => ({
-    ...f.workspace,
-    repositories: [
-      ...f.workspace.repositories,
-      { id: 'scratch', name: 'Temporary', path: f.directory, branch: '', kind: 'scratch' },
-    ],
-  }))
-  const post = (path: string, body: unknown) =>
-    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+it.each(['scratch', 'folder'] as const)(
+  'moves drafts between %s projects and rejects mismatched project kinds',
+  async (kind) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const token = 'scratch-machine-owner-token-at-least-32-characters'
+    const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+    cleanups.push(() => runtime.close())
+    const s = runtime.services
+    s.store.update(() => ({
+      ...f.workspace,
+      repositories: [
+        ...f.workspace.repositories,
+        { id: 'scratch', name: 'Temporary', path: f.directory, branch: '', kind },
+      ],
+    }))
+    const post = (path: string, body: unknown) =>
+      fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    const task = decode(taskSchema, {
+      id: 'temporary-moving',
+      title: 'Draft',
+      repositoryId: 'scratch',
+      agentId: '',
+      status: 'draft',
+      createdAt: new Date().toISOString(),
+      messages: [],
+      files: [],
+      draft: 'Keep this question',
+      example: false,
     })
-  const task = decode(taskSchema, {
-    id: 'temporary-moving',
-    title: 'Draft',
-    repositoryId: 'scratch',
-    agentId: '',
-    status: 'draft',
-    createdAt: new Date().toISOString(),
-    messages: [],
-    files: [],
-    draft: 'Keep this question',
-    example: false,
-  })
-  expect(
-    (await post('/api/tasks/draft-receive', { task, gitIdentity: '', projectKind: 'scratch' }))
-      .status,
-  ).toBe(200)
-  expect(s.store.task(task.id).draft).toBe('Keep this question')
-  expect(
-    (
-      await post('/api/tasks/draft-receive', {
-        task: { ...task, repositoryId: 'repo' },
-        gitIdentity: '',
-        projectKind: 'scratch',
-      })
-    ).status,
-  ).toBe(409)
-  expect(
-    (
-      await post('/api/tasks/draft-moved', {
-        id: task.id,
-        repositoryId: 'scratch',
-        draft: task.draft,
-        gitIdentity: '',
-        projectKind: 'scratch',
-      })
-    ).status,
-  ).toBe(200)
-  expect(s.store.task(task.id).archivedAt).toBeTruthy()
-})
+    expect(
+      (await post('/api/tasks/draft-receive', { task, gitIdentity: '', projectKind: kind })).status,
+    ).toBe(200)
+    expect(s.store.task(task.id).draft).toBe('Keep this question')
+    expect(
+      (
+        await post('/api/tasks/draft-receive', {
+          task: { ...task, repositoryId: 'repo' },
+          gitIdentity: '',
+          projectKind: kind,
+        })
+      ).status,
+    ).toBe(409)
+    expect(
+      (
+        await post('/api/tasks/draft-moved', {
+          id: task.id,
+          repositoryId: 'scratch',
+          draft: task.draft,
+          gitIdentity: '',
+          projectKind: kind,
+        })
+      ).status,
+    ).toBe(200)
+    expect(s.store.task(task.id).archivedAt).toBeTruthy()
+  },
+)

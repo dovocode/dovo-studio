@@ -1,179 +1,46 @@
 import { Schema } from 'effect'
-import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace, useStudioHost } from '@dovo/studio-core'
-import { canChangeTaskCheckout, taskMachineDraft, taskSchema, type Task } from '@dovo/protocol'
-import { Button, DropdownMenu } from '@dovo/studio-ui'
-import { Check, Monitor, ChevronDown } from 'lucide-react'
+import { taskMachineDraft, taskSchema, type Task } from '@dovo/protocol'
 import { taskSources } from '../../list/task-collection'
 
-export function TaskMachineSelector({
-  task,
-  disabled,
-  onMoving,
-}: {
-  task: Task
-  disabled: boolean
-  onMoving: (moving: boolean) => void
-}) {
-  const store = useWorkspace()
-  const host = useStudioHost()
-  const [busy, setBusy] = useApplicationState(false)
-  const [error, setError] = useApplicationState('')
-  const sources = taskSources(store)
-  const repository = store.workspace.repositories.find((repo) => repo.id === task.repositoryId)
-  const scratch = repository?.kind === 'scratch'
-  const identity = scratch ? 'scratch' : repository?.gitIdentity
-  const targets = sources.flatMap((source) => {
-    const matching = source.workspace.repositories.filter(
-      (repo) =>
-        !!identity &&
-        (scratch ? repo.kind === 'scratch' : repo.gitIdentity === identity) &&
-        (source.runtimeId !== store.activeRuntimeId || repo.id === task.repositoryId),
-    )
-    const fallback = identity
-      ? source.workspace.repositories.find((repo) => repo.kind === 'scratch')
-      : undefined
-    const repositories = matching.length ? matching : fallback ? [fallback] : []
-    return repositories.map((repo) => ({ source, repository: repo }))
-  })
-  const machineCount = new Set(targets.map(({ source }) => source.runtimeId)).size
-  const current = sources.find((source) => source.runtimeId === store.activeRuntimeId)
-  const editable = canChangeTaskCheckout(task) && !task.archivedAt
-  if (machineCount < 2 && !error)
-    return (
-      <span
-        className="inline-flex h-6 min-w-0 max-w-40 items-center gap-1.5 px-2 text-[0.625rem]"
-        title={`Runs on ${current?.name ?? 'this machine'}`}
-      >
-        <Monitor className="size-3 shrink-0" />
-        <span className="truncate">{current?.name ?? 'This machine'}</span>
-      </span>
-    )
-  return (
-    <div className="relative">
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-6 gap-1 px-2 text-[0.625rem] font-normal"
-            disabled={
-              disabled ||
-              !editable ||
-              busy ||
-              !!task.draftAttachments?.length ||
-              !!task.pullRequest ||
-              !!task.workItem
-            }
-            title={`Runs on ${current?.name ?? 'this machine'}`}
-            aria-label="Task machine"
-          >
-            <Monitor className="size-3" />
-            <span className="max-w-28 truncate">{current?.name ?? 'This machine'}</span>
-            {editable && <ChevronDown className="size-3" />}
-          </Button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            side="top"
-            className="z-50 max-w-80 rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
-          >
-            <DropdownMenu.Label className="px-2 py-1 text-xs text-muted-foreground">
-              Run on · starts only after your first prompt
-            </DropdownMenu.Label>
-            {targets.map(({ source, repository: target }) => (
-              <DropdownMenu.Item
-                key={`${source.runtimeId}:${target.id}`}
-                className="cursor-default rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:opacity-40"
-                disabled={!source.online || busy || source.runtimeId === store.activeRuntimeId}
-                onSelect={() => {
-                  const profile = store.runtimeRegistry.profiles.find(
-                    (p) => p.id === source.runtimeId,
-                  )
-                  const origin = store.runtimeRegistry.profiles.find(
-                    (p) => p.id === store.activeRuntimeId,
-                  )
-                  if (!profile || !identity) return
-                  setBusy(true)
-                  onMoving(true)
-                  setError('')
-                  void (async () => {
-                    await store.flush()
-                    const draft = taskMachineDraft(task, target, source.snapshot?.defaults)
-                    await store.readRuntime(
-                      profile,
-                      '/api/tasks/draft-receive',
-                      {
-                        task: draft,
-                        gitIdentity: target.kind === 'scratch' ? '' : identity,
-                        projectKind: target.kind === 'scratch' ? 'scratch' : undefined,
-                      },
-                      taskSchema,
-                    )
-                    const sourceRequest: typeof store.request = origin
-                      ? (path, input, schema, method) =>
-                          store.readRuntime(origin, path, input, schema, method)
-                      : store.request
-                    await sourceRequest(
-                      '/api/tasks/draft-moved',
-                      {
-                        id: task.id,
-                        repositoryId: task.repositoryId,
-                        draft: task.draft,
-                        gitIdentity: scratch ? '' : identity,
-                        projectKind: scratch ? 'scratch' : undefined,
-                      },
-                      Schema.Struct({ ok: Schema.Boolean }),
-                    )
-                    await store.refreshRuntimes()
-                    await store.switchRuntime(profile.id)
-                    host.navigate({ viewId: 'tasks', entityId: task.id })
-                  })()
-                    .catch((error: unknown) => setError(String(error)))
-                    .finally(() => {
-                      setBusy(false)
-                      onMoving(false)
-                    })
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <Monitor className="size-3" />
-                  {source.name}
-                  {source.runtimeId === store.activeRuntimeId && (
-                    <Check className="ml-auto size-3" />
-                  )}
-                </span>
-                {!source.online
-                  ? ' · Offline'
-                  : source.runtimeId === store.activeRuntimeId
-                    ? ' · Current'
-                    : ''}
-                <span className="block truncate text-[0.625rem] text-muted-foreground">
-                  {target.kind === 'scratch'
-                    ? 'Chat · choose a folder on this machine'
-                    : target.path}
-                </span>
-              </DropdownMenu.Item>
-            ))}
-            {targets.length < 2 && (
-              <p className="max-w-64 px-2 py-2 text-xs text-muted-foreground">
-                {scratch
-                  ? 'No other saved machine has a temporary task environment.'
-                  : 'No other saved machine has this Git repository checked out.'}
-              </p>
-            )}
-            <p className="max-w-64 px-2 py-1 text-[0.625rem] text-muted-foreground">
-              Draft text moves with you. The destination’s task defaults apply. The original is
-              archived after transfer.
-            </p>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
-      {error && (
-        <p role="alert" className="max-w-72 text-xs text-destructive">
-          {error}
-        </p>
-      )}
-    </div>
+export async function moveTaskDraft(
+  store: ReturnType<typeof useWorkspace>,
+  host: ReturnType<typeof useStudioHost>,
+  task: Task,
+  source: ReturnType<typeof taskSources>[number],
+  target: import('@dovo/protocol').Repository,
+) {
+  const profile = store.runtimeRegistry.profiles.find((item) => item.id === source.runtimeId)
+  const origin = store.runtimeRegistry.profiles.find((item) => item.id === store.activeRuntimeId)
+  const repository = store.workspace.repositories.find((item) => item.id === task.repositoryId)
+  if (!profile || !repository) throw new Error('This machine or project is no longer available.')
+  if (!source.online) throw new Error('This machine is offline.')
+  await store.flush()
+  await store.readRuntime(
+    profile,
+    '/api/tasks/draft-receive',
+    {
+      task: taskMachineDraft(task, target, source.snapshot?.defaults),
+      gitIdentity: target.gitIdentity ?? '',
+      projectKind: target.kind,
+    },
+    taskSchema,
   )
+  const request: typeof store.request = origin
+    ? (path, input, schema, method) => store.readRuntime(origin, path, input, schema, method)
+    : store.request
+  await request(
+    '/api/tasks/draft-moved',
+    {
+      id: task.id,
+      repositoryId: task.repositoryId,
+      draft: task.draft,
+      gitIdentity: repository.gitIdentity ?? '',
+      projectKind: repository.kind,
+    },
+    Schema.Struct({ ok: Schema.Boolean }),
+  )
+  await store.refreshRuntimes()
+  await store.switchRuntime(profile.id)
+  host.navigate({ viewId: 'tasks', entityId: task.id })
 }

@@ -1,137 +1,87 @@
-import { runtimeComputerName } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { View } from 'react-native'
-import { canChangeTaskCheckout, taskMachineDraft, taskSchema, type Task } from '@dovo/protocol'
+import {
+  canChangeTaskCheckout,
+  taskMachineDraft,
+  taskSchema,
+  type Task,
+  type Repository,
+} from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useNavigation } from '../../shell/navigation'
-import { useAction } from '../../ui/controls/use-action'
-import { Choice } from '../../ui/controls/choice'
-import { Text } from '../../ui/content/text'
-import { styles } from '../../ui/theme'
+import { FolderPicker } from './folder-picker'
 import { saveRuntimeDraft } from '../draft/use-draft'
+
 export function TaskMachineSelector({
   task,
   text,
   disabled,
   onMoving,
+  onProjectChange,
 }: {
   task: Task
   text: string
   disabled: boolean
-  onMoving: (value: boolean) => void
+  onMoving: (moving: boolean) => void
+  onProjectChange: (repository: Repository) => Promise<void>
 }) {
   const runtime = useRuntime()
   const { navigate } = useNavigation()
-  const { busy, error, act } = useAction()
   const repository = runtime.snapshot?.workspace.repositories.find(
     (repo) => repo.id === task.repositoryId,
   )
-  const scratch = repository?.kind === 'scratch'
-  const identity = scratch ? 'scratch' : repository?.gitIdentity
-  const targets = runtime.overviews.flatMap((entry) => {
-    const repositories = entry.snapshot?.workspace.repositories ?? []
-    const matching = repositories.filter(
-      (repo) =>
-        identity &&
-        (scratch ? repo.kind === 'scratch' : repo.gitIdentity === identity) &&
-        (entry.profile.id !== runtime.activeId || repo.id === task.repositoryId),
-    )
-    const fallback = identity ? repositories.find((repo) => repo.kind === 'scratch') : undefined
-    return (matching.length ? matching : fallback ? [fallback] : []).map((repository) => ({
-      entry,
-      repository,
-      key: JSON.stringify([entry.profile.id, repository.id]),
-    }))
-  })
-  const value = JSON.stringify([runtime.activeId, task.repositoryId])
-  const editable = canChangeTaskCheckout(task) && !task.archivedAt
   return (
     <View style={{ gap: 4 }}>
-      <Choice
-        compact
-        row
-        label="Machine"
-        selectedLabel={runtimeComputerName(runtime)}
-        value={value}
+      <FolderPicker
+        value={task.repositoryId}
+        repositories={runtime.snapshot?.workspace.repositories ?? []}
         disabled={
           disabled ||
-          busy ||
-          !editable ||
+          !canChangeTaskCheckout(task) ||
+          !!task.archivedAt ||
           !!task.draftAttachments?.length ||
           !!task.pullRequest ||
           !!task.workItem
         }
-        items={
-          targets.length
-            ? targets.map(({ entry, repository, key }) => ({
-                id: key,
-                name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}${repository.kind === 'scratch' && !scratch ? ' · Chat, choose a folder' : ''}`,
-                disabled: !entry.connected,
-              }))
-            : [
-                {
-                  id: value,
-                  name: runtimeComputerName(runtime),
-                },
-              ]
-        }
-        onChange={(key) => {
-          if (key === value) return
-          const target = targets.find((item) => item.key === key)
-          if (!target || !identity) return
-          act(async () => {
-            if (!target.entry.connected)
-              throw new Error('This machine is offline. Reconnect it before selecting it.')
-            onMoving(true)
-            try {
-              const next = taskMachineDraft(
-                { ...task, draft: text },
-                target.repository,
-                target.entry.snapshot?.defaults,
-              )
-              await runtime.readRuntime(
-                target.entry.profile,
-                '/api/tasks/draft-receive',
-                {
-                  task: next,
-                  gitIdentity: target.repository.kind === 'scratch' ? '' : identity,
-                  projectKind: target.repository.kind === 'scratch' ? 'scratch' : undefined,
-                },
-                taskSchema,
-              )
-              await saveRuntimeDraft(target.entry.profile.id, task.id, text)
-              const origin = runtime.profile
-              if (!origin)
-                throw new Error(
-                  'The source machine is no longer saved. The destination draft is preserved.',
-                )
-              await runtime.readRuntime(
-                origin,
-                '/api/tasks/draft-moved',
-                {
-                  id: task.id,
-                  repositoryId: task.repositoryId,
-                  draft: task.draft,
-                  gitIdentity: scratch ? '' : identity,
-                  projectKind: scratch ? 'scratch' : undefined,
-                },
-                Schema.Struct({ ok: Schema.Boolean }),
-              )
-              await runtime.refreshRuntime(origin)
-              await runtime.refreshRuntime(target.entry.profile)
-              navigate('tasks', task.id, target.entry.profile.id)
-            } finally {
-              onMoving(false)
-            }
-          })
+        onMoving={onMoving}
+        onChange={async (_id, target, runtimeId) => {
+          if (runtimeId === runtime.activeId) {
+            await onProjectChange(target)
+            return
+          }
+          const destination = runtime.overviews.find((entry) => entry.profile.id === runtimeId)
+          const origin = runtime.profile
+          if (!destination?.connected || !origin || !repository)
+            throw new Error('This machine or project is unavailable.')
+          const next = taskMachineDraft(
+            { ...task, draft: text },
+            target,
+            destination.snapshot?.defaults,
+          )
+          await runtime.readRuntime(
+            destination.profile,
+            '/api/tasks/draft-receive',
+            { task: next, gitIdentity: target.gitIdentity ?? '', projectKind: target.kind },
+            taskSchema,
+          )
+          await saveRuntimeDraft(runtimeId, task.id, text)
+          await runtime.readRuntime(
+            origin,
+            '/api/tasks/draft-moved',
+            {
+              id: task.id,
+              repositoryId: task.repositoryId,
+              draft: task.draft,
+              gitIdentity: repository.gitIdentity ?? '',
+              projectKind: repository.kind,
+            },
+            Schema.Struct({ ok: Schema.Boolean }),
+          )
+          await runtime.refreshRuntime(origin)
+          await runtime.refreshRuntime(destination.profile)
+          navigate('tasks', task.id, runtimeId)
         }}
       />
-      {editable && <Text style={styles.muted}>Starts only after your first prompt.</Text>}
-      {!!error && (
-        <Text accessibilityRole="alert" style={styles.error}>
-          {error}
-        </Text>
-      )}
     </View>
   )
 }

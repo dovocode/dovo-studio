@@ -37,6 +37,7 @@
     "test:composer-providers:browser": "node scripts/check-composer-providers-browser.mjs",
     "test:mobile-thread-folder:browser": "node scripts/check-mobile-thread-folder-browser.mjs",
     "test:thread-folder:browser": "node scripts/check-thread-folder-browser.mjs",
+    "test:startup-checkout:browser": "node scripts/check-startup-checkout-browser.mjs",
     "test:startup-draft:browser": "node scripts/check-startup-draft-browser.mjs",
     "test:thread-startup:browser": "node scripts/check-thread-startup-browser.mjs",
     "test:mobile-notifications:browser": "node scripts/check-mobile-notifications-browser.mjs",
