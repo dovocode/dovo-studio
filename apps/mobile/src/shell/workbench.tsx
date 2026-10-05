@@ -199,8 +199,10 @@ export function Workbench() {
       const { launchTab, carMode } = readMobilePreferences()
       // Car mode only has Tasks and Settings, so it always opens on Tasks.
       const tab = carMode ? 'tasks' : launchTab
-      if (tab !== 'tasks' && pathname === '/')
-        router.replace(tab === 'jobs' ? '/settings/automations' : `/${tab}`)
+      if (pathname === '/') {
+        if (tab === 'tasks') router.push('/new', { withAnchor: true })
+        else router.replace(tab === 'jobs' ? '/settings/automations' : `/${tab}`)
+      }
     })
   }, [runtime.ready, runtime.profiles.length, pathname])
   // Car mode: Tasks and Settings only.

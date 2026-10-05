@@ -195,11 +195,13 @@ appId: com.dovo.studio
 - tapOn:
     id: Tab Tasks
 - tapOn:
-    text: New task
+    text: New thread
 - extendedWaitUntil:
     visible:
       id: Message
     timeout: 10000
+- tapOn: Folder
+- tapOn: developer-platform/mobile-and-desktop-runtime-connections
 - assertNotVisible: Create task
 - tapOn: Checkout & branch
 - tapOn:

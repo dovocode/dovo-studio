@@ -299,22 +299,12 @@ appId: com.dovo.studio
     text: Open
     optional: true
 - extendedWaitUntil:
-    visible: Choose where this work should run.
-    timeout: 20000
-- tapOn: 127.0.0.1
-- extendedWaitUntil:
-    visible: Choose a project
-    timeout: 20000
-- tapOn:
-    id: Project
-- tapOn:
-    id: Choose developer-platform/mobile-and-desktop-runtime-connections
-- tapOn:
-    id: Open chat
-- extendedWaitUntil:
     visible:
       id: Message
     timeout: 20000
+- assertVisible: What would you like to work on?
+- tapOn: Folder
+- tapOn: developer-platform/mobile-and-desktop-runtime-connections
 - assertNotVisible: Computer changed
 - tapOn: Back
 - extendedWaitUntil:

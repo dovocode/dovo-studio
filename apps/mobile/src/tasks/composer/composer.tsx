@@ -20,6 +20,7 @@ import {
   taskForkResultSchema,
   type WorktreeChoices,
   type Task,
+  type Repository,
 } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { useTaskConversation } from '../conversation/state/provider'
@@ -40,7 +41,15 @@ import { useAction } from '../../ui/controls/use-action'
 import { randomUUID } from 'expo-crypto'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
 import { useNavigation } from '../../shell/navigation'
-export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
+export function Composer({
+  task,
+  onAsk,
+  onSelectRemote,
+}: {
+  task: Task
+  onAsk?: () => void
+  onSelectRemote?: (runtimeId: string, repository: Repository, text: string) => Promise<void>
+}) {
   const insets = useSafeAreaInsets()
   const { actions, send, stop } = useTaskConversation()
   const {
@@ -701,6 +710,7 @@ export function Composer({ task, onAsk }: { task: Task; onAsk?: () => void }) {
           text={draft.text}
           disabled={busy || !draft.ready || attaching || dictation.active}
           onMoving={setMachineMoving}
+          onSelectRemote={onSelectRemote}
           onProjectChange={async (repository) => {
             if (repository.id === task.repositoryId) return
             const id = repository.id

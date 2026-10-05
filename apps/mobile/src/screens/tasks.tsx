@@ -358,16 +358,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                   onPress: () => router.push('/launch'),
                 },
                 {
-                  label: 'No project task',
-                  icon: 'newChat',
-                  disabled: !overviews.some((entry) => entry.connected) || busy,
-                  onPress: () => {
-                    retainPosition()
-                    router.push('/new?noProject=1', { withAnchor: true })
-                  },
-                },
-                {
-                  label: 'New task',
+                  label: 'New thread',
                   icon: 'add',
                   disabled: !overviews.some((entry) => entry.connected) || busy,
                   onPress: () => {

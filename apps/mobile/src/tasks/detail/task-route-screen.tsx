@@ -1,7 +1,8 @@
 import { router, useLocalSearchParams } from 'expo-router'
+import { useState } from 'react'
 import { ActivityIndicator, Keyboard, View } from 'react-native'
 import { useRuntime } from '../../runtime/connection/provider'
-import { ProjectMachinePicker } from '../creation/project-machine-picker'
+import { StartupThread } from '../creation/startup-thread'
 import { useNavigation } from '../../shell/navigation'
 import { taskHref } from '../../shell/task-route'
 import { useRouteComputer } from '../../shell/use-route-computer'
@@ -97,20 +98,20 @@ export function TaskRouteScreen() {
 }
 
 export function NewTaskScreen() {
-  const { noProject } = useLocalSearchParams<{ noProject?: string }>()
+  const [draftVersion, setDraftVersion] = useState(0)
   const { ready, overviews } = useRuntime()
   const { navigate } = useNavigation()
   if (!ready)
     return (
       <>
-        <ScreenHeader title="New task" />
+        <ScreenHeader title="New thread" />
         <ActivityIndicator style={{ flex: 1 }} color={colors.accent} />
       </>
     )
   if (!overviews.some((entry) => entry.connected))
     return (
       <View style={styles.content}>
-        <ScreenHeader title="New task" />
+        <ScreenHeader title="New thread" />
         <Text style={styles.title}>Connect a computer</Text>
         <Text style={styles.muted}>A computer needs to be online to start a task.</Text>
         <Action label="Open computer settings" onPress={() => navigate('settings')} />
@@ -119,11 +120,20 @@ export function NewTaskScreen() {
     )
   return (
     <>
-      <ScreenHeader title="New task" />
-      <ProjectMachinePicker
-        noProject={noProject === '1'}
-        onCancel={backToTasks}
-        onCreated={(runtimeId, id) => router.replace(taskHref(runtimeId, id))}
+      <ScreenHeader
+        title="New thread"
+        buttons={[
+          {
+            label: 'New thread',
+            icon: 'add',
+            onPress: () => setDraftVersion((value) => value + 1),
+          },
+        ]}
+      />
+      <StartupThread
+        key={draftVersion}
+        onBrowse={backToTasks}
+        onCommit={(runtimeId, id) => router.replace(taskHref(runtimeId, id))}
       />
     </>
   )

@@ -74,12 +74,14 @@ export function usePendingConversationMessage() {
 }
 export function ConversationProvider({
   task: liveTask,
+  temporary = false,
   visible,
   openCheckpoint,
   openTerminal,
   children,
 }: {
   task: Task
+  temporary?: boolean
   visible: boolean
   openCheckpoint: (turnId: string, path?: string) => void
   openTerminal: (terminalId: string) => void
@@ -183,7 +185,7 @@ export function ConversationProvider({
   useEffect(() => {
     if ((!visible || answeringQuestion || task.archived) && dictating) finishDictation()
   }, [visible, answeringQuestion, task.archived, dictating, finishDictation])
-  const activity = useToolActivity(task.id, visible, task.status === 'running')
+  const activity = useToolActivity(task.id, visible && !temporary, task.status === 'running')
   const pendingMessage = useMemo(() => {
     const pending = visibleMobileSend(task, actions.pendingMessage)
     return pending?.destination === 'thread' ? pending : null

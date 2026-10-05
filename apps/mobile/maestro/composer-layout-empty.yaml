@@ -51,12 +51,18 @@ appId: com.dovo.studio
 - tapOn:
     id: Tab Tasks
 - tapOn:
-    text: New task
+    text: New thread
+- extendedWaitUntil:
+    visible:
+      id: Message
+    timeout: 10000
+- tapOn: Folder
+- tapOn: developer-platform/mobile-and-desktop-runtime-connections
 - extendedWaitUntil:
     visible:
       id: Checkout & branch
     timeout: 10000
-- assertVisible: What are we building?
+- assertVisible: What would you like to work on?
 - tapOn:
     id: Message
 - waitForAnimationToEnd

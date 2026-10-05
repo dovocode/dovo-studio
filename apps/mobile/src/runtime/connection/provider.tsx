@@ -160,7 +160,8 @@ type Runtime = {
   cacheForRuntime: (profile: RuntimeProfile) => RuntimeReadCache
   readCache: RuntimeReadCache | null
 }
-const Context = createContext<Runtime | null>(null)
+export const RuntimeContext = createContext<Runtime | null>(null)
+const Context = RuntimeContext
 const initialOverview = (profile: RuntimeProfile): RuntimeOverview => ({
   profile,
   snapshot: null,

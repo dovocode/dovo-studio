@@ -52,6 +52,7 @@ jobs:
       - run: pnpm test:shared-storage:browser
       - run: pnpm test:remote-browser-recovery:browser
       - run: pnpm test:mobile-composer:browser
+      - run: pnpm test:mobile-startup-thread:browser
       - run: pnpm test:mobile-energy:browser
       - run: pnpm test:composer-send:browser
       - run: pnpm test:composer-providers:browser

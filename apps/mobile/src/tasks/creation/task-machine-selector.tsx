@@ -18,12 +18,14 @@ export function TaskMachineSelector({
   disabled,
   onMoving,
   onProjectChange,
+  onSelectRemote,
 }: {
   task: Task
   text: string
   disabled: boolean
   onMoving: (moving: boolean) => void
   onProjectChange: (repository: Repository) => Promise<void>
+  onSelectRemote?: (runtimeId: string, repository: Repository, text: string) => Promise<void>
 }) {
   const runtime = useRuntime()
   const { navigate } = useNavigation()
@@ -47,6 +49,10 @@ export function TaskMachineSelector({
         onChange={async (_id, target, runtimeId) => {
           if (runtimeId === runtime.activeId) {
             await onProjectChange(target)
+            return
+          }
+          if (onSelectRemote) {
+            await onSelectRemote(runtimeId, target, text)
             return
           }
           const destination = runtime.overviews.find((entry) => entry.profile.id === runtimeId)
