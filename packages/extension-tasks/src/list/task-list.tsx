@@ -13,7 +13,7 @@ import {
 import { compareTasks, isSnoozed } from '@dovo/studio-core'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { ProjectsMenu } from '@dovo/extension-scm/projects'
-import { Plus, MessageCirclePlus, Search, ChevronDown, Layers2 } from 'lucide-react'
+import { Plus, Search, ChevronDown, Layers2 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useCallback, useDeferredValue, useMemo, useRef } from 'react'
 import { Button, Input, ContextMenu } from '@dovo/studio-ui'
 import { responses, useWorkspace } from '@dovo/studio-core'
@@ -29,7 +29,7 @@ export function TaskList({
   selectedId,
   onSelect,
   onCreate,
-  onCreateNoProject,
+  onNewThread,
   onDeselect,
   onOrderChange,
   onSplit,
@@ -45,7 +45,7 @@ export function TaskList({
   selectedId: string
   onSelect: (entry: TaskEntry) => void
   onCreate: (projectId?: string) => void
-  onCreateNoProject: () => void
+  onNewThread: () => void
   onDeselect: () => void
   /** The tasks in the order they appear in open groups, for keyboard task switching. */
   onOrderChange?: (entries: TaskEntry[]) => void
@@ -547,19 +547,9 @@ export function TaskList({
             size="icon"
             variant="ghost"
             className="size-8 shrink-0"
-            aria-label="New task without a project"
-            title="New task without a project"
-            disabled={busy}
-            onClick={onCreateNoProject}
-          >
-            <MessageCirclePlus size={17} aria-hidden="true" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-8 shrink-0"
-            aria-label="New task"
-            onClick={() => onCreate()}
+            aria-label="New thread"
+            title="New thread"
+            onClick={onNewThread}
             disabled={busy}
           >
             <Plus size={17} aria-hidden="true" />
@@ -738,8 +728,8 @@ export function TaskList({
                 Clear filters
               </Button>
             ) : (
-              <Button size="sm" disabled={busy} onClick={() => onCreate()}>
-                Create a task
+              <Button size="sm" disabled={busy} onClick={onNewThread}>
+                New thread
               </Button>
             )}
           </div>

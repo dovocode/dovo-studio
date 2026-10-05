@@ -355,7 +355,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
   )
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
-  const [noProject, setNoProject] = useApplicationState(false)
   const [choosingProject, setChoosingProject] = useApplicationState(false)
   const [projectQuery, setProjectQuery] = useApplicationState('')
   const [suggestedProject, setSuggestedProject] = useApplicationState('')
@@ -375,7 +374,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
     async (requestedProject?: string, confirmed = false, templateId?: string) => {
       if (busy) return
       if (!confirmed) {
-        setNoProject(false)
         setSuggestedProject(requestedProject ?? projectId)
         setProjectQuery('')
         setError('')
@@ -499,14 +497,26 @@ export default function TasksView({ entityId }: StudioViewProps) {
       viewId: 'tasks',
     })
   }
+  const [draftVersion, setDraftVersion] = useApplicationState(0)
+  const newThread = useCallback(() => {
+    if (busy) return
+    setDeselected(true)
+    setSelectedId('')
+    setSplitId('')
+    setListOpen(false)
+    setChoosingProject(false)
+    setError('')
+    setDraftVersion((version) => version + 1)
+    host.navigate({ viewId: 'tasks' })
+  }, [busy, host])
   useEffect(
     () =>
       host.registerCommand({
         id: 'tasks.new',
-        title: 'New task',
-        run: () => startTask(),
+        title: 'New thread',
+        run: newThread,
       }),
-    [host, startTask],
+    [host, newThread],
   )
   useEffect(() => {
     const disposers = [
@@ -541,7 +551,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   }, [])
   const shortcuts = useRef({
     toggleTerminal,
-    startTask,
+    newThread,
     selectTask: (_entry: TaskEntry) => {},
     selectSurface,
     surface,
@@ -566,7 +576,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   }, [transcriptNotice])
   shortcuts.current = {
     toggleTerminal,
-    startTask,
+    newThread,
     selectTask: (entry) => void selectTask(entry),
     selectSurface,
     surface,
@@ -620,7 +630,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
       // ⌘; (Ctrl+; elsewhere) asks a side question about the open task.
       if (mod && !e.altKey && !e.shiftKey && e.key === ';' && current.task)
         return run(() => setAsking(true))
-      if (mod && !e.altKey && !e.shiftKey && key === 'n') return run(() => void current.startTask())
+      if (mod && !e.altKey && !e.shiftKey && key === 'n') return run(() => current.newThread())
       // Ctrl+O cycles how much of each turn shows: folded steps, every step, replies only.
       if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === 'o')
         return run(() => {
@@ -706,12 +716,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 error={error}
                 onSelect={(entry) => void selectTask(entry)}
                 onCreate={(project) => void startTask(project)}
-                onCreateNoProject={() => {
-                  setNoProject(true)
-                  setProjectQuery('')
-                  setError('')
-                  setChoosingProject(true)
-                }}
+                onNewThread={newThread}
                 onDeselect={deselectTask}
                 onOrderChange={reportOrder}
                 onSplit={(entry) => {
@@ -1097,6 +1102,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 {!compact && <header className="studio-task-thread-header">Tasks</header>}
                 <div className="min-h-0 flex-1">
                   <StartupDraft
+                    key={draftVersion}
                     onBrowse={compact ? () => setListOpen(true) : undefined}
                     onProject={() => void startTask()}
                     onCommit={(draft) => {
@@ -1194,12 +1200,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
             error={error}
             onSelect={(entry) => void selectTask(entry)}
             onCreate={(project) => void startTask(project)}
-            onCreateNoProject={() => {
-              setNoProject(true)
-              setProjectQuery('')
-              setError('')
-              setChoosingProject(true)
-            }}
+            onNewThread={newThread}
             onDeselect={deselectTask}
             onOrderChange={reportOrder}
           />
@@ -1224,7 +1225,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
           if (!busy) setChoosingProject(open)
         }}
         sources={sources}
-        noProject={noProject}
+        noProject={false}
         busy={busy}
         error={error}
         projectQuery={projectQuery}
