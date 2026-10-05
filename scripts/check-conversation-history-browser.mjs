@@ -472,7 +472,8 @@ createRoot(document.getElementById('app')).render(<App/>);`,
             (args) => ({ path: args.path, namespace: 'production' }),
           )
           builder.onResolve({ filter: /^\.\./ }, (args) =>
-            args.importer.endsWith('/detail/task-conversation.tsx')
+            args.importer.endsWith('/detail/task-conversation.tsx') &&
+            args.path !== '../chat/artifact-open-context'
               ? { path: args.path, namespace: 'production' }
               : undefined,
           )
@@ -501,6 +502,7 @@ return <div>{h.hasMore&&<button onClick={()=>h.load()}>Load earlier messages</bu
                 'review-comments-tray': 'ReviewCommentsTray',
                 'plan-approval': 'PlanApproval',
                 'review-findings': 'ReviewFindings',
+                'task-pull-link-dialog': 'TaskPullLinkDialog',
               }
               const name = names[args.path.split('/').at(-1)]
               if (!name) throw new Error(`Missing production fixture module ${args.path}`)
