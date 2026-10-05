@@ -1,7 +1,7 @@
 cask "dovo-studio" do
-  version "0.0.7"
-  sha256 "f74889d0185ff4dbb5e53b177d47403563aa0812c99da7316c078d8deffcfd84"
-  url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.7/Dovo-Studio-0.0.7-arm64.zip"
+  version "0.0.8"
+  sha256 "5950d82385b4a5a56924d5792e178e50ba3f3339f4e215dea03f646f9bb5c8b4"
+  url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.8/Dovo-Studio-0.0.8-arm64.zip"
   name "Dovo Studio"
   desc "Native workspace for coding agents and connected devices"
   homepage "https://github.com/dovocode/dovo-studio"
