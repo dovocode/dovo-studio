@@ -17,7 +17,7 @@ const mocks = {
   '../../agents/model-settings': `export const ModelSettings=()=>null;`,
   '../../ui/controls/choice': `export const Choice=({label,value,items,onChange,disabled,selectedLabel})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{!items.some(item=>item.id===value)&&<option value={value} disabled hidden>{selectedLabel}</option>}{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
   '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
-  '../../ui/theme': `export const styles={};`,
+  '../../ui/theme': `export const styles={};export const useTheme=()=>({styles,colors:{},mode:'dark'});`,
 }
 const built = await build({
   alias: {

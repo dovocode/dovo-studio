@@ -23,7 +23,7 @@ export const Action=({label,onPress,disabled})=><button disabled={disabled} onCl
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
 export const ScreenHeader=({title})=><h1>{title}</h1>;
 export const Icon=()=>null;export const IconButton=({label,onPress})=><button onClick={onPress}>{label}</button>;
-export const Sheet=View;export const colors={};export const styles={};export const Alert={alert:()=>{}};
+export const Sheet=View;export const colors={};export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const Alert={alert:()=>{}};
 `
 const fixture = `
 const base={repositoryId:'repo',agentId:'',status:'running',createdAt:'2026-10-03T12:00:00Z',draft:'',files:[],messages:[],example:false};

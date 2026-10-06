@@ -23,7 +23,7 @@ export const ModelSettings=({agent,onChange})=><input aria-label="Model" value={
 export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
 export const Field=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
-export const styles={};
+export const styles={};export const useTheme=()=>({styles,colors:{},mode:'dark'});
 `
 const browser = await chromium.launch({ headless: true })
 try {

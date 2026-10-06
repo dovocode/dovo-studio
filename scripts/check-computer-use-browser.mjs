@@ -11,7 +11,7 @@ export const View=({children})=><div>{children}</div>;
 export const Text=({children})=><p>{children}</p>;
 export const Linking={openURL:async()=>{}};
 export const Alert={alert:(title,message,buttons)=>{if(window.confirm(message))buttons.at(-1).onPress()}};
-export const styles={};
+export const styles={};export const useTheme=()=>({styles,colors:{},mode:'dark'});
 export const Field=({label,value,onChangeText,editable})=><label>{label}<input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/></label>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Switch=({value,onValueChange,disabled,accessibilityLabel})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;`

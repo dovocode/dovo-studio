@@ -54,8 +54,10 @@ jobs:
       - run: pnpm test:mobile-composer:browser
       - run: pnpm test:mobile-startup-thread:browser
       - run: pnpm test:mobile-energy:browser
+      - run: pnpm test:mobile-appearance:browser
       - run: pnpm test:composer-send:browser
       - run: pnpm test:composer-providers:browser
+      - run: pnpm test:composer-unification:browser
       - run: pnpm test:thread-startup:browser
       - run: pnpm test:settings-target:browser
       - run: pnpm test:subagent-grouping:browser
