@@ -498,6 +498,7 @@ return <div>{h.hasMore&&<button onClick={()=>h.load()}>Load earlier messages</bu
                 'task-questions': 'TaskQuestions',
                 'run-controls': 'RunControls',
                 composer: 'Composer',
+                'task-empty-state': 'TaskEmptyState',
                 'preparation-progress': 'PreparationProgress',
                 'review-comments-tray': 'ReviewCommentsTray',
                 'plan-approval': 'PlanApproval',
