@@ -35,6 +35,7 @@ export function TaskList({
   onSplit,
   onTemplate,
   sources,
+  temporaryEntry,
   activeRuntimeId,
   busy,
   error,
@@ -54,6 +55,8 @@ export function TaskList({
   /** Starts a new task in the entry's project from one of its templates. */
   onTemplate?: (entry: TaskEntry, templateId: string) => void
   sources: TaskSource[]
+  /** An untouched composer draft, visible without workspace persistence or bulk actions. */
+  temporaryEntry?: TaskEntry
   activeRuntimeId: string | null
   busy: boolean
   error: string
@@ -66,7 +69,12 @@ export function TaskList({
   const selectionAnchor = useRef<string | null>(null)
   const bulkLock = useRef(false)
   const [bulkBusy, setBulkBusy] = useApplicationState(false)
-  const allEntries = useMemo(() => collectTasks(sources), [sources])
+  const allEntries = useMemo(() => {
+    const entries = collectTasks(sources)
+    return temporaryEntry && !entries.some((entry) => entry.key === temporaryEntry.key)
+      ? [temporaryEntry, ...entries]
+      : entries
+  }, [sources, temporaryEntry])
   const entries = useMemo(() => mainTaskEntries(allEntries), [allEntries])
   const subagentsByRuntime = useMemo(
     () =>
@@ -87,7 +95,7 @@ export function TaskList({
   )
   const selectedEntry = allEntries.find((entry) => entry.key === selectedId)
   const selectedMainKey = useMemo(() => {
-    if (!selectedEntry) return ''
+    if (!selectedEntry || selectedEntry.key === temporaryEntry?.key) return ''
     if (!selectedEntry.task.delegation) return selectedEntry.key
     const tasks = new Map(selectedEntry.source.workspace.tasks.map((task) => [task.id, task]))
     const seen = new Set<string>()
@@ -104,7 +112,7 @@ export function TaskList({
           entry.source.runtimeId === selectedEntry.source.runtimeId && entry.task.id === task.id,
       )?.key ?? ''
     )
-  }, [entries, selectedEntry])
+  }, [entries, selectedEntry, temporaryEntry])
   const [now, setNow] = useApplicationState(Date.now())
   const showSeconds = entries.some(({ task }) => {
     const started = Date.parse(task.turns?.at(-1)?.startedAt ?? '')
@@ -163,7 +171,9 @@ export function TaskList({
     return entries
       .filter(
         ({ task: t, source, key, projectKey, projectName }) =>
-          (!projectId ||
+          key === temporaryEntry?.key ||
+          (key === selectedId && t.status === 'draft' && !t.archivedAt) ||
+          ((!projectId ||
             projectKey === projectId ||
             source.workspace.repositories.some(
               (repo) =>
@@ -171,20 +181,20 @@ export function TaskList({
                 repo.gitIdentity &&
                 `git:${repo.gitIdentity}` === projectId,
             )) &&
-          (!environment || JSON.stringify(source.runtimeId) === environment) &&
-          !t.archivedAt &&
-          (!needle ||
-            [
-              t.title,
-              t.checkoutBranch ??
-                source.workspace.repositories.find((r) => r.id === t.repositoryId)?.branch ??
-                '',
-              resolveTaskAgent(t, source.workspace.agents)?.name ?? '',
-              source.name,
-              projectName,
-            ].some((text) => text.toLowerCase().includes(needle)) ||
-            search.keys.has(key) ||
-            t.messages.some((message) => message.text.toLowerCase().includes(needle))),
+            (!environment || JSON.stringify(source.runtimeId) === environment) &&
+            !t.archivedAt &&
+            (!needle ||
+              [
+                t.title,
+                t.checkoutBranch ??
+                  source.workspace.repositories.find((r) => r.id === t.repositoryId)?.branch ??
+                  '',
+                resolveTaskAgent(t, source.workspace.agents)?.name ?? '',
+                source.name,
+                projectName,
+              ].some((text) => text.toLowerCase().includes(needle)) ||
+              search.keys.has(key) ||
+              t.messages.some((message) => message.text.toLowerCase().includes(needle)))),
       )
       .sort((a, b) =>
         compareTasks(
@@ -205,6 +215,8 @@ export function TaskList({
       )
   }, [
     entries,
+    temporaryEntry,
+    selectedId,
     projectId,
     environment,
     deferredQuery,
@@ -350,7 +362,9 @@ export function TaskList({
     if (grouping === 'status')
       return statusGroups.map((group) => ({
         ...group,
-        open: expanded[group.id] ?? group.open,
+        open:
+          group.tasks.some((entry) => entry.key === temporaryEntry?.key) ||
+          (expanded[group.id] ?? group.open),
       }))
     const byProject = new Map<string, { id: string; name: string; tasks: TaskEntry[] }>()
     for (const entry of visibleActive) {
@@ -371,13 +385,30 @@ export function TaskList({
     return [
       ...[...byProject.values()]
         .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
-        .map((group) => ({ ...group, open: expanded[group.id] ?? true })),
+        .map((group) => ({
+          ...group,
+          open:
+            group.tasks.some((entry) => entry.key === temporaryEntry?.key) ||
+            (expanded[group.id] ?? true),
+        })),
       ...collapsedGroups,
     ]
-  }, [tasks, now, grouping, expanded, preferences.projectGrouping, preferences.workingSection])
+  }, [
+    tasks,
+    now,
+    grouping,
+    expanded,
+    preferences.projectGrouping,
+    preferences.workingSection,
+    temporaryEntry,
+  ])
   useEffect(() => {
-    onOrderChange?.(groups.filter((group) => group.open).flatMap((group) => group.tasks))
-  }, [groups, onOrderChange])
+    onOrderChange?.(
+      groups
+        .filter((group) => group.open)
+        .flatMap((group) => group.tasks.filter((entry) => entry.key !== temporaryEntry?.key)),
+    )
+  }, [groups, onOrderChange, temporaryEntry])
   // Stable per-entry handlers so memoized rows only re-render when their own data changes.
   const handlers = useRef(
     new Map<
@@ -606,7 +637,7 @@ export function TaskList({
                 key={entry.key}
                 className="flex items-center"
                 onClickCapture={(event) => {
-                  if (bulkBusy || busy) return
+                  if (bulkBusy || busy || entry.key === temporaryEntry?.key) return
                   if (
                     !(event.target instanceof Element) ||
                     event.target.closest('button') !== event.currentTarget.querySelector('button')
@@ -621,7 +652,11 @@ export function TaskList({
                   event.stopPropagation()
                   const order = groups
                     .filter((group) => group.open)
-                    .flatMap((group) => group.tasks.map((item) => item.key))
+                    .flatMap((group) =>
+                      group.tasks
+                        .filter((item) => item.key !== temporaryEntry?.key)
+                        .map((item) => item.key),
+                    )
                   setSelected((current) =>
                     selectTaskKeys(
                       current.size || !selectedMainKey ? current : new Set([selectedMainKey]),
@@ -635,15 +670,22 @@ export function TaskList({
                   if (!event.shiftKey) selectionAnchor.current = entry.key
                 }}
                 onContextMenuCapture={() => {
-                  if (selecting && !selected.has(entry.key) && !bulkBusy)
+                  if (
+                    entry.key !== temporaryEntry?.key &&
+                    selecting &&
+                    !selected.has(entry.key) &&
+                    !bulkBusy
+                  )
                     setSelected(new Set([entry.key]))
                 }}
               >
                 <TaskContextMenu
                   entry={entry}
-                  selectionMenu={selecting ? selectionMenu : undefined}
+                  selectionMenu={
+                    selecting && entry.key !== temporaryEntry?.key ? selectionMenu : undefined
+                  }
                   selected={entry.key === selectedMainKey}
-                  busy={busy}
+                  busy={busy || entry.key === temporaryEntry?.key}
                   onOpen={handlers.open}
                   onCreate={handlers.create}
                   onFilter={handlers.filter}
@@ -666,7 +708,11 @@ export function TaskList({
                     }
                     multiSelected={selected.has(entry.key)}
                     source={entry.source}
-                    editable={entry.source.runtimeId === activeRuntimeId && !busy}
+                    editable={
+                      entry.key !== temporaryEntry?.key &&
+                      entry.source.runtimeId === activeRuntimeId &&
+                      !busy
+                    }
                     disabled={
                       busy ||
                       bulkBusy ||

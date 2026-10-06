@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
 const root = fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url))
 const mocks = {
-  '@dovo/studio-core/state': `import {useState} from 'react'; export const useApplicationState = useState;`,
+  '@dovo/studio-core/state': `import {useState,useRef} from 'react'; export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref];}`,
   '@dovo/studio-core': `
 export {responses} from '@dovo/protocol';
 const preferences = {taskSort:'created',taskGrouping:'none',confirmArchive:false};
@@ -82,14 +82,7 @@ try {
   )
   await page.getByRole('button', { name: 'B', exact: true }).click({ button: 'right' })
   await page.getByText('3 threads selected', { exact: true }).waitFor()
-  for (const name of [
-    'Archive',
-    'Reopen',
-    'Snooze for 1 day',
-    'Mark as unread',
-    'Mark as read',
-    'Delete',
-  ])
+  for (const name of ['Archive', 'Reopen', 'Snooze', 'Mark as unread', 'Mark as read', 'Delete'])
     await page.getByRole('menuitem', { name, exact: true }).waitFor()
   await page.getByRole('menuitem', { name: 'Mark as read', exact: true }).click()
   await page.waitForFunction(() => window.requests.length === 3)
@@ -105,7 +98,7 @@ try {
   for (const [name, path] of [
     ['Archive', '/api/tasks/lifecycle'],
     ['Reopen', '/api/workspace'],
-    ['Snooze for 1 day', '/api/workspace'],
+    ['Snooze', '/api/workspace'],
     ['Mark as unread', '/api/tasks/viewed'],
     ['Delete', '/api/tasks/lifecycle'],
   ]) {
@@ -118,7 +111,10 @@ try {
       .getByRole('button', { name: 'C', exact: true })
       .click({ modifiers: ['Meta', 'Shift'] })
     await page.getByRole('button', { name: 'B', exact: true }).click({ button: 'right' })
-    await page.getByRole('menuitem', { name, exact: true }).click()
+    if (name === 'Snooze') {
+      await page.getByRole('menuitem', { name, exact: true }).hover()
+      await page.getByRole('menuitem', { name: 'For 24 hours', exact: true }).click()
+    } else await page.getByRole('menuitem', { name, exact: true }).click()
     await page.waitForFunction(() => window.requests.length === 3)
     const batch = await page.evaluate(() => window.requests)
     if (

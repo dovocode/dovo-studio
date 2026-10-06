@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { LoaderCircle, GitFork, Folder } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -22,6 +22,7 @@ import {
 } from '@dovo/studio-core'
 import { ChatThread } from '../chat/thread/chat-thread'
 import { Composer } from '../chat/composer/composer'
+import { TaskEmptyState } from '../task-creation/task-empty-state'
 import type { CodeReference } from './code-reference'
 import { PreparationProgress } from '../chat/thread/preparation-progress'
 import { ReviewCommentsTray } from '../chat/thread/review-comments-tray'
@@ -47,8 +48,12 @@ export function TaskConversation({
   codeReference,
   composerInsert,
   onComposerInsertApplied,
+  temporary,
+  workspaceControls,
 }: {
   task: Task
+  temporary?: boolean
+  workspaceControls?: ReactNode
   historyLoaded?: boolean
   historyError?: string
   onReview: () => void
@@ -119,7 +124,7 @@ export function TaskConversation({
   const { snapshot } = useWorkspace()
   const loaded =
     historyLoaded ?? (!snapshot?.detailTaskIds || snapshot.detailTaskIds.includes(task.id))
-  const viewed = useTaskViewed(task, visible && loaded)
+  const viewed = useTaskViewed(task, visible && loaded && !temporary)
   const preparation = taskPreparation(task)
   const budget = taskBudgetUsage(task)
   const { request, connected } = useWorkspace()
@@ -150,19 +155,23 @@ export function TaskConversation({
     )
   return (
     <div data-task-conversation={task.id} className="flex h-full min-h-0 flex-col">
-      <ArtifactOpenContext value={onArtifact}>
-        <ChatThread
-          onReadingHistory={readingHistory}
-          onManagePulls={() => setManagePullTask(task.id)}
-          task={displayedTask}
-          onTerminal={onTerminal}
-          onBrowser={onBrowser}
-          onPullLink={onPullLink}
-          revealMessage={revealMessage}
-          onRevealHandled={onRevealHandled}
-          pending={threadPending}
-        />
-      </ArtifactOpenContext>
+      {temporary ? (
+        <TaskEmptyState />
+      ) : (
+        <ArtifactOpenContext value={onArtifact}>
+          <ChatThread
+            onReadingHistory={readingHistory}
+            onManagePulls={() => setManagePullTask(task.id)}
+            task={displayedTask}
+            onTerminal={onTerminal}
+            onBrowser={onBrowser}
+            onPullLink={onPullLink}
+            revealMessage={revealMessage}
+            onRevealHandled={onRevealHandled}
+            pending={threadPending}
+          />
+        </ArtifactOpenContext>
+      )}
       {(budget.tokenExceeded || budget.timeExceeded) && (
         <p
           role="status"
@@ -239,6 +248,8 @@ export function TaskConversation({
           collapsed={collapseComposerOnScroll && composerCollapsed}
           key={task.id}
           task={task}
+          temporary={temporary}
+          workspaceControls={workspaceControls}
           onPending={setPending}
           onAside={onAside}
           codeReference={codeReference}
