@@ -300,15 +300,16 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Select Windows PE binaries for signing
+        id: signing-files
+        run: node scripts/packaging/windows-signing-files.mjs work/windows-app
       - name: Sign native app and bundled runtime
         uses: azure/artifact-signing-action@v2
         with:
           endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
-          files-folder: ${{ github.workspace }}\work\windows-app
-          files-folder-filter: exe,dll,node
-          files-folder-recurse: true
+          files: ${{ steps.signing-files.outputs.files }}
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
@@ -317,7 +318,8 @@ jobs:
       - name: Verify app and installer signatures
         shell: pwsh
         run: |
-          $files = @(Get-ChildItem work/windows-app -Recurse -File -Include *.exe,*.dll,*.node) + @(Get-ChildItem release -File -Filter *.exe)
+          $paths = @(Get-Content work/windows-signing-files.json -Raw | ConvertFrom-Json)
+          $files = @($paths | ForEach-Object { Get-Item -LiteralPath $_ }) + @(Get-ChildItem release -File -Filter *.exe) + @(Get-Item work/windows-app/resources/elevate.exe)
           if (-not (Get-ChildItem release -File -Filter *.exe)) { throw 'Missing signed installer' }
           foreach ($file in $files) {
             $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName

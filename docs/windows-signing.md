@@ -52,7 +52,8 @@ from another branch needs that branch allowed by the environment. Only the signi
 Windows builds and server smoke tests run on their native x64/ARM64 runners. The unpacked desktop
 apps transfer to Windows x64 because the
 [Azure signing action](https://github.com/Azure/artifact-signing-action) does not support Windows
-ARM runners. The action signs app/runtime EXE, DLL and native Node modules. electron-builder then
+ARM runners. The action signs app/runtime EXE, DLL and native Node modules with Windows PE headers;
+foreign macOS/Linux prebuilds remain intact and are excluded from signing. electron-builder then
 creates and signs the NSIS installer and uninstaller using its v26 Azure integration
 (`azureSignOptions`, still named Trusted Signing upstream). This runs after Azure OIDC login and
 uses the Azure CLI credential on the GitHub runner, not your local Azure CLI.
