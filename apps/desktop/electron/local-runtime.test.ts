@@ -306,7 +306,7 @@ it('provisions a supervised runtime for packaged Mac installs and leaves it runn
   expect(ensureBackgroundRuntime).toHaveBeenCalledWith(
     expect.objectContaining({
       directory: fixture.directory,
-      node: '/fixture/resources/runtime/bin/node',
+      node: join('/fixture/resources', 'runtime/bin/node'),
     }),
   )
 })

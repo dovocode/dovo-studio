@@ -121,4 +121,7 @@ ${windowsSecurityScript}`,
     })
     expect(stdout).not.toMatch(/private-user|private-token/)
   },
+  // Include cold PowerShell startup and keep the test deadline beyond the
+  // subprocess's own 10-second timeout, which still bounds a stalled query.
+  15_000,
 )
