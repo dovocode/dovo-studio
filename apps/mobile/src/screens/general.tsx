@@ -80,7 +80,7 @@ export default function GeneralScreen() {
         </SettingsGroup>
         <SettingsGroup
           title="Task list"
-          footer="Used when Dovo opens. You can change sorting and grouping in the task filters."
+          footer="Working groups running tasks in a collapsed section. They return to the main list when they need input or finish. Pinned tasks stay visible."
         >
           <View style={{ padding: 12 }}>
             <Choice
@@ -104,6 +104,11 @@ export default function GeneralScreen() {
               }
             />
           </View>
+          <SwitchRow
+            label="Working section"
+            value={preferences.workingSection}
+            onValueChange={(workingSection) => updateMobilePreferences({ workingSection })}
+          />
         </SettingsGroup>
         <SettingsGroup title="Date & time">
           <View style={{ padding: 12 }}>

@@ -104,7 +104,7 @@ export default function GeneralSettings() {
         </SettingRow>
         <SettingRow
           label="Working section"
-          description="Group running tasks together. They return to Active when they need your input."
+          description="Group running tasks in a collapsed section. They return to the main list when they need input or finish. Pinned tasks stay visible."
         >
           <Toggle
             label="Working section"

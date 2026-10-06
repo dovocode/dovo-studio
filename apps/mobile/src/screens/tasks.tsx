@@ -75,7 +75,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     })
   const [bulkBusy, setBulkBusy] = useApplicationState(false)
   const [collapsed, setCollapsed] = useApplicationState<Set<string>>(
-    () => new Set(['snoozed', 'settled']),
+    () => new Set(['working', 'snoozed', 'settled']),
   )
   useForegroundInterval(() => setNow(Date.now()), focused ? 15000 : null)
   useEffect(() => {
@@ -172,7 +172,22 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   }, [allTasks, car, now, query, sort, project, projectMembers, archived])
   const listItems = useMemo(() => {
     if (archived || car) return tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))
-    const unsettled = tasks.filter(({ task }) => !task.archived && !isSnoozed(task, now))
+    const active = tasks.filter(({ task }) => !task.archived && !isSnoozed(task, now))
+    const working = preferences.workingSection
+      ? active.filter(
+          ({ task, needsInput }) => !task.pinned && task.status === 'running' && !needsInput,
+        )
+      : []
+    const workingKeys = new Set(working.map((entry) => entry.key))
+    const unsettled = active.filter((entry) => !workingKeys.has(entry.key))
+    const workingItems: TaskListItem[] = working.length
+      ? [
+          { kind: 'group', key: 'working', name: 'Working', count: working.length },
+          ...(collapsed.has('working')
+            ? []
+            : working.map((entry): TaskListItem => ({ kind: 'task', entry }))),
+        ]
+      : []
     const snoozed = tasks.filter(({ task }) => !task.archived && isSnoozed(task, now))
     const settled = tasks.filter(({ task }) => task.archived)
     const snoozedItems: TaskListItem[] = snoozed.length
@@ -194,17 +209,15 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     if (grouping === 'none')
       return [
         ...unsettled.map((entry): TaskListItem => ({ kind: 'task', entry })),
+        ...workingItems,
         ...snoozedItems,
         ...settledItems,
       ]
     const groups: { key: string; name: string; tasks: RuntimeTask[] }[] = []
     if (grouping === 'status') {
-      const active = tasks.filter(
-        ({ task }) => !task.archived && !task.archivedAt && !isSnoozed(task, now),
-      )
       groups.push(
-        { key: 'pinned', name: 'Pinned', tasks: active.filter(({ task }) => task.pinned) },
-        { key: 'active', name: 'Active', tasks: active.filter(({ task }) => !task.pinned) },
+        { key: 'pinned', name: 'Pinned', tasks: unsettled.filter(({ task }) => task.pinned) },
+        { key: 'active', name: 'Active', tasks: unsettled.filter(({ task }) => !task.pinned) },
       )
     } else {
       const identities = new Map(
@@ -245,10 +258,11 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             ? []
             : group.tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))),
         ]),
+      ...workingItems,
       ...snoozedItems,
       ...settledItems,
     ]
-  }, [tasks, grouping, now, projectGroups, collapsed, archived, car])
+  }, [tasks, grouping, now, projectGroups, collapsed, archived, car, preferences.workingSection])
   const bulk = async (
     action: 'archive' | 'restore' | 'snooze' | 'pin' | 'delete',
     hours?: number,
@@ -518,7 +532,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               accessibilityLabel={`${item.name}, ${item.count} tasks`}
               accessibilityState={{
                 expanded: !collapsed.has(
-                  item.key === 'settled' || item.key === 'snoozed'
+                  item.key === 'settled' || item.key === 'snoozed' || item.key === 'working'
                     ? item.key
                     : `${grouping}:${item.key}`,
                 ),
@@ -527,7 +541,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 setCollapsed((current) => {
                   const next = new Set(current)
                   const key =
-                    item.key === 'settled' || item.key === 'snoozed'
+                    item.key === 'settled' || item.key === 'snoozed' || item.key === 'working'
                       ? item.key
                       : `${grouping}:${item.key}`
                   if (next.has(key)) next.delete(key)
@@ -540,7 +554,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               <Icon
                 name={
                   collapsed.has(
-                    item.key === 'settled' || item.key === 'snoozed'
+                    item.key === 'settled' || item.key === 'snoozed' || item.key === 'working'
                       ? item.key
                       : `${grouping}:${item.key}`,
                   )

@@ -166,3 +166,21 @@ it('merges shared scope edits with offline cached scopes that arrive during pref
     },
   ])
 })
+
+it('keeps Working optional and restores the saved choice', async () => {
+  storage.getItem = async () => JSON.stringify({ taskSort: 'title' })
+  storage.setItem = async () => {}
+  let preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences().workingSection).toBe(false)
+  preferences.updateMobilePreferences({ workingSection: true })
+  expect(preferences.readMobilePreferences().workingSection).toBe(true)
+
+  storage.getItem = async () => JSON.stringify({ workingSection: true, taskSort: 'title' })
+  preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences()).toMatchObject({
+    workingSection: true,
+    taskSort: 'title',
+  })
+})
