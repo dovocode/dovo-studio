@@ -12,12 +12,12 @@ runs:
   steps:
     - name: Check for a concurrent dependency cache save
       id: existing
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: ${{ inputs.store }}
         key: ${{ inputs.key }}
         lookup-only: true
-    - uses: actions/cache/save@v4
+    - uses: actions/cache/save@v6
       if: steps.existing.outputs.cache-hit != 'true'
       with:
         path: ${{ inputs.store }}

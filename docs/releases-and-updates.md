@@ -27,7 +27,7 @@ release. The Release workflow produces:
 | Platform | Architectures | Artifacts              | Signing                           |
 | -------- | ------------- | ---------------------- | --------------------------------- |
 | macOS    | ARM64         | DMG, ZIP, mise archive | Developer ID signed and notarized |
-| Windows  | x64, ARM64    | NSIS EXE installer     | Unsigned                          |
+| Windows  | x64, ARM64    | NSIS EXE installer     | Azure Artifact Signing            |
 | Linux    | x64, ARM64    | DEB, RPM, AppImage     | Unsigned                          |
 
 Standalone server archives support macOS ARM64, Linux x64/ARM64 and Windows x64/ARM64. Each desktop
@@ -50,7 +50,8 @@ matching server archive, registers the user service, and uses the same command f
 2. Verify with `pnpm check`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
 3. Configure Mac-only GitHub Actions secrets: `MAC_CERTIFICATE` (Developer ID `.p12` as base64),
    `MAC_CERTIFICATE_PASSWORD`, `MAC_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`,
-   and `APPLE_TEAM_ID`. Do not commit signing material. Windows/Linux need no signing secrets.
+   and `APPLE_TEAM_ID`. Do not commit signing material. Configure the Windows signing environment as
+   described in [Windows signing setup](windows-signing.md). Linux needs no signing credentials.
 4. Run **Release** manually with a matching `vX.Y.Z` tag, or push that tag. All jobs build the
    selected commit. The workflow creates a draft and verifies every expected architecture/format and
    update feed. Inspect the artifacts and publish the draft only after native installation tests.
@@ -86,7 +87,10 @@ Use Node 24, `pnpm build`, then `pnpm exec node scripts/packaging/package-deskto
 OS and architecture. Append `--dir` for an unpacked build. Linux packaging requires Ruby/FPM and RPM
 tools. Only macOS publishing with `--publish` requires a Developer ID identity and notarization
 credentials. The workflow uses native GitHub-hosted ARM runners; repository/plan eligibility must
-allow those runner labels. Unsigned Windows installers may show SmartScreen prompts.
+allow those runner labels. Local Windows builds remain unsigned. Release Windows apps and installers
+are signed on Windows x64 after native builds, including ARM64; update hashes are generated
+afterward. Signing establishes publisher identity, but does not guarantee that SmartScreen will
+never prompt.
 
 To reproduce the shared release staging locally, set `DOVO_PREPARED_RUNTIME` to a new absolute
 directory, run `pnpm run package:prepare-runtime`, then `pnpm run package:platform` with the same

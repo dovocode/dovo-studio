@@ -33,7 +33,7 @@ jobs:
       channel: ${{ steps.prepare.outputs.channel }}
       app_name: ${{ steps.prepare.outputs.app_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Create release draft
@@ -100,7 +100,7 @@ jobs:
       DOVO_RELEASE_VERSION: ${{ needs.draft.outputs.version }}
       DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-build
         id: setup
         with:
@@ -145,7 +145,7 @@ jobs:
           # Signing scans the bundled Node runtime and its dependency tree concurrently.
           ulimit -n 65536
           pnpm run package:platform -- --publish
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           compression-level: 0
           name: server-macos-26
@@ -172,8 +172,10 @@ jobs:
         include:
           - runner: windows-2025
             arch: x64
+            unpacked: win-unpacked
           - runner: windows-11-arm
             arch: arm64
+            unpacked: win-arm64-unpacked
           - runner: ubuntu-24.04
             arch: x64
           - runner: ubuntu-24.04-arm
@@ -186,7 +188,7 @@ jobs:
       DOVO_RELEASE_VERSION: ${{ needs.draft.outputs.version }}
       DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-build
         id: setup
         with:
@@ -214,9 +216,21 @@ jobs:
       - run: pnpm run package:prepare-runtime
         env:
           DOVO_PREPARED_RUNTIME: ${{ runner.temp }}/dovo-prepared-runtime
-      - name: Build unsigned desktop and server packages
+      - name: Build Linux desktop and server packages
+        if: runner.os == 'Linux'
         run: pnpm run package:platform
-      - uses: actions/upload-artifact@v4
+      - name: Build native Windows app and server archive
+        if: runner.os == 'Windows'
+        run: pnpm run package:platform -- --dir
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Windows'
+        with:
+          compression-level: 0
+          name: windows-unpacked-${{ matrix.arch }}
+          if-no-files-found: error
+          path: release/${{ matrix.unpacked }}/
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Linux'
         with:
           compression-level: 0
           name: desktop-${{ matrix.runner }}
@@ -229,27 +243,113 @@ jobs:
             release/*.blockmap
             release/latest*.yml
             release/nightly*.yml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           compression-level: 0
           name: server-${{ matrix.runner }}
           if-no-files-found: error
           path: release/Dovo-Server-*
+  windows-sign:
+    needs: [draft, platform]
+    runs-on: windows-2025
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    environment: windows-signing
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    env:
+      DOVO_RELEASE_VERSION: ${{ needs.draft.outputs.version }}
+      DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
+      AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+      AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+      AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+      AZURE_SIGNING_PUBLISHER: ${{ vars.AZURE_SIGNING_PUBLISHER }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-build
+        id: setup
+        with:
+          packaging: 'true'
+      - name: Verify signing configuration
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          foreach ($name in @('AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID', 'AZURE_SIGNING_ENDPOINT', 'AZURE_SIGNING_ACCOUNT', 'AZURE_SIGNING_PROFILE', 'AZURE_SIGNING_PUBLISHER')) {
+            if (-not [Environment]::GetEnvironmentVariable($name)) { throw "Missing $name environment variable" }
+          }
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/save-dependencies
+        with:
+          store: ${{ steps.setup.outputs.store }}
+          key: ${{ steps.setup.outputs.store-key }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-unpacked-${{ matrix.arch }}
+          path: work/windows-app
+      - name: Azure login with GitHub OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign native app and bundled runtime
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\work\windows-app
+          files-folder-filter: exe,dll,node
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Build signed installer and uninstaller, then generate update hashes
+        run: node scripts/packaging/package-windows-signed.mjs ${{ matrix.arch }} work/windows-app
+      - name: Verify app and installer signatures
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem work/windows-app -Recurse -File -Include *.exe,*.dll,*.node) + @(Get-ChildItem release -File -Filter *.exe)
+          if (-not (Get-ChildItem release -File -Filter *.exe)) { throw 'Missing signed installer' }
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
+            if ($signature.Status -ne 'Valid') { throw "Invalid signature: $($file.FullName): $($signature.Status)" }
+            $publisher = $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+            if ($publisher -cne $env:AZURE_SIGNING_PUBLISHER) { throw "Unexpected publisher: $publisher" }
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          compression-level: 0
+          name: desktop-windows-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest*.yml
+            release/nightly*.yml
   upload:
-    needs: [draft, mac, platform]
+    needs: [draft, mac, platform, windows-sign]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: server-*
           merge-multiple: true
           path: release
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: desktop-*
           merge-multiple: true
           path: release
-      - name: Upload unsigned desktop and server packages into draft release
+      - name: Upload desktop and server packages into draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}

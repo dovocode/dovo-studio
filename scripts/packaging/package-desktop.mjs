@@ -5,6 +5,7 @@ import { stageDesktopWorkspace } from './stage-workspace.mjs'
 import { desktopMiseArchive } from './desktop-mise-archive.mjs'
 import { verifyDesktopBuild } from './desktop-build-stamp.mjs'
 import { copyPreparedRuntime } from './prepared-runtime.mjs'
+import { windowsReleaseConfig } from './windows-signing.mjs'
 import { releaseVariant } from './release-variant.mjs'
 import { mkdtemp, cp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -197,12 +198,7 @@ try {
             process.env.APPLE_TEAM_ID)
         ),
       },
-      win: { icon: join(root, 'apps/desktop/build/icon.png') },
-      nsis: {
-        oneClick: false,
-        allowToChangeInstallationDirectory: true,
-        artifactName: `${variant.artifactPrefix}-\${version}-windows-\${arch}.\${ext}`,
-      },
+      ...windowsReleaseConfig(root, variant),
       linux: {
         icon: join(root, 'apps/desktop/build/icon.png'),
         syncDesktopName: true,

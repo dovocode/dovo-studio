@@ -20,8 +20,8 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: pnpm/action-setup@v4
-    - uses: actions/setup-node@v4
+    - uses: pnpm/action-setup@v6
+    - uses: actions/setup-node@v7
       with:
         node-version: '24'
         architecture: ${{ inputs.architecture }}
@@ -35,7 +35,7 @@ runs:
     # Save explicitly after install so release jobs can avoid a duplicate archive at cleanup.
     - name: Restore pnpm store
       id: store
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: ${{ steps.downloads.outputs.store }}
         key: node-cache-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -44,14 +44,14 @@ runs:
     # The package store does not include registry metadata or lockfile-policy verification.
     # Refresh the immutable entry daily; pnpm still enforces its own metadata expiry and policies.
     - name: Cache pnpm metadata
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ${{ steps.downloads.outputs.metadata }}
         key: pnpm-metadata-v1-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-${{ steps.downloads.outputs.pnpm }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}-${{ steps.downloads.outputs.day }}
         restore-keys: |
           pnpm-metadata-v1-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-${{ steps.downloads.outputs.pnpm }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}-
           pnpm-metadata-v1-${{ runner.os }}-${{ steps.downloads.outputs.architecture }}-${{ steps.downloads.outputs.pnpm }}-
-    - uses: actions/cache@v4
+    - uses: actions/cache@v6
       if: inputs.packaging == 'true'
       with:
         path: ${{ steps.downloads.outputs.directory }}
