@@ -153,11 +153,13 @@ export function TaskActivity({
   error = '',
   turn,
   status,
+  artifactsOnly = false,
 }: {
   tools: ReturnType<typeof recentTools>
   error?: string
   turn?: TaskTurn
   status?: TaskTurn['status']
+  artifactsOnly?: boolean
 }) {
   // Settings → General → Conversation → Tool activity; Ctrl+O switches it from the task.
   const detailsId = useId()
@@ -186,6 +188,12 @@ export function TaskActivity({
     () => tools.flatMap((tool) => artifactReferences(tool.payload)),
     [tools],
   )
+  const cards = artifacts.map((reference) => (
+    <Suspense key={`${reference.id}:${reference.revision}`} fallback={<p>Loading artifact…</p>}>
+      <ArtifactCard reference={reference} />
+    </Suspense>
+  ))
+  if (artifactsOnly) return <>{cards}</>
   const running = entries.filter((entry) => entry.state === 'running')
   const current =
     running.filter((entry) => entry.presentation.kind !== 'reasoning').at(-1) ?? running.at(-1)
@@ -284,11 +292,7 @@ export function TaskActivity({
           <McpAppView reference={reference} />
         </Suspense>
       ))}
-      {artifacts.map((reference) => (
-        <Suspense key={`${reference.id}:${reference.revision}`} fallback={<p>Loading artifact…</p>}>
-          <ArtifactCard reference={reference} />
-        </Suspense>
-      ))}
+      {cards}
       {error && (
         <p role="alert" className="py-2 text-destructive">
           Activity could not be loaded. {error}

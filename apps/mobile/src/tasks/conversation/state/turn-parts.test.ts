@@ -1,6 +1,11 @@
 import { expect, it } from 'vite-plus/test'
 import type { ThreadMessage } from '@assistant-ui/react-native'
-import { foldedTurnPartRanges, toolPartGroupEnd, turnPartBoundaries } from './turn-parts'
+import {
+  foldedTurnPartRanges,
+  toolPartArtifacts,
+  toolPartGroupEnd,
+  turnPartBoundaries,
+} from './turn-parts'
 
 it('preserves shared activity groups across resumes, failures and text boundaries', () => {
   const tool = (id: string, groupKey: string, isError = false) => ({
@@ -52,4 +57,40 @@ it('preserves legacy replies and supports textless turns', () => {
     finalIndex: -1,
     end: 1,
   })
+})
+
+it('keeps created artifacts in folded work, including textless and intermediate replies', () => {
+  const reference = {
+    id: 'b43c4ca3-d5cd-40cd-b98c-cfba9b02e405',
+    taskId: 'thread',
+    title: 'Preview',
+    format: 'html' as const,
+    revision: 1,
+  }
+  const tool = (id: string, artifacts = false) => ({
+    type: 'tool-call' as const,
+    toolCallId: id,
+    toolName: 'Tool',
+    args: {},
+    argsText: '',
+    artifact: {
+      groupKey: id === 'unrelated' ? 'unrelated' : 'created',
+      payload: JSON.stringify({ artifacts: artifacts ? [reference] : [] }),
+    },
+  })
+  const content: ThreadMessage['content'] = [
+    tool('unrelated'),
+    { type: 'text', text: 'Creating a preview' },
+    tool('command'),
+    tool('artifact', true),
+    { type: 'text', text: 'Ready' },
+  ]
+  expect(toolPartArtifacts(content[3]!)).toEqual([reference])
+  expect(toolPartArtifacts(content[1]!)).toEqual([])
+  expect(foldedTurnPartRanges(content, 4, content.length)).toEqual([
+    { start: 2, end: 4 },
+    { start: 4, end: 5 },
+  ])
+  expect(foldedTurnPartRanges(content, -1, 4)).toEqual([{ start: 2, end: 4 }])
+  expect(toolPartArtifacts({ ...tool('invalid'), artifact: { payload: 'not JSON' } })).toEqual([])
 })

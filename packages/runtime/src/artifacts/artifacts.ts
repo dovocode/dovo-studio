@@ -49,16 +49,28 @@ export class Artifacts {
     db.exec(
       'CREATE TABLE IF NOT EXISTS artifact_states (task_id TEXT PRIMARY KEY, state TEXT NOT NULL, since TEXT NOT NULL)',
     )
+    // Older versions may have expired artifact bodies while leaving their activity tiles.
+    const removed = db
+      .prepare(
+        "DELETE FROM activity WHERE kind='tool' AND id GLOB 'artifact:*' AND id NOT IN (SELECT 'artifact:' || id || ':' || revision FROM artifacts)",
+      )
+      .run().changes
+    if (removed) activity.revision++
     const tasks = new Map(store.get().tasks.map((task) => [task.id, task]))
     for (const row of db.prepare('SELECT DISTINCT task_id AS value FROM artifacts').all()) {
       const id = decode(stored, row).value
       const task = tasks.get(id)
       if (task) this.recordState(task)
       else {
-        db.prepare('DELETE FROM artifacts WHERE task_id=?').run(id)
+        this.remove(id)
         db.prepare('DELETE FROM artifact_states WHERE task_id=?').run(id)
       }
     }
+  }
+  private remove(taskId: string) {
+    const changes = this.db.prepare('DELETE FROM artifacts WHERE task_id=?').run(taskId).changes
+    this.activity.removeArtifacts(taskId)
+    return changes
   }
   private recordState(task: Task, now = Date.now()) {
     const state = stateOf(task)
@@ -95,10 +107,9 @@ export class Artifacts {
     )
       return
     const remaining = new Set(after.tasks.map((task) => task.id))
-    const remove = this.db.prepare('DELETE FROM artifacts WHERE task_id=?')
     for (const task of before.tasks)
       if (!remaining.has(task.id)) {
-        remove.run(task.id)
+        this.remove(task.id)
         this.db.prepare('DELETE FROM artifact_states WHERE task_id=?').run(task.id)
       }
     const previous = new Map(before.tasks.map((task) => [task.id, task]))
@@ -131,10 +142,7 @@ export class Artifacts {
             ? settings.archivedArtifactRetention
             : settings.settledArtifactRetention,
         )
-        if (deadline && Date.parse(deadline) <= now)
-          removed += this.db
-            .prepare('DELETE FROM artifacts WHERE task_id=?')
-            .run(row.taskId).changes
+        if (deadline && Date.parse(deadline) <= now) removed += this.remove(row.taskId)
       }
       return removed
     })()
@@ -262,16 +270,17 @@ export class Artifacts {
         )
       this.recordState(task)
       const turn = task.turns?.at(-1)
+      const message = task.messages.find((message) => message.id === turn?.assistantId)
       this.activity.add(
         'tool',
         task.id,
         `Artifact · ${artifact.title}`,
         {
           turnId: turn?.id,
+          messageId: message?.id,
           toolId: `artifact:${artifact.id}:${artifact.revision}`,
           status: 'completed',
-          textOffset:
-            task.messages.at(-1)?.role === 'assistant' ? task.messages.at(-1)?.text.length : 0,
+          textOffset: message?.text.length ?? 0,
           artifacts: [metadata],
         },
         `artifact:${artifact.id}:${artifact.revision}`,

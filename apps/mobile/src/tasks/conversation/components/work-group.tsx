@@ -25,9 +25,11 @@ export function ConversationWorkGroup({
   children,
   startIndex,
   endIndex,
+  artifactsOnly = false,
 }: PropsWithChildren<{
   startIndex: number
   endIndex: number
+  artifactsOnly?: boolean
 }>) {
   const { colors, styles } = useTheme()
 
@@ -62,6 +64,12 @@ export function ConversationWorkGroup({
     : 0
   const duration = turn?.finishedAt ? formatTurnDuration(seconds * 1000) : undefined
   const count = endIndex - startIndex + 1
+  const cards = groupEvents
+    .flatMap((event) => artifactReferences(event.payload))
+    .map((reference) => (
+      <ArtifactCard key={`${reference.id}:${reference.revision}`} reference={reference} />
+    ))
+  if (artifactsOnly) return <>{cards}</>
   return (
     <View>
       <Pressable
@@ -92,12 +100,7 @@ export function ConversationWorkGroup({
         </Text>
       )}
       {open && <View style={{ paddingBottom: 6 }}>{children}</View>}
-      {!open &&
-        groupEvents
-          .flatMap((event) => artifactReferences(event.payload))
-          .map((reference) => (
-            <ArtifactCard key={`${reference.id}:${reference.revision}`} reference={reference} />
-          ))}
+      {!open && cards}
     </View>
   )
 }

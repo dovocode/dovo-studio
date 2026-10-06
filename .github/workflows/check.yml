@@ -48,6 +48,8 @@ jobs:
       - run: pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build
       - run: pnpm --filter @dovo/runtime exec playwright install --with-deps chromium
       - run: pnpm test:conversation-history:browser
+      - run: pnpm test:turn-grouping:browser
+      - run: pnpm test:artifacts:browser
       - run: pnpm test:scoped-settings:browser
       - run: pnpm test:shared-storage:browser
       - run: pnpm test:remote-browser-recovery:browser

@@ -188,16 +188,23 @@ export class Activity {
       )
     this.pendingMessages.delete(task.id)
   }
-  /** Deletes up to `limit` entries older than `before`, oldest first; returns how many. Small
-   * batches keep the database responsive while a large history is trimmed. */
+  /** Deletes up to `limit` log entries older than `before`, oldest first; returns how many.
+   * Artifact tiles follow artifact retention. Small batches keep the database responsive. */
   pruneBefore(before: string, limit = 2000) {
     const changes = this.db
       .prepare(
-        'DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE time < ? ORDER BY time LIMIT ?)',
+        "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE time < ? AND NOT (kind='tool' AND id GLOB 'artifact:*') ORDER BY time LIMIT ?)",
       )
       .run(before, limit).changes
     if (changes) this.revision++
     return changes
+  }
+  /** Artifact outputs follow the artifact's lifetime, rather than log retention. */
+  removeArtifacts(scope: string) {
+    const changes = this.db
+      .prepare("DELETE FROM activity WHERE scope=? AND kind='tool' AND id GLOB 'artifact:*'")
+      .run(scope).changes
+    if (changes) this.revision++
   }
   list(query: string, kind: string, offset: number, scope = '') {
     const filters: string[] = []
@@ -216,14 +223,19 @@ export class Activity {
       filters.push('(summary LIKE ? OR payload LIKE ? OR scope LIKE ?)')
       values.push(`%${query}%`, `%${query}%`, `%${query}%`)
     }
+    const page = `SELECT * FROM activity${filters.length ? ` WHERE ${filters.join(' AND ')}` : ''} ORDER BY time DESC,id DESC LIMIT 100 OFFSET ?`
+    // Thread outputs must survive newer tool calls in both polling and live sync.
+    const includeArtifacts = kind === 'task-activity' && !!scope && !query && offset === 0
     return {
       events: decode(
         mutableArray(record),
         this.db
           .prepare(
-            `SELECT * FROM activity${filters.length ? ` WHERE ${filters.join(' AND ')}` : ''} ORDER BY time DESC,id DESC LIMIT 100 OFFSET ?`,
+            includeArtifacts
+              ? `SELECT * FROM (${page}) UNION SELECT * FROM activity WHERE scope=? AND kind='tool' AND id GLOB 'artifact:*' ORDER BY time DESC,id DESC`
+              : page,
           )
-          .all(...values, offset),
+          .all(...values, offset, ...(includeArtifacts ? [scope] : [])),
       ),
     }
   }

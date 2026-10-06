@@ -8,7 +8,12 @@ import {
   type TaskTurn,
   type useWorkspace,
 } from '@dovo/studio-core'
-import { turnSummary, type PendingMessage, type recentTools } from '@dovo/protocol'
+import {
+  artifactReferences,
+  turnSummary,
+  type PendingMessage,
+  type recentTools,
+} from '@dovo/protocol'
 import { Message, MessageContent, MessageResponse, Button } from '@dovo/studio-ui'
 import { Star } from 'lucide-react'
 import { threadTimeline, finalReplyIndex } from './thread-timeline'
@@ -70,7 +75,16 @@ export const ChatMessage = memo(function ChatMessage({
   const hasFailure = tools.some((tool) =>
     ['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status),
   )
-  if (message.role === 'assistant' && !workOpen && !final && !footer && !hasFailure) return null
+  const hasArtifacts = tools.some((tool) => artifactReferences(tool.payload).length > 0)
+  if (
+    message.role === 'assistant' &&
+    !workOpen &&
+    !final &&
+    !footer &&
+    !hasFailure &&
+    !hasArtifacts
+  )
+    return null
   const ownsFooter = turn?.assistantId === message.id && (workOpen || footer)
   const showContent =
     !!message.text ||
@@ -120,11 +134,23 @@ export const ChatMessage = memo(function ChatMessage({
               index !== finalIndex &&
               !(
                 block.kind === 'activity' &&
-                block.tools.some((tool) =>
-                  ['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status),
+                block.tools.some(
+                  (tool) =>
+                    ['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status) ||
+                    artifactReferences(tool.payload).length > 0,
                 )
               ) ? null : block.kind === 'activity' ? (
-                <TaskActivity key={block.key} status={turn?.status} tools={block.tools} />
+                <TaskActivity
+                  key={block.key}
+                  status={turn?.status}
+                  tools={block.tools}
+                  artifactsOnly={
+                    !workOpen &&
+                    !block.tools.some((tool) =>
+                      ['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status),
+                    )
+                  }
+                />
               ) : block.kind === 'compaction' ? (
                 <p
                   key={`compaction-${block.event.at}`}

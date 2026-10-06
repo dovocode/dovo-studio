@@ -10,13 +10,99 @@ import {
   decode,
   artifactResponseSchema,
   artifactListSchema,
+  activitySchema,
   artifactWriteResponseSchema,
+  conversationToolsByMessage,
+  recentTools,
 } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
 
 const runtimes: Awaited<ReturnType<typeof startRuntime>>[] = []
 afterEach(async () => {
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()))
+})
+it('keeps turn artifact tiles after the recent tool window and activity retention, without duplicating or leaking them', async () => {
+  const f = await fixture()
+  const turnId = randomUUID(),
+    messageId = randomUUID()
+  f.runtime.services.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    status: 'running',
+    messages: [{ id: messageId, turnId, role: 'assistant', text: 'Creating the preview' }],
+    turns: [
+      {
+        id: turnId,
+        assistantId: messageId,
+        agentId: '',
+        provider: 'codex',
+        model: '',
+        status: 'running',
+        startedAt: new Date().toISOString(),
+      },
+    ],
+  }))
+  const created = decode(
+    artifactWriteResponseSchema,
+    (
+      await f.post('create', {
+        taskId: f.taskId,
+        title: 'Turn preview',
+        format: 'html',
+        content: '<p>Saved preview</p>',
+      })
+    ).value,
+  ).artifact
+  const activity = f.runtime.services.activity
+  const artifactEvent = () =>
+    activity
+      .list('', 'task-activity', 0, f.taskId)
+      .events.find((event) => artifactReferences(event.payload).length)
+  expect(JSON.parse(artifactEvent()!.payload)).toMatchObject({ turnId, messageId, textOffset: 20 })
+  expect(
+    activity
+      .list('', 'task-activity', 0, f.taskId)
+      .events.flatMap((event) => artifactReferences(event.payload)),
+  ).toHaveLength(1)
+  const nextMessageId = randomUUID()
+  f.runtime.services.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    messages: [
+      ...task.messages,
+      { id: 'steer', turnId, role: 'user', text: 'Finish the preview' },
+      { id: nextMessageId, turnId, role: 'assistant', text: 'Preview ready' },
+    ],
+    turns: task.turns?.map((turn) => ({ ...turn, assistantId: nextMessageId })),
+  }))
+  expect(
+    conversationToolsByMessage(
+      f.runtime.services.store.task(f.taskId),
+      recentTools(activity.list('', 'task-activity', 0, f.taskId).events),
+    ).get(messageId),
+  ).toHaveLength(1)
+  for (let index = 0; index < 120; index++)
+    activity.add('tool', f.taskId, 'Later command', {}, `later-${index}`)
+  f.runtime.services.db
+    .prepare('UPDATE activity SET time=? WHERE id=?')
+    .run('2026-01-01T00:00:00Z', `artifact:${created.id}:1`)
+  const response = await fetch(`http://127.0.0.1:${f.runtime.port}/api/activity`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope: f.taskId, kind: 'task-activity' }),
+  })
+  const events = decode(activitySchema, await response.json()).events
+  expect(events).toHaveLength(101)
+  expect(events.flatMap((event) => artifactReferences(event.payload))).toEqual(
+    artifactReferences({ artifacts: [created] }),
+  )
+  expect(JSON.stringify(events)).not.toContain('Saved preview')
+  expect(activity.list('', 'task-activity', 0, f.otherId).events).toEqual([])
+  activity.pruneBefore(new Date(Date.now() + 60_000).toISOString())
+  expect(artifactEvent()).toBeDefined()
+  f.runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: workspace.tasks.filter((task) => task.id !== f.taskId),
+  }))
+  expect(activity.list('', 'task-activity', 0, f.taskId).events).toEqual([])
 })
 const token = 'artifacts-test-owner-token-at-least-thirty-two-characters'
 async function fixture(databasePath = ':memory:', enableArtifacts = true) {
@@ -211,6 +297,13 @@ it('keeps saved content and revisions after a runtime restart', async () => {
     f.runtime.services.preferences.save({ settledArtifactRetention: '30-days' })
     f.runtime.services.store.updateTask(f.taskId, (task) => ({ ...task, archived: true }))
     const deadline = f.runtime.services.artifacts.library()[0]?.deleteAt
+    f.runtime.services.activity.add(
+      'tool',
+      f.taskId,
+      'Previously expired artifact',
+      {},
+      `artifact:${first.id}:999`,
+    )
     await f.runtime.close()
     runtimes.splice(runtimes.indexOf(f.runtime), 1)
     const restarted = await startRuntime({
@@ -223,6 +316,14 @@ it('keeps saved content and revisions after a runtime restart', async () => {
       expect(restarted.services.artifacts.library()[0]?.deleteAt).toBe(deadline)
       expect(restarted.services.artifacts.read(f.taskId, first.id, 1).title).toBe('Diagram')
       expect(restarted.services.artifacts.list(f.taskId)[0]).not.toHaveProperty('content')
+      const events = restarted.services.activity.list('', 'task-activity', 0, f.taskId).events
+      expect(events.some((event) => event.id === `artifact:${first.id}:999`)).toBe(false)
+      expect(
+        events
+          .flatMap((event) => artifactReferences(event.payload))
+          .map((reference) => reference.revision)
+          .sort((a, b) => a - b),
+      ).toEqual([1, 2])
     } finally {
       await restarted.close()
     }
@@ -308,6 +409,7 @@ it('retains settle timers through edits, cancels on reopen and starts fresh when
     )
     expect(f.runtime.services.artifacts.prune(since + 27 * 86_400_000)).toBe(2)
     expect(f.runtime.services.artifacts.list(f.taskId)).toEqual([])
+    expect(f.runtime.services.activity.list('', 'task-activity', 0, f.taskId).events).toEqual([])
   } finally {
     clock.mockRestore()
   }

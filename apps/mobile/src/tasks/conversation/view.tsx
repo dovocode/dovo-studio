@@ -50,7 +50,12 @@ import { Pill } from '../../ui/controls/pill'
 import { ConnectionPill } from '../../runtime/connection/connection-status'
 import { useRuntime } from '../../runtime/connection/provider'
 import { createConversationScroll } from './state/scroll'
-import { foldedTurnPartRanges, toolPartGroupEnd, turnPartBoundaries } from './state/turn-parts'
+import {
+  foldedTurnPartRanges,
+  toolPartArtifacts,
+  toolPartGroupEnd,
+  turnPartBoundaries,
+} from './state/turn-parts'
 import { ConversationWorkGroup } from './components/work-group'
 const checkpointSchema = mutableStruct({
   turnId: Schema.String,
@@ -299,7 +304,17 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
         const first = index
         index = toolPartGroupEnd(message.content, first, end)
         elements.push(
-          <WorkGroup key={part.toolCallId} startIndex={first} endIndex={index}>
+          <WorkGroup
+            key={part.toolCallId}
+            startIndex={first}
+            endIndex={index}
+            artifactsOnly={
+              !open &&
+              !message.content
+                .slice(first, index + 1)
+                .some((part) => part.type === 'tool-call' && part.isError)
+            }
+          >
             {Array.from({ length: index - first + 1 }, (_, offset) => (
               <MessagePrimitive.PartByIndex
                 key={first + offset}
@@ -371,8 +386,12 @@ function Message() {
   const hasFailure = useAuiState((state) =>
     state.message.content.some((part) => part.type === 'tool-call' && part.isError),
   )
+  const hasArtifacts = useAuiState((state) =>
+    state.message.content.some((part) => toolPartArtifacts(part).length > 0),
+  )
   const showContent =
     hasFailure ||
+    hasArtifacts ||
     user ||
     !presentation?.groupTurn ||
     !(collapsed ?? presentation.groupTurn.status === 'completed') ||

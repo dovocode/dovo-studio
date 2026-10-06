@@ -1,7 +1,13 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { once } from 'node:events'
 import { WebSocket } from 'ws'
-import { applySnapshotDelta, decode, syncFrameSchema, type SyncFrame } from '@dovo/protocol'
+import {
+  applySnapshotDelta,
+  artifactReferences,
+  decode,
+  syncFrameSchema,
+  type SyncFrame,
+} from '@dovo/protocol'
 import { startRuntime } from '../index.js'
 const cleanup: Array<() => Promise<void> | void> = []
 afterEach(async () => {
@@ -347,6 +353,48 @@ it('omits tool output and raw events over HTTP and sync by default, and refreshe
     runtime.services.activity.list('', 'task-activity', 0, 'task').events[0]!.payload,
   ).toContain('raw-provider-data')
 })
+it('pushes created artifacts through compact activity, retains them past later calls and removes expired tiles', async () => {
+  const { startRuntimeSync, watchRuntimeActivity } = await import('@dovo/protocol')
+  const { runtime, address } = await setup()
+  runtime.services.preferences.save({ enableArtifacts: true, settledArtifactRetention: '7-days' })
+  vi.stubGlobal('WebSocket', WebSocket)
+  cleanup.push(() => {
+    vi.unstubAllGlobals()
+  })
+  const connection = { address, token }
+  let references: ReturnType<typeof artifactReferences> = []
+  let count = 0
+  let wire = ''
+  cleanup.push(
+    watchRuntimeActivity(connection, 'task', (events) => {
+      references = events.flatMap((event) => artifactReferences(event.payload))
+      count = events.length
+      wire = JSON.stringify(events)
+    }),
+  )
+  const sync = startRuntimeSync(connection, { onSnapshot: () => {} })
+  cleanup.push(sync.stop)
+  await expect.poll(() => sync.online()).toBe(true)
+  const artifact = runtime.services.artifacts.write({
+    taskId: 'task',
+    title: 'Live preview',
+    format: 'html',
+    content: '<p>Private artifact body</p>',
+  })
+  await expect.poll(() => references.map((reference) => reference.id)).toEqual([artifact.id])
+  runtime.services.db
+    .prepare('UPDATE activity SET time=? WHERE id=?')
+    .run('2026-01-01T00:00:00Z', `artifact:${artifact.id}:1`)
+  for (let index = 0; index < 120; index++)
+    runtime.services.activity.add('tool', 'task', 'Later command', {}, `later-${index}`)
+  await expect.poll(() => count).toBe(101)
+  expect(references).toHaveLength(1)
+  expect(wire).not.toContain('Private artifact body')
+  runtime.services.store.updateTask('task', (task) => ({ ...task, archived: true }))
+  expect(runtime.services.artifacts.prune(Date.now() + 8 * 86_400_000)).toBe(1)
+  await expect.poll(() => references).toEqual([])
+})
+
 it('updates a shared client activity subscription when detail visibility changes', async () => {
   const { startRuntimeSync, watchRuntimeActivity } = await import('@dovo/protocol')
   const { runtime, address } = await setup()

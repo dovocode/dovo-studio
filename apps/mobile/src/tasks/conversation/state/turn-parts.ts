@@ -1,8 +1,15 @@
 import type { ThreadMessage } from '@assistant-ui/react-native'
-import { decodeResult, mutableStruct } from '@dovo/protocol'
+import { artifactReferences, decodeResult, mutableStruct } from '@dovo/protocol'
 import { Schema } from 'effect'
 
 const groupSchema = mutableStruct({ groupKey: Schema.String })
+const payloadSchema = mutableStruct({ payload: Schema.String })
+
+export function toolPartArtifacts(part: ThreadMessage['content'][number]) {
+  return part.type === 'tool-call'
+    ? artifactReferences(decodeResult(payloadSchema, part.artifact).data?.payload)
+    : []
+}
 
 /** Keep the activity boundaries produced by the shared desktop/native timeline. */
 export function toolPartGroupEnd(content: ThreadMessage['content'], start: number, end: number) {
@@ -36,7 +43,7 @@ export function turnPartBoundaries(content: ThreadMessage['content'], running: b
   return { finalIndex, end: footer < 0 ? content.length : footer }
 }
 
-/** Keep a failed activity group visible as a whole when the turn is folded. */
+/** Keep failures and created artifacts available when the turn is folded. */
 export function foldedTurnPartRanges(
   content: ThreadMessage['content'],
   finalIndex: number,
@@ -46,7 +53,14 @@ export function foldedTurnPartRanges(
   for (let index = 0; index < end; index++) {
     if (content[index]?.type === 'tool-call') {
       const last = toolPartGroupEnd(content, index, end)
-      if (content.slice(index, last + 1).some((part) => part.type === 'tool-call' && part.isError))
+      if (
+        content
+          .slice(index, last + 1)
+          .some(
+            (part) =>
+              (part.type === 'tool-call' && part.isError) || toolPartArtifacts(part).length > 0,
+          )
+      )
         ranges.push({ start: index, end: last + 1 })
       index = last
     } else if (index === finalIndex) ranges.push({ start: index, end: index + 1 })
