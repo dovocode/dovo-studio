@@ -38,6 +38,11 @@ install a new package through their package manager; Check for Updates opens the
 page. Artifacts are not a promise of compatibility with every historical Debian/Fedora/CentOS
 release.
 
+Linux builds use the same desktop identity for Wayland, X11 and packaged launchers. On first launch,
+an AppImage registers a user-local launcher and persistent Dovo icon under `$XDG_DATA_HOME` (or
+`~/.local/share`). Later launches update its executable path after an AppImage move or upgrade.
+Existing user-owned launchers are preserved; DEB/RPM launchers are installed by the package manager.
+
 For a standalone Linux server, [the one-command installer](server-setup.md) selects and verifies the
 matching server archive, registers the user service, and uses the same command for upgrades.
 

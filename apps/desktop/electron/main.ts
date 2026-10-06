@@ -1,4 +1,5 @@
 import { registerQuitShortcut } from './quit-shortcut.js'
+import { registerLinuxDesktop } from './linux-desktop.js'
 import { registerInputPreview } from './input-preview.js'
 import { decode, windowsRuntimeChoiceSchema } from '@dovo/protocol'
 import {
@@ -129,6 +130,7 @@ if (!app.commandLine.hasSwitch('user-data-dir')) {
 // use the same Keychain identity. Preserve the selected profile before renaming.
 app.setName('dovo-studio')
 app.setPath('userData', dataDirectory)
+registerLinuxDesktop(nightly, appName, rendererPath)
 registerConnectionStorage(join(__dirname, '../dist/index.html'))
 const inputPreview = registerInputPreview(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => inputPreview.dispose())

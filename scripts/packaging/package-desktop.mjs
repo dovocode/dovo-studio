@@ -115,6 +115,7 @@ try {
       description: 'Personal agent workspace',
       author: { name: 'Dovocode', email: 'noreply@github.com' },
       homepage: 'https://github.com/dovocode/dovo-studio',
+      desktopName: `${variant.appId}.desktop`,
       license: 'UNLICENSED',
       type: 'module',
       main: 'dist-electron/main.js',
@@ -137,6 +138,10 @@ try {
       electronVersion: electron.version,
       directories: { app: application, output: join(root, 'release') },
       files: ['dist/**/*', 'dist-electron/**/*', 'package.json'],
+      extraResources:
+        process.platform === 'linux'
+          ? [{ from: join(root, 'apps/desktop/build/icon.png'), to: 'icon.png' }]
+          : [],
       afterPack: async (context) => {
         const destination = join(
           context.appOutDir,
@@ -200,6 +205,7 @@ try {
       },
       linux: {
         icon: join(root, 'apps/desktop/build/icon.png'),
+        syncDesktopName: true,
         category: 'Development',
         executableName: variant.nightly ? 'dovo-studio-nightly' : 'dovo-studio',
         maintainer: 'Dovocode <noreply@github.com>',
