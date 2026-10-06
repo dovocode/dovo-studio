@@ -50,6 +50,7 @@ behavior.
 - [Redesign proposal](design/redesign-proposal.md)
 - [Redesign implementation](design/redesign-implementation.md)
 - [Source navigation](design/source-navigation.md)
+- [Session handoff between runtimes](design/session-handoff.md)
 
 ## Reference material
 
