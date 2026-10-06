@@ -9,6 +9,7 @@ import { taskWorkItemSchema } from './scm/work/work-task.js'
 import { resourceSettingsSchema } from './shared/resources.js'
 import { attachmentSchema, MAX_ATTACHMENTS } from './shared/attachments.js'
 import { Schema } from 'effect'
+import { taskTransferStateSchema } from './tasks/transfer-state.js'
 import { forgeBindingSchema, forgeProviderSchema } from './scm/forges/forges.js'
 export const executionSchema = Schema.Literal('main', 'worktree')
 export const providerSchema = Schema.Literal(
@@ -348,6 +349,10 @@ export const linkedPullRequestSchema = mutableStruct({
   title: maxValue(Schema.String, 2000),
 })
 export const taskSchema = mutableStruct({
+  /** Runtime-owned handoff admission lock and destination link. */
+  transfer: Schema.optional(taskTransferStateSchema),
+  /** A validated native import binds to the destination execution fingerprint once. */
+  importedSession: Schema.optional(Schema.String),
   budget: Schema.optional(
     mutableStruct({
       tokens: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.positive())),

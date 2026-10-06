@@ -1,7 +1,7 @@
 # Session handoff between runtimes
 
-Status: proposal. This document describes intended behavior, not an implemented feature.
-Investigation date: 6 October 2026.
+Status: clean-checkout handoff implemented in the accompanying PR. Native context transfer is
+experimental; the validation limits below remain explicit. Investigation date: 6 October 2026.
 
 ## Outcome
 
@@ -25,8 +25,10 @@ or hosted identity service.
 - [Local handoff](../../packages/runtime/src/scm/tasks/task-handoff.ts) moves tasks between the
   project folder and a worktree, with idle checks and preservation of uncommitted changes. It is not
   a cross-runtime transfer API.
-- [Provider adapters](../../packages/runtime/src/agents/execution/types.ts) can run, probe and
-  discover models, but have no session export/import contract.
+- [Provider adapters](../../packages/runtime/src/agents/execution/types.ts) now close an idle task
+  transport before export.
+  [Native session transfer](../../packages/runtime/src/agents/transfer/native-session.ts) exports
+  Codex rollouts and Claude transcripts plus session sidecars.
 - [Usage transcript discovery](../../packages/runtime/src/storage/usage-transcripts.ts) already
   locates Codex and Claude session directories. This reads usage, not complete portable context.
 - Workspace import requires an empty destination and restores a whole workspace. It cannot merge one
@@ -41,13 +43,15 @@ Build a per-task move for a single Git checkout with clean tracked and untracked
 committed HEAD available on the destination, and no linked checkouts or delegated task family.
 Prepare a new isolated destination worktree instead of changing its project folder.
 
-Support native Claude and Codex transfer only after the compatibility experiments below pass. Each
-provider advertises its own transfer capability. A failed or unsupported native import leaves the
-move unactivated; the user can explicitly choose conversation replay, with a clear warning that
-provider tool history and compacted context may be lost. Never silently downgrade.
+The implemented slice supports experimental native Claude and Codex transfer with identical CLI
+versions and destination load validation. A failed or unsupported native import leaves the move
+unactivated; the user can explicitly choose conversation replay, with a clear warning that provider
+tool history and compacted context may be lost. Never silently downgrade.
 
-The destination must already have a usable provider installation and authentication. Show mismatched
-provider versions, unavailable models and missing tools before starting the transfer. Keep the
+The destination must already have a usable provider installation and authentication. The UI lists
+agents with the same provider and model. Version and native-load checks happen during staging; an
+error leaves the source frozen until retry or cancellation. Destination authentication and
+configured tools must already be usable; the transfer does not log in or probe every tool. Keep the
 provider and model unchanged for native continuation; do not silently substitute an agent preset.
 Resolve effective instructions and tool configuration using destination paths and local credentials.
 Block incompatible native continuation and offer replay explicitly.
@@ -60,14 +64,16 @@ automatic restart recovery through every execution entry point.
 ## Transfer contents
 
 A versioned manifest identifies the transfer, source runtime/task, destination runtime/project, new
-destination task ID, task revision, repository identity, exact commit, source checkout path,
-provider/version, session ID and checksums. The destination's task ID is allocated once per transfer
-and reused on retries; source identity remains provenance rather than assuming IDs are global.
+destination task ID, repository identity, exact commit, source checkout path, provider/version,
+session ID and checksums. The destination's task ID is allocated once per transfer and reused on
+retries; source identity remains provenance rather than assuming IDs are global.
 
 Include complete sent messages, relevant task settings and historical turns, attachment bytes,
 artifact revisions and opaque provider session files. Read full server-side conversation storage,
-not a paged client projection. Remap attachment/artifact ownership and references to the new task.
-Keep historical source paths labeled as history; regenerate current file state from the destination
+not a paged client projection. Remap attachment/artifact IDs and ownership to the new task.
+Historical text and opaque provider context retain old references; regenerated artifact tiles use
+local IDs, and the first resumed prompt tells the agent to re-list artifacts and attachments. Keep
+historical source paths labeled as history; regenerate current file state from the destination
 checkout. Old Git checkpoint references must not appear restorable unless their objects were
 transferred and validated; mark them unavailable in the first slice.
 
@@ -85,12 +91,13 @@ path remapping is provider-specific; do not search-and-replace arbitrary transcr
 
 Use the paired client to coordinate authenticated calls to both runtimes. This avoids requiring
 server-to-server reachability or storing the destination device token on the source. Persist
-transfer progress on the servers so a client restart can recover it. Proposed operations are
-prepare-source, stage-destination, seal-source, activate-destination, status and abort, all keyed by
-one transfer ID. Activation uses a source-issued commit proof bound to the immutable manifest and
-destination, validated using trust established for this paired transfer. The proof is not a reusable
-device token. The first implementation must specify and test this trust exchange before exposing
-activation.
+transfer progress on the servers so a client restart can recover it. The `/api/tasks/transfer/*`
+operations are prepare, stage, seal, activate, status, read, begin-abort, abort and abort-source,
+all keyed by one transfer ID. Activation uses a source-issued commit proof bound to the immutable
+manifest and destination. Preparation generates random activation and cancellation secrets and
+exports only their SHA-256 hashes. The source releases the activation secret only after persisting
+`sealed`; the destination verifies its hash and receipt before activation. The paired client
+authenticates independently to both runtimes. Neither secret is a reusable device token.
 
 1. **Prepare source:** persist a freeze under the task lock, export one stable revision and retain
    the original session. Export only after provider writes have settled. Editing files outside Dovo
@@ -108,8 +115,11 @@ activation.
    Replay clears the native session binding and consumed-message tracking explicitly.
 
 Repeated operations return their persisted result; reusing an ID with different contents is
-rejected. Before sealing, abort must first durably tombstone the destination staging record, then
-unfreeze the source. Serialize abort against seal so they cannot both succeed. After sealing, retry
+rejected. Before sealing, cancellation first persists `aborting` on the source and obtains a
+separate cancellation proof, then durably tombstones the destination, then unfreezes the source.
+Source cancellation and sealing share serialization, so both secrets cannot be released.
+Cancellation removes unchanged native files owned by staging, but retains the worktree and branch to
+avoid deleting project data. Modified native files are also retained. After sealing, retry
 activation; never unfreeze the source on a timeout or automatically expire ownership. If activation
 fails, show a recoverable pending transfer. Moving back is a new handoff, not an undo of an
 uncertain move.
@@ -153,32 +163,43 @@ version. Other providers remain replay-only until independently verified.
 Use these implementations as references first. Do not add a CLI dependency or copy source code until
 its integration, versioning and license implications have been assessed.
 
-## Validation and delivery
+## Validation and limits
 
-Before implementing native transfer, use synthetic sessions in isolated provider homes on two
-different checkout paths. Record installed versions and test ordinary history, tool-call/results,
-compaction, attachments and a next turn that depends on pre-handoff context. Validate loading
-without starting a new turn where supported. A successful transcript read is not enough: a
-controlled next turn must demonstrate continuation. If a provider requires all its processes to
-close for export, surface that limitation rather than terminating unrelated sessions.
+The implementation has automated two-runtime tests using real Git, SQLite and authenticated HTTP:
+prepare/stage/seal/activate, round trips with independent attachments and artifact revisions,
+repeated calls after reconstructed transfer managers, rejected unauthenticated access, malformed
+attachment rejection before sealing, source checkout edits, cancellation tombstones and blocked
+source editing/queue admission. A native Claude fixture is loaded by the real SDK history reader; a
+destination-runner test confirms the imported session ID and consumed messages reach the next turn
+without conversation replay. A Codex fixture preserves opaque compaction data and verifies that
+import calls only initialize and thread/resume. Browser checks exercise project/agent choices,
+visible network failure, stable retry IDs and destination navigation.
 
-Then implement protocol schemas, durable transfer admission/state and client coordination; follow
-with Git checkout preparation, task/storage remapping, provider import and shared desktop/web/mobile
-actions. Keep ownership in the runtime, wire schemas in protocol and task UI in the owning
-extension.
+An additional isolated local experiment imported and re-exported a synthetic rollout through the
+installed **Codex CLI 0.160.1** app-server. The **Claude SDK 0.3.288** reader loads transferred
+synthetic history and sidecars. These checks do **not** verify a billed live-model response, real
+compacted-context reasoning, every historical CLI format, full process-crash durability, or native
+iOS interaction. Native transfer remains experimental, rejects differing CLI versions and fails
+explicitly if destination context cannot be loaded; it never silently falls back to replay.
 
-Required verification includes interrupted uploads, invalid bundles, conflicting IDs, repeated
-calls, concurrent sends/jobs, source edits during export, process crashes before and after seal,
-lost activation responses, client restart, abort/seal races, offline destinations and HTTP with
-paired device authentication. Every recovery case must leave at most one executable task and
-preserve the original data. Run targeted runtime/protocol tests and an end-to-end two-runtime
-handoff.
+Current product limits:
 
-After the clean-checkout slice works, add dirty checkout transfer using Git bundles for missing
-commits plus a complete staged/unstaged/untracked snapshot. Preserve binary files, executable bits
-and index state; the UI's text diff is not a transfer format. Explicitly handle or reject submodule
-and LFS requirements. Never create or push a user commit implicitly. Linked checkouts and task
-families follow only when all participating projects can be mapped and transferred consistently.
+- Both computers must be paired and reachable. The destination already needs the same Git remote,
+  exact source commit, provider and model. Dovo never fetches, commits or pushes implicitly.
+- Only clean single-checkout tasks with sent history can move. Queues, scheduled continuations,
+  child task families, linked projects, active terminals, jobs and pending interactions must finish
+  first. Pull-request/work-item tasks, archived tasks, submodules and LFS projects are excluded.
+- The package is at most 64 MB; native files total at most 32 MB. Codex supports ordinary
+  `sessions/` rollouts, not archived rollouts. Claude paths above 200 encoded characters are
+  rejected.
+- Ignored files, installed dependencies, machine processes, source checkpoint restore data and
+  provider credentials are not copied. Destination task defaults supply local setup commands; normal
+  worktree setup runs when the next turn starts.
+- Changing destination agent settings after staging blocks activation until those settings are
+  restored. A sealed source cannot be unlocked; reconnect and retry **Complete move**. To move back,
+  start a new transfer from the destination.
+- Durable transfer records retain the package in the local runtime database. Automatic transfer
+  record cleanup and a browser-only local export/import flow are not part of this slice.
 
-Approval of this proposal selects the direction. Native provider compatibility, commit-proof trust
-exchange and end-to-end recovery remain implementation gates, not claims of completed behavior.
+Follow-ups are dirty-checkout snapshots and Git bundles for missing commits, additional provider
+import contracts, broader real-model/compaction compatibility testing, and mapped linked checkouts.

@@ -108,6 +108,7 @@ export class Tasks {
     try {
       const now = Date.now()
       for (const task of this.store.get().tasks) {
+        if (task.transfer && task.transfer.state !== 'active') continue
         if (this.stopping || task.archived || task.archivedAt || task.example) continue
         const continuation = task.quotaContinuation
         if (continuation && Date.parse(continuation.at) <= now) {
@@ -825,6 +826,10 @@ export class Tasks {
         return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
       return runtimeOperation(() => this.store.task(id)).pipe(
         Effect.flatMap((task) => {
+          if (task.transfer && task.transfer.state !== 'active')
+            return Effect.fail(
+              new HttpError(409, 'Complete or cancel this task’s move before running it.'),
+            )
           // The native boundary above yields. Admission must be rechecked in the
           // same synchronous turn that registers the worker with its executor.
           if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))

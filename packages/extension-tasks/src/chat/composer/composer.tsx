@@ -1,4 +1,6 @@
 import { randomUUID, checkpointCanUndo, taskForkResultSchema } from '@dovo/protocol'
+import { taskTransferBlocked } from '@dovo/protocol'
+import { TaskTransfer } from '../../detail/task-transfer'
 import { projectPrompts } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -370,6 +372,15 @@ export function Composer({
       setSending(false)
     }
   }
+  if (taskTransferBlocked(task))
+    return (
+      <div className="shrink-0 border-t p-3">
+        <p className="mb-2 text-sm text-muted-foreground">
+          This conversation is read-only while its move is pending.
+        </p>
+        <TaskTransfer task={task} />
+      </div>
+    )
   return (
     <div className="shrink-0 px-3 pb-2 pt-1">
       {meter && meter.level !== 'ok' && !pendingQuestion && (

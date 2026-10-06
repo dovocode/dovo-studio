@@ -404,6 +404,10 @@ export function createClaudeAdapter(): AgentAdapter {
         stream.close()
       }
     },
+    closeTask: async (taskId) => {
+      const session = idle.get(taskId)
+      if (session) await close(session)
+    },
     dispose: async () => {
       await Promise.all([...active].map(close))
     },

@@ -1,6 +1,8 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskLifecycleActions } from './task-lifecycle-actions'
-import { Ellipsis, GitPullRequest, Minimize2, Pin } from 'lucide-react'
+import { taskTransferBlocked } from '@dovo/protocol'
+import { TaskTransfer } from './task-transfer'
+import { ArrowRightLeft, Ellipsis, GitPullRequest, Minimize2, Pin } from 'lucide-react'
 import {
   readAppPreferences,
   responses,
@@ -8,10 +10,11 @@ import {
   useWorkspace,
   type Task,
 } from '@dovo/studio-core'
-import { IconButton, Popover } from '@dovo/studio-ui'
+import { Button, IconButton, Popover } from '@dovo/studio-ui'
 export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () => void }) {
   const { setWorkspace, request, connected } = useWorkspace(),
     [actionsOpen, setActionsOpen] = useApplicationState(false),
+    [transferOpen, setTransferOpen] = useApplicationState(false),
     [compactBusy, setCompactBusy] = useApplicationState(false),
     [compactError, setCompactError] = useApplicationState('')
   const compact = () => {
@@ -25,6 +28,7 @@ export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () 
       )
       .finally(() => setCompactBusy(false))
   }
+  if (taskTransferBlocked(task)) return <TaskTransfer task={task} />
   return (
     <>
       <Popover.Root open={actionsOpen} onOpenChange={setActionsOpen}>
@@ -84,6 +88,23 @@ export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () 
                 </IconButton>
               )}
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={
+                !connected ||
+                task.status === 'running' ||
+                task.status === 'draft' ||
+                !!task.queue?.length ||
+                !task.messages.length
+              }
+              onClick={() => {
+                setActionsOpen(false)
+                setTransferOpen(true)
+              }}
+            >
+              <ArrowRightLeft size={14} /> Move to computer…
+            </Button>
             {compactError && (
               <p role="alert" className="max-w-64 text-xs text-destructive">
                 {compactError}
@@ -92,6 +113,7 @@ export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () 
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
+      <TaskTransfer task={task} open={transferOpen} onOpenChange={setTransferOpen} hideTrigger />
     </>
   )
 }

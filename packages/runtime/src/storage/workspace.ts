@@ -37,6 +37,7 @@ import {
 } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 import { isDeepStrictEqual } from 'node:util'
+import { taskTransferBlocked } from '@dovo/protocol'
 const rowSchema = mutableStruct({
   value: Schema.String,
 })
@@ -123,6 +124,23 @@ function loadStoredWorkspace(db: Database.Database, raw: string): Workspace {
   return hydrate(recovered.data)
 }
 export class WorkspaceStore {
+  private transferMutationDepth = 0
+  /** Synchronous runtime-only boundary for handoff ownership transitions. */
+  transferMutation<T>(operation: () => T): T {
+    this.transferMutationDepth++
+    try {
+      return operation()
+    } finally {
+      this.transferMutationDepth--
+    }
+  }
+  requireTaskWritable(id: string) {
+    if (taskTransferBlocked(this.task(id)))
+      throw new HttpError(
+        409,
+        'This task is moving to another computer. Complete or cancel the move first.',
+      )
+  }
   private readonly secrets: McpSecrets
   private workspace: Workspace
   private readonly conversations: Conversations
@@ -456,6 +474,21 @@ export class WorkspaceStore {
     const parsed = migrateJiraSources(
       this.validateWorkspace(this.restoreSecrets(fn(this.workspace))),
     )
+    if (!this.transferMutationDepth) {
+      for (const task of this.workspace.tasks) {
+        if (!taskTransferBlocked(task)) continue
+        const next = parsed.tasks.find((item) => item.id === task.id)
+        // Reading history remains possible without changing transfer ownership.
+        if (
+          !next ||
+          !isDeepStrictEqual(
+            { ...task, lastViewedTurnId: undefined, viewedRevision: undefined },
+            { ...next, lastViewedTurnId: undefined, viewedRevision: undefined },
+          )
+        )
+          this.requireTaskWritable(task.id)
+      }
+    }
     // A business rule for edits only: a stored harness that a newer or older build no longer
     // supports must not keep the workspace from loading at startup.
     for (const repository of parsed.repositories) {
@@ -833,7 +866,9 @@ export class WorkspaceStore {
           record.contextUsage !== undefined ||
           record.sideChats !== undefined ||
           record.forkedFrom !== undefined ||
-          record.consumedMessageIds !== undefined)
+          record.consumedMessageIds !== undefined ||
+          record.transfer !== undefined ||
+          record.importedSession !== undefined)
       )
         throw new HttpError(400, 'New tasks must be drafts')
       const parsed = decode(workspaceSchema.fields[patch.collection].value, record)
