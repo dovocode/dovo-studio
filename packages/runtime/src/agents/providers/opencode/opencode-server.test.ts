@@ -48,6 +48,7 @@ it('shares an authenticated local server across model loading and turns, then st
     endpoint = first.endpoint
     expect(first.endpoint).toBe(second.endpoint)
     expect(launch).toHaveBeenCalledTimes(1)
+    expect(launch.mock.calls[0][2]).toMatchObject({ windowsHide: true })
     expect(launch.mock.calls[0][1]).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '0'])
     expect(catalog.models).toEqual([{ id: 'test/model', name: 'Test / Model', reasoning: [] }])
     expect((await adapter.probe(agent)).available).toBe(true)

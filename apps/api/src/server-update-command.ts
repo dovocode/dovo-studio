@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process'
 export function runServerUpdateCommand(command: string, args: string[], timeout: number) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
+      windowsHide: true,
       stdio: ['ignore', 'inherit', 'pipe'],
       timeout,
       killSignal: 'SIGKILL',

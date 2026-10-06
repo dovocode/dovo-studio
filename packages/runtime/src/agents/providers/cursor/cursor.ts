@@ -1,4 +1,5 @@
-import { fork } from 'node:child_process'
+import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir, homedir } from 'node:os'
@@ -17,8 +18,9 @@ export function openCursorWorker(agent: AgentDiscovery, cwd: string, entry?: URL
   const compiled = new URL('./cursor-worker.js', import.meta.url)
   const file =
     entry ?? (existsSync(compiled) ? compiled : new URL('./cursor-worker.ts', import.meta.url))
-  const child = fork(file, [], {
-    execArgv: file.pathname.endsWith('.ts') ? ['--import', import.meta.resolve('tsx')] : [],
+  const execArgv = file.pathname.endsWith('.ts') ? ['--import', import.meta.resolve('tsx')] : []
+  const child = spawn(process.execPath, [...execArgv, fileURLToPath(file)], {
+    windowsHide: true,
     cwd,
     detached: process.platform !== 'win32',
     env: processEnvironment(agent.env),

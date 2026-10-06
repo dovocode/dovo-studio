@@ -12,6 +12,7 @@ const exec = promisify(execFile)
 const run = async (file: string, args: string[]) =>
   (
     await exec(file, args, {
+      windowsHide: true,
       timeout: 30000,
       maxBuffer: 12 * 1024 * 1024,
     })
@@ -452,6 +453,7 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
             ],
             {
               detached: true,
+              windowsHide: true,
               stdio: 'ignore',
             },
           )
@@ -498,6 +500,7 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
       }
       if (input.action === 'screenshot') {
         const { stdout } = await exec(adb, ['-s', device.runtime, 'exec-out', 'screencap', '-p'], {
+          windowsHide: true,
           encoding: 'buffer',
           timeout: 30000,
           maxBuffer: 12 * 1024 * 1024,

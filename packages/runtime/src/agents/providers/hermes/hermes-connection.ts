@@ -20,6 +20,7 @@ export function openHermesConnection(
 ) {
   const launch = hermesLaunch(agent)
   const child = spawn(launch.command, launch.args, {
+    windowsHide: true,
     cwd,
     detached: process.platform !== 'win32',
     stdio: ['pipe', 'pipe', 'pipe'],

@@ -115,6 +115,7 @@ it('rejects untrusted senders before returning runtime credentials or activating
     'runtime:windows-read',
     'runtime:windows-save',
     'runtime:windows-connection',
+    'runtime:windows-security',
   ]) {
     const handler = fixture.ipc.mock.calls.find(([name]) => name === channel)?.[1]
     if (!handler) throw new Error(`Missing IPC handler ${channel}`)

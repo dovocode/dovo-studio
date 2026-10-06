@@ -115,6 +115,7 @@ export class GitService {
         : [...shellArguments(settings), '-c', `set -e\n${script}`]
     this.audit?.(cwd, [command, ...args])
     const child = spawn(command, args, {
+      windowsHide: true,
       cwd,
       env: processEnvironment(),
       detached: process.platform !== 'win32',
@@ -752,6 +753,7 @@ export class GitService {
   private blobPrefix(cwd: string, hash: string, limit: number): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const child = spawn(this.settings().git, ['cat-file', 'blob', hash], {
+        windowsHide: true,
         cwd,
         env: processEnvironment(),
         stdio: ['ignore', 'pipe', 'pipe'],

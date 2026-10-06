@@ -71,6 +71,7 @@ export class OpenCodeServers {
         command,
         ['serve', ...args, '--hostname', '127.0.0.1', '--port', '0'],
         {
+          windowsHide: true,
           cwd: homedir(),
           env,
           detached: process.platform !== 'win32',

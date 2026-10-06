@@ -16,6 +16,7 @@ export async function executeHook(
 ): Promise<HookResult> {
   signal.throwIfAborted()
   const child = spawn(hook.command, {
+    windowsHide: true,
     cwd,
     shell: true,
     detached: process.platform !== 'win32',

@@ -631,5 +631,19 @@ firewall configuration may be needed for LAN, Tailscale or NetBird connectivity.
 changes those OS settings. If a distribution is removed or startup fails, the setup chooser offers a
 return to Native Windows.
 
-The chooser and supervisor have automated tests. Full provisioning, Windows/WSL networking and
-actual agent runs still require verification on a Windows machine.
+Use **Check Windows security** in the Windows environment chooser or Settings → Runtime after
+reproducing a Defender notification. It reads the most recent 20 ASR block events (1121) from the
+last two hours on the Windows host, even in WSL mode. It shows the rule ID, timestamp, process and
+target paths; events can belong to other apps. **Copy report** copies those fields locally, without
+event user fields or command lines. Paths can include local account names. An unreadable log is
+reported separately from a successful empty query.
+
+A notification mentioning `svchost.exe` does not identify the rule or prove Dovo stopped working.
+The LSASS-protection rule can block memory access while the process continues running. Administrator
+access does not override ASR policy. See Microsoft's
+[ASR reference](https://learn.microsoft.com/en-us/defender-endpoint/attack-surface-reduction-rules-reference).
+Dovo hides background command windows; it does not change Defender rules, request general elevation
+or alter Windows terminal delegation. Code signing is handled separately.
+
+The chooser, security check and supervisor have automated tests. Full provisioning, Windows/WSL
+networking and actual agent runs still require verification on a Windows machine.

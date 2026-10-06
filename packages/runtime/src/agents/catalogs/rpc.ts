@@ -11,6 +11,7 @@ export async function withCatalogRpc<T>(
 ): Promise<T> {
   // Detached like the other owned launchers, so helper processes stop with their group.
   const child = spawn(executable, args, {
+    windowsHide: true,
     env: processEnvironment(env),
     detached: process.platform !== 'win32',
     stdio: ['pipe', 'pipe', 'pipe'],

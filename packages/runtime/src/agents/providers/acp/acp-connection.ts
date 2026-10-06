@@ -43,6 +43,7 @@ export function openAcpConnection(
   delete env.DOVO_OWNER_TOKEN
   delete env.ELECTRON_RUN_AS_NODE
   const child = spawn(launch.command, launch.args, {
+    windowsHide: true,
     cwd,
     env,
     detached: process.platform !== 'win32',

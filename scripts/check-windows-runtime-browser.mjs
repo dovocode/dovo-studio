@@ -49,14 +49,32 @@ try {
   await page.route('https://dovo.test/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
-  const setup = async (status, fail = false) => {
+  const setup = async (
+    status,
+    fail = false,
+    security = { checkedAt: '2026-10-06T10:00:00Z', status: 'ok', events: [] },
+  ) => {
     await page.goto('https://dovo.test/')
     await page.evaluate(
-      ({ status, fail }) => {
+      ({ status, fail, security }) => {
         window.saved = []
         window.connectionChecks = 0
+        window.securityChecks = 0
+        window.copiedReport = ''
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: {
+            writeText: async (text) => {
+              window.copiedReport = text
+            },
+          },
+        })
         window.dovo = {
           windowsRuntime: {
+            security: async () => {
+              window.securityChecks++
+              return security
+            },
             read: async () => status,
             connection: async () => {
               window.connectionChecks++
@@ -78,7 +96,7 @@ try {
           },
         }
       },
-      { status, fail },
+      { status, fail, security },
     )
     await page.addScriptTag({ content: built.outputFiles[0].text })
   }
@@ -89,6 +107,41 @@ try {
       { name: 'Ubuntu Work', version: 2 },
       { name: 'Legacy', version: 1 },
     ],
+  }
+  const securityEvent = {
+    timeCreated: '2026-10-06T09:55:00Z',
+    ruleId: '9E6C4E1F-7D60-472F-BA1A-A39EF669E4B2',
+    processPath: 'C:\\Windows\\System32\\svchost.exe',
+    targetPath: 'C:\\Windows\\System32\\lsass.exe',
+  }
+  const report = { checkedAt: '2026-10-06T10:00:00Z', status: 'ok', events: [securityEvent] }
+  await setup(base, false, report)
+  await page.getByRole('button', { name: 'Check Windows security', exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.securityChecks), 0)
+  await page.getByRole('button', { name: 'Check Windows security', exact: true }).click()
+  await page.getByText(/without stopping it/).waitFor()
+  await page.getByRole('button', { name: 'Copy report', exact: true }).click()
+  assert.deepEqual(JSON.parse(await page.evaluate(() => window.copiedReport)), report)
+  assert.equal(await page.evaluate(() => window.connectionChecks), 0)
+  assert.deepEqual(await page.evaluate(() => window.saved), [])
+  await page.setViewportSize({ width: 390, height: 844 })
+  await setup(base, false, { ...report, events: Array.from({ length: 20 }, () => securityEvent) })
+  await page.getByRole('button', { name: 'Check Windows security', exact: true }).click()
+  await page.getByText(/Most recent ASR blocks/).waitFor()
+  const heading = await page.getByRole('heading', { name: 'Set up Dovo Studio' }).boundingBox()
+  assert.ok(
+    heading && heading.y >= 0 && heading.y < 844,
+    'Long security reports keep setup controls accessible',
+  )
+  await page.setViewportSize({ width: 1280, height: 720 })
+  for (const [status, text] of [
+    ['ok', /No ASR block events were recorded/],
+    ['access-denied', /Windows denied access/],
+    ['unavailable', /Defender events could not be read/],
+  ]) {
+    await setup(base, false, { ...report, status, events: [] })
+    await page.getByRole('button', { name: 'Check Windows security', exact: true }).click()
+    await page.getByText(text).waitFor()
   }
   await setup(base)
   await page.getByLabel('Execution environment', { exact: true }).selectOption('wsl')
@@ -128,7 +181,7 @@ try {
   await page.getByText('Workspace ready').waitFor()
   assert.deepEqual(errors, [])
   console.log(
-    'Windows runtime chooser: distribution selection, failed setup, native fallback and WSL-unavailable flows passed.',
+    'Windows runtime chooser: security reports/copy/access errors, distribution selection, failed setup, native fallback and WSL-unavailable flows passed.',
   )
 } finally {
   await browser.close()

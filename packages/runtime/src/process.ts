@@ -33,22 +33,29 @@ export function execEffect(
   options: ExecFileOptions = {},
 ): Effect.Effect<Output<string | Buffer>, ProcessError> {
   return Effect.async((resume) => {
-    const child = execFile(command, [...args], options, (cause, stdout, stderr) => {
-      resume(
-        cause
-          ? Effect.fail(
-              new ProcessError({
-                message: cause.message,
-                cause,
-                code: cause.code,
-                signal: cause.signal,
-                stdout,
-                stderr,
-              }),
-            )
-          : Effect.succeed({ stdout, stderr }),
-      )
-    })
+    // Runtime commands are background work. Without this, Windows can show a
+    // console/terminal window for every Git command or executable probe.
+    const child = execFile(
+      command,
+      [...args],
+      { windowsHide: true, ...options },
+      (cause, stdout, stderr) => {
+        resume(
+          cause
+            ? Effect.fail(
+                new ProcessError({
+                  message: cause.message,
+                  cause,
+                  code: cause.code,
+                  signal: cause.signal,
+                  stdout,
+                  stderr,
+                }),
+              )
+            : Effect.succeed({ stdout, stderr }),
+        )
+      },
+    )
     // Interruption must wait for the native process to exit before releasing its
     // parent scope; a canceled command may not keep writing into a closed runtime.
     return Effect.async<void>((done) => {

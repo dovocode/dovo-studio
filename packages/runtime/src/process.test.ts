@@ -3,13 +3,25 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, it, vi } from 'vitest'
+import { execFile } from 'node:child_process'
 import { exec, execEffect, ProcessError } from './process.js'
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:child_process')>()
+  return { ...original, execFile: vi.fn<typeof original.execFile>(original.execFile) }
+})
 
 it('preserves text, binary output and native exit details at the boundary', async () => {
   expect(await exec(process.execPath, ['-e', 'process.stdout.write("hello")'])).toEqual({
     stdout: 'hello',
     stderr: '',
   })
+  expect(execFile).toHaveBeenLastCalledWith(
+    process.execPath,
+    ['-e', 'process.stdout.write("hello")'],
+    expect.objectContaining({ windowsHide: true }),
+    expect.any(Function),
+  )
   const binary = await exec(
     process.execPath,
     ['-e', 'process.stdout.write(Buffer.from([0, 255]))'],

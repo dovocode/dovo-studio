@@ -21,10 +21,12 @@ export async function discoverNetworks(): Promise<NetworkAddress[]> {
     .filter((entry, index, all) => all.findIndex((other) => other.host === entry.host) === index)
   const results = await Promise.allSettled([
     execute('tailscale', ['ip', '-4'], {
+      windowsHide: true,
       encoding: 'utf8',
       timeout: 3000,
     }),
     execute('netbird', ['status', '--json'], {
+      windowsHide: true,
       encoding: 'utf8',
       timeout: 3000,
     }),

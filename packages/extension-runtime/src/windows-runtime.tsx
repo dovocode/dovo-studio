@@ -4,8 +4,11 @@ import {
   decode,
   decodeResult,
   windowsRuntimeStatusSchema,
+  windowsSecurityReportSchema,
+  windowsAsrGuidance,
   type WindowsRuntimeStatus,
   type WindowsRuntimeBridge,
+  type WindowsSecurityReport,
 } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
 import { connectionSchema } from '@dovo/studio-core'
@@ -28,12 +31,114 @@ const bridgeSchema = Schema.Struct({
           (value): value is WindowsRuntimeBridge['save'] => typeof value === 'function',
         ),
       ),
+      security: Schema.Unknown.pipe(
+        Schema.filter(
+          (value): value is WindowsRuntimeBridge['security'] => typeof value === 'function',
+        ),
+      ),
     }),
   }),
 })
 const bridge = () => {
   const result = decodeResult(bridgeSchema, window)
   return result.success ? result.data.dovo.windowsRuntime : undefined
+}
+
+function WindowsSecurityControl() {
+  const [report, setReport] = useState<WindowsSecurityReport>()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const check = async () => {
+    const api = bridge()
+    if (!api) return
+    setBusy(true)
+    setError('')
+    setReport(undefined)
+    try {
+      setReport(decode(windowsSecurityReportSchema, await api.security()))
+    } catch {
+      setError(
+        'Windows security check could not complete. Try again after reproducing the problem.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="space-y-2 border-t pt-3" aria-label="Windows security diagnostics">
+      <h3 className="text-sm font-medium">Windows security</h3>
+      <p className="text-xs text-muted-foreground">
+        Check Defender attack surface reduction blocks from the last two hours on this PC. Events
+        may belong to other apps, including when Dovo runs in WSL. This reads local logs without
+        changing permissions or security settings.
+      </p>
+      <div className="flex gap-2">
+        <Button variant="outline" disabled={busy} onClick={() => void check()}>
+          {busy ? 'Checking Windows security…' : 'Check Windows security'}
+        </Button>
+        {report && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(JSON.stringify(report, null, 2))
+                .catch(() => setError('Could not copy the report. Check clipboard permissions.'))
+            }}
+          >
+            Copy report
+          </Button>
+        )}
+      </div>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      {report?.status === 'access-denied' && (
+        <p role="status" className="text-sm">
+          Windows denied access to the Defender event log. A Windows administrator can inspect event
+          1121 in Event Viewer under Applications and Services Logs → Microsoft → Windows → Windows
+          Defender → Operational.
+        </p>
+      )}
+      {report?.status === 'unavailable' && (
+        <p role="status" className="text-sm">
+          Defender events could not be read. The log or PowerShell may be unavailable or blocked by
+          policy. This does not mean there were no blocks.
+        </p>
+      )}
+      {report?.status === 'ok' && (
+        <div className="space-y-3" role="status">
+          {report.events.length === 0 ? (
+            <p className="text-sm">
+              No ASR block events were recorded in the last two hours. This check does not cover
+              SmartScreen, Windows Firewall or other security products.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm">
+                Most recent ASR blocks (up to 20). Compare their times and paths with the failure.
+              </p>
+              <ul className="space-y-3">
+                {report.events.map((event, index) => (
+                  <li
+                    key={`${event.timeCreated}-${index}`}
+                    className="space-y-1 rounded border p-3 text-xs"
+                  >
+                    <p>{event.timeCreated}</p>
+                    <p className="break-all">Rule: {event.ruleId || 'Not recorded'}</p>
+                    <p className="break-all">Process: {event.processPath || 'Not recorded'}</p>
+                    <p className="break-all">Target: {event.targetPath || 'Not recorded'}</p>
+                    <p>{windowsAsrGuidance(event.ruleId)}</p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  )
 }
 
 function WindowsRuntimeControl({
@@ -184,6 +289,7 @@ function WindowsRuntimeControl({
           Refresh
         </Button>
       </div>
+      <WindowsSecurityControl />
     </article>
   )
 }
@@ -222,7 +328,7 @@ export function WindowsRuntimeGate({ children }: { children: ReactNode }) {
   if (ready) return children
   return (
     <main className="flex h-screen items-center justify-center p-6">
-      <div className="w-full max-w-xl">
+      <div className="max-h-[calc(100vh-3rem)] w-full max-w-xl overflow-y-auto">
         <h1 className="mb-4 text-xl font-semibold">Set up Dovo Studio</h1>
         {checked ? (
           <WindowsRuntimeControl initialError={error} onApplied={() => setReady(true)} />

@@ -133,6 +133,11 @@ it('shares concurrent startup and releases startup listeners after readiness', a
   child.emit('message', { type: 'ready', port: 8787 })
   expect(await first).toEqual(await second)
   expect(spawn).toHaveBeenCalledTimes(1)
+  expect(spawn).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.any(Array),
+    expect.objectContaining({ windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }),
+  )
   expect(child.listenerCount('message')).toBe(0)
   await Promise.all([stopLocalRuntime(), stopLocalRuntime()])
   expect(kill).toHaveBeenCalledTimes(1)

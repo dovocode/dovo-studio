@@ -127,7 +127,10 @@ jobs:
           packages/runtime/src/services.test.ts
           packages/runtime/src/computer-use
           packages/runtime/src/agents/execution/stop-owned-child
+          packages/runtime/src/process.test.ts
           apps/desktop/electron/windows-runtime.test.ts
+          apps/desktop/electron/windows-security.test.ts
+          apps/desktop/electron/local-runtime.test.ts
           apps/desktop/electron/main.test.ts
           apps/desktop/electron/task-launcher.test.ts
           apps/api/src/server-manager.test.ts

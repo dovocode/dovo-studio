@@ -78,6 +78,8 @@ contextBridge.exposeInMainWorld('dovo', {
             ipcRenderer.invoke('runtime:windows-read'),
           connection: (): Promise<{ address: string; token: string }> =>
             ipcRenderer.invoke('runtime:windows-connection'),
+          security: (): Promise<import('@dovo/protocol').WindowsSecurityReport> =>
+            ipcRenderer.invoke('runtime:windows-security'),
           save: (
             choice: import('@dovo/protocol').WindowsRuntimeChoice,
           ): Promise<{ address: string; token: string }> =>

@@ -2,6 +2,7 @@ import { registerQuitShortcut } from './quit-shortcut.js'
 import { registerLinuxDesktop } from './linux-desktop.js'
 import { registerInputPreview } from './input-preview.js'
 import { decode, windowsRuntimeChoiceSchema } from '@dovo/protocol'
+import { readWindowsSecurity } from './windows-security.js'
 import {
   windowsRuntimeStatus,
   readWindowsRuntimeChoice,
@@ -225,6 +226,10 @@ ipcMain.handle('runtime:windows-read', (event) => {
   if (process.platform !== 'win32')
     throw new Error('Windows runtime selection is only available on Windows')
   return windowsRuntimeStatus()
+})
+ipcMain.handle('runtime:windows-security', (event) => {
+  requireTrustedRenderer(event, rendererPath)
+  return readWindowsSecurity()
 })
 let switchingRuntime = false
 ipcMain.handle('runtime:windows-save', async (event, value: unknown) => {

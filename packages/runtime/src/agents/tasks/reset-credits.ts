@@ -134,6 +134,7 @@ export async function codexAccount<T>(
     agent.endpoint || 'codex',
     ['app-server', '--listen', 'stdio://', ...(agent.args ?? [])],
     {
+      windowsHide: true,
       cwd: homedir(),
       env: processEnvironment(agent.env),
       stdio: ['pipe', 'pipe', 'pipe'],

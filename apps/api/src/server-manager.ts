@@ -132,6 +132,7 @@ export async function startServer(directory: string, entrypoint: string) {
   // A standalone server binds to its saved configuration even when launched from Dovo.
   delete env.DOVO_DESKTOP_DUAL_LISTENER
   const child = spawn(process.execPath, [entrypoint], {
+    windowsHide: true,
     detached: true,
     stdio: ['ignore', log, log],
     env,

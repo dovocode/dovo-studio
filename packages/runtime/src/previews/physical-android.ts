@@ -16,7 +16,11 @@ export async function physicalAndroid(device: PreviewDevice): Promise<NativeSimu
   const adb = await androidTool('adb')
   const target = ['-s', device.runtime]
   const command = (args: string[]) =>
-    exec(adb, [...target, ...args], { timeout: 10000, maxBuffer: 12 * 1024 * 1024 })
+    exec(adb, [...target, ...args], {
+      windowsHide: true,
+      timeout: 10000,
+      maxBuffer: 12 * 1024 * 1024,
+    })
   const size = androidScreenSize((await command(['shell', 'wm', 'size'])).stdout)
   if (!size) throw new HttpError(503, 'Could not read the Android display size.')
   let width = size.width,
@@ -55,6 +59,7 @@ export async function physicalAndroid(device: PreviewDevice): Promise<NativeSimu
         if (stopped) return
         try {
           const { stdout } = await exec(adb, [...target, 'exec-out', 'screencap', '-p'], {
+            windowsHide: true,
             encoding: 'buffer',
             timeout: 10000,
             maxBuffer: 12 * 1024 * 1024,

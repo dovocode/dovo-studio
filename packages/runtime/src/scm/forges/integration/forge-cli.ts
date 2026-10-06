@@ -45,6 +45,7 @@ function captureCliOutput(
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
+      windowsHide: true,
       cwd: cwd ?? homedir(),
       env: {
         ...processEnvironment(),

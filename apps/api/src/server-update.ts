@@ -37,6 +37,7 @@ export function selectedEntrypoint(directory: string) {
 async function execute(command: string, args: string[], cwd: string, logPath: string) {
   const log = openSync(logPath, 'a', 0o600)
   const child = spawn(command, args, {
+    windowsHide: true,
     cwd,
     stdio: ['ignore', log, log],
     // pnpm is pnpm.cmd on Windows, which Node only runs through the shell.

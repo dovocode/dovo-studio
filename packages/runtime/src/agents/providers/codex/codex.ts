@@ -80,6 +80,7 @@ export function createCodexAdapter(): AgentAdapter {
       const child =
         reusable?.child ??
         spawn(endpoint, ['app-server', '--listen', 'stdio://', ...(run.agent.args ?? [])], {
+          windowsHide: true,
           cwd: run.cwd,
           detached: process.platform !== 'win32',
           env: processEnvironment(run.agent.env),

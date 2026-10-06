@@ -170,6 +170,7 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
           delete env.DOVO_OWNER_TOKEN
           delete env.ELECTRON_RUN_AS_NODE
           const child = spawn(params.command, params.args ?? [], {
+            windowsHide: true,
             cwd: safeCwd,
             env,
             detached: process.platform !== 'win32',

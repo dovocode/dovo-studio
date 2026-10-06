@@ -530,6 +530,7 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
   const execute = promisify(execFile)
   // Touches use device pixels; the phone sees half of them, like points on iOS.
   const screen = await execute(adb, ['-s', device.runtime, 'shell', 'wm', 'size'], {
+    windowsHide: true,
     timeout: 10000,
   })
     .then(({ stdout }) => androidScreenSize(stdout))
@@ -587,6 +588,7 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
       ],
       {
         timeout: 10000,
+        windowsHide: true,
         maxBuffer: 1024 * 1024,
       },
     )
@@ -731,6 +733,7 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
           // adb joins shell arguments. Quote explicitly; input's %s escape means a space.
           const text = "'" + input.text.replaceAll(' ', '%s').replaceAll("'", "'\\''") + "'"
           await execute(adb, ['-s', device.runtime, 'shell', 'input', 'text', text], {
+            windowsHide: true,
             timeout: 10000,
             maxBuffer: 1024 * 1024,
           })
@@ -740,6 +743,7 @@ export async function androidSimulator(device: PreviewDevice): Promise<NativeSim
             text: input.text,
           })
           await execute(adb, ['-s', device.runtime, 'shell', 'input', 'keyevent', '279'], {
+            windowsHide: true,
             timeout: 10000,
             maxBuffer: 1024 * 1024,
           })

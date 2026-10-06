@@ -288,6 +288,7 @@ function launch(directory: string) {
                 : join(directory, '../../api/dist/index.js'),
             ],
             {
+              windowsHide: true,
               env,
               stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
             },
