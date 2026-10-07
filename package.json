@@ -27,7 +27,7 @@
     "pair": "pnpm --filter @dovo/api exec tsx src/cli.ts",
     "server": "pnpm --filter @dovo/api exec tsx src/server-cli.ts",
     "mobile:update": "node scripts/update-mobile.mjs",
-    "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm build",
+    "verify": "pnpm typecheck && pnpm test && pnpm check && pnpm build",
     "test:mcp-apps:browser": "node scripts/build-mcp-apps.mjs && node scripts/check-mcp-apps-browser.mjs",
     "test:artifacts:browser": "node scripts/check-artifacts-browser.mjs",
     "test:windows-runtime:browser": "node scripts/check-windows-runtime-browser.mjs",

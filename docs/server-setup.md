@@ -168,12 +168,12 @@ runtime and Electron profile at the selected location. Phone-local data stays on
 
 Development desktop uses `~/.dovo-dev/desktop` and `~/.dovo-dev/settings.json`, a separate native
 `Dovo Studio (Dev)` Electron profile, and external port 8788 by default. The internal desktop
-connection uses a free loopback port. It starts
-with its own workspace and never imports production data. Development worktrees, agent installs,
-and device helpers also stay under `~/.dovo-dev`. The API development command likewise defaults to
-`~/.dovo-dev/runtime.sqlite` and port 8789, with custom ports supported. Production supervisor
-environment files are not inherited by development launches. For CLI pairing during
-development, use `pnpm pair --connection ~/.dovo-dev/desktop/runtime-connection.json` (desktop) or
+connection uses a free loopback port. It starts with its own workspace and never imports production
+data. Development worktrees, agent installs, and device helpers also stay under `~/.dovo-dev`. The
+API development command likewise defaults to `~/.dovo-dev/runtime.sqlite` and port 8789, with custom
+ports supported. Production supervisor environment files are not inherited by development launches.
+For CLI pairing during development, use
+`pnpm pair --connection ~/.dovo-dev/desktop/runtime-connection.json` (desktop) or
 `pnpm pair --connection ~/.dovo-dev/runtime-connection.json` (API).
 
 Older development desktop data on macOS is normally:

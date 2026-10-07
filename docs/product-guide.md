@@ -205,10 +205,10 @@ The standalone API uses port 8787 and `~/.dovo/runtime.sqlite` by default. `DOVO
 creates `owner-token` alongside its database with owner-only file permissions. Desktop reuses this
 owner identity across launches, supplies it through IPC, and keeps its database in `~/.dovo/desktop`
 by default. Saved connections stay alongside that database; Electron browser data uses the native
-application-data directory. Desktop and runtime preferences are in `~/.dovo/settings.json`. Development
-desktop uses `~/.dovo-dev` with a separate Electron profile and workspace. Provider authentication
-stays on the host. Packaged desktop builds include Node 24 and the complete runtime dependency
-closure. Development builds can use `DOVO_NODE_PATH` when Node is absent from PATH.
+application-data directory. Desktop and runtime preferences are in `~/.dovo/settings.json`.
+Development desktop uses `~/.dovo-dev` with a separate Electron profile and workspace. Provider
+authentication stays on the host. Packaged desktop builds include Node 24 and the complete runtime
+dependency closure. Development builds can use `DOVO_NODE_PATH` when Node is absent from PATH.
 
 For browser access, serve the web frontend over your private network too. An HTTPS frontend needs an
 HTTPS/WSS runtime endpoint, supplied by your local reverse proxy; browsers block mixed content.
