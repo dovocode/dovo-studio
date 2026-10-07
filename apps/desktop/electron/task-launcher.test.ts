@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { beforeEach, expect, it, vi } from 'vite-plus/test'
 const f = vi.hoisted(() => ({
   handlers: new Map<string, (event: Electron.IpcMainInvokeEvent, value?: unknown) => unknown>(),
@@ -16,7 +17,8 @@ vi.mock('./renderer-trust', () => ({
   trustedRendererUrl: () => true,
 }))
 vi.mock('electron', () => ({
-  app: { on: () => {} },
+  app: { on: () => {}, getPath: () => tmpdir() },
+  nativeTheme: { shouldUseDarkColors: true },
   screen: {
     getCursorScreenPoint: () => ({ x: 0, y: 0 }),
     getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1200, height: 800 } }),

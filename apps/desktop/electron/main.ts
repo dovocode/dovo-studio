@@ -27,6 +27,13 @@ import {
 } from './local-runtime.js'
 import { registerConnectionStorage } from './connection-storage.js'
 import {
+  defaultWindowColors,
+  parseWindowColors,
+  readWindowColors,
+  titleBarOverlay,
+  writeWindowColors,
+} from './window-colors.js'
+import {
   desktopProfile,
   migrateDesktopDataDirectory,
   restoreElectronProfile,
@@ -40,7 +47,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
 import { Effect } from 'effect'
 
 import {
@@ -157,19 +164,37 @@ app.once('will-quit', () => {
 
 const taskLauncher = registerTaskLauncher(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => taskLauncher.dispose())
+let mainWindow: BrowserWindow | undefined
+/** The renderer reports its resolved palette; Windows and Linux paint the caption buttons
+ * natively, so they would otherwise stay dark on a light theme. The last palette is kept for
+ * the next launch, before any renderer has painted. */
+ipcMain.handle('window:colors', (event, value: unknown) => {
+  requireTrustedRenderer(event, rendererPath)
+  const colors = parseWindowColors(value)
+  if (!colors) throw new Error('Expected window colours as six-digit hex values')
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!window || window.isDestroyed()) return
+  window.setBackgroundColor(colors.background)
+  if (window === mainWindow && process.platform !== 'darwin')
+    window.setTitleBarOverlay(titleBarOverlay(colors))
+  writeWindowColors(app.getPath('userData'), colors)
+})
 function createWindow(): void {
+  const colors =
+    readWindowColors(app.getPath('userData')) ??
+    defaultWindowColors(nativeTheme.shouldUseDarkColors)
   const window = new BrowserWindow({
     width: 1180,
     height: 760,
     minWidth: 840,
     minHeight: 560,
     title: appName,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: colors.background,
     titleBarStyle: 'hidden',
     ...(process.platform === 'darwin'
       ? { trafficLightPosition: { x: 16, y: 15 } }
       : {
-          titleBarOverlay: { color: '#080808', symbolColor: '#a3a3a3', height: 44 },
+          titleBarOverlay: titleBarOverlay(colors),
           autoHideMenuBar: true,
         }),
     webPreferences: {
@@ -189,9 +214,57 @@ function createWindow(): void {
       void offerLink(window, url)
     }
   }
+  mainWindow = window
+  window.once('closed', () => {
+    if (mainWindow === window) mainWindow = undefined
+  })
   registerQuitShortcut(window.webContents)
   window.webContents.on('will-navigate', guardNavigation)
   window.webContents.on('will-redirect', guardNavigation)
+  // A crashed or hung renderer must not leave a blank or frozen window. Reload once per
+  // minute automatically; after that, let the person choose rather than loop.
+  let reloadedAt = 0
+  window.webContents.on('render-process-gone', (_event, details) => {
+    if (window.isDestroyed() || details.reason === 'clean-exit') return
+    console.error(`Renderer process gone (${details.reason}, exit code ${details.exitCode})`)
+    if (Date.now() - reloadedAt > 60_000) {
+      reloadedAt = Date.now()
+      window.webContents.reload()
+      return
+    }
+    void dialog
+      .showMessageBox(window, {
+        type: 'error',
+        title: appName,
+        message: 'The Dovo Studio window stopped unexpectedly.',
+        detail: `Reason: ${details.reason}. Your tasks keep running on the runtime; reopening the window restores them.`,
+        buttons: ['Reload', 'Quit'],
+        defaultId: 0,
+        cancelId: 0,
+      })
+      .then(({ response }) => {
+        if (window.isDestroyed()) return
+        if (response === 0) window.webContents.reload()
+        else app.quit()
+      })
+  })
+  window.webContents.on('unresponsive', () => {
+    if (window.isDestroyed()) return
+    void dialog
+      .showMessageBox(window, {
+        type: 'warning',
+        title: appName,
+        message: 'The Dovo Studio window is not responding.',
+        detail:
+          'Wait for it to recover, or reload the window. Your tasks keep running on the runtime.',
+        buttons: ['Wait', 'Reload'],
+        defaultId: 0,
+        cancelId: 0,
+      })
+      .then(({ response }) => {
+        if (!window.isDestroyed() && response === 1) window.webContents.forcefullyCrashRenderer()
+      })
+  })
 
   if (process.env.VITE_DEV_SERVER_URL) {
     void window.loadURL(process.env.VITE_DEV_SERVER_URL)

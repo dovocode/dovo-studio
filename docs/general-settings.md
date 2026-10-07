@@ -5,10 +5,12 @@ activity. Changes save automatically on this device. Agent and task configuratio
 pages, with links from General.
 
 The settings navigation groups **This app**, **Agents**, **Tasks & projects**, **Computers** and
-**History**. Search matches page names and their controls. Conversation contains composer, follow-up
-and response preferences; Notifications contains alerts; Review & diffs contains review behavior;
-Updates & about contains application and provider update preferences and notices. Titles & dictation
-has its own computer-specific page.
+**History**. Each page is marked by where it saves: inherited pages carry a layers mark and follow
+the shared project/computer target shown at the bottom of the navigation, per-computer pages carry a
+monitor mark, and device preferences carry no mark. Search matches page names and their controls.
+Conversation contains composer, follow-up and response preferences; Notifications contains alerts;
+Review & diffs contains review behavior; Updates & about contains application and provider update
+preferences and notices. Titles & dictation has its own computer-specific page.
 
 ## Task defaults
 
@@ -23,12 +25,13 @@ are preserved, including choices made while discovery is pending. You can change
 these settings pages without completing a first-run wizard.
 
 Task defaults contains new-task launch and workspace defaults, saved prompts and lifecycle policy.
-Its scope selector shows **Global → Computer → Project → Project on computer**. Each control shows
-where its value comes from and offers Reset when an override is present. Shared layers synchronize
-to paired computers; a shared project uses its canonical Git remote identity. An unset value
-inherits the earlier layers. Selecting **Off** explicitly overrides an inherited **On**. Local
-folders use the checkout-specific computer scope. Switching scope or leaving an edited settings page
-asks before discarding unsaved changes.
+Its **Applying settings for** bar shows **Global → Computer → Project → Project on computer** and
+stays visible while the page scrolls. Each control shows where its value comes from, offers Reset
+when an override is present, and counts later levels that override it with a way to open or reset
+them. Shared layers synchronize to paired computers; a shared project uses its canonical Git remote
+identity. An unset value inherits the earlier layers. Selecting **Off** explicitly overrides an
+inherited **On**. Local folders use the checkout-specific computer scope. Switching scope or leaving
+an edited settings page asks before discarding unsaved changes.
 
 ## Lifecycle
 
@@ -53,6 +56,10 @@ remain uninitialized, initialize directly, or initialize recursively before work
 runtimes must update before scoped lifecycle controls become editable.
 
 ## App preferences
+
+On Windows and Linux, the desktop app's native window controls and title strip follow the selected
+palette and light or dark mode, including **System** changes. The last palette is remembered so the
+window opens in the right colours before the app has rendered.
 
 The app preference pages expose project grouping/order, Working, in-app alerts, completed-paragraph
 streaming, slash-menu skills, rendered Markdown composer preview, composer collapse while reading

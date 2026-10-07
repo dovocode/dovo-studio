@@ -102,4 +102,6 @@ contextBridge.exposeInMainWorld('dovo', {
   },
   extensions: () => ipcRenderer.invoke('runtime:list-extensions'),
   activateExtension: (id: string) => ipcRenderer.invoke('runtime:activate', id),
+  setWindowColors: (colors: { background: string; symbol: string }): Promise<void> =>
+    ipcRenderer.invoke('window:colors', colors),
 })

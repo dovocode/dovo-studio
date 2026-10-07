@@ -42,12 +42,15 @@ vi.mock('electron', () => ({
     requestSingleInstanceLock: () => true,
     quit: fixture.quit,
   },
+  nativeTheme: { shouldUseDarkColors: true },
   BrowserWindow: class {
     webContents = {
       setWindowOpenHandler: vi.fn<(...args: unknown[]) => void>(),
       on: vi.fn<(...args: unknown[]) => void>(),
       once: vi.fn<(...args: unknown[]) => void>(),
     }
+    once = vi.fn<(...args: unknown[]) => void>()
+    isDestroyed = () => false
     constructor() {
       fixture.windows++
     }

@@ -33,6 +33,7 @@ createRoot(root).render(
           inputPreview={window.dovo?.inputPreview}
           taskLauncher={window.dovo?.taskLauncher}
           updates={window.dovo?.updates}
+          windowColors={window.dovo?.setWindowColors}
         />
       </WindowsRuntimeGate>
     )}

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, screen } from 'electron'
 import {
   decode,
   inputPreviewSyncSchema,
@@ -11,7 +11,14 @@ import {
   type InputPreview,
 } from '@dovo/protocol'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
+import { defaultWindowColors, readWindowColors } from './window-colors.js'
 
+/** Popups open before their renderer paints; match the main window's last palette. */
+const popupBackground = () =>
+  (
+    readWindowColors(app.getPath('userData')) ??
+    defaultWindowColors(nativeTheme.shouldUseDarkColors)
+  ).background
 export function registerInputPreview(rendererPath: string, preload: string) {
   let owner: BrowserWindow | undefined
   let popup: BrowserWindow | undefined
@@ -61,7 +68,7 @@ export function registerInputPreview(rendererPath: string, preload: string) {
         frame: false,
         show: false,
         autoHideMenuBar: true,
-        backgroundColor: '#0a0a0a',
+        backgroundColor: popupBackground(),
         webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload },
       })
       popup.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })

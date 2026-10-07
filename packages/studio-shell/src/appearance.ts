@@ -1,11 +1,20 @@
 import { useLayoutEffect } from 'react'
 import { useAppPreferences, useResolvedTheme, useStudioTheme } from '@dovo/studio-core'
 
-/** Applies Settings → Appearance to the document; "System" follows the OS live. */
-export function useAppearance() {
+/** Colours for native window chrome the document cannot paint: the title bar strip and the
+ * caption buttons on Windows and Linux. */
+export type WindowColors = { background: string; symbol: string }
+/** Applies Settings → Appearance to the document; "System" follows the OS live. The desktop
+ * app receives the title bar palette so its native window controls follow the theme. */
+export function useAppearance(onWindowColors?: (colors: WindowColors) => unknown) {
   const { themePalette, textSize, motion, chatWidth } = useAppPreferences()
   const mode = useResolvedTheme()
   const colors = useStudioTheme()
+  useLayoutEffect(() => {
+    void Promise.resolve(
+      onWindowColors?.({ background: colors.sidebar, symbol: colors['muted-foreground'] }),
+    ).catch((error: unknown) => console.warn('Could not update window colours', error))
+  }, [colors, onWindowColors])
   useLayoutEffect(() => {
     const root = document.documentElement
     root.dataset.textSize = textSize

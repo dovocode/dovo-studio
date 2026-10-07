@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { decode, inputPreviewItemSchema, inputPreviewKey, type InputPreview } from '@dovo/protocol'
 const f = vi.hoisted(() => ({
@@ -17,7 +18,8 @@ vi.mock('./renderer-trust', () => ({
   trustedRendererUrl: () => true,
 }))
 vi.mock('electron', () => ({
-  app: { on: () => {} },
+  app: { on: () => {}, getPath: () => tmpdir() },
+  nativeTheme: { shouldUseDarkColors: true },
   screen: {
     getCursorScreenPoint: () => ({ x: 0, y: 0 }),
     getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1200, height: 800 } }),

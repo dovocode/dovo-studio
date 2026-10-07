@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, screen } from 'electron'
 import {
   decode,
   runtimeRegistrySchema,
@@ -6,7 +6,14 @@ import {
   type RuntimeRegistry,
 } from '@dovo/protocol'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
+import { defaultWindowColors, readWindowColors } from './window-colors.js'
 
+/** Popups open before their renderer paints; match the main window's last palette. */
+const popupBackground = () =>
+  (
+    readWindowColors(app.getPath('userData')) ??
+    defaultWindowColors(nativeTheme.shouldUseDarkColors)
+  ).background
 export function registerTaskLauncher(rendererPath: string, preload: string) {
   let shortcut = ''
   let popup: BrowserWindow | undefined
@@ -40,7 +47,7 @@ export function registerTaskLauncher(rendererPath: string, preload: string) {
         show: false,
         alwaysOnTop: true,
         ...(process.platform === 'darwin' ? { type: 'panel' as const } : {}),
-        backgroundColor: '#0a0a0a',
+        backgroundColor: popupBackground(),
         autoHideMenuBar: true,
         webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload },
       })

@@ -14,5 +14,6 @@ interface Window {
     pickDirectory(this: void, runtimeAddress: string): Promise<string | null>
     extensions(): Promise<import('@dovo/client-runtime').ExtensionInfo[]>
     activateExtension(id: string): Promise<import('@dovo/client-runtime').ExtensionInfo>
+    setWindowColors(this: void, colors: { background: string; symbol: string }): Promise<void>
   }
 }
