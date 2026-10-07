@@ -202,12 +202,27 @@ jobs:
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: node -e "if(process.arch!==process.env.EXPECTED_ARCH) throw Error('Native architecture mismatch')"
+      # The hosted runners' Azure apt mirror sometimes stalls mid-index without failing, which
+      # held this step until the job timeout. Bound every fetch, retry, and fall back to the
+      # primary Ubuntu archive before giving up.
       - name: Install Linux packaging tools
         if: runner.os == 'Linux'
+        timeout-minutes: 12
         run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm ruby-dev build-essential libarchive-tools
-          sudo gem install --no-document fpm
+          set -euo pipefail
+          apt='sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Dpkg::Lock::Timeout=120'
+          install() { $apt update && $apt install -y --no-install-recommends rpm ruby-dev build-essential libarchive-tools; }
+          if ! timeout 240 bash -c "$(declare -f install); apt='$apt'; install"; then
+            echo '::warning::apt mirror stalled; retrying against archive.ubuntu.com'
+            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list 2>/dev/null || true
+            timeout 300 bash -c "$(declare -f install); apt='$apt'; install"
+          fi
+          for attempt in 1 2 3; do
+            timeout 180 sudo gem install --no-document fpm && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "::warning::gem install failed (attempt $attempt); retrying"
+            sleep 10
+          done
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/save-dependencies
         with:
