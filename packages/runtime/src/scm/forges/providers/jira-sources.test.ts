@@ -59,10 +59,8 @@ async function setup() {
     issueTypes: [],
   })
   const identity = vi.spyOn(JiraWork.prototype, 'identity').mockResolvedValue('jira-account')
-  const list = vi.spyOn(JiraWork.prototype, 'issues').mockResolvedValue({
-    items: [issue.issue],
-    next: undefined,
-  })
+  // Jira pages are slices of one cached prefix read.
+  const list = vi.spyOn(JiraWork.prototype, 'issueRows').mockResolvedValue([issue.issue])
   const detail = vi.spyOn(JiraWork.prototype, 'issue').mockResolvedValue(issue)
   const mutate = vi.spyOn(JiraWork.prototype, 'actOnIssue')
   const create = vi.spyOn(JiraWork.prototype, 'createIssue')
@@ -126,7 +124,7 @@ it('connects and browses independent Jira sources with no Dovo repositories', as
   ).toMatchObject({
     items: [issue.issue],
   })
-  expect(list).toHaveBeenCalledExactlyOnceWith('open', undefined, undefined)
+  expect(list).toHaveBeenCalledExactlyOnceWith('open', undefined, 61)
   expect(await post('work/issues/list', {})).toMatchObject({
     status: 400,
   })

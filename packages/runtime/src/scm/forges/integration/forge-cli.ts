@@ -1,7 +1,16 @@
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
+import { basename } from 'node:path'
 import { processEnvironment } from '../../../process.js'
 import { HttpError } from '../../../errors.js'
+/** Account and profile probes answer in seconds or not at all; data requests may take longer. */
+export const FORGE_CLI_PROBE_TIMEOUT = 15000
+export const FORGE_CLI_TIMEOUT = 60000
+/** Login status, token and profile lookups across gh, bb, tea, fj and az. */
+const probeCommands = new Set(['auth', 'profile', 'logins', 'login', 'whoami', 'account'])
+export function forgeCliTimeout(args: readonly string[]) {
+  return args.some((arg) => probeCommands.has(arg)) ? FORGE_CLI_PROBE_TIMEOUT : FORGE_CLI_TIMEOUT
+}
 // Deliberately bypass command/activity logging: CLI output may contain credentials.
 export async function runForgeCli(
   executable: string,
@@ -9,8 +18,9 @@ export async function runForgeCli(
   input?: unknown,
   cwd?: string,
   env?: NodeJS.ProcessEnv,
+  timeout = forgeCliTimeout(args),
 ): Promise<string> {
-  return (await captureForgeCli(executable, args, input, cwd, env)).stdout
+  return (await captureForgeCli(executable, args, input, cwd, env, timeout)).stdout
 }
 export function captureForgeCli(
   executable: string,
@@ -18,6 +28,7 @@ export function captureForgeCli(
   input?: unknown,
   cwd?: string,
   env?: NodeJS.ProcessEnv,
+  timeout = forgeCliTimeout(args),
 ): Promise<{ stdout: string; stderr: string }> {
   return captureCliOutput(
     executable,
@@ -25,6 +36,7 @@ export function captureForgeCli(
     input === undefined ? undefined : JSON.stringify(input),
     cwd,
     env,
+    timeout,
   )
 }
 export async function runForgeCliText(
@@ -33,8 +45,13 @@ export async function runForgeCliText(
   input: string,
   cwd?: string,
   env?: NodeJS.ProcessEnv,
+  timeout = forgeCliTimeout(args),
 ) {
-  return (await captureCliOutput(executable, args, input, cwd, env)).stdout
+  return (await captureCliOutput(executable, args, input, cwd, env, timeout)).stdout
+}
+/** The command a timeout names: the executable and its first words, never field values. */
+export function forgeCliLabel(executable: string, args: readonly string[]) {
+  return [basename(executable), ...args.slice(0, 3).filter((arg) => !arg.startsWith('-'))].join(' ')
 }
 function captureCliOutput(
   executable: string,
@@ -42,6 +59,7 @@ function captureCliOutput(
   input?: string,
   cwd?: string,
   env?: NodeJS.ProcessEnv,
+  timeout = FORGE_CLI_TIMEOUT,
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
@@ -78,10 +96,10 @@ function captureCliOutput(
         finish(
           new HttpError(
             504,
-            'The source control CLI timed out. Check authentication on the runtime host; refresh before retrying a write.',
+            `${forgeCliLabel(executable, args)} did not answer within ${Math.round(timeout / 1000)} seconds. A pending keychain or sign-in prompt on the runtime host can hold it; check authentication there and refresh before retrying a write.`,
           ),
         ),
-      60000,
+      timeout,
     )
     child.on('error', () =>
       finish(

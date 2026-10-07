@@ -40,21 +40,30 @@ it('persists pages, coalesces requests, serves stale data immediately and retain
   expect(load).toHaveBeenCalledTimes(2)
   await reopened.dispose()
 })
-it('watches registered repos without a PR screen and stops when disposed', async () => {
+it('keeps refreshing repositories a client read in the background and stops when disposed', async () => {
   vi.useFakeTimers()
   const { cache, pulls, store } = setup()
   store.update((w) => ({
     ...w,
-    repositories: [{ id: 'repo', name: 'Repo', path: '/repo', branch: 'main' }],
+    repositories: [
+      { id: 'repo', name: 'Repo', path: '/repo', branch: 'main' },
+      { id: 'idle', name: 'Idle', path: '/idle', branch: 'main' },
+    ],
   }))
   const load = vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })
   cache.start()
   await new Promise<void>((resolve) => setImmediate(resolve))
   await vi.advanceTimersByTimeAsync(300000)
-  await vi.waitFor(() => expect(load).toHaveBeenCalledWith('/repo', 'open', 1))
+  // Nothing was read by a client, so an idle runtime spends no GitHub calls.
+  expect(load).not.toHaveBeenCalled()
+  await Effect.runPromise(cache.overviewEffect('/repo', 'open', 1))
+  expect(load).toHaveBeenCalledWith('/repo', 'open', 1, false)
+  await vi.advanceTimersByTimeAsync(300000)
+  await vi.waitFor(() => expect(load).toHaveBeenCalledWith('/repo', 'open', 1, true))
+  expect(load.mock.calls.every(([path]) => path === '/repo')).toBe(true)
   await cache.dispose()
-  await vi.advanceTimersByTimeAsync(120000)
-  expect(load).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(300000)
+  expect(load).toHaveBeenCalledTimes(2)
 })
 it('returns cached discussion immediately while a new thread refresh is still pending', async () => {
   const { cache, pulls, db } = setup()

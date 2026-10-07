@@ -12,7 +12,7 @@ import type {
 export interface ForgeAdapter {
   repository(): Promise<ForgeRepository>
   repositories(page: number): Promise<ForgeRepositoryPage>
-  list(state: 'open' | 'closed' | 'all', page: number): Promise<PullPage>
+  list(state: 'open' | 'closed' | 'all', page: number, background?: boolean): Promise<PullPage>
   detail(number: number): Promise<PullDetail>
   comment(input: Schema.Schema.Type<typeof pullLineCommentSchema>): Promise<{
     url: string

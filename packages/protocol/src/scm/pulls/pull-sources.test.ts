@@ -1,6 +1,11 @@
 import { expect, it } from 'vite-plus/test'
 import type { Repository } from '../../workspace'
-import { forgePullIdentity, selectPullSources, uniquePulls } from './pull-sources'
+import {
+  assignRemoteSources,
+  forgePullIdentity,
+  selectPullSources,
+  uniquePulls,
+} from './pull-sources'
 const repository: Repository = {
   id: 'app',
   name: 'App',
@@ -81,4 +86,42 @@ it('canonicalizes forge targets without leaking credentials or confusing API and
   expect(
     forgePullIdentity({ provider: 'forgejo', baseUrl: 'http://forge.local:3000/git/' }, 'Team/App'),
   ).toBe('forge.local:3000/git/Team/App')
+})
+
+it('spreads remotes across connected computers, prefers the local computer and keeps owners', () => {
+  const repo = (name: string) => ({
+    ...repository,
+    id: name,
+    gitIdentity: `github.com/team/${name}`,
+  })
+  const on = (runtimeId: string, name: string, connected = true) => ({
+    key: `${runtimeId}:${name}`,
+    runtimeId,
+    connected,
+    repository: repo(name),
+  })
+  const sources = [
+    on('a', 'one'),
+    on('b', 'one'),
+    on('a', 'two'),
+    on('b', 'two'),
+    on('b', 'three'),
+    on('c', 'three'),
+  ]
+  const first = assignRemoteSources(sources)
+  expect([...first.owners.values()]).toEqual(['a:one', 'b:three', 'a:two'])
+  const preferred = assignRemoteSources(sources, { preferredRuntimeId: 'b' })
+  expect([...preferred.owners.values()]).toEqual(['b:one', 'b:three', 'b:two'])
+  // Owners stay put across refreshes until they disconnect; then the remote moves.
+  const kept = assignRemoteSources(sources, { previous: first.owners, preferredRuntimeId: 'b' })
+  expect(kept.owners).toEqual(first.owners)
+  const offline = sources.map((source) =>
+    source.runtimeId === 'a' ? { ...source, connected: false } : source,
+  )
+  const moved = assignRemoteSources(offline, { previous: first.owners })
+  expect(moved.owners.get('github.com/team/one')).toBe('b:one')
+  expect(moved.selected.map((source) => source.key)).toEqual(['b:one', 'b:two', 'b:three'])
+  // A custom remote identity dedupes other collections, such as Jira sites, the same way.
+  const jira = assignRemoteSources(sources, { remote: (source) => source.repository.id })
+  expect(jira.owners.size).toBe(3)
 })

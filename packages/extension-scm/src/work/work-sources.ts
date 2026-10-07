@@ -1,5 +1,5 @@
-import { runtimeComputerName } from '@dovo/protocol'
-import { useMemo } from 'react'
+import { assignRemoteSources, runtimeComputerName } from '@dovo/protocol'
+import { useMemo, useRef } from 'react'
 import {
   useRepositorySources,
   useWorkspace,
@@ -22,10 +22,16 @@ export type WorkSource = Omit<RepositorySource, 'repository'> & {
 }
 export const jiraSourceKey = (runtimeId: string, sourceId: string) =>
   JSON.stringify([runtimeId, 'jira', sourceId])
+/** The same Jira project on several computers is one source; its reader can change. */
+export const jiraRemoteKey = (jira: Pick<JiraSource, 'site' | 'project'>) =>
+  JSON.stringify(['jira', new URL(jira.site).origin, jira.project])
 
-/** Issue trackers and code repositories have separate identities and lifecycles. */
+/** Issue trackers and code repositories have separate identities and lifecycles. Like pull
+ * requests, each remote and each Jira project is read through one computer: this computer when
+ * it has the source, otherwise the least loaded connected computer, kept until it disconnects. */
 export function useIssueSources(includeJira: boolean): WorkSource[] {
-  const repositories = useRepositorySources()
+  const allRepositories = useRepositorySources()
+  const owners = useRef(new Map<string, string>())
   const {
     workspace,
     activeRuntimeId,
@@ -69,15 +75,32 @@ export function useIssueSources(includeJira: boolean): WorkSource[] {
       runtimeName: string
       connected: boolean
     }[] = JSON.parse(descriptors)
+    const repositories = assignRemoteSources(allRepositories, {
+      previous: owners.current,
+      preferredRuntimeId: activeRuntimeId,
+    })
+    const trackers = assignRemoteSources(
+      jira.map((entry) => ({
+        ...entry,
+        key: jiraSourceKey(entry.profile.id, entry.jira.id),
+        runtimeId: entry.profile.id,
+      })),
+      {
+        previous: owners.current,
+        preferredRuntimeId: activeRuntimeId,
+        remote: (entry) => jiraRemoteKey(entry.jira),
+      },
+    )
+    owners.current = new Map([...repositories.owners, ...trackers.owners])
     return [
-      ...repositories.map((source) => ({
+      ...repositories.selected.map((source) => ({
         ...source,
         name: source.repository.name,
         input: {
           repositoryId: source.repository.id,
         },
       })),
-      ...jira.map(({ profile, jira, projectLinks, runtimeName, connected }) => ({
+      ...trackers.selected.map(({ profile, jira, projectLinks, runtimeName, connected }) => ({
         key: jiraSourceKey(profile.id, jira.id),
         runtimeId: profile.id,
         runtimeName,
@@ -103,5 +126,12 @@ export function useIssueSources(includeJira: boolean): WorkSource[] {
         ) => readRuntime(profile, path, input, schema),
       })),
     ]
-  }, [descriptors, repositories, readRuntime, readRuntimeEffect, runtimeReadCache])
+  }, [
+    descriptors,
+    allRepositories,
+    activeRuntimeId,
+    readRuntime,
+    readRuntimeEffect,
+    runtimeReadCache,
+  ])
 }

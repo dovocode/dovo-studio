@@ -189,3 +189,24 @@ it.each([
     }),
   ).rejects.toThrow(message)
 })
+
+it('serves a stale entry at once, refreshes it once behind the response and shares in-flight loads', async () => {
+  const { service, db } = setup()
+  let release: (value: { items: never[]; next: undefined }) => void = () => {}
+  const load = vi
+    .spyOn(GitForgeWork.prototype, 'issues')
+    .mockImplementation(() => new Promise((resolve) => (release = resolve)))
+  const first = service.request('repo', 'issues/list', {})
+  const second = service.request('repo', 'issues/list', {})
+  await new Promise((resolve) => setImmediate(resolve))
+  expect(load).toHaveBeenCalledTimes(1)
+  release({ items: [], next: undefined })
+  await Promise.all([first, second])
+  db.prepare('UPDATE forge_work_cache SET updated=?').run(Date.now() - 60_000)
+  load.mockResolvedValue({ items: [], next: undefined })
+  const served = await service.request('repo', 'issues/list', {})
+  expect(served).toMatchObject({ stale: true })
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+  expect(await service.request('repo', 'issues/list', {})).not.toMatchObject({ stale: true })
+  expect(load).toHaveBeenCalledTimes(2)
+})

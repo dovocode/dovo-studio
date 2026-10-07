@@ -448,6 +448,7 @@ it('verifies a named GitHub profile without switching the globally active accoun
     { timeout: 60000, maxBuffer: 32 * 1024 * 1024 },
     '/checkout',
     { host: repo.host, token: 'fixture-private-token' },
+    false,
   )
   run.mockResolvedValue(JSON.stringify({ login: 'unexpected-user' }))
   await expect(pulls.identity('/checkout', true)).rejects.toThrow('selected GitHub profile changed')

@@ -70,3 +70,36 @@ it('does not treat permissions or network errors as account exhaustion', async (
   await expect(budget.run('account', async () => 'ready', quota)).resolves.toBe('ready')
   expect(quota).not.toHaveBeenCalled()
 })
+it('pauses background refreshes below the reserve while interactive calls continue', async () => {
+  vi.useFakeTimers()
+  const budget = new GithubBudget()
+  const quota = vi.fn<() => Promise<string>>(async () => '{}')
+  const resetAt = new Date(Date.now() + 600_000).toISOString()
+  budget.observeGraphql(
+    'account',
+    JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 400, resetAt } } }),
+  )
+  await expect(
+    budget.run('account', async () => 'refreshed', quota, { background: true }),
+  ).rejects.toMatchObject({ status: 429 })
+  await expect(budget.run('account', async () => 'ready', quota)).resolves.toBe('ready')
+  // An older window's reading never hides the current balance.
+  budget.observeGraphql(
+    'account',
+    JSON.stringify({
+      data: { rateLimit: { limit: 5000, remaining: 4000, resetAt: new Date(0).toISOString() } },
+    }),
+  )
+  await expect(
+    budget.run('account', async () => 'refreshed', quota, { background: true }),
+  ).rejects.toMatchObject({ status: 429 })
+  budget.observeGraphql(
+    'account',
+    JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 4000, resetAt } } }),
+  )
+  await expect(
+    budget.run('account', async () => 'refreshed', quota, { background: true }),
+  ).resolves.toBe('refreshed')
+  budget.observeGraphql('account', 'not json')
+  expect(quota).not.toHaveBeenCalled()
+})

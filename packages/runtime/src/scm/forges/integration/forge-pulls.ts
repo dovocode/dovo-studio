@@ -148,7 +148,7 @@ export class ForgePullRequests {
           hasMore: repos.length === 50,
         }
       },
-      list: (state, page) => github.list(directory, state, page),
+      list: (state, page, background) => github.list(directory, state, page, background),
       detail: (number) => github.detail(directory, number),
       comment: (input) => github.comment(directory, input),
       create: (input) => github.create(directory, input),
@@ -207,14 +207,17 @@ export class ForgePullRequests {
   }
   // PullCache calls this through its structural Pick<PullRequests, ...> contract.
   // fallow-ignore-next-line unused-class-member
-  async list(cwd: string, state: 'open' | 'closed' | 'all', page: number) {
-    return (await this.target(cwd))?.list(state, page) ?? this.github.list(cwd, state, page)
+  async list(cwd: string, state: 'open' | 'closed' | 'all', page: number, background = false) {
+    return (
+      (await this.target(cwd))?.list(state, page, background) ??
+      this.github.list(cwd, state, page, background)
+    )
   }
   // PullCache refreshes through its structural Pick<PullRequests, ...> contract.
   // fallow-ignore-next-line unused-class-member
-  async status(cwd: string, number: number) {
+  async status(cwd: string, number: number, background = false) {
     const binding = await this.binding(cwd)
-    if (!binding) return this.github.status(cwd, number)
+    if (!binding) return this.github.status(cwd, number, background)
     const connection = this.connections.get(binding.connectionId)
     if (connection.provider !== 'github') return this.detail(cwd, number)
     const detail = await this.githubTarget(
@@ -223,7 +226,7 @@ export class ForgePullRequests {
       new URL(connection.baseUrl).hostname,
       binding.repository,
       connection.cliProfile,
-    ).status(cwd, number)
+    ).status(cwd, number, background)
     detail.pull.connectionId = binding.connectionId
     return detail
   }

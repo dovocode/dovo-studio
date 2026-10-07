@@ -5,6 +5,7 @@ import { fixture } from '../../../testing/fixture'
 import { startRuntime } from '../../../index'
 import type { AgentRun, AgentAdapter } from '../../../agents/execution/types'
 import { runtimeIntegration } from '../../../testing/integration'
+import { GithubTransport } from '../../git/github-transport'
 vi.setConfig(runtimeIntegration)
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => {
@@ -26,14 +27,27 @@ const login = process.env.GH_ACCOUNT || (userIndex >= 0 ? args[userIndex + 1] : 
 if (args[0] === 'auth' && args[1] === 'token') {
   if (!login || process.env.GH_TOKEN && userIndex >= 0) process.exit(7);
   process.stdout.write('fixture-token-' + login);
-} else if (args[0] === 'api' && args.at(-1) === 'user') {
-  process.stdout.write(JSON.stringify({login}));
-} else if (args[0] === 'api' && args.at(-1).startsWith('user/repos')) {
-  process.stdout.write(JSON.stringify([{id:1,name:'app',full_name:login+'/app',html_url:'https://github.com/'+login+'/app',clone_url:'https://github.com/'+login+'/app.git',default_branch:'main'}]));
 } else process.exit(8);
 `,
     { mode: 0o700 },
   )
+  // gh only mints tokens; API requests carry the minted token to GitHub.
+  vi.spyOn(GithubTransport.prototype, 'send').mockImplementation(async (request, token) => {
+    const login = token.replace(/^fixture-token-/, '')
+    if (request.path === 'user') return JSON.stringify({ login })
+    if (request.path.startsWith('user/repos'))
+      return JSON.stringify([
+        {
+          id: 1,
+          name: 'app',
+          full_name: `${login}/app`,
+          html_url: `https://github.com/${login}/app`,
+          clone_url: `https://github.com/${login}/app.git`,
+          default_branch: 'main',
+        },
+      ])
+    throw new Error(`Unexpected GitHub request ${request.path}`)
+  })
   const runtime = await startRuntime({
     databasePath: ':memory:',
     ownerToken: 'github-account-fixture-owner-token-with-32-characters',

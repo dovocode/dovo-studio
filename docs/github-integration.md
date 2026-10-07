@@ -1,8 +1,11 @@
 # GitHub pull requests
 
-Dovo performs GitHub operations on the selected runtime host using GitHub CLI (`gh`). The phone,
-desktop renderer and web client never need a GitHub token. Each registered project can use its
-checkout's GitHub remote or an explicitly saved GitHub connection and `owner/repository` binding.
+Dovo performs GitHub operations on the selected runtime host against GitHub's API, using a token
+that GitHub CLI (`gh`) mints for the host and account in use. The CLI itself still resolves the
+checkout's repository, reads check rollups, reports login status and creates repositories. The
+phone, desktop renderer and web client never need a GitHub token. Each registered project can use
+its checkout's GitHub remote or an explicitly saved GitHub connection and `owner/repository`
+binding.
 
 ## Connect a host
 
@@ -26,24 +29,40 @@ the runtime user's home directory. Headless deployments can supply the CLI's doc
 `GH_TOKEN`/`GITHUB_TOKEN` or enterprise equivalents through their service environment. Do not put
 tokens into a repository URL or workspace configuration.
 
+Tokens follow the CLI's own precedence: `GH_TOKEN`/`GITHUB_TOKEN` for github.com and
+`GH_ENTERPRISE_TOKEN`/`GITHUB_ENTERPRISE_TOKEN` for other hosts win; otherwise Dovo runs
+`gh auth token --hostname HOST` in the project's checkout, so per-directory CLI configuration still
+selects the account, and `--user LOGIN` for a saved connection's named account. A minted token is
+reused for five minutes and dropped when GitHub rejects it, so a new login applies on the next
+request. Conditional requests reuse responses that GitHub reports unchanged, which do not count
+against the quota.
+
 Dovo namespaces PR caches by repository, host, active account and an opaque fingerprint of relevant
-token environment variables. Successful account checks are reused for up to one minute. Explicit
+token environment variables. Successful account checks are reused for up to ten minutes. Explicit
 refresh rechecks the account immediately; use it after `gh auth switch`. Failed authentication does
 not reuse a previously authenticated identity.
 
+GitHub list queries report the account's remaining GraphQL quota, which every call on that host and
+credential shares. Background refreshes pause when less than ten percent remains, keeping the rest
+for the PR screens and actions; cached data stays available until the reset.
+
 ## Projects on multiple computers
 
-The combined PR list and computer summaries read each remote repository through one connected
-computer, including when several checkouts or worktrees point at it. Selection is stable across
-refreshes and falls back to another connected computer when that source disconnects. The remote host
-is part of the identity, so forks and repositories on different hosts remain separate.
+The combined PR list, the issue views and computer summaries read each remote repository through one
+connected computer, including when several checkouts or worktrees point at it. The computer this
+client is connected to reads the remotes it has; other remotes spread across the connected computers
+so no single computer answers for everything. An owner keeps its remotes until it disconnects, and a
+remote that moves keeps its last loaded rows until the new computer answers. The remote host is part
+of the identity, so forks and repositories on different hosts remain separate.
 
 Choose a specific project in the PR filter to use that checkout and its configured account. PR rows
 keep that source's personal relationship flags; flags from different accounts are never combined.
 Credentials and PR caches remain isolated by account on each runtime.
 
-The clients coordinate these listing reads. Each runtime still watches its own tasks' linked PRs for
-status changes and automatic settlement.
+The clients coordinate these listing reads. A runtime refreshes a checkout's open PR list in the
+background only while a client read it within the last 30 minutes, so idle repositories cost no
+GitHub calls. Each runtime still watches its own tasks' linked PRs for status changes and automatic
+settlement; that watching counts as background work for the quota reserve above.
 
 ## Permissions
 

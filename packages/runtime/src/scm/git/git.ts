@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process'
 import { createFilePreview } from './file-preview.js'
 import type { FilePreviewMetadata } from '@dovo/protocol'
 import { GithubBudget } from './github-budget.js'
+import { GithubCredentials, GithubTransport, parseGithubApiArgs } from './github-transport.js'
 import { gitRemoteIdentity } from '@dovo/protocol'
 import { defaultShell, shellArguments } from '../../terminal/shell.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
@@ -20,13 +21,59 @@ import { HttpError, errorMessage } from '../../errors.js'
 import { repositoryPath, safeFile } from '../repositories/paths.js'
 export class GitService {
   private githubBudget = new GithubBudget()
+  private githubCredentials = new GithubCredentials(() => this.settings().gh)
+  private githubTransport = new GithubTransport()
+  /** `gh api` requests go to GitHub's API with a token gh mints per host and checkout; the
+   * other gh commands (repo view, pr view, auth status, repo create) still run the CLI. */
+  private async githubApiRequest(
+    cwd: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    background: boolean,
+    input?: string,
+  ) {
+    const request = parseGithubApiArgs(args, input)
+    const audited = [this.settings().gh, ...args]
+    this.audit?.(cwd, audited)
+    try {
+      const token = await this.githubCredentials.token(request.host, cwd, env)
+      const key = createHash('sha256')
+        .update(JSON.stringify([request.host, token]))
+        .digest('hex')
+      const result = await this.githubBudget.run(
+        key,
+        async () => {
+          const text = await this.githubTransport.send(request, token, {
+            onUnauthorized: () => this.githubCredentials.invalidate(request.host, cwd, env),
+          })
+          if (request.graphql) this.githubBudget.observeGraphql(key, text)
+          return text
+        },
+        () =>
+          this.githubTransport.send(
+            parseGithubApiArgs(['api', '--hostname', request.host, 'rate_limit']),
+            token,
+          ),
+        { background },
+      )
+      this.audit?.(cwd, audited, {})
+      return result
+    } catch (error) {
+      this.audit?.(cwd, audited, { error: errorMessage(error) })
+      throw error
+    }
+  }
   private githubRequest(
     cwd: string,
     args: string[],
     timeout: number,
     maxBuffer: number,
     env: NodeJS.ProcessEnv,
+    background = false,
+    input?: string,
   ) {
+    if (args[0] === 'api') return this.githubApiRequest(cwd, args, env, background, input)
+    if (input !== undefined) throw new HttpError(400, 'Only gh api requests accept a body')
     const hostIndex = args.indexOf('--hostname')
     const repoIndex = args.indexOf('--repo')
     const repositoryHost =
@@ -49,7 +96,11 @@ export class GitService {
       .digest('hex')
     return this.githubBudget.run(
       key,
-      () => this.run(cwd, this.settings().gh, args, timeout, maxBuffer, env),
+      async () => {
+        const result = await this.run(cwd, this.settings().gh, args, timeout, maxBuffer, env)
+        if (args.includes('graphql')) this.githubBudget.observeGraphql(key, result)
+        return result
+      },
       () =>
         this.run(
           cwd,
@@ -59,6 +110,7 @@ export class GitService {
           1024 * 1024,
           env,
         ),
+      { background },
     )
   }
   constructor(
@@ -939,12 +991,19 @@ export class GitService {
       this.nonInteractive(),
     )
   }
-  async github(path: string, args: string[]) {
+  async github(path: string, args: string[], background = false) {
     const { path: cwd } = await this.inspect(path)
-    return this.githubRequest(cwd, args, 60000, 32 * 1024 * 1024, {
-      ...processEnvironment(),
-      ...(await this.githubEnvironment(cwd)),
-    })
+    return this.githubRequest(
+      cwd,
+      args,
+      60000,
+      32 * 1024 * 1024,
+      {
+        ...processEnvironment(),
+        ...(await this.githubEnvironment(cwd)),
+      },
+      background,
+    )
   }
   async githubAccount(
     args: string[],
@@ -958,6 +1017,8 @@ export class GitService {
       token: string
       env?: Record<string, string>
     },
+    background = false,
+    input?: string,
   ) {
     // Account discovery must work before any local checkout has been registered.
     return this.githubRequest(
@@ -979,6 +1040,8 @@ export class GitService {
             }
           : {}),
       },
+      background,
+      input,
     )
   }
   async pullRequests(path: string) {

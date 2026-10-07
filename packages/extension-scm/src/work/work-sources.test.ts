@@ -26,6 +26,7 @@ vi.mock('@dovo/studio-core', async (importOriginal) => ({
 vi.mock('react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react')>()),
   useMemo: (factory: () => unknown) => factory(),
+  useRef: <T>(value: T) => ({ current: value }),
 }))
 const snapshot = decode(snapshotSchema, {
   revision: 1,
@@ -104,9 +105,9 @@ beforeEach(() => {
     runtimeReadCache: () => cache,
   }
 })
-it('lists standalone Jira with no code projects and keeps same IDs distinct across computers', () => {
+it('reads one Jira project through this computer and fails over when it disconnects', () => {
   const sources = useIssueSources(true)
-  expect(sources).toHaveLength(2)
+  expect(sources).toHaveLength(1)
   expect(sources[0]).toMatchObject({
     name: 'Team backlog',
     input: {
@@ -114,11 +115,28 @@ it('lists standalone Jira with no code projects and keeps same IDs distinct acro
     },
   })
   expect(sources[0].key).toBe(jiraSourceKey(mac.id, 'tracker'))
-  expect(sources[1].key).not.toBe(sources[0].key)
+  store.connected = false
+  expect(useIssueSources(true)[0].key).toBe(jiraSourceKey(linux.id, 'tracker'))
+  // A different Jira project on another computer stays a separate source.
+  store.runtimes[1] = {
+    ...store.runtimes[1],
+    snapshot: {
+      ...snapshot,
+      workspace: {
+        ...snapshot.workspace,
+        jiraSources: [
+          { id: 'other', site: 'https://team.atlassian.net', project: 'OPS', name: 'Ops' },
+        ],
+      },
+    },
+  }
+  store.connected = true
+  expect(useIssueSources(true).map((source) => source.name)).toEqual(['Team backlog', 'Ops'])
   expect(useIssueSources(false)).toEqual([])
 })
 it('keeps requests bound to the Jira owner and invalidates scope on credential changes', async () => {
-  const source = useIssueSources(true)[1]
+  store.connected = false
+  const source = useIssueSources(true)[0]
   expect(
     await source.request(
       '/api/scm/work/issues/list',
@@ -146,7 +164,7 @@ it('keeps requests bound to the Jira owner and invalidates scope on credential c
       },
     },
   }
-  expect(useIssueSources(true)[1].scope).not.toBe(source.scope)
+  expect(useIssueSources(true)[0].scope).not.toBe(source.scope)
 })
 it('adds optional per-issue project labels without changing the Jira identity', () => {
   const source = useIssueSources(true)[0]

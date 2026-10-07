@@ -351,3 +351,27 @@ it('uses GitHub token environment connections for both API and Git credentials, 
   expect(store.get(account.id).revision).not.toBe(account.revision)
   expect(JSON.stringify(store.list())).not.toMatch(/work-secret|replacement-secret/)
 })
+
+it('reuses a CLI account lookup across reads and forgets it when a server rejects it', async () => {
+  const identity = vi.fn<() => Promise<string>>(async () => 'account-one')
+  const cli = { identity } as unknown as NonNullable<
+    ConstructorParameters<typeof ForgeConnections>[2]
+  >
+  const connections = new ForgeConnections(db, undefined, cli)
+  const saved = connections.save({
+    name: 'Work',
+    provider: 'gitea',
+    baseUrl: 'https://gitea.example',
+    credential: 'cli',
+    cliTool: 'tea',
+    cliProfile: 'main',
+  })
+  await connections.reconcileCli(saved.id, '/repo')
+  await connections.reconcileCli(saved.id, '/repo')
+  expect(identity).toHaveBeenCalledTimes(1)
+  await connections.reconcileCli(saved.id, '/other')
+  expect(identity).toHaveBeenCalledTimes(2)
+  connections.forgetCredentials(saved.id)
+  await connections.reconcileCli(saved.id, '/repo')
+  expect(identity).toHaveBeenCalledTimes(3)
+})

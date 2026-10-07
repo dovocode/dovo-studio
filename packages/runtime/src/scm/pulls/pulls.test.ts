@@ -48,12 +48,16 @@ it('loads repository-scoped pages and keeps merged and draft states', async () =
   expect(page).toMatchObject({ page: 2, hasMore: true })
   expect(page.pulls[0]).toMatchObject({ state: 'merged', draft: true })
   expect(page.pulls[1].state).toBe('closed')
-  expect(run).toHaveBeenCalledWith('/project/worktree', [
-    'api',
-    '--hostname',
-    'git.example.com',
-    'repos/team/project/pulls?state=closed&sort=updated&direction=desc&per_page=50&page=2',
-  ])
+  expect(run).toHaveBeenCalledWith(
+    '/project/worktree',
+    [
+      'api',
+      '--hostname',
+      'git.example.com',
+      'repos/team/project/pulls?state=closed&sort=updated&direction=desc&per_page=50&page=2',
+    ],
+    false,
+  )
 })
 it('combines all comment pages and preserves details when a check request fails', async () => {
   const git = new GitService()
@@ -151,6 +155,7 @@ it('posts line ranges to the pinned PR in the project host and rejects stale hea
       `commit_id=${pull.head.sha}`,
       `body=${input.body}`,
     ]),
+    false,
   )
   run.mockClear()
   await expect(service.comment('/project', { ...input, headSha: 'b'.repeat(40) })).rejects.toThrow(

@@ -14,6 +14,8 @@ import {
   runtimeFailure,
   type RuntimeFailure,
 } from '../../errors.js'
+/** Keep refreshing a checkout this long after a client last read its pull requests. */
+const DEMAND_WINDOW = 30 * 60_000
 const rowSchema = mutableStruct({
   value: Schema.String,
   updated: Schema.Number.pipe(Schema.check(Schema.isFinite())),
@@ -27,6 +29,9 @@ export class PullCache {
   private scheduler?: ReturnType<typeof startPolling>
   private stopped = false
   private scopes = new Map<string, string>()
+  /** Checkouts a client read recently. Only these refresh in the background; task watching
+   * reads its own pull requests, so idle repositories cost no GitHub calls. */
+  private demanded = new Map<string, number>()
   constructor(
     private db: Database.Database,
     private pulls: Pick<PullRequests, 'list' | 'detail'> & Partial<Pick<PullRequests, 'status'>>,
@@ -158,7 +163,13 @@ export class PullCache {
       )
     })
   }
-  listEffect(cwd: string, state: 'open' | 'closed' | 'all', page: number, force = false) {
+  listEffect(
+    cwd: string,
+    state: 'open' | 'closed' | 'all',
+    page: number,
+    force = false,
+    background = false,
+  ) {
     return Effect.gen({ self: this }, function* () {
       const identify = this.identity
       const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
@@ -166,10 +177,16 @@ export class PullCache {
       return yield* this.readEffect(
         JSON.stringify(['list', scope, state, page]),
         pullPageSchema,
-        () => this.pulls.list(cwd, state, page),
+        () => this.pulls.list(cwd, state, page, background),
         force,
       )
     })
+  }
+  noteDemand(cwd: string) {
+    this.demanded.set(cwd, Date.now())
+    if (this.demanded.size > 500)
+      for (const [key, at] of this.demanded)
+        if (Date.now() - at >= DEMAND_WINDOW) this.demanded.delete(key)
   }
   /** Reuse bounded, credential-scoped list caches instead of loading every PR detail. */
   stackCatalogEffect(cwd: string, force = false, seed?: typeof pullPageSchema.Type) {
@@ -204,6 +221,7 @@ export class PullCache {
   }
   overviewEffect(cwd: string, state: 'open' | 'closed' | 'all', page: number, force = false) {
     return Effect.gen({ self: this }, function* () {
+      this.noteDemand(cwd)
       const result = yield* this.listEffect(cwd, state, page, force)
       if (state === 'closed') return result
       const catalog = yield* this.stackCatalogEffect(
@@ -235,6 +253,7 @@ export class PullCache {
   }
   detailWithStackEffect(cwd: string, number: number, force = false) {
     return Effect.gen({ self: this }, function* () {
+      this.noteDemand(cwd)
       const detail = yield* this.detailEffect(cwd, number, force)
       if (detail.pull.state !== 'open')
         return { ...detail, stack: undefined, pull: { ...detail.pull, stack: undefined } }
@@ -247,8 +266,14 @@ export class PullCache {
       }
     })
   }
-  list(cwd: string, state: 'open' | 'closed' | 'all', page: number, force = false) {
-    return runClientEffect(this.listEffect(cwd, state, page, force))
+  list(
+    cwd: string,
+    state: 'open' | 'closed' | 'all',
+    page: number,
+    force = false,
+    background = false,
+  ) {
+    return runClientEffect(this.listEffect(cwd, state, page, force, background))
   }
   detailEffect(cwd: string, number: number, force = false) {
     return Effect.gen({ self: this }, function* () {
@@ -268,7 +293,7 @@ export class PullCache {
   detail(cwd: string, number: number, force = false) {
     return runClientEffect(this.detailEffect(cwd, number, force))
   }
-  status(cwd: string, number: number, force = false) {
+  status(cwd: string, number: number, force = false, background = false) {
     return runClientEffect(
       Effect.gen({ self: this }, function* () {
         const identify = this.identity
@@ -278,7 +303,9 @@ export class PullCache {
           JSON.stringify(['status', scope, number]),
           pullDetailSchema,
           () =>
-            this.pulls.status ? this.pulls.status(cwd, number) : this.pulls.detail(cwd, number),
+            this.pulls.status
+              ? this.pulls.status(cwd, number, background)
+              : this.pulls.detail(cwd, number),
           force,
         )
       }),
@@ -346,12 +373,19 @@ export class PullCache {
   start() {
     if (this.scheduler || this.stopped) return
     const tick = Effect.gen({ self: this }, function* () {
-      const repos = yield* runtimeOperation(() => this.store.get().repositories)
+      const repos = yield* runtimeOperation(() =>
+        this.store
+          .get()
+          .repositories.filter(
+            (repository) =>
+              Date.now() - (this.demanded.get(repository.path) ?? -Infinity) < DEMAND_WINDOW,
+          ),
+      )
       yield* Effect.forEach(
         repos,
         (repository) =>
           Effect.gen({ self: this }, function* () {
-            yield* this.listEffect(repository.path, 'open', 1).pipe(Effect.result)
+            yield* this.listEffect(repository.path, 'open', 1, false, true).pipe(Effect.result)
             // Include stale-cache refreshes before admitting another repository.
             const pending = [...this.pending].filter(([key]) => {
               try {

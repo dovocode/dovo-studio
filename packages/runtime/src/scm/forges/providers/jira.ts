@@ -189,6 +189,37 @@ const rawIssue = mutableStruct({
     ),
   }),
 })
+
+export function jiraOffset(cursor?: string) {
+  return decode(
+    maxValue(
+      minValue(
+        CoercedNumber.pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ),
+        0,
+      ),
+      9990,
+    ),
+    cursor ?? '0',
+  )
+}
+export function jiraIssuePage<T>(rows: readonly T[], offset: number) {
+  return {
+    items: rows.slice(offset, offset + 30),
+    next: rows.length > offset + 30 && offset + 30 <= 9990 ? String(offset + 30) : undefined,
+  }
+}
+export type JiraVerification = {
+  account: Promise<string>
+  verified: Promise<Schema.Schema.Type<typeof projectSchema>>
+}
 export class JiraWork implements ForgeWorkProvider {
   private account?: Promise<string>
   private verified?: Promise<Schema.Schema.Type<typeof projectSchema>>
@@ -210,6 +241,16 @@ export class JiraWork implements ForgeWorkProvider {
   }
   async verify() {
     return (this.verified ??= this.verifyProject())
+  }
+  /** The account and project checks, so one verification serves many requests. */
+  verification(): JiraVerification {
+    const verified = this.verify()
+    void verified.catch(() => undefined)
+    return { account: this.account ?? verified.then(() => this.account ?? ''), verified }
+  }
+  adopt(state: JiraVerification) {
+    this.account = state.account
+    this.verified = state.verified
   }
   private async verifyProject() {
     this.account ??= this.execute(['jira', 'auth', 'status'])
@@ -289,27 +330,14 @@ export class JiraWork implements ForgeWorkProvider {
     }
   }
   async issues(state: string, cursor?: string, query?: string) {
+    const offset = jiraOffset(cursor)
+    const rows = await this.issueRows(state, query, offset + 31)
+    return jiraIssuePage(rows, offset)
+  }
+  /** The newest `limit` matching issues in the server's order. ACLI exposes a result limit but
+   * no page token, so pages are slices of one prefix read. */
+  async issueRows(state: string, query?: string, limit = 31) {
     await this.verify()
-    // ACLI exposes a result limit but no page token. Read a bounded prefix in the
-    // server's updated order; slicing preserves that order across pages.
-    const offset = decode(
-      maxValue(
-        minValue(
-          CoercedNumber.pipe(
-            Schema.check(Schema.isInt()),
-            Schema.check(
-              Schema.isBetween({
-                minimum: Number.MIN_SAFE_INTEGER,
-                maximum: Number.MAX_SAFE_INTEGER,
-              }),
-            ),
-          ),
-          0,
-        ),
-        9990,
-      ),
-      cursor ?? '0',
-    )
     const status =
       state === 'all'
         ? ''
@@ -330,15 +358,11 @@ export class JiraWork implements ForgeWorkProvider {
       '--jql',
       `project = ${this.binding.project}${status}${search} ORDER BY updated DESC, key DESC`,
       '--limit',
-      String(offset + 31),
+      String(Math.min(limit, 10021)),
       '--fields',
       'key,summary,description,status,issuetype,priority,creator,assignee,labels',
     ])
-    const rows = decode(mutableArray(rawIssue), result)
-    return {
-      items: rows.slice(offset, offset + 30).map((v) => this.normalize(v)),
-      next: rows.length > offset + 30 && offset + 30 <= 9990 ? String(offset + 30) : undefined,
-    }
+    return decode(mutableArray(rawIssue), result).map((v) => this.normalize(v))
   }
   private async raw(id: string) {
     await this.verify()

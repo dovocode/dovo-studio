@@ -29,6 +29,8 @@ import {
   checkRollup,
   summary,
 } from './pull-schemas.js'
+/** A verified login stays valid for minutes; a failed check is never reused. */
+const ACCOUNT_TTL = 600_000
 export class PullRequests {
   private locations = new Map<
     string,
@@ -99,8 +101,8 @@ export class PullRequests {
       path: `repos/${repo.nameWithOwner.split('/').map(encodeURIComponent).join('/')}`,
     }
   }
-  private async run(cwd: string, args: string[]) {
-    if (!this.target) return this.git.github(cwd, args)
+  private async run(cwd: string, args: string[], background = false) {
+    if (!this.target) return this.git.github(cwd, args, background)
     const token = await this.target.token?.(cwd)
     if (this.target.profile && !token)
       throw new HttpError(401, 'The selected GitHub profile is not signed in on this runtime.')
@@ -118,15 +120,17 @@ export class PullRequests {
             ...(this.target.env ? { env: this.target.env } : {}),
           }
         : undefined,
+      background,
     )
   }
-  private async json(cwd: string, args: string[]): Promise<unknown> {
-    return JSON.parse(await this.run(cwd, args))
+  private async json(cwd: string, args: string[], background = false): Promise<unknown> {
+    return JSON.parse(await this.run(cwd, args, background))
   }
   async identity(cwd: string, refresh = false) {
     if (refresh) this.locations.delete(cwd)
     const repo = await this.location(cwd)
     const selectedToken = await this.target?.token?.(cwd)
+    // A checkout can select its own CLI account; keep identities per checkout.
     const environment = createHash('sha256')
       .update(
         JSON.stringify([
@@ -194,7 +198,7 @@ export class PullRequests {
               return current.login
             })
       account = {
-        expires: Date.now() + 60000,
+        expires: Date.now() + ACCOUNT_TTL,
         value,
       }
       this.accounts.set(key, account)
@@ -217,16 +221,20 @@ export class PullRequests {
   async act(cwd: string, input: PullAction) {
     return actOnGithubPull((args) => this.json(cwd, args), await this.location(cwd), input)
   }
-  async list(cwd: string, state: 'open' | 'closed' | 'all', page: number) {
+  async list(cwd: string, state: 'open' | 'closed' | 'all', page: number, background = false) {
     const repo = await this.location(cwd)
     const pulls = decode(
       mutableArray(restPull),
-      await this.json(cwd, [
-        'api',
-        '--hostname',
-        repo.host,
-        `${repo.path}/pulls?state=${state}&sort=updated&direction=desc&per_page=50&page=${page}`,
-      ]),
+      await this.json(
+        cwd,
+        [
+          'api',
+          '--hostname',
+          repo.host,
+          `${repo.path}/pulls?state=${state}&sort=updated&direction=desc&per_page=50&page=${page}`,
+        ],
+        background,
+      ),
     )
     const statuses = await pullStatuses(
       this.git,
@@ -234,7 +242,7 @@ export class PullRequests {
       repo.host,
       repo.nameWithOwner,
       pulls.map((p) => p.number),
-      this.target ? (args) => this.run(cwd, args) : undefined,
+      (args) => this.run(cwd, args, background),
     )
     return decode(pullPageSchema, {
       pulls: pulls.map((p) => ({
@@ -286,13 +294,14 @@ export class PullRequests {
       url: result.html_url,
     })
   }
-  async status(cwd: string, number: number) {
-    return this.detail(cwd, number, true)
+  async status(cwd: string, number: number, background = false) {
+    return this.detail(cwd, number, true, background)
   }
-  async detail(cwd: string, number: number, monitor = false) {
+  async detail(cwd: string, number: number, monitor = false, background = false) {
     const repo = await this.location(cwd)
+    const json = (args: string[]) => this.json(cwd, args, background)
     const api = (path: string, paginate = false) =>
-      this.json(cwd, [
+      json([
         'api',
         '--hostname',
         repo.host,
@@ -304,7 +313,7 @@ export class PullRequests {
       const checks =
         decode(
           checkRollup,
-          await this.json(cwd, [
+          await json([
             'pr',
             'view',
             String(number),
@@ -363,7 +372,7 @@ export class PullRequests {
       api(`pulls/${number}/files?per_page=100`, true).then((v) =>
         decode(mutableArray(mutableArray(restFile)), v).flat(),
       ),
-      this.json(cwd, [
+      json([
         'pr',
         'view',
         String(number),
@@ -372,9 +381,9 @@ export class PullRequests {
         '--json',
         'statusCheckRollup',
       ]).then((v) => decode(checkRollup, v).statusCheckRollup ?? []),
-      githubThreads((args) => this.json(cwd, args), repo, number),
-      githubChecks((args) => this.json(cwd, args), repo, pull.head.sha),
-      this.json(cwd, ['api', '--hostname', repo.host, repo.path]).then((value) =>
+      githubThreads(json, repo, number),
+      githubChecks(json, repo, pull.head.sha),
+      json(['api', '--hostname', repo.host, repo.path]).then((value) =>
         decode(
           mutableStruct({
             allow_merge_commit: Schema.optional(Schema.Boolean),

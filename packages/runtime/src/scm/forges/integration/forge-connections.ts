@@ -33,9 +33,9 @@ function safeJsonParse(value: string): unknown {
   }
 }
 // Host-private storage, deliberately outside workspace snapshots and client read caches.
-// CLI tools (az, bb, tea, gh) take seconds to start. Reuse a derived credential briefly
-// instead of starting one per HTTP request; a rejected credential is forgotten at once.
-const CLI_CREDENTIAL_TTL = 60_000
+// CLI tools (az, bb, tea, gh) take seconds to start. Reuse a derived credential for a few
+// minutes instead of starting one per HTTP request; a rejected credential is forgotten at once.
+const CLI_CREDENTIAL_TTL = 300_000
 export class ForgeConnections {
   private reported = new Set<string>()
   private cliCredentials = new Map<string, { value: Promise<string>; expires: number }>()
@@ -207,8 +207,22 @@ export class ForgeConnections {
   async reconcileCli(id: string, cwd?: string) {
     const row = this.rows().find((item) => item.id === id)
     if (!row || row.credential !== 'cli') return this.get(id)
-    if (!this.cli) throw new HttpError(400, 'CLI accounts are not configured')
-    const identity = await this.cli.identity(row, cwd)
+    const cli = this.cli
+    if (!cli) throw new HttpError(400, 'CLI accounts are not configured')
+    // Reconciling runs before every read; reuse the account lookup like other CLI credentials.
+    // The key follows the account configuration, not the revision a reconciled fingerprint bumps.
+    const identity = await this.cachedCli(
+      [
+        row.id,
+        'identity',
+        row.provider,
+        row.baseUrl,
+        row.cliTool ?? '',
+        row.cliProfile ?? '',
+        cwd ?? '',
+      ].join('\0'),
+      () => cli.identity(row, cwd),
+    )
     const cliFingerprint = createHash('sha256').update(identity).digest('hex')
     const current = this.rows().find((item) => item.id === id)
     if (

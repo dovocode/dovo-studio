@@ -2,7 +2,12 @@ import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, urlSchema, decode, maxValue, minValue } from '@dovo/protocol'
 import { homedir } from 'node:os'
 import { isDeepStrictEqual } from 'node:util'
-import { JiraWork } from '../forges/providers/jira.js'
+import {
+  JiraWork,
+  jiraIssuePage,
+  jiraOffset,
+  type JiraVerification,
+} from '../forges/providers/jira.js'
 import { Schema } from 'effect'
 import type Database from 'better-sqlite3'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -18,6 +23,8 @@ import {
   forgePipelineDetailSchema,
   forgeDefinitionsSchema,
   forgeWorkResultSchema,
+  forgeIssueSchema,
+  mutableArray,
   type CommandSettings,
 } from '@dovo/protocol'
 import { connectionHttp } from '../forges/integration/forge-connections.js'
@@ -30,10 +37,22 @@ import type { ForgePullRequests } from '../forges/integration/forge-pulls.js'
 import type { GitService } from '../git/git.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import { HttpError, errorMessage } from '../../errors.js'
-import { runForgeCli } from '../forges/integration/forge-cli.js'
+import type { runForgeCli } from '../forges/integration/forge-cli.js'
 import { ForgeWorkCache } from './cache.js'
+/** A verified Jira account and project serve requests for this long; refresh rechecks. */
+const JIRA_VERIFICATION_TTL = 600_000
+/** Jira pages are slices of one prefix read; keep at least two pages per read. */
+const JIRA_PREFIX_MINIMUM = 61
+const jiraPrefixSchema = mutableStruct({
+  items: mutableArray(forgeIssueSchema),
+  limit: Schema.Number,
+  cachedAt: Schema.optional(Schema.String),
+  stale: Schema.optional(Schema.Boolean),
+  refreshError: Schema.optional(Schema.String),
+})
 export class ForgeWork {
   private cache: ForgeWorkCache
+  private jira = new Map<string, { expires: number; state: JiraVerification }>()
   constructor(
     db: Database.Database,
     private store: WorkspaceStore,
@@ -41,6 +60,7 @@ export class ForgeWork {
     private forges: ForgeConnections,
     private pulls: ForgePullRequests,
     private commands: () => CommandSettings,
+    private jiraRun?: typeof runForgeCli,
   ) {
     this.cache = new ForgeWorkCache(db)
   }
@@ -116,8 +136,8 @@ export class ForgeWork {
             const token = connection
               ? await this.forges.githubToken(connection.id, repo.path)
               : undefined
-            const result = await runForgeCli(
-              this.commands().gh,
+            // Shares the account budget and token cache with pull request reads.
+            const result = await this.git.githubAccount(
               [
                 'api',
                 '--hostname',
@@ -127,18 +147,13 @@ export class ForgeWork {
                 options?.method ?? 'GET',
                 ...(options?.body === undefined ? [] : ['--input', '-']),
               ],
-              options?.body,
+              { timeout: 60000, maxBuffer: 32 * 1024 * 1024 },
               repo.path,
               token
-                ? {
-                    ...connection?.cliEnv,
-                    GH_HOST: host,
-                    GH_TOKEN: token,
-                    GH_ENTERPRISE_TOKEN: token,
-                    GITHUB_TOKEN: '',
-                    GITHUB_ENTERPRISE_TOKEN: '',
-                  }
+                ? { host, token, ...(connection?.cliEnv ? { env: connection.cliEnv } : {}) }
                 : undefined,
+              false,
+              options?.body === undefined ? undefined : JSON.stringify(options.body),
             )
             return result.trim() ? (JSON.parse(result) as unknown) : null
           },
@@ -190,7 +205,22 @@ export class ForgeWork {
       if (!current || current.site !== selected.site || current.project !== selected.project)
         throw new HttpError(409, 'This Jira source changed. Refresh before continuing.')
     }
-    const provider = new JiraWork(this.commands().acli, selected, undefined, cwd, validateSource)
+    const executable = this.commands().acli
+    const provider = new JiraWork(executable, selected, this.jiraRun, cwd, validateSource)
+    // The CLI has one active account; one verification serves every request for a site and
+    // project until it expires, an explicit refresh asks again, or the check fails.
+    const key = JSON.stringify([executable, new URL(selected.site).origin, selected.project])
+    const verified = this.jira.get(key)
+    if (verified && verified.expires > Date.now() && !decode(forgeWorkQuerySchema, input).refresh)
+      provider.adopt(verified.state)
+    else {
+      const state = provider.verification()
+      const entry = { expires: Date.now() + JIRA_VERIFICATION_TTL, state }
+      this.jira.set(key, entry)
+      void state.verified.catch(() => {
+        if (this.jira.get(key) === entry) this.jira.delete(key)
+      })
+    }
     return this.execute(provider, cwd, ['jira', sourceId], operation, input, validateSource)
   }
   private async execute(
@@ -250,6 +280,34 @@ export class ForgeWork {
       return decode(forgeWorkResultSchema, result)
     }
     const key = JSON.stringify([source, operation, data.id, query.state, query.cursor, query.query])
+    if (operation === 'issues/list' && provider instanceof JiraWork) {
+      // ACLI has no page token: every page is a slice of one ordered prefix. Cache the prefix
+      // per state and search so later pages do not read the earlier rows again.
+      const offset = jiraOffset(query.cursor)
+      const required = Math.max(offset + 31, JIRA_PREFIX_MINIMUM)
+      const prefixKey = JSON.stringify([source, 'issues/prefix', query.state, query.query])
+      const known = this.cache.peek(prefixKey, jiraPrefixSchema)
+      const limit = Math.max(required, known?.value.limit ?? 0)
+      const prefix = await runClientEffect(
+        this.cache.readEffect({
+          key: prefixKey,
+          source,
+          schema: jiraPrefixSchema,
+          refresh: query.refresh || (known?.value.limit ?? 0) < required,
+          load: async (): Promise<typeof jiraPrefixSchema.Type> => ({
+            items: await provider.issueRows(query.state, query.query, limit),
+            limit,
+          }),
+          validateSource,
+        }),
+      )
+      return decode(forgeIssuePageSchema, {
+        ...jiraIssuePage(prefix.items, offset),
+        cachedAt: prefix.cachedAt,
+        stale: prefix.stale,
+        refreshError: prefix.refreshError,
+      })
+    }
     if (operation === 'issues/list')
       return runClientEffect(
         this.cache.readEffect({

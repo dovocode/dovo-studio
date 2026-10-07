@@ -72,3 +72,13 @@ it('runs in the selected project checkout with account environment limited to th
     })
   }
 })
+
+it('gives account probes a short timeout and names the command without its values', async () => {
+  const { forgeCliTimeout, forgeCliLabel } = await import('./forge-cli')
+  expect(forgeCliTimeout(['auth', 'status', '--hostname', 'github.com'])).toBe(15000)
+  expect(forgeCliTimeout(['--host', 'https://forge.example', 'whoami'])).toBe(15000)
+  expect(forgeCliTimeout(['api', 'repos/a/b/pulls'])).toBe(60000)
+  expect(forgeCliLabel('/opt/bin/gh', ['auth', 'token', '--hostname', 'github.com'])).toBe(
+    'gh auth token',
+  )
+})

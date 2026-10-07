@@ -91,7 +91,8 @@ export async function pullStatuses(
         `pr${n}:pullRequest(number:${n}){additions deletions totalCommentsCount viewerDidAuthor assignees(first:100){nodes{login} pageInfo{hasNextPage}} participants(first:100){nodes{login} pageInfo{hasNextPage}} reviewRequests(first:100){nodes{requestedReviewer{... on User{login}}} pageInfo{hasNextPage}} reviewDecision statusCheckRollup{state}}`,
     )
     .join(' ')
-  const query = `query($owner:String!,$name:String!){viewer{login} repository(owner:$owner,name:$name){${fields}}}`
+  // rateLimit keeps the shared budget current without separate quota probes.
+  const query = `query($owner:String!,$name:String!){viewer{login} rateLimit{limit remaining resetAt} repository(owner:$owner,name:$name){${fields}}}`
   try {
     const response = decode(
       mutableStruct({

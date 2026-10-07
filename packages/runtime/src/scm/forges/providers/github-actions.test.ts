@@ -3,6 +3,7 @@ import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { PullRequests } from '../../pulls/pulls.js'
 import { GitService } from '../../git/git.js'
+import { GithubTransport } from '../../git/github-transport.js'
 import { actOnGithubPull, createGithubPull } from './github-actions.js'
 import type { GithubJSON, GithubLocation } from './github-api.js'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
@@ -317,6 +318,7 @@ it('targets a saved GitHub host and repository instead of the checkout default r
     },
     '/checkout',
     undefined,
+    false,
   )
   await expect(
     new PullRequests(git, {
@@ -335,9 +337,10 @@ it('runs a saved GitHub connection from the selected directory without inspectin
   const directory = await mkdtemp(join(tmpdir(), 'dovo-github-account-'))
   try {
     const command = join(directory, 'github.cjs')
+    // gh mints the token from the selected directory; the API request carries it.
     await writeFile(
       command,
-      `#!/usr/bin/env node\nif(process.cwd() !== require('node:fs').realpathSync(${JSON.stringify(directory)}) || !process.argv.includes('repos/team/project/pulls'))process.exit(9);\nprocess.stdout.write(${JSON.stringify(JSON.stringify(current))});\n`,
+      `#!/usr/bin/env node\nif(process.cwd() !== require('node:fs').realpathSync(${JSON.stringify(directory)}) || process.argv[2] !== 'auth' || process.argv[3] !== 'token')process.exit(9);\nprocess.stdout.write('minted-token');\n`,
       {
         mode: 0o700,
       },
@@ -347,6 +350,13 @@ it('runs a saved GitHub connection from the selected directory without inspectin
         gh: command,
       }),
     )
+    const send = vi
+      .spyOn(GithubTransport.prototype, 'send')
+      .mockImplementation(async (request, token) => {
+        if (token !== 'minted-token' || !request.path.includes('repos/team/project/pulls'))
+          throw new Error('Unexpected GitHub request')
+        return JSON.stringify(current)
+      })
     const inspect = vi.spyOn(git, 'inspect')
     await expect(
       new PullRequests(git, {
@@ -364,6 +374,7 @@ it('runs a saved GitHub connection from the selected directory without inspectin
       number: 7,
     })
     expect(inspect).not.toHaveBeenCalled()
+    expect(send).toHaveBeenCalled()
   } finally {
     await rm(directory, {
       recursive: true,
@@ -390,19 +401,15 @@ it('uses the selected GitHub profile only in the command environment from its ch
   try {
     const command = join(directory, 'github.cjs')
     const token = 'fixture-selected-profile-token'
-    await writeFile(
-      command,
-      `#!/usr/bin/env node
-const fs = require('node:fs');
-if (process.cwd() !== fs.realpathSync(${JSON.stringify(directory)})) process.exit(9);
-if (process.env.GH_TOKEN !== ${JSON.stringify(token)} || process.env.GH_ENTERPRISE_TOKEN !== ${JSON.stringify(token)} || process.env.GH_HOST !== ${JSON.stringify(repo.host)}) process.exit(10);
-if (process.argv.some(arg => arg.includes(${JSON.stringify(token)}))) process.exit(11);
-process.stdout.write(${JSON.stringify(JSON.stringify(current))});
-`,
-      {
-        mode: 0o700,
-      },
-    )
+    // A selected profile's token never needs gh again; it goes straight to the API.
+    await writeFile(command, `#!/usr/bin/env node\nprocess.exit(9);\n`, { mode: 0o700 })
+    const send = vi
+      .spyOn(GithubTransport.prototype, 'send')
+      .mockImplementation(async (request, used) => {
+        if (used !== token || request.host !== repo.host) throw new Error('Wrong GitHub account')
+        if (JSON.stringify(request).includes(token)) throw new Error('Token leaked into request')
+        return JSON.stringify(current)
+      })
     const audit = vi.fn<NonNullable<ConstructorParameters<typeof GitService>[1]>>()
     const git = new GitService(
       () =>
@@ -425,6 +432,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify(current))});
       draft: false,
     })
     expect(profileToken).toHaveBeenCalledExactlyOnceWith(directory)
+    expect(send).toHaveBeenCalled()
     expect(JSON.stringify(audit.mock.calls)).not.toContain(token)
     expect(process.env.GH_TOKEN).toBe(originalToken)
   } finally {

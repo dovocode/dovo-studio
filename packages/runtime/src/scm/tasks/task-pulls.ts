@@ -116,7 +116,7 @@ export class TaskPullWatcher {
         continue
       try {
         // Lookup uses this repository's configured forge, never a URL supplied in agent text.
-        const { pull } = await this.s.pullCache.status(path, reference.number)
+        const { pull } = await this.s.pullCache.status(path, reference.number, false, true)
         verifyPullUrl(reference.url, pull.url)
         matches.push(pull)
         this.attach(task, pull)
@@ -179,10 +179,10 @@ export class TaskPullWatcher {
         if (!task.pullRequest && !task.checkoutBranch) continue
         let open = openPulls.get(repo.path)
         if (!open) {
-          open = await this.s.pullCache.list(repo.path, 'open', 1)
+          open = await this.s.pullCache.list(repo.path, 'open', 1, false, true)
           const preferences = this.s.preferences.get()
           if (open.stale && (this.shouldSettle(task) || preferences.archiveOnPullMerge))
-            open = await this.s.pullCache.list(repo.path, 'open', 1, true)
+            open = await this.s.pullCache.list(repo.path, 'open', 1, true, true)
           openPulls.set(repo.path, open)
         }
         // A task with only a branch may have a pull request beyond the first page.
@@ -192,7 +192,7 @@ export class TaskPullWatcher {
             open.hasMore &&
             !open.pulls.some((pull) => matchesBranch(pull, task.checkoutBranch))
           ) {
-            const next = await this.s.pullCache.list(repo.path, 'open', open.page + 1)
+            const next = await this.s.pullCache.list(repo.path, 'open', open.page + 1, false, true)
             open = { ...next, pulls: [...open.pulls, ...next.pulls] }
             openPulls.set(repo.path, open)
             if (!next.pulls.length) break
@@ -221,7 +221,7 @@ export class TaskPullWatcher {
         else {
           // Failing checks need their names; a pull request that left the open list was
           // merged or closed. Both come from the (cached) detail.
-          let detail = await this.s.pullCache.status(repo.path, number)
+          let detail = await this.s.pullCache.status(repo.path, number, false, true)
           const preferences = this.s.preferences.get()
           if (
             detail.pull.state !== 'open' &&
@@ -236,7 +236,8 @@ export class TaskPullWatcher {
           ) {
             const key = JSON.stringify([repo.path, number])
             const confirmed =
-              confirmations.get(key) ?? (await this.s.pullCache.status(repo.path, number, true))
+              confirmations.get(key) ??
+              (await this.s.pullCache.status(repo.path, number, true, true))
             confirmations.set(key, confirmed)
             detail = confirmed
           }

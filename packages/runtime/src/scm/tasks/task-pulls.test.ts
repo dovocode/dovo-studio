@@ -364,7 +364,7 @@ it.each(['closed', 'merged'] as const)(
     expect(f.s.store.task(f.task.id).archived).not.toBe(true)
     f.detail.mockResolvedValue(closed)
     await f.watcher.refresh()
-    expect(f.detail).toHaveBeenCalledWith(expect.any(String), 7, true)
+    expect(f.detail).toHaveBeenCalledWith(expect.any(String), 7, true, true)
     expect(f.s.store.task(f.task.id)).toMatchObject({
       archived: true,
       pullStatus: { state },
@@ -462,6 +462,6 @@ it('refreshes a stale open list before deciding a main PR is still open', async 
       : { pulls: [pull('open', null)], hasMore: false, page: 1, stale: true },
   )
   await f.watcher.refresh()
-  expect(f.list).toHaveBeenCalledWith(expect.any(String), 'open', 1, true)
+  expect(f.list).toHaveBeenCalledWith(expect.any(String), 'open', 1, true, true)
   expect(f.s.store.task(f.task.id).archived).toBe(true)
 })

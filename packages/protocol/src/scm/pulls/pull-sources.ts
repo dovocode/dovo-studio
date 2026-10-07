@@ -39,16 +39,9 @@ export function pullRepositoryKey(repository: Repository, sourceKey: string) {
 /** One remote read per repository. Keep a stable owner until it disconnects; an explicit
  * project filter belongs before this selection so actions retain that project's account. */
 export function selectPullSources<
-  T extends { key: string; repository: Repository; connected: boolean },
+  T extends { key: string; repository: Repository; connected: boolean; runtimeId?: string },
 >(sources: readonly T[]): T[] {
-  const selected = new Map<string, T>()
-  for (const source of [...sources].sort((a, b) => a.key.localeCompare(b.key))) {
-    const key = pullRepositoryKey(source.repository, source.key)
-    const previous = selected.get(key)
-    if (!previous || (!previous.connected && source.connected)) selected.set(key, source)
-  }
-  const keys = new Set([...selected.values()].map((source) => source.key))
-  return sources.filter((source) => keys.has(source.key))
+  return assignRemoteSources(sources).selected
 }
 
 /** Older runtimes may not know their remote identity yet. Never merge viewer flags
@@ -61,4 +54,62 @@ export function uniquePulls<T extends Pick<PullSummary, 'url'>>(pulls: readonly 
     if (!selected.has(key)) selected.set(key, pull)
   }
   return [...selected.values()]
+}
+
+/** Deterministic owner assignment for remotes that several computers can read. The computer this
+ * client is using serves what it has; other remotes spread across connected computers by load.
+ * A previous owner is kept while it stays connected, so refreshes do not move between computers. */
+export function assignRemoteSources<
+  T extends { key: string; repository?: Repository; connected: boolean; runtimeId?: string },
+>(
+  sources: readonly T[],
+  options: {
+    previous?: ReadonlyMap<string, string>
+    preferredRuntimeId?: string | null
+    remote?: (source: T) => string
+  } = {},
+): { selected: T[]; owners: Map<string, string> } {
+  const remote =
+    options.remote ??
+    ((source: T) =>
+      source.repository ? pullRepositoryKey(source.repository, source.key) : source.key)
+  const groups = new Map<string, T[]>()
+  for (const source of [...sources].sort((a, b) => a.key.localeCompare(b.key))) {
+    const key = remote(source)
+    groups.set(key, [...(groups.get(key) ?? []), source])
+  }
+  const owners = new Map<string, string>()
+  const load = new Map<string, number>()
+  const computer = (source: T) => source.runtimeId ?? source.key
+  const own = (key: string, source: T) => {
+    owners.set(key, source.key)
+    load.set(computer(source), (load.get(computer(source)) ?? 0) + 1)
+  }
+  const unassigned: [string, T[]][] = []
+  for (const [key, candidates] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+    const online = candidates.filter((candidate) => candidate.connected)
+    const previous = options.previous?.get(key)
+    const kept = candidates.find(
+      (candidate) => candidate.key === previous && (candidate.connected || !online.length),
+    )
+    if (kept) own(key, kept)
+    else unassigned.push([key, candidates])
+  }
+  for (const [key, candidates] of unassigned) {
+    const online = candidates.filter((candidate) => candidate.connected)
+    const local = online.find((candidate) => computer(candidate) === options.preferredRuntimeId)
+    const chosen =
+      local ??
+      online.reduce<T | undefined>(
+        (best, candidate) =>
+          !best || (load.get(computer(candidate)) ?? 0) < (load.get(computer(best)) ?? 0)
+            ? candidate
+            : best,
+        undefined,
+      ) ??
+      candidates[0]
+    if (chosen) own(key, chosen)
+  }
+  const keys = new Set(owners.values())
+  return { selected: sources.filter((source) => keys.has(source.key)), owners }
 }
