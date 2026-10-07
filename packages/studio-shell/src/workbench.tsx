@@ -27,7 +27,7 @@ import { Button, ErrorBoundary, TooltipProvider, useCompactLayout } from '@dovo/
 import { SettingsNav } from './settings-nav'
 import { useConfirmSettingsNavigation } from '@dovo/studio-core'
 import { appSettingsExtension } from './app-extension'
-import { useAppearance } from './appearance'
+import { useAppearance, type WindowColors } from './appearance'
 import { useTaskNotifications, type NotificationTarget } from './task-notifications'
 import { createExtensionCatalog } from './extension-catalog'
 import { ActivityBar } from './activity-bar'
@@ -46,6 +46,8 @@ type WorkbenchProps = {
   inputPreview?: InputPreviewBridge
   taskLauncher?: StudioHostApi['taskLauncher']
   updates?: DesktopUpdateBridge
+  /** Desktop only: paints the native title bar and caption buttons in the theme's colours. */
+  windowColors?: (colors: WindowColors) => Promise<void>
 }
 type ViewModule = { default: ComponentType<StudioViewProps> }
 /** React.lazy remembers a rejected import forever, so one failed chunk fetch or activation
@@ -136,10 +138,11 @@ function WorkbenchContent({
   updates,
   inputPreview,
   taskLauncher,
+  windowColors,
 }: WorkbenchProps) {
   const compact = useCompactLayout()
   const { showIssues, showJira } = useAppPreferences()
-  useAppearance()
+  useAppearance(windowColors)
   const [update, setUpdate] = useState<DesktopUpdateState>({ status: 'idle' })
   useEffect(() => {
     if (!updates) return
@@ -161,6 +164,7 @@ function WorkbenchContent({
   const {
     ready,
     snapshot,
+    workspace,
     storageError,
     connected,
     syncError,
@@ -180,6 +184,7 @@ function WorkbenchContent({
     viewId: extensions[0]?.views[0]?.id ?? '',
   }))
   const confirmSettingsNavigation = useConfirmSettingsNavigation()
+  const threadSelections = useRef(new Map<string | null, string>())
   const settingsNavigation = useRef({ target, extensions })
   settingsNavigation.current = { target, extensions }
   const navigate = useCallback(
@@ -191,10 +196,26 @@ function WorkbenchContent({
           (view) => view.navigationGroup === 'settings' && view.id === target.viewId,
         ),
       )
-      if (!leavingSettings || confirmSettingsNavigation()) updateTarget(next)
+      if (!leavingSettings || confirmSettingsNavigation()) {
+        updateTarget(next)
+      }
     },
     [updateTarget, confirmSettingsNavigation],
   )
+  const navigateSection = (viewId: string) =>
+    navigate({
+      viewId,
+      entityId:
+        viewId === 'tasks' ? threadSelections.current.get(runtimeRegistry.activeId) : undefined,
+    })
+  // Section history is local to this session and computer; explicit navigation
+  // to a fresh composer still clears it. Ignore an old computer's pending target.
+  useEffect(() => {
+    if (target.viewId !== 'tasks') return
+    if (!target.entityId) threadSelections.current.delete(runtimeRegistry.activeId)
+    else if (workspace.tasks.some((task) => task.id === target.entityId))
+      threadSelections.current.set(runtimeRegistry.activeId, target.entityId)
+  }, [target, runtimeRegistry.activeId, workspace.tasks])
   useEffect(() => {
     if (target.viewId === 'tasks' && target.entityId)
       updateAppPreferences({ lastThreadId: target.entityId })
@@ -349,10 +370,7 @@ function WorkbenchContent({
     .map((view) => ({
       id: `${view.extensionId}.open.${view.id}`,
       title: `Open ${view.title}`,
-      run: () =>
-        navigate({
-          viewId: view.id,
-        }),
+      run: () => navigateSection(view.id),
     }))
   return (
     <StudioHostProvider api={api}>
@@ -459,11 +477,7 @@ function WorkbenchContent({
                     : true,
             )}
             activeId={target.viewId}
-            onSelect={(viewId) =>
-              navigate({
-                viewId,
-              })
-            }
+            onSelect={navigateSection}
           />
           <main
             className="studio-main"
@@ -492,7 +506,7 @@ function WorkbenchContent({
                 <SettingsNav
                   views={settingsViews}
                   activeId={target.viewId}
-                  onSelect={(viewId) => navigate({ viewId })}
+                  onSelect={navigateSection}
                 />
               )}
               <div className="flex min-h-0 min-w-0 flex-1 flex-col">

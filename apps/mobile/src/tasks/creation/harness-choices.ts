@@ -121,6 +121,7 @@ export function taskHarnessChanges(task: Task, selection: string, agent: Agent) 
       before: task.harness ?? null,
       after: decode(taskHarnessSchema, agent),
     },
+    harnessCustomized: { before: task.harnessCustomized ?? null, after: true },
     agentOverrides: {
       before: task.agentOverrides ?? null,
       after: custom

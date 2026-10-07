@@ -269,6 +269,10 @@ function JiraForm({
       <div className="rounded-lg border bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">
         Uses the signed-in Atlassian CLI account on this computer. To sign in there, run{' '}
         <code className="select-all text-foreground">acli jira auth login</code>.
+        <p className="mt-2">
+          For WSL, install the Linux Atlassian CLI and sign in inside the distribution selected in
+          Dovo. Your Windows sign-in is separate.
+        </p>
         {initial && (
           <p className="mt-2">
             Removing this source hides its issues from Dovo. The issues in Jira stay unchanged.

@@ -30,6 +30,29 @@ async function setup() {
   runtime.services.store.update(() => f.workspace)
   return runtime.services
 }
+it('publishes the first provider text immediately and batches subsequent tokens', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    input.onText('First token')
+    expect(s.store.task(input.taskId!).messages.at(-1)?.text).toBe('First token')
+    input.onText(' and second')
+    expect(s.store.task(input.taskId!).messages.at(-1)?.text).toBe('First token')
+    input.onTextBoundary?.()
+    expect(s.store.task(input.taskId!).messages.at(-1)?.text).toBe('First token and second')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const task = s.tasks.create({
+    title: 'Streaming',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Reply',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(run).toHaveBeenCalledOnce()
+  expect(s.store.task(task.id).status).toBe('review')
+})
 it('starts due follow-ups and chained drafts from the host scheduler', async () => {
   const s = await setup()
   vi.spyOn(s.agents, 'get').mockResolvedValue({

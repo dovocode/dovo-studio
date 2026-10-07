@@ -1,5 +1,5 @@
 import { claudeLaunchFlags } from '../../configuration/launch-flags.js'
-import { claudeCommand } from '../../configuration/claude-command.js'
+import { claudeAuthenticated, claudeCommand } from '../../configuration/claude-command.js'
 import { decode } from '@dovo/protocol'
 import { claudeMcpServers } from '../../configuration/mcp-settings.js'
 import { claudeInput, claudeMessage } from './claude-input.js'
@@ -7,9 +7,14 @@ import { Schema } from 'effect'
 import { claudeModels } from '../../catalogs/claude.js'
 import { claudeQuestions } from './claude-questions.js'
 import { formQuestions } from '../shared/form-questions.js'
-import { query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import {
+  query,
+  type AccountInfo,
+  type SDKMessage,
+  type SDKUserMessage,
+} from '@anthropic-ai/claude-agent-sdk'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
-import { executableAvailable, processEnvironment } from '../../../process.js'
+import { processEnvironment } from '../../../process.js'
 import { releaseIdleProvider } from '../../execution/warm-processes.js'
 function claudeStream(
   run: AgentRun,
@@ -199,6 +204,7 @@ type WarmClaude = {
   consumer: Promise<void>
   closed: boolean
   closing?: Promise<void>
+  accountInfo?: Promise<AccountInfo | undefined>
 }
 
 export function createClaudeAdapter(): AgentAdapter {
@@ -317,17 +323,34 @@ export function createClaudeAdapter(): AgentAdapter {
     run.signal.addEventListener('abort', abort, { once: true })
     try {
       run.signal.throwIfAborted()
-      const accountInfo =
+      const accountInfo = (session.accountInfo ??=
         typeof session.stream.accountInfo === 'function'
           ? session.stream.accountInfo().catch((error) => {
               console.warn(
                 'Claude account metadata unavailable:',
                 error instanceof Error ? error.message : String(error),
               )
+              session.accountInfo = undefined
               return undefined
             })
-          : Promise.resolve(undefined)
-      // Observe both promises immediately, so a failed turn cannot become an unhandled rejection while metadata is loading.
+          : Promise.resolve(undefined))
+      // Optional account metadata must not hold a completed reply open. Never
+      // publish a late response into a completed, cancelled or subsequent turn.
+      void accountInfo
+        .then((account) => {
+          const env = processEnvironment(run.agent.env)
+          if (
+            session.turn?.run === run &&
+            !run.signal.aborted &&
+            !session.closed &&
+            account &&
+            !env.ANTHROPIC_AUTH_TOKEN &&
+            !env.ANTHROPIC_API_KEY
+          )
+            run.onEvent?.('account/info', account)
+        })
+        .catch((error) => console.warn('Could not report Claude account metadata:', error))
+      // Observe both promises immediately so a failed turn cannot become an unhandled rejection.
       await Promise.all([
         completion,
         (async () => {
@@ -344,11 +367,6 @@ export function createClaudeAdapter(): AgentAdapter {
           run.signal.throwIfAborted()
           session.input.push(claudeMessage(run))
         })(),
-        accountInfo.then((account) => {
-          const env = processEnvironment(run.agent.env)
-          if (account && !env.ANTHROPIC_AUTH_TOKEN && !env.ANTHROPIC_API_KEY)
-            run.onEvent?.('account/info', account)
-        }),
       ])
       if (session.sessionId && !session.closed && !session.controller.signal.aborted) {
         idle.set(run.taskId, session)
@@ -372,12 +390,12 @@ export function createClaudeAdapter(): AgentAdapter {
     models: claudeModels,
     probe: async (agent) => ({
       provider: 'claude',
-      available: await executableAvailable(agent.endpoint || 'claude'),
+      available: await claudeAuthenticated(agent),
       detail:
-        'Requires Claude CLI installed on this runtime host (claude on PATH or a configured executable). Uses the host’s Claude login or ANTHROPIC_API_KEY.',
+        'Requires Claude CLI authenticated on this runtime host, using a Claude login or supported API credentials.',
     }),
     async run(run) {
-      const command = await claudeCommand(run.agent.endpoint)
+      const command = await claudeCommand(run.agent.endpoint, run.agent.env)
       if (run.taskId && run.tools !== 'none') return runWarm(run, command)
       const controller = new AbortController(),
         abort = () => controller.abort()

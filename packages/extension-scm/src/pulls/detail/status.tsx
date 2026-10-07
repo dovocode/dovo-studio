@@ -43,7 +43,7 @@ export function PullStatus({ detail }: { detail: PullDetail }) {
   })
   return (
     <div className="grid items-start gap-4 @4xl/pr-detail:grid-cols-[minmax(0,1fr)_220px]">
-      <section className="rounded-xl border">
+      <section className="min-w-0 rounded-xl border">
         <h3 className="border-b px-4 py-3 text-sm font-medium">
           Checks <span className="text-muted-foreground">{checks.length}</span>
         </h3>
@@ -58,7 +58,7 @@ export function PullStatus({ detail }: { detail: PullDetail }) {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 {check.url ? (
                   <a
-                    className="min-w-0 break-words font-medium hover:underline"
+                    className="min-w-0 [overflow-wrap:anywhere] font-medium hover:underline"
                     href={check.url}
                     target="_blank"
                     rel="noreferrer"
@@ -66,7 +66,7 @@ export function PullStatus({ detail }: { detail: PullDetail }) {
                     {check.name} ↗
                   </a>
                 ) : (
-                  <span>{check.name}</span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{check.name}</span>
                 )}
                 <Signal signal={checkSignal(check.status)} />
               </div>
@@ -106,8 +106,10 @@ export function PullStatus({ detail }: { detail: PullDetail }) {
                             ? `–${annotation.endLine}`
                             : ''}
                         </p>
-                        <p className="font-medium">{annotation.title || annotation.level}</p>
-                        <p className="whitespace-pre-wrap break-words text-muted-foreground">
+                        <p className="[overflow-wrap:anywhere] font-medium">
+                          {annotation.title || annotation.level}
+                        </p>
+                        <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground">
                           {annotation.message}
                         </p>
                       </article>
@@ -119,7 +121,7 @@ export function PullStatus({ detail }: { detail: PullDetail }) {
           ))}
         </div>
       </section>
-      <aside className="space-y-4 rounded-xl border p-4 text-xs">
+      <aside className="min-w-0 space-y-4 rounded-xl border p-4 text-xs [overflow-wrap:anywhere]">
         <div>
           <h3 className="mb-2 font-medium">Latest reviews</h3>
           {reviews.length ? (

@@ -127,14 +127,28 @@ Other providers can still change between the preflight read and mutation.
 Choose **Sources** in Jira to connect or manage Jira, or **Connect Jira** on an unconnected
 overview. Dovo discovers the signed-in `acli` account’s Jira Cloud site and projects. Pick a Jira
 project and choose **Connect Jira**. No Dovo project, code host or local checkout is required.
+
+For a WSL computer, install the
+[Linux Atlassian CLI](https://developer.atlassian.com/cloud/acli/guides/install-linux/) and run
+`acli jira auth login` as the runtime user inside the distribution selected in Dovo. Windows
+installations and sign-ins are separate. Dovo's WSL runtime includes `~/.local/bin` in its command
+search path, so Atlassian's user-level installation works without changing shell startup files.
+System/PATH installations keep precedence. Custom executables in **Runtime settings** must use Linux
+paths; use `/home/…/acli`, rather than a Windows executable. Jira's temporary description and
+comment files are created and read inside WSL as well.
+
 Manual site/key entry remains available. Sign-in or discovery errors offer a retry action; source
 failures remain visible in the issue list.
 
-Each source belongs to the computer whose CLI account accesses it. The runtime verifies the
-signed-in site and project, accepting Atlassian’s OAuth gateway URLs in API metadata while rejecting
-a different active site. Sources are available beside native GitHub, Gitea, Forgejo and Azure issue
-trackers on mobile, and have their own Jira overview on desktop/web; connecting Jira does not
-replace a repository's native issues or pipelines.
+Each source belongs to the computer whose CLI account accesses it. When several computers have the
+same Jira site and project, the desktop and web views read it through one of them: this computer
+when it has the source, otherwise the least loaded connected computer, kept until it disconnects.
+Project links come from the computer that reads it. The runtime verifies the signed-in site and
+project once per ten minutes for each site and project, and again on explicit refresh, accepting
+Atlassian’s OAuth gateway URLs in API metadata while rejecting a different active site. Sources are
+available beside native GitHub, Gitea, Forgejo and Azure issue trackers on mobile, and have their
+own Jira overview on desktop/web; connecting Jira does not replace a repository's native issues or
+pipelines.
 
 The desktop/web overview groups compact issue rows by source and computer, with exact status,
 priority and assignee visible. **Jira order · per source** preserves Jira's own ordering within each
@@ -172,8 +186,9 @@ command finishes.
 Jira lists follow the server’s most-recently-updated order. The CLI does not expose update dates in
 search results, so those rows omit the date; detail reads provide the real revision before any
 write. Open/closed queries use Jira status categories, and exact workflow status names remain
-supported. Pagination reads a bounded prefix because `acli` has no offset token; actively changing
-results can move between pages. Search can narrow the result set.
+supported. Pagination reads a bounded prefix because `acli` has no offset token; the prefix is
+cached per state and search, so later pages reuse the rows already read. Actively changing results
+can move between pages. Search can narrow the result set.
 
 Jira Cloud is supported; Jira Data Center is not. Subtask creation requiring a parent and custom
 required fields are handled on Jira. If the CLI's detail response contains only part of a
@@ -225,9 +240,12 @@ retried automatically after a lost response. Run actions also check the current 
 active runs can be cancelled, finished runs can be rerun where supported, and unknown or
 already-cancelling states cannot submit those actions.
 
-Issue/run pages and details have a bounded runtime cache with stale fallback. Account and source
-identity separate cache entries; successful writes invalidate the source cache. Pagination controls
-are explicit. If an uncertain write fails, refresh before submitting again to avoid duplicates.
+Issue/run pages and details have a bounded runtime cache with stale fallback. Entries fresher than
+30 seconds are served as they are; older entries are served at once and refreshed once behind the
+response, shared by every client polling that source. Account and source identity separate cache
+entries; successful writes invalidate the source cache. Code repositories present on several
+computers are read through one computer, as for pull requests. Pagination controls are explicit. If
+an uncertain write fails, refresh before submitting again to avoid duplicates.
 
 Provider and CLI contract fixtures cover source identity, writes and task creation. Live account
 permissions and enterprise-specific policies still require validation against your own hosts.

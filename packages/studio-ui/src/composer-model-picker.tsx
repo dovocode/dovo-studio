@@ -1,6 +1,16 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useId } from 'react'
-import { Bot, Check, ChevronDown, Search, Star, Eye, EyeOff, Settings2 } from 'lucide-react'
+import {
+  Bot,
+  Check,
+  ChevronDown,
+  Search,
+  Star,
+  Eye,
+  EyeOff,
+  Settings2,
+  RefreshCw,
+} from 'lucide-react'
 import {
   defaultTaskHarness,
   providers,
@@ -121,6 +131,12 @@ export function ComposerModelPicker({
       availability.available.has(`harness:${p}`) &&
       (!lockedProvider || p === lockedProvider) &&
       (p !== 'acp' || lockedInstallationId === undefined || lockedInstallationId === ''),
+  )
+  const signInProviders = providerSchema.literals.filter(
+    (p) =>
+      (p === 'claude' || p === 'codex') &&
+      !availability.available.has(`harness:${p}`) &&
+      (!lockedProvider || p === lockedProvider),
   )
   const availableInstallations = installations.filter(
     (installation) =>
@@ -326,7 +342,7 @@ export function ComposerModelPicker({
           aria-label="Choose agent and model"
         >
           <div
-            className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r p-1.5"
+            className="flex w-28 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r p-1.5"
             aria-label="Harnesses"
           >
             <Button
@@ -369,9 +385,9 @@ export function ComposerModelPicker({
                 variant="ghost"
                 aria-label={`${providers[p].short} models`}
                 aria-pressed={mode === 'models' && p === activeProvider && !activeInstallationId}
-                title={providers[p].short}
+                title={`${providers[p].short} · available on this computer`}
                 className={cn(
-                  'size-9',
+                  'h-9 w-full justify-start gap-2 px-2',
                   mode === 'models' &&
                     p === activeProvider &&
                     !activeInstallationId &&
@@ -386,8 +402,28 @@ export function ComposerModelPicker({
                 }}
               >
                 <HarnessIcon provider={p} className="size-4" />
+                <span className="text-xs">{providers[p].short}</span>
               </Button>
             ))}
+            {!availability.loading &&
+              !availability.error &&
+              signInProviders.map((p) => (
+                <Button
+                  key={p}
+                  type="button"
+                  variant="ghost"
+                  disabled
+                  aria-label={`${providers[p].short} requires sign-in`}
+                  title={`Install and authenticate ${providers[p].short} on this computer, then refresh providers`}
+                  className="h-auto w-full justify-start gap-2 px-2 py-1.5"
+                >
+                  <HarnessIcon provider={p} className="size-4 shrink-0" />
+                  <span className="text-left text-xs">
+                    {providers[p].short}
+                    <span className="block text-[0.625rem]">Sign in</span>
+                  </span>
+                </Button>
+              ))}
             {availableInstallations.length > 0 && <div className="my-1 w-full border-t" />}
             {availableInstallations.map((installation) => (
               <Button
@@ -438,6 +474,20 @@ export function ComposerModelPicker({
             </Button>
           </div>
           <div className="flex min-w-0 flex-1 flex-col p-2">
+            <div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>Available on this computer</span>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-7 shrink-0"
+                aria-label="Refresh providers"
+                disabled={availability.loading}
+                onClick={availability.refresh}
+              >
+                <RefreshCw className={cn('size-3.5', availability.loading && 'animate-spin')} />
+              </Button>
+            </div>
             <div className="relative mb-2 border-b pb-2">
               <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
               <Input
@@ -590,7 +640,7 @@ export function ComposerModelPicker({
                   {availability.loading
                     ? 'Checking available providers…'
                     : !availability.available.size
-                      ? 'No providers available on this runtime. Configure agents in Settings.'
+                      ? 'No providers ready on this computer. Install and sign in to a provider, then refresh.'
                       : mode === 'agents'
                         ? agents.length
                           ? 'No matching configurations.'
@@ -612,6 +662,19 @@ export function ComposerModelPicker({
                 </Button>
               )}
             </div>
+            {!availability.loading && !availability.error && signInProviders.length > 0 && (
+              <p className="px-2 pt-2 text-[0.6875rem] text-muted-foreground">
+                Install and sign in on this computer with{' '}
+                {signInProviders.map((p, index) => (
+                  <span key={p}>
+                    {index > 0 && ' or '}
+                    <code>{p === 'claude' ? 'claude auth login' : 'codex login'}</code>
+                  </span>
+                ))}
+                , then refresh providers. For WSL, install and sign in inside the selected Linux
+                distribution.
+              </p>
+            )}
             {lockedProvider && (
               <p className="px-2 pt-2 text-[0.6875rem] text-muted-foreground">
                 This conversation uses {providers[lockedProvider].short}. Choose models or custom

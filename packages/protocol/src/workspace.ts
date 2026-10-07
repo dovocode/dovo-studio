@@ -662,6 +662,8 @@ export const taskSchema = mutableStruct({
   snoozedUntil: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
   agentOverrides: Schema.optional(taskModelSchema),
   harness: Schema.optional(Schema.NullOr(taskHarnessSchema)),
+  /** Manual draft settings take precedence when choosing another project on the same computer. */
+  harnessCustomized: Schema.optional(Schema.Boolean),
   queue: Schema.optional(mutableArray(queuedMessageSchema)),
   queuePaused: Schema.optional(Schema.Boolean),
   restartRecovery: Schema.optional(

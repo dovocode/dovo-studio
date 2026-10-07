@@ -329,6 +329,7 @@ export function Composer({
                 agentId: { before: task.agentId, after: '' },
                 agentOverrides: { before: task.agentOverrides ?? null, after: null },
                 harness: { before: task.harness ?? null, after: defaults.harness },
+                harnessCustomized: { before: task.harnessCustomized ?? null, after: null },
                 execution: { before: task.execution ?? null, after: defaults.execution },
                 setupCommand: {
                   before: task.setupCommand ?? null,

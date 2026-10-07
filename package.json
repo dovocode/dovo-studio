@@ -45,6 +45,9 @@
     "test:thread-startup:browser": "node scripts/check-thread-startup-browser.mjs",
     "test:mobile-notifications:browser": "node scripts/check-mobile-notifications-browser.mjs",
     "test:pull-workspace:browser": "node scripts/check-pull-routing-browser.mjs && node scripts/check-pull-workspace-browser.mjs",
+    "test:pull-stability:browser": "node scripts/check-pull-stability-browser.mjs",
+    "test:section-thread:browser": "node scripts/check-section-thread-browser.mjs",
+    "test:manual-model:browser": "node scripts/check-manual-model-browser.mjs",
     "test:pull-links:browser": "node scripts/check-pull-links-browser.mjs && node scripts/check-thread-pull-links-browser.mjs",
     "test:general-settings:browser": "node scripts/check-general-settings-browser.mjs",
     "test:appearance:browser": "node scripts/check-appearance-browser.mjs",
@@ -63,7 +66,8 @@
     "test:shared-storage:browser": "node scripts/check-shared-storage-browser.mjs",
     "test:remote-browser-recovery:browser": "node scripts/check-remote-browser-recovery-browser.mjs",
     "test:diff-scroll:browser": "node scripts/check-diff-scroll-browser.mjs",
-    "test:github-accounts:browser": "node scripts/check-github-accounts-browser.mjs"
+    "test:github-accounts:browser": "node scripts/check-github-accounts-browser.mjs",
+    "test:mobile:smoke": "maestro test apps/mobile/maestro/smoke.yaml"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { once } from 'node:events'
 
@@ -59,68 +59,134 @@ it('preserves validated environment choices and supports rollback to an unconfig
   writeWindowsRuntimeChoice(undefined)
   expect(readWindowsRuntimeChoice()).toBeUndefined()
 })
-it('runs the supervisor with Linux-owned credentials and shuts its runtime down on stdin EOF', async () => {
-  const data = await directory()
-  const entry = join(data, 'fake-runtime.mjs')
-  const stopped = join(data, 'stopped')
-  await writeFile(
-    entry,
-    `
+it.skipIf(process.platform === 'win32')(
+  'runs the Linux supervisor with local CLI paths and credentials and shuts down on stdin EOF',
+  async () => {
+    const data = await directory()
+    const entry = join(data, 'fake-runtime.mjs')
+    const stopped = join(data, 'stopped')
+    const home = join(data, 'linux home')
+    const originalPath = join(data, 'system bin')
+    const localBin = join(home, '.local', 'bin')
+    await mkdir(localBin, { recursive: true })
+    await mkdir(originalPath)
+    await writeFile(join(home, 'jira-account'), 'linux.atlassian.net')
+    await writeFile(join(data, 'comment text.md'), 'WSL comment\nwith Unicode: héllo')
+    // env-node also checks that packaged Node is available without shell setup.
+    const cli = `#!/usr/bin/env node
+const fs = require('node:fs'); const path = require('node:path');
+const args = process.argv.slice(2);
+if (args.join(' ') === 'jira auth status') {
+  process.stdout.write('Site: ' + fs.readFileSync(path.join(process.env.HOME, 'jira-account'), 'utf8'));
+} else {
+  const body = args[args.indexOf('--body-file') + 1];
+  process.stdout.write(JSON.stringify({cwd:process.cwd(), body:fs.readFileSync(body, 'utf8'), args}));
+}
+`
+    await writeFile(join(localBin, 'acli'), cli, { mode: 0o755 })
+    await writeFile(
+      join(originalPath, 'preferred-cli'),
+      '#!/usr/bin/env node\nprocess.stdout.write("system");',
+      {
+        mode: 0o755,
+      },
+    )
+    await writeFile(
+      join(localBin, 'preferred-cli'),
+      '#!/usr/bin/env node\nprocess.stdout.write("local");',
+      {
+        mode: 0o755,
+      },
+    )
+    await writeFile(
+      entry,
+      `
 import { writeFileSync } from 'node:fs'; import { dirname, join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 const directory = dirname(process.env.DOVO_DATABASE_PATH);
+const options = { cwd: directory, encoding: 'utf8' };
+const account = execFileSync('acli', ['jira', 'auth', 'status'], options);
+const args = ['jira', 'workitem', 'comment', 'create', '--key', 'TEAM-1', '--body-file', join(directory, 'comment text.md')];
+const comment = JSON.parse(execFileSync('acli', args, options));
+const preferred = execFileSync('preferred-cli', [], options);
+const explicit = execFileSync(join(process.env.HOME, '.local', 'bin', 'preferred-cli'), [], options);
+writeFileSync(join(directory, 'jira.json'), JSON.stringify({account, comment, preferred, explicit}));
 writeFileSync(join(directory, 'runtime-connection.json'), JSON.stringify({ address: 'http://127.0.0.1:54321', token: 'linux-owned-token-at-least-thirty-two-characters' }));
 writeFileSync(join(directory, 'environment.json'), JSON.stringify(process.env));
+writeFileSync(join(directory, 'cwd.txt'), process.cwd());
 process.on('disconnect', () => { writeFileSync(join(directory, 'stopped'), 'graceful'); process.exit(0); });
 process.send({ type: 'ready' });
 setInterval(() => {}, 1000);
 `,
-  )
-  const { wslSupervisor } = await import('./windows-runtime')
-  const child = spawn(process.execPath, ['--input-type=module', '-e', wslSupervisor, entry, data], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      DOVO_OWNER_TOKEN: 'windows-token-must-not-be-reused',
-      DOVO_SETTINGS_PATH: 'C:\\settings.json',
-      DOVO_RUNTIME_ENV_FILE: 'C:\\environment.json',
-    },
-  })
-  const exited = once(child, 'exit')
-  try {
-    const ready = await new Promise<string>((resolve, reject) => {
-      let output = ''
-      const timer = setTimeout(() => reject(new Error('Supervisor did not become ready')), 10000)
-      child.stdout.on('data', (chunk: Buffer) => {
-        output += chunk.toString()
-        if (output.includes('\n')) {
+    )
+    const { wslSupervisor } = await import('./windows-runtime')
+    const child = spawn(
+      process.execPath,
+      ['--input-type=module', '-e', wslSupervisor, entry, data],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: originalPath,
+          DOVO_OWNER_TOKEN: 'windows-token-must-not-be-reused',
+          DOVO_SETTINGS_PATH: 'C:\\settings.json',
+          DOVO_RUNTIME_ENV_FILE: 'C:\\environment.json',
+        },
+      },
+    )
+    const exited = once(child, 'exit')
+    try {
+      const ready = await new Promise<string>((resolve, reject) => {
+        let output = ''
+        const timer = setTimeout(() => reject(new Error('Supervisor did not become ready')), 10000)
+        child.stdout.on('data', (chunk: Buffer) => {
+          output += chunk.toString()
+          if (output.includes('\n')) {
+            clearTimeout(timer)
+            resolve(output.trim())
+          }
+        })
+        child.once('error', (error) => {
           clearTimeout(timer)
-          resolve(output.trim())
-        }
+          reject(error)
+        })
+        child.once('exit', () => {
+          clearTimeout(timer)
+          reject(new Error('Supervisor exited before readiness'))
+        })
       })
-      child.once('error', (error) => {
-        clearTimeout(timer)
-        reject(error)
+      expect(ready).toContain('DOVO_WSL_READY ')
+      expect(ready).toContain('linux-owned-token')
+      const environment: unknown = JSON.parse(
+        await readFile(join(data, 'environment.json'), 'utf8'),
+      )
+      expect(environment).not.toHaveProperty('DOVO_OWNER_TOKEN')
+      expect(environment).not.toHaveProperty('DOVO_SETTINGS_PATH')
+      expect(environment).not.toHaveProperty('DOVO_RUNTIME_ENV_FILE')
+      expect(environment).toHaveProperty('DOVO_DATABASE_PATH', join(data, 'runtime.sqlite'))
+      expect(environment).toHaveProperty('DOVO_DESKTOP_DUAL_LISTENER', '1')
+      expect(environment).toHaveProperty(
+        'PATH',
+        [originalPath, localBin, dirname(process.execPath)].join(':'),
+      )
+      expect(environment).toHaveProperty('HOME', home)
+      expect(await readFile(join(data, 'cwd.txt'), 'utf8')).toBe(await realpath(home))
+      const jira: unknown = JSON.parse(await readFile(join(data, 'jira.json'), 'utf8'))
+      expect(jira).toMatchObject({
+        account: 'Site: linux.atlassian.net',
+        comment: { cwd: await realpath(data), body: 'WSL comment\nwith Unicode: héllo' },
+        preferred: 'system',
+        explicit: 'local',
       })
-      child.once('exit', () => {
-        clearTimeout(timer)
-        reject(new Error('Supervisor exited before readiness'))
-      })
-    })
-    expect(ready).toContain('DOVO_WSL_READY ')
-    expect(ready).toContain('linux-owned-token')
-    const environment: unknown = JSON.parse(await readFile(join(data, 'environment.json'), 'utf8'))
-    expect(environment).not.toHaveProperty('DOVO_OWNER_TOKEN')
-    expect(environment).not.toHaveProperty('DOVO_SETTINGS_PATH')
-    expect(environment).not.toHaveProperty('DOVO_RUNTIME_ENV_FILE')
-    expect(environment).toHaveProperty('DOVO_DATABASE_PATH', join(data, 'runtime.sqlite'))
-    expect(environment).toHaveProperty('DOVO_DESKTOP_DUAL_LISTENER', '1')
-    child.stdin.end()
-    expect((await exited)[0]).toBe(0)
-    expect(await readFile(stopped, 'utf8')).toBe('graceful')
-  } finally {
-    if (child.exitCode === null) child.kill('SIGKILL')
-  }
-})
+      child.stdin.end()
+      expect((await exited)[0]).toBe(0)
+      expect(await readFile(stopped, 'utf8')).toBe('graceful')
+    } finally {
+      if (child.exitCode === null) child.kill('SIGKILL')
+    }
+  },
+)
 
 it('accepts only the exact published Linux archive with a valid digest and bounded size', async () => {
   const { selectWslArchive } = await import('./windows-runtime')

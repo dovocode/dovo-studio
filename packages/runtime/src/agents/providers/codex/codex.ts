@@ -3,7 +3,7 @@ import { decodeResult, decode } from '@dovo/protocol'
 import { codexMcpServers } from '../../configuration/mcp-settings.js'
 import { isImageAttachment, serviceTierValue } from '@dovo/protocol'
 import { supportsCodexDaybreak } from '../../configuration/codex-modes.js'
-import { codexModels } from '../../catalogs/codex.js'
+import { codexAuthenticated, codexModels } from '../../catalogs/codex.js'
 import { codexQuestions, codexAsyncQuestions } from './codex-questions.js'
 import { formQuestions } from '../shared/form-questions.js'
 import { stopOwnedChild } from '../../execution/stop-owned-child.js'
@@ -12,7 +12,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createMessageConnection } from 'vscode-jsonrpc/node'
 import { Schema } from 'effect'
 import type { AgentAdapter, AgentInput } from '../../execution/types.js'
-import { executableAvailable, processEnvironment } from '../../../process.js'
+import { processEnvironment } from '../../../process.js'
 import { JsonLineReader, JsonLineWriter } from './codex-transport.js'
 const turnInput = (input: Pick<AgentInput, 'prompt' | 'attachments'>) => [
   {
@@ -46,8 +46,8 @@ export function createCodexAdapter(): AgentAdapter {
     models: codexModels,
     probe: async (agent) => ({
       provider: 'codex',
-      available: await executableAvailable(agent.endpoint || 'codex'),
-      detail: 'Codex app-server executable; authentication uses the host’s Codex login.',
+      available: await codexAuthenticated(agent),
+      detail: 'Requires an authenticated Codex login or API-key login on this runtime host.',
     }),
     async run(run) {
       run.signal.throwIfAborted()

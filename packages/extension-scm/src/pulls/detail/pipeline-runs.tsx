@@ -170,7 +170,7 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
         </Button>
       </div>
       {error && (
-        <p role="alert" className="px-4 pt-3 text-xs text-destructive">
+        <p role="alert" className="px-4 pt-3 text-xs text-destructive [overflow-wrap:anywhere]">
           {error}
         </p>
       )}

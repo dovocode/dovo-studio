@@ -3,7 +3,46 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolve } from 'node:path'
-import { codexModels } from './codex'
+import { codexAuthenticated, codexModels } from './codex'
+it.each([
+  ['chatgpt', true],
+  ['apiKey', true],
+  [null, false],
+  // App-servers without account/read still complete the handshake and run turns.
+  ['unsupported', true],
+])('checks the configured Codex account (%s)', async (type, expected) => {
+  const dir = await mkdtemp(join(tmpdir(), 'dovo-codex-auth-'))
+  const executable = join(dir, 'codex')
+  const reply =
+    type === 'unsupported'
+      ? `send({id:m.id,error:{code:-32601,message:'Method not found'}});`
+      : `send({id:m.id,result:{account:${JSON.stringify(type ? { type } : null)}}});`
+  await writeFile(
+    executable,
+    `#!${process.execPath}
+const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');
+require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
+const m=JSON.parse(line);if(m.id===undefined)return;
+if(m.method==='account/read'){
+ if(m.params.refreshToken!==false||process.env.CODEX_HOME!=='/separate/account') {send({id:m.id,error:{code:-1,message:'Wrong auth configuration'}});return;}
+ ${reply}
+} else send({id:m.id,result:{}});
+});`,
+    { mode: 0o700 },
+  )
+  try {
+    expect(
+      await codexAuthenticated({
+        provider: 'codex',
+        endpoint: executable,
+        model: '',
+        env: { CODEX_HOME: '/separate/account' },
+      }),
+    ).toBe(expected)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
 it('preserves advertised reasoning and service tiers in the model catalog', async () => {
   const catalog = await codexModels({
     provider: 'codex',

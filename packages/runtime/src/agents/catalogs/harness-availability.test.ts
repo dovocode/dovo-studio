@@ -29,6 +29,8 @@ it('coalesces probes, expires results, and invalidates when the effective config
     expect(probe).toHaveBeenCalledTimes(2)
     await cache.check({ ...agent, env: { ACCOUNT: 'other' } }, registry)
     expect(probe).toHaveBeenCalledTimes(3)
+    await cache.check({ ...agent, env: { ACCOUNT: 'other' } }, registry, true)
+    expect(probe).toHaveBeenCalledTimes(4)
   } finally {
     await registry.dispose()
   }

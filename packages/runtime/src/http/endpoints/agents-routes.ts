@@ -50,8 +50,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         decode(runtimeDefaultsSchema, s.store.publicValue(value))
       const method = request.method
       if (method === 'POST' && path === '/api/agents/availability') {
-        const { repositoryId } = decode(
-          mutableStruct({ repositoryId: Schema.optional(idSchema) }),
+        const { repositoryId, refresh } = decode(
+          mutableStruct({
+            repositoryId: Schema.optional(idSchema),
+            refresh: Schema.optional(Schema.Boolean),
+          }),
           yield* serviceResult(body(request)),
         )
         let cache = availabilityCaches.get(s.db)
@@ -67,7 +70,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               s.acpInstallations.list(),
             ).map(async ({ id, agent }) => ({
               id,
-              available: await checker.check(agent, s.agents),
+              available: await checker.check(agent, s.agents, refresh),
             })),
           ),
         )

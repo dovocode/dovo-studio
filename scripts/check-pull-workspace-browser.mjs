@@ -67,7 +67,7 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
-  const assets = root + '/apps/web/dist/client/assets'
+  const assets = root + '/apps/desktop/dist/assets'
   for (const file of (await readdir(assets)).filter((file) => file.endsWith('.css')))
     await page.addStyleTag({ content: await readFile(assets + '/' + file, 'utf8') })
   await page.addScriptTag({ content: built.outputFiles[0].text })
@@ -273,7 +273,7 @@ try {
     .getByRole('button')
     .filter({ hasText: 'Scroll regression 179' })
     .waitFor({ state: 'attached' })
-  const scroll = list.locator('div.overflow-y-auto').first()
+  const scroll = list.locator('[aria-label="Pull request rows"]')
   assert.equal(
     await scroll.evaluate(
       (element) => element.scrollHeight > element.clientHeight && element.clientHeight > 100,
@@ -286,8 +286,7 @@ try {
   await scroll.hover()
   await page.mouse.wheel(0, 2000)
   await page.waitForFunction(
-    () =>
-      document.querySelector('[aria-label="Pull request sidebar"] .overflow-y-auto').scrollTop > 0,
+    () => document.querySelector('[aria-label="Pull request rows"]').scrollTop > 0,
   )
   assert.equal(
     await list.locator('header').evaluate((element) => element.getBoundingClientRect().top),

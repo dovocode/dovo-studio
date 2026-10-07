@@ -38,6 +38,7 @@ export function chooseTaskAgent(task: Task, agents: readonly Agent[], agentId: s
     ...task,
     agentId: agent.id,
     harness: decode(taskHarnessSchema, agent),
+    harnessCustomized: true,
     agentOverrides: undefined,
   }
 }
@@ -54,6 +55,7 @@ export function changeTaskHarness(
     return {
       ...task,
       harness: task.harness ?? null,
+      harnessCustomized: true,
       agentOverrides: {
         model: harness.model,
         reasoning: harness.reasoning ?? '',
@@ -69,5 +71,5 @@ export function changeTaskHarness(
           : {}),
       },
     }
-  return { ...task, harness, agentId: '', agentOverrides: undefined }
+  return { ...task, harness, harnessCustomized: true, agentId: '', agentOverrides: undefined }
 }

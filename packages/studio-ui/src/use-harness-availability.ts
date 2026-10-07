@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace } from '@dovo/studio-core'
 import {
@@ -28,16 +28,20 @@ export function useHarnessAvailability(
     loading: boolean
     error: string
   }>({ key: '', choices: [], loading: false, error: '' })
+  const [refreshVersion, setRefreshVersion] = useApplicationState(0)
+  const requestedRefresh = useRef(0)
   useEffect(() => {
     if (!active || !connected) return
     let stopped = false
+    const refresh = refreshVersion !== requestedRefresh.current
+    requestedRefresh.current = refreshVersion
     setState((previous) => ({
       key,
       choices: previous.key === key ? previous.choices : [],
       loading: true,
       error: '',
     }))
-    void request('/api/agents/availability', { repositoryId }, harnessAvailabilitySchema)
+    void request('/api/agents/availability', { repositoryId, refresh }, harnessAvailabilitySchema)
       .then((choices) => {
         if (!stopped) setState({ key, choices, loading: false, error: '' })
       })
@@ -47,7 +51,7 @@ export function useHarnessAvailability(
     return () => {
       stopped = true
     }
-  }, [key, active, connected, request])
+  }, [key, active, connected, request, refreshVersion])
   return {
     available: new Set(
       (state.key === key ? state.choices : [])
@@ -56,5 +60,6 @@ export function useHarnessAvailability(
     ),
     loading: active && connected && (state.key !== key || state.loading),
     error: state.key === key ? state.error : '',
+    refresh: () => setRefreshVersion((version) => version + 1),
   }
 }

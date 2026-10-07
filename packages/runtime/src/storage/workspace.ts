@@ -919,6 +919,7 @@ export class WorkspaceStore {
             'ignoredPullRequestUrls',
             'agentOverrides',
             'harness',
+            'harnessCustomized',
             'execution',
             'existingWorktreePath',
             'worktreeBaseBranch',
@@ -950,7 +951,14 @@ export class WorkspaceStore {
       if (
         patch.collection === 'tasks' &&
         current.status === 'running' &&
-        ['agentId', 'agentOverrides', 'harness', 'repositoryId', 'archived'].includes(key)
+        [
+          'agentId',
+          'agentOverrides',
+          'harness',
+          'harnessCustomized',
+          'repositoryId',
+          'archived',
+        ].includes(key)
       )
         throw new HttpError(409, 'Stop the active turn before changing task settings')
       // Sending consumes the draft outside workspace PATCH. A client may type its next

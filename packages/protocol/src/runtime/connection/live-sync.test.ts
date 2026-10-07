@@ -113,6 +113,80 @@ it('does not create duplicate sockets when refreshed during a handshake', async 
   await new Promise<void>((resolve) => setTimeout(resolve, 20))
   expect(Socket.instances).toHaveLength(1)
 })
+it('replaces an open socket that never acknowledges a foreground resume', async () => {
+  vi.useFakeTimers()
+  const { clock, Socket, live, frame, wake } = await stalledSocketFixture(
+    'http://vpn-runtime.local',
+  )
+  const first = Socket.instances[0]!
+  first.readyState = 1
+  first.onopen?.()
+  first.onmessage?.({ data: frame })
+  live.refresh()
+  clock.mockReturnValue(4000)
+  live.refresh()
+  clock.mockReturnValue(6500)
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(first.readyState).toBe(3)
+  expect(Socket.instances).toHaveLength(2)
+  expect(wake).toHaveBeenCalledOnce()
+  expect(live.online()).toBe(false)
+})
+it('re-sends an unanswered resume once and stretches the deadline to the measured round trip', async () => {
+  vi.useFakeTimers()
+  const { clock, Socket, live, frame } = await stalledSocketFixture('http://slow-runtime.local')
+  const first = Socket.instances[0]!
+  first.readyState = 1
+  first.onopen?.()
+  first.onmessage?.({ data: frame })
+  const sent = vi.spyOn(first, 'send')
+  live.refresh()
+  clock.mockReturnValue(4000)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(sent).toHaveBeenCalledTimes(2)
+  clock.mockReturnValue(4500)
+  first.onmessage?.({ data: JSON.stringify({ type: 'heartbeat', epoch: 'stalled', sequence: 1 }) })
+  // The link answered after 3.5 s; the next resume may take up to 8.75 s before replacement.
+  live.refresh()
+  clock.mockReturnValue(4500 + 8000)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(Socket.instances).toHaveLength(1)
+  clock.mockReturnValue(4500 + 9500)
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(Socket.instances).toHaveLength(2)
+})
+it('keeps an acknowledged resume online without replacing the healthy socket', async () => {
+  vi.useFakeTimers()
+  const { clock, Socket, live, frame } = await stalledSocketFixture('http://healthy-runtime.local')
+  const first = Socket.instances[0]!
+  first.readyState = 1
+  first.onopen?.()
+  first.onmessage?.({ data: frame })
+  live.refresh()
+  first.onmessage?.({ data: JSON.stringify({ type: 'heartbeat', epoch: 'stalled', sequence: 1 }) })
+  clock.mockReturnValue(8000)
+  await vi.advanceTimersByTimeAsync(7000)
+  expect(Socket.instances).toHaveLength(1)
+  expect(live.online()).toBe(true)
+})
+it('does not carry a foreground resume deadline into a replacement socket handshake', async () => {
+  vi.useFakeTimers()
+  const { clock, Socket, live, frame } = await stalledSocketFixture('http://replaced-runtime.local')
+  const first = Socket.instances[0]!
+  first.readyState = 1
+  first.onopen?.()
+  first.onmessage?.({ data: frame })
+  live.refresh()
+  first.readyState = 3
+  first.onclose?.()
+  clock.mockReturnValue(2000)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(Socket.instances).toHaveLength(2)
+  clock.mockReturnValue(6500)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(Socket.instances).toHaveLength(2)
+  expect(Socket.instances[1]!.readyState).toBe(0)
+})
 it.each([401, 403, 404])(
   'uses HTTP fallback without repeated sync attempts after HTTP %s',
   async (status) => {

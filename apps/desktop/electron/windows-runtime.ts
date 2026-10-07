@@ -173,15 +173,19 @@ mv "$stage/runtime" "$target"`,
 export const wslSupervisor = `
 import { spawn } from 'node:child_process';
 import { readFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
 const [entry, directory] = process.argv.slice(1);
 mkdirSync(directory, { recursive: true, mode: 0o700 });
 const environment = { ...process.env };
 for (const key of ['DOVO_OWNER_TOKEN', 'ELECTRON_RUN_AS_NODE', 'DOVO_RUNTIME_ENV_FILE', 'DOVO_DATABASE_PATH', 'DOVO_SETTINGS_PATH']) delete environment[key];
+// --exec bypasses login-shell PATH setup. Retain existing CLI precedence, then
+// expose user-installed Linux tools (including acli/Claude) and bundled Node.
+environment.PATH = [...(environment.PATH ? [environment.PATH] : []), join(homedir(), '.local', 'bin'), dirname(process.execPath)].join(':');
 let listen = { port: '8787', host: '127.0.0.1' };
 try { const saved = JSON.parse(readFileSync(join(directory, 'runtime-listen.json'), 'utf8')); listen = { port: new URL(saved.address).port, host: saved.bindHost }; }
 catch (error) { if (error.code !== 'ENOENT') throw error; }
-const child = spawn(process.execPath, [entry], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { ...environment, DOVO_DATABASE_PATH: join(directory, 'runtime.sqlite'), DOVO_DESKTOP_DUAL_LISTENER: '1', DOVO_RELEASE_DISTRIBUTION: 'desktop', PORT: listen.port, DOVO_HOST: listen.host } });
+const child = spawn(process.execPath, [entry], { cwd: homedir(), stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { ...environment, DOVO_DATABASE_PATH: join(directory, 'runtime.sqlite'), DOVO_DESKTOP_DUAL_LISTENER: '1', DOVO_RELEASE_DISTRIBUTION: 'desktop', PORT: listen.port, DOVO_HOST: listen.host } });
 child.stdout.pipe(process.stderr); child.stderr.pipe(process.stderr);
 child.on('message', message => { if (message?.type === 'ready') { const connection = JSON.parse(readFileSync(join(directory, 'runtime-connection.json'), 'utf8')); process.stdout.write('DOVO_WSL_READY ' + JSON.stringify({ address: connection.address, token: connection.token }) + '\\n'); } });
 child.on('error', error => { console.error(error.message); process.exitCode = 1; });

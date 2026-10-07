@@ -106,14 +106,14 @@ export function processEnvironment(overrides: Record<string, string> = {}) {
     delete env[key]
   return env
 }
-const executableAvailableEffect = (command: string) =>
+const executableAvailableEffect = (command: string, env?: Record<string, string>) =>
   execEffect(command, ['--version'], {
     timeout: 5000,
-    env: processEnvironment(),
+    env: processEnvironment(env),
     maxBuffer: 1024 * 1024,
   }).pipe(
     Effect.as(true),
     Effect.catch(() => Effect.succeed(false)),
   )
-export const executableAvailable = (command: string) =>
-  runClientEffect(executableAvailableEffect(command))
+export const executableAvailable = (command: string, env?: Record<string, string>) =>
+  runClientEffect(executableAvailableEffect(command, env))

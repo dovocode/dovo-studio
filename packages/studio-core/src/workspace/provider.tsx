@@ -227,6 +227,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       throw new Error('This device connection changed. Reopen the item to continue.')
   }, [])
   const busyHosts = useRef(new Set<string>())
+  const snapshotDurations = useRef(new Map<string, number>())
   const busySnapshots = useRef(new Set<string>())
   const snapshotOrder = useRef(new Map<string, number>())
   const bootstrapped = useRef(false),
@@ -1414,6 +1415,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       snapshotOrder.current.set(id, order)
       const checkpoint = synchronization.checkpoint()
       return Effect.gen(function* () {
+        // A large workspace on a slow link needs longer than a small one on a LAN. Allow three
+        // times the last successful read, between 10 and 60 seconds.
+        const startedAt = Date.now()
         const response = yield* Effect.result(
           runtimeRequestEffect(
             connection,
@@ -1422,9 +1426,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             undefined,
             snapshotSchema,
             'GET',
+            Math.min(60000, Math.max(10000, (snapshotDurations.current.get(id) ?? 0) * 3)),
           ),
         )
         if (Result.isSuccess(response)) {
+          snapshotDurations.current.set(id, Date.now() - startedAt)
           const value = response.success
           if (
             stopped ||
@@ -1523,11 +1529,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
     }
     window.addEventListener('online', wake)
+    window.addEventListener('focus', wake)
     document.addEventListener('visibilitychange', wake)
     return () => {
       stopped = true
       live.stop()
       window.removeEventListener('online', wake)
+      window.removeEventListener('focus', wake)
       document.removeEventListener('visibilitychange', wake)
       void polling.stop()
     }

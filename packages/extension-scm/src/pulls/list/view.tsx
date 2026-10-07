@@ -188,7 +188,10 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
           aria-label="Pull request sidebar"
           className={`@container/pr-list min-h-0 min-w-0 flex-col overflow-hidden ${selected ? 'hidden w-full shrink-0 border-r md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
         >
-          <>
+          <div
+            className="min-h-0 max-h-[60%] shrink-0 overflow-y-auto overscroll-contain"
+            aria-label="Pull request filters"
+          >
             <PageHeader title="Pull requests">
               <Button
                 size="icon"
@@ -423,8 +426,11 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                 )}
               </div>
             </div>
-          </>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+          </div>
+          <div
+            aria-label="Pull request rows"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+          >
             <p className="px-3 py-2 text-xs text-muted-foreground" role="status">
               {pulls.length} loaded pull request{pulls.length === 1 ? '' : 's'}
               {pages.some((page) => page.hasMore) ? ' · more available' : ''}

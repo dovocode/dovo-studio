@@ -98,6 +98,12 @@ it('keeps a streaming Claude connection across turns', async () => {
   mocks.query.mockClear()
   const prompts: string[] = []
   const output: string[] = []
+  const events: string[] = []
+  let resolveAccount: (account: { subscriptionType: string }) => void = () => {}
+  const metadata = new Promise<{ subscriptionType: string }>((resolve) => {
+    resolveAccount = resolve
+  })
+  const accountInfo = vi.fn<() => typeof metadata>(() => metadata)
   const setMcpServers = vi
     .fn<
       (
@@ -126,6 +132,7 @@ it('keeps a streaming Claude connection across turns', async () => {
     },
     close,
     setMcpServers,
+    accountInfo,
   }))
   const run: AgentRun = {
     agent: {
@@ -145,6 +152,7 @@ it('keeps a streaming Claude connection across turns', async () => {
     onText: (text) => output.push(text),
     onTextBoundary: () => output.push('boundary'),
     onActivity: () => {},
+    onEvent: (name) => events.push(name),
     approve: async () => false,
     ask: async () => null,
   }
@@ -161,7 +169,12 @@ it('keeps a streaming Claude connection across turns', async () => {
       },
     })
     await claudeAdapter.run(boundRun('first-run'))
+    // A completed reply must not wait for optional metadata or receive it late.
+    resolveAccount({ subscriptionType: 'test' })
+    await metadata
+    expect(events).not.toContain('account/info')
     await claudeAdapter.run({ ...boundRun('second-run'), sessionId: 'session', prompt: 'second' })
+    expect(accountInfo).toHaveBeenCalledOnce()
     expect(setMcpServers).toHaveBeenCalledWith(
       expect.objectContaining({
         dovo_task: expect.objectContaining({

@@ -78,6 +78,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
   const [busy, setBusy] = useState(false)
   const attempt = useRef<LauncherAttempt | null>(null)
   const submitting = useRef(false)
+  const manualSelection = useRef(false)
   useEffect(() => bridge.subscribe(() => setOpen(true)), [bridge])
   const close = () => {
     setOpen(false)
@@ -120,9 +121,17 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
   }, [open, runtimeId, runtimeRegistry.profiles, readRuntime, refresh])
   useEffect(() => {
     if (attempt.current) return
+    if (loadedRuntimeId !== runtimeId) manualSelection.current = false
+    if (!snapshot || loadedRuntimeId !== runtimeId) return
     const repository = snapshot?.workspace.repositories.find((entry) => entry.id === repositoryId)
-    setSelection(snapshot && repository ? launcherDefaultAgent(snapshot, repository) : null)
-  }, [snapshot, repositoryId])
+    setSelection((previous) =>
+      repository
+        ? manualSelection.current && previous
+          ? previous
+          : launcherDefaultAgent(snapshot, repository)
+        : null,
+    )
+  }, [snapshot, repositoryId, loadedRuntimeId, runtimeId])
   const dispatch = async () => {
     if (submitting.current) return
     const profile = runtimeRegistry.profiles.find((profile) => profile.id === runtimeId)
@@ -137,7 +146,10 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
     try {
       if (!attempt.current && snapshot && profile && repository && agent) {
         attempt.current = {
-          task: createLauncherTask(snapshot, repository, agent, text, randomUUID()),
+          task: {
+            ...createLauncherTask(snapshot, repository, agent, text, randomUUID()),
+            harnessCustomized: manualSelection.current || undefined,
+          },
           profile,
           messageId: randomUUID(),
           text: text.trim(),
@@ -205,7 +217,10 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
                   <TaskLauncherControls
                     repository={selectedRepository}
                     selection={selection}
-                    onChange={setSelection}
+                    onChange={(selection) => {
+                      manualSelection.current = true
+                      setSelection(selection)
+                    }}
                     disabled={locked || loading}
                   />
                 </WorkspaceScope>

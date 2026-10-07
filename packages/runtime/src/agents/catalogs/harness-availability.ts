@@ -6,7 +6,11 @@ export class HarnessAvailabilityCache {
   private entries = new Map<string, { expires: number; value: boolean }>()
   private pending = new Map<string, Promise<boolean>>()
 
-  check(agent: Agent, registry: Pick<AgentRegistry, 'configure' | 'launch' | 'get'>) {
+  check(
+    agent: Agent,
+    registry: Pick<AgentRegistry, 'configure' | 'launch' | 'get'>,
+    refresh = false,
+  ) {
     let key: string
     try {
       key = JSON.stringify([modelDiscoveryInput(registry.configure(agent)), registry.launch(agent)])
@@ -14,7 +18,7 @@ export class HarnessAvailabilityCache {
       return Promise.resolve(false)
     }
     const cached = this.entries.get(key)
-    if (cached && cached.expires > Date.now()) return Promise.resolve(cached.value)
+    if (!refresh && cached && cached.expires > Date.now()) return Promise.resolve(cached.value)
     const running = this.pending.get(key)
     if (running) return running
     const request = Promise.resolve()

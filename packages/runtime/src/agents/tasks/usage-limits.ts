@@ -43,7 +43,7 @@ export async function readUsageLimits(agent: Agent) {
       extraArgs: claudeLaunchFlags(agent.args),
       abortController: controller,
       settingSources: [],
-      pathToClaudeCodeExecutable: await claudeCommand(agent.endpoint),
+      pathToClaudeCodeExecutable: await claudeCommand(agent.endpoint, agent.env),
     },
   })
   let timer: ReturnType<typeof setTimeout> | undefined

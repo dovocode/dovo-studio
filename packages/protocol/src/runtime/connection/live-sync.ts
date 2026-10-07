@@ -125,6 +125,12 @@ export function startRuntimeSync(
   let snapshot: RuntimeSnapshot | undefined = cached?.snapshot
   let lastSeen = 0
   let socketStarted = 0
+  let resumeStarted: number | undefined
+  let resumeResent = false
+  // Measured round trip of the last acknowledged resume; the deadline scales with it so a slow
+  // cellular or VPN link is not replaced for being slow, while a dead socket still is.
+  let resumeRoundTrip = 2000
+  const resumeDeadline = () => Math.min(20000, Math.max(5000, resumeRoundTrip * 2.5))
   let failures = 0
   let publishedAt = 0
   let retry: Fiber.Fiber<void, never> | undefined
@@ -170,6 +176,7 @@ export function startRuntimeSync(
     const previous = socket
     socket = undefined
     online = false
+    resumeStarted = undefined
     previous?.close()
   }
   const reconnect = () => {
@@ -213,6 +220,7 @@ export function startRuntimeSync(
       address.searchParams.set('ticket', ticket.ticket)
       const current = new WebSocket(address.href)
       socket = current
+      resumeStarted = undefined
       socketStarted = lastSeen = Date.now()
       current.onopen = () => {
         if (stopped || current !== socket) {
@@ -268,6 +276,8 @@ export function startRuntimeSync(
           if (snapshot && epoch !== undefined && sequence !== undefined)
             value.cursor = { snapshot, epoch, sequence, time: Date.now(), tasks: taskIdentity }
           const becameOnline = !online
+          if (resumeStarted !== undefined) resumeRoundTrip = Math.max(1, Date.now() - resumeStarted)
+          resumeStarted = undefined
           online = true
           failures = 0
           if (becameOnline || frame.type !== 'heartbeat' || Date.now() - publishedAt >= 30000) {
@@ -320,13 +330,26 @@ export function startRuntimeSync(
               closeSocket()
               return
             }
+            const resumeWaited = resumeStarted === undefined ? 0 : Date.now() - resumeStarted
             if (
               socket &&
-              ((!online && Date.now() - socketStarted >= 10000) || Date.now() - lastSeen >= 30000)
+              ((!online && Date.now() - socketStarted >= 10000) ||
+                (resumeStarted !== undefined && resumeWaited >= resumeDeadline()) ||
+                Date.now() - lastSeen >= 30000)
             ) {
               closeSocket()
               reconnect()
               return
+            }
+            // One lost frame must not cost a reconnect: ask once more at half the deadline.
+            if (
+              socket?.readyState === 1 &&
+              resumeStarted !== undefined &&
+              !resumeResent &&
+              resumeWaited >= resumeDeadline() / 2
+            ) {
+              resumeResent = true
+              socket.send(JSON.stringify({ type: 'resume', epoch, sequence }))
             }
             if (!socket && !retry) void connect()
           }),
@@ -339,8 +362,13 @@ export function startRuntimeSync(
     online: () => online,
     refresh: () => {
       if (socket && Date.now() - lastSeen >= 15000) closeSocket()
-      if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'resume', epoch, sequence }))
-      else if (!connecting) {
+      if (socket?.readyState === 1) {
+        // A native socket can remain OPEN after VPN changes or suspend. Require
+        // the server's resume acknowledgement instead of waiting for a heartbeat timeout.
+        if (resumeStarted === undefined) resumeResent = false
+        resumeStarted ??= Date.now()
+        socket.send(JSON.stringify({ type: 'resume', epoch, sequence }))
+      } else if (!connecting) {
         if (retry) Effect.runFork(Fiber.interrupt(retry))
         retry = undefined
         void connect()

@@ -88,6 +88,7 @@ it('offers installed ACP agents directly and saves the selected installation in 
   const selected = selectedTaskHarness(draft, agents, 'acp:gemini', installations)!
   const changes = taskHarnessChanges(draft, 'acp:gemini', selected)
   expect(changes.harness.after).toMatchObject({ provider: 'acp', acpInstallationId: 'gemini' })
+  expect(changes.harnessCustomized.after).toBe(true)
   const task = { ...draft, harness: changes.harness.after }
   expect(taskHarnessSelection(task)).toBe('acp:gemini')
   expect(taskHarnessLabel(task, selected, installations)).toBe('Gemini CLI')

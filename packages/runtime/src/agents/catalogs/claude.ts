@@ -4,7 +4,7 @@ import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import { processEnvironment } from '../../process.js'
 export async function claudeModels(agent: AgentDiscovery): Promise<ModelCatalog> {
-  const command = await claudeCommand(agent.endpoint)
+  const command = await claudeCommand(agent.endpoint, agent.env)
   const controller = new AbortController()
   const input: AsyncIterable<SDKUserMessage> = {
     [Symbol.asyncIterator]: () => ({

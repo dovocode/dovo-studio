@@ -2,11 +2,13 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
 import { Effect, Schema, Semaphore } from 'effect'
 import {
-  selectPullSources,
+  assignRemoteSources,
+  pullRepositoryKey,
   mutableArray,
   mutableStruct,
   pullPageSchema,
   useRepositorySources,
+  useWorkspace,
   startPolling,
   clientTaskScope,
   type RepositorySource,
@@ -28,13 +30,18 @@ const cacheKey = (source: RepositorySource, state: string) =>
   ])
 export function usePulls(state: string, repositoryId = '') {
   const allSources = useRepositorySources()
-  const sources = useMemo(
-    () =>
-      selectPullSources(
-        allSources.filter((source) => !repositoryId || source.key === repositoryId),
-      ),
-    [allSources, repositoryId],
-  )
+  const { activeRuntimeId } = useWorkspace()
+  // Each remote is read through one computer: this computer when it has the checkout,
+  // otherwise the least loaded connected computer. Owners stay put until they disconnect.
+  const owners = useRef(new Map<string, string>())
+  const sources = useMemo(() => {
+    const assigned = assignRemoteSources(
+      allSources.filter((source) => !repositoryId || source.key === repositoryId),
+      { previous: owners.current, preferredRuntimeId: activeRuntimeId },
+    )
+    owners.current = assigned.owners
+    return assigned.selected
+  }, [allSources, repositoryId, activeRuntimeId])
   const [stored, setStored, pagesRef] = useApplicationState<Record<string, Page>>({})
   const [busy, setBusy] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
@@ -75,6 +82,15 @@ export function usePulls(state: string, repositoryId = '') {
             ),
           ),
         )
+    // A remote that moved to another computer keeps its last rows until that computer answers.
+    for (const source of sources) {
+      if (pagesRef.current[source.key]) continue
+      const remote = pullRepositoryKey(source.repository, source.key)
+      const carried = Object.values(pagesRef.current).find(
+        (page) => pullRepositoryKey(page.source.repository, page.source.key) === remote,
+      )
+      if (carried) update(source, { ...carried, stale: true }, undefined)
+    }
     const hydrated = Effect.runSync(
       Effect.cached(
         Effect.forEach(

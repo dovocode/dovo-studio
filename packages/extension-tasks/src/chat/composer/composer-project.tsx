@@ -1,6 +1,5 @@
 import {
   canChangeTaskCheckout,
-  resolveTaskDefaults,
   updateTask,
   useWorkspace,
   useStudioHost,
@@ -22,6 +21,7 @@ import {
 import { useRef, useState } from 'react'
 import { taskSources, type TaskSource } from '../../list/task-collection'
 import { moveTaskDraft } from './task-machine-selector'
+import { changeTaskProject } from './task-project-selection'
 
 export function ComposerProject({
   task,
@@ -61,15 +61,15 @@ export function ComposerProject({
     try {
       if (source.runtimeId === store.activeRuntimeId) {
         store.setWorkspace((workspace) =>
-          updateTask(workspace, task.id, (draft) => ({
-            ...draft,
-            ...resolveTaskDefaults(store.snapshot?.defaults, target),
-            repositoryId: target.id,
-            agentId: '',
-            agentOverrides: undefined,
-            existingWorktreePath: undefined,
-            worktreeBaseBranch: undefined,
-          })),
+          updateTask(workspace, task.id, (draft) =>
+            changeTaskProject(
+              draft,
+              workspace.repositories.find((item) => item.id === draft.repositoryId),
+              target,
+              store.snapshot?.defaults,
+              workspace.agents,
+            ),
+          ),
         )
       } else if (onSelectRemote) await onSelectRemote(source, target)
       else await moveTaskDraft(store, host, task, source, target)

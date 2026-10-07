@@ -461,6 +461,7 @@ ${
         }
         let buffer = '',
           timer: ReturnType<typeof setTimeout> | undefined
+        let textStarted = false
         // A provider segment can span assistant messages when the user steers a live turn.
         const textOwners: Array<{ messageId: string; length: number }> = []
         const ownText = (length: number) => {
@@ -799,6 +800,13 @@ ${
                   acceptPrompt()
                   buffer += text
                   ownText(text.length)
+                  // Deliver the first visible text without a batching delay;
+                  // subsequent tokens still share bounded store writes.
+                  if (!textStarted && text.length) {
+                    textStarted = true
+                    flush()
+                    return
+                  }
                   if (!timer)
                     timer = setTimeout(() => {
                       try {

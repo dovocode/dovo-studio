@@ -94,6 +94,16 @@ written by older versions. If an older installation reports
 restart that service. Reloading alone does not fix an invalid path. Updating or removing the service
 preserves its database and pairings.
 
+## Crash records
+
+If the runtime process ends on an uncaught exception, it writes `last-crash.json` beside its
+database and exits non-zero so its supervisor restarts it. The next start shows the time and message
+in **Devices & runtime** until you dismiss it. The desktop app relaunches a local runtime that exits
+unexpectedly, backing off from two seconds to a minute and giving up after six attempts in a row
+with a dialog that names the reason. A renderer window that crashes reloads once; a window that
+stops responding offers to wait or reload. On the phone, an unexpected error is kept on the device
+and shown once in **Settings**; nothing is reported anywhere.
+
 ## Packaged Mac desktop
 
 The packaged Mac app provisions a per-profile launchd agent when no existing runtime is available.
@@ -634,6 +644,11 @@ it does not move them. Agent CLI installations, authentication, Git, setup scrip
 browser executables and user settings are resolved inside the selected distribution. Install/sign in
 to agents there and keep Linux repositories under `/home` for better filesystem performance. Use
 Dovo’s Browse picker for Linux folders; the Windows system folder dialog is blocked in WSL mode.
+Claude discovery and execution also check its native Linux installation in `~/.local/bin` when the
+runtime’s PATH does not include it. Windows Claude installations and logins are separate. Dovo
+bundles the Agent SDK; install the Claude CLI in the selected distribution and run
+`claude auth login` there. Then use **Refresh providers** in the model picker. Claude and Codex
+become available only after their CLI reports authentication on that runtime host.
 
 The desktop connects over authenticated HTTP on WSL’s localhost forwarding. It checks owner access
 and protocol compatibility before using the connection. After Linux reports ready, Dovo waits up to

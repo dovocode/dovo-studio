@@ -1,5 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { ChoicePicker } from '@dovo/studio-ui'
+import { Button, ChoicePicker } from '@dovo/studio-ui'
 import { preloadStudioHighlighter } from '@dovo/studio-ui/code-themes'
 import { selectedPatchCode } from './selected-code'
 import { LineCommentForm } from '@dovo/studio-ui'
@@ -43,6 +43,7 @@ export function PullPatch({
   const diffs = useDiffOptions()
   const [ready, setReady] = useApplicationState(false),
     [error, setError] = useApplicationState('')
+  const [highlightAttempt, setHighlightAttempt] = useApplicationState(0)
   const parsed = useMemo(() => {
     try {
       const diff = parsePatchFiles(
@@ -73,7 +74,15 @@ export function PullPatch({
         error: String(error),
       }
     }
-  }, [file, reviewContext])
+  }, [
+    file.path,
+    file.previousPath,
+    file.patch,
+    file.status,
+    file.additions,
+    file.deletions,
+    reviewContext,
+  ])
   useEffect(() => {
     let stopped = false
     setReady(false)
@@ -88,7 +97,7 @@ export function PullPatch({
     return () => {
       stopped = true
     }
-  }, [file.path])
+  }, [file.path, highlightAttempt])
   if (!file.patch)
     return (
       <p className="p-4 text-xs text-muted-foreground">
@@ -99,10 +108,23 @@ export function PullPatch({
     )
   if (error || parsed.error || !parsed.diff)
     return (
-      <p role="alert" className="p-4 text-xs text-destructive">
-        Could not render this patch. {error || parsed.error} Open {forgeLabels[provider]} to inspect
-        it.
-      </p>
+      <div className="min-w-0 space-y-2 p-4 text-xs">
+        <p role="alert" className="[overflow-wrap:anywhere] text-destructive">
+          Could not render this patch. {error || parsed.error} Showing the text patch.
+        </p>
+        {error && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setHighlightAttempt((attempt) => attempt + 1)}
+          >
+            Retry highlighting
+          </Button>
+        )}
+        <pre className="overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">
+          {file.patch}
+        </pre>
+      </div>
     )
   return (
     <div
@@ -179,7 +201,6 @@ export function PullPatch({
           options={{
             ...diffs.options,
             diffStyle: split ? 'split' : 'unified',
-            overflow: 'scroll',
             disableFileHeader: true,
             enableLineSelection: !!onComment,
             enableGutterUtility: !!onComment,

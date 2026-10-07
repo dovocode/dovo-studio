@@ -36,6 +36,40 @@ const pageSchema = mutableStruct({
   ),
   nextCursor: Schema.optional(Schema.NullOr(Schema.String)),
 })
+/** Ask the configured app-server, so separate CODEX_HOME and API-key logins
+ * are checked with the same configuration used to run a conversation. */
+export async function codexAuthenticated(agent: AgentDiscovery): Promise<boolean> {
+  try {
+    return await withCatalogRpc(
+      agent.endpoint || 'codex',
+      ['app-server', '--listen', 'stdio://', ...(agent.args ?? [])],
+      async (rpc) => {
+        await rpc.sendRequest('initialize', {
+          clientInfo: { name: 'dovo_studio', version: '0.1.0' },
+        })
+        await rpc.sendNotification('initialized', {})
+        const response: unknown = await rpc
+          .sendRequest('account/read', { refreshToken: false })
+          .catch((error: unknown) => {
+            if (error instanceof ResponseError && error.code === -32601) return undefined
+            throw error
+          })
+        // An older app-server cannot report its account, yet it answered the
+        // handshake like the model catalog expects; keep it selectable.
+        if (response === undefined) return true
+        const result = decode(
+          mutableStruct({ account: Schema.NullOr(mutableStruct({ type: Schema.String })) }),
+          response,
+        )
+        return result.account?.type === 'chatgpt' || result.account?.type === 'apiKey'
+      },
+      agent.env,
+    )
+  } catch {
+    // Missing, signed-out and unresponsive harnesses are not ready to run.
+    return false
+  }
+}
 export async function codexModels(agent: AgentDiscovery): Promise<ModelCatalog> {
   return withCatalogRpc(
     agent.endpoint || 'codex',

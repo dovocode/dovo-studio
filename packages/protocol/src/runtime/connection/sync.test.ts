@@ -1,6 +1,7 @@
 import { expect, it } from 'vite-plus/test'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from './runtime.js'
+import { defaultTaskHarness, resolveTaskAgent } from '../../workspace.js'
 import {
   applySnapshotDelta,
   snapshotDelta,
@@ -8,6 +9,7 @@ import {
   activityDelta,
   applyActivityDelta,
   activityDeltaSchema,
+  syncFrameSchema,
 } from './sync.js'
 const snapshot = () =>
   decode(snapshotSchema, {
@@ -39,6 +41,56 @@ const snapshot = () =>
     devices: [],
     pendingDevices: [],
   })
+it.each(['standalone', 'custom agent'] as const)(
+  'preserves a manually selected model through send and streaming deltas for a %s',
+  (selection) => {
+    let previous = snapshot()
+    const task = previous.workspace.tasks[0]!
+    task.harnessCustomized = true
+    task.harness = { ...defaultTaskHarness('codex'), model: 'configured-default' }
+    if (selection === 'standalone') task.harness.model = 'manually-selected'
+    else {
+      task.agentId = 'custom'
+      task.agentOverrides = { model: 'manually-selected', reasoning: 'high' }
+    }
+    for (const status of ['running', 'review'] as const) {
+      const next = {
+        ...previous,
+        revision: previous.revision + 1,
+        workspace: {
+          ...previous.workspace,
+          tasks: previous.workspace.tasks.map((task, index) =>
+            index === 0
+              ? {
+                  ...task,
+                  status,
+                  draft: '',
+                  messages: [...task.messages, { id: status, role: 'user' as const, text: 'Send' }],
+                }
+              : task,
+          ),
+        },
+      }
+      const frame = decode(
+        syncFrameSchema,
+        JSON.parse(
+          JSON.stringify({
+            type: 'delta',
+            epoch: 'runtime',
+            sequence: next.revision,
+            base: previous.revision,
+            tag: 'updated',
+            delta: snapshotDelta(previous, next, true, true),
+          }),
+        ),
+      )
+      if (frame.type !== 'delta') throw new Error('Expected delta')
+      previous = applySnapshotDelta(previous, frame.delta)
+      expect(previous).toEqual(next)
+      expect(resolveTaskAgent(previous.workspace.tasks[0]!, [])?.model).toBe('manually-selected')
+    }
+  },
+)
 it('streams appends without repeating history and preserves untouched threads', () => {
   const previous = snapshot(),
     next = snapshot()

@@ -201,6 +201,7 @@ it('uses the host Claude CLI instead of the SDK bundled executable', async () =>
 it('reports missing Claude CLI for discovery, model listing and execution', async () => {
   vi.mocked(executableAvailable).mockResolvedValue(false)
   const input = run('ask')
+  input.agent.endpoint = join(tmpdir(), 'dovo-missing-claude-executable')
   expect(await claudeAdapter.probe(input.agent)).toMatchObject({ available: false })
   await expect(claudeAdapter.run(input)).rejects.toThrow('Install Claude Code on this runtime host')
   await expect(claudeModels(input.agent)).rejects.toThrow(
