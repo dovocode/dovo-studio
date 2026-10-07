@@ -35,6 +35,7 @@ import {
   type ReactNode,
 } from 'react'
 import { AppState } from 'react-native'
+import * as Network from 'expo-network'
 import * as SecureStore from 'expo-secure-store'
 import { Data, Effect, Schema, Semaphore } from 'effect'
 import {
@@ -124,6 +125,8 @@ type Runtime = {
   legacyDraftRuntimeId: string | null
   connected: boolean
   ready: boolean
+  /** Saved pairings are being checked after launch; connections wait for the result. */
+  recovering: boolean
   error: string
   connectEffect: (
     value: RuntimeConnection,
@@ -189,6 +192,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       },
     ),
     [ready, setReady] = useApplicationState(false),
+    [recovering, setRecovering] = useApplicationState(true),
     [storageError, setStorageError] = useApplicationState(''),
     [legacyDraftRuntimeId, setLegacyDraftRuntimeId] = useApplicationState<string | null>(null)
   const [previews, setPreviews] = useApplicationState<OptimisticTask[]>([])
@@ -891,6 +895,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       .pipe(
         Effect.asVoid,
         Effect.catch((error) => Effect.sync(() => setStorageError(error.message))),
+        // A pairing rotated while the app was killed must settle before the first snapshot
+        // read, so the stale registry never produces a spurious error.
+        Effect.ensuring(Effect.sync(() => setRecovering(false))),
       )
     void commands.run(recover)
     const subscription = AppState.addEventListener('change', (state) => {
@@ -902,7 +909,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [ready, storageLock, persistRegistryEffect, beforeReplace])
   useEffect(() => {
-    if (!ready || !profile || !appActive) return
+    if (!ready || recovering || !profile || !appActive) return
     let stopped = false
     let wakeFallback = () => {}
     const live = startRuntimeSync(profile.connection, {
@@ -941,18 +948,40 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       },
     )
     wakeFallback = polling.refresh
+    // Wi-Fi to cellular, a VPN toggle or captive portal: ask the runtime at once instead of
+    // waiting for the socket watchdog or the next failed poll.
+    const network = Network.addNetworkStateListener((state) => {
+      if (state.isConnected) {
+        live.refresh()
+        polling.refresh()
+      }
+    })
     return () => {
       stopped = true
+      network.remove()
       live.stop()
       void polling.stop()
     }
-  }, [ready, profile, appActive, refreshProfileEffect, updateEntry, mutations])
+  }, [ready, recovering, profile, appActive, refreshProfileEffect, updateEntry, mutations])
   useEffect(() => {
     if (!ready || !appActive || computerRefresh === 'manual') return
     const polling = startPolling(
-      Effect.suspend(() =>
-        AppState.currentState === 'active' ? refreshAllEffect(false) : Effect.void,
-      ),
+      Effect.suspend(() => {
+        if (AppState.currentState !== 'active') return Effect.void
+        if (computerRefresh !== 'reduced') return refreshAllEffect(false)
+        // Reduced background activity on a metered link keeps other computers' summaries as
+        // they are; the active computer still refreshes through its own connection.
+        return Effect.tryPromise({
+          try: () => Network.getNetworkStateAsync(),
+          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+        }).pipe(
+          Effect.flatMap((state) =>
+            state.type === Network.NetworkStateType.CELLULAR
+              ? Effect.void
+              : refreshAllEffect(false),
+          ),
+        )
+      }),
       {
         interval: computerRefresh === 'reduced' ? 120000 : 30000,
         onError: (error) => setStorageError(String(error)),
@@ -1148,6 +1177,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         snapshot: overviews.find((entry) => entry.profile.id === profile?.id)?.snapshot ?? null,
         connected: active?.connected ?? false,
         ready,
+        recovering,
         error:
           storageError ||
           settingsSyncError ||

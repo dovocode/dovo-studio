@@ -49,6 +49,7 @@ import { HttpError, type RuntimeFailure } from '../errors.js'
 import { body } from './support/body.js'
 import { hashSecret, equalSecret } from '../auth/devices.js'
 import { validateAutomation } from '../jobs/validation.js'
+import { clearLastCrash } from '../storage/last-crash.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 // Unauthenticated routes read at most what they need before any credential is checked.
 const PAIRING_BODY_LIMIT = 4 * 1024
@@ -566,6 +567,11 @@ export function route(
       if (method === 'POST' && path === '/api/runtime/prepare-restart') {
         owner()
         return yield* serviceResult(s.tasks.prepareRestart())
+      }
+      if (method === 'POST' && path === '/api/runtime/crash/dismiss') {
+        owner()
+        clearLastCrash(s.db.name)
+        return yield* serviceResult({ ok: true })
       }
       if (method === 'POST' && path.startsWith('/api/runtime/network/')) {
         owner()

@@ -1,6 +1,6 @@
 import { readRuntimeEnvironment } from './runtime-environment.js'
 import { Cause, Data, Effect, Exit } from 'effect'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { discoverNetworks, resolveBindHost } from './network.js'
@@ -54,6 +54,31 @@ const attempt = <A>(operation: string, run: () => A) =>
 // every task and phone connection on this computer. Synchronous uncaught exceptions still exit.
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection in the Dovo runtime', reason)
+})
+// A synchronous throw ends the process. Record why next to the database so the next start can
+// show it in Devices & runtime, then exit non-zero so supervisors restart the runtime.
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception in the Dovo runtime', error)
+  try {
+    const databasePath = process.env.DOVO_DATABASE_PATH
+    if (databasePath)
+      writeFileSync(
+        join(dirname(databasePath), 'last-crash.json'),
+        JSON.stringify({
+          at: new Date().toISOString(),
+          message:
+            `${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`.slice(
+              0,
+              1000,
+            ),
+          stack: error instanceof Error ? error.stack?.slice(0, 4000) : undefined,
+        }),
+        { mode: 0o600 },
+      )
+  } catch {
+    // The crash record is best effort; exiting is not.
+  }
+  process.exit(1)
 })
 
 // Agents are spawned by name (codex, claude, gh); resolve them like the user's terminal does.

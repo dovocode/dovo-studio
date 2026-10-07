@@ -1,0 +1,25 @@
+# Smoke flow for a built app on a simulator or device: pair, open a thread, send a message.
+# Run locally with a runtime on the LAN:
+#   DOVO_PAIR_ADDRESS=http://mac.local:8787 DOVO_PAIR_CODE=123456 maestro test apps/mobile/maestro/smoke.yaml
+appId: com.dovo.studio
+---
+- launchApp:
+    clearState: true
+- tapOn: 'Connect a computer'
+- tapOn:
+    id: 'Runtime address'
+- inputText: ${DOVO_PAIR_ADDRESS}
+- tapOn:
+    id: 'Pairing code'
+- inputText: ${DOVO_PAIR_CODE}
+- tapOn: 'Pair'
+- assertVisible: 'Online'
+- tapOn: 'Tasks'
+- tapOn: 'New task'
+- tapOn:
+    id: 'Message'
+- inputText: 'Smoke test: reply with OK'
+- tapOn: 'Send'
+- assertVisible:
+    text: 'OK'
+    timeout: 120000

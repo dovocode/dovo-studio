@@ -16,6 +16,7 @@ import { overviewWorkspace, scopedWorkspace } from './snapshot-overview.js'
 import { discoverProjectIcon } from '../../scm/repositories/project-icon.js'
 import { desktopAppUpdateInfo, canUpdateDesktop } from '../desktop-updates.js'
 import { canUpdateServer } from '../server-updates.js'
+import { readLastCrash } from '../../storage/last-crash.js'
 export function runtimeSnapshot(
   s: Services,
   device: { id: string; owner: boolean },
@@ -45,6 +46,7 @@ export function runtimeSnapshot(
       ...(taskIds ? { detailTaskIds: [...taskIds] } : {}),
       protocolVersion: RUNTIME_PROTOCOL_VERSION,
       runtimeInstanceId: s.instanceId,
+      lastCrash: readLastCrash(s.db.name),
       runtimeHost: hostname(),
       releaseVersion: process.env.DOVO_RELEASE_VERSION || undefined,
       desktopApp: desktopAppUpdateInfo(),

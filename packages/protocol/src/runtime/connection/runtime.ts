@@ -88,6 +88,8 @@ export const snapshotSchema = mutableStruct({
   /** Present on scoped replicas; only these threads contain authoritative history. */
   detailTaskIds: Schema.optional(mutableArray(Schema.String)),
   runtimeInstanceId: Schema.optional(Schema.String),
+  /** The runtime process ended unexpectedly before this start; shown until dismissed. */
+  lastCrash: Schema.optional(mutableStruct({ at: Schema.String, message: Schema.String })),
   protocolVersion: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isInt()))),
   runtimeHost: Schema.optional(Schema.String),
   releaseVersion: Schema.optional(Schema.String),

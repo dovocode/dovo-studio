@@ -5,7 +5,7 @@ import { ensureBackgroundRuntime, stopBackgroundRuntimeForUpdate } from './backg
 import { spawn, type ChildProcess } from 'node:child_process'
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
-import { app } from 'electron'
+import { app, dialog } from 'electron'
 import { Effect, Exit, Scope, Schema, Semaphore } from 'effect'
 import { readConnection } from '../../api/src/connection.js'
 import { runtimeOwnerToken } from '../../api/src/owner-token.js'
@@ -315,12 +315,23 @@ function launch(directory: string) {
     const crashed = (code: number | null, signal: NodeJS.Signals | null) => {
       // Leave `owned` in place: startLocalRuntime sees the exited child and closes its scope.
       if (owned?.child !== child || owned.stopping || quitting) return
-      console.error(`Local runtime exited (${signal ?? code}). ${diagnostics}`.trim())
+      const reason = `Local runtime exited (${signal ?? code}). ${diagnostics}`.trim()
+      console.error(reason)
+      // A runtime that stayed up for a while earned a fresh budget; one that dies at startup
+      // backs off from two seconds to a minute so a bad port or lock does not spin.
       if (Date.now() - startedAt > 60_000) relaunches = 0
-      if (relaunches >= 5) {
+      if (relaunches >= 6) {
         console.error('Local runtime keeps exiting; not relaunching. Restart Dovo Studio.')
+        void dialog.showMessageBox({
+          type: 'error',
+          title: app.getName(),
+          message: 'The local runtime keeps stopping.',
+          detail: `${reason.slice(-1500)}\n\nRestart Dovo Studio after fixing the cause. The runtime log in the data directory has the full output.`,
+          buttons: ['OK'],
+        })
         return
       }
+      const delay = Math.min(60_000, 2_000 * 2 ** relaunches)
       relaunches++
       clearTimeout(relaunchTimer)
       relaunchTimer = setTimeout(() => {
@@ -329,7 +340,7 @@ function launch(directory: string) {
         void startLocalRuntime(directory).catch((error: unknown) =>
           console.error('Local runtime relaunch failed:', error),
         )
-      }, 2_000)
+      }, delay)
       relaunchTimer.unref()
     }
     child.stdout?.on('data', stdout)

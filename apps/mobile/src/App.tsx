@@ -13,6 +13,9 @@ import { Workbench } from './shell/workbench'
 import { LinkBrowser } from './ui/content/open-link'
 import { TaskWidgetProvider } from './widgets/provider'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { installCrashRecorder } from './runtime/diagnostics/crash-log'
+// Before any screen renders, so a crash during startup is recorded as well.
+installCrashRecorder()
 export default function App() {
   return (
     <MobileAppearance>

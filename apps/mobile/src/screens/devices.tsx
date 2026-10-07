@@ -277,6 +277,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
     profile,
     snapshot,
     connected,
+    recovering,
     error: connectionError,
     refresh,
     renameRuntimeEffect,
@@ -331,7 +332,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
               },
             ]}
           >
-            {connected ? 'Online' : 'Offline'}
+            {connected ? 'Online' : recovering ? 'Reconnecting…' : 'Offline'}
           </Text>
           <Text selectable style={styles.muted}>
             {profile.connection.address}

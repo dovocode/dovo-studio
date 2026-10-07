@@ -7,13 +7,35 @@ import { SearchField } from '../ui/controls/field'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { useRuntime } from '../runtime/connection/provider'
+import { useSettingsTargetState } from '../runtime/preferences/settings-target'
+import { settingsScopeLabels } from '@dovo/protocol'
 import { ScreenHeader } from '../ui/layout/screen-header'
+import { Action } from '../ui/controls/action'
+import { useEffect } from 'react'
+import { clearLastCrash, readLastCrash, type CrashRecord } from '../runtime/diagnostics/crash-log'
+
+/** Where a page saves, shown beside its name and explained under the target summary. */
+const storage = {
+  computer: { icon: 'device', label: 'Saved per computer' },
+  inherited: { icon: 'stack', label: 'Inherits across settings levels', accent: true },
+} as const
 
 export default function SettingsScreen() {
   const { colors, styles } = useTheme()
 
   const { profiles, overviews } = useRuntime()
+  const target = useSettingsTargetState()
   const [query, setQuery] = useApplicationState('')
+  const [crash, setCrash] = useApplicationState<CrashRecord | null>(null)
+  useEffect(() => {
+    let active = true
+    void readLastCrash().then((record) => {
+      if (active) setCrash(record)
+    })
+    return () => {
+      active = false
+    }
+  }, [setCrash])
   const archived = overviews.reduce(
     (count, entry) =>
       count +
@@ -54,7 +76,7 @@ export default function SettingsScreen() {
     {
       title: 'Agents',
       footer:
-        'Global → Computer → Project → Project on computer. Later levels override earlier ones.',
+        'Marked pages inherit Global → Computer → Project → Project on computer and follow the target above.',
       items: [
         {
           title: 'Agents',
@@ -62,6 +84,7 @@ export default function SettingsScreen() {
           icon: 'chat',
           tint: '#bb9aff',
           path: '/settings/agents',
+          storage: 'inherited',
           keywords: 'models providers permissions access accounts login reasoning',
         },
         {
@@ -70,6 +93,7 @@ export default function SettingsScreen() {
           icon: 'jobs',
           tint: '#5ac8bd',
           path: '/settings/resources',
+          storage: 'inherited',
           keywords: 'resources integrations servers registry tools',
         },
         {
@@ -78,6 +102,7 @@ export default function SettingsScreen() {
           icon: 'jobs',
           tint: '#f3bb75',
           path: '/settings/usage',
+          storage: 'computer',
           keywords: 'codex claude costs models',
         },
       ],
@@ -90,6 +115,7 @@ export default function SettingsScreen() {
           subtitle: 'Default agent, workspace, lifecycle and saved prompts',
           icon: 'settings',
           path: '/settings/task-defaults',
+          storage: 'inherited',
           keywords:
             'inherit global computer project checkout worktree setup submodules quota resume settle restart',
         },
@@ -98,6 +124,7 @@ export default function SettingsScreen() {
           subtitle: 'GitHub, Bitbucket, Forgejo, Gitea and Azure DevOps',
           icon: 'changes',
           path: '/settings/source-control',
+          storage: 'computer',
           keywords: 'git accounts forge tokens repositories',
         },
         {
@@ -105,6 +132,7 @@ export default function SettingsScreen() {
           subtitle: 'Scheduled tasks, workflows and runs',
           icon: 'jobs',
           path: '/settings/automations',
+          storage: 'computer',
           keywords: 'jobs cron webhooks',
         },
       ],
@@ -169,6 +197,41 @@ export default function SettingsScreen() {
           value={query}
           onChangeText={setQuery}
         />
+        {!needle && crash && (
+          <View accessibilityRole="alert" style={[styles.card, { gap: 6 }]}>
+            <Text style={[styles.text, { fontWeight: '600' }]}>
+              {crash.fatal ? 'The app closed unexpectedly' : 'The app hit an unexpected error'}
+            </Text>
+            <Text style={styles.muted}>{new Date(crash.at).toLocaleString()}</Text>
+            <Text selectable numberOfLines={6} style={styles.muted}>
+              {crash.message}
+            </Text>
+            <Text style={[styles.muted, { fontSize: 12 }]}>
+              Nothing was sent anywhere. Your tasks and saved work on your computers are safe.
+            </Text>
+            <Action
+              secondary
+              label="Dismiss crash report"
+              onPress={() => {
+                setCrash(null)
+                void clearLastCrash()
+              }}
+            />
+          </View>
+        )}
+        {!needle && profiles.length > 0 && (
+          <View accessibilityLabel="Inherited settings target" style={[styles.card, { gap: 4 }]}>
+            <Text style={[styles.muted, { fontSize: 12 }]}>Applying inherited settings for</Text>
+            <Text style={[styles.text, { fontSize: 15, fontWeight: '600' }]}>
+              {target.projectName} · {target.computerName}
+            </Text>
+            <Text style={[styles.muted, { fontSize: 12, lineHeight: 17 }]}>
+              {settingsScopeLabels[target.scope]} level, kept while you move between pages. Change
+              it on Agents, MCP & skills or Task defaults. Pages with a stack mark use it; pages
+              with a computer mark save per computer; other pages save on this device.
+            </Text>
+          </View>
+        )}
         {matches.map((group) => (
           <SettingsGroup
             key={group.title}
@@ -183,6 +246,7 @@ export default function SettingsScreen() {
                 icon={item.icon}
                 label={'label' in item ? item.label : undefined}
                 tint={'tint' in item ? item.tint : undefined}
+                mark={'storage' in item ? storage[item.storage] : undefined}
                 disabled={!profiles.length && !('local' in item && item.local)}
                 onPress={() => router.push(item.path)}
                 last={index === group.items.length - 1}
