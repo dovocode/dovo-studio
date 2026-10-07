@@ -5,6 +5,7 @@ export const agentsExtension = defineStudioExtension(
     {
       id: 'resources',
       navigationGroup: 'settings',
+      settingsScope: 'inherited',
       title: 'MCP, skills & hooks',
       icon: 'agents',
       order: 3,
@@ -15,6 +16,7 @@ export const agentsExtension = defineStudioExtension(
     {
       id: 'text-generation',
       navigationGroup: 'settings',
+      settingsScope: 'computer',
       title: 'Titles & dictation',
       icon: 'agents',
       order: 2.2,
@@ -26,6 +28,7 @@ export const agentsExtension = defineStudioExtension(
     {
       id: 'agents',
       navigationGroup: 'settings',
+      settingsScope: 'inherited',
       title: 'Agents',
       icon: 'agents',
       order: 2,

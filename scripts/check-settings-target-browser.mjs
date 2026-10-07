@@ -12,8 +12,8 @@ try {
       ? root + '/apps/mobile/src/runtime/preferences'
       : root + '/packages/studio-core/src'
     const header = mobile ? 'ScopedSettings' : 'SettingsScopePage'
-    const core = `import {createContext,useContext} from 'react';export {SettingsTargetProvider,useSettingsTarget,useSettingsDraft} from '${root}/packages/studio-core/src/settings-target.tsx';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,snapshot:entry.snapshot,connected:entry.connected,request:(path,input)=>window.request(profile.id,path,input)}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
-    const nativeRuntime = `import {createContext,useContext} from 'react';const Scope=createContext(null);export const useRuntime=()=>useContext(Scope)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const entry=window.sources.find(entry=>entry.profile.id===runtimeId);return <Scope.Provider value={{...window.runtime,snapshot:entry.snapshot,connected:entry.connected,call:(path,input)=>window.request(runtimeId,path,input)}}><div data-owner={runtimeId}>{children}</div></Scope.Provider>};`
+    const core = `import {createContext,useContext} from 'react';export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft} from '${root}/packages/studio-core/src/settings-target.tsx';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,activeRuntimeId:profile.id,snapshot:entry.snapshot,connected:entry.connected,request:(path,input)=>window.request(profile.id,path,input)}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
+    const nativeRuntime = `import {createContext,useContext} from 'react';const Scope=createContext(null);export const useRuntime=()=>useContext(Scope)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const entry=window.sources.find(entry=>entry.profile.id===runtimeId);return <Scope.Provider value={{...window.runtime,activeId:runtimeId,snapshot:entry.snapshot,connected:entry.connected,call:(path,input)=>window.request(runtimeId,path,input)}}><div data-owner={runtimeId}>{children}</div></Scope.Provider>};`
     const mocks = {
       '@dovo/studio-core': core,
       './workspace/provider': `export const useWorkspace=()=>window.runtime;`,
@@ -27,7 +27,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {SettingsTargetProvider${mobile ? ',ScopedSettings' : ''}} from '${base}/settings-target.tsx';${mobile ? '' : `import {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`}import {TaskDefaultSettings} from '${mobile ? base : root + '/packages/studio-ui/src'}/task-default-settings.tsx';const repo={id:'mac-repo',name:'Shared project',path:'/mac/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=[{profile:{id:'mac',name:'Mac',connection:{address:'http://mac.local',token:'test-token'}},name:'Mac',scope:'mac',connected:true,snapshot:{defaults:{},workspace:{repositories:[repo]}}},{profile:{id:'linux',name:'Linux',connection:{address:'http://linux.local',token:'test-token'}},name:'Linux',scope:'linux',connected:true,snapshot:{defaults:{},workspace:{repositories:[{...repo,id:'linux-repo',path:'/linux/repo'}]}}},{profile:{id:'empty',name:'Empty',connection:{address:'http://empty.local',token:'test-token'}},name:'Empty',scope:'empty',connected:true,snapshot:{defaults:{},workspace:{repositories:[]}}}];window.writes=[];window.request=async(host,path,input)=>{if(path.endsWith('/read'))return {value:{taskDefaults:{setupCommand:'scope setup'}},inherited:{taskDefaults:{}},projectKey:'project:github.com/team/repo'};if(path.endsWith('/save')){window.writes.push({host,...input});return {value:input.after,inherited:{}}}throw Error(path)};window.runtime={runtimes:window.sources,overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',snapshot:window.sources[0].snapshot,connected:true};function App(){const [page,setPage]=useState('defaults');return <SettingsTargetProvider><button onClick={()=>setPage('defaults')}>Defaults page</button><button onClick={()=>setPage('tools')}>Tools page</button><${header} ${mobile ? '' : 'title={page} description="Scoped settings"'}>{selection=>page==='defaults'?<TaskDefaultSettings inline scope={selection.scope} repository={selection.repository}/>:<p data-testid="target">{selection.scope}:{selection.repository?.id||''}</p>}</${header}></SettingsTargetProvider>}createRoot(document.getElementById('app')).render(<App/>);`,
+        contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {SettingsTargetProvider${mobile ? ',ScopedSettings' : ''}} from '${base}/settings-target.tsx';${mobile ? '' : `import {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`}import {TaskDefaultSettings} from '${mobile ? base : root + '/packages/studio-ui/src'}/task-default-settings.tsx';const repo={id:'mac-repo',name:'Shared project',path:'/mac/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=[{profile:{id:'mac',name:'Mac',connection:{address:'http://mac.local',token:'test-token'}},name:'Mac',scope:'mac',connected:true,snapshot:{defaults:{},workspace:{repositories:[repo]}}},{profile:{id:'linux',name:'Linux',connection:{address:'http://linux.local',token:'test-token'}},name:'Linux',scope:'linux',connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'linux setup'}},shared:[]}},workspace:{repositories:[{...repo,id:'linux-repo',path:'/linux/repo'}]}}},{profile:{id:'empty',name:'Empty',connection:{address:'http://empty.local',token:'test-token'}},name:'Empty',scope:'empty',connected:true,snapshot:{defaults:{},workspace:{repositories:[]}}}];window.writes=[];window.request=async(host,path,input)=>{if(path.endsWith('/read'))return {value:{taskDefaults:{setupCommand:'scope setup'}},inherited:{taskDefaults:{}},projectKey:'project:github.com/team/repo'};if(path.endsWith('/save')){window.writes.push({host,...input});return {value:input.after,inherited:{}}}throw Error(path)};window.runtime={runtimes:window.sources,overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',snapshot:window.sources[0].snapshot,connected:true,readRuntime:(profile,path,input)=>window.request(profile.id,path,input)};function App(){const [page,setPage]=useState('defaults');return <SettingsTargetProvider><button onClick={()=>setPage('defaults')}>Defaults page</button><button onClick={()=>setPage('tools')}>Tools page</button><${header} ${mobile ? '' : 'title={page} description="Scoped settings"'}>{selection=>page==='defaults'?<TaskDefaultSettings inline scope={selection.scope} repository={selection.repository}/>:<p data-testid="target">{selection.scope}:{selection.repository?.id||''}</p>}</${header}></SettingsTargetProvider>}createRoot(document.getElementById('app')).render(<App/>);`,
         loader: 'tsx',
         resolveDir: root,
       },
@@ -110,6 +110,39 @@ try {
     const last = await page.evaluate(() => window.writes.at(-1))
     assert.equal(last.scope, 'global')
     assert.equal(last.after.taskDefaults.setupCommand, undefined)
+    // Later levels stay visible from Global; opening one moves the shared target there.
+    const overridden = page.getByRole('button', {
+      name: 'Worktree setup: overridden at 1 later level',
+      exact: true,
+    })
+    await overridden.click()
+    await page.getByText('Computer · Linux', { exact: true }).waitFor()
+    await page.getByText('linux setup', { exact: true }).waitFor()
+    await page
+      .getByRole('button', { name: 'Open Computer settings for Linux', exact: true })
+      .click()
+    // The expanded scope choices stay open on mobile while the target moves.
+    assert.equal(await environments.inputValue(), 'linux')
+    if (mobile) await page.getByText('Editing Computer.', { exact: true }).waitFor()
+    else
+      assert.equal(
+        await page
+          .getByRole('button', { name: 'Edit Computer settings', exact: true })
+          .getAttribute('aria-pressed'),
+        'true',
+      )
+    await page.getByRole('button', { name: 'Save defaults', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: /overridden at/ }).count(), 0)
+    await page.getByRole('button', { name: 'Edit Global settings', exact: true }).click()
+    await overridden.click()
+    await page
+      .getByRole('button', { name: 'Reset all later worktree setup overrides', exact: true })
+      .click()
+    await page.getByText('Reset 1 override.', { exact: true }).waitFor()
+    const reset = await page.evaluate(() => window.writes.at(-1))
+    assert.equal(reset.host, 'linux')
+    assert.equal(reset.scope, 'environment')
+    assert.equal(reset.after.taskDefaults.setupCommand, undefined)
     assert.deepEqual(errors, [])
     await page.close()
     console.log(

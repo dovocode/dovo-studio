@@ -10,6 +10,7 @@ export const runtimeExtension = defineStudioExtension(
     {
       id: 'runtime',
       navigationGroup: 'settings',
+      settingsScope: 'computer',
       title: 'Devices & runtime',
       icon: 'runtime',
       order: 4,
@@ -21,6 +22,7 @@ export const runtimeExtension = defineStudioExtension(
     {
       id: 'task-defaults',
       navigationGroup: 'settings',
+      settingsScope: 'inherited',
       title: 'Task defaults',
       icon: 'runtime',
       order: 3,
@@ -32,6 +34,7 @@ export const runtimeExtension = defineStudioExtension(
     {
       id: 'commands',
       navigationGroup: 'settings',
+      settingsScope: 'computer',
       title: 'CLI commands & shell',
       icon: 'runtime',
       order: 4.05,
@@ -42,6 +45,7 @@ export const runtimeExtension = defineStudioExtension(
     {
       id: 'computer-use',
       navigationGroup: 'settings',
+      settingsScope: 'computer',
       title: 'Computer use',
       icon: 'runtime',
       order: 4.1,
@@ -53,6 +57,7 @@ export const runtimeExtension = defineStudioExtension(
     {
       id: 'worktrees',
       navigationGroup: 'settings',
+      settingsScope: 'computer',
       title: 'Worktrees',
       icon: 'runtime',
       order: 3.7,
@@ -64,6 +69,7 @@ export const runtimeExtension = defineStudioExtension(
     {
       id: 'running-tasks',
       navigationGroup: 'settings',
+      settingsScope: 'computer',
       title: 'Running tasks',
       icon: 'runtime',
       order: 4.2,
@@ -75,6 +81,7 @@ export const runtimeExtension = defineStudioExtension(
     {
       id: 'activity',
       navigationGroup: 'settings',
+      settingsScope: 'computer',
       title: 'Activity & message history',
       icon: 'runtime',
       order: 4.5,

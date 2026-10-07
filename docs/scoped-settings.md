@@ -9,12 +9,20 @@ saved prompts inherit in this order:
 4. **Project on computer** — overrides for one checkout on one environment.
 
 The **Task defaults**, **Agents** and **MCP, skills & hooks** pages share a project/computer target
-selector on desktop and mobile. The four levels are visible in order and can be selected directly.
-Choose **All projects** or a project, then **All computers · shared** or one computer. These choices
-select one of the four levels above; shared settings synchronize defaults rather than bulk-editing
-each computer’s overrides. The target stays selected between these pages. A project missing from the
-selected computer cannot be edited until another target is chosen. Local folders are offered only
-with a specific computer.
+selector on desktop and mobile. On desktop, an **Applying settings for** bar below the page title
+holds the project and computer choices, the four levels in order, and which level is being edited.
+It stays visible while the page scrolls, and the settings navigation repeats the current target so
+it is visible from every page. Choose **All projects** or a project, then **All computers · shared**
+or one computer. These choices select one of the four levels above; shared settings synchronize
+defaults rather than bulk-editing each computer’s overrides. The target stays selected between these
+pages. A project missing from the selected computer cannot be edited until another target is chosen.
+Local folders are offered only with a specific computer.
+
+Each page in the settings navigation shows where it saves: a layers mark for pages that inherit
+through the four levels, a monitor mark for pages saved on one computer, and no mark for device
+preferences, which ignore the target. Mobile uses the same bar above its scoped pages, with **Change
+scope** revealing the project and computer choices, and the Settings list shows the current target
+with matching marks on its rows.
 
 Task defaults and lifecycle settings also have a **Sources** control. It shows values at each scope,
 grouped by computer, with the winning value checked. Matching projects use their canonical Git
@@ -24,7 +32,12 @@ still requires saving. Opening Sources uses existing snapshots without additiona
 
 Each task setting shows its effective source beside the control. **Set here** identifies an override
 at the selected level; **Inherited** identifies the earlier level or Dovo default. Individual Reset
-controls use the earlier value, and changes are saved using **Save defaults**. Unset task fields
+controls use the earlier value, and changes are saved using **Save defaults**. When later levels
+replace the value being edited, an **Overridden by** count lists them: each computer, each shared
+project once, and each project on a computer, with its value. **Open** moves the target to that
+level, and **Reset all** removes those later overrides after confirmation so they inherit again.
+Shared project overrides are reset through the computer that reported them; offline computers are
+listed as skipped. Changing the current level never touches later overrides. Unset task fields
 inherit; an empty setup command disables inherited setup. Agent launch settings are selected and
 reset as a complete group so models and account settings cannot cross providers. Choosing an agent
 profile copies its launch settings and access into the defaults. Saved prompts can be edited here on

@@ -1,5 +1,11 @@
-import type { SettingsSection, StudioView } from '@dovo/studio-core'
+import {
+  useSettingsTarget,
+  type SettingsSection,
+  type SettingsStorage,
+  type StudioView,
+} from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
+import { settingsScopeLabels } from '@dovo/protocol'
 import { ChoicePicker, Input } from '@dovo/studio-ui'
 import {
   Archive,
@@ -16,10 +22,12 @@ import {
   Layers,
   MessagesSquare,
   Download,
+  Monitor,
   MonitorSmartphone,
   Palette,
   Search,
   Settings2,
+  Smartphone,
   Terminal,
   Wrench,
   X,
@@ -57,6 +65,13 @@ const headings: readonly [SettingsSection | 'more', string][] = [
   ['more', 'More'],
 ]
 
+/** Where a page saves, shown beside its name and explained in the legend below the list. */
+const storage: Record<SettingsStorage, { icon: typeof Search; label: string }> = {
+  device: { icon: Smartphone, label: 'Saved on this device' },
+  computer: { icon: Monitor, label: 'Saved per computer' },
+  inherited: { icon: Layers, label: 'Inherits across settings levels' },
+}
+
 /** Grouped settings navigation with search, organized like Codex and T3 Code. */
 export function SettingsNav({
   views,
@@ -68,6 +83,7 @@ export function SettingsNav({
   onSelect: (viewId: string) => void
 }) {
   const [query, setQuery] = useApplicationState('')
+  const { target, scope, source, repository } = useSettingsTarget()
   const select = (id: string) => {
     if (id !== activeId) onSelect(id)
   }
@@ -80,6 +96,8 @@ export function SettingsNav({
       view.title.toLowerCase().includes(needle)
     )
   })
+  const project = repository?.name ?? (target.projectId ? 'Unavailable project' : 'All projects')
+  const computer = target.environmentId ? (source?.name ?? 'Unavailable computer') : 'All computers'
   return (
     <nav
       aria-label="Settings sections"
@@ -143,6 +161,8 @@ export function SettingsNav({
             {items.map((view) => {
               const Icon = icons[view.id] ?? Settings2
               const active = activeId === view.id
+              const kind = view.settingsScope && view.settingsScope !== 'device'
+              const Storage = kind ? storage[view.settingsScope ?? 'device'].icon : null
               return (
                 <button
                   key={view.id}
@@ -162,11 +182,11 @@ export function SettingsNav({
                     className={active ? 'text-primary' : 'text-muted-foreground/70'}
                   />
                   <span className="min-w-0 flex-1 truncate">{view.title}</span>
-                  {['agents', 'resources', 'task-defaults'].includes(view.id) && (
-                    <Layers
+                  {Storage && view.settingsScope && (
+                    <Storage
                       size={12}
-                      aria-label="Inherits across settings levels"
-                      className="shrink-0 text-muted-foreground/60"
+                      aria-label={storage[view.settingsScope].label}
+                      className={`shrink-0 ${view.settingsScope === 'inherited' ? 'text-primary/70' : 'text-muted-foreground/60'}`}
                     />
                   )}
                   {active && (
@@ -183,12 +203,23 @@ export function SettingsNav({
           No settings match “{query}”.
         </p>
       )}
-      <div className="mt-auto hidden border-t px-2 pt-4 text-[11px] leading-relaxed text-muted-foreground md:block">
-        <p className="mb-1 flex items-center gap-1.5">
-          <Layers className="size-3" />
-          Inherited settings
+      <div
+        aria-label="Inherited settings target"
+        className="mt-auto hidden space-y-2 border-t px-2 pt-4 text-[11px] leading-relaxed text-muted-foreground md:block"
+      >
+        <p className="flex items-center gap-1.5">
+          <Layers className="size-3 text-primary/70" aria-hidden="true" />
+          Applying inherited settings for
         </p>
-        <p>Agent and task defaults can be shared or customized for a computer or project.</p>
+        <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
+          {project} · {computer}
+        </p>
+        <p>
+          {settingsScopeLabels[scope]} level, kept while you move between pages. Pages marked{' '}
+          <Layers className="inline size-3 align-[-2px]" aria-hidden="true" /> use it;{' '}
+          <Monitor className="inline size-3 align-[-2px]" aria-hidden="true" /> pages save per
+          computer; other pages save on this device.
+        </p>
       </div>
     </nav>
   )

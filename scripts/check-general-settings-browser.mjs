@@ -6,7 +6,7 @@ import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const core = `import {createContext,useContext} from 'react';
 export {useAppPreferences,updateAppPreferences} from '${root}/packages/studio-core/src/preferences.ts';
-export {SettingsTargetProvider,useSettingsTarget,useSettingsDraft,useConfirmSettingsNavigation} from '${root}/packages/studio-core/src/settings-target.tsx';
+export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft,useConfirmSettingsNavigation} from '${root}/packages/studio-core/src/settings-target.tsx';
 export {agentSchema,modelCatalogSchema,selectableAccessModes,supportsAccess} from '@dovo/protocol';
 export const providers={codex:{name:'Codex'},claude:{name:'Claude Code'},opencode:{name:'OpenCode'},acp:{name:'ACP'},cursor:{name:'Cursor'},copilot:{name:'GitHub Copilot'},hermes:{name:'Hermes'},grok:{name:'Grok Build'},muse:{name:'Muse'}};
 export const formatDateTime=value=>new Date(value).toLocaleString();
@@ -52,7 +52,7 @@ import Agents from '${root}/packages/extension-agents/src/view.tsx';
 import TaskDefaults from '${root}/packages/extension-runtime/src/task-defaults-view.tsx';
 window.repo={id:'project',name:'Dovo',gitIdentity:'github.com/team/dovo',path:'/repo',branch:'main'};
 const global={taskDefaults:{setupCommand:'pnpm install'},resources:{skills:[],mcpServers:[]},taskBehavior:{quotaResume:true}};
-window.sources=[{profile:{id:'computer',name:'MacBook Pro'},name:'MacBook Pro',scope:'computer',connected:true,snapshot:{scopedAgentsSupported:true,taskBehaviorSupported:true,defaults:{scopedSettings:{environment:{},shared:[{key:'global',updatedAt:1,changeId:'global',value:global}]}},workspace:{agents:[],repositories:[window.repo]}}}];
+window.sources=[{profile:{id:'computer',name:'MacBook Pro',connection:{address:'http://computer.local',token:'test-token'}},name:'MacBook Pro',scope:'computer',connected:true,snapshot:{scopedAgentsSupported:true,taskBehaviorSupported:true,defaults:{scopedSettings:{environment:{},shared:[{key:'global',updatedAt:1,changeId:'global',value:global}]}},workspace:{agents:[],repositories:[window.repo]}}}];
 window.documents={global};window.writes=[];
 window.request=async(path,input)=>{
  if(path==='/api/runtime/preferences/read')return {autoContinueAfterRestart:false,settleOnPullClose:false};
@@ -63,7 +63,7 @@ window.request=async(path,input)=>{
  if(path.endsWith('/save')){window.documents[key]=input.after;window.writes.push(input);return {value:input.after,inherited}};
  throw Error(path);
 };
-window.runtime={...window.sources[0],request:window.request,activeRuntimeId:'computer',refreshRuntimes:async()=>{}};
+window.runtime={...window.sources[0],runtimes:window.sources,request:window.request,activeRuntimeId:'computer',refreshRuntimes:async()=>{}};
 const views=[
  {id:'general',title:'General',order:.1,settingsSection:'app',keywords:'organization navigation'},
  {id:'conversation-settings',title:'Conversation',order:.3,settingsSection:'app',keywords:'composer streaming markdown'},

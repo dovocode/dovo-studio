@@ -64,6 +64,11 @@ export function useConfirmSettingsNavigation() {
   const context = useContext(Context)
   return context?.confirmNavigation ?? (() => true)
 }
+/** Scoped controls can also render outside the settings area, where there is no target to move. */
+export function useOptionalSettingsTarget() {
+  const context = useContext(Context)
+  return context ? { target: context.target, setTarget: context.setTarget } : null
+}
 export function useSettingsTarget() {
   const context = useContext(Context)
   if (!context) throw new Error('SettingsTargetProvider is required')

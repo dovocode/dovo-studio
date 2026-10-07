@@ -1,7 +1,7 @@
 import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
 import { SettingRow, SettingsGroup, SettingsPage, Segmented, Toggle } from './layout'
 
-export function DiffSettingsRows() {
+function DiffSettingsRows() {
   const preferences = useAppPreferences()
   return (
     <>

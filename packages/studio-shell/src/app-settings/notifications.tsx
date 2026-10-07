@@ -2,7 +2,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
 import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
 
-export function NotificationSettingsRows() {
+function NotificationSettingsRows() {
   const preferences = useAppPreferences()
   const [notice, setNotice] = useApplicationState('')
   // Turning on a notification asks the OS for permission once.

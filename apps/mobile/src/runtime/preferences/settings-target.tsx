@@ -59,27 +59,56 @@ export function useSettingsDraft(dirty: boolean, saving = false) {
     [context?.registerDraft, dirty, saving],
   )
 }
+/** Scoped controls can also render outside the settings screens, where there is no target to move. */
+export function useOptionalSettingsTarget() {
+  const context = useContext(Context)
+  return context ? { target: context.target, setTarget: context.setTarget } : null
+}
+/** The shared target with its resolved level, computer and project, for summaries. */
+export function useSettingsTargetState() {
+  const context = useContext(Context)
+  if (!context) throw new Error('SettingsTargetProvider is required')
+  const { overviews, activeId } = useRuntime()
+  const resolved = resolveSettingsTarget(overviews, context.target, activeId)
+  return {
+    ...context,
+    ...resolved,
+    projectName:
+      resolved.repository?.name ??
+      (context.target.projectId ? 'Unavailable project' : 'All projects'),
+    computerName: context.target.environmentId
+      ? resolved.source
+        ? runtimeComputerName(resolved.source)
+        : 'Unavailable computer'
+      : 'All computers',
+  }
+}
+/** The target bar above scoped pages, like T3 Code's "Applying settings for". */
 export function ScopedSettings({
   children,
 }: {
   children: (selection: { scope: SettingsScope; repository?: Repository }) => ReactNode
 }) {
   const { colors, styles } = useTheme()
-
-  const context = useContext(Context)
-  if (!context) throw new Error('SettingsTargetProvider is required')
-  const { target, setTarget } = context
+  const { target, setTarget, source, scope, repository, projectName, computerName } =
+    useSettingsTargetState()
   const { overviews, activeId } = useRuntime()
-  const { source, scope, repository } = resolveSettingsTarget(overviews, target, activeId)
   const projects = settingsProjectChoices(overviews, target.environmentId)
   const [expanded, setExpanded] = useApplicationState(false)
+  const selectedIndex = settingsScopes.indexOf(scope)
   return (
     <View style={{ flex: 1, gap: 12 }}>
-      <View style={[styles.card, { gap: 12, marginHorizontal: 12 }]}>
-        <View
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-        >
-          <Text style={[styles.text, { fontSize: 14, fontWeight: '600' }]}>Settings scope</Text>
+      <View
+        accessibilityLabel="Settings target"
+        style={[styles.card, { gap: 10, marginHorizontal: 12 }]}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={[styles.muted, { flex: 1, fontSize: 13, lineHeight: 18 }]}>
+            Applying settings for{' '}
+            <Text style={{ color: colors.text, fontWeight: '600' }}>{projectName}</Text>
+            {' on '}
+            <Text style={{ color: colors.text, fontWeight: '600' }}>{computerName}</Text>
+          </Text>
           <Action
             secondary
             label={expanded ? 'Hide scope choices' : 'Change scope'}
@@ -88,25 +117,28 @@ export function ScopedSettings({
         </View>
         <View
           accessibilityLabel="Settings inheritance"
-          style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}
+          style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}
         >
           {settingsScopes.map((level, index) => {
             const next = settingsTargetAtScope(overviews, target, level, activeId)
             const selected = scope === level
+            const passed = index < selectedIndex
             return (
               <Pressable
                 key={level}
                 accessibilityRole="button"
                 accessibilityLabel={`Edit ${settingsScopeLabels[level]} settings`}
+                accessibilityHint={settingsScopeDescriptions[level]}
                 accessibilityState={{ selected, disabled: !next }}
                 disabled={!next}
                 onPress={() => next && setTarget(next)}
                 style={({ pressed }) => ({
-                  width: '48%',
-                  flexGrow: 1,
+                  width: expanded ? '48%' : undefined,
+                  flexGrow: expanded ? 1 : 0,
                   gap: 4,
-                  padding: 10,
-                  minHeight: expanded ? 76 : 40,
+                  paddingHorizontal: 10,
+                  paddingVertical: expanded ? 10 : 7,
+                  minHeight: expanded ? 76 : 34,
                   borderRadius: 10,
                   borderWidth: 1,
                   borderColor: selected ? colors.accent : colors.border,
@@ -118,9 +150,9 @@ export function ScopedSettings({
                   style={[
                     styles.text,
                     {
-                      fontSize: 13,
+                      fontSize: 12,
                       fontWeight: '600',
-                      color: selected ? colors.accent : colors.text,
+                      color: selected ? colors.accent : passed ? colors.text : colors.muted,
                     },
                   ]}
                 >
@@ -171,11 +203,10 @@ export function ScopedSettings({
         )}
         <Text style={[styles.muted, { fontSize: 12, lineHeight: 17 }]}>
           <Text style={{ color: colors.text, fontWeight: '600' }}>
-            Editing {settingsScopeLabels[scope]} defaults.
+            Editing {settingsScopeLabels[scope]}.
           </Text>{' '}
-          {target.environmentId ? runtimeComputerName(source ?? {}) : 'All computers'}
-          {repository ? ` · ${repository.name}` : ' · All projects'}. Later levels override earlier
-          ones. Inherit or reset to use an earlier value.
+          Later levels override earlier ones; each setting shows its source and which later levels
+          override it.
           {!target.environmentId ? ' Shared defaults sync to paired computers.' : ''}
         </Text>
       </View>

@@ -7,6 +7,7 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'general',
       navigationGroup: 'settings',
+      settingsScope: 'device',
       title: 'General',
       icon: 'runtime',
       order: 0.1,
@@ -18,6 +19,7 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'conversation-settings',
       navigationGroup: 'settings',
+      settingsScope: 'device',
       title: 'Conversation',
       icon: 'runtime',
       order: 0.3,
@@ -29,6 +31,7 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'updates-settings',
       navigationGroup: 'settings',
+      settingsScope: 'device',
       title: 'Updates & about',
       icon: 'runtime',
       order: 0.7,
@@ -39,6 +42,7 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'browser-settings',
       navigationGroup: 'settings',
+      settingsScope: 'device',
       title: 'Browser',
       icon: 'runtime',
       order: 0.6,
@@ -49,6 +53,7 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'notifications',
       navigationGroup: 'settings',
+      settingsScope: 'device',
       title: 'Notifications',
       icon: 'runtime',
       order: 0.4,
@@ -60,6 +65,7 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'appearance',
       navigationGroup: 'settings',
+      settingsScope: 'device',
       title: 'Appearance',
       icon: 'runtime',
       order: 0.2,
@@ -70,6 +76,7 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'diffs',
       navigationGroup: 'settings',
+      settingsScope: 'device',
       title: 'Review & diffs',
       icon: 'runtime',
       order: 3.2,
@@ -81,6 +88,7 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'pull-request-settings',
       navigationGroup: 'settings',
+      settingsScope: 'device',
       title: 'Pull requests',
       icon: 'runtime',
       order: 3.1,
@@ -91,6 +99,7 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'usage',
       navigationGroup: 'settings',
+      settingsScope: 'computer',
       title: 'Usage & limits',
       icon: 'runtime',
       order: 2.4,
@@ -102,6 +111,7 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'shortcuts',
       navigationGroup: 'settings',
+      settingsScope: 'device',
       title: 'Keyboard shortcuts',
       icon: 'runtime',
       order: 0.5,

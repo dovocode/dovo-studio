@@ -51,6 +51,7 @@ export function SettingsRow({
   onPress,
   label,
   testID,
+  mark,
   disabled = false,
   selected = false,
   last = false,
@@ -62,6 +63,8 @@ export function SettingsRow({
   onPress: () => void
   label?: string
   testID?: string
+  /** Where the page saves, shown before the chevron. */
+  mark?: { icon: ComponentProps<typeof Icon>['name']; label: string; accent?: boolean }
   disabled?: boolean
   selected?: boolean
   last?: boolean
@@ -123,6 +126,11 @@ export function SettingsRow({
           )}
         </View>
         {selected && <Icon name="check" size={16} color={colors.accent} />}
+        {mark && (
+          <View accessibilityLabel={mark.label}>
+            <Icon name={mark.icon} size={13} color={mark.accent ? colors.accent : colors.muted} />
+          </View>
+        )}
         <Icon name="next" size={12} color={colors.muted} />
       </View>
     </Pressable>

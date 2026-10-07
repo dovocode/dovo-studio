@@ -1,4 +1,10 @@
-import { settingsAtScope, settingsScopes, scopeEditorDefaults } from './scoped-settings.js'
+import {
+  settingsAtScope,
+  settingsScopes,
+  scopeEditorDefaults,
+  settingsProjectId,
+  type SettingsTarget,
+} from './scoped-settings.js'
 import type { RuntimeDefaults } from './runtime-setup.js'
 import type { Repository, ScopedSettingsValue, SettingsScope } from '../../workspace.js'
 
@@ -67,4 +73,97 @@ export function settingBaseLabel(field: SettingField) {
     case 'setupCommand':
       return 'No setup command · Dovo default'
   }
+}
+
+export type SettingOverrideSource = {
+  profile: { id: string }
+  name: string
+  snapshot: {
+    defaults?: RuntimeDefaults
+    workspace: { repositories: readonly Repository[] }
+  } | null
+}
+export type SettingOverride = {
+  scope: SettingsScope
+  /** Selecting this target edits the override. */
+  target: SettingsTarget
+  /** The computer that stores the override, also for shared project entries. */
+  environmentId: string
+  repositoryId?: string
+  computer?: string
+  project?: string
+  value: unknown
+}
+function storedValue(
+  runtime: RuntimeDefaults | undefined,
+  repository: Repository | undefined,
+  scope: SettingsScope,
+  field: SettingField,
+) {
+  const settings = settingsAtScope(scopeEditorDefaults(runtime), repository, scope)
+  return field.group === 'taskDefaults'
+    ? settings.taskDefaults?.[field.key]
+    : settings.taskBehavior?.[field.key]
+}
+/** Later levels that keep their own value while the selected level changes. A computer lists only
+ * its own projects; a shared project lists each computer's local override. Shared project
+ * overrides appear once even when several computers have the checkout. */
+export function settingOverrides(
+  sources: readonly SettingOverrideSource[],
+  field: SettingField,
+  editing: { scope: SettingsScope; repository?: Repository; environmentId?: string },
+): SettingOverride[] {
+  const later = settingsScopes.slice(settingsScopes.indexOf(editing.scope) + 1)
+  const result: SettingOverride[] = []
+  const sharedProjects = new Set<string>()
+  for (const source of sources) {
+    const snapshot = source.snapshot
+    if (!snapshot || (editing.environmentId && editing.environmentId !== source.profile.id))
+      continue
+    const id = source.profile.id
+    const repositories = snapshot.workspace.repositories.filter(
+      (repository) =>
+        !editing.repository ||
+        (!!repository.gitIdentity && repository.gitIdentity === editing.repository.gitIdentity),
+    )
+    for (const scope of later) {
+      if (scope === 'environment') {
+        const value = storedValue(snapshot.defaults, undefined, scope, field)
+        if (value !== undefined)
+          result.push({
+            scope,
+            target: { environmentId: id, projectId: '' },
+            environmentId: id,
+            computer: source.name,
+            value,
+          })
+        continue
+      }
+      for (const repository of repositories) {
+        const identity = repository.gitIdentity
+        if (scope === 'project' && (!identity || sharedProjects.has(identity))) continue
+        const value = storedValue(snapshot.defaults, repository, scope, field)
+        if (value === undefined) continue
+        if (scope === 'project' && identity) sharedProjects.add(identity)
+        result.push({
+          scope,
+          target: {
+            environmentId: scope === 'project' ? '' : id,
+            projectId: settingsProjectId(repository, id),
+          },
+          environmentId: id,
+          repositoryId: repository.id,
+          computer: scope === 'project' ? undefined : source.name,
+          project: repository.name,
+          value,
+        })
+      }
+    }
+  }
+  return result.sort(
+    (a, b) =>
+      settingsScopes.indexOf(a.scope) - settingsScopes.indexOf(b.scope) ||
+      (a.project ?? '').localeCompare(b.project ?? '') ||
+      (a.computer ?? '').localeCompare(b.computer ?? ''),
+  )
 }

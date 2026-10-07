@@ -21,10 +21,14 @@ export interface StudioViewProps {
 }
 /** Settings sidebar headings, grouped the way Codex and T3 Code organize theirs. */
 export type SettingsSection = 'app' | 'agents' | 'coding' | 'computers' | 'archived'
+export type SettingsStorage = 'device' | 'computer' | 'inherited'
 export interface StudioView {
   navigationGroup?: 'settings' | 'hidden'
   /** Heading a settings page is listed under. */
   settingsSection?: SettingsSection
+  /** Where a settings page stores values: this device, one computer, or the inherited
+   * Global → Computer → Project → Project on computer levels. */
+  settingsScope?: SettingsStorage
   /** Extra words settings search matches, e.g. the controls a page contains. */
   keywords?: string
   id: string
