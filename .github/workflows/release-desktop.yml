@@ -318,14 +318,24 @@ jobs:
       - name: Verify app and installer signatures
         shell: pwsh
         run: |
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signTool) { throw 'Windows SDK SignTool is missing' }
           $paths = @(Get-Content work/windows-signing-files.json -Raw | ConvertFrom-Json)
           $files = @($paths | ForEach-Object { Get-Item -LiteralPath $_ }) + @(Get-ChildItem release -File -Filter *.exe) + @(Get-Item work/windows-app/resources/elevate.exe)
           if (-not (Get-ChildItem release -File -Filter *.exe)) { throw 'Missing signed installer' }
           foreach ($file in $files) {
-            $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
-            if ($signature.Status -ne 'Valid') { throw "Invalid signature: $($file.FullName): $($signature.Status)" }
-            $publisher = $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
-            if ($publisher -cne $env:AZURE_SIGNING_PUBLISHER) { throw "Unexpected publisher: $publisher" }
+            # /pa verifies the embedded signature; /a would prefer Windows catalog signatures.
+            & $signTool.FullName verify /pa /v $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Invalid embedded signature: $($file.FullName)" }
+            $signedCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate]::CreateFromSignedFile($file.FullName)
+            $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($signedCertificate)
+            try {
+              $publisher = $certificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+              if ($publisher -cne $env:AZURE_SIGNING_PUBLISHER) { throw "Unexpected publisher for $($file.FullName): $publisher" }
+            } finally {
+              $certificate.Dispose()
+              $signedCertificate.Dispose()
+            }
           }
       - uses: actions/upload-artifact@v7
         with:
