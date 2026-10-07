@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
 import { Image, View } from 'react-native'
 import { Schema } from 'effect'
-import { projectIcon, projectIconColor, type Repository } from '@dovo/protocol'
+import { projectIcon, projectIconColor, projectIconInitials, type Repository } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 import { Action } from '../../ui/controls/action'
@@ -57,12 +57,17 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
             }}
           >
             <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>
-              {repository.name.slice(0, 2).toUpperCase()}
+              {projectIconInitials(repository)}
             </Text>
           </View>
         )}
         <Text style={[styles.text, { flex: 1 }]}>Project icon</Text>
       </View>
+      <Text style={styles.muted}>
+        {repository.gitIdentity
+          ? 'Custom images sync across paired computers for this Git project.'
+          : 'This project’s icon stays on this computer.'}
+      </Text>
       <View style={styles.row}>
         <Action secondary label="Choose image" disabled={!connected || busy} onPress={choose} />
         {repository.iconOverride && (

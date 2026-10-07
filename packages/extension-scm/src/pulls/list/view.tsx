@@ -1,4 +1,4 @@
-import { githubPullTarget, type PullSummary } from '@dovo/protocol'
+import { uniquePulls, githubPullTarget, type PullSummary } from '@dovo/protocol'
 import { AddPullsToThread } from './add-to-thread'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
@@ -65,7 +65,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
       setSelected(null)
     }
   }, [entityId, activeRuntimeId])
-  const { sources, pages: allPages, busy, connected, more, refresh } = usePulls(state)
+  const { sources, pages: allPages, busy, connected, more, refresh } = usePulls(state, repositoryId)
   const pages = allPages.filter((page) => !repositoryId || page.source.key === repositoryId)
   const openingRef = useRef(false)
   const open = async (source: RepositorySource, number: number) => {
@@ -92,14 +92,15 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
   const creatingSource = sources.find(
     (source) => source.key === creating?.key && source.scope === creating.scope,
   )
-  const filteredPulls = pages
-    .flatMap((page) =>
+  const filteredPulls = uniquePulls(
+    pages.flatMap((page) =>
       page.pulls.map((pull) => ({
         ...pull,
         source: page.source,
         repositoryName: page.source.repository.name,
       })),
-    )
+    ),
+  )
     .filter(
       (p) =>
         (state === 'all' || p.state === state) &&
@@ -171,7 +172,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
   const selectStyle = 'h-8 w-auto max-w-52 rounded-md border bg-background px-2 text-xs'
   const activeFilters = Number(draft !== 'all') + Number(attention)
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {opening && (
         <p role="status" className="px-5 py-2 text-xs text-muted-foreground">
           Opening on its computer…
@@ -182,10 +183,10 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
           {openError}
         </p>
       )}
-      <div className="flex min-h-0 min-w-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <nav
           aria-label="Pull request sidebar"
-          className={`@container/pr-list min-h-0 min-w-0 flex-col ${selected ? 'hidden w-full shrink-0 border-r md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
+          className={`@container/pr-list min-h-0 min-w-0 flex-col overflow-hidden ${selected ? 'hidden w-full shrink-0 border-r md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
         >
           <>
             <PageHeader title="Pull requests">
@@ -423,7 +424,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
               </div>
             </div>
           </>
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
             <p className="px-3 py-2 text-xs text-muted-foreground" role="status">
               {pulls.length} loaded pull request{pulls.length === 1 ? '' : 's'}
               {pages.some((page) => page.hasMore) ? ' · more available' : ''}
@@ -505,7 +506,10 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
             {pages.map((page) => (
               <div key={page.source.key} className="mt-3">
                 {page.error && (
-                  <p role="alert" className="text-xs text-destructive">
+                  <p
+                    role="alert"
+                    className="break-words text-xs text-destructive [overflow-wrap:anywhere]"
+                  >
                     {page.source.repository.name} · {page.source.runtimeName}: {page.error}
                   </p>
                 )}
@@ -513,11 +517,14 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                   <Button
                     size="sm"
                     variant="outline"
+                    className="max-w-full"
                     disabled={busy || !page.source.connected}
                     onClick={() => void more(page.source.key)}
                   >
-                    {page.error ? 'Retry' : 'Load more'} · {page.source.repository.name} ·{' '}
-                    {page.source.runtimeName}
+                    <span className="min-w-0 truncate">
+                      {page.error ? 'Retry' : 'Load more'} · {page.source.repository.name} ·{' '}
+                      {page.source.runtimeName}
+                    </span>
                   </Button>
                 )}
               </div>

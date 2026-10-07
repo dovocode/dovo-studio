@@ -482,22 +482,21 @@ export function startLocalRuntime(
     ),
   )
 }
+function stopOwnedRuntime() {
+  return Effect.gen(function* () {
+    yield* Effect.tryPromise({ try: stopWslRuntime, catch: failure })
+    if (!owned) return
+    owned.stopping = true
+    yield* Scope.close(owned.scope, Exit.void)
+    owned = undefined
+  })
+}
 /** Quit: stop the owned runtime and never relaunch it afterwards. */
 export function stopLocalRuntime() {
   quitting = true
   clearTimeout(relaunchTimer)
   relaunchTimer = undefined
-  return Effect.runPromise(
-    lifecycle.withPermits(1)(
-      Effect.gen(function* () {
-        yield* Effect.tryPromise({ try: stopWslRuntime, catch: failure })
-        if (!owned) return
-        owned.stopping = true
-        yield* Scope.close(owned.scope, Exit.void)
-        owned = undefined
-      }),
-    ),
-  )
+  return Effect.runPromise(lifecycle.withPermits(1)(stopOwnedRuntime()))
 }
 
 /** Updating the installed bundle also updates its supervised runtime, unlike ordinary Quit. */
@@ -594,24 +593,55 @@ export async function localRuntimeNetwork(directory: string, address: string) {
 }
 
 /** Switching environments stops only runtimes owned by this desktop. External servers stay intact. */
-export async function pauseLocalRuntime() {
-  const connection = owned?.connection ?? wslRuntimeConnection()
-  if (connection) {
-    const state = await runtimeRequest(
-      connection,
-      connection.address,
-      '/api/snapshot',
-      undefined,
-      mutableStruct({
-        workspace: mutableStruct({ tasks: Schema.Array(mutableStruct({ status: Schema.String })) }),
+export function pauseLocalRuntime() {
+  return Effect.runPromise(
+    lifecycle.withPermits(1)(
+      Effect.gen(function* () {
+        const native = owned && !exited(owned.child) ? owned : undefined
+        const connection = native?.connection ?? wslRuntimeConnection()
+        if (connection) {
+          const state = yield* Effect.tryPromise({
+            try: () =>
+              runtimeRequest(
+                connection,
+                connection.address,
+                '/api/snapshot',
+                undefined,
+                mutableStruct({
+                  workspace: mutableStruct({
+                    tasks: Schema.Array(mutableStruct({ status: Schema.String })),
+                  }),
+                }),
+                'GET',
+              ),
+            catch: failure,
+          }).pipe(
+            Effect.catch((cause) => {
+              // A crash during this request has no live work to inspect. Never assume that a
+              // still-running process is idle just because its HTTP listener is unreachable.
+              if (native ? exited(native.child) : !wslRuntimeConnection())
+                return Effect.succeed(undefined)
+              return Effect.fail(
+                new Error(
+                  'Cannot check active work on the current runtime. Reconnect to it or stop it before switching execution environments.',
+                  { cause },
+                ),
+              )
+            }),
+          )
+          if (state?.workspace.tasks.some((task) => task.status === 'running'))
+            return yield* Effect.fail(
+              new Error('Finish or stop active runs before switching execution environments.'),
+            )
+        }
+        quitting = true
+        clearTimeout(relaunchTimer)
+        relaunchTimer = undefined
+        yield* stopOwnedRuntime()
+        quitting = false
       }),
-      'GET',
-    )
-    if (state.workspace.tasks.some((task) => task.status === 'running'))
-      throw new Error('Finish or stop active runs before switching execution environments.')
-  }
-  await stopLocalRuntime()
-  quitting = false
+    ),
+  )
 }
 export async function setLocalRuntimeNetwork(
   directory: string,

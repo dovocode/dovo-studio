@@ -176,3 +176,8 @@ export * from './tasks/delegation.js'
 export * from './random-uuid.js'
 
 export * from './automation/triggers.js'
+
+export * from './scm/pulls/pull-sources.js'
+
+export * from './runtime/connection/setting-layers.js'
+export * from './runtime/connection/project-icons.js'

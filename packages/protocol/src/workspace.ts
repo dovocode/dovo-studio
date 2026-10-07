@@ -130,8 +130,15 @@ export const taskBehaviorSchema = mutableStruct({
   continueAfterRestart: Schema.optional(Schema.Boolean),
 })
 export type TaskBehavior = Schema.Schema.Type<typeof taskBehaviorSchema>
+export const projectIconSchema = maxValue(
+  Schema.String.pipe(Schema.check(Schema.isPattern(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/))),
+  50000,
+)
+
 /** Settings that can inherit across computers and projects. */
 export const scopedSettingsValueSchema = mutableStruct({
+  /** Null resets custom icons across computers without resurrecting local overrides. */
+  projectIcon: Schema.optional(Schema.NullOr(projectIconSchema)),
   agents: Schema.optional(maxValue(mutableArray(agentPresetSchema), 100)),
   taskDefaults: Schema.optional(projectTaskDefaultsSchema),
   taskBehavior: Schema.optional(taskBehaviorSchema),
@@ -167,14 +174,7 @@ export const repositorySchema = mutableStruct({
   /** Missing means a Git project, preserving existing workspaces. */
   kind: Schema.optional(Schema.Literals(['folder', 'scratch'])),
   /** User-selected project icon, stored as a small PNG for every client. */
-  iconOverride: Schema.optional(
-    maxValue(
-      Schema.String.pipe(
-        Schema.check(Schema.isPattern(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)),
-      ),
-      50000,
-    ),
-  ),
+  iconOverride: Schema.optional(projectIconSchema),
   /** Derived from files in the project checkout by the runtime. */
   discoveredIcon: Schema.optional(
     maxValue(
@@ -192,6 +192,8 @@ export const repositorySchema = mutableStruct({
   templates: Schema.optional(maxValue(mutableArray(taskTemplateSchema), 30)),
   actions: Schema.optional(maxValue(mutableArray(projectActionSchema), 20)),
   prompts: Schema.optional(maxValue(mutableArray(savedPromptSchema), 40)),
+  /** Runtime-derived PR target, including explicit forge bindings. No credentials. */
+  pullIdentity: Schema.optional(Schema.String),
   gitIdentity: Schema.optional(Schema.String),
   gitIdentityError: Schema.optional(Schema.String),
   taskDefaults: Schema.optional(projectTaskDefaultsSchema),
@@ -753,12 +755,17 @@ const projectColors = [
   '#047857',
   '#9f1239',
 ] as const
-/** Repository IDs are random at creation, so this gives each fallback icon one stable color. */
+/** Git identity keeps the same project colour across independently added checkouts. */
 export function projectIconColor(repository: Repository | undefined) {
   if (!repository) return projectColors[0]
   let hash = 2166136261
-  for (const char of repository.id) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619)
+  for (const char of repository.gitIdentity ?? repository.id)
+    hash = Math.imul(hash ^ char.charCodeAt(0), 16777619)
   return projectColors[(hash >>> 0) % projectColors.length]
+}
+export function projectIconInitials(repository: Repository | undefined, fallbackName = 'P') {
+  const name = repository?.gitIdentity?.split('/').pop() || repository?.name || fallbackName
+  return name.slice(0, 2).toUpperCase()
 }
 export type Task = Schema.Schema.Type<typeof taskSchema>
 export type ChangedFile = Schema.Schema.Type<typeof fileSchema>

@@ -6,7 +6,7 @@ import { homedir } from 'node:os'
 import { discoverNetworks, resolveBindHost } from './network.js'
 import { publishConnection } from './connection.js'
 import { writePrivateJson } from './server-config.js'
-import { RuntimeHost, runtimeLayer } from '@dovo/runtime'
+import { RuntimeHost, runtimeLayer, initializeAgentDefaults } from '@dovo/runtime'
 import { acquireProcessLock } from './process-lock.js'
 import { runtimeOwnerToken } from './owner-token.js'
 import { knownToolDirectories, loginShellPath, mergePath } from './login-path.js'
@@ -117,6 +117,11 @@ const program = Effect.scoped(
     const externalPort = Number(process.env.PORT ?? 8787)
     yield* Effect.gen(function* () {
       const runtime = yield* RuntimeHost
+      yield* Effect.tryPromise({
+        try: () => initializeAgentDefaults(runtime.services),
+        catch: (cause) =>
+          new RuntimeProcessError({ operation: 'initialize agent defaults', cause }),
+      })
       const clientHost =
         desktopDualListener || ['0.0.0.0', '::'].includes(bindHost) ? '127.0.0.1' : bindHost
       const address = `http://${clientHost.includes(':') ? `[${clientHost}]` : clientHost}:${runtime.port}`

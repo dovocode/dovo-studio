@@ -1,4 +1,4 @@
-import { projectIcon, projectIconColor, type Repository } from '@dovo/protocol'
+import { projectIcon, projectIconColor, projectIconInitials, type Repository } from '@dovo/protocol'
 import { cn } from './lib/utils'
 
 export function ProjectIcon({
@@ -21,7 +21,7 @@ export function ProjectIcon({
       {icon ? (
         <img src={icon} alt="" className="size-full object-contain" />
       ) : (
-        (repository?.name ?? 'P').slice(0, 2)
+        projectIconInitials(repository)
       )}
     </span>
   )

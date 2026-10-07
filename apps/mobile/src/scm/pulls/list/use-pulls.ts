@@ -2,7 +2,13 @@ import { useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
 import { Effect, Schema, Semaphore } from 'effect'
 import { startPolling, clientTaskScope } from '@dovo/client-runtime'
-import { mutableArray, mutableStruct, pullPageSchema, type PullPage } from '@dovo/protocol'
+import {
+  selectPullSources,
+  mutableArray,
+  mutableStruct,
+  pullPageSchema,
+  type PullPage,
+} from '@dovo/protocol'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { refreshFirstPage, shouldSweepWorkPages } from '../../work/collection-pages'
 import { useRuntime } from '../../../runtime/connection/provider'
@@ -34,9 +40,10 @@ const cacheKey = (repository: Repository, state: string) =>
 export function usePulls(repositoryId: string, state: string) {
   const { focused: enabled } = useNavigation()
   const { readRuntimeEffect: request, overviews, cacheForRuntime } = useRuntime()
-  const sources = collectionSources(overviews).filter(
+  const allSources = collectionSources(overviews).filter(
     (source) => !repositoryId || source.key === repositoryId,
   )
+  const sources = selectPullSources(allSources)
   const key = collectionSourceIdentity(sources)
   const sourcesRef = useRef(sources)
   sourcesRef.current = sources
@@ -344,7 +351,7 @@ export function usePulls(repositoryId: string, state: string) {
         })
   return {
     pages: values,
-    sources,
+    sources: allSources,
     busy,
     connected,
     more: (id: string) => moreRef.current(id),

@@ -167,6 +167,7 @@ function TaskDefaultSettingsForm({
       origin && (
         <SettingSource
           {...origin}
+          setting={{ field: { group: 'taskDefaults', key }, repository, scope, value: draft[key] }}
           label={origin.label}
           disabled={disabled}
           onReset={() => change({ ...draft, [key]: undefined })}
@@ -553,6 +554,12 @@ function TaskDefaultSettingsForm({
                   legacyBehavior[key] !== undefined,
                 )}
                 label={label}
+                setting={{
+                  field: { group: 'taskBehavior', key },
+                  repository,
+                  scope,
+                  value: behavior[key],
+                }}
                 disabled={disabled}
                 onReset={() => {
                   setBehavior({ ...behavior, [key]: undefined })
@@ -583,6 +590,12 @@ function TaskDefaultSettingsForm({
           />
           <SettingSource
             {...taskBehaviorOrigin(snapshot?.defaults, repository, scope, behavior, 'inactiveDays')}
+            setting={{
+              field: { group: 'taskBehavior', key: 'inactiveDays' },
+              repository,
+              scope,
+              value: behavior.inactiveDays,
+            }}
             label="Days of inactivity before settling"
             disabled={disabled}
             onReset={() => {

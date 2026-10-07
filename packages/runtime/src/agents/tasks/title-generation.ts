@@ -63,6 +63,11 @@ export class TitleGeneration {
         })),
       }))
   }
+  hasSavedSettings() {
+    return (
+      this.db.prepare('SELECT 1 FROM documents WHERE id = ?').get('title-generation') !== undefined
+    )
+  }
   read() {
     const row = decode(
       Schema.UndefinedOr(

@@ -1,3 +1,9 @@
+import { randomUUID } from 'node:crypto'
+import {
+  initializeScopedSettings,
+  mergeSharedSettings,
+  sharedProjectIconEntry,
+} from '@dovo/protocol'
 import {
   linkedPullRequestSchema,
   addTaskPullLinks,
@@ -101,8 +107,15 @@ export function scmRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request, 4 * 1024 * 1024)),
         )
-        if (!s.store.get().repositories.some((repo) => repo.id === input.repositoryId))
-          throw new HttpError(404, 'Project not found')
+        let repository = s.store.get().repositories.find((repo) => repo.id === input.repositoryId)
+        if (!repository) throw new HttpError(404, 'Project not found')
+        // Resolve the current remote rather than sharing under a stale cached identity.
+        const isGitProject =
+          !repository.kind && (yield* serviceResult(s.git.isRepository(repository.path)))
+        const gitIdentity = isGitProject
+          ? yield* serviceResult(s.git.repositoryIdentity(repository.path, true))
+          : undefined
+        repository = { ...repository, gitIdentity }
         let iconOverride: string | undefined
         if (input.data) {
           const source = Buffer.from(input.data, 'base64')
@@ -122,10 +135,29 @@ export function scmRoute(request: IncomingMessage, path: string) {
           if (iconOverride.length > 50000)
             throw new HttpError(413, 'This image is too detailed for a task icon')
         }
+        const current = s.defaults.get()
+        const scoped = initializeScopedSettings(current)
+        const entry = sharedProjectIconEntry(
+          { ...current, scopedSettings: scoped },
+          repository,
+          iconOverride,
+          {
+            updatedAt: Math.max(Date.now(), ...scoped.shared.map((entry) => entry.updatedAt + 1)),
+            changeId: randomUUID(),
+          },
+        )
+        if (entry)
+          s.defaults.save(
+            {
+              ...current,
+              scopedSettings: { ...scoped, shared: mergeSharedSettings(scoped.shared, [entry]) },
+            },
+            false,
+          )
         s.store.update((workspace) => ({
           ...workspace,
           repositories: workspace.repositories.map((repo) =>
-            repo.id === input.repositoryId ? { ...repo, iconOverride } : repo,
+            repo.id === input.repositoryId ? { ...repo, gitIdentity, iconOverride } : repo,
           ),
         }))
         return yield* serviceResult({ ok: true })

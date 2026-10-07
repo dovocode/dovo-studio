@@ -1,3 +1,6 @@
+import sharp from 'sharp'
+import { Effect } from 'effect'
+import { runtimeSnapshot } from '../support/runtime-snapshot'
 import { expect, it } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -52,6 +55,12 @@ async function fixture() {
   }
   return {
     runtime,
+    icon: (input: unknown) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/scm/repositories/icon`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
     call,
     read,
     save,
@@ -594,5 +603,60 @@ it('inherits lifecycle policy across all four scopes and resets individual overr
     expect((await f.save('global', { taskBehavior: { inactiveDays: 366 } })).status).toBe(400)
   } finally {
     await f.close()
+  }
+})
+
+it('shares uploaded project icons and resets across different runtime repository IDs', async () => {
+  const a = await fixture(),
+    b = await fixture()
+  try {
+    await a.save('project', { taskDefaults: { setupCommand: 'pnpm install' } })
+    await b.read('project')
+    b.runtime.services.store.update((workspace) => ({
+      ...workspace,
+      repositories: workspace.repositories.map((repo) => ({ ...repo, id: 'other-project' })),
+    }))
+    const image = await sharp({
+      create: { width: 2, height: 2, channels: 4, background: '#ff0000' },
+    })
+      .png()
+      .toBuffer()
+    expect((await a.icon({ repositoryId: 'project', data: image.toString('base64') })).status).toBe(
+      200,
+    )
+    const uploaded = a.runtime.services.defaults.get().scopedSettings?.shared
+    expect((await a.read('project')).value.taskDefaults?.setupCommand).toBe('pnpm install')
+    expect((await b.call('settings/sync', { shared: uploaded })).status).toBe(200)
+    const snapshot = await Effect.runPromise(
+      runtimeSnapshot(b.runtime.services, { id: 'owner', owner: true }),
+    )
+    const icon = snapshot.workspace.repositories.find(
+      (repo) => repo.id === 'other-project',
+    )?.iconOverride
+    expect(icon).toMatch(/^data:image\/png;base64,/)
+    // Keep an old local upload to verify that a shared reset suppresses it.
+    b.runtime.services.store.update((workspace) => ({
+      ...workspace,
+      repositories: workspace.repositories.map((repo) => ({ ...repo, iconOverride: icon })),
+    }))
+    expect((await a.icon({ repositoryId: 'project' })).status).toBe(200)
+    const reset = a.runtime.services.defaults.get().scopedSettings?.shared
+    await b.call('settings/sync', { shared: reset })
+    await b.call('settings/sync', { shared: uploaded })
+    const cleared = await Effect.runPromise(
+      runtimeSnapshot(b.runtime.services, { id: 'owner', owner: true }),
+    )
+    expect(
+      cleared.workspace.repositories.find((repo) => repo.id === 'other-project')?.iconOverride,
+    ).toBeUndefined()
+    expect(
+      b.runtime.services.defaults
+        .get()
+        .scopedSettings?.shared.find((entry) => entry.key === 'project:github.com/team/project')
+        ?.value.projectIcon,
+    ).toBeNull()
+  } finally {
+    await a.close()
+    await b.close()
   }
 })

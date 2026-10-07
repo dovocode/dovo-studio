@@ -1,6 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import { decode } from './shared/schema'
-import { projectIcon, projectIconColor, repositorySchema } from './workspace'
+import { projectIcon, projectIconColor, projectIconInitials, repositorySchema } from './workspace'
 
 it('uses the project override for every task and falls back to its discovered icon', () => {
   const repository = decode(repositorySchema, {
@@ -28,4 +28,18 @@ it('keeps a distinct fallback color stable for each project ID', () => {
   expect(projectIconColor({ ...repository, id: 'def94854-49b4-4d40-a360-7322681fb3c7' })).not.toBe(
     projectIconColor(repository),
   )
+})
+
+it('uses Git identity for consistent colours and initials across machines', () => {
+  const repository = decode(repositorySchema, {
+    id: 'one',
+    name: 'My checkout',
+    path: '/app',
+    branch: 'main',
+    gitIdentity: 'github.com/team/project',
+  })
+  const other = { ...repository, id: 'two', name: 'Work app', path: '/other' }
+  expect(projectIconColor(other)).toBe(projectIconColor(repository))
+  expect(projectIconInitials(other)).toBe('PR')
+  expect(projectIconInitials(repository)).toBe('PR')
 })

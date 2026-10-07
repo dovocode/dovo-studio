@@ -174,6 +174,12 @@ export function TaskBehaviorSettings({
               source={
                 <SettingSource
                   label={label}
+                  setting={{
+                    field: { group: 'taskBehavior', key },
+                    repository,
+                    scope,
+                    value: draft[key],
+                  }}
                   origin={taskBehaviorOrigin(
                     snapshot?.defaults,
                     repository,
@@ -207,6 +213,12 @@ export function TaskBehaviorSettings({
             source={
               <SettingSource
                 label="Days of inactivity before settling"
+                setting={{
+                  field: { group: 'taskBehavior', key: 'inactiveDays' },
+                  repository,
+                  scope,
+                  value: draft.inactiveDays,
+                }}
                 origin={taskBehaviorOrigin(
                   snapshot?.defaults,
                   repository,

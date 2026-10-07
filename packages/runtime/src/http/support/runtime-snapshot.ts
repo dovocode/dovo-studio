@@ -1,6 +1,10 @@
+import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import { Effect } from 'effect'
 import {
+  forgePullIdentity,
+  sharedProjectIcon,
+  migrateProjectIcons,
   RUNTIME_PROTOCOL_VERSION,
   runtimeDefaultsSchema,
   decode,
@@ -20,8 +24,18 @@ export function runtimeSnapshot(
   pagedHistory = false,
 ) {
   return Effect.gen(function* () {
+    const migrated = migrateProjectIcons(s.defaults.get(), s.store.get().repositories, {
+      updatedAt: Date.now(),
+      changeId: randomUUID(),
+    })
+    if (migrated) s.defaults.save(migrated, false)
     const revision = s.store.version()
     const storedWorkspace = s.store.publicWorkspace()
+    const forgeConnections = new Map(
+      storedWorkspace.repositories.some((repository) => repository.forge)
+        ? s.forges.list().map((connection) => [connection.id, connection] as const)
+        : [],
+    )
     const scratch = yield* serviceResult(s.scratch.available())
     const workspace =
       scratch && !storedWorkspace.repositories.some((repo) => repo.id === scratch.id)
@@ -59,8 +73,17 @@ export function runtimeSnapshot(
             : workspace),
         repositories: yield* Effect.forEach(
           workspace.repositories,
-          (repo) =>
+          (storedRepository) =>
             Effect.gen(function* () {
+              const binding = storedRepository.forge
+              const connection = binding && forgeConnections.get(binding.connectionId)
+              const repo = {
+                ...storedRepository,
+                pullIdentity:
+                  connection && binding
+                    ? forgePullIdentity(connection, binding.repository)
+                    : undefined,
+              }
               if (repo.kind === 'scratch')
                 return { ...repo, gitIdentity: undefined, gitIdentityError: undefined }
               const discoveredIcon = yield* serviceResult(discoverProjectIcon(repo.path))
@@ -94,6 +117,7 @@ export function runtimeSnapshot(
                     ...repo,
                     discoveredIcon,
                     gitIdentity,
+                    iconOverride: sharedProjectIcon(s.defaults.get(), { ...repo, gitIdentity }),
                     gitIdentityError: undefined,
                   }
                 }),

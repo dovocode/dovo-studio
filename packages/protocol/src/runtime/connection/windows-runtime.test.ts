@@ -12,3 +12,14 @@ it('interprets the exact ASR rule, including uppercase and braced identifiers', 
   expect(windowsAsrGuidance('unknown-rule')).toContain('investigate')
   expect(windowsAsrGuidance('svchost.exe')).not.toContain('LSASS')
 })
+
+it('removes Electron and FiberFailure transport prefixes from visible errors', async () => {
+  const { windowsRuntimeErrorMessage } = await import('./windows-runtime')
+  expect(
+    windowsRuntimeErrorMessage(
+      new Error(
+        "Error invoking remote method 'runtime:windows-save': (FiberFailure) Error: WSL localhost forwarding is unavailable",
+      ),
+    ),
+  ).toBe('WSL localhost forwarding is unavailable')
+})

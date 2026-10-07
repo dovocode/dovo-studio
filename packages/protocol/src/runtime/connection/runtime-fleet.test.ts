@@ -480,3 +480,108 @@ it('refreshes task snapshots without a per-project PR sweep, retaining approxima
     new URL('http://one.local:51464/api/snapshot?scope=overview'),
   )
 })
+
+it('queries each remote only on one connected runtime, retaining that account and clearing duplicate summaries', async () => {
+  const { loadFleetPullOverviewsEffect } = await import('./runtime-fleet')
+  const repo = { ...snapshot.workspace.repositories[0], gitIdentity: 'github.com/org/repo' }
+  const first: RuntimeOverview = {
+    ...overview,
+    snapshot: {
+      ...snapshot,
+      workspace: { ...snapshot.workspace, repositories: [repo, { ...repo, id: 'worktree' }] },
+    },
+  }
+  const second = { ...first, profile: other }
+  const fetch = vi.fn<typeof globalThis.fetch>(() =>
+    Promise.resolve(json({ pulls: [{ ...pull, viewerIsAuthor: false }], page: 1, hasMore: false })),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const values: RuntimeOverview[] = []
+  await Effect.runPromise(
+    loadFleetPullOverviewsEffect([second, first], (value) => values.push(value)),
+  )
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(fetch.mock.calls[0][0]).toEqual(new URL('http://one.local:51464/api/scm/pulls/overview'))
+  const body = fetch.mock.calls[0][1]?.body
+  if (typeof body !== 'string') throw new Error('Expected a JSON request body')
+  expect(JSON.parse(body)).toMatchObject({ repositoryId: 'same-repo' })
+  expect(values.find((entry) => entry.profile.id === other.id)?.pulls?.total).toBe(0)
+  expect(values.find((entry) => entry.profile.id === profile.id)?.pulls?.total).toBe(1)
+  fetch.mockClear()
+  values.length = 0
+  await Effect.runPromise(
+    loadFleetPullOverviewsEffect([{ ...first, connected: false }, second], (value) =>
+      values.push(value),
+    ),
+  )
+  expect(values.find((entry) => entry.profile.id === profile.id)?.pulls?.total).toBe(0)
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(fetch.mock.calls[0][0]).toEqual(new URL('http://two.local:51464/api/scm/pulls/overview'))
+})
+
+it('retains separate hosts and credentials and skips summaries within their freshness window', async () => {
+  const { loadFleetPullOverviewsEffect } = await import('./runtime-fleet')
+  const first = {
+    ...overview,
+    snapshot: {
+      ...snapshot,
+      workspace: {
+        ...snapshot.workspace,
+        repositories: [
+          { ...snapshot.workspace.repositories[0], gitIdentity: 'github.com/org/repo' },
+        ],
+      },
+    },
+  }
+  const second = {
+    ...first,
+    profile: other,
+    snapshot: {
+      ...first.snapshot,
+      workspace: {
+        ...first.snapshot.workspace,
+        repositories: [
+          {
+            ...first.snapshot.workspace.repositories[0],
+            gitIdentity: 'enterprise.example/org/repo',
+          },
+        ],
+      },
+    },
+  }
+  const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+    const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+    const firstAccount = address.includes('one.local')
+    expect(new Headers(init?.headers).get('authorization')).toBe(
+      `Bearer ${firstAccount ? profile.connection.token : other.connection.token}`,
+    )
+    return json({
+      pulls: [
+        {
+          ...pull,
+          url: `https://${firstAccount ? 'github.com' : 'enterprise.example'}/org/repo/pull/1`,
+          viewerReviewRequested: firstAccount,
+        },
+      ],
+      page: 1,
+      hasMore: false,
+    })
+  })
+  vi.stubGlobal('fetch', fetch)
+  const values: RuntimeOverview[] = []
+  await Effect.runPromise(
+    loadFleetPullOverviewsEffect([first, second], (value) => values.push(value)),
+  )
+  expect(fetch).toHaveBeenCalledTimes(2)
+  expect(values.find((entry) => entry.profile.id === profile.id)?.pulls?.reviewRequested).toBe(1)
+  expect(values.find((entry) => entry.profile.id === other.id)?.pulls?.reviewRequested).toBe(0)
+  fetch.mockClear()
+  await Effect.runPromise(
+    loadFleetPullOverviewsEffect(
+      [first, second],
+      () => {},
+      () => false,
+    ),
+  )
+  expect(fetch).not.toHaveBeenCalled()
+})

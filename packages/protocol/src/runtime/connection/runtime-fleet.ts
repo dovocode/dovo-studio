@@ -8,7 +8,8 @@ import { pullPageSchema } from '../../scm/pulls/pulls.js'
 import type { PullSummary } from '../../scm/pulls/pulls.js'
 import { pullNeedsAttention } from '../../scm/pulls/pull-presentation.js'
 import { isSnoozed } from '../../tasks/task-priority.js'
-import type { Task } from '../../workspace.js'
+import { selectPullSources } from '../../scm/pulls/pull-sources.js'
+import type { Repository, Task } from '../../workspace.js'
 /** People type what their computer shows, often without a scheme. Plain HTTP is the
  * supported LAN/VPN default, so a bare host is never upgraded to HTTPS. */
 export function normalizeRuntimeAddress(value: string) {
@@ -223,7 +224,65 @@ export function loadRuntimeOverviewEffect(
         pulls: cached?.pulls ? { ...cached.pulls, partial: true } : null,
         pullError: cached?.pullError ?? null,
       }
-    const repositories = snapshot.workspace.repositories
+    return yield* loadRuntimePullOverviewEffect(profile, snapshot, cached)
+  })
+}
+
+/** Snapshot discovery finishes for the whole fleet before remote PR reads start. */
+export function loadFleetPullOverviewsEffect(
+  entries: readonly RuntimeOverview[],
+  onOverview: (overview: RuntimeOverview) => void,
+  shouldLoad: (entry: RuntimeOverview, repositories: readonly Repository[]) => boolean = () => true,
+): Effect.Effect<void> {
+  const sources = selectPullSources(
+    entries.flatMap((entry) =>
+      (entry.snapshot?.workspace.repositories ?? [])
+        .filter((repository) => !repository.kind)
+        .map((repository) => ({
+          key: JSON.stringify([entry.profile.id, repository.id]),
+          connected: entry.connected,
+          repository,
+          runtimeId: entry.profile.id,
+        })),
+    ),
+  )
+  return Effect.forEach(
+    entries.filter((entry) => entry.snapshot),
+    (entry) => {
+      const snapshot = entry.snapshot
+      if (!snapshot) return Effect.void
+      const repositories = sources
+        .filter((source) => source.runtimeId === entry.profile.id)
+        .map((source) => source.repository)
+      if (!repositories.length)
+        return Effect.sync(() =>
+          onOverview({
+            ...entry,
+            pulls: { total: 0, needsAttention: 0, reviewRequested: 0, partial: false },
+            pullError: null,
+          }),
+        )
+      if (!entry.connected || !shouldLoad(entry, repositories)) return Effect.void
+      return loadRuntimePullOverviewEffect(entry.profile, snapshot, entry, repositories).pipe(
+        Effect.tap((overview) => Effect.sync(() => onOverview(overview))),
+      )
+    },
+    // Each runtime reads up to three repositories; do not multiply that budget by the fleet.
+    { concurrency: 1, discard: true },
+  )
+}
+
+function loadRuntimePullOverviewEffect(
+  profile: RuntimeProfile,
+  snapshot: RuntimeSnapshot,
+  cached?: RuntimeOverview,
+  repositories: readonly Repository[] = selectPullSources(
+    snapshot.workspace.repositories
+      .filter((repository) => !repository.kind)
+      .map((repository) => ({ key: repository.id, repository, connected: true })),
+  ).map((source) => source.repository),
+): Effect.Effect<RuntimeOverview> {
+  return Effect.gen(function* () {
     // Concurrency belongs to the parent fiber; interruption cancels every child request.
     const pages = yield* Effect.forEach(
       repositories,
@@ -266,7 +325,7 @@ export function loadRuntimeOverviewEffect(
       profile,
       snapshot,
       connected: true,
-      lastSeen,
+      lastSeen: new Date().toISOString(),
       error: null,
       pulls:
         loaded || !repositories.length

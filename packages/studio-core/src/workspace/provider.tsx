@@ -54,6 +54,8 @@ import {
   upsertRuntime,
   removeRuntime,
   loadRuntimeOverviewEffect,
+  loadFleetPullOverviewsEffect,
+  pullOverviewScope,
   runtimeRequestEffect,
   clearRuntimeRequestCache,
   getRuntimeSnapshotTag,
@@ -998,8 +1000,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   )
   const refreshRuntimesEffect = useCallback(
     () =>
-      Effect.suspend(() =>
-        Effect.forEach(
+      Effect.gen(function* () {
+        yield* Effect.forEach(
           registryRef.current.profiles,
           (profile) =>
             Effect.gen(function* () {
@@ -1036,6 +1038,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   receiveSnapshot,
                   false,
                   runtimeSyncOnline(profile.connection),
+                  { loadPulls: false },
                 )
                 if (!valid()) return
                 const previous = overviewsRef.current[profile.id]
@@ -1060,8 +1063,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               )
             }),
           { concurrency: 3, discard: true },
-        ),
-      ),
+        )
+        yield* loadFleetPullOverviewsEffect(
+          registryRef.current.profiles.flatMap((profile) => {
+            const entry = overviewsRef.current[profile.id]
+            return entry && entry.profile.connection.token === profile.connection.token
+              ? [entry]
+              : []
+          }),
+          (value) => {
+            const previous = overviewsRef.current[value.profile.id]
+            if (
+              !previous ||
+              previous.profile.connection.token !== value.profile.connection.token ||
+              previous.profile.connection.address !== value.profile.connection.address ||
+              !previous.snapshot ||
+              !value.snapshot ||
+              pullOverviewScope(previous.snapshot.workspace.repositories) !==
+                pullOverviewScope(value.snapshot.workspace.repositories) ||
+              !registryRef.current.profiles.some(
+                (profile) =>
+                  profile.id === value.profile.id &&
+                  profile.connection.token === value.profile.connection.token,
+              )
+            )
+              return
+            updateOverview({ ...previous, pulls: value.pulls, pullError: value.pullError })
+          },
+        )
+      }),
     [installSnapshot, synchronization, updateOverview],
   )
   const refreshRuntimes = useCallback(

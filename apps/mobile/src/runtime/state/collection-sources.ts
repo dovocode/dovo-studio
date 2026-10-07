@@ -39,6 +39,8 @@ export const collectionSourceIdentity = (sources: ProjectSource[]) =>
         path: repository.path,
         name: repository.name,
         forge: repository.forge,
+        gitIdentity: repository.gitIdentity,
+        pullIdentity: repository.pullIdentity,
         jira: repository.jira,
       },
     })),
@@ -51,6 +53,8 @@ export const projectContentIdentity = ({ key, profile, repository }: ProjectSour
     profile.connection.address,
     profile.connection.token,
     repository.path,
+    repository.gitIdentity,
+    repository.pullIdentity,
     repository.forge,
     repository.jira,
   ])

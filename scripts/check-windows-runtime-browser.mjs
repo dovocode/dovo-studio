@@ -12,7 +12,7 @@ const built = await build({
     ),
   },
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {WindowsRuntimeGate} from './src/windows-runtime.tsx';createRoot(document.getElementById('app')).render(<WindowsRuntimeGate><p>Workspace ready</p></WindowsRuntimeGate>);`,
+    contents: `import {createRoot} from 'react-dom/client';import {WindowsRuntimeGate,WindowsRuntimeSettings} from './src/windows-runtime.tsx';createRoot(document.getElementById('app')).render(location.search === '?settings' ? <WindowsRuntimeSettings/> : <WindowsRuntimeGate><p>Workspace ready</p></WindowsRuntimeGate>);`,
     resolveDir: new URL('../packages/extension-runtime/', import.meta.url).pathname,
     loader: 'tsx',
   },
@@ -53,12 +53,15 @@ try {
     status,
     fail = false,
     security = { checkedAt: '2026-10-06T10:00:00Z', status: 'ok', events: [] },
+    settings = false,
   ) => {
-    await page.goto('https://dovo.test/')
+    await page.goto(settings ? 'https://dovo.test/?settings' : 'https://dovo.test/')
     await page.evaluate(
       ({ status, fail, security }) => {
         window.saved = []
         window.connectionChecks = 0
+        window.failConnection = fail
+        window.holdConnection = false
         window.securityChecks = 0
         window.copiedReport = ''
         Object.defineProperty(navigator, 'clipboard', {
@@ -78,7 +81,9 @@ try {
             read: async () => status,
             connection: async () => {
               window.connectionChecks++
-              if (fail) throw new Error('Distribution no longer available')
+              if (window.holdConnection)
+                await new Promise((resolve) => (window.releaseConnection = resolve))
+              if (window.failConnection) throw new Error('Distribution no longer available')
               return {
                 address: 'http://127.0.0.1:12345',
                 token: 'local-owner-token-at-least-thirty-two-characters',
@@ -88,6 +93,8 @@ try {
               window.saved.push(choice)
               if (choice.mode === 'wsl' && window.failSave)
                 throw new Error('Download checksum mismatch')
+              if (choice.mode === 'native' && !window.keepConnectionFailure)
+                window.failConnection = false
               return {
                 address: 'http://127.0.0.1:12345',
                 token: 'local-owner-token-at-least-thirty-two-characters',
@@ -173,12 +180,93 @@ try {
   await page.getByRole('button', { name: 'Apply environment', exact: true }).click()
   await page.getByText('Workspace ready').waitFor()
   assert.deepEqual(await page.evaluate(() => window.saved), [{ mode: 'native' }])
+  await setup(base)
+  await page.evaluate(() => {
+    window.holdConnection = true
+  })
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await page.getByRole('button', { name: 'Connecting workspace…', exact: true }).waitFor()
+  assert.equal(await page.getByText('Workspace ready').count(), 0)
+  await page.evaluate(() => {
+    window.holdConnection = false
+    window.releaseConnection()
+  })
+  await page.getByText('Workspace ready').waitFor()
+  assert.equal(await page.evaluate(() => window.connectionChecks), 1)
+
+  await setup(base)
+  await page.evaluate(() => {
+    window.failConnection = true
+    window.keepConnectionFailure = true
+  })
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await page
+    .getByRole('alert')
+    .filter({ hasText: 'The runtime was prepared, but the workspace connection failed' })
+    .waitFor()
+  assert.equal(await page.getByText('Workspace ready').count(), 0)
+  await page.evaluate(() => {
+    window.failConnection = false
+  })
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await page.getByText('Workspace ready').waitFor()
+
   await setup({ ...base, distributions: [], error: 'WSL unavailable' })
   await page.getByLabel('Execution environment', { exact: true }).selectOption('wsl')
   assert.equal(await page.getByRole('button', { name: 'Continue', exact: true }).isDisabled(), true)
   await page.getByLabel('Execution environment', { exact: true }).selectOption('native')
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await page.getByText('Workspace ready').waitFor()
+  // Settings must not reload until the selected runtime connection is verified.
+  await setup({ ...base, configured: true }, false, undefined, true)
+  await page.getByLabel('Execution environment', { exact: true }).selectOption('wsl')
+  await page.evaluate(() => {
+    window.holdConnection = true
+  })
+  await page.getByRole('button', { name: 'Apply environment', exact: true }).click()
+  await page.getByRole('button', { name: 'Connecting workspace…', exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.saved), [
+    { mode: 'wsl', distribution: 'Ubuntu Work' },
+  ])
+  const reloaded = page.waitForEvent('framenavigated', {
+    predicate: (frame) => frame === page.mainFrame(),
+  })
+  await page.evaluate(() => {
+    window.holdConnection = false
+    window.releaseConnection()
+  })
+  await reloaded
+  await page.waitForLoadState()
+  assert.equal(await page.locator('#app').textContent(), '')
+
+  // A settings activation failure stays visible and permits retry without reloading.
+  await setup({ ...base, configured: true }, false, undefined, true)
+  await page.getByLabel('Execution environment', { exact: true }).selectOption('wsl')
+  await page.evaluate(() => {
+    window.failConnection = true
+  })
+  await page.getByRole('button', { name: 'Apply environment', exact: true }).click()
+  await page
+    .getByRole('alert')
+    .filter({
+      hasText: 'The runtime was prepared, but the workspace connection failed',
+    })
+    .waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'Apply environment', exact: true }).isEnabled(),
+    true,
+  )
+  assert.equal(await page.evaluate(() => window.connectionChecks), 1)
+  const retried = page.waitForEvent('framenavigated', {
+    predicate: (frame) => frame === page.mainFrame(),
+  })
+  await page.evaluate(() => {
+    window.failConnection = false
+  })
+  await page.getByRole('button', { name: 'Apply environment', exact: true }).click()
+  await retried
+  await page.waitForLoadState()
+  assert.equal(await page.locator('#app').textContent(), '')
   assert.deepEqual(errors, [])
   console.log(
     'Windows runtime chooser: security reports/copy/access errors, distribution selection, failed setup, native fallback and WSL-unavailable flows passed.',

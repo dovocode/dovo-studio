@@ -52,3 +52,12 @@ export interface WindowsRuntimeBridge {
   save(choice: WindowsRuntimeChoice): Promise<{ address: string; token: string }>
   security(): Promise<WindowsSecurityReport>
 }
+
+/** Electron adds an IPC wrapper to errors; show the actionable message without its transport prefix. */
+export function windowsRuntimeErrorMessage(cause: unknown) {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  return message
+    .replace(/^Error invoking remote method '[^']+':\s*/, '')
+    .replace(/^\(FiberFailure\)\s*/, '')
+    .replace(/^(?:Error|TypeError):\s*/, '')
+}

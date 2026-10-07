@@ -535,3 +535,69 @@ it.each([undefined, '8787', '0'])(
     await stopLocalRuntime()
   },
 )
+
+it('switches away from an exited owned runtime without fetching its stale port', async () => {
+  const f = await childFixture()
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  const starting = f.startLocalRuntime('/unused')
+  await vi.waitFor(() => expect(f.child.listenerCount('message')).toBe(1))
+  f.child.emit('message', { type: 'ready', port: 34267 })
+  await starting
+  Object.defineProperty(f.child, 'signalCode', { value: 'SIGTERM', configurable: true })
+  f.child.emit('exit', null, 'SIGTERM')
+  const request = vi.fn<typeof fetch>().mockRejectedValue(new TypeError('fetch failed'))
+  vi.stubGlobal('fetch', request)
+  await f.pauseLocalRuntime()
+  expect(request).not.toHaveBeenCalled()
+  expect(f.kill).not.toHaveBeenCalled()
+})
+
+it('allows switching when the owned runtime exits during the idle-work check', async () => {
+  const f = await childFixture()
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  const starting = f.startLocalRuntime('/unused')
+  await vi.waitFor(() => expect(f.child.listenerCount('message')).toBe(1))
+  f.child.emit('message', { type: 'ready', port: 34267 })
+  await starting
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation(async () => {
+      Object.defineProperty(f.child, 'signalCode', { value: 'SIGTERM', configurable: true })
+      f.child.emit('exit', null, 'SIGTERM')
+      throw new TypeError('fetch failed')
+    }),
+  )
+  await f.pauseLocalRuntime()
+  expect(f.kill).not.toHaveBeenCalled()
+})
+
+it('never assumes an unreachable live runtime is idle', async () => {
+  const f = await childFixture()
+  const starting = f.startLocalRuntime('/unused')
+  await vi.waitFor(() => expect(f.child.listenerCount('message')).toBe(1))
+  f.child.emit('message', { type: 'ready', port: 34267 })
+  await starting
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new TypeError('fetch failed')))
+  await expect(f.pauseLocalRuntime()).rejects.toThrow('Cannot check active work')
+  expect(f.kill).not.toHaveBeenCalled()
+  await f.stopLocalRuntime()
+})
+
+it('serializes the idle-work check with a concurrent startup', async () => {
+  const f = await childFixture()
+  const starting = f.startLocalRuntime('/unused')
+  await vi.waitFor(() => expect(f.child.listenerCount('message')).toBe(1))
+  const request = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(Response.json({ workspace: { tasks: [{ status: 'running' }] } }))
+  vi.stubGlobal('fetch', request)
+  const pausing = (async () => {
+    await expect(f.pauseLocalRuntime()).rejects.toThrow('Finish or stop active runs')
+  })()
+  expect(request).not.toHaveBeenCalled()
+  f.child.emit('message', { type: 'ready', port: 34267 })
+  await starting
+  await pausing
+  expect(f.kill).not.toHaveBeenCalled()
+  await f.stopLocalRuntime()
+})

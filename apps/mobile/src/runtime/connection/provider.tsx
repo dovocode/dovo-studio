@@ -1,3 +1,4 @@
+import type { Repository } from '@dovo/protocol'
 import {
   runtimeHasCustomName,
   mergeSharedSettings,
@@ -52,6 +53,8 @@ import {
   upsertRuntime,
   removeRuntime,
   loadRuntimeOverviewEffect,
+  loadFleetPullOverviewsEffect,
+  pullOverviewScope,
   isUnauthorizedRuntimeError,
   sameRuntimeConnection,
   type RuntimeConnection,
@@ -481,17 +484,14 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     (profile: RuntimeProfile) => runClientEffect(refreshProfileEffect(profile)),
     [refreshProfileEffect],
   )
-  const pullOverviewReads = useRef(new Map<string, number>())
+  const pullOverviewReads = useRef(new Map<string, { at: number; scope: string }>())
   const refreshOverviewEffect = useCallback(
-    (profile: RuntimeProfile, refreshPulls = true): Effect.Effect<void> =>
+    (profile: RuntimeProfile): Effect.Effect<void> =>
       Effect.suspend(() => {
         const pending = fleetPending.current.get(profile.id)
         if (pending?.token === profile.connection.token) return pending.effect
         const version = (sequence.current.get(profile.id) ?? 0) + 1
         sequence.current.set(profile.id, version)
-        const loadPulls =
-          refreshPulls ||
-          Date.now() - (pullOverviewReads.current.get(profile.id) ?? 0) >= 5 * 60_000
         const shared = Effect.runSync(
           Effect.cached(
             loadRuntimeOverviewEffect(
@@ -502,12 +502,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               },
               current.current.activeId !== profile.id,
               false,
-              { loadPulls },
+              { loadPulls: false },
             ).pipe(
               Effect.tap((next) =>
                 Effect.sync(() => {
-                  if (loadPulls && next.connected && !next.pullError)
-                    pullOverviewReads.current.set(profile.id, Date.now())
                   updateEntry(profile, (previous) =>
                     sequence.current.get(profile.id) === version
                       ? next
@@ -539,19 +537,59 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   )
   const refreshAllEffect = useCallback(
     (includeActive = true) =>
-      Effect.suspend(() =>
-        Effect.forEach(
+      Effect.gen(function* () {
+        yield* Effect.forEach(
           current.current.profiles.filter(
             (item) => includeActive || item.id !== current.current.activeId,
           ),
-          (profile) => refreshOverviewEffect(profile, includeActive),
-          {
-            concurrency: 3,
-            discard: true,
+          (profile) => refreshOverviewEffect(profile),
+          { concurrency: 3, discard: true },
+        )
+        const entries = current.current.profiles.flatMap((profile) => {
+          const entry = entryRef.current[profile.id]
+          return entry && entry.profile.connection.token === profile.connection.token ? [entry] : []
+        })
+        const scope = (entry: RuntimeOverview, repositories: readonly Repository[]) =>
+          JSON.stringify([entry.profile.connection, pullOverviewScope(repositories)])
+        const scopes = new Map<string, string>()
+        yield* loadFleetPullOverviewsEffect(
+          entries,
+          (value) => {
+            const previous = entryRef.current[value.profile.id]
+            if (
+              !previous?.snapshot ||
+              !value.snapshot ||
+              !sameRuntimeConnection(previous.profile.connection, value.profile.connection) ||
+              pullOverviewScope(previous.snapshot.workspace.repositories) !==
+                pullOverviewScope(value.snapshot.workspace.repositories)
+            )
+              return
+            const selectedScope = scopes.get(value.profile.id)
+            if (!selectedScope) pullOverviewReads.current.delete(value.profile.id)
+            if (selectedScope && !value.pullError)
+              pullOverviewReads.current.set(value.profile.id, {
+                at: Date.now(),
+                scope: selectedScope,
+              })
+            updateEntry(value.profile, (previous) => ({
+              ...previous,
+              pulls: value.pulls,
+              pullError: value.pullError,
+            }))
           },
-        ),
-      ),
-    [refreshOverviewEffect],
+          (entry, repositories) => {
+            const selectedScope = scope(entry, repositories)
+            scopes.set(entry.profile.id, selectedScope)
+            const previous = pullOverviewReads.current.get(entry.profile.id)
+            return (
+              includeActive ||
+              previous?.scope !== selectedScope ||
+              Date.now() - previous.at >= 5 * 60_000
+            )
+          },
+        )
+      }),
+    [refreshOverviewEffect, updateEntry],
   )
   const refreshAll = useCallback(() => runClientEffect(refreshAllEffect()), [refreshAllEffect])
   const profile = registry.profiles.find((item) => item.id === registry.activeId) ?? null

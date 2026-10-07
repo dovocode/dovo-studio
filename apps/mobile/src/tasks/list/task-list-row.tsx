@@ -24,6 +24,7 @@ import { Text } from '../../ui/content/text'
 import {
   projectIcon,
   projectIconColor,
+  projectIconInitials,
   acpHarnessName,
   resolveTaskAgent,
   type RuntimeOverview,
@@ -201,7 +202,7 @@ export function TaskListRow({
                   <Image source={{ uri: icon }} style={{ width: 22, height: 22 }} />
                 ) : (
                   <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
-                    {(row.projectName || 'P').slice(0, 2).toUpperCase()}
+                    {projectIconInitials(repository, row.projectName || 'P')}
                   </Text>
                 )}
               </View>

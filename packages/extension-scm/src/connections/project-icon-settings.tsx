@@ -1,18 +1,31 @@
+import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { projectIcon } from '@dovo/protocol'
 import { useWorkspace, type Repository } from '@dovo/studio-core'
 import { Button, ProjectIcon } from '@dovo/studio-ui'
 
 export function ProjectIconSettings({ repository }: { repository: Repository }) {
-  const { setWorkspace } = useWorkspace()
+  const { request, connected, refreshRuntime, runtimes, activeRuntimeId } = useWorkspace()
   const [error, setError] = useApplicationState('')
-  const save = (iconOverride: string | undefined) =>
-    setWorkspace((current) => ({
-      ...current,
-      repositories: current.repositories.map((item) =>
-        item.id === repository.id ? { ...item, iconOverride } : item,
-      ),
-    }))
+  const [busy, setBusy] = useApplicationState(false)
+  const save = async (iconOverride: string | undefined) => {
+    const profile = runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile
+    if (!profile) return
+    setBusy(true)
+    setError('')
+    try {
+      await request(
+        '/api/scm/repositories/icon',
+        { repositoryId: repository.id, data: iconOverride?.split(',')[1] },
+        Schema.Struct({ ok: Schema.Literal(true) }),
+      )
+      await refreshRuntime(profile)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
   const upload = async (file: File) => {
     setError('')
     try {
@@ -29,7 +42,7 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
         context.drawImage(image, (48 - width) / 2, (48 - height) / 2, width, height)
         const value = canvas.toDataURL('image/png')
         if (value.length > 50000) throw new Error('This image is too detailed for a task icon.')
-        save(value)
+        await save(value)
       } finally {
         image.close()
       }
@@ -44,6 +57,9 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
         <p className="text-xs font-medium">Project icon</p>
         <p className="text-xs text-muted-foreground">
           Used for every task in this project.{' '}
+          {repository.gitIdentity
+            ? 'Custom images sync across paired computers for this Git project.'
+            : 'This project’s icon stays on this computer.'}{' '}
           {repository.iconOverride
             ? 'Custom image.'
             : projectIcon(repository)
@@ -60,6 +76,7 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
         Choose image
         <input
           type="file"
+          disabled={!connected || busy}
           accept="image/png,image/jpeg,image/webp"
           className="sr-only"
           onChange={(event) => {
@@ -70,7 +87,12 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
         />
       </label>
       {repository.iconOverride && (
-        <Button size="sm" variant="ghost" onClick={() => save(undefined)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!connected || busy}
+          onClick={() => void save(undefined)}
+        >
           Reset
         </Button>
       )}

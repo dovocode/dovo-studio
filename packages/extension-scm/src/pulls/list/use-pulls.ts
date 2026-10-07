@@ -1,7 +1,8 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Effect, Schema, Semaphore } from 'effect'
 import {
+  selectPullSources,
   mutableArray,
   mutableStruct,
   pullPageSchema,
@@ -25,8 +26,15 @@ const cacheKey = (source: RepositorySource, state: string) =>
     state,
     source.repository.forge,
   ])
-export function usePulls(state: string) {
-  const sources = useRepositorySources()
+export function usePulls(state: string, repositoryId = '') {
+  const allSources = useRepositorySources()
+  const sources = useMemo(
+    () =>
+      selectPullSources(
+        allSources.filter((source) => !repositoryId || source.key === repositoryId),
+      ),
+    [allSources, repositoryId],
+  )
   const [stored, setStored, pagesRef] = useApplicationState<Record<string, Page>>({})
   const [busy, setBusy] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
@@ -248,7 +256,7 @@ export function usePulls(state: string) {
       : []
   })
   return {
-    sources,
+    sources: allSources,
     pages,
     busy,
     connected: sources.some((source) => source.connected),

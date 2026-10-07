@@ -16,7 +16,9 @@ gh auth status --hostname github.com
 
 For GitHub Enterprise Server, use its hostname in both commands and the saved connection. Dovo
 passes the host and repository explicitly so a parent shell's `GH_REPO` or `GH_HOST` cannot redirect
-a project operation. A saved connection uses that host's active CLI account.
+a project operation. A saved connection can select a named `gh` account, a custom wrapper's
+non-secret environment selector, or a token from the runtime environment. Each project's binding
+controls its GitHub operations; selecting it never switches the global CLI login.
 
 The CLI normally uses the system credential store. On machines without a working credential store,
 GitHub CLI can fall back to its own plaintext configuration; inspect `gh auth status` and protect
@@ -28,6 +30,20 @@ Dovo namespaces PR caches by repository, host, active account and an opaque fing
 token environment variables. Successful account checks are reused for up to one minute. Explicit
 refresh rechecks the account immediately; use it after `gh auth switch`. Failed authentication does
 not reuse a previously authenticated identity.
+
+## Projects on multiple computers
+
+The combined PR list and computer summaries read each remote repository through one connected
+computer, including when several checkouts or worktrees point at it. Selection is stable across
+refreshes and falls back to another connected computer when that source disconnects. The remote host
+is part of the identity, so forks and repositories on different hosts remain separate.
+
+Choose a specific project in the PR filter to use that checkout and its configured account. PR rows
+keep that source's personal relationship flags; flags from different accounts are never combined.
+Credentials and PR caches remain isolated by account on each runtime.
+
+The clients coordinate these listing reads. Each runtime still watches its own tasks' linked PRs for
+status changes and automatic settlement.
 
 ## Permissions
 

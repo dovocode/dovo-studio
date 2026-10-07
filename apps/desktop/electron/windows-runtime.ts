@@ -1,3 +1,4 @@
+import { waitForWslRuntime } from './wsl-runtime-health.js'
 import { desktopRuntimeDirectory } from './runtime-data-directory.js'
 import { app } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
@@ -8,7 +9,6 @@ import { Schema } from 'effect'
 import {
   decode,
   mutableStruct,
-  RUNTIME_PROTOCOL_VERSION,
   windowsRuntimeChoiceSchema,
   type WindowsRuntimeChoice,
   type WindowsRuntimeStatus,
@@ -197,7 +197,10 @@ const connectionSchema = mutableStruct({
 let owned: { child: ChildProcess; connection?: typeof connectionSchema.Type } | undefined
 let starting: Promise<typeof connectionSchema.Type> | undefined
 export const wslRuntimeOwned = () => !!owned
-export const wslRuntimeConnection = () => owned?.connection
+export const wslRuntimeConnection = () =>
+  owned && owned.child.exitCode === null && owned.child.signalCode === null
+    ? owned.connection
+    : undefined
 export function startWslRuntime(distribution: string) {
   if (starting) return starting
   if (owned && owned.child.exitCode === null && owned.child.signalCode === null)
@@ -266,19 +269,7 @@ export function startWslRuntime(distribution: string) {
         url.password
       )
         throw new Error('WSL returned an unexpected local address')
-      const response = await fetch(`${connection.address}/api/snapshot`, {
-        headers: { Authorization: `Bearer ${connection.token}` },
-        redirect: 'error',
-        signal: AbortSignal.timeout(10000),
-      })
-      const snapshot = decode(
-        mutableStruct({ owner: Schema.Boolean, protocolVersion: Schema.Number }),
-        await response.json(),
-      )
-      if (!response.ok || !snapshot.owner || snapshot.protocolVersion !== RUNTIME_PROTOCOL_VERSION)
-        throw new Error(
-          'WSL runtime could not be reached with a compatible authenticated connection. Check WSL localhost forwarding.',
-        )
+      await waitForWslRuntime(connection, child)
       owned = { child, connection }
       return connection
     } catch (error) {

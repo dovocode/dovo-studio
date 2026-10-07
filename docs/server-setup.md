@@ -611,7 +611,10 @@ archives are unsigned. The generated mise configuration includes both Windows ar
 On Windows, desktop setup offers **Native Windows (recommended)** and **WSL 2**. Change the
 selection later in **Settings → Computers → Devices & runtime**. Applying a change reopens the
 workspace in the selected environment. Finish or stop active runs first; Dovo refuses to switch
-while its owned runtime has running tasks. External servers are never stopped by this choice.
+while its owned runtime has running tasks. An exited process’s old localhost port is not queried; an
+unreachable live process still blocks switching because active work cannot be checked. Connection
+polling cannot restart the runtime during a switch. External servers are never stopped by this
+choice.
 
 Native mode uses the bundled Windows runtime and your Windows Git, agent installations and logins.
 WSL mode lists installed WSL 2 distributions, including distributions with spaces in their names.
@@ -633,9 +636,15 @@ to agents there and keep Linux repositories under `/home` for better filesystem 
 Dovo’s Browse picker for Linux folders; the Windows system folder dialog is blocked in WSL mode.
 
 The desktop connects over authenticated HTTP on WSL’s localhost forwarding. It checks owner access
-and protocol compatibility before using the connection. Quitting closes the desktop-owned WSL
-runtime gracefully. Changing distributions does not shut down the distribution or unrelated Linux
-processes. Phone access remains opt-in through LAN/VPN settings, with pairing codes and device
+and protocol compatibility before using the connection. After Linux reports ready, Dovo waits up to
+ten seconds for Windows localhost forwarding to accept connections; authentication and protocol
+failures are not retried. Native and WSL saves return a connection only after checking the listener
+with the desktop owner token and matching protocol. Setup waits for a verified selected connection
+before opening the workspace. Errors identify preparation, connection or recovery failure, remain
+visible for retry, and omit Electron/FiberFailure transport prefixes. Dovo reports that the previous
+environment was restored only after verifying its connection too. Quitting closes the desktop-owned
+WSL runtime gracefully. Changing distributions does not shut down the distribution or unrelated
+Linux processes. Phone access remains opt-in through LAN/VPN settings, with pairing codes and device
 tokens required. WSL NAT networking may need forwarding; mirrored networking and Windows/Hyper-V
 firewall configuration may be needed for LAN, Tailscale or NetBird connectivity. Dovo never silently
 changes those OS settings. If a distribution is removed or startup fails, the setup chooser offers a

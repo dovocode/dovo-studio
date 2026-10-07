@@ -1,3 +1,4 @@
+import { uniquePulls } from '@dovo/protocol'
 import { AddPullsToThread } from '../scm/pulls/list/add-to-thread'
 import type { PullSummary } from '@dovo/protocol'
 import { pullStackLabel } from '@dovo/protocol'
@@ -77,8 +78,8 @@ function PullsContent({
   )
   const pulls = useMemo(
     () =>
-      pages
-        .flatMap((page) =>
+      uniquePulls(
+        pages.flatMap((page) =>
           page.pulls.map((pull) => ({
             ...pull,
             runtimeId: page.runtimeId,
@@ -88,7 +89,8 @@ function PullsContent({
             repositoryId: page.repositoryId,
             repositoryName: page.name,
           })),
-        )
+        ),
+      )
         .filter(
           (p) =>
             (state === 'all' || p.state === state) &&

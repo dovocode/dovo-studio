@@ -14,7 +14,7 @@ const mocks = {
   '@dovo/studio-ui': controls,
   '@dovo/studio-core': `export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,pulls:window.pulls}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
+  './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
   './use-pull-detail': `export const usePullDetail=()=>({detail:window.detail,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
   './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
@@ -29,10 +29,10 @@ const built = await build({
     resolveDir: root,
     contents: `import {createRoot} from 'react-dom/client';import {PullDetail} from '${root}/packages/extension-scm/src/pulls/detail/detail.tsx';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';
 const pull={number:7,title:'Improve pull request reviews',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'dominic',updatedAt:'2026-10-04',head:'feature',base:'main',labels:['feature'],checksState:'SUCCESS',reviewDecision:'REVIEW_REQUIRED',additions:24,deletions:8,commentCount:3,viewerIsAuthor:true,viewerIsAssigned:true,viewerIsInvolved:true,viewerReviewRequested:true};
-window.pulls=[pull,{...pull,number:8,title:'Other author',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerIsAuthor:false,viewerIsAssigned:false,viewerReviewRequested:false},{...pull,number:9,title:'Draft feature',draft:true,viewerIsAuthor:false,viewerReviewRequested:false}];
+window.pulls=[pull,{...pull,number:8,url:'https://github.com/team/project/pull/8',title:'Other author',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerIsAuthor:false,viewerIsAssigned:false,viewerReviewRequested:false},{...pull,number:9,url:'https://github.com/team/project/pull/9',title:'Draft feature',draft:true,viewerIsAuthor:false,viewerReviewRequested:false}];
 window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connected:true,repository:{id:'repo',name:'Project'}};
 window.detail={pull:{...pull,body:'Review workflow description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',mergeable:true,reviewers:['reviewer'],assignees:['dominic'],additions:2,deletions:0,changedFiles:2},files:['src/first.ts','src/second.ts'].map(path=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new'})),comments:[{id:'comment',kind:'comment',author:'reviewer',body:'Please add a test',url:pull.url,date:'2026-10-04'},{id:'review',kind:'review',author:'teammate',state:'APPROVED',body:'Looks good to me',url:pull.url,date:'2026-10-04'}],checks:[{name:'Tests',status:'SUCCESS',summary:'All tests passed',details:'2 tests completed'}],warnings:[],capabilities:{actions:['comment','review'],reviewDecisions:['comment','approve','request-changes'],mergeMethods:[]}};
-window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};const rootView=createRoot(document.getElementById('app'));window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);rootView.render(<div className="studio dark flex h-screen"><View/></div>);`,
+window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};const rootView=createRoot(document.getElementById('app'));window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);rootView.render(<div className="studio dark flex h-screen"><View/></div>);`,
   },
   bundle: true,
   write: false,
@@ -268,6 +268,81 @@ try {
   await noOverflow()
   await embedded.getByRole('button', { name: 'Close preview', exact: true }).click()
   assert.equal(await page.evaluate(() => window.embeddedClosed), true)
+  await page.evaluate(() => window.showLongList())
+  await list
+    .getByRole('button')
+    .filter({ hasText: 'Scroll regression 179' })
+    .waitFor({ state: 'attached' })
+  const scroll = list.locator('div.overflow-y-auto').first()
+  assert.equal(
+    await scroll.evaluate(
+      (element) => element.scrollHeight > element.clientHeight && element.clientHeight > 100,
+    ),
+    true,
+  )
+  const headerTop = await list
+    .locator('header')
+    .evaluate((element) => element.getBoundingClientRect().top)
+  await scroll.hover()
+  await page.mouse.wheel(0, 2000)
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[aria-label="Pull request sidebar"] .overflow-y-auto').scrollTop > 0,
+  )
+  assert.equal(
+    await list.locator('header').evaluate((element) => element.getBoundingClientRect().top),
+    headerTop,
+  )
+  await list.getByRole('button').filter({ hasText: 'Scroll regression 179' }).first().focus()
+  assert.equal(
+    await list.locator('header').evaluate((element) => element.getBoundingClientRect().top),
+    headerTop,
+  )
+  assert.equal(await page.evaluate(() => document.scrollingElement.scrollTop), 0)
+  assert.equal(await page.evaluate(() => document.querySelector('.studio').scrollTop), 0)
+  assert.equal(await page.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), true)
+  const overflow = await scroll.evaluate((element) => ({
+    width: element.scrollWidth,
+    visible: element.clientWidth,
+  }))
+  assert.ok(
+    overflow.width <= overflow.visible + 1,
+    `Hidden PR overflow: ${JSON.stringify(overflow)}`,
+  )
+  for (const selector of [
+    '.studio',
+    '.studio-body',
+    '.studio-main',
+    '[aria-label="Pull request sidebar"]',
+  ]) {
+    assert.equal(
+      await page
+        .locator(selector)
+        .evaluate((element) => element.scrollHeight <= element.clientHeight + 1),
+      true,
+      `Hidden height overflow in ${selector}`,
+    )
+  }
+  await page.setViewportSize({ width: 360, height: 650 })
+  assert.equal(
+    await scroll.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+    true,
+    'Narrow PR list must not hide horizontal overflow',
+  )
+  for (const selector of [
+    '.studio',
+    '.studio-body',
+    '.studio-main',
+    '[aria-label="Pull request sidebar"]',
+  ]) {
+    assert.equal(
+      await page
+        .locator(selector)
+        .evaluate((element) => element.scrollHeight <= element.clientHeight + 1),
+      true,
+      `Narrow hidden height overflow in ${selector}`,
+    )
+  }
   assert.deepEqual(errors, [])
   console.log(
     'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts and embedded previews passed.',

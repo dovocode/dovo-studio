@@ -6,6 +6,7 @@ import {
   windowsRuntimeStatusSchema,
   windowsSecurityReportSchema,
   windowsAsrGuidance,
+  windowsRuntimeErrorMessage,
   type WindowsRuntimeStatus,
   type WindowsRuntimeBridge,
   type WindowsSecurityReport,
@@ -90,7 +91,7 @@ function WindowsSecurityControl() {
         )}
       </div>
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="break-words text-sm text-destructive [overflow-wrap:anywhere]">
           {error}
         </p>
       )}
@@ -154,6 +155,7 @@ function WindowsRuntimeControl({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(initialError)
   const [refresh, setRefresh] = useState(0)
+  const [phase, setPhase] = useState<'preparing' | 'connecting'>('preparing')
   useEffect(() => {
     const api = bridge()
     if (!api) return
@@ -179,7 +181,7 @@ function WindowsRuntimeControl({
         }
       })
       .catch((cause: unknown) => {
-        if (!disposed) setError(cause instanceof Error ? cause.message : String(cause))
+        if (!disposed) setError(windowsRuntimeErrorMessage(cause))
       })
     return () => {
       disposed = true
@@ -194,16 +196,31 @@ function WindowsRuntimeControl({
     const api = bridge()
     if (!api) return
     setBusy(true)
+    setPhase('preparing')
     setError('')
+    let saved = false
     try {
-      const connection = decode(
+      const savedConnection = decodeResult(
         connectionSchema,
         await api.save(mode === 'native' ? { mode } : { mode, distribution }),
       )
-      await onApplied?.(connection)
+      if (!savedConnection.success)
+        throw new Error(
+          'The desktop returned invalid runtime connection details. Restart Dovo Studio and retry.',
+        )
+      saved = true
+      setPhase('connecting')
+      const connection = decodeResult(connectionSchema, await api.connection())
+      if (!connection.success)
+        throw new Error(
+          'The desktop returned invalid runtime connection details. Restart Dovo Studio and retry.',
+        )
+      await onApplied?.(connection.data)
       setRefresh((value) => value + 1)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(
+        `${saved ? 'The runtime was prepared, but the workspace connection failed. Retry applying this environment. ' : ''}${windowsRuntimeErrorMessage(cause)}`,
+      )
     } finally {
       setBusy(false)
     }
@@ -264,7 +281,7 @@ function WindowsRuntimeControl({
         </>
       )}
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="break-words text-sm text-destructive [overflow-wrap:anywhere]">
           {error}
         </p>
       )}
@@ -283,7 +300,13 @@ function WindowsRuntimeControl({
             void apply()
           }}
         >
-          {busy ? 'Preparing runtime…' : status?.configured ? 'Apply environment' : 'Continue'}
+          {busy
+            ? phase === 'connecting'
+              ? 'Connecting workspace…'
+              : 'Preparing and verifying runtime…'
+            : status?.configured
+              ? 'Apply environment'
+              : 'Continue'}
         </Button>
         <Button variant="outline" disabled={busy} onClick={() => setRefresh((value) => value + 1)}>
           Refresh
@@ -309,7 +332,13 @@ export function WindowsRuntimeGate({ children }: { children: ReactNode }) {
       .read()
       .then(async (raw) => {
         const status = decode(windowsRuntimeStatusSchema, raw)
-        if (status.configured) await api.connection()
+        if (status.configured) {
+          const connection = decodeResult(connectionSchema, await api.connection())
+          if (!connection.success)
+            throw new Error(
+              'The desktop returned invalid runtime connection details. Restart Dovo Studio and retry.',
+            )
+        }
         if (!disposed) {
           setReady(status.configured)
           setChecked(true)
@@ -317,7 +346,7 @@ export function WindowsRuntimeGate({ children }: { children: ReactNode }) {
       })
       .catch((cause: unknown) => {
         if (!disposed) {
-          setError(cause instanceof Error ? cause.message : String(cause))
+          setError(windowsRuntimeErrorMessage(cause))
           setChecked(true)
         }
       })
@@ -328,7 +357,7 @@ export function WindowsRuntimeGate({ children }: { children: ReactNode }) {
   if (ready) return children
   return (
     <main className="flex h-screen items-center justify-center p-6">
-      <div className="max-h-[calc(100vh-3rem)] w-full max-w-xl overflow-y-auto">
+      <div className="max-h-[calc(100vh-3rem)] min-w-0 w-full max-w-xl overflow-y-auto">
         <h1 className="mb-4 text-xl font-semibold">Set up Dovo Studio</h1>
         {checked ? (
           <WindowsRuntimeControl initialError={error} onApplied={() => setReady(true)} />

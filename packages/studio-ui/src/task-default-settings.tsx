@@ -137,6 +137,7 @@ function TaskDefaultSettingsForm({
       origin && (
         <SettingSource
           origin={origin}
+          setting={{ field: { group: 'taskDefaults', key }, repository, scope, value: draft[key] }}
           label={origin.label}
           disabled={disabled}
           onReset={() => change({ ...draft, [key]: undefined })}

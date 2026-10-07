@@ -140,7 +140,7 @@ export function FileTree({
       label="diff files pane"
       maxFraction={0.4}
       maxWidth={640}
-      className="flex min-h-0 flex-col border-l bg-sidebar"
+      className="flex min-h-0 flex-col overflow-hidden border-l bg-sidebar"
       aria-label="Changed files"
     >
       <div className="flex h-10 shrink-0 items-center justify-between border-b px-3 text-xs font-medium">

@@ -70,6 +70,19 @@ if (args[0] === 'auth' && args[1] === 'token') {
     },
   ]
   s.store.update(() => personal.workspace)
+  const { runtimeSnapshot } = await import('../../../http/support/runtime-snapshot.js')
+  const { Effect } = await import('effect')
+  const identity = vi
+    .spyOn(s.git, 'cachedRepositoryIdentity')
+    .mockReturnValue(Promise.resolve('github.com/clone/app'))
+  const snapshot = await Effect.runPromise(runtimeSnapshot(s, { id: 'owner', owner: true }))
+  expect(
+    snapshot.workspace.repositories.filter((repo) => !repo.kind).map((repo) => repo.pullIdentity),
+  ).toEqual(['github.com/personal/app', 'github.com/work/app'])
+  expect(
+    snapshot.workspace.repositories.filter((repo) => !repo.kind).map((repo) => repo.gitIdentity),
+  ).toEqual(['github.com/clone/app', 'github.com/clone/app'])
+  identity.mockRestore()
   vi.stubEnv('GH_TOKEN', 'ambient-token')
   const originalSelector = process.env.GH_ACCOUNT
   const [first, second] = await Promise.all([

@@ -809,7 +809,11 @@ export default function TasksView({ entityId }: StudioViewProps) {
               </p>
             )}
             <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
-              <ResizablePanel id="thread" defaultSize={bottomTerminalOpen ? 65 : 100} minSize="30%">
+              <ResizablePanel
+                id="thread"
+                defaultSize={bottomTerminalOpen ? '65%' : '100%'}
+                minSize="30%"
+              >
                 <TaskConversation
                   historyLoaded={usingStartupDraft || historyLoaded}
                   historyError={historyError}
@@ -1036,7 +1040,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 panes.current.changes = element
               }}
               tabIndex={-1}
-              className={cn('min-h-0 min-w-0 flex-1', surface !== 'changes' && 'hidden')}
+              className={cn(
+                'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+                surface !== 'changes' && 'hidden',
+              )}
             >
               {surface === 'changes' && (
                 <ReviewPane
@@ -1052,7 +1059,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 panes.current.files = element
               }}
               tabIndex={-1}
-              className={cn('min-h-0 min-w-0 flex-1', surface !== 'files' && 'hidden')}
+              className={cn(
+                'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+                surface !== 'files' && 'hidden',
+              )}
             >
               {surface === 'files' && (
                 <TaskFiles

@@ -407,7 +407,7 @@ export function ReviewPane(props: Parameters<typeof PrimaryReviewPane>[0]) {
   const { workspace } = useWorkspace()
   const [checkoutId, setCheckoutId] = useApplicationState('')
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {!!props.task.linkedCheckouts?.length && (
         <ChoicePicker
           aria-label="Review project checkout"

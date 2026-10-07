@@ -1,8 +1,9 @@
+import { checkRuntimeConnection } from './runtime-connection-health.js'
 import { configureDesktopRuntimeDirectory, desktopDataRoot } from './runtime-data-directory.js'
 import { registerQuitShortcut } from './quit-shortcut.js'
 import { registerLinuxDesktop } from './linux-desktop.js'
 import { registerInputPreview } from './input-preview.js'
-import { decode, windowsRuntimeChoiceSchema } from '@dovo/protocol'
+import { decode, windowsRuntimeChoiceSchema, windowsRuntimeErrorMessage } from '@dovo/protocol'
 import { readWindowsSecurity } from './windows-security.js'
 import {
   windowsRuntimeStatus,
@@ -218,18 +219,27 @@ ipcMain.handle('links:external', async (event, url: unknown) => {
 })
 
 let activateSelectedRuntime = false
+let switchingRuntime = false
 ipcMain.handle('runtime:connection', async (event) => {
   requireTrustedRenderer(event, rendererPath)
+  if (switchingRuntime) throw new Error('A runtime switch is already in progress')
   const connection = await startLocalRuntime(__dirname)
   if (!activateSelectedRuntime) return connection
   activateSelectedRuntime = false
   return { ...connection, activate: true }
 })
-ipcMain.handle('runtime:windows-connection', (event) => {
+ipcMain.handle('runtime:windows-connection', async (event) => {
   requireTrustedRenderer(event, rendererPath)
   if (process.platform !== 'win32')
     throw new Error('Windows runtime selection is only available on Windows')
-  return startLocalRuntime(__dirname)
+  if (switchingRuntime) throw new Error('A runtime switch is already in progress')
+  try {
+    const connection = await startLocalRuntime(__dirname)
+    await checkRuntimeConnection(connection)
+    return connection
+  } catch (cause) {
+    throw windowsRuntimeFailure('Could not connect to the selected runtime', cause)
+  }
 })
 
 ipcMain.handle('runtime:windows-read', (event) => {
@@ -242,7 +252,27 @@ ipcMain.handle('runtime:windows-security', (event) => {
   requireTrustedRenderer(event, rendererPath)
   return readWindowsSecurity()
 })
-let switchingRuntime = false
+function windowsRuntimeFailure(stage: string, cause: unknown) {
+  console.error(stage, cause)
+  const message =
+    cause instanceof AggregateError
+      ? `${cause.message}: ${cause.errors.map(windowsRuntimeErrorMessage).join('; ')}`
+      : windowsRuntimeErrorMessage(cause)
+  const detail =
+    cause instanceof AggregateError
+      ? message
+      : /fetch failed|ECONNREFUSED/.test(message)
+        ? 'The local runtime is not accepting the connection. Retry; if it still fails, restart Dovo Studio and inspect the runtime log.'
+        : cause instanceof Error && cause.name === 'TimeoutError'
+          ? 'The local runtime did not respond within 10 seconds. Retry or restart Dovo Studio.'
+          : message
+  const restored =
+    message.includes('The previous execution environment was restored.') &&
+    !detail.includes('The previous execution environment was restored.')
+      ? ' The previous execution environment was restored.'
+      : ''
+  return new Error(`${stage}. ${detail}${restored}`, { cause })
+}
 ipcMain.handle('runtime:windows-save', async (event, value: unknown) => {
   requireTrustedRenderer(event, rendererPath)
   if (process.platform !== 'win32')
@@ -250,32 +280,48 @@ ipcMain.handle('runtime:windows-save', async (event, value: unknown) => {
   if (switchingRuntime) throw new Error('A runtime switch is already in progress')
   const choice = decode(windowsRuntimeChoiceSchema, value)
   switchingRuntime = true
+  let stage = 'Could not prepare the selected execution environment'
   try {
     if (choice.mode === 'wsl') await prepareWslRuntime(choice.distribution)
     const previous = readWindowsRuntimeChoice()
     // Accepting the existing native environment is setup, not a runtime restart.
     if (choice.mode === 'native' && previous?.mode !== 'wsl') {
+      stage = 'Could not connect to the Native Windows runtime'
       const connection = await startLocalRuntime(__dirname)
+      await checkRuntimeConnection(connection)
+      stage = 'Could not save the runtime selection'
       writeWindowsRuntimeChoice(choice)
       activateSelectedRuntime = true
       return connection
     }
+    stage = 'Could not stop the current runtime for switching'
     await pauseLocalRuntime()
+    stage =
+      choice.mode === 'wsl'
+        ? `Could not connect to WSL (${choice.distribution})`
+        : 'Could not connect to the Native Windows runtime'
     try {
       writeWindowsRuntimeChoice(choice)
       const connection = await startLocalRuntime(__dirname)
+      await checkRuntimeConnection(connection)
       activateSelectedRuntime = true
       return connection
     } catch (cause) {
-      await pauseLocalRuntime()
-      writeWindowsRuntimeChoice(previous)
       try {
-        await startLocalRuntime(__dirname)
+        await pauseLocalRuntime()
+        writeWindowsRuntimeChoice(previous)
+        const recovered = await startLocalRuntime(__dirname)
+        await checkRuntimeConnection(recovered)
       } catch (recovery) {
         throw new AggregateError([cause, recovery], 'Runtime switch and recovery failed')
       }
-      throw cause
+      throw new Error(
+        `${windowsRuntimeErrorMessage(cause)} The previous execution environment was restored.`,
+        { cause },
+      )
     }
+  } catch (cause) {
+    throw windowsRuntimeFailure(stage, cause)
   } finally {
     switchingRuntime = false
   }

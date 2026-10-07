@@ -50,6 +50,8 @@ export function useRepositorySources() {
         profile.connection,
         repository.id,
         repository.path,
+        repository.gitIdentity,
+        repository.pullIdentity,
         repository.forge,
         repository.jira,
       ]),

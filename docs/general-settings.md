@@ -12,6 +12,16 @@ has its own computer-specific page.
 
 ## Task defaults
 
+The runtime selects initial agent and title models automatically before publishing its connection.
+If Codex is installed and available through the configured command, new tasks use the latest visible
+Sol model at medium reasoning, and titles/dictation use the latest Luna model at low reasoning. The
+installed Codex catalogue determines the versions; if discovery fails, the bundled defaults are
+GPT-6.1-Sol and GPT-6-Luna. Otherwise, Claude uses its latest `opus` alias at medium effort for
+tasks and latest `sonnet` alias at low effort for titles/dictation. Provider installation and
+authentication still use the host’s existing setup. Explicit task defaults and saved title choices
+are preserved, including choices made while discovery is pending. You can change the defaults on
+these settings pages without completing a first-run wizard.
+
 Task defaults contains new-task launch and workspace defaults, saved prompts and lifecycle policy.
 Its scope selector shows **Global → Computer → Project → Project on computer**. Each control shows
 where its value comes from and offers Reset when an override is present. Shared layers synchronize

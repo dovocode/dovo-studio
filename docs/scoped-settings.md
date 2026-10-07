@@ -16,6 +16,12 @@ each computer’s overrides. The target stays selected between these pages. A pr
 selected computer cannot be edited until another target is chosen. Local folders are offered only
 with a specific computer.
 
+Task defaults and lifecycle settings also have a **Sources** control. It shows values at each scope,
+grouped by computer, with the winning value checked. Matching projects use their canonical Git
+identity across computers. The selected computer previews the current draft; other computers show
+saved snapshot values, labelled when offline. Reset removes only the current scope’s override and
+still requires saving. Opening Sources uses existing snapshots without additional server requests.
+
 Each task setting shows its effective source beside the control. **Set here** identifies an override
 at the selected level; **Inherited** identifies the earlier level or Dovo default. Individual Reset
 controls use the earlier value, and changes are saved using **Save defaults**. Unset task fields
@@ -40,6 +46,13 @@ Prompts override by case-insensitive name. Removing an override reveals the inhe
 The editors show inherited entries that can be copied into the current scope and changed or
 disabled. Hooks override by name across the four scopes; custom-agent hooks still append to the
 resolved project hooks.
+
+Project fallback icon colours and initials use canonical Git identity, so differently named
+checkouts on different computers look the same. Uploaded project icons also synchronize through
+shared project settings; existing local uploads are promoted when the runtime knows their Git
+identity. Reset records a shared tombstone so an older local upload cannot return. Detected images
+still come from checkout files. Projects without a Git identity keep local icons and
+repository-specific fallback colours.
 
 Project identity uses the existing Git origin identity normalization, including SSH/HTTPS
 equivalents. Forks remain separate. If there is no origin, only an unambiguous remote identity is
