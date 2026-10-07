@@ -235,6 +235,7 @@ export class Artifacts {
       .map((row) => decode(artifactMetadataSchema, JSON.parse(decode(stored, row).value)))
   }
   write(input: ArtifactCreate | ArtifactUpdate) {
+    this.store.requireTaskWritable(input.taskId)
     if (!this.preferences().enableArtifacts)
       throw new HttpError(403, 'Enable Dovo Artifacts in this computer’s settings first')
     const task = this.store.task(input.taskId)

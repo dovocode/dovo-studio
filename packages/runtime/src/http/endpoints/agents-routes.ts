@@ -46,6 +46,23 @@ export function agentsRoute(request: IncomingMessage, path: string) {
   return routeProgram(
     Effect.gen(function* () {
       const s = yield* RuntimeServices
+      if (
+        request.method === 'POST' &&
+        path.startsWith('/api/tasks/') &&
+        !['/read', '/list', '/preview', '/changes', '/files', '/commit-message'].some((suffix) =>
+          path.endsWith(suffix),
+        )
+      ) {
+        const input = yield* serviceResult(body(request))
+        if (
+          input &&
+          typeof input === 'object' &&
+          'id' in input &&
+          typeof input.id === 'string' &&
+          s.store.get().tasks.some((task) => task.id === input.id)
+        )
+          s.store.requireTaskWritable(input.id)
+      }
       const publicDefaults = (value: unknown) =>
         decode(runtimeDefaultsSchema, s.store.publicValue(value))
       const method = request.method
@@ -1066,6 +1083,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         s.store.updateTask(id, (t) => ({
           ...t,
           sessionId: undefined,
+          importedSession: undefined,
           sessionAgentId: undefined,
           consumedMessageIds: undefined,
           contextUsage: undefined,

@@ -29,6 +29,7 @@
     "mobile:update": "node scripts/update-mobile.mjs",
     "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm build",
     "test:mcp-apps:browser": "node scripts/build-mcp-apps.mjs && node scripts/check-mcp-apps-browser.mjs",
+    "test:task-transfer:browser": "node scripts/check-task-transfer-browser.mjs",
     "test:artifacts:browser": "node scripts/check-artifacts-browser.mjs",
     "test:windows-runtime:browser": "node scripts/check-windows-runtime-browser.mjs",
     "test:turn-grouping:browser": "node scripts/check-turn-grouping-browser.mjs",

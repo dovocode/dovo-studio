@@ -14,6 +14,7 @@ function terminalCheckout(store: WorkspaceStore, taskId: string, checkoutId?: st
   let task = store.task(taskId)
   let selected = checkoutId
   while (true) {
+    store.requireTaskWritable(task.id)
     if (task.archived || task.archivedAt)
       throw new HttpError(409, 'Restore the thread before opening a terminal')
     if (seen.has(task.id)) throw new HttpError(409, 'Invalid inherited checkout')

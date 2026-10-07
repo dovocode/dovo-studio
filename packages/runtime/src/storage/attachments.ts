@@ -73,6 +73,7 @@ export class Attachments {
   }
   async upload(value: unknown) {
     const input = decode(attachmentUploadSchema, value)
+    this.store.requireTaskWritable(input.taskId)
     const task = this.store.task(input.taskId)
     if (task.archived || task.archivedAt)
       throw new HttpError(409, 'Restore the task before attaching files')

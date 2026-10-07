@@ -38,6 +38,7 @@ import { desktopUpdate } from './desktop-updates.js'
 import { serverUpdateStatus, startServerUpdate } from './server-updates.js'
 import { defaultShell } from '../terminal/shell.js'
 import { agentsRoute } from './endpoints/agents-routes.js'
+import { taskTransferRoute } from './endpoints/task-transfer-routes.js'
 import { terminalsRoute } from './endpoints/terminals-routes.js'
 import { jobsRoute } from './endpoints/jobs-routes.js'
 import { scmRoute } from './endpoints/scm-routes.js'
@@ -148,6 +149,8 @@ export function route(
         )
       }
       const device = s.devices.authenticate(token)
+      if (method === 'POST' && path.startsWith('/api/tasks/transfer/'))
+        return yield* taskTransferRoute(request, path)
       if (method === 'POST' && path.startsWith('/api/subagents/')) {
         if (!device.owner)
           throw new HttpError(403, 'Child agents are controlled by the parent agent')

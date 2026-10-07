@@ -51,6 +51,8 @@ export interface AgentRun {
   ) => Promise<QuestionAnswers | null>
 }
 export interface AgentAdapter {
+  /** Flush and close only this task's idle transport before exporting its session. */
+  closeTask?: (taskId: string) => Promise<void>
   models?: (agent: AgentDiscovery, launch?: AcpLaunch) => Promise<ModelCatalog>
   run: (run: AgentRun) => Promise<void>
   probe: (agent: Agent, launch?: AcpLaunch) => Promise<ProviderStatus>

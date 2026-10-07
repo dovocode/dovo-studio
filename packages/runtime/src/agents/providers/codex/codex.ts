@@ -48,6 +48,12 @@ export function createCodexAdapter(): AgentAdapter {
     await stopOwnedChild(connection.child)
   }
   return {
+    closeTask: async (taskId) => {
+      const connection = idle.get(taskId)
+      if (!connection) return
+      await close(connection)
+      idle.delete(taskId)
+    },
     models: codexModels,
     probe: async (agent) => ({
       provider: 'codex',

@@ -1,4 +1,5 @@
 import { resolveTaskDefaults } from '@dovo/protocol'
+import { taskTransferBlocked } from '@dovo/protocol'
 import { checkpointCanUndo } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { useModelCatalog } from '../../agents/use-model-catalog'
@@ -242,6 +243,15 @@ export function Composer({
             : dictation.state?.status === 'done'
               ? 'Dictation cleaned up'
               : ''
+  if (taskTransferBlocked(task))
+    return (
+      <View style={styles.content}>
+        <Text>
+          This conversation is read-only while its move is pending. Use “Complete move” in task
+          actions to continue or cancel.
+        </Text>
+      </View>
+    )
   if (
     snapshot?.questions.some(
       (question) => question.taskId === task.id && question.prompt.blocking !== false,

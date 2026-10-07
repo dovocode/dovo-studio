@@ -28,6 +28,7 @@ import { MessageQueue } from '../composer/message-queue'
 import { TaskQuestions } from './task-questions'
 import { LinkedProjects } from './linked-projects'
 import { RenameThread } from './rename-thread'
+import { TaskTransfer } from './task-transfer'
 import { useTaskLifecycle } from './use-task-lifecycle'
 import {
   AccessibilityInfo,
@@ -39,7 +40,7 @@ import {
 } from 'react-native'
 import { useEffect, useState, type ComponentProps } from 'react'
 import { Text } from '../../ui/content/text'
-import { type Task } from '@dovo/protocol'
+import { taskTransferBlocked, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Sheet } from '../../ui/layout/sheet'
@@ -160,6 +161,7 @@ function TaskDetailContent({
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const { snapshot, connected, profiles, profile, callEffect, read, activeId } = useRuntime()
+  const [transferring, setTransferring] = useState(false)
   const worktreeThread = useAction()
   const worktreeActions: HeaderAction[] =
     task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
@@ -520,6 +522,22 @@ function TaskDetailContent({
                   worktreeActions,
                   moveActions,
                   [
+                    {
+                      label:
+                        task.transfer?.direction === 'out' ? 'Complete move' : 'Move to computer',
+                      icon: 'device' as const,
+                      overflow: true,
+                      disabled:
+                        !connected ||
+                        task.status === 'running' ||
+                        !!task.queue?.length ||
+                        profiles.length < 2 ||
+                        task.status === 'draft' ||
+                        !task.messages.length,
+                      onPress: () => setTransferring(true),
+                    },
+                  ],
+                  [
                     ...(snapshot?.artifactsEnabled
                       ? [
                           {
@@ -595,6 +613,12 @@ function TaskDetailContent({
                       onPress: () => setEditingInstructions(true),
                     },
                   ] satisfies HeaderAction[],
+                )
+                .map((action) =>
+                  taskTransferBlocked(task) &&
+                  !['Complete move', 'Artifacts'].includes(action.label)
+                    ? { ...action, disabled: true }
+                    : action,
                 )
         }
       />
@@ -813,6 +837,7 @@ function TaskDetailContent({
         </Sheet>
       )}
       {renaming && <RenameThread task={task} onClose={() => setRenaming(false)} />}
+      {transferring && <TaskTransfer task={task} onClose={() => setTransferring(false)} />}
       {editingInstructions && task.repositoryId && (
         <ProjectInstructions
           repositoryId={task.repositoryId}

@@ -106,6 +106,7 @@ export class AgentRegistry {
         return yield* Effect.fail(runtimeFailure(new Error('Provider failed to activate')))
       const models = adapter.models
       return {
+        ...(adapter.closeTask ? { closeTask: adapter.closeTask } : {}),
         run: (run) =>
           adapter.run({
             ...run,

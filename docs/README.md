@@ -22,6 +22,7 @@ provider setup, and feature manual. The guides below focus on particular workflo
   inheritance.
 - [General settings](general-settings.md): organized device preferences, task defaults and lifecycle
   policies.
+- [Move to another computer](session-handoff.md): task handoff, native context, replay and recovery.
 - [Chat interactions](chat-interactions.md): queues, steering, questions, and approvals.
 - [Usage and limits](usage.md): account windows, CLI history, pricing, refresh, and caching.
 - [Codex modes](codex-modes.md): supported Codex reasoning and speed choices.
@@ -50,6 +51,7 @@ behavior.
 - [Redesign proposal](design/redesign-proposal.md)
 - [Redesign implementation](design/redesign-implementation.md)
 - [Source navigation](design/source-navigation.md)
+- [Session handoff between runtimes](design/session-handoff.md)
 
 ## Reference material
 

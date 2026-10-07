@@ -18,6 +18,7 @@ export class TaskQueue {
     private activity?: Pick<Activity, 'add'>,
   ) {}
   accepted(id: string, messageId: string, text: string, attachments: Attachment[] = []) {
+    this.store.requireTaskWritable(id)
     const task = this.store.task(id)
     const receipt = this.store.taskSubmission(id, messageId)
     if (receipt) {
