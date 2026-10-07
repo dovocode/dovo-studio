@@ -473,14 +473,37 @@ it('refuses an environment switch while owned tasks are running', async () => {
   const starting = f.startLocalRuntime('/unused')
   await vi.waitFor(() => expect(f.child.listenerCount('message')).toBe(1))
   f.child.emit('message', { type: 'ready', port: 8787 })
-  await starting
+  const connection = await starting
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>(async () =>
-      Response.json({ workspace: { tasks: [{ status: 'running' }] } }),
-    ),
+    vi.fn<typeof fetch>(async (url, options) => {
+      // Use the platform's request validation: GET bodies throw before any network request.
+      const request = new Request(url, options)
+      expect(request.method).toBe('GET')
+      expect(request.headers.get('Authorization')).toBe(`Bearer ${connection.token}`)
+      return Response.json({ workspace: { tasks: [{ status: 'running' }] } })
+    }),
   )
   await expect(f.pauseLocalRuntime()).rejects.toThrow('Finish or stop active runs')
   expect(f.kill).not.toHaveBeenCalled()
   await f.stopLocalRuntime()
+})
+
+it('checks idle tasks with a valid GET before stopping the runtime for an environment switch', async () => {
+  const f = await childFixture()
+  const starting = f.startLocalRuntime('/unused')
+  await vi.waitFor(() => expect(f.child.listenerCount('message')).toBe(1))
+  f.child.emit('message', { type: 'ready', port: 8787 })
+  const connection = await starting
+  const request = vi.fn<typeof fetch>(async (url, options) => {
+    const validated = new Request(url, options)
+    expect(validated.method).toBe('GET')
+    expect(validated.body).toBeNull()
+    expect(validated.headers.get('Authorization')).toBe(`Bearer ${connection.token}`)
+    return Response.json({ workspace: { tasks: [{ status: 'completed' }] } })
+  })
+  vi.stubGlobal('fetch', request)
+  await f.pauseLocalRuntime()
+  expect(request).toHaveBeenCalledOnce()
+  expect(f.kill).toHaveBeenCalledOnce()
 })

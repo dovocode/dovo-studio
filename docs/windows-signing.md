@@ -56,7 +56,11 @@ ARM runners. The action signs app/runtime EXE, DLL and native Node modules with 
 foreign macOS/Linux prebuilds remain intact and are excluded from signing. electron-builder then
 creates and signs the NSIS installer and uninstaller using its v26 Azure integration
 (`azureSignOptions`, still named Trusted Signing upstream). This runs after Azure OIDC login and
-uses the Azure CLI credential on the GitHub runner, not your local Azure CLI.
+uses the Azure CLI credential on the GitHub runner, not your local Azure CLI. Before NSIS embeds the
+signed uninstaller, a build-time check verifies its embedded Authenticode signature and publisher.
+An unsigned, invalid or unexpected-publisher uninstaller fails the build. During an upgrade,
+`old-uninstaller.exe` is a copy of the previous installation's uninstaller; copying preserves its
+signature, but signing a new release cannot sign an older unsigned installation.
 
 Update manifests and blockmaps are generated from the final signed installers. The embedded update
 configuration includes the publisher CN. Both architectures keep their existing stable/nightly feed

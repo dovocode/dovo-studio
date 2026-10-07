@@ -63,6 +63,10 @@ try {
       directories: { output: join(root, 'release') },
       forceCodeSigning: true,
       win: { ...config.win, azureSignOptions: signing },
+      nsis: {
+        ...config.nsis,
+        include: join(root, 'scripts/packaging/windows-uninstaller.nsh'),
+      },
       publish: [publish],
     },
   })

@@ -593,7 +593,7 @@ export async function pauseLocalRuntime() {
       connection,
       connection.address,
       '/api/snapshot',
-      {},
+      undefined,
       mutableStruct({
         workspace: mutableStruct({ tasks: Schema.Array(mutableStruct({ status: Schema.String })) }),
       }),
