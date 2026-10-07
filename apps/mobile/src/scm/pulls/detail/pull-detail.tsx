@@ -70,7 +70,7 @@ export function PullDetail({
   const open = (url: string, external = false) => {
     void runClientEffect(
       nativeEffect(() => openAppLink(url, external)).pipe(
-        Effect.catchAll((error) => nativeEffect(() => setError(String(error)))),
+        Effect.catch((error) => nativeEffect(() => setError(String(error)))),
       ),
     )
   }

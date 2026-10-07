@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { taskBranchName } from './task-branch'
 
 it('uses the AI task title with a unique suffix and strips Git ref metacharacters', () => {

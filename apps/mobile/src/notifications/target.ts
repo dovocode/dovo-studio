@@ -6,7 +6,7 @@ const targetSchema = mutableStruct({
   runtimeId: identity,
   taskId: identity,
   inputId: Schema.optional(identity),
-  inputType: Schema.optional(Schema.Literal('question', 'approval')),
+  inputType: Schema.optional(Schema.Literals(['question', 'approval'])),
 })
 export function notificationTarget(data: unknown) {
   const result = decodeResult(targetSchema, data)

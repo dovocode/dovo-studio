@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { createFilePreview } from './file-preview'
 
 it('does not read oversized images and reports the saved size instead', async () => {

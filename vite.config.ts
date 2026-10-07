@@ -51,6 +51,18 @@ export default defineConfig({
     ],
   },
   test: {
+    // Effect v4 yields through setImmediate; keep scheduler handoffs live with fake clocks.
+    fakeTimers: {
+      toFake: [
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+        'Date',
+        'performance',
+        'hrtime',
+      ],
+    },
     setupFiles: ['./scripts/test-runtime-environment.ts'],
     include: [
       'packages/**/*.test.ts',

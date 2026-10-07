@@ -92,7 +92,7 @@ export class TaskTurnRunner {
   }
   /** Retry only change capture for an already terminal provider turn. */
   finalizeEffect(id: string, cwd: string, hasGit: boolean) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const turn = this.store.task(id).turns?.at(-1)
       if (
         turn &&
@@ -174,7 +174,7 @@ export class TaskTurnRunner {
     retire?: () => Effect.Effect<void>,
   ) {
     return Effect.scoped(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const task = this.store.task(id)
         const artifactsEnabled = this.artifactsEnabled()
         const configured = resolveTaskAgent(task, this.store.get().agents)
@@ -264,6 +264,9 @@ ${
             400,
             `${agent.provider} does not support access mode ${agent.permission}`,
           )
+        const githubEnvironment = hasGit
+          ? yield* runtimeOperation(() => this.git.githubEnvironment(cwd))
+          : {}
         const commands = this.commands.get()
         const branch = hasGit
           ? (yield* runtimeOperation(() => this.git.inspect(cwd))).branch
@@ -282,6 +285,9 @@ ${
                   },
                 },
                 cwd,
+                githubEnvironment: createHash('sha256')
+                  .update(JSON.stringify(githubEnvironment))
+                  .digest('hex'),
                 commands,
                 cuaServer,
                 branch,
@@ -409,7 +415,7 @@ ${
               error: undefined,
             })
           let after: string | undefined
-          return Effect.gen(this, function* () {
+          return Effect.gen({ self: this }, function* () {
             const action = {
               id: `checkpoint:${turnId}`,
               taskId: id,
@@ -441,7 +447,7 @@ ${
               ...(linked.length ? { linked } : {}),
             }
           }).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.succeed({
                 before,
                 after,
@@ -589,7 +595,7 @@ ${
         }
         yield* Effect.forkScoped(
           Effect.sleep(2 * 60 * 60 * 1000).pipe(
-            Effect.zipRight(
+            Effect.andThen(
               Effect.sync(() =>
                 controller.abort(new Error('Task exceeded the two-hour runtime limit')),
               ),
@@ -597,7 +603,7 @@ ${
             Effect.interruptible,
           ),
         )
-        yield* Effect.gen(this, function* () {
+        yield* Effect.gen({ self: this }, function* () {
           const questionController = new AbortController()
           const questionSignal = AbortSignal.any([controller.signal, questionController.signal])
           this.activity?.add('agent', id, `${agent.provider} turn started`, {
@@ -666,6 +672,7 @@ ${
                 taskId: id,
                 agent: {
                   ...agent,
+                  env: { ...agent.env, ...githubEnvironment },
                   instructions: [
                     agent.instructions,
                     browserCdpInstructions(id),
@@ -1068,7 +1075,7 @@ ${
             hasGit ? runtimeOperation(() => this.git.changes(cwd)) : Effect.succeed([])
           ).pipe(
             Effect.map((files) => ({ files, error: undefined })),
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.succeed({
                 files: undefined,
                 error: `Agent finished. Could not refresh changes: ${errorMessage(error)}`,
@@ -1102,8 +1109,8 @@ ${
             ),
           }))
         }).pipe(
-          Effect.catchAllCause((cause) =>
-            Effect.gen(this, function* () {
+          Effect.catchCause((cause) =>
+            Effect.gen({ self: this }, function* () {
               const error = runtimeFailure(Cause.squash(cause))
               if (providerFinishedAt) {
                 // Finalization failure cannot revise the provider's successful outcome.

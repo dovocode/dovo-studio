@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { openDatabase } from '../../storage/database'
 import { WorkspaceStore } from '../../storage/workspace'
 import { journalProvider } from './journal-provider'

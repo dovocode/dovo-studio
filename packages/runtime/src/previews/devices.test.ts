@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { parseIosDevices, parsePhysicalIosDevices, parsePhysicalAndroidDevices } from './devices'
 it('only offers available simulators and preserves transition state', () => {
   const devices = parseIosDevices(

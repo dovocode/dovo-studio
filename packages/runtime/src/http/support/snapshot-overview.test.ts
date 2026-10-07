@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { taskBudgetUsage, type Task, type Workspace } from '@dovo/protocol'
 import { scopedWorkspace } from './snapshot-overview'
 const task: Task = {

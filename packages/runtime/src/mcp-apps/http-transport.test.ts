@@ -3,7 +3,7 @@ import { once } from 'node:events'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { mcpHttpOptions } from './http-transport'
 
 it.each(['streamable', 'sse'] as const)(

@@ -5,9 +5,14 @@ import type { PullDetail } from '@dovo/protocol'
 import { githubApi, type GithubJSON, type GithubLocation } from './github-api.js'
 import { errorMessage } from '../../../errors.js'
 const check = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.positive()),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThan(0))),
   name: Schema.String,
   status: Schema.String,
   conclusion: Schema.NullOr(Schema.String),
@@ -19,16 +24,24 @@ const check = mutableStruct({
     mutableStruct({
       summary: Schema.NullOr(Schema.String),
       text: Schema.optional(Schema.NullOr(Schema.String)),
-      annotations_count: Schema.Number.pipe(Schema.finite())
-        .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-        .pipe(Schema.nonNegative()),
+      annotations_count: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+        .pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        )
+        .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
     }),
   ),
 })
 const annotation = mutableStruct({
   path: Schema.String,
-  start_line: Schema.Number.pipe(Schema.finite()),
-  end_line: Schema.Number.pipe(Schema.finite()),
+  start_line: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+  end_line: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   annotation_level: Schema.String,
   message: Schema.String,
   title: Schema.optional(Schema.NullOr(Schema.String)),

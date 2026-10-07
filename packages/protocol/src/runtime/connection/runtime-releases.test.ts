@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { fetchRuntimeReleases, newerRuntimeVersion } from './runtime-releases'
 afterEach(() => vi.unstubAllGlobals())
 const tap = (version: string) =>

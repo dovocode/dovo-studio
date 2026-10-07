@@ -184,6 +184,7 @@ export {
   startPolling,
   startReconnecting,
   startSocketHeartbeat,
+  startMcpAppTools,
   clientTaskScope,
 } from '@dovo/client-runtime'
 export {

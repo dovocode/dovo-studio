@@ -3,6 +3,16 @@ const f = vi.hoisted(() => ({
   listeners: new Map<string, (event: Electron.IpcMainEvent, value?: unknown) => void>(),
   handlers: new Map<string, (event: Electron.IpcMainInvokeEvent, value?: unknown) => unknown>(),
   write: vi.fn<() => void>(),
+  connectionWrite: vi.fn<typeof import('node:fs/promises').writeFile>(),
+  connectionRename: vi.fn<typeof import('node:fs/promises').rename>(),
+}))
+vi.mock('./runtime-data-directory.js', () => ({
+  desktopRuntimeDirectory: () => '/isolated/.dovo-dev/desktop',
+}))
+vi.mock('node:fs/promises', () => ({
+  readFile: vi.fn<typeof import('node:fs/promises').readFile>(),
+  writeFile: f.connectionWrite,
+  rename: f.connectionRename,
 }))
 vi.mock('electron', () => ({
   app: { getPath: () => '/unused' },
@@ -14,7 +24,11 @@ vi.mock('electron', () => ({
       handler: (event: Electron.IpcMainInvokeEvent, value?: unknown) => unknown,
     ) => f.handlers.set(name, handler),
   },
-  safeStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'keychain' },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    getSelectedStorageBackend: () => 'keychain',
+    encryptString: (value: string) => Buffer.from(value),
+  },
 }))
 vi.mock('@dovo/protocol/local-settings', () => ({
   readLocalSettingsSection: () => ({ theme: 'dark' }),
@@ -52,3 +66,17 @@ it.each([undefined, 'http://localhost:5173'])(
     expect(foreign.returnValue).toEqual({ error: expect.stringContaining('Untrusted') })
   },
 )
+
+it('stores encrypted connections in the runtime workspace instead of the Electron profile', async () => {
+  registerConnectionStorage('/app/index.html')
+  await f.handlers.get('runtime:registry-write')?.(event('file:///app/index.html'), '{}')
+  expect(f.connectionWrite).toHaveBeenCalledWith(
+    '/isolated/.dovo-dev/desktop/runtime-connections.enc.tmp',
+    Buffer.from('{}'),
+    { mode: 0o600 },
+  )
+  expect(f.connectionRename).toHaveBeenCalledWith(
+    '/isolated/.dovo-dev/desktop/runtime-connections.enc.tmp',
+    '/isolated/.dovo-dev/desktop/runtime-connections.enc',
+  )
+})

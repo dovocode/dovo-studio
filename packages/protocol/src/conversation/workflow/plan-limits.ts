@@ -304,7 +304,10 @@ export function accountLimitGroups(windows: ReturnType<typeof accountPlanLimits>
 export const resetCreditsSchema = mutableStruct({
   supported: Schema.Boolean,
   pendingAttemptId: Schema.optional(Schema.String),
-  availableCount: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+  availableCount: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+  ),
   reason: Schema.optional(Schema.String),
   credits: mutableArray(
     mutableStruct({
@@ -322,7 +325,7 @@ export const usageLimitsReadSchema = mutableStruct({
     mutableStruct({
       agentId: Schema.String,
       provider: Schema.String,
-      status: Schema.Literal('ok', 'unsupported', 'failed'),
+      status: Schema.Literals(['ok', 'unsupported', 'failed']),
       reason: Schema.optional(Schema.String),
     }),
   ),

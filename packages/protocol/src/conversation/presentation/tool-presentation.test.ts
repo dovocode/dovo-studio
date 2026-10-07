@@ -1,5 +1,5 @@
 import { Schema } from 'effect'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { recentTools, activitySchema } from '../../automation/activity'
 import { activitySummary, toolPresentation } from './tool-presentation'
 type Event = Schema.Schema.Type<typeof activitySchema>['events'][number]

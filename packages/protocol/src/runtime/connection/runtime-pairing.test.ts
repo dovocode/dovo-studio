@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Deferred, Effect } from 'effect'
 import { saveRuntimePairing, recoverRuntimePairings, cancelRuntimePairing } from './runtime-pairing'
 import { runtimeProfile, runtimeRegistrySchema, type RuntimeRegistry } from './runtime-fleet'

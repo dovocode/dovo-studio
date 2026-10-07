@@ -1,6 +1,6 @@
 import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
 import { urlSchema, decode } from '@dovo/protocol'
-import { Effect, Schema } from 'effect'
+import { Effect, Schema, Struct } from 'effect'
 import type {
   ForgeCapabilities,
   ForgeRepository,
@@ -52,70 +52,70 @@ const branch = mutableStruct({
     name: Schema.String,
   }),
   commit: mutableStruct({
-    hash: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+    hash: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
   }),
   repository,
 })
 const participant = mutableStruct({
   user,
-  approved: Schema.optionalWith(Schema.Boolean, {
-    default: () => false,
-  }),
+  approved: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   state: Schema.optional(Schema.String),
   participated_on: Schema.optional(Schema.NullOr(Schema.String)),
 })
 const pull = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.positive()),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThan(0))),
   title: Schema.String,
-  description: Schema.optionalWith(Schema.String, {
-    default: () => '',
-  }),
-  state: Schema.Literal('OPEN', 'MERGED', 'DECLINED', 'SUPERSEDED'),
-  draft: Schema.optionalWith(Schema.Boolean, {
-    default: () => false,
-  }),
+  description: Schema.String.pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
+  state: Schema.Literals(['OPEN', 'MERGED', 'DECLINED', 'SUPERSEDED']),
+  draft: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   author: user,
   updated_on: Schema.String,
   source: branch,
   destination: branch,
-  reviewers: Schema.optionalWith(mutableArray(user), {
-    default: () => [],
-  }),
-  participants: Schema.optionalWith(mutableArray(participant), {
-    default: () => [],
-  }),
+  reviewers: mutableArray(user).pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
+  participants: mutableArray(participant).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
   links: mutableStruct({
     html: link,
   }),
 })
 const listPull = mutableStruct({
-  ...pull.omit('reviewers', 'participants').fields,
+  ...pull.mapFields(Struct.omit(['reviewers', 'participants'])).fields,
   reviewers: Schema.optional(mutableArray(user)),
   participants: Schema.optional(mutableArray(participant)),
 })
 const comment = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite()).pipe(
-    Schema.int(),
-    Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(
+      Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+    ),
   ),
   content: mutableStruct({
-    raw: Schema.optionalWith(Schema.String, {
-      default: () => '',
-    }),
+    raw: Schema.String.pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
   }),
   user,
   created_on: Schema.String,
-  deleted: Schema.optionalWith(Schema.Boolean, {
-    default: () => false,
-  }),
+  deleted: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   parent: Schema.optional(
     Schema.NullOr(
       mutableStruct({
-        id: Schema.Number.pipe(Schema.finite()).pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+        id: Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
         ),
       }),
     ),
@@ -124,8 +124,8 @@ const comment = mutableStruct({
     Schema.NullOr(
       mutableStruct({
         path: Schema.String,
-        from: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
-        to: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
+        from: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite())))),
+        to: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite())))),
         outdated: Schema.optional(Schema.Boolean),
       }),
     ),
@@ -145,12 +145,22 @@ const status = mutableStruct({
 })
 const stat = mutableStruct({
   status: Schema.String,
-  lines_added: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.nonNegative()),
-  lines_removed: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.nonNegative()),
+  lines_added: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
+  lines_removed: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
   old: Schema.optional(
     Schema.NullOr(
       mutableStruct({
@@ -220,7 +230,7 @@ export class BitbucketForge implements ForgeAdapter {
       defaultBranch: value.mainbranch?.name,
     }
   }
-  private async page<T, I>(path: string, schema: Schema.Schema<T, I>, page: number) {
+  private async page<T, I>(path: string, schema: Schema.Codec<T, I>, page: number) {
     if (!Number.isInteger(page) || page < 1 || page > 100)
       throw new HttpError(400, 'Page must be between 1 and 100')
     const shape = mutableStruct({
@@ -242,7 +252,7 @@ export class BitbucketForge implements ForgeAdapter {
       next: undefined,
     }
   }
-  private async all<T, I>(path: string, schema: Schema.Schema<T, I>) {
+  private async all<T, I>(path: string, schema: Schema.Codec<T, I>) {
     const shape = mutableStruct({
       values: mutableArray(schema),
       next: Schema.optional(urlSchema()),
@@ -647,9 +657,14 @@ export class BitbucketForge implements ForgeAdapter {
                 parent: {
                   id: decode(
                     CoercedNumber.pipe(
-                      Schema.int(),
-                      Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-                    ).pipe(Schema.positive()),
+                      Schema.check(Schema.isInt()),
+                      Schema.check(
+                        Schema.isBetween({
+                          minimum: Number.MIN_SAFE_INTEGER,
+                          maximum: Number.MAX_SAFE_INTEGER,
+                        }),
+                      ),
+                    ).pipe(Schema.check(Schema.isGreaterThan(0))),
                     input.commentId,
                   ),
                 },
@@ -680,9 +695,14 @@ export class BitbucketForge implements ForgeAdapter {
     } else if (input.action === 'resolve') {
       const id = decode(
         CoercedNumber.pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-        ).pipe(Schema.positive()),
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ).pipe(Schema.check(Schema.isGreaterThan(0))),
         input.threadId,
       )
       await this.http.json(`${path}/comments/${id}/resolve`, {

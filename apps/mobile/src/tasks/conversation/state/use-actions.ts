@@ -177,7 +177,7 @@ export function useConversationActions(task: Task) {
         changes,
       },
       mutableStruct({
-        revision: Schema.Number.pipe(Schema.finite()),
+        revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
       }),
       'PATCH',
     )
@@ -220,7 +220,7 @@ export function useConversationActions(task: Task) {
           attempt.title ??
           (yield* readEffect('/api/tasks/title', { text: summary }, generatedTitleSchema).pipe(
             Effect.map((value) => value.title),
-            Effect.catchAll(() =>
+            Effect.catch(() =>
               Effect.succeed(summary.split('\n')[0]?.trim().slice(0, 80) || 'New task'),
             ),
           ))
@@ -254,7 +254,7 @@ export function useConversationActions(task: Task) {
         )
         yield* storedDraft.confirmEffect(attempt, clearDraft)
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           mobileWorkflow(function* () {
             failedSend.current = attempt
             return yield* Effect.fail(error)
@@ -262,7 +262,7 @@ export function useConversationActions(task: Task) {
         ),
       )
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         mobileWorkflow(function* () {
           setPendingMessage((pending) =>
             pending?.taskId === task.id && pending.message.id === submittedId

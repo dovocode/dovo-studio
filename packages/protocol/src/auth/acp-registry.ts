@@ -19,7 +19,7 @@ export const acpInstallationSchema = mutableStruct({
   registryId,
   name: minValue(Schema.String, 1),
   version: minValue(Schema.String, 1),
-  distribution: Schema.Literal('binary', 'npx', 'uvx'),
+  distribution: Schema.Literals(['binary', 'npx', 'uvx']),
   installedAt: Schema.String,
   needsRepair: Schema.optional(Schema.Boolean),
 })
@@ -37,7 +37,7 @@ export const acpRegistryAgentSchema = mutableStruct({
   license: Schema.optional(Schema.String),
   licenseUrl: Schema.optional(urlSchema({ protocol: /^https?$/ })),
   icon: Schema.optional(urlSchema({ protocol: /^https?$/ })),
-  distribution: Schema.Literal('binary', 'npx', 'uvx'),
+  distribution: Schema.Literals(['binary', 'npx', 'uvx']),
   available: Schema.Boolean,
   installed: Schema.optional(acpInstallationSchema),
 })

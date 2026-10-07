@@ -1,19 +1,21 @@
 import { modelDisplayName } from './model-display-name.js'
 export { modelDisplayName } from './model-display-name.js'
 import { mutableStruct, mutableArray } from '../shared/schema.js'
-import { Schema } from 'effect'
+import { Schema, Struct } from 'effect'
 import { agentSchema } from '../workspace.js'
-export const agentDiscoverySchema = agentSchema.pick(
-  'provider',
-  'endpoint',
-  'executablePath',
-  'configDirectory',
-  'args',
-  'env',
-  'model',
-  'acpInstallationId',
-  'acpMode',
-  'acpConfig',
+export const agentDiscoverySchema = agentSchema.mapFields(
+  Struct.pick([
+    'provider',
+    'endpoint',
+    'executablePath',
+    'configDirectory',
+    'args',
+    'env',
+    'model',
+    'acpInstallationId',
+    'acpMode',
+    'acpConfig',
+  ]),
 )
 const choiceSchema = mutableStruct({
   id: Schema.String,
@@ -23,7 +25,7 @@ export const modelCatalogSchema = mutableStruct({
   harness: Schema.optional(
     mutableStruct({
       name: Schema.String,
-      generation: Schema.Literal('v1', 'v2'),
+      generation: Schema.Literals(['v1', 'v2']),
     }),
   ),
   models: mutableArray(
@@ -73,7 +75,7 @@ export const modelCatalogSchema = mutableStruct({
   ),
   codex: Schema.optional(
     mutableStruct({
-      daybreakPrograms: mutableArray(Schema.Literal('daybreakBlue', 'daybreakRed')),
+      daybreakPrograms: mutableArray(Schema.Literals(['daybreakBlue', 'daybreakRed'])),
       fastModeBlocked: Schema.Boolean,
     }),
   ),

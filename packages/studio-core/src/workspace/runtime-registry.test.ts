@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { decodeRuntimeRegistry } from './runtime-registry'
 const connection = { address: 'http://remote:8787/', token: 'a-valid-runtime-token-123456' }
 it('migrates one saved connection into a selected runtime without losing credentials', () => {
@@ -17,7 +17,7 @@ it('does not overwrite malformed saved runtime credentials', () => {
 })
 
 it('reads the saved workspace registry without waiting for pending network pairing', async () => {
-  const { vi } = await import('vitest')
+  const { vi } = await import('vite-plus/test')
   const { readRuntimeRegistry } = await import('./runtime-registry')
   const registry = decodeRuntimeRegistry(null, JSON.stringify(connection))
   const pending = {

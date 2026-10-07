@@ -1,6 +1,6 @@
 import * as warmProcesses from '../../execution/warm-processes.js'
 import { decode, mcpServerSchema } from '@dovo/protocol'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { readFile, rm, writeFile, mkdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createHermesAdapter, hermesModels } from './hermes.js'

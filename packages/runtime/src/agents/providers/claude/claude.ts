@@ -41,7 +41,7 @@ function claudeStream(
       ...(run.agent.reasoning
         ? {
             effort: decode(
-              Schema.Literal('low', 'medium', 'high', 'xhigh', 'max'),
+              Schema.Literals(['low', 'medium', 'high', 'xhigh', 'max']),
               run.agent.reasoning,
             ),
           }

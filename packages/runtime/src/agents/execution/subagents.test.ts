@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { updateSubagents } from './subagents'
 const now = '2026-09-23T00:00:00Z'
 it('merges Codex spawn, activity and completion by agent ID without inventing usage', () => {

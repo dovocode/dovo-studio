@@ -9,13 +9,15 @@ import {
   acpMcpServers,
 } from '../agents/configuration/mcp-settings'
 import { randomUUID } from 'node:crypto'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { createServer } from 'node:http'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
   ListToolsRequestSchema,
+  ListToolsResultSchema,
   CallToolRequestSchema,
+  CallToolResultSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { startRuntime } from '../index'
@@ -141,7 +143,14 @@ it('captures MCP Apps and legacy resources once without putting HTML in sync', a
   const s = await setup(),
     bridge = s.runtime.services.mcpApps
   const listed = await bridge.proxy(s.token, 'tools/list', {})
-  expect(listed).toMatchObject({ tools: [{ name: 'chart' }, { name: 'legacy' }] })
+  expect(listed).toMatchObject({
+    tools: [
+      { name: 'chart' },
+      { name: 'legacy' },
+      { name: 'dovo_app_list_tools' },
+      { name: 'dovo_app_call_tool' },
+    ],
+  })
   await expect(bridge.proxy(s.token, 'tools/call', { name: 'refresh' })).rejects.toThrow(
     'not available',
   )
@@ -226,7 +235,12 @@ it('runs the provider stdio proxy without exposing upstream credentials', async 
   const client = new Client({ name: 'harness-fixture', version: '1' })
   cleanups.push(() => client.close())
   await client.connect(transport)
-  expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(['chart', 'legacy'])
+  expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+    'chart',
+    'legacy',
+    'dovo_app_list_tools',
+    'dovo_app_call_tool',
+  ])
   await client.callTool({ name: 'chart', arguments: {} })
   expect(s.calls()).toBe(1)
   expect(codexMcpServers([s.proxy]).fixture).toMatchObject({ command: process.execPath })
@@ -405,3 +419,89 @@ it.each([401, 403, 405])(
     expect(s.requestMethods).toEqual(status === 405 ? ['POST', 'GET'] : ['POST'])
   },
 )
+
+it('routes agent calls to ticket-authenticated live app tools and removes them when the view closes', async () => {
+  const { WebSocket } = await import('ws')
+  const s = await setup(),
+    bridge = s.runtime.services.mcpApps
+  await bridge.proxy(s.token, 'tools/call', { name: 'chart' })
+  const ref = recentTools(
+    s.runtime.services.activity.list('', 'task-activity', 0, s.task.id).events,
+  ).flatMap((event) => mcpAppReferences(event.payload))[0]!
+  const endpoint = `http://127.0.0.1:${s.runtime.port}/api/mcp-apps/ticket`
+  const issue = (credential: string) =>
+    fetch(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: s.task.id, id: ref.id }),
+    })
+  expect((await issue('invalid')).status).toBe(401)
+  const response = await issue('test-owner-token-with-at-least-32-characters')
+  expect(response.ok).toBe(true)
+  const payload: unknown = await response.json()
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    !('ticket' in payload) ||
+    typeof payload.ticket !== 'string'
+  )
+    throw new Error('No ticket')
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${s.runtime.port}/ws/mcp-app?ticket=${encodeURIComponent(payload.ticket)}`,
+  )
+  cleanups.push(async () => socket.close())
+  await new Promise<void>((resolve, reject) => {
+    socket.once('open', resolve)
+    socket.once('error', reject)
+  })
+  socket.send(
+    JSON.stringify({
+      type: 'tools',
+      tools: [
+        {
+          name: 'selected_rows',
+          inputSchema: { type: 'object' },
+          annotations: { readOnlyHint: true },
+        },
+      ],
+    }),
+  )
+  let name = ''
+  await vi.waitFor(async () => {
+    const list = CallToolResultSchema.parse(
+      await bridge.proxy(s.token, 'tools/call', { name: 'dovo_app_list_tools' }),
+    )
+    const content = list.content[0]
+    if (content?.type !== 'text') throw new Error('Missing tool list')
+    name = ListToolsResultSchema.parse({ tools: JSON.parse(content.text) }).tools[0]?.name ?? ''
+    expect(name).not.toBe('')
+  })
+  socket.on('message', (data) => {
+    const bytes = Buffer.isBuffer(data)
+      ? data
+      : Array.isArray(data)
+        ? Buffer.concat(data)
+        : Buffer.from(data)
+    const request: unknown = JSON.parse(bytes.toString('utf8'))
+    if (request && typeof request === 'object' && 'requestId' in request)
+      socket.send(
+        JSON.stringify({
+          type: 'result',
+          requestId: request.requestId,
+          result: { content: [{ type: 'text', text: 'rows 1 and 2' }] },
+        }),
+      )
+  })
+  expect(
+    await bridge.proxy(s.token, 'tools/call', { name: 'dovo_app_call_tool', arguments: { name } }),
+  ).toEqual({
+    content: [{ type: 'text', text: 'rows 1 and 2' }],
+  })
+  expect(s.calls()).toBe(1)
+  socket.close()
+  await vi.waitFor(async () => {
+    await expect(
+      bridge.proxy(s.token, 'tools/call', { name: 'dovo_app_call_tool', arguments: { name } }),
+    ).rejects.toThrow('no longer available')
+  })
+})

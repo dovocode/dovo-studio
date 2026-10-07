@@ -1,7 +1,7 @@
 import { runtimeComputerName } from '@dovo/protocol'
 import { openAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
-import { Effect, Schema } from 'effect'
+import { Effect, Schema, Semaphore } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import {
   appendUniqueRows,
@@ -52,11 +52,21 @@ type WorkItemProps = {
 type RunAction = 'rerun' | 'cancel' | 'enable' | 'disable'
 const cachedIssueSchema = mutableStruct({
   ...forgeIssueDetailSchema.fields,
-  loadedPages: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(1, 500))),
+  loadedPages: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 1, maximum: 500 })),
+    ),
+  ),
 })
 const cachedPipelineSchema = mutableStruct({
   ...forgePipelineDetailSchema.fields,
-  loadedPages: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(1, 500))),
+  loadedPages: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 1, maximum: 500 })),
+    ),
+  ),
 })
 
 /** The route owns item identity; the collection remains mounted underneath. */
@@ -131,7 +141,7 @@ function WorkItemContent({
   const loadedPages = useRef(1)
   const consumedRevision = useRef(0)
   const requests = useRef(new RequestScope())
-  const [semaphore] = useState(() => Effect.runSync(Effect.makeSemaphore(1)))
+  const [semaphore] = useState(() => Effect.runSync(Semaphore.make(1)))
   const alive = useRef(true)
   useEffect(() => {
     alive.current = true
@@ -191,7 +201,7 @@ function WorkItemContent({
               }
             }
           }).pipe(
-            Effect.catchAll((cause) =>
+            Effect.catch((cause) =>
               nativeEffect(() => {
                 if (valid())
                   setError(
@@ -261,7 +271,7 @@ function WorkItemContent({
               }) ?? Effect.succeed(undefined)
             )
           }).pipe(
-            Effect.catchAll(() =>
+            Effect.catch(() =>
               nativeEffect(() => {
                 if (valid()) setError('Details loaded, but could not be saved for offline use.')
               }),
@@ -305,7 +315,7 @@ function WorkItemContent({
               }) ?? Effect.succeed(undefined)
             )
           }).pipe(
-            Effect.catchAll(() =>
+            Effect.catch(() =>
               nativeEffect(() => {
                 if (valid()) setError('Details loaded, but could not be saved for offline use.')
               }),
@@ -313,7 +323,7 @@ function WorkItemContent({
           )
         }
       }).pipe(
-        Effect.catchAll((cause) =>
+        Effect.catch((cause) =>
           nativeEffect(() => {
             if (!stopped) {
               setStale(true)
@@ -373,7 +383,7 @@ function WorkItemContent({
       mobileWorkflow(function* () {
         yield* readCache?.removeEffect(detailKey) ?? Effect.succeed(undefined)
       }).pipe(
-        Effect.catchAll(() =>
+        Effect.catch(() =>
           nativeEffect(() =>
             setError('Updated details could not be cleared from offline storage.'),
           ),
@@ -432,7 +442,7 @@ function WorkItemContent({
                 }) ?? Effect.succeed(undefined)
               )
             }).pipe(
-              Effect.catchAll((_error) =>
+              Effect.catch((_error) =>
                 nativeEffect(() => {
                   if (current()) setError('Details loaded, but could not be saved for offline use.')
                 }),
@@ -475,7 +485,7 @@ function WorkItemContent({
                 }) ?? Effect.succeed(undefined)
               )
             }).pipe(
-              Effect.catchAll((_error) =>
+              Effect.catch((_error) =>
                 nativeEffect(() => {
                   if (current()) setError('Details loaded, but could not be saved for offline use.')
                 }),
@@ -483,7 +493,7 @@ function WorkItemContent({
             )
           }
         }).pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               if (current()) {
                 setStale(true)
@@ -506,7 +516,7 @@ function WorkItemContent({
   const open = (url: string) => {
     void runClientEffect(
       nativeEffect(() => openAppLink(url)).pipe(
-        Effect.catchAll((cause) => nativeEffect(() => setError(String(cause)))),
+        Effect.catch((cause) => nativeEffect(() => setError(String(cause)))),
       ),
     )
   }
@@ -894,7 +904,7 @@ function WorkItemContent({
                 )
                   .pipe(Effect.flatMap((result) => nativeEffect(() => done(result.message))))
                   .pipe(
-                    Effect.catchAll((cause) =>
+                    Effect.catch((cause) =>
                       nativeEffect(() => {
                         if (alive.current) setError(String(cause))
                       }),

@@ -1,5 +1,5 @@
 import { decode } from '@dovo/protocol'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { commandsSchema } from '@dovo/protocol'
 import { checkAdapterUpdates } from './diagnostics'
 const run = vi.hoisted(() =>
@@ -63,7 +63,7 @@ it('checks the installed adapters without contacting an update registry or runni
   expect(diagnostics.find((item) => item.id === 'cursor-sdk')).toMatchObject({
     available: true,
     kind: 'sdk',
-    installedVersion: '1.0.35',
+    installedVersion: '1.0.36',
     provider: 'cursor',
   })
   expect(diagnostics.filter((item) => item.kind === 'sdk').every((item) => item.available)).toBe(

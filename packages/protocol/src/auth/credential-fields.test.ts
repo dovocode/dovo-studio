@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { credentialFields, credentialValues } from './credential-fields'
 it('preserves hidden credentials until explicitly replaced or removed', () => {
   const fields = credentialFields({ API_KEY: 'dovo-stored-secret:opaque', OTHER: 'another' })

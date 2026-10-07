@@ -28,7 +28,7 @@ function useRuntimePreferences() {
       requestEffect('/api/runtime/preferences/read', {}, runtimePreferencesSchema).pipe(
         Effect.tap((settings) => Effect.sync(() => setValue(settings))),
         Effect.asVoid,
-        Effect.catchAll((error) => Effect.sync(() => setError(error.message))),
+        Effect.catch((error) => Effect.sync(() => setError(error.message))),
       ),
     )
     return () => {
@@ -41,7 +41,7 @@ function useRuntimePreferences() {
     void Effect.runPromise(
       requestEffect('/api/runtime/preferences/save', changes, runtimePreferencesSchema).pipe(
         Effect.tap((settings) => Effect.sync(() => setValue(settings))),
-        Effect.catchAll((error) => Effect.sync(() => setError(error.message))),
+        Effect.catch((error) => Effect.sync(() => setError(error.message))),
         Effect.ensuring(Effect.sync(() => setBusy(false))),
       ),
     )

@@ -1,6 +1,6 @@
 import { Effect, Fiber } from 'effect'
 import type { PullDetail } from '@dovo/protocol'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { openDatabase } from '../../storage/database'
 import { WorkspaceStore } from '../../storage/workspace'
 import { GitService } from '../git/git'
@@ -49,8 +49,9 @@ it('watches registered repos without a PR screen and stops when disposed', async
   }))
   const load = vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })
   cache.start()
+  await new Promise<void>((resolve) => setImmediate(resolve))
   await vi.advanceTimersByTimeAsync(300000)
-  expect(load).toHaveBeenCalledWith('/repo', 'open', 1)
+  await vi.waitFor(() => expect(load).toHaveBeenCalledWith('/repo', 'open', 1))
   await cache.dispose()
   await vi.advanceTimersByTimeAsync(120000)
   expect(load).toHaveBeenCalledTimes(1)

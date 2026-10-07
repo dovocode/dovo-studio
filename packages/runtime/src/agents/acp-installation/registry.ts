@@ -4,13 +4,10 @@ import { valid as semverValid } from 'semver'
 
 export const REGISTRY_URL = 'https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json'
 
-const boundedString = (max: number) => Schema.String.pipe(Schema.maxLength(max))
+const boundedString = (max: number) => Schema.String.pipe(Schema.check(Schema.isMaxLength(max)))
 const argSchema = boundedString(4096)
 const argsSchema = mutableArray(argSchema)
-const environmentSchema = Schema.Record({
-  key: boundedString(256),
-  value: boundedString(4096),
-})
+const environmentSchema = Schema.Record(boundedString(256), boundedString(4096))
 const optionalEnvironment = Schema.optional(environmentSchema)
 const binaryTargetSchema = mutableStruct({
   archive: boundedString(4096),
@@ -25,7 +22,7 @@ const packageDistributionSchema = mutableStruct({
   env: optionalEnvironment,
 })
 const distributionSchema = mutableStruct({
-  binary: Schema.optional(Schema.Record({ key: Schema.String, value: binaryTargetSchema })),
+  binary: Schema.optional(Schema.Record(Schema.String, binaryTargetSchema)),
   npx: Schema.optional(packageDistributionSchema),
   uvx: Schema.optional(packageDistributionSchema),
 })

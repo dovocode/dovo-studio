@@ -1,7 +1,7 @@
 import { pullStackSchema, pullStackSummarySchema } from './pull-stack.js'
 import { mutableArray, mutableStruct } from '../../shared/schema.js'
 import { urlSchema, maxValue, minValue, refine } from '../../shared/schema.js'
-import { Schema } from 'effect'
+import { Schema, Effect, Struct } from 'effect'
 import { taskHarnessSchema, taskPullSchema } from '../../workspace.js'
 import { forgeCapabilitiesSchema, forgeProviderSchema } from '../forges/forges.js'
 const link = urlSchema({
@@ -9,22 +9,45 @@ const link = urlSchema({
 })
 export const pullSummarySchema = mutableStruct({
   additions: Schema.optional(
-    Schema.NullOr(Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative())),
+    Schema.NullOr(
+      Schema.Number.pipe(
+        Schema.check(Schema.isFinite()),
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
+    ),
   ),
   deletions: Schema.optional(
-    Schema.NullOr(Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative())),
+    Schema.NullOr(
+      Schema.Number.pipe(
+        Schema.check(Schema.isFinite()),
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
+    ),
   ),
   commentCount: Schema.optional(
-    Schema.NullOr(Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative())),
+    Schema.NullOr(
+      Schema.Number.pipe(
+        Schema.check(Schema.isFinite()),
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
+    ),
   ),
   stack: Schema.optional(pullStackSummarySchema),
   provider: Schema.optional(forgeProviderSchema),
-  number: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.positive()),
+  number: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThan(0))),
   title: Schema.String,
   url: link,
-  state: Schema.Literal('open', 'closed', 'merged'),
+  state: Schema.Literals(['open', 'closed', 'merged']),
   draft: Schema.Boolean,
   author: Schema.String,
   updatedAt: Schema.String,
@@ -45,7 +68,7 @@ export const pullPageSchema = mutableStruct({
   refreshError: Schema.optional(Schema.String),
   pulls: mutableArray(pullSummarySchema),
   hasMore: Schema.Boolean,
-  page: Schema.Number.pipe(Schema.finite()),
+  page: Schema.Number.pipe(Schema.check(Schema.isFinite())),
 })
 export const pullCommentSchema = mutableStruct({
   threadId: Schema.optional(Schema.String),
@@ -58,10 +81,10 @@ export const pullCommentSchema = mutableStruct({
   body: Schema.String,
   date: Schema.String,
   url: link,
-  kind: Schema.Literal('comment', 'review', 'inline'),
+  kind: Schema.Literals(['comment', 'review', 'inline']),
   state: Schema.optional(Schema.String),
   path: Schema.optional(Schema.String),
-  line: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
+  line: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite())))),
   replyTo: Schema.optional(Schema.String),
   diff: Schema.optional(Schema.String),
 })
@@ -75,12 +98,13 @@ export const pullDetailSchema = mutableStruct({
   pull: mutableStruct({
     ...pullSummarySchema.fields,
     ...{
-      ...taskPullSchema.pick('headSha', 'baseSha', 'repositoryUrl').fields,
-      ...taskPullSchema.pick('provider', 'connectionId', 'headRef', 'cloneUrl').fields,
+      ...taskPullSchema.mapFields(Struct.pick(['headSha', 'baseSha', 'repositoryUrl'])).fields,
+      ...taskPullSchema.mapFields(Struct.pick(['provider', 'connectionId', 'headRef', 'cloneUrl']))
+        .fields,
       body: Schema.String,
-      additions: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
-      deletions: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
-      changedFiles: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
+      additions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
+      deletions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
+      changedFiles: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       mergeable: Schema.NullOr(Schema.Boolean),
       reviewers: mutableArray(Schema.String),
       assignees: mutableArray(Schema.String),
@@ -92,8 +116,8 @@ export const pullDetailSchema = mutableStruct({
       path: Schema.String,
       previousPath: Schema.optional(Schema.String),
       status: Schema.String,
-      additions: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
-      deletions: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
+      additions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
+      deletions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       patch: Schema.optional(Schema.String),
     }),
   ),
@@ -111,8 +135,8 @@ export const pullDetailSchema = mutableStruct({
         mutableArray(
           mutableStruct({
             path: Schema.String,
-            startLine: Schema.Number.pipe(Schema.finite()),
-            endLine: Schema.Number.pipe(Schema.finite()),
+            startLine: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+            endLine: Schema.Number.pipe(Schema.check(Schema.isFinite())),
             level: Schema.String,
             message: Schema.String,
             title: Schema.optional(Schema.String),
@@ -129,19 +153,22 @@ export type PullDetail = Schema.Schema.Type<typeof pullDetailSchema>
 export type PullComment = Schema.Schema.Type<typeof pullCommentSchema>
 export const pullTaskInputSchema = refine(
   mutableStruct({
-    number: Schema.Number.pipe(Schema.finite())
-      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-      .pipe(Schema.positive()),
-    agentId: Schema.optionalWith(maxValue(Schema.String, 200), {
-      default: () => '',
-    }),
+    number: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+      .pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      )
+      .pipe(Schema.check(Schema.isGreaterThan(0))),
+    agentId: maxValue(Schema.String, 200).pipe(
+      Schema.withDecodingDefaultType(Effect.sync(() => '')),
+    ),
     harness: Schema.optional(taskHarnessSchema),
     stackAction: Schema.optional(Schema.Literal('update')),
-    objective: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 12000),
+    objective: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 12000),
     headSha: taskPullSchema.fields.headSha,
-    run: Schema.optionalWith(Schema.Boolean, {
-      default: () => false,
-    }),
+    run: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   }),
   (input) => !(input.agentId && input.harness),
   {
@@ -159,19 +186,34 @@ export function pullFilePatch(file: Pick<PullDetail['files'][number], 'patch' | 
 }
 export const pullLineCommentSchema = refine(
   mutableStruct({
-    number: Schema.Number.pipe(Schema.finite())
-      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-      .pipe(Schema.positive()),
+    number: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+      .pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      )
+      .pipe(Schema.check(Schema.isGreaterThan(0))),
     headSha: taskPullSchema.fields.headSha,
     path: minValue(Schema.String, 1),
-    side: Schema.Literal('additions', 'deletions'),
-    start: Schema.Number.pipe(Schema.finite())
-      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-      .pipe(Schema.positive()),
-    end: Schema.Number.pipe(Schema.finite())
-      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-      .pipe(Schema.positive()),
-    body: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 10000),
+    side: Schema.Literals(['additions', 'deletions']),
+    start: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+      .pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      )
+      .pipe(Schema.check(Schema.isGreaterThan(0))),
+    end: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+      .pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      )
+      .pipe(Schema.check(Schema.isGreaterThan(0))),
+    body: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 10000),
   }),
   (v) => v.end >= v.start,
   'Invalid line range',

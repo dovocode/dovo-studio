@@ -1,5 +1,5 @@
 import { decode, pullDetailSchema } from '@dovo/protocol'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 import { TaskPullWatcher } from './task-pulls'

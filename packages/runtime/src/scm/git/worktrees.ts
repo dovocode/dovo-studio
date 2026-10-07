@@ -50,7 +50,7 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
       for (const repository of workspace.repositories) {
         if (repository.kind) continue
         // A missing or broken project checkout shouldn't hide the others' worktrees.
-        const listed = yield* Effect.either(
+        const listed = yield* Effect.result(
           runtimeOperation(async () => {
             const { path: top } = await s.git.inspect(repository.path)
             const common = (
@@ -62,8 +62,8 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
             return { common, records }
           }),
         )
-        if (listed._tag === 'Left') continue
-        const { common, records } = listed.right
+        if (listed._tag === 'Failure') continue
+        const { common, records } = listed.success
         const tasks = workspace.tasks.flatMap((task) => [
           ...(task.repositoryId === repository.id
             ? [{ task, keys: taskWorktreeKeys(common, task.id) }]
@@ -98,7 +98,7 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
           // A prunable entry has no directory left to inspect; nothing there can be lost.
           const dirty = prunable
             ? undefined
-            : yield* Effect.either(
+            : yield* Effect.result(
                 runtimeOperation(() => s.git.command(path, ['status', '--porcelain'])),
               )
           worktrees.push({
@@ -110,7 +110,7 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
             taskTitle: owner?.title,
             state,
             // Unreadable status counts as changed: never offer to delete what we can't inspect.
-            dirty: !!dirty && (dirty._tag === 'Left' || !!dirty.right.trim()),
+            dirty: !!dirty && (dirty._tag === 'Failure' || !!dirty.success.trim()),
             prunable,
           })
         }

@@ -29,7 +29,10 @@ const unavailable = (reason: string): ResetCredits => ({
 const optionalText = Schema.optional(Schema.NullOr(Schema.String))
 const grantSchema = mutableStruct({
   id: Schema.String,
-  resets_left: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+  resets_left: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+  ),
   ends_at: optionalText,
   paused: Schema.optional(Schema.Boolean),
   usable_now: Schema.optional(Schema.Boolean),
@@ -83,7 +86,10 @@ export function codexCredits(payload: unknown, now = Date.now()): ResetCredits {
       rateLimitResetCredits: Schema.optional(
         Schema.NullOr(
           mutableStruct({
-            availableCount: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+            availableCount: Schema.Number.pipe(
+              Schema.check(Schema.isInt()),
+              Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+            ),
             credits: Schema.optional(Schema.NullOr(mutableArray(Schema.Unknown))),
           }),
         ),
@@ -99,7 +105,7 @@ export function codexCredits(payload: unknown, now = Date.now()): ResetCredits {
     status: Schema.String,
     resetType: Schema.String,
     title: optionalText,
-    expiresAt: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
+    expiresAt: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite())))),
   })
   return {
     supported: true,
@@ -178,10 +184,10 @@ export async function codexAccount<T>(
     await stopOwnedChild(child)
   }
 }
-async function readLogin<T extends Schema.Schema.AnyNoContext>(
+async function readLogin<T extends Schema.Codec<unknown, unknown>>(
   schema: T,
   path: string,
-): Promise<Schema.Schema.Type<T>> {
+): Promise<T['Type']> {
   try {
     return decode(schema, JSON.parse(await readFile(path, 'utf8')))
   } catch {
@@ -238,7 +244,7 @@ async function claudeRequest(
   return response.json() as Promise<unknown>
 }
 export function claudeQuotaLimits(payload: unknown): PlanLimit[] {
-  const value = decodeResult(Schema.Record({ key: Schema.String, value: Schema.Unknown }), payload)
+  const value = decodeResult(Schema.Record(Schema.String, Schema.Unknown), payload)
   return reportedPlanLimits(
     'claude',
     'account/usage/read',
@@ -311,7 +317,7 @@ export async function consumeResetCredit(
         throw new Error('The signed-in account changed. Reset canceled.')
       const result = decode(
         mutableStruct({
-          outcome: Schema.Literal('reset', 'nothingToReset', 'noCredit', 'alreadyRedeemed'),
+          outcome: Schema.Literals(['reset', 'nothingToReset', 'noCredit', 'alreadyRedeemed']),
         }),
         await request('account/rateLimitResetCredit/consume', {
           idempotencyKey,
@@ -326,14 +332,14 @@ export async function consumeResetCredit(
     throw new Error('No redeemable Claude reset credit.')
   const response = decode(
     mutableStruct({
-      result: Schema.Literal(
+      result: Schema.Literals([
         'reset',
         'already_used',
         'not_limited',
         'cooldown',
         'ineligible',
         'unavailable',
-      ),
+      ]),
     }),
     await claudeRequest(
       login,

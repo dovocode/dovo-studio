@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { Readable } from 'node:stream'

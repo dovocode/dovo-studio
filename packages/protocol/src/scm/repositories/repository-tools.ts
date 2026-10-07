@@ -11,12 +11,12 @@ export const createGithubRepositorySchema = mutableStruct({
   ...repositoryFolderSchema.fields,
   name: maxValue(
     Schema.String.pipe(
-      Schema.pattern(/^[A-Za-z0-9][A-Za-z0-9_.-]*(\/[A-Za-z0-9][A-Za-z0-9_.-]*)?$/),
+      Schema.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9_.-]*(\/[A-Za-z0-9][A-Za-z0-9_.-]*)?$/)),
     ),
     200,
   ),
-  visibility: Schema.Literal('private', 'public'),
+  visibility: Schema.Literals(['private', 'public']),
 })
 export const openRepositorySchema = mutableStruct({
-  target: Schema.Literal('finder', 'vscode', 'cursor'),
+  target: Schema.Literals(['finder', 'vscode', 'cursor']),
 })

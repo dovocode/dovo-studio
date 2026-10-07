@@ -20,6 +20,22 @@ allowlist of `ui-card`, `ui-text`, `ui-button`, `ui-stack` and `ui-image`, using
 Arbitrary host DOM and custom component libraries are deliberately not exposed. HTML assets/network
 requests must have declared `_meta.ui.csp` origins; undeclared access is blocked.
 
+## Reading live app state
+
+Modern apps can expose read-only tools through the MCP Apps tools capability. The host discovers
+these tools on initialization and list-change notifications. The agent uses `dovo_app_list_tools`
+and `dovo_app_call_tool` to discover and read the current selection or other state in an open app,
+including apps opened after the agent cached its initial tool list. Only tools explicitly marked
+`readOnlyHint: true` without a destructive hint are exposed. Tool annotations are declarations by
+the configured app, not a sandbox guarantee.
+
+Tools belong to the current thread, server and connected view. Closing a view cancels its
+outstanding calls. When an app is open on several devices, the latest connected view supplies its
+tools; closing it falls back to the remaining view. Device credentials and server configuration are
+checked again on each operation. Calls have a 30-second timeout and bounded messages; app tools are
+never persisted or polled in the background. Desktop and mobile use the same ticket-authenticated
+transport, preserving HTTP and optional HTTPS.
+
 ## Permissions and recovery
 
 Apps run in nested, isolated frames. Guest messages are source checked, and the mobile/native

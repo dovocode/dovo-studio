@@ -1,11 +1,16 @@
-import { afterEach, expect, it } from 'vite-plus/test'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readLocalSettingsSection, writeLocalSettingsSection } from './local-settings'
+import {
+  localSettingsPath,
+  readLocalSettingsSection,
+  writeLocalSettingsSection,
+} from './local-settings'
 
 const directories: string[] = []
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
@@ -35,4 +40,9 @@ it('does not replace malformed settings', () => {
   writeFileSync(path, '{broken')
   expect(() => writeLocalSettingsSection('app', () => ({}), path)).toThrow('Expected property name')
   expect(readFileSync(path, 'utf8')).toBe('{broken')
+})
+
+it('honors an isolated settings path for development', () => {
+  vi.stubEnv('DOVO_SETTINGS_PATH', '/isolated/.dovo-dev/settings.json')
+  expect(localSettingsPath()).toBe('/isolated/.dovo-dev/settings.json')
 })

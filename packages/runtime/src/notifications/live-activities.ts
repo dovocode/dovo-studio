@@ -14,9 +14,9 @@ const rowSchema = mutableStruct({
   ...liveActivityRegistrationSchema.fields,
   ...{
     deviceId: Schema.String,
-    expires: Schema.Number.pipe(Schema.finite()),
+    expires: Schema.Number.pipe(Schema.check(Schema.isFinite())),
     fingerprint: Schema.String,
-    sentAt: Schema.Number.pipe(Schema.finite()),
+    sentAt: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   },
 })
 export function activityPayload(props: LiveTaskProps, ended: boolean, now: number) {
@@ -41,7 +41,7 @@ export function activityPayload(props: LiveTaskProps, ended: boolean, now: numbe
 }
 export class LiveActivities {
   private scheduler?: ReturnType<typeof startPolling>
-  private pending?: Fiber.RuntimeFiber<void, never>
+  private pending?: Fiber.Fiber<void, never>
   private executor = ManagedRuntime.make(Layer.empty)
   private stopped = false
   private error: string | null = null
@@ -74,7 +74,7 @@ export class LiveActivities {
       throw new HttpError(409, 'This task turn is no longer running')
     const count = decode(
       mutableStruct({
-        count: Schema.Number.pipe(Schema.finite()),
+        count: Schema.Number.pipe(Schema.check(Schema.isFinite())),
       }),
       this.db
         .prepare('SELECT count(*) as count FROM live_activities WHERE device_id=?')
@@ -118,9 +118,9 @@ export class LiveActivities {
       if (this.stopped) return Effect.void
       if (this.pending) return Fiber.join(this.pending)
       this.pending = this.executor.runFork(
-        Effect.yieldNow().pipe(
-          Effect.zipRight(this.deliverEffect()),
-          Effect.catchAllCause(() =>
+        Effect.yieldNow.pipe(
+          Effect.andThen(this.deliverEffect()),
+          Effect.catchCause(() =>
             Effect.sync(() => {
               this.error =
                 'Live Activity delivery failed. Check APNs credentials and connectivity on this runtime.'
@@ -142,7 +142,7 @@ export class LiveActivities {
     return runClientEffect(this.flushEffect())
   }
   private deliverEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const now = Date.now()
       const trusted = new Set([
         'owner',
@@ -237,7 +237,7 @@ export class LiveActivities {
     })
   }
   disposeEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       this.stopped = true
       const scheduler = this.scheduler
       if (scheduler) yield* runtimeOperation(() => scheduler.stop())

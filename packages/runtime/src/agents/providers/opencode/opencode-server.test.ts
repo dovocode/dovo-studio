@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { OpenCodeServers, opencodeHeaders } from './opencode-server'

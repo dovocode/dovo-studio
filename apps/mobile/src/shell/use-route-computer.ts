@@ -19,7 +19,7 @@ export function useRouteComputer(runtimeId: string) {
     setError('')
     void runClientEffect(
       selectRuntimeEffect(runtimeId).pipe(
-        Effect.catchAll((cause) =>
+        Effect.catch((cause) =>
           nativeEffect(() => {
             if (current) setError(cause instanceof Error ? cause.message : String(cause))
           }),

@@ -1,5 +1,5 @@
 import { decodeResult, decode } from '../../shared/schema.js'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { forgeCliProfileQuerySchema, forgeConnectionInputSchema } from './forges.js'
 it.each(['', 'h', 'https:', 'https://'])(
   'validates an unfinished server URL without throwing: %s',
@@ -39,4 +39,24 @@ it('still rejects credentials and query strings in discovery server URLs', () =>
       baseUrl: 'https://git.example.com/base',
     }).baseUrl,
   ).toBe('https://git.example.com/base')
+})
+
+it('validates wrapper selectors separately from named GitHub users and secrets', () => {
+  const github = {
+    name: 'Work',
+    provider: 'github',
+    baseUrl: 'https://github.com',
+    credential: 'gh-wrapper',
+    cliEnv: { GH_ACCOUNT: 'work' },
+  }
+  expect(decode(forgeConnectionInputSchema, github).cliEnv).toEqual({ GH_ACCOUNT: 'work' })
+  for (const input of [
+    { ...github, cliEnv: {} },
+    { ...github, cliProfile: 'work' },
+    { ...github, provider: 'forgejo' },
+    { ...github, cliEnv: { GH_TOKEN: 'secret' } },
+    { ...github, cliEnv: { GH_REPO: 'other/repo' } },
+    { ...github, cliEnv: { 'bad-name': 'work' } },
+  ])
+    expect(decodeResult(forgeConnectionInputSchema, input).success).toBe(false)
 })

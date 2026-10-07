@@ -5,8 +5,9 @@ const host = JSON.parse(await readFile('packages/studio-ui/mcp-apps/host.json', 
 const guest = (
   await build({
     stdin: {
-      contents: `import { App } from '@modelcontextprotocol/ext-apps';
-const app = new App({ name:'Fixture', version:'1' }, {});
+      contents: `import { App } from '@modelcontextprotocol/ext-apps';import { z } from 'zod';
+const app = new App({ name:'Fixture', version:'1' }, {tools:{listChanged:true}});
+app.registerTool('selection', {description:'Read selection',inputSchema:z.object({}),annotations:{readOnlyHint:true}}, async()=>({content:[{type:'text',text:document.querySelector('#result').textContent}]}));
 app.ontoolresult = (result) => { document.querySelector('#result').textContent = result.structuredContent.count; };
 document.querySelector('button').onclick = async () => { const result = await app.callServerTool({ name: 'refresh', arguments: {} }); document.querySelector('#result').textContent = result.structuredContent.count; };
 await app.connect();`,
@@ -73,6 +74,39 @@ try {
     .frames()
     .at(-1)
     .waitForFunction(() => document.querySelector('#result')?.textContent === '2')
+  await page.waitForFunction(() =>
+    window.reports.some(
+      (r) => r.type === 'app-tools' && r.tools.some((t) => t.name === 'selection'),
+    ),
+  )
+  await page.evaluate(() =>
+    window.dovoMcpAppTool({
+      type: 'app-tool-call',
+      nonce: 'wrong',
+      requestId: 'wrong',
+      name: 'selection',
+      arguments: {},
+    }),
+  )
+  await page.evaluate(() =>
+    window.dovoMcpAppTool({
+      type: 'app-tool-call',
+      nonce: 'test-nonce',
+      requestId: 'selection-1',
+      name: 'selection',
+      arguments: {},
+    }),
+  )
+  await page.waitForFunction(() =>
+    window.reports.some((r) => r.type === 'app-tool-result' && r.requestId === 'selection-1'),
+  )
+  const selection = await page.evaluate(() =>
+    window.reports.find((r) => r.type === 'app-tool-result' && r.requestId === 'selection-1'),
+  )
+  if (selection.result?.content?.[0]?.text !== '2')
+    throw new Error('App tool did not read live selection')
+  if (await page.evaluate(() => window.reports.some((r) => r.requestId === 'wrong')))
+    throw new Error('App tool accepted wrong view nonce')
   const guestFrame = page.frames().at(-1)
   const inaccessible = await guestFrame.evaluate(() => {
     try {

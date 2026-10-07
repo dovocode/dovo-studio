@@ -1,5 +1,5 @@
 import { decode } from '@dovo/protocol'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vite-plus/test'
 import { questionPromptSchema } from '@dovo/protocol'
 import { startRuntime } from '../../index'
 const cleanups: Array<() => Promise<void>> = []

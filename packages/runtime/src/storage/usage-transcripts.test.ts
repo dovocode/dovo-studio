@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { transcriptUsage } from './usage-transcripts.js'
 import { openCodeUsage } from './usage-opencode.js'
 it('deduplicates cumulative Codex notifications and keeps cache input disjoint', () => {

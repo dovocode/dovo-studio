@@ -7,10 +7,10 @@ import { RuntimeContext, useRuntime } from '../../runtime/connection/provider'
 const taskPatch = Schema.Struct({
   collection: Schema.Literal('tasks'),
   id: Schema.String,
-  changes: Schema.Record({
-    key: Schema.String,
-    value: Schema.Struct({ before: Schema.Unknown, after: Schema.Unknown }),
-  }),
+  changes: Schema.Record(
+    Schema.String,
+    Schema.Struct({ before: Schema.Unknown, after: Schema.Unknown }),
+  ),
 })
 const revision = Schema.Struct({ revision: Schema.Number })
 

@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { connect, type Socket } from 'node:net'
 import { once } from 'node:events'
 import { createRuntimeServer } from './server'

@@ -13,7 +13,7 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../../ui/theme'
 const bridgeSchema = mutableStruct({
   channel: Schema.Literal('dovo-browser'),
-  type: Schema.Literal('ready', 'reconnect', 'close'),
+  type: Schema.Literals(['ready', 'reconnect', 'close']),
 })
 export function RemoteBrowser({
   taskId,
@@ -87,7 +87,7 @@ export function RemoteBrowser({
             expanded: presentation.current,
           })
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               if (version === current.current)
                 post({
@@ -190,7 +190,7 @@ export function RemoteBrowser({
                 },
                 responses.ok,
               ).pipe(
-                Effect.catchAll((error) =>
+                Effect.catch((error) =>
                   nativeEffect(() =>
                     post({
                       type: 'error',

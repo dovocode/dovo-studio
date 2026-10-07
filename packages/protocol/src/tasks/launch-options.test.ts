@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { parseAgentEnvironment, formatAgentEnvironment } from './launch-options'
 it('preserves values containing equals, spaces and empty values', () => {
   const env = { HOME_DIR: '/path with spaces', FILTER: 'a=b', EMPTY: '' }

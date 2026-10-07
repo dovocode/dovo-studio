@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { builtInAgentPresets, pendingAgentPresets } from './agent-presets'
 import { agentSchema, defaultTaskHarness } from '../workspace'
 import { decode } from '../shared/schema'

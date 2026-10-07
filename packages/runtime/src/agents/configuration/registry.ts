@@ -52,7 +52,7 @@ export class AgentRegistry {
           activationEvents: [`onCommand:agent.${id}.run`],
         },
         activate: (context) =>
-          Effect.gen(this, function* () {
+          Effect.gen({ self: this }, function* () {
             this.adapters.set(id, yield* runtimeOperation(load))
             context.subscriptions.push({
               dispose: () => {
@@ -99,7 +99,7 @@ export class AgentRegistry {
     }
   }
   getEffect(provider: Agent['provider']) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       yield* this.host.activateEffect(`dovo.provider.${provider}`)
       const adapter = this.adapters.get(provider)
       if (!adapter)

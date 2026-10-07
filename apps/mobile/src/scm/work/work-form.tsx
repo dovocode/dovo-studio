@@ -98,7 +98,7 @@ export function WorkForm({
           ),
         )
         .pipe(
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             nativeEffect(() => {
               if (current) setError(String(e))
             }),
@@ -137,7 +137,7 @@ export function WorkForm({
           ),
         )
         .pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               if (current()) setError(error instanceof Error ? error.message : String(error))
             }),
@@ -179,7 +179,7 @@ export function WorkForm({
               items: appendUniqueRows(definitions.items, value.items),
             })
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               if (current()) setError(error instanceof Error ? error.message : String(error))
             }),
@@ -234,12 +234,7 @@ export function WorkForm({
                     definition,
                     ref,
                     inputs: decode(
-                      Schema.mutable(
-                        Schema.Record({
-                          key: Schema.String,
-                          value: Schema.String,
-                        }),
-                      ),
+                      Schema.Record(Schema.String, Schema.mutableKey(Schema.String)),
                       JSON.parse(inputs),
                     ),
                   }
@@ -298,7 +293,7 @@ export function WorkForm({
           )
           onDone(result.message, result)
         }).pipe(
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             nativeEffect(() => {
               setError(e instanceof Error ? e.message : String(e))
             }),

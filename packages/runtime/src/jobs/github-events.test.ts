@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { defaultGithubTrigger, githubEventChoices, type GithubTrigger } from '@dovo/protocol'
 import { GithubEvents } from './github-events.js'
 const since = '2026-10-04T09:00:00Z',

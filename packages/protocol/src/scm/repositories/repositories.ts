@@ -1,18 +1,15 @@
 import { mutableStruct } from '../../shared/schema.js'
 import { maxValue, minValue, refine } from '../../shared/schema.js'
-import { Schema, ParseResult } from 'effect'
+import { Schema, SchemaGetter, SchemaIssue, Effect } from 'effect'
 import { forgeBindingSchema } from '../forges/forges.js'
 
 // Only repository roots on github.com are accepted, never credentials, refs or arbitrary remotes.
-export const githubRepositorySchema = Schema.transformOrFail(
-  maxValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 500),
-  mutableStruct({
-    name: Schema.String,
-    url: Schema.String,
-  }),
-  {
-    strict: true,
-    decode: (value, _options, ast) => {
+export const githubRepositorySchema = maxValue(
+  Schema.String.pipe(Schema.decodeTo(Schema.Trim)),
+  500,
+).pipe(
+  Schema.decodeTo(mutableStruct({ name: Schema.String, url: Schema.String }), {
+    decode: SchemaGetter.transformEffect((value) => {
       const slug = value
         .replace(/^https:\/\/github\.com\//i, '')
         .replace(/\/$/, '')
@@ -28,19 +25,18 @@ export const githubRepositorySchema = Schema.transformOrFail(
         name === '.' ||
         name === '..'
       )
-        return ParseResult.fail(
-          new ParseResult.Type(ast, value, 'Enter owner/repo or https://github.com/owner/repo'),
+        return Effect.fail(
+          new SchemaIssue.InvalidValue(undefined, {
+            message: 'Enter owner/repo or https://github.com/owner/repo',
+          }),
         )
-      return ParseResult.succeed({
-        name,
-        url: `https://github.com/${owner}/${name}.git`,
-      })
-    },
-    encode: (value) => ParseResult.succeed(value.url),
-  },
+      return Effect.succeed({ name, url: `https://github.com/${owner}/${name}.git` })
+    }),
+    encode: SchemaGetter.transform((value) => value.url),
+  }),
 )
 const name = maxValue(
-  minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1, 'Enter a repository name'),
+  minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1, 'Enter a repository name'),
   200,
 )
 // Preserve paths returned by the folder picker, including legal trailing whitespace.
@@ -49,25 +45,23 @@ const path = refine(
   (value) => !value.includes('\0'),
   'Invalid path',
 )
-export const addRepositorySchema = Schema.Union(
-  ...[
-    mutableStruct({
-      source: Schema.Literal('local'),
-      name,
-      path,
-    }),
-    mutableStruct({
-      source: Schema.Literal('forge'),
-      name,
-      directory: path,
-      forge: forgeBindingSchema,
-    }),
-    mutableStruct({
-      source: Schema.Literal('github'),
-      name,
-      repository: githubRepositorySchema,
-      directory: path,
-    }),
-  ],
-)
+export const addRepositorySchema = Schema.Union([
+  mutableStruct({
+    source: Schema.Literal('local'),
+    name,
+    path,
+  }),
+  mutableStruct({
+    source: Schema.Literal('forge'),
+    name,
+    directory: path,
+    forge: forgeBindingSchema,
+  }),
+  mutableStruct({
+    source: Schema.Literal('github'),
+    name,
+    repository: githubRepositorySchema,
+    directory: path,
+  }),
+])
 export const REPOSITORY_CLONE_TIMEOUT_MS = 300_000

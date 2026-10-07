@@ -1,6 +1,6 @@
 import { ChildProcess } from 'node:child_process'
 import { PassThrough } from 'node:stream'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { stopOwnedChild } from './stop-owned-child'
 
 const mocked = vi.hoisted(() => ({

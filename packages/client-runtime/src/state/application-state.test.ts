@@ -1,5 +1,5 @@
-import * as Registry from '@effect-atom/atom/Registry'
-import { expect, it } from 'vitest'
+import { AtomRegistry as Registry } from 'effect/reactivity'
+import { expect, it } from 'vite-plus/test'
 import { applicationState } from './application-state.js'
 
 it('publishes a stable view while retaining the latest authoritative value', () => {

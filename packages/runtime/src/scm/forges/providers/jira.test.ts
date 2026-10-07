@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { readFile } from 'node:fs/promises'
 import { JiraWork, jiraMarkdown, listJiraProjects } from './jira'
 import type { runForgeCli } from '../integration/forge-cli'

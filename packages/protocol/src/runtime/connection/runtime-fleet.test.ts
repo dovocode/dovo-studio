@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import { decode, decodeResult } from '../../shared/schema.js'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import {
   aggregateRuntimeTasks,
   loadRuntimeOverview,

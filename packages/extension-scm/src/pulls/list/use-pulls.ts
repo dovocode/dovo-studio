@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
-import { Effect, Schema } from 'effect'
+import { Effect, Schema, Semaphore } from 'effect'
 import {
   mutableArray,
   mutableStruct,
@@ -41,7 +41,7 @@ export function usePulls(state: string) {
     const sweepKeys = new Set(sources.map((source) => JSON.stringify([source.scope, remoteState])))
     for (const key of fullSweepAt.current.keys())
       if (!sweepKeys.has(key)) fullSweepAt.current.delete(key)
-    const semaphore = Effect.runSync(Effect.makeSemaphore(1))
+    const semaphore = Effect.runSync(Semaphore.make(1))
     const commands = clientTaskScope()
     const update = (source: RepositorySource, page: CachedPullPage, error?: string) => {
       if (current !== generation.current) return
@@ -61,7 +61,7 @@ export function usePulls(state: string) {
       source.readCache
         .writeEffect(cacheKey(source, remoteState), page)
         .pipe(
-          Effect.catchAll(() =>
+          Effect.catch(() =>
             Effect.sync(() =>
               update(source, page, 'PRs loaded, but could not be saved for offline use.'),
             ),
@@ -85,7 +85,7 @@ export function usePulls(state: string) {
                   cachedAt: cached.value.cachedAt ?? cached.cachedAt,
                 })
             }).pipe(
-              Effect.catchAll(() =>
+              Effect.catch(() =>
                 Effect.sync(() =>
                   update(
                     source,
@@ -155,7 +155,7 @@ export function usePulls(state: string) {
             if (count > 1 && !page.stale && !page.refreshError)
               fullSweepAt.current.set(sweepKey, Date.now())
           }).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.sync(() =>
                 update(
                   source,
@@ -218,7 +218,7 @@ export function usePulls(state: string) {
           if (!page.stale && !page.refreshError)
             fullSweepAt.current.set(JSON.stringify([source.scope, remoteState]), Date.now())
         }).pipe(
-          Effect.catchAll((error) => Effect.sync(() => update(source, previous, error.message))),
+          Effect.catch((error) => Effect.sync(() => update(source, previous, error.message))),
           Effect.ensuring(
             Effect.sync(() => {
               if (current === generation.current) setBusy(false)

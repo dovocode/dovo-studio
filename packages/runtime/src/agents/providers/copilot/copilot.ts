@@ -131,7 +131,7 @@ function configuration(run: AgentRun, signal: AbortSignal): SessionConfig {
           : { type: 'http', url: server.url, headers: mcpHeaders(server) }
     }
   const effort = run.agent.reasoning
-    ? decode(Schema.Literal('low', 'medium', 'high', 'xhigh'), run.agent.reasoning)
+    ? decode(Schema.Literals(['low', 'medium', 'high', 'xhigh']), run.agent.reasoning)
     : undefined
   return {
     model: run.agent.model || undefined,

@@ -71,3 +71,36 @@ export function migrateDesktopDataDirectory(
   renameSync(source, target)
   return target
 }
+
+// Move only known Electron files. Runtime state and unknown files stay in the workspace.
+export function restoreElectronProfile(source: string, target: string): void {
+  if (source === target) return
+  const names = [
+    'Local State',
+    'Preferences',
+    'Secure Preferences',
+    'Local Storage',
+    'Session Storage',
+    'IndexedDB',
+    'Cookies',
+    'Cookies-journal',
+    'Network',
+    'Partitions',
+    'Service Worker',
+    'WebStorage',
+    'blob_storage',
+    'SharedStorage',
+    'Cache',
+    'Code Cache',
+    'GPUCache',
+    'DawnGraphiteCache',
+    'DawnWebGPUCache',
+    'Dictionaries',
+  ].filter((name) => existsSync(join(source, name)))
+  for (const name of names) {
+    if (existsSync(join(target, name)))
+      throw new Error(`Electron profile already contains ${name}; preserving both copies`)
+  }
+  mkdirSync(target, { recursive: true, mode: 0o700 })
+  for (const name of names) renameSync(join(source, name), join(target, name))
+}

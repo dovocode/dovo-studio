@@ -114,11 +114,11 @@ it('updates before the server replies, rolls back a failure, and preserves anoth
       const reply = yield* Deferred.make<void, Error>()
       const first = change()
       const second = { ...change(), changes: { snoozedUntil: '2026-09-25T10:00:00Z' } }
-      const fiber = yield* Effect.fork(
+      const fiber = yield* Effect.forkChild(
         optimisticTaskEffect(
           first,
           publish,
-          Deferred.succeed(started, undefined).pipe(Effect.zipRight(Deferred.await(reply))),
+          Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(reply))),
         ),
       )
       yield* Deferred.await(started)
@@ -143,11 +143,11 @@ it('removes previews on success and cancellation', async () => {
   await Effect.runPromise(
     Effect.gen(function* () {
       const started = yield* Deferred.make<void>()
-      const fiber = yield* Effect.fork(
+      const fiber = yield* Effect.forkChild(
         optimisticTaskEffect(
           change(),
           publish,
-          Deferred.succeed(started, undefined).pipe(Effect.zipRight(Effect.never)),
+          Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
         ),
       )
       yield* Deferred.await(started)

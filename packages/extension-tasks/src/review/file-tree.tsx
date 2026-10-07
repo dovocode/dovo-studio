@@ -147,7 +147,7 @@ export function FileTree({
         <span>Files</span>
         <span className="tabular-nums text-muted-foreground">{files.length}</span>
       </div>
-      <div className="border-b p-2">
+      <div className="shrink-0 border-b p-2">
         <input
           type="search"
           aria-label="Search changed files"
@@ -157,7 +157,7 @@ export function FileTree({
           className="h-7 w-full rounded border bg-background px-2 text-xs"
         />
       </div>
-      <div className="min-h-0 overflow-auto p-2">
+      <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-2">
         <FolderRows
           folder={fileTree(filtered)}
           stats={new Map(stats.map((stat) => [stat.path, stat]))}

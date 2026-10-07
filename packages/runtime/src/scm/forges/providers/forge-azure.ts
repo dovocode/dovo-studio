@@ -1,7 +1,7 @@
 import { uuidSchema } from '@dovo/protocol'
 import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
 import { urlSchema, decode } from '@dovo/protocol'
-import { Schema } from 'effect'
+import { Schema, Effect, SchemaTransformation } from 'effect'
 import { createTwoFilesPatch } from 'diff'
 import type {
   ForgeCapabilities,
@@ -34,44 +34,47 @@ const repositoryInput = mutableStruct({
   remoteUrl: urlSchema(),
   defaultBranch: Schema.optional(Schema.String),
 })
-const repository = Schema.transform(
-  repositoryInput,
-  mutableStruct({ ...repositoryInput.fields, webUrl: urlSchema() }),
-  {
-    strict: true,
-    decode: (value) => {
-      const web = new URL(value.webUrl ?? value.remoteUrl)
-      web.username = ''
-      web.password = ''
-      web.search = ''
-      web.hash = ''
-      return { ...value, webUrl: web.href }
-    },
-    encode: (value) => value,
-  },
+const repository = repositoryInput.pipe(
+  Schema.decodeTo(
+    mutableStruct({ ...repositoryInput.fields, webUrl: urlSchema() }),
+    SchemaTransformation.transform({
+      decode: (value) => {
+        const web = new URL(value.webUrl ?? value.remoteUrl)
+        web.username = ''
+        web.password = ''
+        web.search = ''
+        web.hash = ''
+        return { ...value, webUrl: web.href }
+      },
+      encode: (value) => value,
+    }),
+  ),
 )
 const commit = mutableStruct({
-  commitId: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+  commitId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
 })
 const reviewer = mutableStruct({
   ...identity.fields,
   ...{
-    vote: Schema.optionalWith(Schema.Number.pipe(Schema.finite()), {
-      default: () => 0,
-    }),
+    vote: Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+      Schema.withDecodingDefaultType(Effect.sync(() => 0)),
+    ),
     isRequired: Schema.optional(Schema.Boolean),
   },
 })
 const pull = mutableStruct({
-  pullRequestId: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.positive()),
+  pullRequestId: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThan(0))),
   title: Schema.String,
   description: Schema.optional(Schema.NullOr(Schema.String)),
-  status: Schema.Literal('active', 'abandoned', 'completed'),
-  isDraft: Schema.optionalWith(Schema.Boolean, {
-    default: () => false,
-  }),
+  status: Schema.Literals(['active', 'abandoned', 'completed']),
+  isDraft: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   createdBy: identity,
   creationDate: Schema.String,
   closedDate: Schema.optional(Schema.String),
@@ -88,70 +91,71 @@ const pull = mutableStruct({
   ),
   lastMergeSourceCommit: Schema.optional(Schema.NullOr(commit)),
   lastMergeTargetCommit: Schema.optional(Schema.NullOr(commit)),
-  reviewers: Schema.optionalWith(mutableArray(reviewer), {
-    default: () => [],
-  }),
-  labels: Schema.optionalWith(
-    mutableArray(
-      mutableStruct({
-        name: Schema.String,
-      }),
-    ),
-    {
-      default: () => [],
-    },
-  ),
+  reviewers: mutableArray(reviewer).pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
+  labels: mutableArray(
+    mutableStruct({
+      name: Schema.String,
+    }),
+  ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
   mergeStatus: Schema.optional(Schema.String),
   mergeFailureMessage: Schema.optional(Schema.String),
   completionQueueTime: Schema.optional(Schema.String),
 })
 const position = mutableStruct({
-  line: Schema.Number.pipe(Schema.finite()).pipe(
-    Schema.int(),
-    Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  line: Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(
+      Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+    ),
   ),
   offset: Schema.optional(
-    Schema.Number.pipe(Schema.finite()).pipe(
-      Schema.int(),
-      Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+    Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
     ),
   ),
 })
 const thread = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite()).pipe(
-    Schema.int(),
-    Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(
+      Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+    ),
   ),
-  status: Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite())),
+  status: Schema.Union([Schema.String, Schema.Number.pipe(Schema.check(Schema.isFinite()))]),
   isDeleted: Schema.optional(Schema.Boolean),
   publishedDate: Schema.String,
   lastUpdatedDate: Schema.optional(Schema.String),
-  comments: Schema.optionalWith(
-    mutableArray(
-      mutableStruct({
-        id: Schema.Number.pipe(Schema.finite()).pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  comments: mutableArray(
+    mutableStruct({
+      id: Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
         ),
-        parentCommentId: Schema.optional(
-          Schema.Number.pipe(Schema.finite()).pipe(
-            Schema.int(),
-            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+      ),
+      parentCommentId: Schema.optional(
+        Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
           ),
         ),
-        author: identity,
-        content: Schema.optional(Schema.NullOr(Schema.String)),
-        publishedDate: Schema.String,
-        isDeleted: Schema.optional(Schema.Boolean),
-        commentType: Schema.optional(
-          Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite())),
-        ),
-      }),
-    ),
-    {
-      default: () => [],
-    },
-  ),
+      ),
+      author: identity,
+      content: Schema.optional(Schema.NullOr(Schema.String)),
+      publishedDate: Schema.String,
+      isDeleted: Schema.optional(Schema.Boolean),
+      commentType: Schema.optional(
+        Schema.Union([Schema.String, Schema.Number.pipe(Schema.check(Schema.isFinite()))]),
+      ),
+    }),
+  ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
   threadContext: Schema.optional(
     Schema.NullOr(
       mutableStruct({
@@ -166,7 +170,7 @@ const thread = mutableStruct({
       mutableStruct({
         iterationContext: Schema.optional(
           mutableStruct({
-            secondComparingIteration: Schema.Number.pipe(Schema.finite()),
+            secondComparingIteration: Schema.Number.pipe(Schema.check(Schema.isFinite())),
           }),
         ),
         trackingCriteria: Schema.optional(
@@ -181,9 +185,14 @@ const thread = mutableStruct({
   ),
 })
 const iteration = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.positive()),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThan(0))),
   sourceRefCommit: commit,
   targetRefCommit: commit,
   commonRefCommit: commit,
@@ -191,11 +200,13 @@ const iteration = mutableStruct({
   updatedDate: Schema.optional(Schema.String),
 })
 const change = mutableStruct({
-  changeTrackingId: Schema.Number.pipe(Schema.finite()).pipe(
-    Schema.int(),
-    Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  changeTrackingId: Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(
+      Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+    ),
   ),
-  changeType: Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite())),
+  changeType: Schema.Union([Schema.String, Schema.Number.pipe(Schema.check(Schema.isFinite()))]),
   originalPath: Schema.optional(Schema.String),
   item: mutableStruct({
     path: Schema.String,
@@ -204,14 +215,14 @@ const change = mutableStruct({
   }),
 })
 const status = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite()),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   state: Schema.String,
   context: mutableStruct({
     name: Schema.String,
     genre: Schema.optional(Schema.String),
   }),
   targetUrl: Schema.optional(Schema.NullOr(urlSchema())),
-  iterationId: Schema.optional(Schema.Number.pipe(Schema.finite())),
+  iterationId: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
 })
 const policy = mutableStruct({
   status: Schema.String,
@@ -224,7 +235,7 @@ const policy = mutableStruct({
   context: Schema.optional(
     Schema.NullOr(
       mutableStruct({
-        buildId: Schema.optional(Schema.Number.pipe(Schema.finite())),
+        buildId: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       }),
     ),
   ),
@@ -479,22 +490,30 @@ export class AzureForge implements ForgeAdapter {
       const result = decode(
         mutableStruct({
           changeEntries: mutableArray(change),
-          nextSkip: Schema.optionalWith(
-            Schema.Number.pipe(Schema.finite())
-              .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-              .pipe(Schema.nonNegative()),
-            {
-              default: () => 0,
-            },
-          ),
-          nextTop: Schema.optionalWith(
-            Schema.Number.pipe(Schema.finite())
-              .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-              .pipe(Schema.nonNegative()),
-            {
-              default: () => 0,
-            },
-          ),
+          nextSkip: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+            .pipe(
+              Schema.check(Schema.isInt()),
+              Schema.check(
+                Schema.isBetween({
+                  minimum: Number.MIN_SAFE_INTEGER,
+                  maximum: Number.MAX_SAFE_INTEGER,
+                }),
+              ),
+            )
+            .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
+            .pipe(Schema.withDecodingDefaultType(Effect.sync(() => 0))),
+          nextTop: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+            .pipe(
+              Schema.check(Schema.isInt()),
+              Schema.check(
+                Schema.isBetween({
+                  minimum: Number.MIN_SAFE_INTEGER,
+                  maximum: Number.MAX_SAFE_INTEGER,
+                }),
+              ),
+            )
+            .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
+            .pipe(Schema.withDecodingDefaultType(Effect.sync(() => 0))),
         }),
         await this.http.json(
           this.api(`${this.path}/pullrequests/${number}/iterations/${id}/changes`, {
@@ -898,7 +917,7 @@ export class AzureForge implements ForgeAdapter {
     const side = input.side === 'additions' ? 'right' : 'left'
     const created = decode(
       mutableStruct({
-        id: Schema.Number.pipe(Schema.finite()),
+        id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
       }),
       await this.http.json(this.api(`${this.path}/pullrequests/${input.number}/threads`), {
         method: 'POST',
@@ -972,16 +991,26 @@ export class AzureForge implements ForgeAdapter {
       if (!input.threadId) throw new HttpError(400, 'An Azure reply requires its thread ID')
       const id = decode(
         CoercedNumber.pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-        ).pipe(Schema.positive()),
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ).pipe(Schema.check(Schema.isGreaterThan(0))),
         input.threadId,
       )
       const parent = decode(
         CoercedNumber.pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-        ).pipe(Schema.positive()),
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ).pipe(Schema.check(Schema.isGreaterThan(0))),
         input.commentId,
       )
       await this.http.json(this.api(`${path}/threads/${id}/comments`), {
@@ -995,9 +1024,14 @@ export class AzureForge implements ForgeAdapter {
     } else if (input.action === 'resolve') {
       const id = decode(
         CoercedNumber.pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-        ).pipe(Schema.positive()),
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ).pipe(Schema.check(Schema.isGreaterThan(0))),
         input.threadId,
       )
       await this.http.json(this.api(`${path}/threads/${id}`), {

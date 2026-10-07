@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { startSocketHeartbeat } from './socket-heartbeat.js'
 afterEach(() => vi.useRealTimers())
 const pong = (nonce: string) =>

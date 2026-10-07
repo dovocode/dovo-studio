@@ -4,7 +4,8 @@ import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { lockSync } from 'proper-lockfile'
 
-export const localSettingsPath = () => join(homedir(), '.dovo', 'settings.json')
+export const localSettingsPath = () =>
+  process.env.DOVO_SETTINGS_PATH ?? join(homedir(), '.dovo', 'settings.json')
 
 function readDocument(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {}

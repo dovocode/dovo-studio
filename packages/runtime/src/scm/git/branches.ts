@@ -39,9 +39,7 @@ export function listBranchesEffect(s: Pick<Services, 'git'>, cwd: string) {
       const head = (yield* runtimeOperation(() =>
         s.git.command(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']),
       ).pipe(
-        Effect.catchAll((error) =>
-          branches.length ? Effect.fail(error) : Effect.succeed('unborn'),
-        ),
+        Effect.catch((error) => (branches.length ? Effect.fail(error) : Effect.succeed('unborn'))),
       )).trim()
       return decode(branchesSchema, {
         current,
@@ -96,12 +94,12 @@ export function switchBranchEffect(
               (repository) =>
                 runtimeOperation(() => s.git.inspect(repository.path)).pipe(
                   Effect.map((checkout) => ({ id: repository.id, path: checkout.path })),
-                  Effect.either,
+                  Effect.result,
                 ),
               { concurrency: 3 },
             )
             const ids = repos.flatMap((result) =>
-              result._tag === 'Right' && result.right.path === cwd ? [result.right.id] : [],
+              result._tag === 'Success' && result.success.path === cwd ? [result.success.id] : [],
             )
             const affected = s.store
               .get()

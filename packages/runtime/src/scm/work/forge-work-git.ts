@@ -1,6 +1,6 @@
 import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
-import { Schema } from 'effect'
+import { Schema, Effect } from 'effect'
 import { pipelineActionAllowed } from '@dovo/protocol'
 import type {
   ForgeIssue,
@@ -17,36 +17,31 @@ const user = mutableStruct({
   login: Schema.String,
 })
 const issue = mutableStruct({
-  number: Schema.Number.pipe(Schema.finite()),
+  number: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   title: Schema.String,
   body: Schema.optional(Schema.NullOr(Schema.String)),
   state: Schema.String,
   html_url: Schema.String,
   user: Schema.optional(Schema.NullOr(user)),
   assignees: Schema.optional(Schema.NullOr(mutableArray(user))),
-  labels: Schema.optionalWith(
-    mutableArray(
-      mutableStruct({
-        name: Schema.String,
-      }),
-    ),
-    {
-      default: () => [],
-    },
-  ),
+  labels: mutableArray(
+    mutableStruct({
+      name: Schema.String,
+    }),
+  ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
   updated_at: Schema.String,
   pull_request: Schema.optional(Schema.Unknown),
-  content_version: Schema.optional(Schema.Number.pipe(Schema.finite())),
+  content_version: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
 })
 const comment = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite()),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   body: Schema.String,
   user: Schema.optional(Schema.NullOr(user)),
   created_at: Schema.String,
   html_url: Schema.optional(Schema.String),
 })
 const run = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite()),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   name: Schema.optional(Schema.NullOr(Schema.String)),
   display_title: Schema.optional(Schema.String),
   title: Schema.optional(Schema.String),
@@ -67,11 +62,15 @@ const run = mutableStruct({
   updated: Schema.optional(Schema.String),
   path: Schema.optional(Schema.NullOr(Schema.String)),
   workflow_id: Schema.optional(
-    Schema.NullOr(Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite()))),
+    Schema.NullOr(
+      Schema.Union([Schema.String, Schema.Number.pipe(Schema.check(Schema.isFinite()))]),
+    ),
   ),
-  run_number: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
-  index_in_repo: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
-  run_attempt: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.finite()))),
+  run_number: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite())))),
+  index_in_repo: Schema.optional(
+    Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
+  ),
+  run_attempt: Schema.optional(Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite())))),
   event: Schema.optional(Schema.NullOr(Schema.String)),
   trigger_event: Schema.optional(Schema.NullOr(Schema.String)),
   run_started_at: Schema.optional(Schema.NullOr(Schema.String)),
@@ -86,9 +85,14 @@ const run = mutableStruct({
   ),
 })
 const step = mutableStruct({
-  number: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.nonNegative()),
+  number: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
   name: Schema.String,
   status: Schema.String,
   conclusion: Schema.optional(Schema.NullOr(Schema.String)),
@@ -96,7 +100,7 @@ const step = mutableStruct({
   completed_at: Schema.optional(Schema.NullOr(Schema.String)),
 })
 const job = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite()),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   name: Schema.String,
   status: Schema.String,
   conclusion: Schema.optional(Schema.NullOr(Schema.String)),
@@ -111,8 +115,13 @@ export function workPage(cursor?: string) {
     maxValue(
       minValue(
         CoercedNumber.pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
         ),
         1,
       ),
@@ -191,7 +200,7 @@ export class GitForgeWork implements ForgeWorkProvider {
       : `${raw.updated_at}:${raw.content_version}`
   }
   async issues(state: string, cursor?: string, query?: string) {
-    const selected = decode(Schema.Literal('open', 'closed', 'all'), state),
+    const selected = decode(Schema.Literals(['open', 'closed', 'all']), state),
       page = workPage(cursor)
     if (query?.trim() && this.provider === 'github') {
       // Quote user words, so repository/state scope cannot be overridden by a
@@ -205,7 +214,7 @@ export class GitForgeWork implements ForgeWorkProvider {
       const result = decode(
         mutableStruct({
           items: mutableArray(issue),
-          total_count: Schema.Number.pipe(Schema.finite()),
+          total_count: Schema.Number.pipe(Schema.check(Schema.isFinite())),
         }),
         await this.http.json(
           `search/issues?q=${encodeURIComponent(search)}&sort=updated&order=desc&per_page=30&page=${page}`,
@@ -230,9 +239,14 @@ export class GitForgeWork implements ForgeWorkProvider {
   async issue(id: string, cursor?: string) {
     const n = decode(
         CoercedNumber.pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-        ).pipe(Schema.positive()),
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ).pipe(Schema.check(Schema.isGreaterThan(0))),
         id,
       ),
       page = workPage(cursor)
@@ -288,9 +302,11 @@ export class GitForgeWork implements ForgeWorkProvider {
   async actOnIssue(input: ForgeIssueAction) {
     const id = decode(
       CoercedNumber.pipe(
-        Schema.int(),
-        Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-      ).pipe(Schema.positive()),
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      ).pipe(Schema.check(Schema.isGreaterThan(0))),
       input.id,
     )
     const current = decode(issue, await this.get(`issues/${id}`))
@@ -305,7 +321,7 @@ export class GitForgeWork implements ForgeWorkProvider {
         },
       })
     else {
-      if (input.state) decode(Schema.Literal('open', 'closed'), input.state)
+      if (input.state) decode(Schema.Literals(['open', 'closed']), input.state)
       if (input.labels !== undefined && this.provider !== 'github')
         throw new HttpError(400, 'Editing label names is unavailable for this server')
       await this.get(`issues/${id}`, {
@@ -377,7 +393,7 @@ export class GitForgeWork implements ForgeWorkProvider {
       mutableStruct({
         workflows: mutableArray(
           mutableStruct({
-            id: Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite())),
+            id: Schema.Union([Schema.String, Schema.Number.pipe(Schema.check(Schema.isFinite()))]),
             name: Schema.String,
             state: Schema.optional(Schema.String),
           }),
@@ -417,9 +433,14 @@ export class GitForgeWork implements ForgeWorkProvider {
   async pipeline(id: string, cursor?: string) {
     const n = decode(
         CoercedNumber.pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-        ).pipe(Schema.positive()),
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ).pipe(Schema.check(Schema.isGreaterThan(0))),
         id,
       ),
       page = workPage(cursor)
@@ -487,9 +508,11 @@ export class GitForgeWork implements ForgeWorkProvider {
     }
     const id = decode(
       CoercedNumber.pipe(
-        Schema.int(),
-        Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-      ).pipe(Schema.positive()),
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      ).pipe(Schema.check(Schema.isGreaterThan(0))),
       input.id,
     )
     const current = decode(run, await this.get(`actions/runs/${id}`))

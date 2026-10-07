@@ -1,3 +1,4 @@
+import { desktopRuntimeDirectory } from './runtime-data-directory.js'
 import { app } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs'
@@ -14,7 +15,7 @@ import {
 } from '@dovo/protocol'
 
 const execute = promisify(execFile)
-const path = () => join(app.getPath('userData'), 'windows-runtime.json')
+const path = () => join(desktopRuntimeDirectory(), 'windows-runtime.json')
 export function readWindowsRuntimeChoice(): WindowsRuntimeChoice | undefined {
   try {
     return decode(windowsRuntimeChoiceSchema, JSON.parse(readFileSync(path(), 'utf8')))
@@ -191,7 +192,7 @@ process.stdin.resume(); process.stdin.on('end', stop); process.on('SIGTERM', sto
 `
 const connectionSchema = mutableStruct({
   address: Schema.String,
-  token: Schema.String.pipe(Schema.minLength(32)),
+  token: Schema.String.pipe(Schema.check(Schema.isMinLength(32))),
 })
 let owned: { child: ChildProcess; connection?: typeof connectionSchema.Type } | undefined
 let starting: Promise<typeof connectionSchema.Type> | undefined

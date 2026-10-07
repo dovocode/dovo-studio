@@ -20,7 +20,12 @@ export type SubagentSpawn = Schema.Schema.Type<typeof subagentSpawnSchema>
 export const subagentReadSchema = mutableStruct({
   ...subagentScopeSchema.fields,
   id,
-  timeoutMs: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(0, 20000))),
+  timeoutMs: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 0, maximum: 20000 })),
+    ),
+  ),
 })
 /** Never grant a child wider access than its parent, even when selecting a saved preset. */
 export function delegatedAccess(

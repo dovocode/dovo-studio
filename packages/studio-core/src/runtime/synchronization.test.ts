@@ -1,5 +1,5 @@
 import { decode } from '@dovo/protocol'
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { WorkspaceSynchronization, type WorkspaceOutbox } from './synchronization'
 import type { WorkspaceOutboxChange } from './synchronization'
 import { workspaceSchema, type RuntimeConnection, type WorkspacePatch } from '@dovo/protocol'
@@ -318,7 +318,7 @@ it.each(['acknowledgement', 'discard'] as const)(
       operation === 'discard' ? sync.discardEffect(sync.checkpoint()) : sync.retryEffect(),
     )
     await vi.waitFor(() => expect(clearing).toBe(true))
-    await Effect.runPromise(Fiber.interruptFork(fiber))
+    fiber.interruptUnsafe()
     release()
     await Effect.runPromise(Fiber.await(fiber))
     expect(durable).toBe(false)

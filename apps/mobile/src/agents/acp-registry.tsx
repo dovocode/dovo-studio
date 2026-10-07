@@ -1,4 +1,4 @@
-import { Effect, Either, Schema } from 'effect'
+import { Effect, Result, Schema } from 'effect'
 import { useEffect, useState } from 'react'
 import { Alert, Linking, View } from 'react-native'
 import {
@@ -77,28 +77,32 @@ export function AcpRegistry({
       mobileWorkflow(function* () {
         const [registry, installed] = yield* Effect.all([
           callEffect('/api/agents/acp/registry', {}, acpRegistryResponseSchema, 'POST').pipe(
-            Effect.either,
+            Effect.result,
           ),
           callEffect('/api/agents/acp/list', {}, installationsResponseSchema, 'POST').pipe(
-            Effect.either,
+            Effect.result,
           ),
         ])
         yield* nativeEffect(() => {
           if (!active) return
-          if (Either.isRight(registry)) setCatalog(registry.right)
+          if (Result.isSuccess(registry)) setCatalog(registry.success)
           else
             setLoadError(
-              registry.left instanceof Error ? registry.left.message : String(registry.left),
+              registry.failure instanceof Error
+                ? registry.failure.message
+                : String(registry.failure),
             )
-          if (Either.isRight(installed)) setInstallations(installed.right.installations)
+          if (Result.isSuccess(installed)) setInstallations(installed.success.installations)
           else
             setLoadError(
-              installed.left instanceof Error ? installed.left.message : String(installed.left),
+              installed.failure instanceof Error
+                ? installed.failure.message
+                : String(installed.failure),
             )
           setLoading(false)
         })
       }).pipe(
-        Effect.catchAll((cause) =>
+        Effect.catch((cause) =>
           nativeEffect(() => {
             if (!active) return
             setLoadError(cause instanceof Error ? cause.message : String(cause))
@@ -381,7 +385,7 @@ function AcpAuthentication({
           ),
         )
         .pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               if (active) setInspectError(cause instanceof Error ? cause.message : String(cause))
             }),
@@ -409,7 +413,7 @@ function AcpAuthentication({
               if (active) setMethods(value)
             }),
           ),
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               if (active) setInspectError(String(cause))
             }),

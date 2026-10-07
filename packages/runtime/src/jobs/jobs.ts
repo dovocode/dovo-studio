@@ -36,7 +36,7 @@ function triggerContext(payload: unknown) {
 export class Jobs {
   revision = 0
   private runs = new Map<string, StoredRun>()
-  private active = new Map<string, Fiber.RuntimeFiber<void, never>>()
+  private active = new Map<string, Fiber.Fiber<void, never>>()
   private readonly executor = ManagedRuntime.make(Layer.empty)
   private stopping = false
   private scheduler?: ReturnType<typeof startPolling>
@@ -297,8 +297,8 @@ export class Jobs {
     if (pending)
       this.executor.runFork(
         Fiber.await(pending).pipe(
-          Effect.zipRight(Effect.sync(() => this.launch(id))),
-          Effect.tapErrorCause((cause) =>
+          Effect.andThen(Effect.sync(() => this.launch(id))),
+          Effect.tapCause((cause) =>
             Effect.logError('Could not resume reviewed automation', cause),
           ),
         ),
@@ -358,14 +358,14 @@ export class Jobs {
   private launch(id: string) {
     if (this.active.has(id) || this.stopping) return
     const pending = this.executor.runFork(
-      Effect.yieldNow().pipe(
-        Effect.zipRight(this.advanceEffect(id)),
+      Effect.yieldNow.pipe(
+        Effect.andThen(this.advanceEffect(id)),
         Effect.ensuring(
           Effect.sync(() => {
             this.active.delete(id)
           }),
         ),
-        Effect.tapErrorCause((cause) => Effect.logError('Automation persistence failed', cause)),
+        Effect.tapCause((cause) => Effect.logError('Automation persistence failed', cause)),
       ),
     )
     this.active.set(id, pending)
@@ -402,7 +402,7 @@ export class Jobs {
     return task
   }
   private advanceEffect(id: string) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       while (!this.stopping) {
         const currentRun = this.runs.get(id)
         if (!currentRun || currentRun.status !== 'running') return
@@ -496,7 +496,7 @@ export class Jobs {
         })
       }
     }).pipe(
-      Effect.catchAllCause((cause) =>
+      Effect.catchCause((cause) =>
         Effect.sync(() => {
           const run = this.runs.get(id)
           if (run?.status === 'running')
@@ -506,7 +506,7 @@ export class Jobs {
     )
   }
   shutdownEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       this.dispose()
       this.stopping = true
       const stopped = yield* Effect.forEach(
@@ -529,7 +529,8 @@ export class Jobs {
       })
       yield* Effect.promise(() => this.executor.dispose())
       const failures = stopped.filter(Exit.isFailure).map((exit) => exit.cause)
-      if (failures.length) yield* Effect.failCause(failures.reduce(Cause.sequential))
+      if (failures.length)
+        yield* Effect.failCause(failures.reduce((left, right) => Cause.combine(left, right)))
     })
   }
   shutdown() {

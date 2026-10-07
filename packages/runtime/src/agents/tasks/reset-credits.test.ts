@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { claudeCredits, codexCredits, claudeQuotaLimits } from './reset-credits'
 it('reads Codex banked credits with epoch expiry and excludes expired or unknown credits', () => {
   const now = Date.parse('2026-09-30T12:00:00Z')

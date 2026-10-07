@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { planAwaitingApproval } from './plan-mode.js'
 
 it('waits for approval only after the agent answered a plan-mode message', () => {

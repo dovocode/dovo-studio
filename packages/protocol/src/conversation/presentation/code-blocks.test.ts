@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { codeBlockLabel, fencedCodeBlocks, shellCommand } from './code-blocks.js'
 
 it('extracts fenced blocks with their language and ignores inline code', () => {

@@ -1,5 +1,5 @@
 import type { AgentAdapter } from '../agents/execution/types'
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { Approvals } from '../agents/execution/approvals'
 import { Activity, redact } from './activity'
 import { openDatabase } from './database'

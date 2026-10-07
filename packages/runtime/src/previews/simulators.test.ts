@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { SimulatorPreviews } from './simulators'
 import * as native from './simulator-native'
 import * as discovery from './devices'

@@ -6,7 +6,7 @@ export const conversationPageSchema = mutableStruct({
   messages: mutableArray(messageSchema),
   turns: mutableArray(turnSchema),
   before: Schema.optional(Schema.String),
-  historyRevision: Schema.optional(Schema.NonNegativeInt),
+  historyRevision: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 })
 export type ConversationPage = Schema.Schema.Type<typeof conversationPageSchema>
 const encodedSizes = new WeakMap<object, number>()

@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { questionAnswerError } from '@dovo/protocol'
 import type { AgentRun } from '../../execution/types'
 import { codexQuestions } from '../codex/codex-questions'

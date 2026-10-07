@@ -1,4 +1,4 @@
-import { Data, Effect, Either, Exit, Schedule, Schema } from 'effect'
+import { Data, Effect, Result, Exit, Schedule, Schema } from 'effect'
 import { decodeResult, ValidationError } from './schema.js'
 import type { RuntimeConnection } from '../runtime/connection/runtime.js'
 import { REPOSITORY_CLONE_TIMEOUT_MS } from '../scm/repositories/repositories.js'
@@ -71,7 +71,7 @@ const idempotentPaths = new Set(['/api/tasks/message', '/api/tasks/steer'])
 /** A single request; interruption aborts both the fetch and response body read.
  * GET reads and ID-deduplicated sends retry transient failures within the same deadline;
  * other mutations never retry. */
-export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
+export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
   connection: RuntimeConnection | null,
   address: string,
   path: string,
@@ -80,7 +80,7 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
   method = 'POST',
   timeoutMs?: number,
   options?: { mutationId?: string },
-): Effect.Effect<Schema.Schema.Type<T>, RuntimeRequestError | ValidationError> {
+): Effect.Effect<T['Type'], RuntimeRequestError | ValidationError> {
   return Effect.gen(function* () {
     const target = yield* Effect.try({
       try: () => {
@@ -132,7 +132,7 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
           Effect.sync(() => new AbortController()),
           (controller, exit) =>
             Effect.sync(() => {
-              if (Exit.isInterrupted(exit)) controller.abort()
+              if (Exit.hasInterrupts(exit)) controller.abort()
             }),
         )
         const send = (tag?: string) =>
@@ -172,7 +172,7 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
             const parsed = yield* decodeResponse(
               typeof cached === 'string' ? yield* parseJson(cached) : cached,
             )
-            conditional.refresh(parsed)
+            if (parsed !== null && typeof parsed === 'object') conditional.refresh(parsed)
             rememberSnapshotTag(parsed, conditional.tag)
             return parsed
           }
@@ -228,7 +228,11 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
         }
         const parsed = yield* decodeResponse(yield* parseJson(text))
         if (conditional) {
-          conditional.save(response.headers.get('etag'), text, parsed)
+          conditional.save(
+            response.headers.get('etag'),
+            text,
+            parsed !== null && typeof parsed === 'object' ? parsed : undefined,
+          )
           rememberSnapshotTag(parsed, response.headers.get('etag'))
         }
         return parsed
@@ -238,20 +242,23 @@ export function runtimeRequestEffect<T extends Schema.Schema.AnyNoContext>(
         method === 'GET' || !!options?.mutationId || idempotentPaths.has(path)
           ? Effect.retry(request, readRetry)
           : request,
-      Effect.timeoutFail({
+      Effect.timeoutOrElse({
         duration: timeoutMs ?? requestTimeout(path),
-        onTimeout: () =>
-          new RuntimeRequestError({
-            kind: 'timeout',
-            message: `The runtime at ${target.host} took too long to respond. Check its connection before retrying.`,
-          }),
+        orElse: () =>
+          Effect.fail(
+            (() =>
+              new RuntimeRequestError({
+                kind: 'timeout',
+                message: `The runtime at ${target.host} took too long to respond. Check its connection before retrying.`,
+              }))(),
+          ),
       }),
     )
   })
 }
 
 /** Promise boundary for framework callbacks and clients outside the Effect runtime. */
-export async function runtimeRequest<T extends Schema.Schema.AnyNoContext>(
+export async function runtimeRequest<T extends Schema.Codec<unknown, unknown>>(
   connection: RuntimeConnection | null,
   address: string,
   path: string,
@@ -260,13 +267,13 @@ export async function runtimeRequest<T extends Schema.Schema.AnyNoContext>(
   method = 'POST',
   timeoutMs?: number,
   signal?: AbortSignal,
-): Promise<Schema.Schema.Type<T>> {
+): Promise<T['Type']> {
   const result = await Effect.runPromise(
-    Effect.either(
+    Effect.result(
       runtimeRequestEffect(connection, address, path, input, schema, method, timeoutMs),
     ),
     { signal },
   )
-  if (Either.isLeft(result)) throw result.left
-  return result.right
+  if (Result.isFailure(result)) throw result.failure
+  return result.success
 }

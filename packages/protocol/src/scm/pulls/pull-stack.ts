@@ -1,7 +1,10 @@
 import { Schema } from 'effect'
 import { mutableArray, mutableStruct, urlSchema } from '../../shared/schema.js'
 import type { PullSummary } from './pulls.js'
-const number = Schema.Number.pipe(Schema.int(), Schema.positive())
+const number = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThan(0)),
+)
 export const pullStackSummarySchema = mutableStruct({
   rootNumber: number,
   position: number,
@@ -20,7 +23,10 @@ export const pullStackSchema = mutableStruct({
       base: Schema.String,
       draft: Schema.Boolean,
       parentNumber: Schema.optional(number),
-      depth: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+      depth: Schema.Number.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
     }),
   ),
 })

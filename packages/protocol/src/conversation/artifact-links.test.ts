@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { externalArtifactLinks } from './artifact-links'
 
 it('gathers named Claude artifacts and ChatGPT Sites from Markdown and prose, once per link', () => {

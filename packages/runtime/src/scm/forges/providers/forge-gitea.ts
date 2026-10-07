@@ -141,7 +141,7 @@ export class GiteaForge implements ForgeAdapter {
   }
 
   // Some instances cap limit below 50. An empty next page, rather than its size, proves the end.
-  private async all<T, I>(path: string, schema: Schema.Schema<T, I>): Promise<T[]> {
+  private async all<T, I>(path: string, schema: Schema.Codec<T, I>): Promise<T[]> {
     const values: T[] = []
     for (let page = 1; page <= 100; page++) {
       const rows = decode(mutableArray(schema), await this.http.json(this.pagePath(path, page)))
@@ -155,9 +155,17 @@ export class GiteaForge implements ForgeAdapter {
   }
   async repositories(page: number) {
     decode(
-      Schema.Number.pipe(Schema.finite())
-        .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-        .pipe(Schema.positive()),
+      Schema.Number.pipe(Schema.check(Schema.isFinite()))
+        .pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        )
+        .pipe(Schema.check(Schema.isGreaterThan(0))),
       page,
     )
     const path = '/api/v1/user/repos'
@@ -236,12 +244,20 @@ export class GiteaForge implements ForgeAdapter {
   }
   async list(state: 'open' | 'closed' | 'all', page: number) {
     decode(
-      Schema.Number.pipe(Schema.finite())
-        .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-        .pipe(Schema.positive()),
+      Schema.Number.pipe(Schema.check(Schema.isFinite()))
+        .pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        )
+        .pipe(Schema.check(Schema.isGreaterThan(0))),
       page,
     )
-    decode(Schema.Literal('open', 'closed', 'all'), state)
+    decode(Schema.Literals(['open', 'closed', 'all']), state)
     const path = `${this.path}/pulls?state=${state}&sort=recentupdate`
     const [raw, viewer] = await Promise.all([
       this.http.json(this.pagePath(path, page)),
@@ -306,9 +322,17 @@ export class GiteaForge implements ForgeAdapter {
   }
   private async pull(number: number) {
     decode(
-      Schema.Number.pipe(Schema.finite())
-        .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-        .pipe(Schema.positive()),
+      Schema.Number.pipe(Schema.check(Schema.isFinite()))
+        .pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        )
+        .pipe(Schema.check(Schema.isGreaterThan(0))),
       number,
     )
     return decode(forgePull, await this.http.json(`${this.path}/pulls/${number}`))

@@ -16,7 +16,7 @@ export const branchesSchema = mutableStruct({
   originDefault: Schema.optional(Schema.String),
 })
 export const switchBranchSchema = mutableStruct({
-  action: Schema.Literal('switch', 'create'),
+  action: Schema.Literals(['switch', 'create']),
   name: maxValue(minValue(Schema.String, 1), 250),
   revision: minValue(Schema.String, 1),
 })

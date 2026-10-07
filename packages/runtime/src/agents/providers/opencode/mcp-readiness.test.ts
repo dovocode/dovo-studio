@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { waitForMcpConnection } from './mcp-readiness.js'
 
 it('waits for pending registration to finish without registering again', async () => {

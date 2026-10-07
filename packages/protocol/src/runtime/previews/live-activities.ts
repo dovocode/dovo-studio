@@ -7,22 +7,32 @@ export const liveActivityRegistrationSchema = mutableStruct({
   activityId: maxValue(minValue(Schema.String, 1), 200),
   taskId: maxValue(minValue(Schema.String, 1), 200),
   turnId: maxValue(minValue(Schema.String, 1), 200),
-  pushToken: Schema.String.pipe(Schema.pattern(/^[a-fA-F0-9]{32,512}$/)),
+  pushToken: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-fA-F0-9]{32,512}$/))),
 })
 export const liveActivityStatusSchema = mutableStruct({
   configured: Schema.Boolean,
-  environment: Schema.Literal('sandbox', 'production'),
+  environment: Schema.Literals(['sandbox', 'production']),
   error: Schema.NullOr(Schema.String),
 })
 export const liveTaskPropsSchema = mutableStruct({
   title: Schema.String,
   project: Schema.String,
   device: Schema.String,
-  status: Schema.Literal('Working', 'Needs input', 'Done', 'Failed', 'Stopped'),
-  startedAt: Schema.Number.pipe(Schema.finite()),
+  status: Schema.Literals(['Working', 'Needs input', 'Done', 'Failed', 'Stopped']),
+  startedAt: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   activity: Schema.optional(Schema.String),
-  queued: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
-  activeThreads: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
+  queued: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
+  activeThreads: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
 })
 export type LiveTaskProps = Schema.Schema.Type<typeof liveTaskPropsSchema>
 const activityLabels: Record<string, string> = {

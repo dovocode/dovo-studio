@@ -59,8 +59,8 @@ import {
 import { ConversationWorkGroup } from './components/work-group'
 const checkpointSchema = mutableStruct({
   turnId: Schema.String,
-  files: Schema.Number.pipe(Schema.finite()),
-  omitted: Schema.Number.pipe(Schema.finite()),
+  files: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+  omitted: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   error: Schema.optional(Schema.String),
 })
 function AttachmentPart({ data }: DataMessagePartProps<unknown>) {
@@ -76,7 +76,7 @@ function CompactionPart({ data }: DataMessagePartProps<unknown>) {
   const { styles } = useTheme()
 
   const item = decode(
-    mutableStruct({ at: Schema.String, trigger: Schema.Literal('manual', 'auto') }),
+    mutableStruct({ at: Schema.String, trigger: Schema.Literals(['manual', 'auto']) }),
     data,
   )
   return (
@@ -202,7 +202,7 @@ function CheckpointRow({
   )
 }
 const toolSchema = mutableStruct({
-  ...activitySchema.fields.events.value.fields,
+  ...activitySchema.fields.events.schema.value.fields,
   ...{
     status: Schema.String,
     turnId: Schema.optional(Schema.String),

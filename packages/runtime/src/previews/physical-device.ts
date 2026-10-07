@@ -31,7 +31,12 @@ async function helper() {
     const hash = createHash('sha256')
     for (const file of ['Cargo.toml', 'Cargo.lock', 'src/main.rs', 'src/media.rs'])
       hash.update(await readFile(join(source, file)))
-    const target = join(homedir(), '.dovo', 'helpers', 'ios-device', hash.digest('hex'))
+    const target = join(
+      process.env.DOVO_DATA_ROOT ?? join(homedir(), '.dovo'),
+      'helpers',
+      'ios-device',
+      hash.digest('hex'),
+    )
     const executable = join(target, 'release', 'dovo-ios-device')
     try {
       await access(executable)
@@ -97,25 +102,25 @@ export function physicalKeys(key: string): number[] {
     ]),
   ]
 }
-const eventSchema = Schema.Union(
-  ...[
-    mutableStruct({
-      type: Schema.Literal('ready'),
-      device: Schema.String,
-    }),
-    mutableStruct({
-      type: Schema.Literal('ack'),
-      id: Schema.Number.pipe(Schema.finite()).pipe(
-        Schema.int(),
-        Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+const eventSchema = Schema.Union([
+  mutableStruct({
+    type: Schema.Literal('ready'),
+    device: Schema.String,
+  }),
+  mutableStruct({
+    type: Schema.Literal('ack'),
+    id: Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
       ),
-    }),
-    mutableStruct({
-      type: Schema.Literal('error'),
-      message: Schema.String,
-    }),
-  ],
-)
+    ),
+  }),
+  mutableStruct({
+    type: Schema.Literal('error'),
+    message: Schema.String,
+  }),
+])
 async function stop(child: ChildProcess) {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) return
   const exited = once(child, 'exit')

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import type { PullPage } from '@dovo/studio-core'
 import { refreshPageCount, refreshPullPage } from './collection-pages'
 

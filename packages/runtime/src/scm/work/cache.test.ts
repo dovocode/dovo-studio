@@ -1,6 +1,6 @@
 import { mutableStruct } from '@dovo/protocol'
 import { Effect, Fiber, Schema } from 'effect'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { runClientEffect } from '@dovo/client-runtime'
 import { openDatabase } from '../../storage/database.js'
 import { ForgeWorkCache } from './cache.js'

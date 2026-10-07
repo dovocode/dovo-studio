@@ -6,14 +6,23 @@ import { fileURLToPath } from 'node:url'
 import { writeDesktopBuildStamp } from '../../scripts/packaging/desktop-build-stamp.mjs'
 
 export default defineConfig({
+  test: {
+    // Vitest v4 compatibility: preserve mock call history.
+    // Remove after tests no longer rely on calls from setup or earlier tests.
+    // https://viteplus.dev/guide/vitest-v5#remove-unneeded-compatibility-settings
+    // https://vitest.dev/guide/migration/#clearmocks-is-enabled-by-default
+    clearMocks: false,
+  },
   base: './',
   run: {
     tasks: {
       bundle: {
         command: 'vp build',
-        // Generated directory entries must not become inputs on the next clean runner.
-        input: [{ auto: true }, '!.', '!dist', '!dist/**', '!dist-electron', '!dist-electron/**'],
-        output: [{ auto: true }, 'dist/**', 'dist-electron/**'],
+        cache: {
+          // Generated directory entries must not become inputs on the next clean runner.
+          input: [{ auto: true }, '!.', '!dist', '!dist/**', '!dist-electron', '!dist-electron/**'],
+          output: [{ auto: true }, 'dist/**', 'dist-electron/**'],
+        },
       },
     },
   },

@@ -16,7 +16,7 @@ import { releaseIdleProvider } from '../../execution/warm-processes.js'
 import { openHermesConnection } from './hermes-connection.js'
 import { hermesConfig } from './hermes-config.js'
 
-const objectSchema = Schema.mutable(Schema.Record({ key: Schema.String, value: Schema.Unknown }))
+const objectSchema = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 const object = (value: unknown) => decodeResult(objectSchema, value).data ?? {}
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
 const catalogSchema = mutableStruct({
@@ -32,11 +32,9 @@ const catalogSchema = mutableStruct({
       is_current: Schema.optional(Schema.Boolean),
       aliases: Schema.optional(mutableArray(Schema.String)),
       capabilities: Schema.optional(
-        Schema.mutable(
-          Schema.Record({
-            key: Schema.String,
-            value: mutableStruct({ reasoning: Schema.optional(Schema.Boolean) }),
-          }),
+        Schema.Record(
+          Schema.String,
+          Schema.mutableKey(mutableStruct({ reasoning: Schema.optional(Schema.Boolean) })),
         ),
       ),
     }),

@@ -1,6 +1,6 @@
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { urlSchema, refine, minValue, maxValue } from '../../shared/schema.js'
-import { Schema } from 'effect'
+import { Schema, SchemaTransformation } from 'effect'
 export const jiraBindingSchema = mutableStruct({
   site: refine(
     urlSchema({
@@ -24,9 +24,14 @@ export const jiraBindingSchema = mutableStruct({
     },
     'Use your Jira Cloud site URL, for example https://team.atlassian.net',
   ),
-  project: Schema.String.pipe(Schema.compose(Schema.Trim))
-    .pipe(Schema.compose(Schema.Uppercase))
-    .pipe(Schema.pattern(/^[A-Z][A-Z0-9_]{1,49}$/)),
+  project: Schema.String.pipe(Schema.decodeTo(Schema.Trim))
+    .pipe(
+      Schema.decodeTo(
+        Schema.String.check(Schema.isUppercased()),
+        SchemaTransformation.toUpperCase(),
+      ),
+    )
+    .pipe(Schema.check(Schema.isPattern(/^[A-Z][A-Z0-9_]{1,49}$/))),
 })
 export type JiraBinding = Schema.Schema.Type<typeof jiraBindingSchema>
 export const jiraProjectsSchema = mutableStruct({
@@ -47,7 +52,7 @@ export const jiraSourceSchema = mutableStruct({
   ...{
     id: maxValue(minValue(Schema.String, 1), 200),
     name: Schema.optional(
-      maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 200),
+      maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 200),
     ),
   },
 })

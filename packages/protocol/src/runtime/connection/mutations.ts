@@ -1,4 +1,4 @@
-import { Effect, Schema } from 'effect'
+import { Effect, Schema, Semaphore } from 'effect'
 import { decode, mutableArray, mutableStruct } from '../../shared/schema.js'
 import { runtimeRequestEffect, RuntimeRequestError } from '../../shared/client.js'
 import type { RuntimeConnection } from './runtime.js'
@@ -24,7 +24,7 @@ export const mutationOutboxSchema = mutableArray(
   mutableStruct({
     id: Schema.String,
     path: Schema.String,
-    method: Schema.Literal('POST', 'PATCH'),
+    method: Schema.Literals(['POST', 'PATCH']),
     input: Schema.Unknown,
     /** Failed domain checks require an explicit retry or discard; reconnect cannot fix them. */
     blocked: Schema.optional(Schema.Boolean),
@@ -46,7 +46,7 @@ type State = {
   supported?: boolean
   pending: MutationOutbox
   error: string | null
-  lock: Effect.Semaphore
+  lock: Semaphore.Semaphore
 }
 const connectionKey = (connection: RuntimeConnection) =>
   JSON.stringify([new URL(connection.address).origin, connection.token])
@@ -77,7 +77,7 @@ export class RuntimeMutations {
       state = {
         pending: [],
         error: null,
-        lock: Effect.runSync(Effect.makeSemaphore(1)),
+        lock: Effect.runSync(Semaphore.make(1)),
       }
       this.states.set(key, state)
     }
@@ -90,7 +90,7 @@ export class RuntimeMutations {
   private supports(connection: RuntimeConnection, state: State, refresh = false) {
     return Effect.gen(function* () {
       if (state.supported !== undefined && !(refresh && !state.supported)) return state.supported
-      const result = yield* Effect.either(
+      const result = yield* Effect.result(
         runtimeRequestEffect(
           connection,
           connection.address,
@@ -100,16 +100,16 @@ export class RuntimeMutations {
           'GET',
         ),
       )
-      if (result._tag === 'Left') {
-        if (result.left instanceof RuntimeRequestError && result.left.status === 404)
+      if (result._tag === 'Failure') {
+        if (result.failure instanceof RuntimeRequestError && result.failure.status === 404)
           return (state.supported = false)
-        return yield* Effect.fail(result.left)
+        return yield* Effect.fail(result.failure)
       }
       return (state.supported = true)
     })
   }
   private load(connection: RuntimeConnection, state: State) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const value = yield* operation(() => this.storage.read(connection))
       const pending = yield* Effect.try({
         try: () => decode(mutationOutboxSchema, value ?? []),
@@ -151,7 +151,7 @@ export class RuntimeMutations {
     )
   }
   private drain(connection: RuntimeConnection, state: State, retry = false, stopBefore?: string) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       if (!state.pending.length) return
       while (state.pending.length && state.pending[0]?.id !== stopBefore) {
         const item = state.pending[0]!
@@ -161,17 +161,17 @@ export class RuntimeMutations {
               state.error ?? 'A saved action needs review. Retry or discard pending actions.',
             ),
           )
-        const result = yield* Effect.either(this.send(connection, item))
-        if (result._tag === 'Left') {
-          state.error = transient(result.left)
-            ? `Saved actions will sync when this computer is reachable. ${result.left.message}`
-            : result.left.message
-          if (!transient(result.left))
+        const result = yield* Effect.result(this.send(connection, item))
+        if (result._tag === 'Failure') {
+          state.error = transient(result.failure)
+            ? `Saved actions will sync when this computer is reachable. ${result.failure.message}`
+            : result.failure.message
+          if (!transient(result.failure))
             yield* this.save(connection, state, (pending) =>
               pending.map((entry) => (entry.id === item.id ? { ...entry, blocked: true } : entry)),
             )
           this.changed()
-          return yield* Effect.fail(result.left)
+          return yield* Effect.fail(result.failure)
         }
         yield* this.save(connection, state, (pending) =>
           pending.filter((entry) => entry.id !== item.id),
@@ -187,7 +187,7 @@ export class RuntimeMutations {
     const state = this.state(connection)
     return state.lock
       .withPermits(1)(
-        Effect.gen(this, function* () {
+        Effect.gen({ self: this }, function* () {
           yield* this.load(connection, state)
           if (!state.pending.length) {
             if (state.error !== null) {
@@ -216,7 +216,7 @@ export class RuntimeMutations {
   discardEffect(connection: RuntimeConnection) {
     const state = this.state(connection)
     return state.lock.withPermits(1)(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         yield* operation(() => this.storage.clear(connection))
         state.pending = []
         state.error = null
@@ -227,7 +227,7 @@ export class RuntimeMutations {
   assertEmptyEffect(connection: RuntimeConnection) {
     const state = this.state(connection)
     return state.lock.withPermits(1)(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         yield* this.load(connection, state)
         if (state.pending.length)
           return yield* Effect.fail(
@@ -238,7 +238,7 @@ export class RuntimeMutations {
       }),
     )
   }
-  requestEffect<T extends Schema.Schema.AnyNoContext>(
+  requestEffect<T extends Schema.Codec<unknown, unknown>>(
     connection: RuntimeConnection,
     path: string,
     input: unknown,
@@ -250,7 +250,7 @@ export class RuntimeMutations {
     const state = this.state(connection)
     return state.lock
       .withPermits(1)(
-        Effect.gen(this, function* () {
+        Effect.gen({ self: this }, function* () {
           yield* this.load(connection, state)
           // A UI retry of the same unresolved command keeps its identity, including after restart.
           let item = state.pending.find(
@@ -275,8 +275,8 @@ export class RuntimeMutations {
           }
           const command = item
           let sent = false
-          const result = yield* Effect.either(
-            Effect.gen(this, function* () {
+          const result = yield* Effect.result(
+            Effect.gen({ self: this }, function* () {
               if (!(yield* this.supports(connection, state))) {
                 // This new command has never reached the host. Legacy hosts can execute it
                 // normally; previously saved commands still require receipt support.
@@ -300,21 +300,21 @@ export class RuntimeMutations {
               return yield* this.send(connection, command)
             }),
           )
-          if (result._tag === 'Left') {
-            state.error = transient(result.left)
-              ? `Action saved for reconnect. ${result.left.message}`
-              : result.left.message
+          if (result._tag === 'Failure') {
+            state.error = transient(result.failure)
+              ? `Action saved for reconnect. ${result.failure.message}`
+              : result.failure.message
             const rejectedLegacyCommand =
               sent &&
               state.supported === false &&
-              result.left instanceof RuntimeRequestError &&
-              result.left.status !== undefined &&
-              !transient(result.left)
-            if ((!transient(result.left) && !sent && created) || rejectedLegacyCommand)
+              result.failure instanceof RuntimeRequestError &&
+              result.failure.status !== undefined &&
+              !transient(result.failure)
+            if ((!transient(result.failure) && !sent && created) || rejectedLegacyCommand)
               yield* this.save(connection, state, (pending) =>
                 pending.filter((entry) => entry.id !== command.id),
               )
-            if (!transient(result.left) && sent && !rejectedLegacyCommand)
+            if (!transient(result.failure) && sent && !rejectedLegacyCommand)
               yield* this.save(connection, state, (pending) =>
                 pending.map((entry) =>
                   entry.id === command.id ? { ...entry, blocked: true } : entry,
@@ -323,15 +323,18 @@ export class RuntimeMutations {
             this.changed()
             // A send is accepted into this client's durable queue. Clear its composer now,
             // rather than resurrecting its text when reconnect later delivers it.
-            if (transient(result.left) && ['/api/tasks/message', '/api/tasks/steer'].includes(path))
+            if (
+              transient(result.failure) &&
+              ['/api/tasks/message', '/api/tasks/steer'].includes(path)
+            )
               return yield* Effect.try({
                 try: () => decode(schema, { ok: true, pending: true }),
                 catch: (error) => (error instanceof Error ? error : new Error(String(error))),
               })
-            return yield* Effect.fail(result.left)
+            return yield* Effect.fail(result.failure)
           }
           const value = yield* Effect.try({
-            try: () => decode(schema, result.right),
+            try: () => decode(schema, result.success),
             catch: (error) => (error instanceof Error ? error : new Error(String(error))),
           })
           yield* this.save(connection, state, (pending) =>

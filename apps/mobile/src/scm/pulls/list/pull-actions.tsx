@@ -119,7 +119,7 @@ export function PullActionSheet({
                 'The server is processing this merge. Refresh to see its final state.',
             )
         }).pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               setError(cause instanceof Error ? cause.message : String(cause))
             }),

@@ -1,13 +1,16 @@
 import { Schema } from 'effect'
 import { mutableStruct } from '../../shared/schema.js'
 
-export const windowsRuntimeChoiceSchema = Schema.Union(
+export const windowsRuntimeChoiceSchema = Schema.Union([
   mutableStruct({ mode: Schema.Literal('native') }),
   mutableStruct({
     mode: Schema.Literal('wsl'),
-    distribution: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(256)),
+    distribution: Schema.String.pipe(
+      Schema.check(Schema.isMinLength(1)),
+      Schema.check(Schema.isMaxLength(256)),
+    ),
   }),
-)
+])
 export type WindowsRuntimeChoice = typeof windowsRuntimeChoiceSchema.Type
 export const windowsRuntimeStatusSchema = mutableStruct({
   configured: Schema.Boolean,
@@ -19,14 +22,14 @@ export type WindowsRuntimeStatus = typeof windowsRuntimeStatusSchema.Type
 
 export const windowsSecurityEventSchema = mutableStruct({
   timeCreated: Schema.String,
-  ruleId: Schema.String.pipe(Schema.maxLength(128)),
-  processPath: Schema.String.pipe(Schema.maxLength(32768)),
-  targetPath: Schema.String.pipe(Schema.maxLength(32768)),
+  ruleId: Schema.String.pipe(Schema.check(Schema.isMaxLength(128))),
+  processPath: Schema.String.pipe(Schema.check(Schema.isMaxLength(32768))),
+  targetPath: Schema.String.pipe(Schema.check(Schema.isMaxLength(32768))),
 })
 export const windowsSecurityReportSchema = mutableStruct({
   checkedAt: Schema.String,
-  status: Schema.Literal('ok', 'access-denied', 'unavailable'),
-  events: Schema.Array(windowsSecurityEventSchema).pipe(Schema.maxItems(20)),
+  status: Schema.Literals(['ok', 'access-denied', 'unavailable']),
+  events: Schema.Array(windowsSecurityEventSchema).pipe(Schema.check(Schema.isMaxLength(20))),
 })
 export type WindowsSecurityReport = typeof windowsSecurityReportSchema.Type
 

@@ -83,7 +83,7 @@ export function useComposerDictation({
                 },
           )
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               // Speech is already saved locally; a model/network failure must never lose it.
               if (mounted.current && edit.current === transaction)

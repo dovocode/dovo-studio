@@ -6,10 +6,10 @@ const user = Schema.NullOr(
   }),
 )
 export const restPull = mutableStruct({
-  number: Schema.Number.pipe(Schema.finite()),
+  number: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   title: Schema.String,
   html_url: Schema.String,
-  state: Schema.Literal('open', 'closed'),
+  state: Schema.Literals(['open', 'closed']),
   merged_at: Schema.NullOr(Schema.String),
   draft: Schema.optional(Schema.Boolean),
   user,
@@ -31,16 +31,16 @@ export const restDetail = mutableStruct({
   ...{
     head: mutableStruct({
       label: Schema.String,
-      sha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+      sha: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
     }),
     base: mutableStruct({
       label: Schema.String,
-      sha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+      sha: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
     }),
     body: Schema.NullOr(Schema.String),
-    additions: Schema.Number.pipe(Schema.finite()),
-    deletions: Schema.Number.pipe(Schema.finite()),
-    changed_files: Schema.Number.pipe(Schema.finite()),
+    additions: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+    deletions: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+    changed_files: Schema.Number.pipe(Schema.check(Schema.isFinite())),
     mergeable: Schema.NullOr(Schema.Boolean),
     requested_teams: Schema.optional(
       mutableArray(
@@ -62,14 +62,14 @@ export const restDetail = mutableStruct({
   },
 })
 export const restComment = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite()),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   user,
   body: Schema.NullOr(Schema.String),
   html_url: Schema.String,
   created_at: Schema.String,
 })
 export const restReview = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite()),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   user,
   body: Schema.NullOr(Schema.String),
   html_url: Schema.String,
@@ -80,18 +80,18 @@ export const restInline = mutableStruct({
   ...restComment.fields,
   ...{
     path: Schema.String,
-    line: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
-    original_line: Schema.NullOr(Schema.Number.pipe(Schema.finite())),
+    line: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
+    original_line: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
     diff_hunk: Schema.String,
-    in_reply_to_id: Schema.optional(Schema.Number.pipe(Schema.finite())),
+    in_reply_to_id: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
   },
 })
 export const restFile = mutableStruct({
   filename: Schema.String,
   previous_filename: Schema.optional(Schema.String),
   status: Schema.String,
-  additions: Schema.Number.pipe(Schema.finite()),
-  deletions: Schema.Number.pipe(Schema.finite()),
+  additions: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+  deletions: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   patch: Schema.optional(Schema.String),
 })
 export const checkRollup = mutableStruct({

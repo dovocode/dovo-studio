@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { estimatedTurnCost } from './estimated-cost.js'
 
 it('prices local tokens at standard API rates and leaves unknown models unpriced', () => {

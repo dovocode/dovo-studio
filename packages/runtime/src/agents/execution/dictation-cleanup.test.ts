@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { existsSync } from 'node:fs'
 import { openDatabase } from '../../storage/database'
 import { WorkspaceStore } from '../../storage/workspace'

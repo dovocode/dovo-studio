@@ -1,3 +1,4 @@
+import { startMcpAppTools } from '@dovo/client-runtime'
 import { SafeModal } from '../layout/safe-modal'
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
@@ -8,6 +9,7 @@ import * as Crypto from 'expo-crypto'
 import WebView from 'react-native-webview'
 import {
   mcpAppDownloads,
+  responses,
   mcpAppResponseSchema,
   mcpAppRpcResponseSchema,
   type McpAppReference,
@@ -23,7 +25,7 @@ const object = (value: unknown): Record<string, unknown> =>
 export const McpAppView = memo(function McpAppView({ reference }: { reference: McpAppReference }) {
   const { colors, styles } = useTheme()
 
-  const { call, connected, activeId } = useRuntime()
+  const { call, connected, activeId, connection } = useRuntime()
   const view = useRef<WebView>(null)
   const [app, setApp] = useState<McpApp>()
   const [error, setError] = useState('')
@@ -32,10 +34,13 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
   const [full, setFull] = useState(false)
   const nonce = useRef(Crypto.randomUUID())
   const ready = useRef(false)
+  const tools = useRef<ReturnType<typeof startMcpAppTools>>(undefined)
+  const advertisedTools = useRef<unknown[]>([])
   useEffect(() => {
     setApp(undefined)
     setError('')
     ready.current = false
+    advertisedTools.current = []
     nonce.current = Crypto.randomUUID()
   }, [activeId, reference.taskId, reference.id])
   useEffect(() => {
@@ -58,6 +63,40 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
       disposed = true
     }
   }, [call, activeId, reference.id, reference.taskId, connected])
+  useEffect(() => {
+    if (!connected || !connection || !app?.connected || app.format !== 'apps') return
+    const key = nonce.current
+    const sendTool = (value: unknown) =>
+      view.current?.injectJavaScript(`window.dovoMcpAppTool(${JSON.stringify(value)});true;`)
+    const current = startMcpAppTools({
+      address: connection.address,
+      ticket: async () =>
+        (
+          await call(
+            '/api/mcp-apps/ticket',
+            { taskId: reference.taskId, id: reference.id },
+            responses.ticket,
+          )
+        ).ticket,
+      call: (value) => sendTool({ ...value, type: 'app-tool-call', nonce: key }),
+      cancel: (requestId) => sendTool({ type: 'app-tool-cancel', requestId, nonce: key }),
+      onError: (cause) => setNotice(cause.message),
+    })
+    tools.current = current
+    current.setTools(advertisedTools.current)
+    return () => {
+      tools.current = undefined
+      void current.stop()
+    }
+  }, [
+    connected,
+    connection?.address,
+    app?.id,
+    app?.connected,
+    call,
+    reference.taskId,
+    reference.id,
+  ])
   const load = () => {
     if (ready.current && app)
       view.current?.injectJavaScript(
@@ -113,6 +152,16 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
           }
           const value = object(data)
           if (value.nonce !== nonce.current) return
+          if (value.type === 'app-tools' && Array.isArray(value.tools)) {
+            advertisedTools.current = value.tools
+            tools.current?.setTools(value.tools)
+          }
+          if (value.type === 'app-tool-result' && typeof value.requestId === 'string')
+            tools.current?.reply({
+              requestId: value.requestId,
+              result: value.result,
+              error: typeof value.error === 'string' ? value.error : undefined,
+            })
           if (value.type === 'notice' && typeof value.message === 'string')
             setNotice(value.message.slice(0, 2000))
           if (

@@ -1,5 +1,5 @@
 import { runtimeUpdate } from './runtime-releases.js'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from './runtime.js'
 import {

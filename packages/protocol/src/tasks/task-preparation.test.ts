@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { preparationElapsed, taskPreparation } from './task-preparation.js'
 import type { Task } from '../workspace.js'
 

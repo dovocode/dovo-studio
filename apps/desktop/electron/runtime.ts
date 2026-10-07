@@ -6,10 +6,9 @@ interface DesktopRuntime {
   readonly host: ExtensionHost
 }
 
-export class DesktopRuntimeTag extends Context.Tag('DovoDesktopRuntime')<
-  DesktopRuntimeTag,
-  DesktopRuntime
->() {}
+export class DesktopRuntimeTag extends Context.Service<DesktopRuntimeTag, DesktopRuntime>()(
+  'DovoDesktopRuntime',
+) {}
 
 const desktopRuntime = (): DesktopRuntime => {
   const host = new ExtensionHost()

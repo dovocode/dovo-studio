@@ -13,8 +13,8 @@ const rowSchema = mutableStruct({
   id: Schema.String,
   taskId: Schema.String,
   attemptId: Schema.String,
-  kind: Schema.Literal('start', 'steer', 'interrupt', 'checkpoint', 'answer'),
-  state: Schema.Literal('pending', 'dispatched', 'acknowledged', 'completed', 'uncertain'),
+  kind: Schema.Literals(['start', 'steer', 'interrupt', 'checkpoint', 'answer']),
+  state: Schema.Literals(['pending', 'dispatched', 'acknowledged', 'completed', 'uncertain']),
 })
 
 /** Dispatch uncertainty is durable. Never automatically repeat a process-bound action. */

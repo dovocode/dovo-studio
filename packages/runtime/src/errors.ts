@@ -43,7 +43,7 @@ export const runtimeOperation = <A>(run: () => A): Effect.Effect<Awaited<A>, Run
 /** Keep known synchronous domain failures typed while preserving unexpected defects. */
 export const runtimeProgram = <A, E, R>(program: Effect.Effect<A, E, R>) =>
   program.pipe(
-    Effect.catchAllDefect((cause) =>
+    Effect.catchDefect((cause) =>
       cause instanceof HttpError || cause instanceof ValidationError
         ? Effect.fail(cause)
         : Effect.die(cause),

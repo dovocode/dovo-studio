@@ -4,7 +4,7 @@ import { clientTaskScope } from '@dovo/client-runtime'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decodeResult } from '@dovo/protocol'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { Schema, Effect } from 'effect'
+import { Schema, Effect, Semaphore } from 'effect'
 import { liveTaskProps, liveActivityStatusSchema, type RuntimeOverview } from '@dovo/protocol'
 import type { useRuntime } from '../runtime/connection/provider'
 import TaskActivity from './task-activity'
@@ -42,7 +42,7 @@ export function createActivityController(onError: (message: string) => void) {
     const fingerprints = new Map<string, { value: string; at: number }>()
     const registered = new Map<string, string>()
     const registering = new Map<string, string>()
-    const registrationLocks = new Map<string, Effect.Semaphore>()
+    const registrationLocks = new Map<string, Semaphore.Semaphore>()
     const tokens = new Map<string, string>()
     const retryAt = new Map<string, { key: string; at: number }>()
     const listeners = new Map<
@@ -53,7 +53,7 @@ export function createActivityController(onError: (message: string) => void) {
     >()
     let disposed = false
     const commands = clientTaskScope()
-    const permit = yield* Effect.makeSemaphore(1)
+    const permit = yield* Semaphore.make(1)
     const persist = async () => {
       const value = JSON.stringify({ records: [...records.values()], seen: [...seen].slice(-200) })
       if (value === lastSaved) return
@@ -77,7 +77,7 @@ export function createActivityController(onError: (message: string) => void) {
                 { activityId: record.id },
                 mutableStruct({ ok: Schema.Boolean }),
               ).pipe(
-                Effect.catchAll(() =>
+                Effect.catch(() =>
                   Effect.sync(() => {
                     if (!disposed)
                       onError(
@@ -198,7 +198,7 @@ export function createActivityController(onError: (message: string) => void) {
               const id = record.id
               let lock = registrationLocks.get(id)
               if (!lock) {
-                lock = yield* Effect.makeSemaphore(1)
+                lock = yield* Semaphore.make(1)
                 registrationLocks.set(id, lock)
               }
               const registrationLock = lock
@@ -251,7 +251,7 @@ export function createActivityController(onError: (message: string) => void) {
                   registrationLock
                     .withPermits(1)(register(token))
                     .pipe(
-                      Effect.catchAll(() =>
+                      Effect.catch(() =>
                         Effect.sync(() => {
                           if (!disposed)
                             onError(

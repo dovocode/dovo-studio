@@ -9,10 +9,10 @@ export const inputPreviewItemSchema = mutableStruct({
   taskTitle: Schema.String,
   connection: connectionSchema,
   connected: Schema.Boolean,
-  request: Schema.Union(
+  request: Schema.Union([
     mutableStruct({ kind: Schema.Literal('question'), value: pendingQuestionSchema }),
     mutableStruct({ kind: Schema.Literal('approval'), value: approvalSchema }),
-  ),
+  ]),
 })
 export const inputPreviewSyncSchema = mutableStruct({
   enabled: Schema.Boolean,
@@ -20,7 +20,7 @@ export const inputPreviewSyncSchema = mutableStruct({
 })
 export const inputPreviewAnswerSchema = mutableStruct({
   key: Schema.String,
-  answer: Schema.Union(questionAnswersSchema, Schema.Null, Schema.Boolean),
+  answer: Schema.Union([questionAnswersSchema, Schema.Null, Schema.Boolean]),
 })
 export type InputPreviewItem = Schema.Schema.Type<typeof inputPreviewItemSchema>
 /** Credentials stay in the host process and are never sent to the preview renderer. */

@@ -21,7 +21,7 @@ export const githubEventChoices = [
   { id: 'discussion.updated', name: 'Discussion · Updated' },
   { id: 'sub_issue.added', name: 'Sub issue · Added' },
 ] as const
-export const githubEventSchema = Schema.Literal(...githubEventChoices.map((item) => item.id))
+export const githubEventSchema = Schema.Literals([...githubEventChoices.map((item) => item.id)])
 export const githubTriggerSchema = mutableStruct({
   host: Schema.String,
   repository: Schema.String,

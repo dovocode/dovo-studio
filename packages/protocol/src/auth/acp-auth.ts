@@ -3,7 +3,7 @@ import { mutableArray, mutableStruct } from '../shared/schema.js'
 import { terminalSchema } from '../runtime/connection/runtime.js'
 
 const authenticationProgressSchema = mutableStruct({
-  status: Schema.Literal('waiting', 'completed', 'failed'),
+  status: Schema.Literals(['waiting', 'completed', 'failed']),
   output: Schema.String,
   urls: mutableArray(Schema.String),
   error: Schema.optional(Schema.String),
@@ -15,7 +15,7 @@ export const acpInspectionSchema = mutableStruct({
       id: Schema.String,
       name: Schema.String,
       description: Schema.optional(Schema.String),
-      type: Schema.Literal('agent', 'terminal'),
+      type: Schema.Literals(['agent', 'terminal']),
     }),
   ),
   canLogout: Schema.Boolean,

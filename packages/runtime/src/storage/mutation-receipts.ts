@@ -7,10 +7,10 @@ const receiptSchema = mutableStruct({
   fingerprint: Schema.String,
   result: Schema.NullOr(Schema.String),
 })
-const outcomeSchema = Schema.Union(
+const outcomeSchema = Schema.Union([
   mutableStruct({ ok: Schema.Literal(true), value: Schema.Unknown }),
   mutableStruct({ ok: Schema.Literal(false), status: Schema.Number, error: Schema.String }),
-)
+])
 /** Persist responses rather than replaying side effects when an acknowledgement is lost.
  * An interrupted in-flight action is uncertain after restart and must never run blindly. */
 export class MutationReceipts {

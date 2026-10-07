@@ -1,4 +1,4 @@
-import { Effect } from 'effect'
+import { Effect, Semaphore } from 'effect'
 import { Directory, File, Paths } from 'expo-file-system'
 import { digestStringAsync, CryptoDigestAlgorithm, randomUUID } from 'expo-crypto'
 import {
@@ -15,7 +15,7 @@ async function fileFor(connection: RuntimeConnection) {
   const directory = new Directory(Paths.document, 'runtime-mutations')
   return { directory, file: new File(directory, `${key}.json`) }
 }
-const writer = Effect.runSync(Effect.makeSemaphore(1))
+const writer = Effect.runSync(Semaphore.make(1))
 export const mobileMutationStorage: MutationStorage = {
   id: randomUUID,
   async read(connection) {

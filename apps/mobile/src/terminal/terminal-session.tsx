@@ -118,16 +118,16 @@ export function TerminalSession({ id }: { id: string }) {
         onMessage={(event) => {
           try {
             const message = decode(
-              Schema.Union(
+              Schema.Union([
                 mutableStruct({
                   error: Schema.String,
                   attempt: Schema.optional(Schema.Number),
                 }),
                 mutableStruct({
-                  type: Schema.Literal('ready', 'connected'),
+                  type: Schema.Literals(['ready', 'connected']),
                   attempt: Schema.optional(Schema.Number),
                 }),
-              ),
+              ]),
               JSON.parse(event.nativeEvent.data),
             )
             if ('type' in message && message.type === 'ready') {

@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { startRuntime } from '../../index.js'
 import { fixture } from '../../testing/fixture.js'
 import * as cua from '../../computer-use/cua.js'

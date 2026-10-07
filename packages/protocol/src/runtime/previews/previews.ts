@@ -46,11 +46,11 @@ export const previewPresets = [
 export const previewDeviceSchema = mutableStruct({
   id: Schema.String,
   name: Schema.String,
-  kind: Schema.optional(Schema.Literal('simulator', 'physical')),
+  kind: Schema.optional(Schema.Literals(['simulator', 'physical'])),
   connection: Schema.optional(Schema.String),
   liveSupported: Schema.optional(Schema.Boolean),
-  platform: Schema.Literal('ios', 'android'),
-  state: Schema.Literal('booted', 'stopped', 'starting'),
+  platform: Schema.Literals(['ios', 'android']),
+  state: Schema.Literals(['booted', 'stopped', 'starting']),
   runtime: Schema.String,
 })
 export type PreviewDevice = Schema.Schema.Type<typeof previewDeviceSchema>
@@ -62,7 +62,7 @@ export const previewDevicesSchema = mutableStruct({
 export const previewActionSchema = mutableStruct({
   taskId: maxValue(minValue(Schema.String, 1), 200),
   id: maxValue(minValue(Schema.String, 1), 200),
-  action: Schema.Literal(
+  action: Schema.Literals([
     'boot',
     'shutdown',
     'open',
@@ -77,10 +77,12 @@ export const previewActionSchema = mutableStruct({
     'landscape',
     'light',
     'dark',
-  ),
+  ]),
   url: Schema.optional(maxValue(Schema.String, 4096)),
   bundleId: Schema.optional(
-    maxValue(minValue(Schema.String, 1), 255).pipe(Schema.pattern(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/)),
+    maxValue(minValue(Schema.String, 1), 255).pipe(
+      Schema.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/)),
+    ),
   ),
 })
 export const previewResultSchema = mutableStruct({
@@ -95,96 +97,126 @@ export const previewResultSchema = mutableStruct({
     ),
   ),
 })
-export const browserCommandSchema = Schema.Union(
-  ...[
-    mutableStruct({
-      action: Schema.Literal('external'),
-      key: maxValue(minValue(Schema.String, 1), 500),
-      url: urlSchema(),
-    }),
-    mutableStruct({
-      action: Schema.Literal('show'),
-      profileId: Schema.optional(Schema.String.pipe(Schema.pattern(/^[a-zA-Z0-9_-]{1,100}$/))),
-      taskId: Schema.optional(Schema.String),
-      agentAccess: Schema.optional(Schema.Boolean),
-      key: maxValue(minValue(Schema.String, 1), 500),
-      url: urlSchema(),
-      viewport: Schema.optional(
-        mutableStruct({
-          width: maxValue(
-            minValue(
-              Schema.Number.pipe(Schema.finite()).pipe(
-                Schema.int(),
-                Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-              ),
-              1,
-            ),
-            2000,
-          ),
-          height: maxValue(
-            minValue(
-              Schema.Number.pipe(Schema.finite()).pipe(
-                Schema.int(),
-                Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-              ),
-              1,
-            ),
-            2000,
-          ),
-        }),
-      ),
-      bounds: mutableStruct({
-        x: minValue(
-          Schema.Number.pipe(Schema.finite()).pipe(
-            Schema.int(),
-            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-          ),
-          0,
-        ),
-        y: minValue(
-          Schema.Number.pipe(Schema.finite()).pipe(
-            Schema.int(),
-            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-          ),
-          0,
-        ),
+export const browserCommandSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literal('external'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    url: urlSchema(),
+  }),
+  mutableStruct({
+    action: Schema.Literal('show'),
+    profileId: Schema.optional(
+      Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/))),
+    ),
+    taskId: Schema.optional(Schema.String),
+    agentAccess: Schema.optional(Schema.Boolean),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    url: urlSchema(),
+    viewport: Schema.optional(
+      mutableStruct({
         width: maxValue(
           minValue(
-            Schema.Number.pipe(Schema.finite()).pipe(
-              Schema.int(),
-              Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+            Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+              Schema.check(Schema.isInt()),
+              Schema.check(
+                Schema.isBetween({
+                  minimum: Number.MIN_SAFE_INTEGER,
+                  maximum: Number.MAX_SAFE_INTEGER,
+                }),
+              ),
             ),
             1,
           ),
-          5000,
+          2000,
         ),
         height: maxValue(
           minValue(
-            Schema.Number.pipe(Schema.finite()).pipe(
-              Schema.int(),
-              Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+            Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+              Schema.check(Schema.isInt()),
+              Schema.check(
+                Schema.isBetween({
+                  minimum: Number.MIN_SAFE_INTEGER,
+                  maximum: Number.MAX_SAFE_INTEGER,
+                }),
+              ),
             ),
             1,
           ),
-          5000,
+          2000,
         ),
       }),
-    }),
-    mutableStruct({
-      action: Schema.Literal(
-        'hide',
-        'close',
-        'back',
-        'forward',
-        'reload',
-        'hard-reload',
-        'devtools',
-        'status',
+    ),
+    bounds: mutableStruct({
+      x: minValue(
+        Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ),
+        0,
       ),
-      key: maxValue(minValue(Schema.String, 1), 500),
+      y: minValue(
+        Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ),
+        0,
+      ),
+      width: maxValue(
+        minValue(
+          Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+            Schema.check(Schema.isInt()),
+            Schema.check(
+              Schema.isBetween({
+                minimum: Number.MIN_SAFE_INTEGER,
+                maximum: Number.MAX_SAFE_INTEGER,
+              }),
+            ),
+          ),
+          1,
+        ),
+        5000,
+      ),
+      height: maxValue(
+        minValue(
+          Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+            Schema.check(Schema.isInt()),
+            Schema.check(
+              Schema.isBetween({
+                minimum: Number.MIN_SAFE_INTEGER,
+                maximum: Number.MAX_SAFE_INTEGER,
+              }),
+            ),
+          ),
+          1,
+        ),
+        5000,
+      ),
     }),
-  ],
-)
+  }),
+  mutableStruct({
+    action: Schema.Literals([
+      'hide',
+      'close',
+      'back',
+      'forward',
+      'reload',
+      'hard-reload',
+      'devtools',
+      'status',
+    ]),
+    key: maxValue(minValue(Schema.String, 1), 500),
+  }),
+])
 export type BrowserCommand = Schema.Schema.Type<typeof browserCommandSchema>
 export type BrowserBridge = (command: BrowserCommand) => Promise<
   | {
@@ -199,13 +231,15 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
 
 /** Private desktop discovery for task-scoped, page-only CDP endpoints. */
 export const desktopBrowserHostSchema = mutableStruct({
-  pid: Schema.Number.pipe(Schema.int(), Schema.positive()),
+  pid: Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
   targets: mutableArray(
     mutableStruct({
       taskId: Schema.String,
       profileId: Schema.String,
       endpoint: Schema.String.pipe(
-        Schema.pattern(/^ws:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{64}\/devtools\/page\/\d+$/),
+        Schema.check(
+          Schema.isPattern(/^ws:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{64}\/devtools\/page\/\d+$/),
+        ),
       ),
     }),
   ),

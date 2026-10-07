@@ -47,6 +47,6 @@ events immediately.
 Reviewed T3 Code's [orchestrator v2 branch](https://github.com/pingdotgg/t3code/pull/2829), revision
 `3e4ca4c532f9746f8ce62acfa80b8a6ea30e962b`, particularly `CommandReceiptStore`,
 `RunFinalizationService`, `ProviderRuntimeRecoveryService`, and the architecture guide. These
-changes apply its durable-intent and runtime-ownership principles to Dovo's existing Effect 3
+changes apply its durable-intent and runtime-ownership principles to Dovo's existing Effect 4
 runtime. They do not replace Dovo's workspace storage with T3's event log/outbox or change its
 provider lock, HTTP/VPN connectivity, device pairing, or restart-continuation preference.

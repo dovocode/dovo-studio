@@ -1,4 +1,4 @@
-import { Cause, Effect, Either, Fiber, Queue } from 'effect'
+import { Cause, Effect, Result, Fiber, Queue } from 'effect'
 
 type PollingOptions<E> = {
   interval: number
@@ -32,23 +32,23 @@ export function startPolling<E>(work: Effect.Effect<void, E>, options: PollingOp
     ),
     // A defect (a rejected Effect.promise, a synchronous throw) in one cycle must not end the
     // worker for good: record it like a failure and poll again. Interruption still stops it.
-    Effect.catchAllCause((cause) =>
-      Cause.isInterruptedOnly(cause)
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
         ? Effect.failCause(cause)
         : Effect.sync(() => {
             failures++
           }).pipe(
-            Effect.zipRight(
-              Either.match(Cause.failureOrCause(cause), {
-                onLeft: (error) => Effect.sync(() => options.onError(error)),
-                onRight: (defect) => Effect.logError('Polling cycle failed', defect),
+            Effect.andThen(
+              Result.match(Cause.findError(cause), {
+                onSuccess: (error) => Effect.sync(() => options.onError(error)),
+                onFailure: (defect) => Effect.logError('Polling cycle failed', defect),
               }),
             ),
             // A faulty reporting callback must not take down the owned polling worker.
-            Effect.catchAllCause(Effect.logError),
+            Effect.catchCause(Effect.logError),
           ),
     ),
-    Effect.zipRight(
+    Effect.andThen(
       Effect.suspend(() =>
         Effect.raceFirst(Queue.take(wakeups), Effect.sleep(delay())).pipe(Effect.asVoid),
       ),
@@ -60,13 +60,13 @@ export function startPolling<E>(work: Effect.Effect<void, E>, options: PollingOp
         yield* Effect.raceFirst(Queue.take(wakeups), Effect.sleep(options.interval))
       yield* Effect.forever(cycle)
     }).pipe(
-      Effect.tapErrorCause((cause) =>
-        Cause.isInterruptedOnly(cause) ? Effect.void : Effect.logError(cause),
+      Effect.tapCause((cause) =>
+        Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.logError(cause),
       ),
       Effect.ensuring(
         Effect.sync(() => {
           stopped = true
-        }).pipe(Effect.zipRight(Queue.shutdown(wakeups))),
+        }).pipe(Effect.andThen(Queue.shutdown(wakeups))),
       ),
     ),
   )

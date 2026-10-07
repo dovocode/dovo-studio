@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { UsagePricing } from './usage-pricing.js'
 import { openDatabase } from './database.js'
 import { usagePriceInput, type UsageRecord } from '@dovo/protocol'

@@ -1,5 +1,5 @@
 import { Deferred, Effect } from 'effect'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { clientTaskScope } from './task-scope.js'
 
 it('cancels every view command, waits for cleanup, and rejects new work after release', async () => {
@@ -12,10 +12,10 @@ it('cancels every view command, waits for cleanup, and rejects new work after re
       Effect.sync(() => {
         active++
       }),
-      () => Deferred.succeed(started, undefined).pipe(Effect.zipRight(Effect.never)),
+      () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
       () =>
         Deferred.await(released).pipe(
-          Effect.zipRight(
+          Effect.andThen(
             Effect.sync(() => {
               active--
             }),

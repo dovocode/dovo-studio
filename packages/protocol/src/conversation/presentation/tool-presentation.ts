@@ -2,12 +2,7 @@ import { mutableArray, mutableStruct } from '../../shared/schema.js'
 import { decodeResult } from '../../shared/schema.js'
 import { Schema } from 'effect'
 import type { recentTools } from '../../automation/activity.js'
-const record = Schema.mutable(
-  Schema.Record({
-    key: Schema.String,
-    value: Schema.Unknown,
-  }),
-)
+const record = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const parse = (value: string): unknown => {
   try {
@@ -106,7 +101,7 @@ function computePresentation(
       title: Schema.String,
       input: Schema.String,
       output: Schema.String,
-      kind: Schema.Literal('computer', 'command', 'web', 'file', 'tool', 'reasoning'),
+      kind: Schema.Literals(['computer', 'command', 'web', 'file', 'tool', 'reasoning']),
     }),
     envelope.presentation,
   ).data

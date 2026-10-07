@@ -9,7 +9,7 @@ import { getSharedPayloads, clearSharedPayloads } from 'expo-sharing'
 import { AppState, Linking } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { randomUUID } from 'expo-crypto'
-import { Schema, Effect } from 'effect'
+import { Schema, Effect, Semaphore } from 'effect'
 const item = mutableStruct({
   id: Schema.String,
   text: maxValue(minValue(Schema.String, 1), 12000),
@@ -21,7 +21,7 @@ const item = mutableStruct({
 export type ShortcutInput = Schema.Schema.Type<typeof item>
 const storage = 'dovo.shortcut.inbox'
 // Inbox writes belong to the app, including while React replaces its root.
-const inboxLock = Effect.unsafeMakeSemaphore(1)
+const inboxLock = Semaphore.makeUnsafe(1)
 const readInbox = mobileWorkflow(function* () {
   const value = yield* nativeEffect(() => AsyncStorage.getItem(storage))
   // One unreadable entry must not block every later shortcut; drop it and keep the rest.
@@ -79,7 +79,7 @@ export function useShortcuts() {
               if (!stopped) setQueue(updated)
             }).pipe(Effect.uninterruptible),
           )
-          .pipe(Effect.catchAll(report)),
+          .pipe(Effect.catch(report)),
       )
     }
     const receive = (url: string) => {
@@ -106,7 +106,7 @@ export function useShortcuts() {
               if (!stopped) setQueue(updated)
             }).pipe(Effect.uninterruptible),
           )
-          .pipe(Effect.catchAll(report)),
+          .pipe(Effect.catch(report)),
       )
     }
     void commands.run(
@@ -119,7 +119,7 @@ export function useShortcuts() {
             }),
           ),
           Effect.asVoid,
-          Effect.catchAll(report),
+          Effect.catch(report),
         ),
     )
     void commands.run(
@@ -130,7 +130,7 @@ export function useShortcuts() {
           }),
         ),
         Effect.asVoid,
-        Effect.catchAll(report),
+        Effect.catch(report),
       ),
     )
     receiveShare()

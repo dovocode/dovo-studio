@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { ForgeHttp } from './forge-http'
 import type { ForgeConnection } from '@dovo/protocol'
 const connection: ForgeConnection = {

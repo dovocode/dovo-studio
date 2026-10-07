@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { contextMeter } from './context-meter.js'
 
 it('describes context usage with and without a known window size', () => {

@@ -10,7 +10,7 @@ import {
 import { estimatedTurnCost } from '../agents/tasks/estimated-cost.js'
 const documentSchema = mutableStruct({
   updatedAt: Schema.String,
-  rates: Schema.Record({ key: Schema.String, value: usagePriceSchema }),
+  rates: Schema.Record(Schema.String, usagePriceSchema),
 })
 const priceUrl =
   'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
@@ -42,7 +42,7 @@ export class UsagePricing {
           }
         } else {
           const parsed = decodeResult(
-            Schema.Record({ key: Schema.String, value: usagePriceSchema }),
+            Schema.Record(Schema.String, usagePriceSchema),
             JSON.parse(row.data.value),
           )
           if (parsed.success) this.overrides = parsed.data

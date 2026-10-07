@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { PassThrough } from 'node:stream'
 import { createMessageConnection } from 'vscode-jsonrpc/node'
 import { JsonLineReader, JsonLineWriter } from './codex-transport'

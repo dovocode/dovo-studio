@@ -7,13 +7,21 @@ export const subagentSchema = mutableStruct({
   id: Schema.String,
   provider: Schema.String,
   name: Schema.String,
-  status: Schema.Literal('working', 'completed', 'failed', 'stopped', 'unknown'),
+  status: Schema.Literals(['working', 'completed', 'failed', 'stopped', 'unknown']),
   activity: Schema.optional(Schema.String),
   prompt: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   reasoning: Schema.optional(Schema.String),
-  tokens: Schema.optional(Schema.Number.pipe(Schema.finite()).pipe(Schema.nonNegative())),
-  durationMs: Schema.optional(Schema.Number.pipe(Schema.finite()).pipe(Schema.nonNegative())),
+  tokens: Schema.optional(
+    Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
+  durationMs: Schema.optional(
+    Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
   parentId: Schema.optional(Schema.String),
   startedAt: Schema.String,
   updatedAt: Schema.String,

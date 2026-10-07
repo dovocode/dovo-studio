@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { defineStudioExtension, type StudioHostApi, type StudioView } from './frontend'
 import { createExtensionCatalog } from '../../studio-shell/src/extension-catalog'
 it('contributes views before loading and disposes activated commands', async () => {

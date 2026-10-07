@@ -13,7 +13,7 @@ export const worktreeListSchema = mutableStruct({
       taskId: Schema.optional(Schema.String),
       taskTitle: Schema.optional(Schema.String),
       /** active: its task is in use · archived: task archived · missing: task deleted */
-      state: Schema.Literal('active', 'archived', 'missing'),
+      state: Schema.Literals(['active', 'archived', 'missing']),
       dirty: Schema.Boolean,
       /** Git reports the folder is gone; removing only clears Git's record. */
       prunable: Schema.Boolean,

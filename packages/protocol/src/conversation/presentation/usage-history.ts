@@ -5,11 +5,14 @@ export const usageRecordSchema = mutableStruct({
   taskId: Schema.String,
   title: Schema.String,
   sessionId: Schema.optional(Schema.String),
-  origin: Schema.optional(Schema.Literal('dovo', 'cli')),
+  origin: Schema.optional(Schema.Literals(['dovo', 'cli'])),
   turn: turnSchema,
 })
 export type UsageRecord = Schema.Schema.Type<typeof usageRecordSchema>
-const rate = Schema.Number.pipe(Schema.finite(), Schema.nonNegative())
+const rate = Schema.Number.pipe(
+  Schema.check(Schema.isFinite()),
+  Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+)
 export const usagePriceSchema = mutableStruct({
   input: rate,
   output: rate,
@@ -22,7 +25,7 @@ export const usageHistorySchema = mutableStruct({
   records: mutableArray(usageRecordSchema),
   notices: mutableArray(Schema.String),
   pricingUpdatedAt: Schema.optional(Schema.String),
-  overrides: Schema.optional(Schema.Record({ key: Schema.String, value: usagePriceSchema })),
+  overrides: Schema.optional(Schema.Record(Schema.String, usagePriceSchema)),
 })
 export type UsageHistoryResult = Schema.Schema.Type<typeof usageHistorySchema>
 

@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { openDatabase } from '../storage/database.js'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { defaultGithubTrigger, type Automation } from '@dovo/protocol'
 import { GithubTriggers } from './github-triggers.js'
 import { HttpError } from '../errors.js'

@@ -1,5 +1,5 @@
 import { decode } from '@dovo/protocol'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
 import { taskSchema } from '@dovo/protocol'
 import { startRuntime } from '../index'

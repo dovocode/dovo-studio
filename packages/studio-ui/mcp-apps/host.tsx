@@ -17,7 +17,6 @@ import {
   ReadResourceResultSchema,
   ListResourcesResultSchema,
   ListResourceTemplatesResultSchema,
-  ListToolsRequestSchema,
   ListToolsResultSchema,
   ListPromptsResultSchema,
 } from '@modelcontextprotocol/sdk/types.js'
@@ -25,6 +24,7 @@ import { resourceCsp, csp, protectHtml, sources } from './security'
 import sandbox from './sandbox.json'
 import type { McpApp } from '@dovo/protocol'
 const rootElement = document.getElementById('root')!
+const appCalls = new Map<string, AbortController>()
 let bridge: AppBridge | undefined
 let legacy: Root | undefined
 let frame: HTMLIFrameElement | undefined
@@ -105,6 +105,9 @@ function reply(value: unknown) {
   else entry.resolve(data.result)
 }
 async function cleanup() {
+  post({ type: 'app-tools', tools: [] })
+  for (const controller of appCalls.values()) controller.abort()
+  appCalls.clear()
   for (const entry of pending.values()) entry.cancel()
   pending.clear()
   if (bridge) {
@@ -250,15 +253,25 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
   )
   const current = bridge
   current.oncalltool = async (params, extra) =>
-    CallToolResultSchema.parse(await rpc('tools/call', params, extra.signal))
+    CallToolResultSchema.parse(await rpc('tools/call', params, extra.mcpReq.signal))
   current.onreadresource = async (params) =>
     ReadResourceResultSchema.parse(await rpc('resources/read', params))
   current.onlistresources = async (params) =>
     ListResourcesResultSchema.parse(await rpc('resources/list', params))
   current.onlistresourcetemplates = async (params) =>
     ListResourceTemplatesResultSchema.parse(await rpc('resources/templates/list', params))
-  current.setRequestHandler(ListToolsRequestSchema, async ({ params }) =>
-    ListToolsResultSchema.parse(await rpc('tools/list', params)),
+  current.setRequestHandler(
+    'tools/list',
+    {
+      params: z
+        .object({
+          cursor: z.string().optional(),
+          _meta: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional(),
+    },
+    async (params, extra) =>
+      ListToolsResultSchema.parse(await rpc('tools/list', params, extra.mcpReq.signal)),
   )
   current.onlistprompts = async (params) =>
     ListPromptsResultSchema.parse(await rpc('prompts/list', params))
@@ -291,9 +304,18 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
   current.onsizechange = ({ height }) => {
     if (typeof height === 'number' && Number.isFinite(height)) post({ type: 'height', height })
   }
+  const publishTools = async () => {
+    if (bridge !== current || !current.getAppCapabilities()?.tools) return
+    const result = await current.listTools({})
+    if (bridge === current) post({ type: 'app-tools', tools: result.tools })
+  }
+  current.setNotificationHandler('notifications/tools/list_changed', () => {
+    void publishTools().catch((error) => post({ type: 'notice', message: String(error) }))
+  })
   current.oninitialized = async () => {
     await current.sendToolInput({ arguments: record(app.input) })
     await current.sendToolResult(CallToolResultSchema.parse(app.result))
+    await publishTools()
   }
   current.onsandboxready = async () => {
     await current.sendSandboxResourceReady({
@@ -319,8 +341,38 @@ function notify() {
     bridge.sendPromptListChanged(),
   ]).catch((error) => post({ type: 'error', message: String(error) }))
 }
+function appToolMessage(input: unknown) {
+  const value = record(input)
+  if (value.nonce !== nonce || typeof value.requestId !== 'string') return
+  if (value.type === 'app-tool-cancel') {
+    appCalls.get(value.requestId)?.abort()
+    return
+  }
+  if (value.type !== 'app-tool-call' || typeof value.name !== 'string') return
+  const current = bridge,
+    key = nonce,
+    requestId = value.requestId
+  if (!current) return
+  const controller = new AbortController()
+  appCalls.set(requestId, controller)
+  void current
+    .callTool(
+      { name: value.name, arguments: record(value.arguments) },
+      { signal: controller.signal, timeout: 30000 },
+    )
+    .then((result) => {
+      if (bridge === current && nonce === key) post({ type: 'app-tool-result', requestId, result })
+    })
+    .catch((error) => {
+      if (bridge === current && nonce === key)
+        post({ type: 'app-tool-result', requestId, error: String(error) })
+    })
+    .finally(() => appCalls.delete(requestId))
+}
+window.dovoMcpAppTool = appToolMessage
 window.addEventListener('message', (event) => {
   if (event.source !== parent) return
+  appToolMessage(event.data)
   if (event.data?.type === 'load')
     void load(event.data.app, event.data.nonce, event.data.theme, false).catch((error) =>
       post({ type: 'error', message: String(error) }),
@@ -348,5 +400,6 @@ declare global {
     dovoMcpLoad: (app: McpApp, key: string, theme: 'dark' | 'light') => void
     dovoMcpReply: (value: unknown) => void
     dovoMcpNotify: () => void
+    dovoMcpAppTool: (value: unknown) => void
   }
 }

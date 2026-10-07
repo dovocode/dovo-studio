@@ -17,22 +17,22 @@ const bridgeSchema = Schema.Struct({
   dovo: Schema.Struct({
     windowsRuntime: Schema.Struct({
       read: Schema.Unknown.pipe(
-        Schema.filter(
+        Schema.refine(
           (value): value is WindowsRuntimeBridge['read'] => typeof value === 'function',
         ),
       ),
       connection: Schema.Unknown.pipe(
-        Schema.filter(
+        Schema.refine(
           (value): value is WindowsRuntimeBridge['connection'] => typeof value === 'function',
         ),
       ),
       save: Schema.Unknown.pipe(
-        Schema.filter(
+        Schema.refine(
           (value): value is WindowsRuntimeBridge['save'] => typeof value === 'function',
         ),
       ),
       security: Schema.Unknown.pipe(
-        Schema.filter(
+        Schema.refine(
           (value): value is WindowsRuntimeBridge['security'] => typeof value === 'function',
         ),
       ),

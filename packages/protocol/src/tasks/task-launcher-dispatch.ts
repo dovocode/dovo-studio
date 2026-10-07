@@ -3,13 +3,13 @@ import { mutableStruct } from '../shared/schema.js'
 import { responses } from '../runtime/connection/runtime.js'
 import type { Task } from '../workspace.js'
 import type { RuntimeProfile } from '../runtime/connection/runtime-fleet.js'
-export type LauncherRequest = <T extends Schema.Schema.AnyNoContext>(
+export type LauncherRequest = <T extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
   path: string,
   input: unknown,
   schema: T,
   method?: 'GET' | 'POST' | 'PATCH',
-) => Promise<Schema.Schema.Type<T>>
+) => Promise<T['Type']>
 export type LauncherAttempt = {
   task: Task
   profile: RuntimeProfile

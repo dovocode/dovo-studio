@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { androidScreenSize, MinicapFrames } from './simulator-native'
 it('assembles fragmented native video packets and multiple frames without JPEG parsing', () => {
   const header = Buffer.alloc(24)

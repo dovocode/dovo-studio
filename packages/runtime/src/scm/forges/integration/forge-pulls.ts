@@ -38,6 +38,30 @@ export class ForgePullRequests {
     ).trim()
     return this.store.get().repositories.find((repo) => repo.path === dirname(common))?.forge
   }
+  async githubEnvironment(cwd: string): Promise<Record<string, string>> {
+    if (
+      !this.store.get().repositories.some((repo) => repo.path === cwd) &&
+      !(await this.git.folderStatus(cwd)).initialized
+    )
+      return {}
+    const binding = await this.binding(cwd)
+    if (!binding) return {}
+    const connection = this.connections.get(binding.connectionId)
+    if (connection.provider !== 'github') return {}
+    const token = await this.connections.githubToken(connection.id, cwd)
+    return {
+      ...connection.cliEnv,
+      GH_HOST: new URL(connection.baseUrl).hostname,
+      ...(token
+        ? {
+            GH_TOKEN: token,
+            GH_ENTERPRISE_TOKEN: token,
+            GITHUB_TOKEN: '',
+            GITHUB_ENTERPRISE_TOKEN: '',
+          }
+        : {}),
+    }
+  }
   adapter(connectionId: string, repository: string, cwd?: string): ForgeAdapter {
     const connection = this.connections.get(connectionId)
     const directory =
@@ -85,13 +109,14 @@ export class ForgePullRequests {
             ? {
                 host,
                 token,
+                ...(connection.cliEnv ? { env: connection.cliEnv } : {}),
               }
             : undefined,
         ),
       ) as unknown
     }
     const repoSchema = mutableStruct({
-      id: Schema.Number.pipe(Schema.finite()),
+      id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
       name: Schema.String,
       full_name: Schema.String,
       html_url: Schema.String,
@@ -144,6 +169,7 @@ export class ForgePullRequests {
       host,
       repository,
       profile,
+      env: this.connections.get(id).cliEnv,
       token: (cwd) => {
         if (this.connections.get(id).revision !== revision)
           throw new HttpError(

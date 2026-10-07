@@ -51,13 +51,10 @@ const MAX_EXTRACTED_BYTES = 1024 * 1024 * 1024
 const MAX_ARCHIVE_ENTRIES = 100_000
 const INSTALL_DOCUMENT_ID = 'acp-installations'
 
-const boundedString = (max: number) => Schema.String.pipe(Schema.maxLength(max))
+const boundedString = (max: number) => Schema.String.pipe(Schema.check(Schema.isMaxLength(max)))
 const argsSchema = mutableArray(boundedString(4096))
-const environmentSchema = Schema.Record({
-  key: boundedString(256),
-  value: boundedString(4096),
-})
-const packageBinSchema = Schema.Union(Schema.String, environmentSchema)
+const environmentSchema = Schema.Record(boundedString(256), boundedString(4096))
+const packageBinSchema = Schema.Union([Schema.String, environmentSchema])
 const storedInstallationSchema = mutableStruct({
   ...acpInstallationSchema.fields,
   command: boundedString(4096),
@@ -381,7 +378,10 @@ export class AcpInstallations {
 
   constructor(
     private readonly db: Database.Database,
-    private readonly directory = join(homedir(), '.dovo', 'acp-agents'),
+    private readonly directory = join(
+      process.env.DOVO_DATA_ROOT ?? join(homedir(), '.dovo'),
+      'acp-agents',
+    ),
     options: AcpInstallationsOptions = {},
   ) {
     this.fetcher = options.fetch ?? fetch

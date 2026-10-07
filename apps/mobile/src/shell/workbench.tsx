@@ -278,7 +278,7 @@ export function Workbench() {
               withAnchor: true,
             })
         }).pipe(
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             nativeEffect(() => {
               setLoadError(String(e))
             }),
@@ -316,7 +316,7 @@ export function Workbench() {
           ),
         )
         .pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               if (!stopped) setLoadError(String(error))
             }),
@@ -331,7 +331,7 @@ export function Workbench() {
     () => () => {
       void runClientEffect(
         nativeEffect(() => extensions.host.dispose()).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => console.error('Mobile extension shutdown failed', error)),
           ),
         ),

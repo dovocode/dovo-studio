@@ -8,9 +8,14 @@ export const attachmentSchema = mutableStruct({
   id: uuidSchema,
   name: maxValue(minValue(Schema.String, 1), 250),
   mime: Schema.String,
-  size: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.nonNegative()),
+  size: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
 })
 export const attachmentResultSchema = mutableStruct({
   attachment: attachmentSchema,
@@ -18,12 +23,12 @@ export const attachmentResultSchema = mutableStruct({
 export const attachmentUploadResultSchema = mutableStruct({
   ...attachmentResultSchema.fields,
   ...{
-    revision: Schema.Number.pipe(Schema.finite()),
+    revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   },
 })
 export const attachmentMutationSchema = mutableStruct({
   ok: Schema.Literal(true),
-  revision: Schema.Number.pipe(Schema.finite()),
+  revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
 })
 export const attachmentReadSchema = mutableStruct({
   ...attachmentResultSchema.fields,

@@ -23,3 +23,5 @@ export { ExtensionError, type ExtensionOperation } from './effects/operation.js'
 export { clientTaskScope } from './effects/task-scope.js'
 export { startReconnecting } from './effects/reconnecting.js'
 export { startSocketHeartbeat } from './effects/socket-heartbeat.js'
+
+export { startMcpAppTools } from './effects/mcp-app-tools.js'

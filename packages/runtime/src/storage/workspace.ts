@@ -12,7 +12,7 @@ import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode, decodeResult } from '@dovo/protocol'
 import { migrateJiraSources } from './jira-migration.js'
 import type Database from 'better-sqlite3'
-import { Schema } from 'effect'
+import { Schema, Struct } from 'effect'
 import {
   messageSchema,
   turnSchema,
@@ -48,13 +48,13 @@ const collectionSchemas = {
   jiraSources: jiraSourceSchema,
   jiraIssueLinks: jiraIssueLinkSchema,
 } as const
-function validatedItems<S extends Schema.Schema.AnyNoContext>(
+function validatedItems<S extends Schema.Codec<unknown, unknown>>(
   schema: S,
   items: unknown,
-  old: Schema.Schema.Type<S>[],
-): Schema.Schema.Type<S>[] {
+  old: S['Type'][],
+): S['Type'][] {
   if (items === old) return old
-  const known = new Map<unknown, Schema.Schema.Type<S>>(old.map((item) => [item, item]))
+  const known = new Map<unknown, S['Type']>(old.map((item) => [item, item]))
   return decode(Schema.Array(Schema.Unknown), items).map(
     (item) => known.get(item) ?? decode(schema, item),
   )
@@ -73,13 +73,19 @@ function loadStoredWorkspace(db: Database.Database, raw: string): Workspace {
     mutableStruct({
       storageVersion: Schema.Number,
       workspace: Schema.Unknown,
-      historyCounts: Schema.Record({
-        key: Schema.String,
-        value: mutableStruct({
-          messages: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
-          turns: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+      historyCounts: Schema.Record(
+        Schema.String,
+        mutableStruct({
+          messages: Schema.Number.pipe(
+            Schema.check(Schema.isInt()),
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+          ),
+          turns: Schema.Number.pipe(
+            Schema.check(Schema.isInt()),
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+          ),
         }),
-      }),
+      ),
     }),
     parsed,
   )
@@ -364,12 +370,14 @@ export class WorkspaceStore {
       const previous = known.get(value.id)
       if (value === previous) return previous
       if (!previous) return decode(taskSchema, value)
-      const candidate = decode(Schema.Record({ key: Schema.String, value: Schema.Unknown }), value)
+      const candidate = decode(Schema.Record(Schema.String, Schema.Unknown), value)
       const keys = Object.keys(taskSchema.fields)
         .filter((key): key is keyof Task => Object.hasOwn(taskSchema.fields, key))
         .filter((key) => candidate[key] !== previous[key])
       const changed = decode(
-        taskSchema.pick(...keys.filter((key) => key !== 'messages' && key !== 'turns')),
+        taskSchema.mapFields(
+          Struct.pick([...keys.filter((key) => key !== 'messages' && key !== 'turns')]),
+        ),
         Object.fromEntries(
           keys
             .filter((key) => key !== 'messages' && key !== 'turns')
@@ -395,12 +403,12 @@ export class WorkspaceStore {
   }
   /** Validate changed entities only; immutable, already validated histories remain shared. */
   private validateWorkspace(value: unknown, previous = this.workspace): Workspace {
-    const candidate = decode(Schema.Record({ key: Schema.String, value: Schema.Unknown }), value)
-    const collection = <S extends Schema.Schema.AnyNoContext>(
+    const candidate = decode(Schema.Record(Schema.String, Schema.Unknown), value)
+    const collection = <S extends Schema.Codec<unknown, unknown>>(
       schema: S,
       items: unknown,
-      old: Schema.Schema.Type<S>[],
-    ): Schema.Schema.Type<S>[] => {
+      old: S['Type'][],
+    ): S['Type'][] => {
       return validatedItems(schema, items, old)
     }
     const shell = decode(workspaceSchema, {
@@ -428,19 +436,28 @@ export class WorkspaceStore {
           ? previous?.jiraSources
           : candidate.jiraSources === undefined
             ? undefined
-            : decode(workspaceSchema.fields.jiraSources.from, candidate.jiraSources),
+            : decode(
+                Schema.required(workspaceSchema.fields.jiraSources.schema),
+                candidate.jiraSources,
+              ),
       jiraIssueLinks:
         candidate.jiraIssueLinks === previous?.jiraIssueLinks
           ? previous?.jiraIssueLinks
           : candidate.jiraIssueLinks === undefined
             ? undefined
-            : decode(workspaceSchema.fields.jiraIssueLinks.from, candidate.jiraIssueLinks),
+            : decode(
+                Schema.required(workspaceSchema.fields.jiraIssueLinks.schema),
+                candidate.jiraIssueLinks,
+              ),
       planLimits:
         candidate.planLimits === previous?.planLimits
           ? previous?.planLimits
           : candidate.planLimits === undefined
             ? undefined
-            : decode(workspaceSchema.fields.planLimits.from, candidate.planLimits),
+            : decode(
+                Schema.required(workspaceSchema.fields.planLimits.schema),
+                candidate.planLimits,
+              ),
     }
   }
   update(
@@ -789,14 +806,13 @@ export class WorkspaceStore {
     const entity = list.find((item) => item.id === patch.id)
     if (patch.create !== undefined) {
       const record = decode(
-        Schema.Struct(
-          mutableStruct({
-            id: Schema.String,
-          }).fields,
-          {
-            key: Schema.String,
-            value: Schema.Unknown,
-          },
+        Schema.StructWithRest(
+          Schema.Struct(
+            mutableStruct({
+              id: Schema.String,
+            }).fields,
+          ),
+          [Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))],
         ),
         patch.create,
       )
@@ -836,7 +852,7 @@ export class WorkspaceStore {
           record.consumedMessageIds !== undefined)
       )
         throw new HttpError(400, 'New tasks must be drafts')
-      const parsed = decode(workspaceSchema.fields[patch.collection].value, record)
+      const parsed = decode(workspaceSchema.fields[patch.collection].schema.value, record)
       if (patch.collection === 'tasks') this.validateProjectTask(decode(taskSchema, parsed))
       if (patch.collection === 'repositories' && 'kind' in record && record.kind === 'scratch')
         throw new HttpError(400, 'The scratch workspace is managed by Dovo')
@@ -865,15 +881,7 @@ export class WorkspaceStore {
       patch.changes.repositoryId
     )
       throw new HttpError(400, 'Linked tasks stay attached to their source repository')
-    const current = decode(
-      Schema.mutable(
-        Schema.Record({
-          key: Schema.String,
-          value: Schema.Unknown,
-        }),
-      ),
-      entity,
-    )
+    const current = decode(Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)), entity)
     if (
       patch.collection === 'repositories' &&
       (patch.changes.gitIdentity || patch.changes.gitIdentityError)
@@ -970,14 +978,13 @@ export class WorkspaceStore {
         const old = decode(mutableArray(Schema.Unknown), current.messages),
           next = decode(
             mutableArray(
-              Schema.Struct(
-                mutableStruct({
-                  role: Schema.String,
-                }).fields,
-                {
-                  key: Schema.String,
-                  value: Schema.Unknown,
-                },
+              Schema.StructWithRest(
+                Schema.Struct(
+                  mutableStruct({
+                    role: Schema.String,
+                  }).fields,
+                ),
+                [Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))],
               ),
             ),
             change.after,

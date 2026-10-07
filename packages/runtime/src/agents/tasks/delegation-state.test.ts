@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import type { Agent, Subagent, Task } from '@dovo/protocol'
 import { projectDelegatedAgents } from './delegation-state'
 const agents: Agent[] = [

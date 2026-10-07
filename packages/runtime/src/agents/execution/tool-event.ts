@@ -2,12 +2,7 @@ import { mutableArray } from '@dovo/protocol'
 import { decodeResult } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { Agent } from '@dovo/protocol'
-const record = Schema.mutable(
-  Schema.Record({
-    key: Schema.String,
-    value: Schema.Unknown,
-  }),
-)
+const record = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const string = (value: unknown) => (typeof value === 'string' ? value : '')
 export function toolEvent(provider: Agent['provider'], name: string, payload: unknown) {

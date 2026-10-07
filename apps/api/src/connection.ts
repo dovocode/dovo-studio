@@ -56,6 +56,10 @@ export function publishConnection(directory: string, connection: LocalConnection
 export function connectionPaths() {
   if (process.env.DOVO_DATABASE_PATH)
     return [join(dirname(process.env.DOVO_DATABASE_PATH), 'runtime-connection.json')]
+  if (process.env.DOVO_DATA_ROOT)
+    return [process.env.DOVO_DATA_ROOT, join(process.env.DOVO_DATA_ROOT, 'desktop')]
+      .map((directory) => join(directory, 'runtime-connection.json'))
+      .filter(existsSync)
   const home = homedir()
   const appData =
     process.platform === 'darwin'
@@ -63,7 +67,12 @@ export function connectionPaths() {
       : process.platform === 'win32'
         ? (process.env.APPDATA ?? join(home, 'AppData/Roaming'))
         : (process.env.XDG_CONFIG_HOME ?? join(home, '.config'))
-  return [join(home, '.dovo'), join(appData, '@dovo/desktop'), join(appData, 'Dovo Studio')]
+  return [
+    join(home, '.dovo'),
+    join(home, '.dovo', 'desktop'),
+    join(appData, '@dovo/desktop'),
+    join(appData, 'Dovo Studio'),
+  ]
     .map((directory) => join(directory, 'runtime-connection.json'))
     .filter(existsSync)
 }

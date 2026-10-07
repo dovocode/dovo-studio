@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { defaultTaskHarness, type Agent, type ProviderStatus } from '@dovo/protocol'
 import { AgentRegistry } from '../configuration/registry.js'
 import { HarnessAvailabilityCache } from './harness-availability.js'

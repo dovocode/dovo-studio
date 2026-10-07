@@ -1,5 +1,5 @@
 import { runtimeIntegration, waitForRuntime as waitForRecovery } from '../../testing/integration'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { join } from 'node:path'
 import { startRuntime } from '../../index'
 import { createServices } from '../../services'

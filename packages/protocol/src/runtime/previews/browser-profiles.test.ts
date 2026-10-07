@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { decodeResult } from '../../shared/schema.js'
 import { browserProfilesSchema } from './browser-profiles'
 it('requires a default profile, unique safe IDs, and meaningful names', () => {

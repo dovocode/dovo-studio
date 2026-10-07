@@ -1,4 +1,4 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeComputerName, parseAgentEnvironment, formatAgentEnvironment } from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
@@ -91,7 +91,7 @@ function ConnectionsContent() {
               if (active && !received && cached) setConnections(cached.value.connections)
             }),
           ),
-          Effect.catchAll(() =>
+          Effect.catch(() =>
             Effect.sync(() => {
               if (active) setError('Could not load saved accounts.')
             }),
@@ -113,7 +113,7 @@ function ConnectionsContent() {
                     readCache?.writeEffect('scm-connections', result) ?? Effect.succeed(undefined)
                   )
                 }).pipe(
-                  Effect.catchAll((_error) =>
+                  Effect.catch((_error) =>
                     nativeEffect(() => {
                       if (active)
                         setError('Accounts loaded, but could not be saved for offline access.')
@@ -124,7 +124,7 @@ function ConnectionsContent() {
             ),
           )
           .pipe(
-            Effect.catchAll((cause) =>
+            Effect.catch((cause) =>
               nativeEffect(() => {
                 if (active) setError(String(cause))
               }),
@@ -154,7 +154,7 @@ function ConnectionsContent() {
           )
           done()
         }).pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               setError(String(cause))
             }),
@@ -194,8 +194,8 @@ function ConnectionsContent() {
         </SettingsGroup>
         <Action label="Connect account" disabled={!connected} onPress={() => setEditing('new')} />
         <Text style={styles.muted}>
-          GitHub projects already use the runtime’s GitHub CLI login. Add a connection to use
-          another account host or provider.
+          GitHub projects already use the runtime’s GitHub CLI login. Add a connection to use a
+          different GitHub user, wrapper selector, host or provider.
         </Text>
         <SettingsGroup title="Projects">
           {(snapshot?.workspace.repositories ?? []).map((repo, index) => (
@@ -281,6 +281,9 @@ function ConnectionForm({
   const [username, setUsername] = useApplicationState(initial?.username ?? ''),
     [token, setToken] = useApplicationState(''),
     [tokenEnv, setTokenEnv] = useApplicationState(initial?.tokenEnv ?? '')
+  const [cliEnvironment, setCliEnvironment] = useApplicationState(
+    formatAgentEnvironment(initial?.cliEnv),
+  )
   const [cliProfile, setCliProfile] = useApplicationState(initial?.cliProfile ?? '')
   const [cliTool, setCliTool] = useApplicationState<'fj' | 'tea'>(initial?.cliTool ?? 'tea')
   const [credential, setCredential] = useApplicationState(initial?.credential ?? 'gh'),
@@ -304,6 +307,7 @@ function ConnectionForm({
             baseUrl,
             username: username || undefined,
             credential,
+            cliEnv: credential === 'gh-wrapper' ? parseAgentEnvironment(cliEnvironment) : undefined,
             ...(credential === 'cli' || credential === 'gh'
               ? {
                   cliProfile: cliProfile.trim() || undefined,
@@ -325,7 +329,7 @@ function ConnectionForm({
           setToken('')
           onDone()
         }).pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               setError(cause instanceof Error ? cause.message : String(cause))
             }),
@@ -370,7 +374,31 @@ function ConnectionForm({
         autoCorrect={false}
         keyboardType="url"
       />
-      {provider === 'github' ? (
+      {provider === 'github' && (
+        <Choice
+          label="Authentication"
+          value={credential}
+          onChange={(next) => {
+            if (
+              next === 'gh' ||
+              next === 'gh-wrapper' ||
+              next === 'environment' ||
+              next === 'token'
+            ) {
+              setCredential(next)
+              setToken('')
+            }
+          }}
+          disabled={busy}
+          items={[
+            { id: 'gh', name: 'GitHub CLI account' },
+            { id: 'gh-wrapper', name: 'GitHub CLI wrapper · environment selector' },
+            { id: 'environment', name: 'Token from runtime environment' },
+            { id: 'token', name: 'API token' },
+          ]}
+        />
+      )}
+      {provider === 'github' && (credential === 'gh' || credential === 'gh-wrapper') ? (
         <Text style={styles.muted}>
           Run gh auth login --hostname{' '}
           {(() => {
@@ -394,31 +422,33 @@ function ConnectionForm({
               autoCorrect={false}
             />
           )}
-          <Choice
-            label="Credential"
-            value={credential}
-            onChange={(value) => {
-              setCredential(
-                value === 'environment' ? 'environment' : value === 'cli' ? 'cli' : 'token',
-              )
-              setToken('')
-            }}
-            disabled={busy}
-            items={[
-              {
-                id: 'cli',
-                name: 'Signed-in CLI account',
-              },
-              {
-                id: 'token',
-                name: 'API token on runtime',
-              },
-              {
-                id: 'environment',
-                name: 'Runtime environment variable',
-              },
-            ]}
-          />
+          {provider !== 'github' && (
+            <Choice
+              label="Credential"
+              value={credential}
+              onChange={(value) => {
+                setCredential(
+                  value === 'environment' ? 'environment' : value === 'cli' ? 'cli' : 'token',
+                )
+                setToken('')
+              }}
+              disabled={busy}
+              items={[
+                {
+                  id: 'cli',
+                  name: 'Signed-in CLI account',
+                },
+                {
+                  id: 'token',
+                  name: 'API token on runtime',
+                },
+                {
+                  id: 'environment',
+                  name: 'Runtime environment variable',
+                },
+              ]}
+            />
+          )}
           {credential === 'cli' ? (
             <>
               {['gitea', 'forgejo'].includes(provider) && (
@@ -479,6 +509,22 @@ function ConnectionForm({
               Tokens are stored in the runtime’s private database, outside workspace sync.
             </Text>
           )}
+        </>
+      )}
+      {credential === 'gh-wrapper' && (
+        <>
+          <Field
+            label="Wrapper selectors · NAME=value per line"
+            value={cliEnvironment}
+            onChangeText={setCliEnvironment}
+            editable={!busy}
+            multiline
+            autoCorrect={false}
+          />
+          <Text style={styles.muted}>
+            Configure the gh wrapper in Runtime commands. These selectors are non-secret settings
+            shared with paired clients.
+          </Text>
         </>
       )}
       {(credential === 'cli' || credential === 'gh') && (
@@ -576,7 +622,7 @@ function ProjectConnection({
           setPage(next)
           setMore(result.hasMore)
         }).pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               setError(String(cause))
             }),
@@ -629,7 +675,7 @@ function ProjectConnection({
             )
           onDone()
         }).pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               setError(String(cause))
             }),

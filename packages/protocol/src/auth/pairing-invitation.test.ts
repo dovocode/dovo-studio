@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { pairingAddress, pairingInvitationUrl, parsePairingInvitation } from './pairing-invitation'
 const invitation = {
   address: 'http://100.90.80.70:8787',

@@ -353,7 +353,7 @@ function PullsContent({
                   onPress: () => {
                     void runClientEffect(
                       nativeEffect(() => openAppLink(p.url, true)).pipe(
-                        Effect.catchAll((error) =>
+                        Effect.catch((error) =>
                           nativeEffect(() => Alert.alert('Could not open PR', String(error))),
                         ),
                       ),

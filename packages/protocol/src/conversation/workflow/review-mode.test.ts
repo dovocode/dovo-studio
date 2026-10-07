@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { commandSuggestions } from '../presentation/resource-mentions.js'
 import { fixFindingsPrompt, parseReviewFindings, reviewFindings } from './review-mode.js'
 

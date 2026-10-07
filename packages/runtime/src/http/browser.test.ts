@@ -1,5 +1,5 @@
 import { decode } from '@dovo/protocol'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { once } from 'node:events'
 import { WebSocket } from 'ws'
 import { startRuntime } from '../index'

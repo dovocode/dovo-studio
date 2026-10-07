@@ -83,7 +83,7 @@ export function CatalogPicker({
               if (id === generation.current) setSkills(result.entries)
             }
           }).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               nativeEffect(() => {
                 if (id === generation.current) setLoadError(String(error))
               }),

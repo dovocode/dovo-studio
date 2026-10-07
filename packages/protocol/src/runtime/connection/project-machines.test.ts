@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { gitRemoteIdentity, projectMachineGroups } from './project-machines'
 import { taskMachineDraft } from '../../tasks/task-machine-draft'
 import { decode } from '../../shared/schema'

@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { ProgressBuffer } from './progress-buffer'
 it('coalesces progress by item and flushes it before a terminal boundary', () => {
   const failed = vi.fn<(cause: unknown) => void>(),

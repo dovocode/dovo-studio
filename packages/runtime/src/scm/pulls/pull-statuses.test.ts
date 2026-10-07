@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { GitService } from '../git/git'
 import { pullStatuses } from './pull-statuses'
 it('loads check and review statuses in one repository-scoped request', async () => {

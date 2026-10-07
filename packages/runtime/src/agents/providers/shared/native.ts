@@ -1,7 +1,7 @@
 import { Schema } from 'effect'
 import { decodeResult } from '@dovo/protocol'
 
-const record = Schema.mutable(Schema.Record({ key: Schema.String, value: Schema.Unknown }))
+const record = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 export const nativeObject = (value: unknown) => decodeResult(record, value).data ?? {}
 export const nativeText = (value: unknown) => (typeof value === 'string' ? value : '')
 

@@ -30,7 +30,7 @@ const state = mutableStruct({
 })
 const pipeline = mutableStruct({
   uuid: Schema.String,
-  build_number: Schema.Number.pipe(Schema.finite()),
+  build_number: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   created_on: Schema.String,
   completed_on: Schema.optional(Schema.NullOr(Schema.String)),
   trigger: Schema.optional(

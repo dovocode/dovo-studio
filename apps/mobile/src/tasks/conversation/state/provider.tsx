@@ -11,7 +11,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react'
-import { RegistryContext, useAtomValue } from '@effect-atom/atom-react'
+import { RegistryContext, useAtomValue } from '@effect/atom-react'
 import { applicationState } from '@dovo/client-runtime'
 import { AssistantRuntimeProvider } from '@assistant-ui/react-native'
 import { useExternalStoreRuntime } from '@assistant-ui/core/react'

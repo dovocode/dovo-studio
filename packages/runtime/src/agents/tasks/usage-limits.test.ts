@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import type { Agent } from '@dovo/protocol'
 import { readUsageLimits } from './usage-limits.js'
 const mocks = vi.hoisted(() => ({

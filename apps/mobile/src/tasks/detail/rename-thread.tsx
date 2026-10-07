@@ -30,7 +30,7 @@ export function RenameThread({ task, onClose }: { task: Task; onClose: () => voi
                 id: task.id,
                 changes: { title: { before: task.title, after: title.trim() } },
               },
-              mutableStruct({ revision: Schema.Number.pipe(Schema.finite()) }),
+              mutableStruct({ revision: Schema.Number.pipe(Schema.check(Schema.isFinite())) }),
               'PATCH',
             ).pipe(Effect.tap(() => Effect.sync(onClose))),
           )

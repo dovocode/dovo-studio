@@ -1,6 +1,6 @@
 # Effect patterns in Dovo
 
-The codebase uses Effect 3 at runtime and client boundaries, alongside existing Promise-based APIs.
+The codebase uses Effect 4 at runtime and client boundaries, alongside existing Promise-based APIs.
 Follow local conventions and migrate a boundary when you touch it; the repository is not uniformly
 Effect-native yet. These helpers live in [runtime errors](../packages/runtime/src/errors.ts) and
 [client runtime](../packages/client-runtime/src). See
@@ -80,10 +80,29 @@ for reads, use an existing refresh or bounded backoff policy where the owning se
 - Use `Effect.fail` for an expected typed failure; use `runtimeOperation` at Promise/sync IO edges.
 - Preserve domain errors such as `HttpError` and validation failures so callers can respond
   appropriately.
-- Catch errors only where the caller has a recovery behavior. `catchAll` does not catch defects; use
-  `catchAllCause` only when defect/interruption handling is intentional.
+- Catch errors only where the caller has a recovery behavior. `Effect.catch` does not catch defects;
+  use `Effect.catchCause` only when defect/interruption handling is intentional.
 - Keep interruption observable for caller-owned work. Do not convert cancellation into “success” to
   silence logs; filter interruption-only causes only at an owner boundary, as `clientTaskScope` and
   `startPolling` do.
 - Add tests for externally visible failure, cancellation, or recovery behavior, not for a helper's
   implementation details.
+
+## Effect 4 contracts and tests
+
+Use `Schema.Codec<A, I>` for codecs and `S['Type']` for generic decoded values. Schema checks use
+`Schema.check(Schema.isFinite())` or `Schema.check(Schema.makeFilter(...))`; preserve concrete
+schema types when writing validation helpers. `mutableStruct` marks keys mutable, and `mutableArray`
+keeps wire collections mutable. Defaults use `Schema.withDecodingDefaultType` with `Effect.sync` so
+collection defaults are fresh for every decode. Use `strictStruct` for objects that must reject
+excess keys, including nested boundaries; parser options in annotations do not enforce this in v4.
+
+Atoms come from `effect/reactivity`; React bindings come from `@effect/atom-react`. Keep one
+registry per application root. Effect ecosystem versions are pinned together in package manifests
+and the workspace override, including OpenCode's protocol/schema dependencies that still declare an
+older v4 RC.
+
+Tests use Vitest 5 through `vite-plus/test`. Fake clocks leave `setImmediate` live because Effect v4
+uses it for scheduler handoffs. Await observable completion when a worker yields; advancing a fake
+clock alone does not prove that a native Promise or owned worker has settled. Interruption
+assertions should check interruption behavior rather than Effect's incidental error wording.

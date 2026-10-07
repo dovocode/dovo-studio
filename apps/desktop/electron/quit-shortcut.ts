@@ -2,7 +2,9 @@ import { app, type WebContents } from 'electron'
 import { readLocalSettingsSection } from '@dovo/protocol/local-settings'
 import { decodeResult, mutableStruct } from '@dovo/protocol'
 import { Schema } from 'effect'
-const preference = mutableStruct({ quitShortcut: Schema.Literal('immediate', 'hold', 'disabled') })
+const preference = mutableStruct({
+  quitShortcut: Schema.Literals(['immediate', 'hold', 'disabled']),
+})
 /** Menu-based Quit remains available; this only changes the keyboard shortcut. */
 export function registerQuitShortcut(contents: WebContents) {
   let timer: ReturnType<typeof setTimeout> | undefined

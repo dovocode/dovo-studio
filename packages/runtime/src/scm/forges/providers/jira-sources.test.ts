@@ -1,7 +1,7 @@
 import { decode } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { forgeIssueDetailSchema, forgeWorkOptionsSchema } from '@dovo/protocol'
 import { startRuntime } from '../../../index.js'
 import { JiraWork } from './jira.js'

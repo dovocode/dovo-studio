@@ -1,5 +1,6 @@
+import { Schema } from 'effect'
 import { decodeResult } from './schema.js'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { connectionSchema } from '../runtime/connection/runtime.js'
 import { runtimeRegistrySchema } from '../runtime/connection/runtime-fleet.js'
 import { jiraBindingSchema } from '../scm/forges/jira.js'
@@ -7,7 +8,7 @@ import { forgeWorkResultSchema } from '../scm/forges/forge-work.js'
 import { pullActionResultSchema } from '../scm/forges/forges.js'
 const credentialFreeURLs = [
   connectionSchema.fields.address,
-  forgeWorkResultSchema.fields.url.from,
+  Schema.required(forgeWorkResultSchema.fields.url.schema),
   pullActionResultSchema.fields.url,
 ]
 it.each(['', 'h', 'https:', 'https://', 'https://[', '//example.com', 'not a url'])(

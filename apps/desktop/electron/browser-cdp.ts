@@ -8,9 +8,9 @@ import { Schema } from 'effect'
 import { decode, mutableStruct, desktopBrowserHostSchema } from '@dovo/protocol'
 
 const commandSchema = mutableStruct({
-  id: Schema.Number.pipe(Schema.int()),
+  id: Schema.Number.pipe(Schema.check(Schema.isInt())),
   method: Schema.String,
-  params: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+  params: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   sessionId: Schema.optional(Schema.String),
 })
 type Target = {

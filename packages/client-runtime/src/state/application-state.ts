@@ -1,4 +1,4 @@
-import * as Atom from '@effect-atom/atom/Atom'
+import { Atom } from 'effect/reactivity'
 import { Option } from 'effect'
 
 /** State and its rendering projection share one authoritative atom. */

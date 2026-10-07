@@ -4,7 +4,7 @@ export const RUNTIME_PROTOCOL_VERSION = 2
 export const PAIRING_PROTOCOL_VERSION = 2
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { minValue, urlSchema, refine, maxValue } from '../../shared/schema.js'
-import { Schema } from 'effect'
+import { Schema, Effect } from 'effect'
 import { workspaceSchema, providerSchema, taskSchema } from '../../workspace.js'
 import { runtimeDefaultsSchema } from './runtime-setup.js'
 import { pendingQuestionSchema } from '../../conversation/workflow/questions.js'
@@ -28,18 +28,20 @@ export const terminalSchema = mutableStruct({
   taskId: Schema.String,
   title: Schema.String,
   exited: Schema.Boolean,
-  exitCode: Schema.optional(Schema.Number.pipe(Schema.finite())),
+  exitCode: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
 })
 export const jobRunStepSchema = mutableStruct({
   nodeId: Schema.String,
   label: Schema.String,
-  kind: Schema.Literal('trigger', 'task', 'review'),
-  status: Schema.Literal('pending', 'running', 'waiting', 'completed', 'failed', 'cancelled'),
+  kind: Schema.Literals(['trigger', 'task', 'review']),
+  status: Schema.Literals(['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled']),
   taskId: Schema.optional(Schema.String),
   attempt: minValue(
-    Schema.Number.pipe(Schema.finite()).pipe(
-      Schema.int(),
-      Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+    Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
     ),
     0,
   ),
@@ -50,7 +52,7 @@ export const jobRunStepSchema = mutableStruct({
 export const jobRunSchema = mutableStruct({
   id: Schema.String,
   automationId: Schema.String,
-  status: Schema.Literal('running', 'waiting', 'completed', 'failed', 'cancelled'),
+  status: Schema.Literals(['running', 'waiting', 'completed', 'failed', 'cancelled']),
   completedNodes: mutableArray(Schema.String),
   taskIds: mutableArray(Schema.String),
   waitingNodeId: Schema.optional(Schema.String),
@@ -58,9 +60,14 @@ export const jobRunSchema = mutableStruct({
   failedNodeId: Schema.optional(Schema.String),
   steps: Schema.optional(mutableArray(jobRunStepSchema)),
   attempt: Schema.optional(
-    Schema.Number.pipe(Schema.finite())
-      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-      .pipe(Schema.positive()),
+    Schema.Number.pipe(Schema.check(Schema.isFinite()))
+      .pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      )
+      .pipe(Schema.check(Schema.isGreaterThan(0))),
   ),
   interrupted: Schema.optional(Schema.Boolean),
   error: Schema.optional(Schema.String),
@@ -81,26 +88,28 @@ export const snapshotSchema = mutableStruct({
   /** Present on scoped replicas; only these threads contain authoritative history. */
   detailTaskIds: Schema.optional(mutableArray(Schema.String)),
   runtimeInstanceId: Schema.optional(Schema.String),
-  protocolVersion: Schema.optional(Schema.Number.pipe(Schema.int())),
+  protocolVersion: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isInt()))),
   runtimeHost: Schema.optional(Schema.String),
   releaseVersion: Schema.optional(Schema.String),
-  releaseDistribution: Schema.optional(Schema.Literal('desktop', 'archive', 'source')),
+  releaseDistribution: Schema.optional(Schema.Literals(['desktop', 'archive', 'source'])),
   releaseCanUpdate: Schema.optional(Schema.Boolean),
   desktopApp: Schema.optional(
     mutableStruct({
       version: Schema.String,
       canUpdate: Schema.Boolean,
-      channel: Schema.optional(Schema.Literal('stable', 'nightly')),
+      channel: Schema.optional(Schema.Literals(['stable', 'nightly'])),
     }),
   ),
   defaults: Schema.optional(runtimeDefaultsSchema),
-  acpInstallations: Schema.optionalWith(mutableArray(acpInstallationSchema), { default: () => [] }),
-  revision: Schema.Number.pipe(Schema.finite()),
+  acpInstallations: mutableArray(acpInstallationSchema).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
+  revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   workspace: workspaceSchema,
   approvals: mutableArray(approvalSchema),
-  questions: Schema.optionalWith(mutableArray(pendingQuestionSchema), {
-    default: () => [],
-  }),
+  questions: mutableArray(pendingQuestionSchema).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
   terminals: mutableArray(terminalSchema),
   runs: mutableArray(jobRunSchema),
   devices: mutableArray(deviceSchema),
@@ -131,54 +140,62 @@ export const connectionSchema = mutableStruct({
   token: minValue(Schema.String, 20),
 })
 export const patchSchema = mutableStruct({
-  collection: Schema.Literal('agents', 'repositories', 'tasks', 'automations'),
+  collection: Schema.Literals(['agents', 'repositories', 'tasks', 'automations']),
   id: Schema.String,
-  changes: Schema.mutable(
-    Schema.Record({
-      key: Schema.String,
-      value: mutableStruct({
+  changes: Schema.Record(
+    Schema.String,
+    Schema.mutableKey(
+      mutableStruct({
         before: Schema.Unknown,
         after: Schema.Unknown,
       }),
-    }),
+    ),
   ),
   create: Schema.optional(Schema.Unknown),
 })
-export const terminalInputSchema = Schema.Union(
-  ...[
-    mutableStruct({
-      type: Schema.Literal('ping'),
-      nonce: maxValue(minValue(Schema.String, 1), 64),
-    }),
-    mutableStruct({
-      type: Schema.Literal('input'),
-      data: maxValue(Schema.String, 65536),
-    }),
-    mutableStruct({
-      type: Schema.Literal('resize'),
-      cols: maxValue(
-        minValue(
-          Schema.Number.pipe(Schema.finite()).pipe(
-            Schema.int(),
-            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+export const terminalInputSchema = Schema.Union([
+  mutableStruct({
+    type: Schema.Literal('ping'),
+    nonce: maxValue(minValue(Schema.String, 1), 64),
+  }),
+  mutableStruct({
+    type: Schema.Literal('input'),
+    data: maxValue(Schema.String, 65536),
+  }),
+  mutableStruct({
+    type: Schema.Literal('resize'),
+    cols: maxValue(
+      minValue(
+        Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
           ),
-          2,
         ),
-        500,
+        2,
       ),
-      rows: maxValue(
-        minValue(
-          Schema.Number.pipe(Schema.finite()).pipe(
-            Schema.int(),
-            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+      500,
+    ),
+    rows: maxValue(
+      minValue(
+        Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
           ),
-          1,
         ),
-        300,
+        1,
       ),
-    }),
-  ],
-)
+      300,
+    ),
+  }),
+])
 export type RuntimeConnection = Schema.Schema.Type<typeof connectionSchema>
 export type RuntimeSnapshot = Schema.Schema.Type<typeof snapshotSchema>
 export type WorkspacePatch = Schema.Schema.Type<typeof patchSchema>
@@ -205,7 +222,7 @@ export const responses = {
     expiresAt: Schema.String,
   }),
   pairClaim: mutableStruct({
-    status: Schema.Literal('pending', 'approved', 'denied'),
+    status: Schema.Literals(['pending', 'approved', 'denied']),
     token: Schema.optional(Schema.String),
   }),
   ticket: mutableStruct({
@@ -241,9 +258,9 @@ export const responses = {
   pulls: mutableStruct({
     pulls: mutableArray(
       mutableStruct({
-        number: Schema.Number.pipe(Schema.finite()),
+        number: Schema.Number.pipe(Schema.check(Schema.isFinite())),
         title: Schema.String,
-        url: Schema.String.pipe(Schema.compose(urlSchema())),
+        url: Schema.String.pipe(Schema.decodeTo(urlSchema())),
         state: Schema.String,
         headRefName: Schema.String,
       }),
@@ -259,46 +276,59 @@ export const responses = {
 }
 
 export const runtimePreferencesSchema = mutableStruct({
-  settledArtifactRetention: Schema.optionalWith(artifactRetentionSchema, {
-    default: () => 'forever' as const,
-  }),
-  archivedArtifactRetention: Schema.optionalWith(artifactRetentionSchema, {
-    default: () => 'forever' as const,
-  }),
-  enableArtifacts: Schema.optionalWith(Schema.Boolean, { default: () => false }),
-  browserProfiles: Schema.optionalWith(browserProfilesSchema, { default: defaultBrowserProfiles }),
-  autoContinueAfterRestart: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  settledArtifactRetention: artifactRetentionSchema.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 'forever' as const)),
+  ),
+  archivedArtifactRetention: artifactRetentionSchema.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 'forever' as const)),
+  ),
+  enableArtifacts: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
+  browserProfiles: browserProfilesSchema.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(defaultBrowserProfiles)),
+  ),
+  autoContinueAfterRestart: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
   /** Archive tasks with no activity for this many days; 0 turns it off. */
-  autoArchiveDays: Schema.optionalWith(Schema.Literal(0, 7, 14, 30), { default: () => 0 as const }),
+  autoArchiveDays: Schema.Literals([0, 7, 14, 30]).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 0 as const)),
+  ),
   /** macOS: keep the computer awake while any task is running. */
-  preventSleepWhileRunning: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  preventSleepWhileRunning: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
   /** Archive a task once its pull request is merged or closed (idle tasks only). */
-  archiveOnPullMerge: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  archiveOnPullMerge: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   /** Settle (without archiving) idle threads once their main PR is merged or closed. */
-  settleOnPullClose: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  settleOnPullClose: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   /** Verify and attach PRs mentioned in messages or matching the task branch. */
-  autoLinkPullRequests: Schema.optionalWith(Schema.Boolean, { default: () => true }),
+  autoLinkPullRequests: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => true)),
+  ),
   /** Housekeeping removes clean worktrees of archived tasks; branches are always kept. */
-  removeArchivedWorktrees: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  removeArchivedWorktrees: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
   /** Delete activity history older than this many days; 0 keeps everything. Defaults to 90 so
    * request and tool history cannot grow the database without bound. */
-  activityRetentionDays: Schema.optionalWith(Schema.Literal(0, 30, 90, 365), {
-    default: () => 90 as const,
-  }),
+  activityRetentionDays: Schema.Literals([0, 30, 90, 365]).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 90 as const)),
+  ),
   /** Prefix for new task branches, e.g. `dovo/` or `feature/`; empty for none. */
-  branchPrefix: Schema.optionalWith(
-    Schema.String.pipe(
-      Schema.maxLength(40),
-      Schema.pattern(/^(?:[A-Za-z0-9][A-Za-z0-9._-]*\/)*$/, {
-        message: () => 'Use letters, numbers, dots, dashes or underscores, ending with /',
-      }),
-      // Git also rejects `..` and components ending in `.lock` or `.`.
-      Schema.filter((prefix) => !/\.\.|\.lock\/|\.\//.test(prefix), {
-        message: () => 'Git branch names cannot contain .. or end a part with .lock or .',
+  branchPrefix: Schema.String.pipe(
+    Schema.check(Schema.isMaxLength(40)),
+    Schema.check(
+      Schema.isPattern(/^(?:[A-Za-z0-9][A-Za-z0-9._-]*\/)*$/, {
+        message: 'Use letters, numbers, dots, dashes or underscores, ending with /',
       }),
     ),
-    { default: () => 'dovo/' },
-  ),
+    // Git also rejects `..` and components ending in `.lock` or `.`.
+    Schema.check(
+      Schema.makeFilter((prefix) => !/\.\.|\.lock\/|\.\//.test(prefix), {
+        message: 'Git branch names cannot contain .. or end a part with .lock or .',
+      }),
+    ),
+  ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'dovo/'))),
 })
 
 export const runtimeRestartSchema = mutableStruct({ id: Schema.String })
@@ -307,6 +337,6 @@ export const runtimeRestartSchema = mutableStruct({ id: Schema.String })
 export function normalizeBranchPrefix(input: string) {
   const trimmed = input.trim()
   const prefix = trimmed && !trimmed.endsWith('/') ? `${trimmed}/` : trimmed
-  const valid = Schema.decodeUnknownEither(runtimePreferencesSchema)({ branchPrefix: prefix })
-  return { prefix, valid: valid._tag === 'Right' }
+  const valid = Schema.decodeUnknownResult(runtimePreferencesSchema)({ branchPrefix: prefix })
+  return { prefix, valid: valid._tag === 'Success' }
 }

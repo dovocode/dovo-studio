@@ -88,9 +88,9 @@ export function createPullTaskEffect(
         tasks: [...workspace.tasks, task],
       }))
       if (input.run) {
-        const started = yield* Effect.either(s.tasks.startEffect(task.id))
-        if (started._tag === 'Left') {
-          const message = errorMessage(started.left)
+        const started = yield* Effect.result(s.tasks.startEffect(task.id))
+        if (started._tag === 'Failure') {
+          const message = errorMessage(started.failure)
           s.store.updateTask(task.id, (t) => ({
             ...t,
             status: 'failed',

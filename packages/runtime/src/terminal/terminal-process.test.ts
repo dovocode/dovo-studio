@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { exec } from '../process.js'
 import { runtimeIntegration } from '../testing/integration.js'
 

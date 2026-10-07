@@ -1,5 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { validationMessages } from '@dovo/protocol'
+import { validationMessages, parseAgentEnvironment, formatAgentEnvironment } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { CliProfilePicker } from './cli-profile-picker'
 import { useEffect, useRef } from 'react'
@@ -26,6 +26,7 @@ import {
   DialogTitle,
   FormField,
   Input,
+  Textarea,
 } from '@dovo/studio-ui'
 export function useForgeConnections() {
   const { connected, request, readCache } = useWorkspace()
@@ -114,6 +115,9 @@ function ConnectionForm({
   const [cliProfile, setCliProfile] = useApplicationState(value?.cliProfile ?? '')
   const [cliTool, setCliTool] = useApplicationState<'fj' | 'tea'>(value?.cliTool ?? 'tea')
   const [token, setToken] = useApplicationState('')
+  const [cliEnvironment, setCliEnvironment] = useApplicationState(
+    formatAgentEnvironment(value?.cliEnv),
+  )
   const [tokenEnv, setTokenEnv] = useApplicationState(value?.tokenEnv ?? '')
   const [error, setError] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
@@ -138,6 +142,13 @@ function ConnectionForm({
         event.preventDefault()
         event.stopPropagation()
         if (running.current) return
+        let cliEnv: Record<string, string> | undefined
+        try {
+          if (credential === 'gh-wrapper') cliEnv = parseAgentEnvironment(cliEnvironment)
+        } catch (cause) {
+          setError(cause instanceof Error ? cause.message : String(cause))
+          return
+        }
         const parsed = decodeResult(forgeConnectionInputSchema, {
           ...(value
             ? {
@@ -149,6 +160,7 @@ function ConnectionForm({
           provider,
           baseUrl: baseUrl.trim(),
           credential,
+          cliEnv,
           ...(credential === 'cli' || credential === 'gh'
             ? {
                 cliProfile: cliProfile.trim() || undefined,
@@ -244,29 +256,62 @@ function ConnectionForm({
             />
           </FormField>
         )}
-        {provider === 'github' ? (
+        {provider === 'github' && (
+          <FormField label="Authentication">
+            <ChoicePicker
+              aria-label="Authentication method"
+              value={credential}
+              onValueChange={(next) => {
+                if (
+                  next === 'gh' ||
+                  next === 'gh-wrapper' ||
+                  next === 'environment' ||
+                  next === 'token'
+                ) {
+                  setCredential(next)
+                  setToken('')
+                }
+              }}
+            >
+              <option value="gh">GitHub CLI account</option>
+              <option value="gh-wrapper">GitHub CLI wrapper · environment selector</option>
+              <option value="environment">Token from runtime environment</option>
+              <option value="token">API token</option>
+            </ChoicePicker>
+          </FormField>
+        )}
+        {provider === 'github' && (credential === 'gh' || credential === 'gh-wrapper') ? (
           <p className="text-xs text-muted-foreground">
             Uses GitHub CLI authentication on this runtime. Sign in there with{' '}
             <code>gh auth login{githubHost ? ` --hostname ${githubHost}` : ''}</code>.
+            {credential === 'gh-wrapper' && (
+              <>
+                {' '}
+                Configure the gh wrapper executable in Runtime commands. Selector values are
+                non-secret settings shared with paired clients.
+              </>
+            )}
           </p>
         ) : (
           <>
-            <FormField label="Authentication">
-              <ChoicePicker
-                aria-label="Authentication method"
-                value={credential}
-                onValueChange={(next) => {
-                  if (next === 'token' || next === 'environment' || next === 'cli') {
-                    setCredential(next)
-                    setToken('')
-                  }
-                }}
-              >
-                <option value="cli">Signed-in CLI account</option>
-                <option value="token">API token</option>
-                <option value="environment">Runtime environment variable</option>
-              </ChoicePicker>
-            </FormField>
+            {provider !== 'github' && (
+              <FormField label="Authentication">
+                <ChoicePicker
+                  aria-label="Authentication method"
+                  value={credential}
+                  onValueChange={(next) => {
+                    if (next === 'token' || next === 'environment' || next === 'cli') {
+                      setCredential(next)
+                      setToken('')
+                    }
+                  }}
+                >
+                  <option value="cli">Signed-in CLI account</option>
+                  <option value="token">API token</option>
+                  <option value="environment">Runtime environment variable</option>
+                </ChoicePicker>
+              </FormField>
+            )}
             {credential === 'cli' ? (
               <>
                 {['gitea', 'forgejo'].includes(provider) && (
@@ -331,6 +376,17 @@ function ConnectionForm({
               </p>
             )}
           </>
+        )}
+        {credential === 'gh-wrapper' && (
+          <FormField label="Wrapper selectors (NAME=value, one per line)">
+            <Textarea
+              aria-label="Wrapper selectors"
+              value={cliEnvironment}
+              onChange={(event) => setCliEnvironment(event.target.value)}
+              placeholder="GH_ACCOUNT=work"
+              spellCheck={false}
+            />
+          </FormField>
         )}
         {(credential === 'cli' || credential === 'gh') && (
           <CliProfilePicker
@@ -431,11 +487,13 @@ function ConnectionsContent({
                   ·{' '}
                   {connection.credential === 'gh'
                     ? `GitHub CLI${connection.cliProfile ? ` · ${connection.cliProfile}` : ''}`
-                    : connection.credential === 'environment'
-                      ? connection.tokenEnv
-                      : connection.credential === 'cli'
-                        ? `CLI · ${connection.cliProfile || connection.cliTool || 'az'}`
-                        : 'Token saved'}
+                    : connection.credential === 'gh-wrapper'
+                      ? 'GitHub CLI wrapper · Environment selector'
+                      : connection.credential === 'environment'
+                        ? connection.tokenEnv
+                        : connection.credential === 'cli'
+                          ? `CLI · ${connection.cliProfile || connection.cliTool || 'az'}`
+                          : 'Token saved'}
                 </p>
               </div>
               <div className="flex flex-wrap gap-1">

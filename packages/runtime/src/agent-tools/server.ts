@@ -29,7 +29,7 @@ const writable = () => {
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value) }],
 })
-const args = Schema.mutable(Schema.Record({ key: Schema.String, value: Schema.Unknown }))
+const args = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 const string = (value: unknown, name: string) => {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} is required`)
   return value

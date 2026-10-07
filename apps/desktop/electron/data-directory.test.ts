@@ -1,9 +1,10 @@
 import { afterEach, expect, it } from 'vite-plus/test'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   desktopProfile,
+  restoreElectronProfile,
   migrateDesktopDataDirectory,
   selectDesktopDataDirectory,
 } from './data-directory'
@@ -123,4 +124,30 @@ it('uses the stable workspace for a nightly install, including on a fresh machin
   expect(select()).toBe(current)
   writeFileSync(join(current, 'runtime.sqlite'), '')
   expect(select()).toBe(current)
+})
+
+it('restores Electron storage while keeping connections, history and unknown files in the workspace', () => {
+  const { current, legacy } = profiles()
+  for (const name of ['Local State', 'runtime.sqlite', 'runtime-connections.enc', 'custom-file'])
+    writeFileSync(join(legacy, name), name)
+  mkdirSync(join(legacy, 'Partitions'))
+  writeFileSync(join(legacy, 'Partitions', 'preview'), 'browser login')
+  restoreElectronProfile(legacy, current)
+  expect(readFileSync(join(current, 'Local State'), 'utf8')).toBe('Local State')
+  expect(readFileSync(join(current, 'Partitions', 'preview'), 'utf8')).toBe('browser login')
+  for (const name of ['runtime.sqlite', 'runtime-connections.enc', 'custom-file']) {
+    expect(existsSync(join(legacy, name))).toBe(true)
+    expect(existsSync(join(current, name))).toBe(false)
+  }
+  restoreElectronProfile(legacy, current)
+})
+
+it('preflights profile conflicts before moving any files', () => {
+  const { current, legacy } = profiles()
+  writeFileSync(join(legacy, 'Local State'), 'original')
+  writeFileSync(join(legacy, 'Preferences'), 'old')
+  writeFileSync(join(current, 'Preferences'), 'new')
+  expect(() => restoreElectronProfile(legacy, current)).toThrow('preserving both copies')
+  expect(readFileSync(join(legacy, 'Local State'), 'utf8')).toBe('original')
+  expect(readFileSync(join(current, 'Preferences'), 'utf8')).toBe('new')
 })

@@ -1,3 +1,4 @@
+import { Struct } from 'effect'
 import { useCallback, useEffect } from 'react'
 import {
   accessLabel,
@@ -264,7 +265,7 @@ function TaskDefaultSettingsForm({
                     value === 'inherit'
                       ? undefined
                       : agent
-                        ? decode(taskHarnessSchema.omit('resources'), agent)
+                        ? decode(taskHarnessSchema.mapFields(Struct.omit(['resources'])), agent)
                         : inheritedHarness,
                 })
               }}
@@ -337,7 +338,10 @@ function TaskDefaultSettingsForm({
                 connected={connected}
                 loadModels={loadModels}
                 onChange={(agent) =>
-                  change({ ...draft, harness: decode(taskHarnessSchema.omit('resources'), agent) })
+                  change({
+                    ...draft,
+                    harness: decode(taskHarnessSchema.mapFields(Struct.omit(['resources'])), agent),
+                  })
                 }
               />
             </div>

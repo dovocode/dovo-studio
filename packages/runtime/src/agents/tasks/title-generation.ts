@@ -22,7 +22,7 @@ import type { AgentRegistry } from '../configuration/registry.js'
 import { HttpError, runtimeFailure, runtimeOperation, runtimeProgram } from '../../errors.js'
 import { cleanDictationOutput, dictationInstructions } from '../execution/dictation-cleanup.js'
 export class TitleGeneration {
-  private running = new Map<AbortController, Fiber.RuntimeFiber<unknown, unknown>>()
+  private running = new Map<AbortController, Fiber.Fiber<unknown, unknown>>()
   private executor = ManagedRuntime.make(Layer.empty)
   private stopped = false
   private sideRuns = new Map<string, AbortController>()
@@ -107,11 +107,11 @@ export class TitleGeneration {
   }
   generateEffect(value: unknown) {
     return runtimeProgram(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const { text } = decode(generateTitleSchema, value)
         return yield* this.trackEffect((controller) =>
           runtimeProgram(
-            Effect.gen(this, function* () {
+            Effect.gen({ self: this }, function* () {
               const output = yield* this.runEffect(text, controller, 'title')
               const title = output
                 .trim()
@@ -136,7 +136,7 @@ export class TitleGeneration {
   }
   cleanupEffect(value: unknown) {
     return runtimeProgram(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const { text } = decode(cleanupDictationSchema, value)
         return yield* this.trackEffect((controller) =>
           this.runEffect(text, controller, 'dictation').pipe(
@@ -154,8 +154,8 @@ export class TitleGeneration {
       if (this.stopped) return Effect.fail(runtimeFailure(new Error('Runtime shutting down')))
       const controller = new AbortController()
       const fiber = this.executor.runFork(
-        Effect.yieldNow().pipe(
-          Effect.zipRight(
+        Effect.yieldNow.pipe(
+          Effect.andThen(
             Effect.suspend(() => run(controller)).pipe(Effect.mapError(runtimeFailure)),
           ),
           Effect.ensuring(
@@ -219,12 +219,12 @@ export class TitleGeneration {
   }
   askSideChatEffect(value: unknown) {
     return runtimeProgram(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const input = decode(
           mutableStruct({
             id: Schema.String,
             chatId: Schema.String,
-            question: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 4000),
+            question: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 4000),
           }),
           value,
         )
@@ -312,7 +312,7 @@ export class TitleGeneration {
                 : Effect.fail(runtimeFailure(new HttpError(502, 'The model returned no answer'))),
             ),
             Effect.tap((answer) => Effect.sync(() => update(answer))),
-            Effect.catchAll((error) => {
+            Effect.catch((error) => {
               update(undefined, 'Could not finish this answer. Ask again.')
               return Effect.fail(error)
             }),
@@ -330,11 +330,11 @@ export class TitleGeneration {
   /** A side question about a task: answered from its conversation without joining it. */
   askEffect(value: unknown) {
     return runtimeProgram(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const { id, question } = decode(
           mutableStruct({
             id: maxValue(minValue(Schema.String, 1), 200),
-            question: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 4000),
+            question: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 4000),
           }),
           value,
         )
@@ -354,7 +354,7 @@ export class TitleGeneration {
   /** A commit message for the task's uncommitted changes: a subject line and a short body. */
   commitMessageEffect(value: { id: string; diff: string }) {
     return runtimeProgram(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const task = this.store.get().tasks.find((item) => item.id === value.id)
         if (!task) throw new HttpError(404, 'Task not found')
         const output = yield* this.trackEffect((controller) =>
@@ -373,7 +373,7 @@ export class TitleGeneration {
   /** A pull request title and description from the task (when known) and the branch's changes. */
   pullDescriptionEffect(value: { taskId?: string; diff: string; commits: string }) {
     return runtimeProgram(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const task = value.taskId
           ? this.store.get().tasks.find((item) => item.id === value.taskId)
           : undefined
@@ -403,7 +403,7 @@ export class TitleGeneration {
     const config = oneShotModes[mode]
     return runtimeProgram(
       Effect.scoped(
-        Effect.gen(this, function* () {
+        Effect.gen({ self: this }, function* () {
           const settings = this.read()
           const defaults = new RuntimeDefaults(this.db).get()
           const harness = resolveTitleHarness(
@@ -423,14 +423,14 @@ export class TitleGeneration {
             // Cleanup failure must not turn a generated title into a defect.
             (directory) =>
               Effect.tryPromise(() => rm(directory, { recursive: true, force: true })).pipe(
-                Effect.catchAll((error) =>
+                Effect.catch((error) =>
                   Effect.logWarning('Could not remove a temporary directory', error),
                 ),
               ),
           )
           yield* Effect.forkScoped(
             Effect.sleep(config.timeout).pipe(
-              Effect.zipRight(Effect.sync(() => controller.abort(new Error(config.timedOut)))),
+              Effect.andThen(Effect.sync(() => controller.abort(new Error(config.timedOut)))),
               Effect.interruptible,
             ),
           )
@@ -478,9 +478,9 @@ export class TitleGeneration {
               ask: async () => null,
             }),
           ).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               runtimeOperation(() => controller.signal.throwIfAborted()).pipe(
-                Effect.zipRight(Effect.fail(error)),
+                Effect.andThen(Effect.fail(error)),
               ),
             ),
           )
@@ -491,7 +491,7 @@ export class TitleGeneration {
     )
   }
   disposeEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       this.stopped = true
       for (const controller of this.running.keys())
         controller.abort(new Error('Runtime shutting down'))

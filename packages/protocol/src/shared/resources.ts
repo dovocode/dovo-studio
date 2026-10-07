@@ -1,67 +1,45 @@
 import { mutableArray, mutableStruct } from './schema.js'
 import { maxValue, urlSchema, superRefine, minValue } from './schema.js'
-import { Schema } from 'effect'
-const name = Schema.String.pipe(Schema.compose(Schema.Trim)).pipe(
-  Schema.pattern(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/),
+import { Schema, Effect } from 'effect'
+const name = Schema.String.pipe(Schema.decodeTo(Schema.Trim)).pipe(
+  Schema.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/)),
 )
-const environmentName = Schema.String.pipe(Schema.pattern(/^[A-Za-z_][A-Za-z0-9_]*$/))
+const environmentName = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/)),
+)
 export const mcpServerSchema = superRefine(
   mutableStruct({
     name,
     enabled: Schema.Boolean,
-    transport: Schema.Literal('stdio', 'http'),
-    command: Schema.optionalWith(maxValue(Schema.String, 2000), {
-      default: () => '',
-    }),
-    args: Schema.optionalWith(maxValue(mutableArray(maxValue(Schema.String, 4000)), 100), {
-      default: () => [],
-    }),
-    url: Schema.optionalWith(maxValue(Schema.String, 4000), {
-      default: () => '',
-    }),
-    env: Schema.optionalWith(
-      Schema.mutable(
-        Schema.Record({
-          key: environmentName,
-          value: environmentName,
-        }),
-      ),
-      {
-        default: () => ({}),
-      },
+    transport: Schema.Literals(['stdio', 'http']),
+    command: maxValue(Schema.String, 2000).pipe(
+      Schema.withDecodingDefaultType(Effect.sync(() => '')),
     ),
-    bearerTokenEnv: Schema.optionalWith(Schema.Union(Schema.Literal(''), environmentName), {
-      default: () => '',
-    }),
+    args: maxValue(mutableArray(maxValue(Schema.String, 4000)), 100).pipe(
+      Schema.withDecodingDefaultType(Effect.sync(() => [])),
+    ),
+    url: maxValue(Schema.String, 4000).pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
+    env: Schema.Record(environmentName, Schema.mutableKey(environmentName)).pipe(
+      Schema.withDecodingDefaultType(Effect.sync(() => ({}))),
+    ),
+    bearerTokenEnv: Schema.Union([Schema.Literal(''), environmentName]).pipe(
+      Schema.withDecodingDefaultType(Effect.sync(() => '')),
+    ),
     envValues: Schema.optional(
-      Schema.mutable(
-        Schema.Record({
-          key: environmentName,
-          value: maxValue(Schema.String, 4000),
-        }),
-      ),
+      Schema.Record(environmentName, Schema.mutableKey(maxValue(Schema.String, 4000))),
     ),
     headerValues: Schema.optional(
-      Schema.mutable(
-        Schema.Record({
-          key: Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9-]+$/)),
-          value: maxValue(Schema.String, 4000),
-        }),
+      Schema.Record(
+        Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9-]+$/))),
+        Schema.mutableKey(maxValue(Schema.String, 4000)),
       ),
     ),
     sourceUrl: Schema.optional(urlSchema()),
     sourceRevision: Schema.optional(maxValue(Schema.String, 200)),
-    headerEnv: Schema.optionalWith(
-      Schema.mutable(
-        Schema.Record({
-          key: Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9-]+$/)),
-          value: environmentName,
-        }),
-      ),
-      {
-        default: () => ({}),
-      },
-    ),
+    headerEnv: Schema.Record(
+      Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9-]+$/))),
+      Schema.mutableKey(environmentName),
+    ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => ({})))),
   }),
   (server, context) => {
     if (server.transport === 'stdio' && !server.command.trim())
@@ -87,9 +65,9 @@ export const mcpServerSchema = superRefine(
 )
 export const managedSkillSchema = mutableStruct({
   name,
-  description: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 2000),
+  description: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 2000),
   enabled: Schema.Boolean,
-  content: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 64000),
+  content: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 64000),
   sourceUrl: Schema.optional(urlSchema()),
   sourceRevision: Schema.optional(maxValue(Schema.String, 200)),
   sourcePath: Schema.optional(maxValue(Schema.String, 4000)),
@@ -97,20 +75,23 @@ export const managedSkillSchema = mutableStruct({
 export const agentHookSchema = mutableStruct({
   name,
   enabled: Schema.Boolean,
-  event: Schema.Literal('before-turn', 'after-turn'),
-  command: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 4000),
-  timeoutSeconds: Schema.Number.pipe(Schema.int(), Schema.between(1, 600)),
+  event: Schema.Literals(['before-turn', 'after-turn']),
+  command: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 4000),
+  timeoutSeconds: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isBetween({ minimum: 1, maximum: 600 })),
+  ),
 })
 export type AgentHook = Schema.Schema.Type<typeof agentHookSchema>
 export const resourceSettingsSchema = superRefine(
   mutableStruct({
     hooks: Schema.optional(maxValue(mutableArray(agentHookSchema), 20)),
-    mcpServers: Schema.optionalWith(maxValue(mutableArray(mcpServerSchema), 30), {
-      default: () => [],
-    }),
-    skills: Schema.optionalWith(maxValue(mutableArray(managedSkillSchema), 20), {
-      default: () => [],
-    }),
+    mcpServers: maxValue(mutableArray(mcpServerSchema), 30).pipe(
+      Schema.withDecodingDefaultType(Effect.sync(() => [])),
+    ),
+    skills: maxValue(mutableArray(managedSkillSchema), 20).pipe(
+      Schema.withDecodingDefaultType(Effect.sync(() => [])),
+    ),
   }),
   (settings, context) => {
     for (const key of ['mcpServers', 'skills', 'hooks'] as const)

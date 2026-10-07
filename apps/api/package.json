@@ -7,7 +7,7 @@
   ],
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/dev.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -15,11 +15,11 @@
   "dependencies": {
     "@dovo/protocol": "workspace:*",
     "@dovo/runtime": "workspace:*",
-    "effect": "^3.22.1",
+    "effect": "4.0.1",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.6",
-    "tsx": "^4.23.13"
+    "tsx": "^4.23.15"
   }
 }

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { decodeWorkTarget, encodeWorkTarget } from './work-navigation.js'
 
 it('opens Jira issue targets independently of a destination project', () => {

@@ -25,12 +25,7 @@ const turnInput = (input: Pick<AgentInput, 'prompt' | 'attachments'>) => [
     path: file.path,
   })),
 ]
-const object = Schema.mutable(
-  Schema.Record({
-    key: Schema.String,
-    value: Schema.Unknown,
-  }),
-)
+const object = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 type CodexConnection = {
   child: ChildProcess
   rpc: ReturnType<typeof createMessageConnection>
@@ -430,7 +425,7 @@ export function createCodexAdapter(): AgentAdapter {
           run.agent.permission === 'auto' &&
           !decodeResult(
             mutableStruct({
-              approvalsReviewer: Schema.Literal('auto_review', 'guardian_subagent'),
+              approvalsReviewer: Schema.Literals(['auto_review', 'guardian_subagent']),
             }),
             response,
           ).success

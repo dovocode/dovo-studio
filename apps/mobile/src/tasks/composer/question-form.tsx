@@ -56,7 +56,7 @@ export function QuestionForm({
         return yield* mobileWorkflow(function* () {
           yield* nativeEffect(() => onAnswer(answers))
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               setError(String(error))
               submitting.current = false

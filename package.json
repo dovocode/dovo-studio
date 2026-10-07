@@ -61,20 +61,22 @@
     "test:scoped-agents:browser": "node scripts/check-scoped-agents-browser.mjs",
     "test:subagent-grouping:browser": "node scripts/check-subagent-grouping-browser.mjs",
     "test:shared-storage:browser": "node scripts/check-shared-storage-browser.mjs",
-    "test:remote-browser-recovery:browser": "node scripts/check-remote-browser-recovery-browser.mjs"
+    "test:remote-browser-recovery:browser": "node scripts/check-remote-browser-recovery-browser.mjs",
+    "test:diff-scroll:browser": "node scripts/check-diff-scroll-browser.mjs",
+    "test:github-accounts:browser": "node scripts/check-github-accounts-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^26.4.1",
-    "effect": "^3.22.1",
+    "@types/node": "^26.6.4",
+    "effect": "4.0.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
-    "fallow": "^3.22.0",
+    "fallow": "^3.31.0",
     "playwright": "^1.63.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite-plus": "^0.3.0",
-    "ws": "^8.21.3"
+    "vite-plus": "catalog:",
+    "ws": "^8.22.0"
   },
   "engines": {
     "node": ">=24.11.0"

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { defaultTaskHarness, automationSchema } from '../workspace.js'
 import { defaultGithubTrigger } from './triggers.js'
 import { decode } from '../shared/schema.js'

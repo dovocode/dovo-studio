@@ -12,18 +12,18 @@ import type {
 import type { TaskPreviewChanges } from './task-previews'
 import type { Workspace } from './schema'
 
-export type WorkspaceRequest = <T extends Schema.Schema.AnyNoContext>(
+export type WorkspaceRequest = <T extends Schema.Codec<unknown, unknown>>(
   path: string,
   input: unknown,
   schema: T,
   method?: 'GET' | 'POST' | 'PATCH',
-) => Promise<Schema.Schema.Type<T>>
-export type WorkspaceRequestEffect = <T extends Schema.Schema.AnyNoContext>(
+) => Promise<T['Type']>
+export type WorkspaceRequestEffect = <T extends Schema.Codec<unknown, unknown>>(
   path: string,
   input: unknown,
   schema: T,
   method?: 'GET' | 'POST' | 'PATCH',
-) => Effect.Effect<Schema.Schema.Type<T>, Error>
+) => Effect.Effect<T['Type'], Error>
 export type WorkspaceContextValue = {
   previewTask: <A>(
     connection: RuntimeConnection,
@@ -63,20 +63,20 @@ export type WorkspaceContextValue = {
   discardMutations: (profile: RuntimeProfile) => Promise<void>
   pendingSync: boolean
   readCache: RuntimeReadCache | null
-  readRuntime: <T extends Schema.Schema.AnyNoContext>(
+  readRuntime: <T extends Schema.Codec<unknown, unknown>>(
     profile: RuntimeProfile,
     path: string,
     input: unknown,
     schema: T,
     method?: 'GET' | 'POST' | 'PATCH',
-  ) => Promise<Schema.Schema.Type<T>>
-  readRuntimeEffect: <T extends Schema.Schema.AnyNoContext>(
+  ) => Promise<T['Type']>
+  readRuntimeEffect: <T extends Schema.Codec<unknown, unknown>>(
     profile: RuntimeProfile,
     path: string,
     input: unknown,
     schema: T,
     method?: 'GET' | 'POST' | 'PATCH',
-  ) => Effect.Effect<Schema.Schema.Type<T>, Error>
+  ) => Effect.Effect<T['Type'], Error>
   runtimeReadCache: (profile: RuntimeProfile) => RuntimeReadCache
 }
 export const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)

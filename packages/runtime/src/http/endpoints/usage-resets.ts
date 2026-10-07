@@ -44,7 +44,10 @@ function saveAttempt(db: Database.Database, accountId: string, key: string, outc
     JSON.stringify({ key, settled: outcome !== undefined, ...(outcome ? { outcome } : {}) }),
   )
 }
-const text = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(200))
+const text = Schema.String.pipe(
+  Schema.check(Schema.isMinLength(1)),
+  Schema.check(Schema.isMaxLength(200)),
+)
 export const usageResets = (request: IncomingMessage, path: string) =>
   Effect.gen(function* () {
     const s = yield* RuntimeServices
@@ -55,7 +58,7 @@ export const usageResets = (request: IncomingMessage, path: string) =>
         accountId: text,
         creditId: Schema.optional(text),
         idempotencyKey: Schema.optional(
-          Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9_-]{1,64}$/)),
+          Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,64}$/))),
         ),
       }),
       yield* serviceResult(body(request)),

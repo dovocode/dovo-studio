@@ -74,7 +74,7 @@ export function CliProfilePicker({
             ),
           )
           .pipe(
-            Effect.catchAll((error: unknown) =>
+            Effect.catch((error: unknown) =>
               nativeEffect(() => {
                 if (current) setError(error instanceof Error ? error.message : String(error))
               }),
@@ -95,7 +95,12 @@ export function CliProfilePicker({
     }
   }, [read, connected, provider, baseUrl, cliTool, repositoryId, revision])
   const optional = provider === 'github' || provider === 'azure-devops' || cliTool === 'fj'
-  const label = provider === 'azure-devops' ? 'CLI tenant' : 'CLI profile'
+  const label =
+    provider === 'github'
+      ? 'GitHub user'
+      : provider === 'azure-devops'
+        ? 'CLI tenant'
+        : 'CLI profile'
   return (
     <View
       style={{
@@ -129,7 +134,11 @@ export function CliProfilePicker({
           items={cliProfileOptions(
             result?.profiles ?? [],
             value,
-            optional ? 'CLI default' : 'Choose profile',
+            optional
+              ? provider === 'github'
+                ? 'Active GitHub account'
+                : 'CLI default'
+              : 'Choose profile',
           )}
         />
       )}

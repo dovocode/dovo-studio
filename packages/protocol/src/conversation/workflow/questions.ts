@@ -1,42 +1,29 @@
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { minValue, maxValue, refine } from '../../shared/schema.js'
-import { Schema } from 'effect'
+import { Schema, Effect } from 'effect'
 export const agentQuestionSchema = mutableStruct({
   id: maxValue(minValue(Schema.String, 1), 200),
   header: maxValue(Schema.String, 200),
   question: maxValue(minValue(Schema.String, 1), 12000),
-  options: Schema.optionalWith(
-    maxValue(
-      mutableArray(
-        mutableStruct({
-          value: maxValue(minValue(Schema.String, 1), 1000),
-          label: maxValue(minValue(Schema.String, 1), 1000),
-          description: Schema.optionalWith(maxValue(Schema.String, 4000), {
-            default: () => '',
-          }),
-        }),
-      ),
-      50,
+  options: maxValue(
+    mutableArray(
+      mutableStruct({
+        value: maxValue(minValue(Schema.String, 1), 1000),
+        label: maxValue(minValue(Schema.String, 1), 1000),
+        description: maxValue(Schema.String, 4000).pipe(
+          Schema.withDecodingDefaultType(Effect.sync(() => '')),
+        ),
+      }),
     ),
-    {
-      default: () => [],
-    },
+    50,
+  ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
+  multiple: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
+  custom: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => true))),
+  secret: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
+  required: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => true))),
+  inputType: Schema.Literals(['text', 'number']).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 'text')),
   ),
-  multiple: Schema.optionalWith(Schema.Boolean, {
-    default: () => false,
-  }),
-  custom: Schema.optionalWith(Schema.Boolean, {
-    default: () => true,
-  }),
-  secret: Schema.optionalWith(Schema.Boolean, {
-    default: () => false,
-  }),
-  required: Schema.optionalWith(Schema.Boolean, {
-    default: () => true,
-  }),
-  inputType: Schema.optionalWith(Schema.Literal('text', 'number'), {
-    default: () => 'text',
-  }),
 })
 export const questionPromptSchema = refine(
   mutableStruct({
@@ -48,11 +35,9 @@ export const questionPromptSchema = refine(
   (v) => new Set(v.questions.map((q) => q.id)).size === v.questions.length,
   'Question IDs must be unique',
 )
-export const questionAnswersSchema = Schema.mutable(
-  Schema.Record({
-    key: maxValue(minValue(Schema.String, 1), 200),
-    value: maxValue(mutableArray(maxValue(Schema.String, 10000)), 50),
-  }),
+export const questionAnswersSchema = Schema.Record(
+  maxValue(minValue(Schema.String, 1), 200),
+  Schema.mutableKey(maxValue(mutableArray(maxValue(Schema.String, 10000)), 50)),
 )
 export const pendingQuestionSchema = mutableStruct({
   id: Schema.String,

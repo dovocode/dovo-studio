@@ -1,5 +1,5 @@
 import { decode } from '@dovo/protocol'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { startRuntime } from '../index'

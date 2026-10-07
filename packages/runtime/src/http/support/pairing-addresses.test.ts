@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { pairingAddresses } from './pairing-addresses'
 import type { NetworkInterfaceInfo } from 'node:os'
 const entry = (address: string, internal = false): NetworkInterfaceInfo => ({

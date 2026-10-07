@@ -38,7 +38,7 @@ type Running = {
   runId: string
   retiring?: boolean
   controller: AbortController
-  fiber?: Fiber.RuntimeFiber<void, RuntimeFailure>
+  fiber?: Fiber.Fiber<void, RuntimeFailure>
   cwd?: string
   directories?: string[]
   steer?: (messageId: string) => Promise<void>
@@ -696,7 +696,7 @@ export class Tasks {
         start
           ? this.startEffect(id).pipe(
               // Input is accepted durably; start failures are persisted on the task.
-              Effect.catchAll(() => Effect.void),
+              Effect.catch(() => Effect.void),
               Effect.asVoid,
             )
           : Effect.void,
@@ -749,7 +749,7 @@ export class Tasks {
         const { run, nativeSteer, paused, token } = prepared
         const operation = nativeSteer
           ? runtimeOperation(() => nativeSteer(messageId)).pipe(
-              Effect.catchAll((error) =>
+              Effect.catch((error) =>
                 Effect.sync(() =>
                   this.store.updateTask(id, (task) => ({
                     ...task,
@@ -760,7 +760,7 @@ export class Tasks {
               ),
               Effect.asVoid,
             )
-          : Effect.gen(this, function* () {
+          : Effect.gen({ self: this }, function* () {
               run.controller.abort(new Error('Interrupted to apply steering'))
               if (run.fiber) yield* Fiber.await(run.fiber)
               if (
@@ -927,7 +927,7 @@ export class Tasks {
                 },
           )
           this.running.set(id, run)
-          const work = Effect.gen(this, function* () {
+          const work = Effect.gen({ self: this }, function* () {
             const cwd = yield* runtimeOperation(() =>
               this.checkouts.directory(id, run.controller.signal),
             )
@@ -1057,7 +1057,7 @@ export class Tasks {
                           : this.sendEffect(id, messageId, text)
                       this.executor.runFork(
                         deliver.pipe(
-                          Effect.catchAllCause((cause) =>
+                          Effect.catchCause((cause) =>
                             Effect.sync(() => {
                               this.store.updateTask(id, (task) => ({
                                 ...task,
@@ -1073,7 +1073,7 @@ export class Tasks {
                 },
                 continuing,
                 () =>
-                  Effect.gen(this, function* () {
+                  Effect.gen({ self: this }, function* () {
                     run.retiring = true
                     yield* this.drainChildren(id, run.id)
                   }),
@@ -1082,8 +1082,8 @@ export class Tasks {
               yield* this.drainChildren(id, run.id)
             } while (!this.store.task(id).queuePaused && this.store.task(id).queue?.length)
           }).pipe(
-            Effect.tapErrorCause((cause) =>
-              Effect.gen(this, function* () {
+            Effect.tapCause((cause) =>
+              Effect.gen({ self: this }, function* () {
                 const error = runtimeFailure(Cause.squash(cause))
                 if (
                   error instanceof RuntimeOperationError &&
@@ -1130,9 +1130,9 @@ export class Tasks {
               }),
             ),
             Effect.ensuring(
-              Effect.gen(this, function* () {
+              Effect.gen({ self: this }, function* () {
                 // Let already-delivered input enqueue before releasing this task's ownership.
-                yield* Effect.yieldNow()
+                yield* Effect.yieldNow
                 if (this.running.get(id) === run) {
                   run.retiring = true
                   yield* this.drainChildren(id, run.id)
@@ -1153,10 +1153,10 @@ export class Tasks {
                 ) {
                   // The chained turn persists its own outcome. A defect here would abort
                   // restart recovery for every later task and reach automation callers.
-                  // Exit, not Either: a defect must stay inside this finalizer too.
+                  // Exit, not Result: a defect must stay inside this finalizer too.
                   const resumed = yield* Effect.exit(this.startEffect(id))
                   if (Exit.isSuccess(resumed)) yield* Effect.exit(resumed.value.completion)
-                  else if (!Cause.isInterruptedOnly(resumed.cause))
+                  else if (!Cause.hasInterruptsOnly(resumed.cause))
                     yield* Effect.try(() =>
                       this.store.updateTask(id, (task) =>
                         task.status === 'running' || !task.queue?.length
@@ -1172,7 +1172,7 @@ export class Tasks {
                             },
                       ),
                     ).pipe(
-                      Effect.catchAll((error) =>
+                      Effect.catch((error) =>
                         Effect.logError('Could not record the queued turn failure', error),
                       ),
                     )
@@ -1190,7 +1190,15 @@ export class Tasks {
           fiber.addObserver((exit) => {
             if (exit._tag === 'Failure') Effect.runSync(Deferred.failCause(ready, exit.cause))
           })
-          return Deferred.await(ready).pipe(Effect.as({ completion: Fiber.join(fiber) }))
+          return Deferred.await(ready).pipe(
+            // Startup failures are actionable only after the worker releases its ownership.
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause)
+                : Fiber.await(fiber).pipe(Effect.andThen(Effect.failCause(cause))),
+            ),
+            Effect.as({ completion: Fiber.join(fiber) }),
+          )
         }),
       )
     })
@@ -1276,7 +1284,7 @@ export class Tasks {
     })
   }
   private stopChildren(parentTaskId: string, parentRunId: string) {
-    const fibers: Fiber.RuntimeFiber<void, RuntimeFailure>[] = []
+    const fibers: Fiber.Fiber<void, RuntimeFailure>[] = []
     for (const child of this.store.get().tasks) {
       if (
         child.delegation?.parentTaskId !== parentTaskId ||
@@ -1495,7 +1503,7 @@ export class Tasks {
       .tasks.filter((task) => task.restartRecovery && !task.delegation)
       .map((task) => task.id)
     this.executor.runFork(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         for (const id of ids) {
           if (this.stopping) break
           const task = this.store.get().tasks.find((item) => item.id === id)
@@ -1531,9 +1539,9 @@ export class Tasks {
           ).pipe(
             Effect.flatMap((run) => run.completion),
             // Catch defects too: one task's failure must not stop recovery of the rest.
-            Effect.catchAllCause((cause) =>
+            Effect.catchCause((cause) =>
               Effect.try(() => {
-                if (Cause.isInterruptedOnly(cause)) return
+                if (Cause.hasInterruptsOnly(cause)) return
                 const error = Cause.squash(cause)
                 const current = this.store.get().tasks.find((task) => task.id === id)
                 // Deleted meanwhile, stopping, or stopped by the user: nothing to record.
@@ -1557,7 +1565,7 @@ export class Tasks {
                 }))
               }).pipe(
                 // Recording the failure must not stop recovery of the remaining tasks.
-                Effect.catchAll((error) =>
+                Effect.catch((error) =>
                   Effect.logError('Could not record a restart recovery failure', error),
                 ),
               ),
@@ -1568,7 +1576,7 @@ export class Tasks {
     )
   }
   disposeEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       this.stopping = true
       if (this.scheduleTimer) clearInterval(this.scheduleTimer)
       this.scheduleTimer = undefined

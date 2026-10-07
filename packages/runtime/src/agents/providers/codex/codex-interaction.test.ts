@@ -2,7 +2,7 @@ import { decode } from '@dovo/protocol'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Schema } from 'effect'
 import type { AgentRun, AgentSteer } from '../../execution/types'
 import { codexAdapter } from './codex'
@@ -90,15 +90,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
       .trim()
       .split('\n')
       .map((line) =>
-        decode(
-          Schema.mutable(
-            Schema.Record({
-              key: Schema.String,
-              value: Schema.Unknown,
-            }),
-          ),
-          JSON.parse(line),
-        ),
+        decode(Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)), JSON.parse(line)),
       )
   return {
     run,

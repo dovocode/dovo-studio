@@ -56,3 +56,4 @@ apps/mobile/google-services.json
 
 /packages/studio-ui/mcp-apps/host.json
 /packages/studio-ui/mcp-apps/sandbox.json
+.vitest/

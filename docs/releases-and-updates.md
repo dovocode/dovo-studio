@@ -74,14 +74,19 @@ To inspect local cache hits, repeat `pnpm build` or `pnpm typecheck`, then run
 before changing package-store caching; large native stores can take longer to restore than small
 task results. Cold runs after dependency or toolchain updates remain necessary.
 
-Merging into `main` builds and publishes `vX.Y.Z-nightly.N` automatically after all platform
-artifacts pass verification. Nightly releases are GitHub prereleases and do not replace the latest
-Stable release. Their release notes list commit messages since the previous published nightly,
-including direct commits to main. Failed draft builds do not advance that baseline. They include
-separate signed **Dovo Studio (Nightly)** Mac bundles, Windows/Linux installers, server archives,
-update metadata, Homebrew definitions, and a pinned mise config. The Stable release remains an
-explicit review and publish step. When preparing the next Stable version, update the
-`version_prefix` for both Nightly tools in `distribution/mise.toml` to the new base version.
+The Release workflow checks `main` every three hours (at minute 17 UTC) and can be run manually with
+an empty tag to build a nightly. Both triggers build only when application commits exist since the
+most recent published Stable or Nightly release on that branch. Distribution-only commits in
+`Formula` and `Casks` are ignored; failed drafts do not advance the baseline. Pushes to `main` run
+checks but no longer start release builds. Nightlies publish as `vX.Y.Z-nightly.N` after all
+platform artifacts and the Check workflow pass verification. Nightly releases are GitHub prereleases
+and do not replace the latest Stable release. Their release notes list commit messages since the
+previous published nightly, including direct commits to main. Failed draft builds do not advance
+that baseline. They include separate signed **Dovo Studio (Nightly)** Mac bundles, Windows/Linux
+installers, server archives, update metadata, Homebrew definitions, and a pinned mise config. The
+Stable release remains an explicit review and publish step. When preparing the next Stable version,
+update the `version_prefix` for both Nightly tools in `distribution/mise.toml` to the new base
+version.
 
 Use Node 24, `pnpm build`, then `pnpm exec node scripts/packaging/package-desktop.mjs` on the target
 OS and architecture. Append `--dir` for an unpacked build. Linux packaging requires Ruby/FPM and RPM

@@ -16,10 +16,10 @@ import {
 } from '../../errors.js'
 const rowSchema = mutableStruct({
   value: Schema.String,
-  updated: Schema.Number.pipe(Schema.finite()),
+  updated: Schema.Number.pipe(Schema.check(Schema.isFinite())),
 })
 export class PullCache {
-  private pending = new Map<string, Fiber.RuntimeFiber<unknown, RuntimeFailure>>()
+  private pending = new Map<string, Fiber.Fiber<unknown, RuntimeFailure>>()
   private executor = ManagedRuntime.make(Layer.empty)
   private invalidated = new Set<string>()
   private failedAt = new Map<string, number>()
@@ -46,13 +46,13 @@ export class PullCache {
   }
   private readEffect<T extends { cachedAt?: string; stale?: boolean; refreshError?: string }, I>(
     key: string,
-    schema: Schema.Schema<T, I>,
+    schema: Schema.Codec<T, I>,
     fetch: () => Promise<T>,
     force: boolean,
     reconcile?: (fresh: T, cached?: T) => T,
     ttl = 120_000,
   ): Effect.Effect<T, RuntimeFailure> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       if (this.stopped && force)
         return yield* Effect.fail(runtimeFailure(new Error('Pull cache is closed')))
       const row = yield* runtimeOperation(() =>
@@ -63,10 +63,10 @@ export class PullCache {
       )
       let cached: T | undefined
       if (row) {
-        const parsed = yield* Effect.either(
+        const parsed = yield* Effect.result(
           runtimeOperation(() => decode(schema, JSON.parse(row.value))),
         )
-        if (parsed._tag === 'Right') cached = parsed.right
+        if (parsed._tag === 'Success') cached = parsed.success
         else
           yield* runtimeOperation(() =>
             this.db.prepare('DELETE FROM pull_cache WHERE key=?').run(key),
@@ -79,9 +79,9 @@ export class PullCache {
           return Fiber.join(existing).pipe(
             Effect.flatMap((value) => runtimeOperation(() => decode(schema, value))),
           )
-        const worker = Effect.gen(this, function* () {
+        const worker = Effect.gen({ self: this }, function* () {
           // Register ownership before a synchronous SDK failure can finish this worker.
-          yield* Effect.yieldNow()
+          yield* Effect.yieldNow
           const fetched = yield* runtimeOperation(fetch)
           return yield* runtimeOperation(() => {
             const updated = Date.now()
@@ -145,7 +145,7 @@ export class PullCache {
           runtimeFailure(new Error(this.errors.get(key) ?? 'PR refresh temporarily unavailable')),
         )
       return yield* refresh.pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           cached && row
             ? Effect.succeed({
                 ...cached,
@@ -159,7 +159,7 @@ export class PullCache {
     })
   }
   listEffect(cwd: string, state: 'open' | 'closed' | 'all', page: number, force = false) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const identify = this.identity
       const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
       this.rememberScope(cwd, scope)
@@ -173,21 +173,21 @@ export class PullCache {
   }
   /** Reuse bounded, credential-scoped list caches instead of loading every PR detail. */
   stackCatalogEffect(cwd: string, force = false, seed?: typeof pullPageSchema.Type) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const pulls: PullSummary[] = []
       let complete = false
       let warning: string | undefined
       for (let page = 1; page <= 10; page++) {
-        const result = yield* Effect.either(
+        const result = yield* Effect.result(
           page === 1 && seed?.page === 1
             ? Effect.succeed(seed)
             : this.listEffect(cwd, 'open', page, force),
         )
-        if (result._tag === 'Left') {
-          warning = errorMessage(result.left)
+        if (result._tag === 'Failure') {
+          warning = errorMessage(result.failure)
           break
         }
-        const value = result.right
+        const value = result.success
         pulls.push(...value.pulls)
         if (value.stale || value.refreshError)
           warning = value.refreshError ?? 'Stack information is cached.'
@@ -203,7 +203,7 @@ export class PullCache {
     })
   }
   overviewEffect(cwd: string, state: 'open' | 'closed' | 'all', page: number, force = false) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const result = yield* this.listEffect(cwd, state, page, force)
       if (state === 'closed') return result
       const catalog = yield* this.stackCatalogEffect(
@@ -222,7 +222,7 @@ export class PullCache {
     })
   }
   stackEffect(cwd: string, number: number, force = false) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const catalog = yield* this.stackCatalogEffect(cwd, force)
       return {
         stack: pullStacks(catalog.pulls, catalog.complete).get(number),
@@ -234,7 +234,7 @@ export class PullCache {
     return runClientEffect(this.stackEffect(cwd, number, force))
   }
   detailWithStackEffect(cwd: string, number: number, force = false) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const detail = yield* this.detailEffect(cwd, number, force)
       if (detail.pull.state !== 'open')
         return { ...detail, stack: undefined, pull: { ...detail.pull, stack: undefined } }
@@ -251,7 +251,7 @@ export class PullCache {
     return runClientEffect(this.listEffect(cwd, state, page, force))
   }
   detailEffect(cwd: string, number: number, force = false) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const identify = this.identity
       const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
       this.rememberScope(cwd, scope)
@@ -270,7 +270,7 @@ export class PullCache {
   }
   status(cwd: string, number: number, force = false) {
     return runClientEffect(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const identify = this.identity
         const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
         this.rememberScope(cwd, scope)
@@ -294,7 +294,9 @@ export class PullCache {
     const matches = (key: string) => {
       try {
         const parsed = decodeResult(
-          Schema.Tuple([Schema.String, Schema.String, Schema.Unknown], Schema.Unknown),
+          Schema.TupleWithRest(Schema.Tuple([Schema.String, Schema.String, Schema.Unknown]), [
+            Schema.Unknown,
+          ]),
           JSON.parse(key),
         )
         return (
@@ -321,10 +323,9 @@ export class PullCache {
       if (!matches(row.key)) continue
       try {
         const value = decode(
-          Schema.Struct(mutableStruct({}).fields, {
-            key: Schema.String,
-            value: Schema.Unknown,
-          }),
+          Schema.StructWithRest(Schema.Struct(mutableStruct({}).fields), [
+            Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
+          ]),
           JSON.parse(row.value),
         )
         this.db.prepare('UPDATE pull_cache SET value=? WHERE key=?').run(
@@ -344,13 +345,13 @@ export class PullCache {
   }
   start() {
     if (this.scheduler || this.stopped) return
-    const tick = Effect.gen(this, function* () {
+    const tick = Effect.gen({ self: this }, function* () {
       const repos = yield* runtimeOperation(() => this.store.get().repositories)
       yield* Effect.forEach(
         repos,
         (repository) =>
-          Effect.gen(this, function* () {
-            yield* this.listEffect(repository.path, 'open', 1).pipe(Effect.either)
+          Effect.gen({ self: this }, function* () {
+            yield* this.listEffect(repository.path, 'open', 1).pipe(Effect.result)
             // Include stale-cache refreshes before admitting another repository.
             const pending = [...this.pending].filter(([key]) => {
               try {
@@ -371,7 +372,7 @@ export class PullCache {
     })
   }
   disposeEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       this.stopped = true
       const scheduler = this.scheduler
       if (scheduler) yield* runtimeOperation(() => scheduler.stop())

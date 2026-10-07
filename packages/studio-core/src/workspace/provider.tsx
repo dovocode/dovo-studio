@@ -36,7 +36,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from 'react'
-import { Effect, Either, Schema } from 'effect'
+import { Effect, Result, Schema, Semaphore } from 'effect'
 import { startPolling, runClientEffect, clientTaskScope } from '@dovo/client-runtime'
 import {
   recoverRuntimePairings,
@@ -237,7 +237,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setMutationVersion((version) => version + 1),
       ),
   )
-  const [storageLock] = useApplicationState(() => Effect.runSync(Effect.makeSemaphore(1)))
+  const [storageLock] = useApplicationState(() => Effect.runSync(Semaphore.make(1)))
   const [synchronization] = useState(
     () => new WorkspaceSynchronization(setSyncError, undefined, writeWorkspaceOutbox),
   )
@@ -454,7 +454,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           }),
         { concurrency: 3, discard: true },
       ).pipe(
-        Effect.catchAll(() =>
+        Effect.catch(() =>
           Effect.sync(() => {
             cacheDirty.current = true
             setStorageError('Could not cache device workspaces. Keep this window open.')
@@ -654,7 +654,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   }),
                 catch: connectionError,
               }).pipe(
-                Effect.catchAll((error) =>
+                Effect.catch((error) =>
                   Effect.sync(() =>
                     setStorageError(
                       `Connected with your saved edits, but the old address backup could not be removed. ${error.message}`,
@@ -713,7 +713,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       .pipe(
         Effect.flatMap((active) => (active ? openProfileEffect(active) : Effect.void)),
         Effect.asVoid,
-        Effect.catchAll((error) => Effect.sync(() => setStorageError(error.message))),
+        Effect.catch((error) => Effect.sync(() => setStorageError(error.message))),
       )
     const foreground = () => {
       if (document.visibilityState === 'visible') void commands.run(recover)
@@ -1104,7 +1104,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           restoredWorkspaceDocument = saved
         }
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
             writable.current = false
             setStorageError(
@@ -1116,7 +1116,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       // A locked keychain or missing Linux keyring must not leave the workbench on
       // "Opening workspace…" forever; continue read-only with no saved computers.
       let registry = yield* native(readRuntimeRegistry).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
             registryWritable.current = false
             setStorageError(
@@ -1132,13 +1132,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           const saved = localStorage.getItem(snapshotKey)
           if (saved)
             cached = decode(
-              Schema.mutable(Schema.Record({ key: Schema.String, value: snapshotSchema })),
+              Schema.Record(Schema.String, Schema.mutableKey(snapshotSchema)),
               JSON.parse(saved),
             )
         },
         catch: connectionError,
       }).pipe(
-        Effect.catchAll(() =>
+        Effect.catch(() =>
           Effect.sync(() => {
             setStorageError('Saved device cache could not be loaded. Reconnect to refresh it.')
           }),
@@ -1149,7 +1149,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         mutableStruct({
           dovo: mutableStruct({
             runtimeConnection: Schema.Unknown.pipe(
-              Schema.filter(
+              Schema.refine(
                 (value): value is (...args: unknown[]) => unknown => typeof value === 'function',
               ),
             ),
@@ -1200,7 +1200,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               pulls: null,
             })
         }).pipe(
-          Effect.catchAll(() =>
+          Effect.catch(() =>
             Effect.sync(() => {
               migrated = false
               setStorageError('Saved device cache could not be loaded. Reconnect to refresh it.')
@@ -1267,19 +1267,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 initialWorkspace,
                 responses.ok,
               ).pipe(Effect.uninterruptible)
-          }).pipe(Effect.catchAll((error) => Effect.sync(() => setSyncError(error.message))))
+          }).pipe(Effect.catch((error) => Effect.sync(() => setSyncError(error.message))))
         }
         if (!outbox)
           yield* openProfileEffect(active).pipe(
-            Effect.catchAll((error) => Effect.sync(() => setSyncError(error.message))),
+            Effect.catch((error) => Effect.sync(() => setSyncError(error.message))),
           )
       }
       setReady(true)
       yield* refreshRuntimesEffect().pipe(
-        Effect.catchAll((error) => Effect.sync(() => setSyncError(String(error)))),
+        Effect.catch((error) => Effect.sync(() => setSyncError(String(error)))),
       )
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() => {
           if (!disposed) setSyncError(error.message)
         }),
@@ -1384,7 +1384,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       snapshotOrder.current.set(id, order)
       const checkpoint = synchronization.checkpoint()
       return Effect.gen(function* () {
-        const response = yield* Effect.either(
+        const response = yield* Effect.result(
           runtimeRequestEffect(
             connection,
             connection.address,
@@ -1394,8 +1394,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             'GET',
           ),
         )
-        if (Either.isRight(response)) {
-          const value = response.right
+        if (Result.isSuccess(response)) {
+          const value = response.success
           if (
             stopped ||
             !synchronization.isCurrent(checkpoint) ||
@@ -1420,16 +1420,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               error: null,
             })
         } else {
-          const error = response.left
+          const error = response.failure
           if (connection.token === localOwnerToken.current) {
-            const recovered = yield* Effect.either(
+            const recovered = yield* Effect.result(
               Effect.tryPromise({
                 try: async () => {
                   const bridge = decodeResult(
                     mutableStruct({
                       dovo: mutableStruct({
                         runtimeConnection: Schema.Unknown.pipe(
-                          Schema.filter(
+                          Schema.refine(
                             (value): value is () => Promise<unknown> => typeof value === 'function',
                           ),
                         ),
@@ -1450,7 +1450,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 catch: connectionError,
               }),
             )
-            if (Either.isRight(recovered) && recovered.right) return
+            if (Result.isSuccess(recovered) && recovered.success) return
           }
           if (
             !stopped &&

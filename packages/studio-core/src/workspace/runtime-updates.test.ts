@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { newerRuntimeVersion } from './runtime-updates.js'
 
 it('compares stable and nightly release versions numerically', () => {

@@ -76,9 +76,9 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
             setError(hydration.error)
           }),
         ),
-        Effect.zipRight(
+        Effect.andThen(
           drafts.flushEffect().pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.sync(() => {
                 if (activeKey.current === key)
                   setError(`Could not save the recovered draft. ${String(error)}`)
@@ -103,7 +103,7 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') return
       void runClientEffect(
-        drafts.flushEffect().pipe(Effect.catchAll((error) => Effect.sync(() => report(error)))),
+        drafts.flushEffect().pipe(Effect.catch((error) => Effect.sync(() => report(error)))),
       )
     })
     return () => subscription.remove()
@@ -121,7 +121,7 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
         // Own edits are already in React state. Persistence must not echo an older
         // keystroke into a controlled TextInput when its Effect starts later.
         drafts.writeEffect(key, value, listener.current).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.sync(() => {
               if (activeKey.current === key) setError(String(error))
             }),
@@ -145,7 +145,7 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
     confirmEffect: (attempt: SendAttempt, clear: boolean) =>
       drafts
         .confirmEffect(key, attempt, clear)
-        .pipe(Effect.catchAll((error) => Effect.sync(() => report(error)))),
+        .pipe(Effect.catch((error) => Effect.sync(() => report(error)))),
     error,
   }
 }

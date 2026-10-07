@@ -1,18 +1,18 @@
 import { mutableStruct, mutableArray } from './schema.js'
 import { maxValue, urlSchema } from './schema.js'
-import { Schema } from 'effect'
+import { Schema, Effect } from 'effect'
 import { mcpServerSchema } from './resources.js'
 export const catalogSearchSchema = mutableStruct({
-  query: Schema.optionalWith(maxValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 200), {
-    default: () => '',
-  }),
+  query: maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 200).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => '')),
+  ),
   cursor: Schema.optional(maxValue(Schema.String, 1000)),
 })
 export const skillCatalogEntrySchema = mutableStruct({
   id: Schema.String,
   name: Schema.String,
   source: Schema.String,
-  installs: Schema.Number.pipe(Schema.finite()),
+  installs: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   url: urlSchema(),
   supported: Schema.Boolean,
 })
@@ -37,9 +37,9 @@ export const registryCatalogSchema = mutableStruct({
   cursor: Schema.optional(Schema.String),
 })
 export const skillCatalogImportSchema = mutableStruct({
-  revision: Schema.optional(Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/))),
-  source: Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/)),
-  skill: Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9_-]+$/)),
+  revision: Schema.optional(Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/)))),
+  source: Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/))),
+  skill: Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_-]+$/))),
 })
 export type SkillCatalogEntry = Schema.Schema.Type<typeof skillCatalogEntrySchema>
 export type RegistryEntry = Schema.Schema.Type<typeof registryEntrySchema>

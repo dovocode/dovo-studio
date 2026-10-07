@@ -64,7 +64,7 @@ export function LineComment({
           onDone()
           onClose()
         }).pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               setError(cause instanceof Error ? cause.message : String(cause))
             }),

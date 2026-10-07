@@ -44,7 +44,7 @@ export function usePullDetail(repositoryId: string, number: number) {
               },
             }))
         }).pipe(
-          Effect.catchAll(() =>
+          Effect.catch(() =>
             Effect.sync(() => {
               if (!stopped) setError('Saved details could not be read from this device.')
             }),
@@ -71,7 +71,7 @@ export function usePullDetail(repositoryId: string, number: number) {
         ),
         Effect.flatMap((value) =>
           (readCache ? readCache.writeEffect(cacheKey, value) : Effect.void).pipe(
-            Effect.catchAll(() =>
+            Effect.catch(() =>
               Effect.sync(() => {
                 if (!stopped) setError('Details loaded, but could not be saved for offline use.')
               }),

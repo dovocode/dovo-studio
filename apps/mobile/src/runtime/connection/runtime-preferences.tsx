@@ -38,7 +38,7 @@ export function RuntimePreferences() {
       readEffect('/api/runtime/preferences/read', {}, runtimePreferencesSchema).pipe(
         Effect.tap((settings) => Effect.sync(() => setValue(settings))),
         Effect.asVoid,
-        Effect.catchAll((error) => Effect.sync(() => setLoadError(error.message))),
+        Effect.catch((error) => Effect.sync(() => setLoadError(error.message))),
       ),
     )
     return () => {

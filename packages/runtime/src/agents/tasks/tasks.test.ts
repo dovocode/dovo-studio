@@ -7,7 +7,7 @@ import {
   conversationToolsByMessage,
 } from '@dovo/protocol'
 import type { AgentAdapter } from '../execution/types'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 import type { AgentRun, AgentSteer } from '../execution/types'

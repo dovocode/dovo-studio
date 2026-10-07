@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { canChangeTaskCheckout } from '@dovo/protocol'
 import { writeFile, rm, realpath } from 'node:fs/promises'
 import { join } from 'node:path'

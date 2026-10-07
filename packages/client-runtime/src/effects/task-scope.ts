@@ -2,15 +2,15 @@ import { Cause, Effect, Fiber } from 'effect'
 
 /** Framework-owned commands are cancelled together when their view is released. */
 export function clientTaskScope() {
-  const pending = new Set<Fiber.RuntimeFiber<void, never>>()
+  const pending = new Set<Fiber.Fiber<void, never>>()
   let closed = false
   return {
     run(work: Effect.Effect<void>): Promise<void> {
       if (closed) return Promise.resolve()
       const fiber = Effect.runFork(
         work.pipe(
-          Effect.tapErrorCause((cause) =>
-            Cause.isInterruptedOnly(cause) ? Effect.void : Effect.logError(cause),
+          Effect.tapCause((cause) =>
+            Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.logError(cause),
           ),
         ),
       )

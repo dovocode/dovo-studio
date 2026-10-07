@@ -1,5 +1,5 @@
 import { decode } from '@dovo/protocol'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { commandsSchema, forgeConnectionSchema } from '@dovo/protocol'
 import { ForgeCliAccounts } from './forge-cli-accounts'
 import { runForgeCli, runForgeCliText } from './forge-cli'
@@ -251,6 +251,12 @@ it('uses the project checkout for selected account credentials without switching
       ['auth', 'token', '--hostname', 'github.example', '--user', 'work-user'],
       undefined,
       cwd,
+      {
+        GH_TOKEN: undefined,
+        GITHUB_TOKEN: undefined,
+        GH_ENTERPRISE_TOKEN: undefined,
+        GITHUB_ENTERPRISE_TOKEN: undefined,
+      },
     )
     expect(
       await connections.gitAuthorization(selected.id, 'https://github.example/work/app.git', cwd),
@@ -276,4 +282,45 @@ it('uses the project checkout for selected account credentials without switching
   expect(await cli.authorization(tea, false, cwd)).toBe('token private=token')
   expect(vi.mocked(runForgeCli).mock.lastCall?.[3]).toBe(cwd)
   expect(vi.mocked(runForgeCliText).mock.lastCall?.[3]).toBe(cwd)
+})
+
+it('resolves wrapper-selected tokens in the checkout and keeps them outside connection metadata', async () => {
+  vi.mocked(runForgeCli).mockResolvedValue('wrapper-private-token\n')
+  const db = openDatabase(':memory:')
+  try {
+    const connections = new ForgeConnections(db, undefined, cli)
+    const account = connections.save({
+      name: 'Work wrapper',
+      provider: 'github',
+      baseUrl: 'https://github.com',
+      credential: 'gh-wrapper',
+      cliEnv: { GH_ACCOUNT: 'work' },
+    })
+    expect(await connections.githubToken(account.id, '/project')).toBe('wrapper-private-token')
+    expect(runForgeCli).toHaveBeenCalledExactlyOnceWith(
+      'gh',
+      ['auth', 'token', '--hostname', 'github.com'],
+      undefined,
+      '/project',
+      { GH_ACCOUNT: 'work' },
+    )
+    expect(
+      await connections.gitAuthorization(
+        account.id,
+        'https://github.com/team/project.git',
+        '/project',
+      ),
+    ).toBe(`Basic ${Buffer.from('x-access-token:wrapper-private-token').toString('base64')}`)
+    connections.forgetCredentials(account.id)
+    vi.mocked(runForgeCli).mockResolvedValue('')
+    await expect(connections.githubToken(account.id, '/project')).rejects.toThrow(
+      'Authenticate the selected GitHub CLI account',
+    )
+    expect(JSON.stringify(connections.list())).not.toContain('wrapper-private-token')
+    expect(JSON.stringify(db.prepare('SELECT * FROM forge_connections').all())).not.toContain(
+      'wrapper-private-token',
+    )
+  } finally {
+    db.close()
+  }
 })

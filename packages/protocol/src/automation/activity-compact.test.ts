@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { compactActivityEvents, recentTools, type activitySchema } from './activity'
 import { toolPresentation } from '../conversation/presentation/tool-presentation'
 import { mcpAppReferences } from '../conversation/mcp-apps'

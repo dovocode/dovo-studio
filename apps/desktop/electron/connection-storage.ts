@@ -1,6 +1,7 @@
+import { desktopRuntimeDirectory } from './runtime-data-directory.js'
 import { readFile, writeFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
-import { app, ipcMain, safeStorage, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { ipcMain, safeStorage, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { pathToFileURL } from 'node:url'
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 export function registerConnectionStorage(rendererPath: string) {
@@ -27,7 +28,7 @@ export function registerConnectionStorage(rendererPath: string) {
     )
       throw new Error('Unlock your system keychain to save runtime connections securely')
   }
-  const path = () => join(app.getPath('userData'), 'runtime-connections.enc')
+  const path = () => join(desktopRuntimeDirectory(), 'runtime-connections.enc')
   ipcMain.on('app:settings-read', (event) => {
     try {
       trustedFrame(event, true)

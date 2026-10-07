@@ -58,7 +58,7 @@ export function GithubRepositoryPicker({
           ),
         )
         .pipe(
-          Effect.catchAll((error: unknown) =>
+          Effect.catch((error: unknown) =>
             nativeEffect(() => {
               if (active) setError(error instanceof Error ? error.message : String(error))
             }),

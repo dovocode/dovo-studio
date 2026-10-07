@@ -81,7 +81,7 @@ export function CreatePull({
             ),
           )
           .pipe(
-            Effect.catchAll((cause) =>
+            Effect.catch((cause) =>
               nativeEffect(() => {
                 if (active) setError(String(cause))
               }),
@@ -171,7 +171,7 @@ export function CreatePull({
           )
           onCreated(repositoryId, result.number)
         }).pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               setError(cause instanceof Error ? cause.message : String(cause))
             }),
@@ -223,7 +223,7 @@ export function CreatePull({
                   setBody(result.body)
                 }),
               ),
-              Effect.catchAll((cause) => Effect.sync(() => setError(String(cause)))),
+              Effect.catch((cause) => Effect.sync(() => setError(String(cause)))),
               Effect.ensuring(Effect.sync(() => setDescribing(false))),
             ),
           )

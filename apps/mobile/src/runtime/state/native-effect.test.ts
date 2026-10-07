@@ -13,7 +13,7 @@ it('recovers synchronous SDK failures and always releases UI busy state', async 
       throw failure
     })
   }).pipe(
-    Effect.catchAll((cause) =>
+    Effect.catch((cause) =>
       Effect.sync(() => {
         reported = cause
       }),

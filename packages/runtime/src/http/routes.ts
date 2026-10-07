@@ -77,8 +77,8 @@ export function route(
         const input = decode(
           mutableStruct({
             protocolVersion: Schema.optional(Schema.Number),
-            code: Schema.String.pipe(Schema.pattern(/^\d{8}$/)),
-            name: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 100),
+            code: Schema.String.pipe(Schema.check(Schema.isPattern(/^\d{8}$/))),
+            name: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 100),
           }),
           yield* serviceResult(body(request, PAIRING_BODY_LIMIT)),
         )
@@ -211,6 +211,15 @@ export function route(
               : { versions: s.artifacts.versions(taskId, id) },
           )
         }
+      }
+      if (method === 'POST' && path === '/api/mcp-apps/ticket') {
+        const { taskId, id } = decode(
+          mutableStruct({ taskId: uuidSchema, id: uuidSchema }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        if (!s.mcpApps.read(taskId, id).connected)
+          throw new HttpError(409, 'MCP App is disconnected')
+        return { ticket: s.tickets.issue(token, `mcp-app:${id}`, taskId) }
       }
       if (method === 'POST' && path === '/api/mcp-apps/read') {
         const { taskId, id } = decode(
@@ -449,28 +458,30 @@ export function route(
       if (method === 'POST' && path === '/api/activity') {
         const input = decode(
           mutableStruct({
-            includeDetails: Schema.optionalWith(Schema.Boolean, { default: () => false }),
-            query: Schema.optionalWith(maxValue(Schema.String, 500), {
-              default: () => '',
-            }),
-            kind: Schema.optionalWith(maxValue(Schema.String, 100), {
-              default: () => '',
-            }),
-            scope: Schema.optionalWith(maxValue(Schema.String, 200), {
-              default: () => '',
-            }),
-            offset: Schema.optionalWith(
-              minValue(
-                Schema.Number.pipe(Schema.finite()).pipe(
-                  Schema.int(),
-                  Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-                ),
-                0,
-              ),
-              {
-                default: () => 0,
-              },
+            includeDetails: Schema.Boolean.pipe(
+              Schema.withDecodingDefaultType(Effect.sync(() => false)),
             ),
+            query: maxValue(Schema.String, 500).pipe(
+              Schema.withDecodingDefaultType(Effect.sync(() => '')),
+            ),
+            kind: maxValue(Schema.String, 100).pipe(
+              Schema.withDecodingDefaultType(Effect.sync(() => '')),
+            ),
+            scope: maxValue(Schema.String, 200).pipe(
+              Schema.withDecodingDefaultType(Effect.sync(() => '')),
+            ),
+            offset: minValue(
+              Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+                Schema.check(Schema.isInt()),
+                Schema.check(
+                  Schema.isBetween({
+                    minimum: Number.MIN_SAFE_INTEGER,
+                    maximum: Number.MAX_SAFE_INTEGER,
+                  }),
+                ),
+              ),
+              0,
+            ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 0))),
           }),
           yield* serviceResult(body(request)),
         )
@@ -727,7 +738,7 @@ export function route(
               ),
             }
             validateAutomation(
-              decode(workspaceSchema.fields.automations.value, next),
+              decode(workspaceSchema.fields.automations.schema.value, next),
               s.store.get(),
             )
           }
@@ -742,9 +753,9 @@ export function route(
         owner()
         const input = decode(
           mutableStruct({
-            autoApprove: Schema.optionalWith(Schema.Boolean, {
-              default: () => false,
-            }),
+            autoApprove: Schema.Boolean.pipe(
+              Schema.withDecodingDefaultType(Effect.sync(() => false)),
+            ),
           }),
           yield* serviceResult(body(request)),
         )
@@ -808,5 +819,8 @@ export function route(
 }
 
 function syncTasks(url: URL) {
-  return decode(mutableArray(idSchema).pipe(Schema.maxItems(8)), url.searchParams.getAll('task'))
+  return decode(
+    mutableArray(idSchema).pipe(Schema.check(Schema.isMaxLength(8))),
+    url.searchParams.getAll('task'),
+  )
 }

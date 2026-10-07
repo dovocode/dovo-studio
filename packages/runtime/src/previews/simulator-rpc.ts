@@ -29,7 +29,7 @@ export class SimulatorRpc {
     const type = this.root.lookupType(name)
     return (value: object) => Buffer.from(type.encode(type.fromObject(value)).finish())
   }
-  private decode<T, I>(name: string, schema: Schema.Schema<T, I>) {
+  private decode<T, I>(name: string, schema: Schema.Codec<T, I>) {
     const type = this.root.lookupType(name)
     return (value: Buffer): T =>
       decode(
@@ -46,7 +46,7 @@ export class SimulatorRpc {
     requestType: string,
     responseType: string,
     request: object,
-    schema: Schema.Schema<T, I>,
+    schema: Schema.Codec<T, I>,
   ) {
     return new Promise<T>((resolve, reject) => {
       this.client.makeUnaryRequest(
@@ -71,7 +71,7 @@ export class SimulatorRpc {
     requestType: string,
     responseType: string,
     request: object,
-    schema: Schema.Schema<T, I>,
+    schema: Schema.Codec<T, I>,
   ) {
     return this.client.makeServerStreamRequest(
       `/${this.prefix}/${method}`,
@@ -85,7 +85,7 @@ export class SimulatorRpc {
     method: string,
     requestType: string,
     responseType: string,
-    schema: Schema.Schema<T, I>,
+    schema: Schema.Codec<T, I>,
   ) {
     return this.client.makeBidiStreamRequest(
       `/${this.prefix}/${method}`,
@@ -98,7 +98,7 @@ export class SimulatorRpc {
     method: string,
     requestType: string,
     responseType: string,
-    schema: Schema.Schema<T, I>,
+    schema: Schema.Codec<T, I>,
     done: (error: Error | null) => void,
   ) {
     return this.client.makeClientStreamRequest(

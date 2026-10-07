@@ -57,7 +57,7 @@ export function PairingGuide({
       }).pipe(
         Effect.tap((value) => Effect.sync(() => setQr(value))),
         Effect.asVoid,
-        Effect.catchAll((cause) => Effect.sync(() => setError(cause.message))),
+        Effect.catch((cause) => Effect.sync(() => setError(cause.message))),
       ),
     )
     return () => {

@@ -2,7 +2,7 @@ import { writeFile, readFile } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
 import { join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Schema } from 'effect'
 import { decode, mutableStruct } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -328,9 +328,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     (await readFile(log, 'utf8'))
       .trim()
       .split('\n')
-      .map((line) =>
-        decode(Schema.Record({ key: Schema.String, value: Schema.Unknown }), JSON.parse(line)),
-      )
+      .map((line) => decode(Schema.Record(Schema.String, Schema.Unknown), JSON.parse(line)))
   return { runtime, task, rows }
 }
 it('replays native Codex steering with exact provider turn correlation into the real task pipeline', async () => {

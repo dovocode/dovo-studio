@@ -57,14 +57,7 @@ export async function codexModels(agent: AgentDiscovery): Promise<ModelCatalog> 
             Schema.NullOr(
               mutableStruct({
                 featureRequirements: Schema.optional(
-                  Schema.NullOr(
-                    Schema.mutable(
-                      Schema.Record({
-                        key: Schema.String,
-                        value: Schema.Boolean,
-                      }),
-                    ),
-                  ),
+                  Schema.NullOr(Schema.Record(Schema.String, Schema.mutableKey(Schema.Boolean))),
                 ),
               }),
             ),

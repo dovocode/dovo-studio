@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { physicalPoint, physicalKeys } from './physical-device'
 
 it('maps portrait and landscape preview pixels into native touchscreen coordinates', () => {

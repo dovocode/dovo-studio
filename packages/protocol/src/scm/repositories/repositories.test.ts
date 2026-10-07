@@ -1,5 +1,5 @@
 import { decode, decodeResult } from '../../shared/schema.js'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { addRepositorySchema, githubRepositorySchema } from './repositories.js'
 it.each(['owner/repo', ' https://github.com/owner/repo.git ', 'https://github.com/owner/repo/'])(
   'normalizes a GitHub repository: %s',

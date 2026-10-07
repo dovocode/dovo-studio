@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
-import { Effect, Schema } from 'effect'
+import { Effect, Schema, Semaphore } from 'effect'
 import { startPolling, clientTaskScope } from '@dovo/client-runtime'
 import { mutableArray, mutableStruct, pullPageSchema, type PullPage } from '@dovo/protocol'
 import { useApplicationState } from '../../../runtime/state/application-state'
@@ -65,7 +65,7 @@ export function usePulls(repositoryId: string, state: string) {
           ),
     )
     sourceState.current = remoteState
-    const semaphore = Effect.runSync(Effect.makeSemaphore(1))
+    const semaphore = Effect.runSync(Semaphore.make(1))
     const commands = clientTaskScope()
     const update = (id: string, page: Page) => {
       if (current === generation.current) setPages((previous) => ({ ...previous, [id]: page }))
@@ -80,14 +80,14 @@ export function usePulls(repositoryId: string, state: string) {
       name: entry.repository.name,
     })
     const save = (entry: (typeof repositories)[number], page: Page) =>
-      Schema.decodeUnknown(cachedPullPageSchema)(page).pipe(
+      Schema.decodeUnknownEffect(cachedPullPageSchema)(page).pipe(
         Effect.flatMap((value) =>
           cacheForRuntime(entry.profile).writeEffect(
             cacheKey(entry.repository, remoteState),
             value,
           ),
         ),
-        Effect.catchAll(() =>
+        Effect.catch(() =>
           Effect.sync(() =>
             update(entry.key, {
               ...page,
@@ -114,7 +114,7 @@ export function usePulls(repositoryId: string, state: string) {
                   cachedAt: cached.value.cachedAt ?? cached.cachedAt,
                 })
             }).pipe(
-              Effect.catchAll(() =>
+              Effect.catch(() =>
                 Effect.sync(() => {
                   if (!pagesRef.current[entry.key])
                     update(entry.key, {
@@ -233,7 +233,7 @@ export function usePulls(repositoryId: string, state: string) {
               acknowledgePullList(cache, entry.repository.id, invalidated)
             yield* save(entry, page)
           }).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.sync(() =>
                 update(entry.key, {
                   ...(pagesRef.current[entry.key] ?? { pulls: [], hasMore: false, page: 0 }),
@@ -298,7 +298,7 @@ export function usePulls(repositoryId: string, state: string) {
               Date.now(),
             )
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.sync(() => update(id, { ...previous, error: error.message })),
           ),
           Effect.ensuring(

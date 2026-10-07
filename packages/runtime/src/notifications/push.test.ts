@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { decode, taskSchema, type RelayNotification } from '@dovo/protocol'
 import { PushNotifications, notificationRelay } from './push'
 import { openDatabase } from '../storage/database'

@@ -25,7 +25,7 @@ export function createSendAttempts(createId: () => string) {
   }
   const deliverEffect = <A, E>(scope: SendScope, attempt: SendAttempt, send: Effect.Effect<A, E>) =>
     send.pipe(
-      Effect.catchAll((error) => (confirmed.has(attempt) ? Effect.void : Effect.fail(error))),
+      Effect.catch((error) => (confirmed.has(attempt) ? Effect.void : Effect.fail(error))),
       Effect.map(() => acknowledge(scope, attempt.id)),
     )
   return {

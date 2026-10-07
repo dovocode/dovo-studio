@@ -39,7 +39,7 @@ export default function AppUpdates() {
           }
           setRelease(next)
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               setMessage(error instanceof Error ? error.message : String(error))
             }),
@@ -81,7 +81,7 @@ export default function AppUpdates() {
             onPress={() =>
               void runClientEffect(
                 nativeEffect(() => openAppLink(release.url)).pipe(
-                  Effect.catchAll(() =>
+                  Effect.catch(() =>
                     nativeEffect(() => setMessage('Could not open release notes.')),
                   ),
                 ),

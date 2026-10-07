@@ -1,6 +1,6 @@
 import { decode } from '@dovo/protocol'
 /// <reference types="node" />
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { PullRequests } from '../../pulls/pulls.js'
 import { GitService } from '../../git/git.js'
 import { actOnGithubPull, createGithubPull } from './github-actions.js'

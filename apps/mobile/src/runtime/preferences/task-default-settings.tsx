@@ -1,3 +1,4 @@
+import { Struct } from 'effect'
 import { randomUUID } from 'expo-crypto'
 import {
   runtimePreferencesSchema,
@@ -250,7 +251,7 @@ function TaskDefaultSettingsForm({
               value === 'inherit'
                 ? undefined
                 : agent
-                  ? decode(taskHarnessSchema.omit('resources'), agent)
+                  ? decode(taskHarnessSchema.mapFields(Struct.omit(['resources'])), agent)
                   : (setup?.defaults.harness ?? defaultTaskHarness('codex')),
             ...(agent ? { permission: agent.permission } : {}),
           })
@@ -300,7 +301,10 @@ function TaskDefaultSettingsForm({
             disabled={disabled}
             agent={{ ...harness, id: 'defaults', name: 'Task defaults' }}
             onChange={(agent) =>
-              change({ ...draft, harness: decode(taskHarnessSchema.omit('resources'), agent) })
+              change({
+                ...draft,
+                harness: decode(taskHarnessSchema.mapFields(Struct.omit(['resources'])), agent),
+              })
             }
           />
           <Field

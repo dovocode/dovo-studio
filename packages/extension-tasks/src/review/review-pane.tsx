@@ -133,7 +133,10 @@ function PrimaryReviewPane({
   const additions = stats.reduce((total, item) => total + item.additions, 0)
   const deletions = stats.reduce((total, item) => total + item.deletions, 0)
   return (
-    <section className="flex h-full min-w-0 flex-col bg-background" aria-label="Diff">
+    <section
+      className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
+      aria-label="Diff"
+    >
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>

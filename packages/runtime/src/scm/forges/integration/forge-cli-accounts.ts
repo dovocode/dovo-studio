@@ -21,7 +21,7 @@ export class ForgeCliAccounts {
       ).json('api/v1/user')
       const user = decode(
         mutableStruct({
-          id: Schema.Number.pipe(Schema.finite()),
+          id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
           login: Schema.String,
         }),
         data,
@@ -43,6 +43,16 @@ export class ForgeCliAccounts {
         ],
         undefined,
         cwd,
+        connection.credential === 'gh-wrapper'
+          ? connection.cliEnv
+          : connection.cliProfile
+            ? {
+                GH_TOKEN: undefined,
+                GITHUB_TOKEN: undefined,
+                GH_ENTERPRISE_TOKEN: undefined,
+                GITHUB_ENTERPRISE_TOKEN: undefined,
+              }
+            : undefined,
       )
     ).trim()
     if (!token || /\s/.test(token))
@@ -124,14 +134,7 @@ export class ForgeCliAccounts {
       ),
     )
     const rows = decode(
-      mutableArray(
-        Schema.mutable(
-          Schema.Record({
-            key: Schema.String,
-            value: Schema.Unknown,
-          }),
-        ),
-      ),
+      mutableArray(Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))),
       data,
     )
     const selected = rows.find((row) => {
@@ -218,13 +221,13 @@ export class ForgeCliAccounts {
       }
       const parsed = decodeResult(
         mutableStruct({
-          hosts: Schema.mutable(
-            Schema.Record({
-              key: Schema.String,
-              value: mutableStruct({
+          hosts: Schema.Record(
+            Schema.String,
+            Schema.mutableKey(
+              mutableStruct({
                 token: minValue(Schema.String, 1),
               }),
-            }),
+            ),
           ),
         }),
         privateJson(content),

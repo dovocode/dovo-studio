@@ -43,7 +43,7 @@ export function MessageAttachments({
         return yield* mobileWorkflow(function* () {
           yield* nativeEffect(() => operation())
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               setError(String(error))
             }),

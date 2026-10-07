@@ -86,17 +86,17 @@ export async function readForgeCliProfiles(
     const host = new URL(baseUrl).hostname
     const data = decode(
       mutableStruct({
-        hosts: Schema.mutable(
-          Schema.Record({
-            key: Schema.String,
-            value: mutableArray(
+        hosts: Schema.Record(
+          Schema.String,
+          Schema.mutableKey(
+            mutableArray(
               mutableStruct({
                 login: Schema.String,
                 active: Schema.optional(Schema.Boolean),
                 tokenSource: Schema.optional(Schema.String),
               }),
             ),
-          }),
+          ),
         ),
       }),
       await read(commands.gh, ['auth', 'status', '--hostname', host, '--json', 'hosts']),
@@ -129,14 +129,7 @@ export async function readForgeCliProfiles(
       'fj stores one account for each server. Use a named tea login for multiple accounts on the same server.'
   } else {
     const rows = decode(
-      mutableArray(
-        Schema.mutable(
-          Schema.Record({
-            key: Schema.String,
-            value: Schema.Unknown,
-          }),
-        ),
-      ),
+      mutableArray(Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))),
       await read(commands.tea, ['logins', 'list', '--output', 'json']),
     )
     for (const row of rows) {

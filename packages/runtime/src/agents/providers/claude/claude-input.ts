@@ -24,7 +24,7 @@ export function claudeMessage(run: AgentRun): SDKUserMessage {
           source: {
             type: 'base64' as const,
             media_type: decode(
-              Schema.Literal('image/png', 'image/jpeg', 'image/gif', 'image/webp'),
+              Schema.Literals(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
               file.mime,
             ),
             data: file.data,

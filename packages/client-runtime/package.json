@@ -22,10 +22,7 @@
     "test": "vp test"
   },
   "dependencies": {
-    "@effect-atom/atom": "0.7.0",
-    "effect": "^3.22.1"
+    "effect": "4.0.1"
   },
-  "devDependencies": {
-    "vitest": "4.1.11"
-  }
+  "devDependencies": {}
 }

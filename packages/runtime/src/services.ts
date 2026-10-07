@@ -71,7 +71,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   )
   const devices = new Devices(db, ownerToken),
     pairing = new Pairing(devices),
-    git = new GitService(
+    git: GitService = new GitService(
       () => commands.get(),
       (cwd, args, result) =>
         activity.add(
@@ -81,8 +81,9 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
           { args, ...result },
         ),
       (connectionId, remote, cwd) => forges.gitAuthorization(connectionId, remote, cwd),
+      (cwd) => pulls.githubEnvironment(cwd),
     ),
-    pulls = new ForgePullRequests(git, forges, store),
+    pulls: ForgePullRequests = new ForgePullRequests(git, forges, store),
     terminals = new Terminals(() => commands.get(), activity),
     agents = new AgentRegistry(
       () => commands.get(),
@@ -239,7 +240,6 @@ export interface Services {
   projectFiles: ProjectFiles
 }
 
-export class RuntimeServices extends Context.Tag('dovo/RuntimeServices')<
-  RuntimeServices,
-  Services
->() {}
+export class RuntimeServices extends Context.Service<RuntimeServices, Services>()(
+  'dovo/RuntimeServices',
+) {}

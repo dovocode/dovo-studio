@@ -158,20 +158,22 @@ export function PullChanges({
           })}
         </div>
         {treeOpen && (
-          <aside className="max-h-[65vh] shrink-0 overflow-y-auto border-b p-2 @4xl:border-b-0 @4xl:border-l @4xl:sticky @4xl:top-2 @4xl:w-56">
+          <aside className="flex max-h-[65vh] min-h-0 shrink-0 flex-col overflow-hidden border-b p-2 @4xl:sticky @4xl:top-2 @4xl:w-56 @4xl:self-start @4xl:border-b-0 @4xl:border-l">
             <Input
               aria-label="Filter changed files"
               placeholder="Find a file…"
-              className="mb-2 h-8 text-xs"
+              className="mb-2 h-8 shrink-0 text-xs"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
-            <PullFileTree
-              files={files.filter((f) => f.path.toLowerCase().includes(query.toLowerCase()))}
-              selected={selected}
-              viewed={viewed}
-              onSelect={selectFile}
-            />
+            <div className="min-h-0 overflow-auto overscroll-contain">
+              <PullFileTree
+                files={files.filter((f) => f.path.toLowerCase().includes(query.toLowerCase()))}
+                selected={selected}
+                viewed={viewed}
+                onSelect={selectFile}
+              />
+            </div>
           </aside>
         )}
       </div>

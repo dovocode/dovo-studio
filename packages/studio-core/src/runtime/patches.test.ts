@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { createWorkspace } from '../workspace/seed'
 import { updateTask } from '../workspace/actions'
 import { decode, taskSchema } from '@dovo/protocol'

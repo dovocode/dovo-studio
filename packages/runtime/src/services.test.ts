@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vite-plus/test'
 import { join } from 'node:path'
 import { startRuntime } from './index'
 import { createServices } from './services'

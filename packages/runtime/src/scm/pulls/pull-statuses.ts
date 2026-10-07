@@ -5,9 +5,24 @@ import type { PullSummary } from '@dovo/protocol'
 import type { GitService } from '../git/git.js'
 import { errorMessage } from '../../errors.js'
 const status = mutableStruct({
-  additions: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
-  deletions: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
-  totalCommentsCount: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
+  additions: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
+  deletions: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
+  totalCommentsCount: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
   viewerDidAuthor: Schema.optional(Schema.Boolean),
   assignees: Schema.optional(
     mutableStruct({
@@ -86,12 +101,7 @@ export async function pullStatuses(
               login: Schema.String,
             }),
           ),
-          repository: Schema.mutable(
-            Schema.Record({
-              key: Schema.String,
-              value: Schema.NullOr(status),
-            }),
-          ),
+          repository: Schema.Record(Schema.String, Schema.mutableKey(Schema.NullOr(status))),
         }),
       }),
       JSON.parse(

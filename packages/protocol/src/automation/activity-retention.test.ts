@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { retainActivityEvents, type activitySchema } from './activity'
 import type { Schema } from 'effect'
 

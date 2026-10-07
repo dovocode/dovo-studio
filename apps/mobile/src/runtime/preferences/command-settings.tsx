@@ -75,7 +75,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
             ),
           )
           .pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               nativeEffect(() => {
                 if (!stopped) setLoadError(String(error))
               }),

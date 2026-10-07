@@ -159,12 +159,22 @@ and Node installation. Run the install on that host; do not copy `node_modules` 
 Do this before creating a fresh server if you already have tasks on desktop. Both clients must use
 the **same data directory**. A second directory is a separate workspace with separate pairings.
 
-Desktop stores its profile, including its runtime database, under `~/.dovo/desktop`. On first launch
-after upgrading, it moves an existing Electron profile there after stopping its managed runtime. An
-explicit `--user-data-dir` keeps its selected location. Desktop and runtime preferences live in the
-`app` and `runtime` sections of `~/.dovo/settings.json`; task history, attachments, and caches
-remain separate files. Saved remote connections remain in the encrypted
-`~/.dovo/desktop/runtime-connections.enc` file. Phone-local data stays on the phone.
+Desktop keeps runtime history and encrypted saved connections under `~/.dovo/desktop`, with
+preferences in `~/.dovo/settings.json`. Electron's browser storage and caches use the operating
+system's application-data directory. Upgrading moves a legacy workspace after stopping its managed
+runtime and restores known Electron storage files to the native profile without overwriting existing
+files. Unknown files remain in the workspace. An explicit `--user-data-dir` keeps its isolated
+runtime and Electron profile at the selected location. Phone-local data stays on the phone.
+
+Development desktop uses `~/.dovo-dev/desktop` and `~/.dovo-dev/settings.json`, a separate native
+`Dovo Studio (Dev)` Electron profile, and external port 8788 by default. The internal desktop
+connection uses a free loopback port. It starts
+with its own workspace and never imports production data. Development worktrees, agent installs,
+and device helpers also stay under `~/.dovo-dev`. The API development command likewise defaults to
+`~/.dovo-dev/runtime.sqlite` and port 8789, with custom ports supported. Production supervisor
+environment files are not inherited by development launches. For CLI pairing during
+development, use `pnpm pair --connection ~/.dovo-dev/desktop/runtime-connection.json` (desktop) or
+`pnpm pair --connection ~/.dovo-dev/runtime-connection.json` (API).
 
 Older development desktop data on macOS is normally:
 

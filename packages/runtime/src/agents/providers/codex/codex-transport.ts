@@ -23,21 +23,23 @@ export class JsonLineReader extends AbstractMessageReader {
     lines.on('line', (line) => {
       try {
         const value = decode(
-          Schema.Struct(
-            mutableStruct({
-              jsonrpc: Schema.optional(Schema.String),
-            }).fields,
-            {
-              key: Schema.String,
-              value: Schema.Unknown,
-            },
+          Schema.StructWithRest(
+            Schema.Struct(
+              mutableStruct({
+                jsonrpc: Schema.optional(Schema.String),
+              }).fields,
+            ),
+            [Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))],
           ),
           JSON.parse(line),
         )
         if (value.method === 'serverRequest/resolved') {
           const resolved = decode(
             mutableStruct({
-              requestId: Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite())),
+              requestId: Schema.Union([
+                Schema.String,
+                Schema.Number.pipe(Schema.check(Schema.isFinite())),
+              ]),
             }),
             value.params,
           )

@@ -7,10 +7,15 @@ import { useApplicationState } from '../../runtime/state/application-state'
 import { Text } from './text'
 import { useTheme } from '../theme'
 import html from '../../../assets/mermaid.json'
-const response = Schema.Union(
-  mutableStruct({ height: Schema.Number.pipe(Schema.finite(), Schema.nonNegative()) }),
+const response = Schema.Union([
+  mutableStruct({
+    height: Schema.Number.pipe(
+      Schema.check(Schema.isFinite()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  }),
   mutableStruct({ error: Schema.String }),
-)
+])
 export const MermaidDiagram = memo(function MermaidDiagram({ chart }: { chart: string }) {
   const { colors, styles } = useTheme()
 

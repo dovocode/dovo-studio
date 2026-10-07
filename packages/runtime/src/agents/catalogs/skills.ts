@@ -3,7 +3,7 @@ import { decode, decodeResult } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, posix } from 'node:path'
-import { Schema } from 'effect'
+import { Schema, Effect } from 'effect'
 import { catalogSearchSchema, skillCatalogSchema, skillCatalogImportSchema } from '@dovo/protocol'
 import { catalogBytes, catalogJson } from './fetch.js'
 import { importSkill } from '../configuration/resources.js'
@@ -21,9 +21,9 @@ export async function searchSkills(input: unknown) {
           skillId: Schema.optional(Schema.String),
           name: Schema.String,
           source: Schema.String,
-          installs: Schema.optionalWith(Schema.Number.pipe(Schema.finite()), {
-            default: () => 0,
-          }),
+          installs: Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+            Schema.withDecodingDefaultType(Effect.sync(() => 0)),
+          ),
         }),
       ),
     }),
@@ -50,14 +50,14 @@ const fileSchema = mutableStruct({
   path: Schema.String,
   type: Schema.String,
   mode: Schema.String,
-  size: Schema.optional(Schema.Number.pipe(Schema.finite())),
+  size: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
 })
 export async function installCatalogSkill(input: unknown, root: string) {
   const { source, skill, revision } = decode(skillCatalogImportSchema, input)
   const api = `https://api.github.com/repos/${source}`
   const commit = decode(
     mutableStruct({
-      sha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+      sha: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
     }),
     await catalogJson(`${api}/commits/${revision ?? 'HEAD'}`),
   )

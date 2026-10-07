@@ -192,7 +192,7 @@ it('cancels push-token registration and releases its listener on disposal', asyn
     Effect.sync(() => {
       started = true
     }).pipe(
-      Effect.zipRight(Effect.never),
+      Effect.andThen(Effect.never),
       Effect.onInterrupt(() =>
         Effect.sync(() => {
           interrupted = true

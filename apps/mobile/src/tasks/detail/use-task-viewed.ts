@@ -90,7 +90,7 @@ export function useTaskViewed(task: Task, chatVisible: boolean) {
           ),
         )
         .pipe(
-          Effect.catchAll(() =>
+          Effect.catch(() =>
             nativeEffect(() => {
               if (current)
                 setState({

@@ -14,7 +14,7 @@ export const mcpAppSchema = mutableStruct({
   input: Schema.Unknown,
   result: Schema.Unknown,
   resource: Schema.Unknown,
-  format: Schema.Literal('apps', 'legacy'),
+  format: Schema.Literals(['apps', 'legacy']),
   connected: Schema.Boolean,
 })
 export type McpApp = Schema.Schema.Type<typeof mcpAppSchema>

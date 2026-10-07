@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { canChangeTaskCheckout } from '@dovo/protocol'
 import { openDatabase } from '../../storage/database'
 import { WorkspaceStore } from '../../storage/workspace'

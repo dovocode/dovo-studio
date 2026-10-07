@@ -6,7 +6,7 @@ import { errorMessage, runtimeOperation, type RuntimeFailure } from '../../error
 
 const rowSchema = mutableStruct({
   value: Schema.String,
-  updated: Schema.Number.pipe(Schema.finite()),
+  updated: Schema.Number.pipe(Schema.check(Schema.isFinite())),
 })
 
 type CacheResult = {
@@ -38,7 +38,7 @@ export class ForgeWorkCache {
   readEffect<T extends CacheResult, I>(options: {
     key: string
     source: string
-    schema: Schema.Schema<T, I>
+    schema: Schema.Codec<T, I>
     refresh: boolean
     load: () => Promise<T>
     validateSource: () => void
@@ -46,7 +46,7 @@ export class ForgeWorkCache {
     T & { cachedAt: string; stale?: boolean; refreshError?: string },
     RuntimeFailure
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const { key, source, schema, refresh, load, validateSource } = options
       const row = yield* runtimeOperation(() =>
         decode(
@@ -56,10 +56,10 @@ export class ForgeWorkCache {
       )
       let cached: T | undefined
       if (row) {
-        const parsed = yield* Effect.either(
+        const parsed = yield* Effect.result(
           runtimeOperation(() => decode(schema, JSON.parse(row.value))),
         )
-        if (parsed._tag === 'Right') cached = parsed.right
+        if (parsed._tag === 'Success') cached = parsed.success
         else
           yield* runtimeOperation(() =>
             this.db.prepare('DELETE FROM forge_work_cache WHERE key=?').run(key),
@@ -74,7 +74,7 @@ export class ForgeWorkCache {
         }
 
       const version = this.versions.get(source) ?? 0
-      const refreshed = yield* Effect.either(
+      const refreshed = yield* Effect.result(
         runtimeOperation(load).pipe(
           Effect.flatMap((value) => runtimeOperation(() => decode(schema, value))),
           Effect.flatMap((value) =>
@@ -102,7 +102,7 @@ export class ForgeWorkCache {
           ),
         ),
       )
-      if (refreshed._tag === 'Right') return refreshed.right
+      if (refreshed._tag === 'Success') return refreshed.success
 
       yield* runtimeOperation(validateSource)
       if (cached && row)
@@ -110,9 +110,9 @@ export class ForgeWorkCache {
           ...cached,
           cachedAt: new Date(row.updated).toISOString(),
           stale: true,
-          refreshError: errorMessage(refreshed.left),
+          refreshError: errorMessage(refreshed.failure),
         }
-      return yield* Effect.fail(refreshed.left)
+      return yield* Effect.fail(refreshed.failure)
     })
   }
 }

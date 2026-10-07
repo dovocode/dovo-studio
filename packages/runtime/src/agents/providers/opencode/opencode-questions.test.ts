@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { createServer, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
 import { opencodeAdapter } from './opencode'

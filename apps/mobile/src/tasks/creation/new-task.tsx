@@ -96,7 +96,7 @@ export function NewTask({
           call(
             '/api/workspace',
             { collection: 'tasks', id, create: task, changes: {} },
-            mutableStruct({ revision: Schema.Number.pipe(Schema.finite()) }),
+            mutableStruct({ revision: Schema.Number.pipe(Schema.check(Schema.isFinite())) }),
             'PATCH',
           ),
         )
@@ -110,7 +110,7 @@ export function NewTask({
           ),
         )
         .pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               if (active) setError(String(error))
             }),

@@ -1,3 +1,4 @@
+import { Schema } from 'effect'
 import { mobileModelCatalogKey } from './model-catalog-cache'
 import { useModelCatalog } from './use-model-catalog'
 import {
@@ -345,7 +346,10 @@ export function ModelSettings({
               onChange({
                 ...agent,
                 cyberAccessProgram: program
-                  ? decode(agentSchema.fields.cyberAccessProgram.from, program)
+                  ? decode(
+                      Schema.required(agentSchema.fields.cyberAccessProgram.schema.schema),
+                      program,
+                    )
                   : undefined,
               })
             }

@@ -13,7 +13,7 @@ import { handoffTask } from '../../scm/tasks/task-handoff.js'
 import { uncommittedChanges } from '../../scm/work/change-summary.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
 import { runtimeSetupSchema, titleGenerationSettingsSchema } from '@dovo/protocol'
-import { mutableStruct } from '@dovo/protocol'
+import { mutableStruct, strictStruct } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -296,7 +296,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           mutableStruct({
             task: taskSchema,
             gitIdentity: Schema.String,
-            projectKind: Schema.optional(Schema.Literal('scratch', 'folder')),
+            projectKind: Schema.optional(Schema.Literals(['scratch', 'folder'])),
           }),
           yield* serviceResult(body(request)),
         )
@@ -348,7 +348,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             draft: Schema.String,
             repositoryId: idSchema,
             gitIdentity: Schema.String,
-            projectKind: Schema.optional(Schema.Literal('scratch', 'folder')),
+            projectKind: Schema.optional(Schema.Literals(['scratch', 'folder'])),
           }),
           yield* serviceResult(body(request)),
         )
@@ -395,13 +395,9 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/lifecycle') {
         const { id, action } = decode(
-          mutableStruct({
+          strictStruct({
             id: idSchema,
-            action: Schema.Literal('archive', 'restore', 'delete'),
-          }).annotations({
-            parseOptions: {
-              onExcessProperty: 'error',
-            },
+            action: Schema.Literals(['archive', 'restore', 'delete']),
           }),
           yield* serviceResult(body(request)),
         )
@@ -475,19 +471,21 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/viewed') {
         const { id, turnId, viewed, expectedRevision } = decode(
-          mutableStruct({
+          strictStruct({
             id: idSchema,
             turnId: idSchema,
-            viewed: Schema.optionalWith(Schema.Boolean, {
-              default: () => true,
-            }),
-            expectedRevision: Schema.Number.pipe(Schema.finite())
-              .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-              .pipe(Schema.nonNegative()),
-          }).annotations({
-            parseOptions: {
-              onExcessProperty: 'error',
-            },
+            viewed: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => true))),
+            expectedRevision: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+              .pipe(
+                Schema.check(Schema.isInt()),
+                Schema.check(
+                  Schema.isBetween({
+                    minimum: Number.MIN_SAFE_INTEGER,
+                    maximum: Number.MAX_SAFE_INTEGER,
+                  }),
+                ),
+              )
+              .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
           }),
           yield* serviceResult(body(request)),
         )
@@ -591,10 +589,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           mutableStruct({
             id: idSchema,
             messageId: idSchema,
-            text: maxValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 120000),
-            attachmentIds: Schema.optionalWith(attachmentIdsSchema, {
-              default: () => [],
-            }),
+            text: maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 120000),
+            attachmentIds: attachmentIdsSchema.pipe(
+              Schema.withDecodingDefaultType(Effect.sync(() => [])),
+            ),
             review: Schema.optional(Schema.Boolean),
             runId: Schema.optional(idSchema),
           }),
@@ -627,9 +625,9 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/queue') {
         const input = decode(
-          mutableStruct({
+          strictStruct({
             id: idSchema,
-            action: Schema.Literal(
+            action: Schema.Literals([
               'edit',
               'remove',
               'restore',
@@ -638,7 +636,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               'down',
               'pause',
               'resume',
-            ),
+            ]),
             messageId: Schema.optional(idSchema),
             text: Schema.optional(maxValue(Schema.String, 120000)),
             expectedText: Schema.optional(maxValue(Schema.String, 120000)),
@@ -694,7 +692,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           mutableStruct({
             id: idSchema,
             text: Schema.optional(
-              maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 20000),
+              maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000),
             ),
             at: Schema.optional(Schema.String),
             removeId: Schema.optional(idSchema),
@@ -804,9 +802,9 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           mutableStruct({
             id: idSchema,
             message: Schema.optional(
-              maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 4000),
+              maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 4000),
             ),
-            push: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+            push: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
           }),
           yield* serviceResult(body(request)),
         )
@@ -848,7 +846,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/retry') {
         const input = decode(
-          mutableStruct({
+          strictStruct({
             id: idSchema,
             turnId: idSchema,
             model: Schema.optional(maxValue(Schema.String, 200)),
@@ -866,7 +864,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/worktree-thread') {
         const input = decode(
-          mutableStruct({ id: idSchema, mode: Schema.Literal('reuse', 'fork') }),
+          mutableStruct({ id: idSchema, mode: Schema.Literals(['reuse', 'fork']) }),
           yield* serviceResult(body(request)),
         )
         return yield* serviceResult(s.tasks.newWorktreeThread(input.id, input.mode))
@@ -879,7 +877,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/handoff') {
         const input = decode(
-          mutableStruct({ id: idSchema, target: Schema.Literal('worktree', 'main') }),
+          mutableStruct({ id: idSchema, target: Schema.Literals(['worktree', 'main']) }),
           yield* serviceResult(body(request)),
         )
         return yield* serviceResult(handoffTask(s, input.id, input.target))
@@ -944,10 +942,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/turn/restore') {
         const input = decode(
-          mutableStruct({
+          strictStruct({
             id: idSchema,
             turnId: idSchema,
-            direction: Schema.Literal('undo', 'redo'),
+            direction: Schema.Literals(['undo', 'redo']),
           }),
           yield* serviceResult(body(request)),
         )

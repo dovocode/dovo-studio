@@ -6,7 +6,7 @@ import { runtimeIntegration, waitForRuntime as waitForJob } from '../testing/int
 import { defaultGithubTrigger, defaultTaskHarness } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type { AgentRun, AgentAdapter } from '../agents/execution/types'
-import { beforeEach, afterEach, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, expect, it, vi } from 'vite-plus/test'
 import { join } from 'node:path'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'

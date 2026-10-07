@@ -8,7 +8,7 @@ import { Schema } from 'effect'
 import { mcpHeaders, mcpServerEnvironment } from '../../configuration/mcp-settings.js'
 import { processEnvironment } from '../../../process.js'
 
-const record = Schema.mutable(Schema.Record({ key: Schema.String, value: Schema.Unknown }))
+const record = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 async function optionalFile(path: string) {
   try {
     return await readFile(path, 'utf8')

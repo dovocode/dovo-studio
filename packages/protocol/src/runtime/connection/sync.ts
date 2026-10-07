@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { Schema, Struct } from 'effect'
 import { decode, mutableArray, mutableStruct } from '../../shared/schema.js'
 import {
   messageSchema,
@@ -10,15 +10,20 @@ import {
 import { snapshotSchema, type RuntimeSnapshot } from './runtime.js'
 import { activitySchema, activityEventSchema } from '../../automation/activity.js'
 const order = mutableArray(Schema.String)
-const taskFieldsSchema = taskSchema.omit('messages')
-const taskUpdatesSchema = Schema.partial(taskFieldsSchema.omit('id'))
+const taskFieldsSchema = taskSchema.mapFields(Struct.omit(['messages']))
+const taskUpdatesSchema = taskFieldsSchema
+  .mapFields(Struct.omit(['id']))
+  .mapFields(Struct.map(Schema.optional))
 const taskFieldDeltaSchema = mutableStruct({
   values: taskUpdatesSchema,
-  removed: mutableArray(Schema.keyof(taskFieldsSchema.omit('id'))),
+  removed: mutableArray(
+    Schema.Literals(Object.keys(taskFieldsSchema.mapFields(Struct.omit(['id'])).fields)),
+  ),
 })
 const assertTaskFields: (
   input: unknown,
-) => asserts input is Schema.Schema.Type<typeof taskFieldsSchema> = Schema.asserts(taskFieldsSchema)
+) => asserts input is Schema.Schema.Type<typeof taskFieldsSchema> = (input) =>
+  Schema.asserts(taskFieldsSchema, input)
 function applyTaskFields(before: Task, delta: Schema.Schema.Type<typeof taskFieldDeltaSchema>) {
   const { messages: _messages, ...previous } = before
   const removed = new Set<string>(delta.removed)
@@ -33,23 +38,26 @@ const messagesSchema = mutableStruct({
   order: Schema.optional(order),
   changes: mutableArray(
     mutableStruct({
-      fields: messageSchema.omit('text'),
-      text: Schema.Union(
+      fields: messageSchema.mapFields(Struct.omit(['text'])),
+      text: Schema.Union([
         Schema.String,
         mutableStruct({
-          length: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+          length: Schema.Number.pipe(
+            Schema.check(Schema.isInt()),
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+          ),
           append: Schema.String,
         }),
-      ),
+      ]),
     }),
   ),
 })
 export const snapshotDeltaSchema = mutableStruct({
   revision: Schema.optional(snapshotSchema.fields.revision),
-  state: Schema.optional(snapshotSchema.omit('workspace')),
+  state: Schema.optional(snapshotSchema.mapFields(Struct.omit(['workspace']))),
   workspace: mutableStruct({
     metadata: Schema.optional(
-      workspaceSchema.omit('tasks', 'agents', 'repositories', 'automations'),
+      workspaceSchema.mapFields(Struct.omit(['tasks', 'agents', 'repositories', 'automations'])),
     ),
     agents: Schema.optional(workspaceSchema.fields.agents),
     repositories: Schema.optional(workspaceSchema.fields.repositories),
@@ -61,7 +69,7 @@ export const snapshotDeltaSchema = mutableStruct({
           mutableStruct({
             id: Schema.String,
             updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
-            fields: Schema.optional(taskSchema.omit('messages')),
+            fields: Schema.optional(taskSchema.mapFields(Struct.omit(['messages']))),
             fieldDelta: Schema.optional(taskFieldDeltaSchema),
             messages: Schema.optional(messagesSchema),
           }),
@@ -72,26 +80,38 @@ export const snapshotDeltaSchema = mutableStruct({
 })
 const cursor = {
   epoch: Schema.String,
-  sequence: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+  sequence: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+  ),
 }
 export const activityDeltaSchema = mutableStruct({
   order: Schema.optional(order),
   changes: mutableArray(
     mutableStruct({
-      fields: activityEventSchema.omit('payload'),
-      payload: Schema.Union(
+      fields: activityEventSchema.mapFields(Struct.omit(['payload'])),
+      payload: Schema.Union([
         Schema.String,
         mutableStruct({
-          length: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
-          offset: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
-          remove: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+          length: Schema.Number.pipe(
+            Schema.check(Schema.isInt()),
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+          ),
+          offset: Schema.Number.pipe(
+            Schema.check(Schema.isInt()),
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+          ),
+          remove: Schema.Number.pipe(
+            Schema.check(Schema.isInt()),
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+          ),
           insert: Schema.String,
         }),
-      ),
+      ]),
     }),
   ),
 })
-export const syncFrameSchema = Schema.Union(
+export const syncFrameSchema = Schema.Union([
   mutableStruct({
     type: Schema.Literal('snapshot'),
     ...cursor,
@@ -117,21 +137,30 @@ export const syncFrameSchema = Schema.Union(
     delta: activityDeltaSchema,
   }),
   mutableStruct({ type: Schema.Literal('heartbeat'), ...cursor }),
-)
-export const syncInputSchema = Schema.Union(
+])
+export const syncInputSchema = Schema.Union([
   mutableStruct({
     type: Schema.Literal('resume'),
     epoch: Schema.optional(Schema.String),
-    sequence: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
+    sequence: Schema.optional(
+      Schema.Number.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
+    ),
   }),
   mutableStruct({
     type: Schema.Literal('watch'),
-    scopes: mutableArray(Schema.String.pipe(Schema.maxLength(200))).pipe(Schema.maxItems(8)),
+    scopes: mutableArray(Schema.String.pipe(Schema.check(Schema.isMaxLength(200)))).pipe(
+      Schema.check(Schema.isMaxLength(8)),
+    ),
     detailScopes: Schema.optional(
-      mutableArray(Schema.String.pipe(Schema.maxLength(200))).pipe(Schema.maxItems(8)),
+      mutableArray(Schema.String.pipe(Schema.check(Schema.isMaxLength(200)))).pipe(
+        Schema.check(Schema.isMaxLength(8)),
+      ),
     ),
   }),
-)
+])
 export const syncTicketSchema = mutableStruct({
   ticket: Schema.String,
   format: Schema.optional(Schema.Number),

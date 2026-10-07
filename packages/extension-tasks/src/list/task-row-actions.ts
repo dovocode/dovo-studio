@@ -11,24 +11,8 @@ export type TaskRowChanges = Partial<
 
 /** Patch only the requested fields, with their original values as conflict guards. */
 export function taskRowPatch(task: Task, updates: TaskRowChanges) {
-  const before = decode(
-    Schema.mutable(
-      Schema.Record({
-        key: Schema.String,
-        value: Schema.Unknown,
-      }),
-    ),
-    task,
-  )
-  const after = decode(
-    Schema.mutable(
-      Schema.Record({
-        key: Schema.String,
-        value: Schema.Unknown,
-      }),
-    ),
-    updates,
-  )
+  const before = decode(Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)), task)
+  const after = decode(Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)), updates)
   const changes: Record<
     string,
     {
@@ -83,7 +67,7 @@ export function taskActionClient(store: Store, source: TaskSource) {
           '/api/workspace',
           input,
           mutableStruct({
-            revision: Schema.Number.pipe(Schema.finite()),
+            revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
           }),
           'PATCH',
         )

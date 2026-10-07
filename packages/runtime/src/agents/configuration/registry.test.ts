@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { AcpLaunch } from '../execution/types.js'

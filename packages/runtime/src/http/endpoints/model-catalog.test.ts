@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import { startRuntime } from '../../index.js'

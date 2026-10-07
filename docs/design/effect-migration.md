@@ -1,9 +1,9 @@
 # Effect migration
 
-Use the existing stable Effect 3 line across the application. Keep React and React Native as the
-rendering layer; move application state, commands, asynchronous work and resource ownership into
-Effect. Preserve wire formats, database contents, pairing credentials and native platform behavior.
-Do not deploy intermediate migration steps to the user's installed apps or background service.
+Use stable Effect 4 across the application. Keep React and React Native as the rendering layer; move
+application state, commands, asynchronous work and resource ownership into Effect. Preserve wire
+formats, database contents, pairing credentials and native platform behavior. Do not deploy
+intermediate migration steps to the user's installed apps or background service.
 
 Baseline: 944 tests in 153 test files passed before this migration. Existing uncommitted desktop
 lifecycle changes are part of the starting point and must be preserved.
@@ -30,7 +30,8 @@ moving to its dependants.
 Effect 4 was evaluated on 2026-09-23. The registry reported stable Effect 3.22.2 and Effect
 4.0.0-rc.117. The Effect 4 React adapter accepts this repository's React versions, but its test
 adapter requires Vitest 5 while this repository uses Vitest 4 through Vite+. The user selected
-Effect 3 and a single-agent migration.
+Effect 3 and a single-agent migration at that time. On 2026-10-07 the user requested the stable
+Effect 4 and Vitest 5 migration.
 
 ## Implemented and verified
 
@@ -102,7 +103,7 @@ TypeScript, included in its strict typecheck. Metro, Babel, Expo plugin introspe
 export load the TypeScript files directly with the repository's Node 24 toolchain. Swift platform
 files and generated bundles remain in their native formats.
 
-Expo screen workflows compose Effect 3 operations for transport, registry changes, offline cache,
+Expo screen workflows compose Effect 4 operations for transport, registry changes, offline cache,
 forms, attachments, message delivery, dictation, shortcuts and Live Activities. Effect atoms remain
 the application state source. `mobileWorkflow` maps synchronous SDK throws into the same error
 channel as rejected native operations; `nativeEffect` adapts SDK and UI callbacks. Promise-returning
@@ -121,3 +122,25 @@ isolated launchd process confirmed that the extra CA is loaded before applicatio
 parent exit, restarts after a crash and restores the same private configuration after update unload.
 The temporary service was removed. Physical iPhone behavior and signed installed updates remain
 unverified; this pass does not replace the installed applications.
+
+## Effect 4 and Vitest 5
+
+The application now pins Effect 4.0.1 and matching React atom bindings. Atoms are imported from
+`effect/reactivity`; the old `@effect-atom` dependencies are removed. OpenCode protocol/schema
+codecs use the same stable Effect through the workspace override, replacing their RC dependency.
+Vite+ 1.0.0 supplies the matching Vitest 5.0.1 runner; tests import `vite-plus/test` and use v5's
+mock-clearing default.
+
+Schema constructors, checks, defaults, transformations, mutable keys, decoding and diagnostics use
+v4 APIs. Strict object validation is explicit through `strictStruct`, preserving nested
+excess-property rejection. Missing Gitea diff counts remain optional without inventing zero counts.
+Service keys, cause inspection, semaphores, callback adapters, scope and fiber APIs are migrated.
+Startup failures wait for worker cleanup before reporting failure so an immediate retry cannot race
+retained run ownership. Fake clocks keep Effect's `setImmediate` scheduler handoffs live.
+
+Wire formats, stored data, HTTP LAN/VPN connections, pairing codes and device tokens are unchanged.
+Installed production applications and services are not replaced by this migration.
+
+Verified after migration: 2,224 passing tests (6 existing skips), all 17 package typechecks and all
+16 builds without cache, clean lint and formatting, and a fresh iOS Hermes export. Physical device
+behavior and signed installed updates remain unverified.

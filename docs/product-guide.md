@@ -204,7 +204,9 @@ The standalone API uses port 8787 and `~/.dovo/runtime.sqlite` by default. `DOVO
 `DOVO_HOST`, `PORT` and `DOVO_OWNER_TOKEN` override these. Without an explicit token, the API
 creates `owner-token` alongside its database with owner-only file permissions. Desktop reuses this
 owner identity across launches, supplies it through IPC, and keeps its database in `~/.dovo/desktop`
-by default. Desktop and runtime preferences are in `~/.dovo/settings.json`. Provider authentication
+by default. Saved connections stay alongside that database; Electron browser data uses the native
+application-data directory. Desktop and runtime preferences are in `~/.dovo/settings.json`. Development
+desktop uses `~/.dovo-dev` with a separate Electron profile and workspace. Provider authentication
 stays on the host. Packaged desktop builds include Node 24 and the complete runtime dependency
 closure. Development builds can use `DOVO_NODE_PATH` when Node is absent from PATH.
 
@@ -549,6 +551,20 @@ an existing project or clone through a connected provider. Desktop and mobile su
 creation/editing, comments, reviews, reviewer requests/removal, supported thread resolution, merge
 and close/reopen actions. Provider/version capabilities control which actions appear. See
 [Source control connections](source-control.md) for setup and limits.
+
+To use different GitHub users for different projects, add a named connection in **Settings → Source
+control**, then link it in the project's source-control settings. **GitHub CLI account** selects a
+user already signed in with `gh auth login`; it retrieves that user's token without changing the
+globally active account. **GitHub CLI wrapper · environment selector** accepts your wrapper's
+non-secret selectors, one `NAME=value` per line (for example `GH_ACCOUNT=work`). Set the wrapper
+executable in **Runtime commands → GitHub CLI**. Selectors are sent only to that connection's
+commands and new agent turns, and are visible to paired clients. For secrets, choose **Token from
+runtime environment** and supply the variable name instead. A missing credential fails explicitly.
+
+Project bindings apply to GitHub PRs, issues, workflows, repository browsing/cloning, HTTPS pushes
+and new agent turns, including worktrees. They select authentication, not Git commit author/email;
+SSH remotes continue to use the SSH configuration on the host. Changing an account applies to future
+turns; stop and restart an active turn to use the new selection.
 
 GitHub PR links for registered projects open native PR details on desktop and mobile, including
 links to the files, commits and checks tabs. Other links keep the existing browser flow, and **Open

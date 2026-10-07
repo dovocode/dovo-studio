@@ -1,5 +1,5 @@
 import { decode } from '../../shared/schema.js'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { forgeIssueSchema, forgePipelineSchema } from '../forges/forge-work.js'
 import {
   issueLabel,

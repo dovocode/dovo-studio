@@ -35,7 +35,7 @@ import {
 } from 'react'
 import { AppState } from 'react-native'
 import * as SecureStore from 'expo-secure-store'
-import { Data, Effect, Schema } from 'effect'
+import { Data, Effect, Schema, Semaphore } from 'effect'
 import {
   saveRuntimePairing,
   cancelRuntimePairing,
@@ -75,35 +75,35 @@ const empty: RuntimeRegistry = {
   activeId: null,
   profiles: [],
 }
-type Call = <T extends Schema.Schema.AnyNoContext>(
+type Call = <T extends Schema.Codec<unknown, unknown>>(
   path: string,
   input: unknown,
   schema: T,
   method?: string,
-) => Promise<Schema.Schema.Type<T>>
-type RuntimeRead = <T extends Schema.Schema.AnyNoContext>(
+) => Promise<T['Type']>
+type RuntimeRead = <T extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
   path: string,
   input: unknown,
   schema: T,
   method?: string,
-) => Promise<Schema.Schema.Type<T>>
+) => Promise<T['Type']>
 class ConnectionChangedError extends Data.TaggedError('ConnectionChangedError')<{
   readonly message: string
 }> {}
-type CallEffect = <T extends Schema.Schema.AnyNoContext>(
+type CallEffect = <T extends Schema.Codec<unknown, unknown>>(
   path: string,
   input: unknown,
   schema: T,
   method?: string,
-) => Effect.Effect<Schema.Schema.Type<T>, Error>
-type RuntimeReadEffect = <T extends Schema.Schema.AnyNoContext>(
+) => Effect.Effect<T['Type'], Error>
+type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
   path: string,
   input: unknown,
   schema: T,
   method?: string,
-) => Effect.Effect<Schema.Schema.Type<T>, Error>
+) => Effect.Effect<T['Type'], Error>
 type Runtime = {
   previewTaskEffect: <A, E>(
     profile: RuntimeProfile,
@@ -218,7 +218,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         setMutationVersion((version) => version + 1),
       ),
   )
-  const [storageLock] = useApplicationState(() => Effect.runSync(Effect.makeSemaphore(1)))
+  const [storageLock] = useApplicationState(() => Effect.runSync(Semaphore.make(1)))
   const beforeReplace = useCallback(
     (previous: RuntimeConnection) =>
       mutations
@@ -364,7 +364,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         concurrency: 3,
         discard: true,
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
             for (const id of ids) cacheDirty.current.add(id)
             setStorageError(`Could not save the offline cache. ${error.message}`)
@@ -470,7 +470,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             }),
           ),
           Effect.tap(() =>
-            mutations.recoverEffect(profile.connection).pipe(Effect.catchAll(() => Effect.void)),
+            mutations.recoverEffect(profile.connection).pipe(Effect.catch(() => Effect.void)),
           ),
           Effect.asVoid,
         )
@@ -745,13 +745,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         // The mutation already committed. A failed refresh is reported in overview state.
         Effect.tap(() =>
           profile
-            ? refreshProfileEffect(profile).pipe(Effect.catchAll(() => Effect.void))
+            ? refreshProfileEffect(profile).pipe(Effect.catch(() => Effect.void))
             : Effect.void,
         ),
         Effect.tap(() =>
           profile
             ? persistEntryEffect(profile.id).pipe(
-                Effect.catchAll((error) =>
+                Effect.catch((error) =>
                   Effect.sync(() =>
                     setStorageError(`Could not save the offline cache. ${error.message}`),
                   ),
@@ -812,7 +812,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               connected: false,
             }))
           }).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.sync(() => {
                 if (!disposed) setStorageError(`Could not load the offline cache. ${error.message}`)
               }),
@@ -824,7 +824,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         },
       )
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() => {
           if (!disposed) setStorageError(error.message)
         }),
@@ -852,7 +852,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       )
       .pipe(
         Effect.asVoid,
-        Effect.catchAll((error) => Effect.sync(() => setStorageError(error.message))),
+        Effect.catch((error) => Effect.sync(() => setStorageError(error.message))),
       )
     void commands.run(recover)
     const subscription = AppState.addEventListener('change', (state) => {
@@ -1187,7 +1187,7 @@ export function RuntimeScope({ runtimeId, children }: { runtimeId: string; child
       readEffect(path, input, schema, method).pipe(
         Effect.tap(() =>
           profile
-            ? refreshRuntimeEffect(profile).pipe(Effect.catchAll(() => Effect.void))
+            ? refreshRuntimeEffect(profile).pipe(Effect.catch(() => Effect.void))
             : Effect.void,
         ),
       ),

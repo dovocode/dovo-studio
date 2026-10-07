@@ -1,3 +1,4 @@
+import { configureDesktopRuntimeDirectory, desktopDataRoot } from './runtime-data-directory.js'
 import { registerQuitShortcut } from './quit-shortcut.js'
 import { registerLinuxDesktop } from './linux-desktop.js'
 import { registerInputPreview } from './input-preview.js'
@@ -27,6 +28,7 @@ import { registerConnectionStorage } from './connection-storage.js'
 import {
   desktopProfile,
   migrateDesktopDataDirectory,
+  restoreElectronProfile,
   selectDesktopDataDirectory,
 } from './data-directory.js'
 import { backgroundRuntimeLabel } from './background-runtime.js'
@@ -56,7 +58,12 @@ const appName = !app.isPackaged
   : nightly
     ? 'Dovo Studio (Nightly)'
     : 'Dovo Studio'
-const currentDirectory = app.getPath('userData')
+const explicitDirectory = app.commandLine.hasSwitch('user-data-dir')
+const dataRoot = desktopDataRoot(homedir(), app.isPackaged)
+const currentDirectory =
+  !app.isPackaged && !explicitDirectory
+    ? join(app.getPath('appData'), appName)
+    : app.getPath('userData')
 const selectedDirectory = selectDesktopDataDirectory({
   packaged: app.isPackaged,
   explicitDirectory: app.commandLine.hasSwitch('user-data-dir'),
@@ -113,32 +120,36 @@ const stopRuntimeForMigration = (directory: string) => {
   rmSync(join(homedir(), 'Library', 'LaunchAgents', `${label}.plist`), { force: true })
 }
 let dataDirectory = selectedDirectory
-if (!app.commandLine.hasSwitch('user-data-dir')) {
+if (!explicitDirectory) {
   try {
     dataDirectory = migrateDesktopDataDirectory(
       selectedDirectory,
-      join(homedir(), '.dovo', 'desktop'),
+      join(dataRoot, 'desktop'),
       stopRuntimeForMigration,
     )
   } catch (error) {
-    console.error(
-      'Could not move desktop data to ~/.dovo/desktop; using the existing profile.',
-      error,
-    )
+    console.error('Could not move desktop runtime data; using the existing workspace.', error)
   }
 }
-// Development and packaged builds share saved connections, so they must also
-// use the same Keychain identity. Preserve the selected profile before renaming.
+// Preserve the established Keychain identity while restoring native Electron storage.
 app.setName('dovo-studio')
-app.setPath('userData', dataDirectory)
+configureDesktopRuntimeDirectory(dataDirectory)
+process.env.DOVO_DATA_ROOT = dataRoot
+process.env.DOVO_SETTINGS_PATH = join(dataRoot, 'settings.json')
+if (!explicitDirectory) {
+  try {
+    restoreElectronProfile(dataDirectory, currentDirectory)
+  } catch (error) {
+    console.error('Could not restore Electron profile; existing files have been preserved.', error)
+  }
+}
+app.setPath('userData', currentDirectory)
+app.setPath('sessionData', currentDirectory)
 registerLinuxDesktop(nightly, appName, rendererPath)
 registerConnectionStorage(join(__dirname, '../dist/index.html'))
 const inputPreview = registerInputPreview(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => inputPreview.dispose())
-const browserBridge = registerBrowser(
-  join(__dirname, '../dist/index.html'),
-  app.getPath('userData'),
-)
+const browserBridge = registerBrowser(join(__dirname, '../dist/index.html'), dataDirectory)
 app.once('will-quit', () => {
   void browserBridge.dispose()
 })
@@ -349,7 +360,7 @@ const startup = Effect.gen(function* () {
         await restore()
       }
     })
-    void registerRemoteUpdates(app.getPath('userData'), updates, join(homedir(), '.dovo'))
+    void registerRemoteUpdates(dataDirectory, updates, dataRoot)
       .then((close) => {
         if (close)
           app.once('will-quit', () => {
@@ -385,7 +396,7 @@ const startup = Effect.gen(function* () {
     try: () => startLocalRuntime(__dirname),
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
   }).pipe(
-    Effect.catchAll((error) =>
+    Effect.catch((error) =>
       Effect.sync(() => {
         // Keep the window and updater available; the workspace displays connection errors.
         console.error('Local runtime needs attention:', error.message)

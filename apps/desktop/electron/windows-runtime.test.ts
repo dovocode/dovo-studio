@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { once } from 'node:events'
 
 const fixture = vi.hoisted(() => ({ directory: '' }))
+vi.mock('./runtime-data-directory.js', () => ({ desktopRuntimeDirectory: () => fixture.directory }))
 vi.mock('electron', () => ({
   app: { getPath: () => fixture.directory, getVersion: () => '0.0.7' },
 }))

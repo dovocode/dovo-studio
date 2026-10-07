@@ -1,18 +1,47 @@
-import { expect, it } from 'vitest'
-import { Schema } from 'effect'
-import { decode, decodeResult, isoDateTime, mutableStruct, ValidationError } from './schema.js'
+import { expect, it } from 'vite-plus/test'
+import { Schema, Effect } from 'effect'
+import {
+  decode,
+  decodeResult,
+  isoDateTime,
+  mutableStruct,
+  strictStruct,
+  ValidationError,
+} from './schema.js'
 import { runtimeRegistrySchema } from '../runtime/connection/runtime-fleet.js'
 
 it('keeps field defaults, optional values, and strict boundary validation', () => {
-  const schema = mutableStruct({
-    name: Schema.optionalWith(Schema.String, { default: () => 'default' }),
-    count: Schema.optional(Schema.Number.pipe(Schema.finite())),
-  }).annotations({ parseOptions: { onExcessProperty: 'error' } })
+  const schema = strictStruct({
+    name: Schema.String.pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'default'))),
+    count: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
+  })
   expect(decode(schema, {})).toEqual({ name: 'default' })
   for (const input of [{ extra: true }, { count: Infinity }, { count: NaN }]) {
     expect(decodeResult(schema, input).success).toBe(false)
     expect(() => decode(schema, input)).toThrow(ValidationError)
   }
+})
+
+it('defaults missing and undefined fields independently without accepting null', () => {
+  const schema = strictStruct({
+    items: Schema.mutable(Schema.Array(Schema.String)).pipe(
+      Schema.withDecodingDefaultType(Effect.sync(() => [])),
+    ),
+  })
+  const first = decode(schema, {})
+  const second = decode(schema, { items: undefined })
+  first.items.push('first')
+  expect(second.items).toEqual([])
+  expect(decodeResult(schema, { items: null }).success).toBe(false)
+  expect(Schema.encodeSync(schema)(first)).toEqual({ items: ['first'] })
+})
+
+it('keeps nested strict boundaries while ordinary objects strip unknown fields', () => {
+  const schema = mutableStruct({ nested: strictStruct({ name: Schema.String }) })
+  expect(decode(schema, { nested: { name: 'valid' }, extra: true })).toEqual({
+    nested: { name: 'valid' },
+  })
+  expect(decodeResult(schema, { nested: { name: 'valid', extra: true } }).success).toBe(false)
 })
 
 it('rejects invalid dates rather than normalizing them', () => {

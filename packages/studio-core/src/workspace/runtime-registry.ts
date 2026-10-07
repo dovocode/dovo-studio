@@ -29,12 +29,12 @@ export function decodeRuntimeRegistry(
 const bridgeSchema = mutableStruct({
   dovo: mutableStruct({
     readRuntimeRegistry: Schema.Unknown.pipe(
-      Schema.filter(
+      Schema.refine(
         (value): value is (...args: unknown[]) => unknown => typeof value === 'function',
       ),
     ),
     writeRuntimeRegistry: Schema.Unknown.pipe(
-      Schema.filter(
+      Schema.refine(
         (value): value is (...args: unknown[]) => unknown => typeof value === 'function',
       ),
     ),

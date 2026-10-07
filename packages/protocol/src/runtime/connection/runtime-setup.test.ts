@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { decode } from '../../shared/schema'
 import { defaultTaskHarness } from '../../workspace'
 import { runtimeDefaultsSchema } from './runtime-setup'

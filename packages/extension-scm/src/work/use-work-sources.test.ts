@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { reusableOptions } from './work-source-page'
 
 it('reuses fresh options only for the same scope and mode without a forced refresh', () => {

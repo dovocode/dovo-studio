@@ -68,7 +68,7 @@ export function JiraProjectForm({
           ),
         )
         .pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               if (current) setLoadError(cause instanceof Error ? cause.message : String(cause))
             }),
@@ -133,7 +133,7 @@ export function JiraProjectForm({
           onSaved?.()
           onClose()
         }).pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               setError(cause instanceof Error ? cause.message : String(cause))
             }),

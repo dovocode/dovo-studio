@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { appendUniqueRows, clientScopeKey, RequestScope } from './request-scope.js'
 
 it('rejects late page responses after navigation or unmount', async () => {

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 const fixture = vi.hoisted(() => ({ directory: '', packaged: false }))
+vi.mock('./runtime-data-directory.js', () => ({ desktopRuntimeDirectory: () => fixture.directory }))
 vi.mock('electron', () => ({
   app: {
     getPath: () => fixture.directory,
@@ -31,6 +32,7 @@ afterEach(() => {
   fixture.packaged = false
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
   vi.restoreAllMocks()
   vi.resetAllMocks()
   vi.resetModules()
@@ -507,3 +509,29 @@ it('checks idle tasks with a valid GET before stopping the runtime for an enviro
   expect(request).toHaveBeenCalledOnce()
   expect(f.kill).toHaveBeenCalledOnce()
 })
+it.each([undefined, '8787', '0'])(
+  'isolates development ports and credentials from inherited production configuration (%s)',
+  async (savedPort) => {
+    vi.stubEnv('DOVO_PORT', undefined)
+    vi.stubEnv('DOVO_RUNTIME_ENV_FILE', '/production/runtime-environment.json')
+    const { child, spawn, startLocalRuntime, stopLocalRuntime } = await childFixture()
+    if (savedPort)
+      writeFileSync(
+        join(fixture.directory, 'runtime-listen.json'),
+        JSON.stringify({
+          address: `http://127.0.0.1:${savedPort}`,
+          bindHost: '0.0.0.0',
+        }),
+      )
+    const pending = startLocalRuntime('/unused')
+    await vi.waitFor(() => expect(child.listenerCount('message')).toBe(1))
+    child.emit('message', { type: 'ready', port: 51466 })
+    const connection = await pending
+    const environment = vi.mocked(spawn).mock.calls[0]?.[2]?.env
+    expect(environment?.PORT).toBe('8788')
+    expect(environment?.DOVO_RUNTIME_ENV_FILE).toBeUndefined()
+    expect(environment?.DOVO_OWNER_TOKEN).toBe(connection.token)
+    expect(connection.address).toBe('http://127.0.0.1:51466')
+    await stopLocalRuntime()
+  },
+)

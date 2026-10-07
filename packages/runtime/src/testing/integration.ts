@@ -1,4 +1,4 @@
-import { vi } from 'vitest'
+import { vi } from 'vite-plus/test'
 
 // These tests exercise real Git processes and SQLite as well as owned background workers.
 // Completion is a state assertion, not a one-second performance contract.

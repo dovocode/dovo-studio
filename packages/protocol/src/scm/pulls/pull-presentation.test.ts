@@ -1,5 +1,5 @@
 import { decode } from '../../shared/schema.js'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { pullSummarySchema, type PullComment } from './pulls.js'
 import {
   comparePulls,

@@ -1,6 +1,6 @@
 import { executableAvailable } from '../../../process'
 import { claudeModels } from '../../catalogs/claude'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

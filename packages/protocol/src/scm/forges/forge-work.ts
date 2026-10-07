@@ -1,9 +1,9 @@
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { minValue, maxValue, refine, urlSchema } from '../../shared/schema.js'
-import { Schema } from 'effect'
+import { Schema, Effect } from 'effect'
 import { forgeProviderSchema } from './forges.js'
 const id = refine(
-  maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 300),
+  maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 300),
   (value) => !/[\p{Cc}]/u.test(value) && !['.', '..'].includes(value),
 )
 const url = refine(
@@ -26,34 +26,28 @@ const cached = {
 }
 export const forgeWorkQuerySchema = mutableStruct({
   cursor: Schema.optional(maxValue(Schema.String, 4000)),
-  query: Schema.optional(maxValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 300)),
-  state: Schema.optionalWith(maxValue(Schema.String, 100), {
-    default: () => 'open',
-  }),
-  refresh: Schema.optionalWith(Schema.Boolean, {
-    default: () => false,
-  }),
+  query: Schema.optional(maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 300)),
+  state: maxValue(Schema.String, 100).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 'open')),
+  ),
+  refresh: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
 })
 export const forgeWorkOptionsSchema = mutableStruct({
-  provider: Schema.Union(forgeProviderSchema, Schema.Literal('jira')),
+  provider: Schema.Union([forgeProviderSchema, Schema.Literal('jira')]),
   issues: Schema.Boolean,
   issueNotice: Schema.optional(Schema.String),
-  issueTypes: Schema.optionalWith(mutableArray(Schema.String), {
-    default: () => [],
-  }),
-  issueStates: Schema.optionalWith(mutableArray(Schema.String), {
-    default: () => [],
-  }),
+  issueTypes: mutableArray(Schema.String).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
+  issueStates: mutableArray(Schema.String).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
   issueSearch: Schema.optional(Schema.Boolean),
-  assignees: Schema.optionalWith(Schema.Boolean, {
-    default: () => true,
-  }),
-  labels: Schema.optionalWith(Schema.Boolean, {
-    default: () => false,
-  }),
+  assignees: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => true))),
+  labels: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   pipelines: Schema.Boolean,
   pipelineNotice: Schema.optional(Schema.String),
-  pipelineActions: mutableArray(Schema.Literal('run', 'rerun', 'cancel', 'enable', 'disable')),
+  pipelineActions: mutableArray(Schema.Literals(['run', 'rerun', 'cancel', 'enable', 'disable'])),
 })
 export type ForgeWorkOptions = Schema.Schema.Type<typeof forgeWorkOptionsSchema>
 export const forgeIssueSchema = mutableStruct({
@@ -61,9 +55,7 @@ export const forgeIssueSchema = mutableStruct({
   title: Schema.String,
   body: Schema.String,
   state: Schema.String,
-  type: Schema.optionalWith(Schema.String, {
-    default: () => 'Issue',
-  }),
+  type: Schema.String.pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'Issue'))),
   url,
   author: Schema.String,
   priority: Schema.optional(Schema.String),
@@ -72,9 +64,9 @@ export const forgeIssueSchema = mutableStruct({
   labels: mutableArray(Schema.String),
   updatedAt: Schema.String,
   revision: Schema.String,
-  bodyFormat: Schema.optionalWith(Schema.Literal('markdown', 'html'), {
-    default: () => 'markdown',
-  }),
+  bodyFormat: Schema.Literals(['markdown', 'html']).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 'markdown')),
+  ),
   preview: Schema.optional(Schema.String),
   bodyNotice: Schema.optional(Schema.String),
 })
@@ -94,9 +86,9 @@ export const forgeIssueDetailSchema = mutableStruct({
       author: Schema.String,
       createdAt: Schema.String,
       url: Schema.optional(url),
-      bodyFormat: Schema.optionalWith(Schema.Literal('markdown', 'html'), {
-        default: () => 'markdown',
-      }),
+      bodyFormat: Schema.Literals(['markdown', 'html']).pipe(
+        Schema.withDecodingDefaultType(Effect.sync(() => 'markdown')),
+      ),
     }),
   ),
   next: Schema.optional(Schema.String),
@@ -104,52 +96,46 @@ export const forgeIssueDetailSchema = mutableStruct({
 })
 export type ForgeIssueDetail = Schema.Schema.Type<typeof forgeIssueDetailSchema>
 const fields = {
-  title: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 1000),
+  title: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 1000),
   body: maxValue(Schema.String, 100000),
   assignees: maxValue(
-    mutableArray(maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 300)),
+    mutableArray(maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 300)),
     20,
   ),
   labels: maxValue(
-    mutableArray(maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 100)),
+    mutableArray(maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 100)),
     100,
   ),
 }
 export const forgeIssueCreateSchema = mutableStruct({
   ...fields,
-  assignees: Schema.optionalWith(fields.assignees, {
-    default: () => [],
-  }),
-  labels: Schema.optionalWith(fields.labels, {
-    default: () => [],
-  }),
-  type: Schema.optionalWith(maxValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 100), {
-    default: () => 'Issue',
-  }),
+  assignees: fields.assignees.pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
+  labels: fields.labels.pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
+  type: maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 100).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 'Issue')),
+  ),
 })
 export type ForgeIssueCreate = Schema.Schema.Type<typeof forgeIssueCreateSchema>
-export const forgeIssueActionSchema = Schema.Union(
-  ...[
-    mutableStruct({
-      action: Schema.Literal('edit'),
-      id,
-      revision: id,
-      title: Schema.optional(fields.title),
-      body: Schema.optional(fields.body),
-      state: Schema.optional(
-        maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 100),
-      ),
-      assignees: Schema.optional(fields.assignees),
-      labels: Schema.optional(fields.labels),
-    }),
-    mutableStruct({
-      action: Schema.Literal('comment'),
-      id,
-      revision: id,
-      body: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 100000),
-    }),
-  ],
-)
+export const forgeIssueActionSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literal('edit'),
+    id,
+    revision: id,
+    title: Schema.optional(fields.title),
+    body: Schema.optional(fields.body),
+    state: Schema.optional(
+      maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 100),
+    ),
+    assignees: Schema.optional(fields.assignees),
+    labels: Schema.optional(fields.labels),
+  }),
+  mutableStruct({
+    action: Schema.Literal('comment'),
+    id,
+    revision: id,
+    body: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 100000),
+  }),
+])
 export type ForgeIssueAction = Schema.Schema.Type<typeof forgeIssueActionSchema>
 const pipelineTiming = {
   startedAt: Schema.optional(Schema.String),
@@ -169,9 +155,14 @@ export const forgePipelineSchema = mutableStruct({
   definition: Schema.optional(Schema.String),
   number: Schema.optional(Schema.String),
   attempt: Schema.optional(
-    Schema.Number.pipe(Schema.finite())
-      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-      .pipe(Schema.positive()),
+    Schema.Number.pipe(Schema.check(Schema.isFinite()))
+      .pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      )
+      .pipe(Schema.check(Schema.isGreaterThan(0))),
   ),
   event: Schema.optional(Schema.String),
   workflow: Schema.optional(Schema.String),
@@ -190,9 +181,14 @@ export const forgePipelineStepSchema = mutableStruct({
   name: Schema.String,
   status: Schema.String,
   number: Schema.optional(
-    Schema.Number.pipe(Schema.finite())
-      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-      .pipe(Schema.nonNegative()),
+    Schema.Number.pipe(Schema.check(Schema.isFinite()))
+      .pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      )
+      .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
   ),
   url: Schema.optional(url),
   errors: pipelineErrors,
@@ -226,51 +222,40 @@ export const forgeDefinitionsSchema = mutableStruct({
     }),
   ),
   next: Schema.optional(Schema.String),
-  manual: Schema.optionalWith(Schema.Boolean, {
-    default: () => false,
-  }),
+  manual: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   hint: Schema.optional(Schema.String),
 })
-export const forgePipelineActionSchema = Schema.Union(
-  ...[
-    mutableStruct({
-      action: Schema.Literal('run'),
-      definition: id,
-      ref: id,
-      inputs: Schema.optionalWith(
-        refine(
-          Schema.mutable(
-            Schema.Record({
-              key: maxValue(minValue(Schema.String, 1), 100),
-              value: maxValue(Schema.String, 10000),
-            }),
-          ),
-          (v) => Object.keys(v).length <= 100,
-          'Use at most 100 pipeline inputs',
-        ),
-        {
-          default: () => ({}),
-        },
+export const forgePipelineActionSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literal('run'),
+    definition: id,
+    ref: id,
+    inputs: refine(
+      Schema.Record(
+        maxValue(minValue(Schema.String, 1), 100),
+        Schema.mutableKey(maxValue(Schema.String, 10000)),
       ),
-    }),
-    mutableStruct({
-      action: Schema.Literal('rerun'),
-      id,
-    }),
-    mutableStruct({
-      action: Schema.Literal('cancel'),
-      id,
-    }),
-    mutableStruct({
-      action: Schema.Literal('enable'),
-      id,
-    }),
-    mutableStruct({
-      action: Schema.Literal('disable'),
-      id,
-    }),
-  ],
-)
+      (v) => Object.keys(v).length <= 100,
+      'Use at most 100 pipeline inputs',
+    ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => ({})))),
+  }),
+  mutableStruct({
+    action: Schema.Literal('rerun'),
+    id,
+  }),
+  mutableStruct({
+    action: Schema.Literal('cancel'),
+    id,
+  }),
+  mutableStruct({
+    action: Schema.Literal('enable'),
+    id,
+  }),
+  mutableStruct({
+    action: Schema.Literal('disable'),
+    id,
+  }),
+])
 export type ForgePipelineAction = Schema.Schema.Type<typeof forgePipelineActionSchema>
 export const forgeWorkResultSchema = mutableStruct({
   id: Schema.optional(id),

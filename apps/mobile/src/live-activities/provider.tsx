@@ -107,7 +107,7 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
         const retireActivities = () =>
           void commands.run(
             sync.pipe(
-              Effect.catchAll(() =>
+              Effect.catch(() =>
                 Effect.sync(() => {
                   if (!disposed)
                     setError('Live Activities could not be stopped. Try again when connected.')
@@ -172,7 +172,7 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
         yield* Effect.never
       }),
     ).pipe(
-      Effect.catchAll(() =>
+      Effect.catch(() =>
         Effect.sync(() => {
           if (!disposed)
             setError('Could not initialize Live Activities. Reopen the app to try again.')
@@ -193,7 +193,7 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
     setError('')
     void runClientEffect(
       nativeEffect(() => AsyncStorage.setItem(preferenceKey, String(value))).pipe(
-        Effect.catchAll(() =>
+        Effect.catch(() =>
           nativeEffect(() => setError('Could not save Live Activity preferences.')),
         ),
       ),

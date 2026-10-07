@@ -8,7 +8,10 @@ import {
   type Task,
   type Workspace,
 } from '@dovo/protocol'
-const rowSchema = mutableStruct({ kind: Schema.Literal('message', 'turn'), value: Schema.String })
+const rowSchema = mutableStruct({
+  kind: Schema.Literals(['message', 'turn']),
+  value: Schema.String,
+})
 
 /** History is authoritative in SQLite; workspace metadata never rewrites old messages. */
 export class Conversations {

@@ -97,7 +97,7 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
             ),
           )
           .pipe(
-            Effect.catchAll((error: unknown) =>
+            Effect.catch((error: unknown) =>
               nativeEffect(() => {
                 if (current()) setError(error instanceof Error ? error.message : String(error))
               }),

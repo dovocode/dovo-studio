@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vite-plus/test'
 import { rm } from 'node:fs/promises'
 import { grokLaunch } from './grok.js'
 import { initializeAcp, openAcpConnection } from '../acp/acp-connection.js'

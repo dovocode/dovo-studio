@@ -2,16 +2,13 @@ name: Release
 on:
   push:
     tags: ['v*']
-    branches: [main]
-    paths-ignore:
-      - 'Casks/**'
-      - 'Formula/**'
+  schedule:
+    - cron: '17 */3 * * *'
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag matching package.json (for example v0.0.1)
-        required: true
-        default: v0.0.1
+        description: Leave empty for a nightly, or specify a release tag matching package.json
+        required: false
       verify_only:
         description: Verify existing release assets without rebuilding
         type: boolean
@@ -42,9 +39,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           INPUT_TAG: ${{ inputs.tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           VERSION=$(node -p 'require("./package.json").version')
-          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == schedule || ( "$GITHUB_EVENT_NAME" == workflow_dispatch && -z "$INPUT_TAG" ) ]]; then
+            test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH" || { echo "Nightlies must run on the default branch"; exit 1; }
+            if test "$(node scripts/packaging/nightly-changes.mjs "$GITHUB_SHA")" != true; then
+              echo "build=false" >> "$GITHUB_OUTPUT"
+              echo "No changes since the last published release; skipping nightly." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
             VERSION="${VERSION}-nightly.${GITHUB_RUN_NUMBER}"
             TAG="v${VERSION}"
             CHANNEL=nightly

@@ -131,6 +131,7 @@ export class ForgeWork {
               repo.path,
               token
                 ? {
+                    ...connection?.cliEnv,
                     GH_HOST: host,
                     GH_TOKEN: token,
                     GH_ENTERPRISE_TOKEN: token,
@@ -201,16 +202,15 @@ export class ForgeWork {
     validateSource: () => void,
   ) {
     const data = decode(
-      Schema.Struct(
-        mutableStruct({
-          id: Schema.optional(maxValue(Schema.String, 300)),
-          type: Schema.optional(maxValue(Schema.String, 100)),
-          area: Schema.optional(Schema.Literal('issues', 'pipelines')),
-        }).fields,
-        {
-          key: Schema.String,
-          value: Schema.Unknown,
-        },
+      Schema.StructWithRest(
+        Schema.Struct(
+          mutableStruct({
+            id: Schema.optional(maxValue(Schema.String, 300)),
+            type: Schema.optional(maxValue(Schema.String, 100)),
+            area: Schema.optional(Schema.Literals(['issues', 'pipelines'])),
+          }).fields,
+        ),
+        [Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))],
       ),
       input,
     )

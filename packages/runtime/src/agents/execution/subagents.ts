@@ -2,12 +2,7 @@ import { mutableArray } from '@dovo/protocol'
 import { decodeResult } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { Subagent } from '@dovo/protocol'
-const record = Schema.mutable(
-  Schema.Record({
-    key: Schema.String,
-    value: Schema.Unknown,
-  }),
-)
+const record = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
 const number = (value: unknown) =>

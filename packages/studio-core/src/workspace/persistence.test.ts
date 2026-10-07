@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { createWorkspace } from './seed'
 import { decodeWorkspace, encodeWorkspace } from './persistence'
 it('round trips drafts, configurations and workflow positions', () => {

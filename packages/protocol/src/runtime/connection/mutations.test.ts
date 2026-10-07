@@ -5,7 +5,7 @@ const connection = { address: 'http://netbird-host:4310', token: 'test-device' }
 const urlPath = (url: Parameters<typeof fetch>[0]) =>
   typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
 const ok = Schema.Struct({ ok: Schema.Boolean })
-const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.either(effect))
+const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect))
 afterEach(() => vi.unstubAllGlobals())
 function fixture(initial: MutationOutbox = [], changed: () => void = () => {}) {
   let stored: MutationOutbox = structuredClone(initial)
@@ -53,10 +53,10 @@ it('persists before sending and recovers a lost response with the same action ID
       ok,
     ),
   )
-  expect(failed._tag).toBe('Left')
+  expect(failed._tag).toBe('Failure')
   expect(f.stored()).toHaveLength(1)
   reachable = true
-  expect((await run(f.restart().recoverEffect(connection)))._tag).toBe('Right')
+  expect((await run(f.restart().recoverEffect(connection)))._tag).toBe('Success')
   expect(new Set(ids)).toEqual(new Set(['operation-1']))
   expect(f.stored()).toEqual([])
 })
@@ -71,8 +71,8 @@ it('accepts a saved send locally so composer text can be cleared, then delivers 
       ok,
     ),
   )
-  expect(result._tag).toBe('Right')
-  expect(result).toMatchObject({ _tag: 'Right', right: { ok: true } })
+  expect(result._tag).toBe('Success')
+  expect(result).toMatchObject({ _tag: 'Success', success: { ok: true } })
   expect(f.stored()[0]?.input).toEqual({ id: 'task', messageId: 'message', text: 'Go' })
   vi.stubGlobal(
     'fetch',
@@ -125,7 +125,7 @@ it('holds conflicts for explicit review, isolates host credentials, and never se
   const result = await run(
     failing.requestEffect(connection, '/api/tasks/lifecycle', { id: 'task', action: 'delete' }, ok),
   )
-  expect(result._tag).toBe('Left')
+  expect(result._tag).toBe('Failure')
   expect(fetch).not.toHaveBeenCalled()
 })
 it('keeps multiple offline sends ordered and retains each identity through recovery', async () => {
@@ -134,7 +134,7 @@ it('keeps multiple offline sends ordered and retains each identity through recov
   for (const messageId of ['first', 'second']) {
     expect(
       await run(f.queue.requestEffect(connection, '/api/tasks/message', { messageId }, ok)),
-    ).toMatchObject({ _tag: 'Right', right: { ok: true } })
+    ).toMatchObject({ _tag: 'Success', success: { ok: true } })
   }
   expect(f.stored().map((entry) => entry.id)).toEqual(['operation-1', 'operation-2'])
   const delivered: unknown[] = []
@@ -147,7 +147,7 @@ it('keeps multiple offline sends ordered and retains each identity through recov
       return Response.json({ ok: true })
     }),
   )
-  expect((await run(f.restart().recoverEffect(connection)))._tag).toBe('Right')
+  expect((await run(f.restart().recoverEffect(connection)))._tag).toBe('Success')
   expect(delivered).toEqual([{ messageId: 'first' }, { messageId: 'second' }])
   expect(f.stored()).toEqual([])
 })
@@ -162,13 +162,13 @@ it('executes new actions on legacy hosts but refuses to blindly replay a saved a
   vi.stubGlobal('fetch', fetch)
   expect(
     await run(f.queue.requestEffect(connection, '/api/tasks/lifecycle', { id: 'task' }, ok)),
-  ).toMatchObject({ _tag: 'Right', right: { ok: true } })
+  ).toMatchObject({ _tag: 'Success', success: { ok: true } })
   expect(f.stored()).toEqual([])
   const saved = fixture([
     { id: 'prior', path: '/api/tasks/lifecycle', method: 'POST', input: { id: 'task' } },
   ])
   fetch.mockClear()
-  expect((await run(saved.queue.recoverEffect(connection)))._tag).toBe('Left')
+  expect((await run(saved.queue.recoverEffect(connection)))._tag).toBe('Failure')
   expect(fetch).toHaveBeenCalledOnce()
   expect(saved.stored()).toHaveLength(1)
 })
@@ -192,12 +192,12 @@ it.each([400, 409])(
     )
     expect(
       await run(f.queue.requestEffect(connection, '/api/tasks/lifecycle', { id: 'rejected' }, ok)),
-    ).toMatchObject({ _tag: 'Left', left: { message: 'Action rejected' } })
+    ).toMatchObject({ _tag: 'Failure', failure: { message: 'Action rejected' } })
     expect(f.stored()).toEqual([])
     reject = false
     expect(
       await run(f.queue.requestEffect(connection, '/api/tasks/lifecycle', { id: 'next' }, ok)),
-    ).toMatchObject({ _tag: 'Right', right: { ok: true } })
+    ).toMatchObject({ _tag: 'Success', success: { ok: true } })
     expect(f.stored()).toEqual([])
   },
 )
@@ -222,7 +222,7 @@ it('removes only the rejected legacy command when another client appends during 
   expect(
     (await run(f.queue.requestEffect(connection, '/api/tasks/lifecycle', { id: 'rejected' }, ok)))
       ._tag,
-  ).toBe('Left')
+  ).toBe('Failure')
   expect(f.stored()).toEqual([other])
 })
 
@@ -257,25 +257,25 @@ it.each(['connection', 'gateway', 'invalid JSON', 'invalid schema', 'unreadable 
     expect(
       (await run(f.queue.requestEffect(connection, '/api/tasks/lifecycle', { id: 'first' }, ok)))
         ._tag,
-    ).toBe('Right')
+    ).toBe('Success')
     expect(
       (
         await run(
           f.queue.requestEffect(connection, '/api/tasks/lifecycle', { id: 'uncertain' }, ok),
         )
       )._tag,
-    ).toBe('Left')
+    ).toBe('Failure')
     expect(f.stored()).toHaveLength(1)
     expect(f.stored()[0]?.input).toEqual({ id: 'uncertain' })
     fetch.mockClear()
     expect(await run(f.queue.recoverEffect(connection))).toMatchObject({
-      _tag: 'Left',
-      left: { message: 'Update this runtime before recovering saved actions.' },
+      _tag: 'Failure',
+      failure: { message: 'Update this runtime before recovering saved actions.' },
     })
     expect(fetch).not.toHaveBeenCalled()
     expect(await run(f.queue.recoverEffect(connection, true))).toMatchObject({
-      _tag: 'Left',
-      left: { message: 'Update this runtime before recovering saved actions.' },
+      _tag: 'Failure',
+      failure: { message: 'Update this runtime before recovering saved actions.' },
     })
     expect(fetch).toHaveBeenCalledOnce()
     expect(f.stored()).toHaveLength(1)
@@ -300,10 +300,10 @@ it('rechecks legacy receipt support on explicit recovery after a runtime upgrade
   )
   expect(
     (await run(f.queue.requestEffect(connection, '/api/tasks/lifecycle', { id: 'task' }, ok)))._tag,
-  ).toBe('Left')
+  ).toBe('Failure')
   expect(f.stored()).toHaveLength(1)
   upgraded = true
-  expect((await run(f.queue.recoverEffect(connection, true)))._tag).toBe('Right')
+  expect((await run(f.queue.recoverEffect(connection, true)))._tag).toBe('Success')
   expect(f.stored()).toEqual([])
 })
 
@@ -340,7 +340,7 @@ it('retains independent offline writers and removes acknowledgements by identity
       return Response.json({ ok: true })
     }),
   )
-  expect((await run(f.restart().recoverEffect(connection)))._tag).toBe('Right')
+  expect((await run(f.restart().recoverEffect(connection)))._tag).toBe('Success')
   expect(delivered).toEqual([...original, 'another-tab'])
   expect(f.stored()).toEqual([])
 })
@@ -373,7 +373,7 @@ it('concurrent recovery reuses receipt identities and preserves the ordered jour
   const results = await Promise.all(
     [f.queue, f.restart()].map((queue) => run(queue.recoverEffect(connection))),
   )
-  expect(results.map((result) => result._tag)).toEqual(['Right', 'Right'])
+  expect(results.map((result) => result._tag)).toEqual(['Success', 'Success'])
   expect(firstRequests).toBe(2)
   expect([...applied]).toEqual(['first', 'second'])
   expect(f.stored()).toEqual([])
@@ -397,12 +397,12 @@ it('preserves malformed saved actions and fails before sending or overwriting th
   expect(
     (await run(queue.requestEffect(connection, '/api/tasks/message', { messageId: 'new' }, ok)))
       ._tag,
-  ).toBe('Left')
+  ).toBe('Failure')
   expect(fetch).not.toHaveBeenCalled()
   expect(update).not.toHaveBeenCalled()
-  expect((await run(queue.discardEffect(connection)))._tag).toBe('Right')
+  expect((await run(queue.discardEffect(connection)))._tag).toBe('Success')
   expect(saved).toEqual([])
-  expect((await run(queue.assertEmptyEffect(connection)))._tag).toBe('Right')
+  expect((await run(queue.assertEmptyEffect(connection)))._tag).toBe('Success')
 })
 
 it('refuses to forget unloaded saved actions and refuses unsent commands behind blocked actions', async () => {
@@ -414,17 +414,17 @@ it('refuses to forget unloaded saved actions and refuses unsent commands behind 
     blocked: true,
   }
   const f = fixture([old])
-  expect((await run(f.queue.assertEmptyEffect(connection)))._tag).toBe('Left')
+  expect((await run(f.queue.assertEmptyEffect(connection)))._tag).toBe('Failure')
   const fetch = vi.fn<typeof globalThis.fetch>()
   vi.stubGlobal('fetch', fetch)
   expect(
     (await run(f.queue.requestEffect(connection, '/api/tasks/message', { messageId: 'new' }, ok)))
       ._tag,
-  ).toBe('Left')
+  ).toBe('Failure')
   expect(f.stored()).toEqual([old])
   expect(fetch).not.toHaveBeenCalled()
   await run(f.queue.discardEffect(connection))
-  expect((await run(f.restart().assertEmptyEffect(connection)))._tag).toBe('Right')
+  expect((await run(f.restart().assertEmptyEffect(connection)))._tag).toBe('Success')
 })
 
 it('removes a newly refused unsent command when recovery of an earlier action fails', async () => {
@@ -448,7 +448,7 @@ it('removes a newly refused unsent command when recovery of an earlier action fa
   expect(
     (await run(f.queue.requestEffect(connection, '/api/tasks/message', { messageId: 'new' }, ok)))
       ._tag,
-  ).toBe('Left')
+  ).toBe('Failure')
   expect(f.stored()).toEqual([{ ...old, blocked: true }])
 })
 
@@ -479,22 +479,22 @@ it('notifies changes from other writers while ignoring equivalent freshly decode
     [{ id: 'saved', path: '/api/tasks/message', method: 'POST', input: { text: 'old' } }],
     changed,
   )
-  expect((await run(f.queue.assertEmptyEffect(connection)))._tag).toBe('Left')
+  expect((await run(f.queue.assertEmptyEffect(connection)))._tag).toBe('Failure')
   expect(changed).toHaveBeenCalledOnce()
   changed.mockClear()
-  expect((await run(f.queue.assertEmptyEffect(connection)))._tag).toBe('Left')
+  expect((await run(f.queue.assertEmptyEffect(connection)))._tag).toBe('Failure')
   expect(changed).not.toHaveBeenCalled()
   await f.storage.update(connection, (pending) =>
     pending.map((entry) => ({ ...entry, input: { text: 'changed elsewhere' }, blocked: true })),
   )
-  expect((await run(f.queue.assertEmptyEffect(connection)))._tag).toBe('Left')
+  expect((await run(f.queue.assertEmptyEffect(connection)))._tag).toBe('Failure')
   expect(changed).toHaveBeenCalledOnce()
   changed.mockClear()
   await f.storage.clear()
-  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Right')
+  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
   expect(changed).toHaveBeenCalledOnce()
   changed.mockClear()
-  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Right')
+  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
   expect(changed).not.toHaveBeenCalled()
 })
 

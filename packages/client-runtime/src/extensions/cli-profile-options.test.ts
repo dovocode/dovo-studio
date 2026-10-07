@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { cliProfileOptions } from './cli-profile-options.js'
 
 it('keeps a saved account when discovery is unavailable or returns different accounts', () => {

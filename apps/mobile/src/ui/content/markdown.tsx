@@ -287,7 +287,7 @@ export const Markdown = memo(function Markdown({
               if (target) {
                 void runClientEffect(
                   nativeEffect(() => openAppLink(target)).pipe(
-                    Effect.catchAll((error) =>
+                    Effect.catch((error) =>
                       nativeEffect(() => Alert.alert('Could not open link', String(error))),
                     ),
                   ),

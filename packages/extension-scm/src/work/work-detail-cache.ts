@@ -11,11 +11,21 @@ import {
 
 const cachedIssueSchema = mutableStruct({
   ...forgeIssueDetailSchema.fields,
-  loadedPages: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(1, 500))),
+  loadedPages: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 1, maximum: 500 })),
+    ),
+  ),
 })
 const cachedPipelineSchema = mutableStruct({
   ...forgePipelineDetailSchema.fields,
-  loadedPages: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(1, 500))),
+  loadedPages: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 1, maximum: 500 })),
+    ),
+  ),
 })
 
 export function workDetailCacheKeys(

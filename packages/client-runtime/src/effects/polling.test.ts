@@ -1,5 +1,5 @@
 import { Effect } from 'effect'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { startPolling } from './polling.js'
 
 afterEach(() => vi.useRealTimers())
@@ -112,6 +112,7 @@ it('backs off an unreachable read, wakes on refresh, and resets after success', 
   expect(times.map((time) => time - start)).toEqual([0, 20, 60, 100, 140])
   offline = false
   poller.refresh()
+  await new Promise<void>((resolve) => setImmediate(resolve))
   await vi.advanceTimersByTimeAsync(0)
   expect(times).toHaveLength(6)
   await vi.advanceTimersByTimeAsync(10)

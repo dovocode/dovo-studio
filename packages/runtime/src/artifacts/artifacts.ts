@@ -24,7 +24,7 @@ import { HttpError } from '../errors.js'
 const stored = mutableStruct({ value: Schema.String })
 const lifecycle = mutableStruct({
   taskId: Schema.String,
-  state: Schema.Literal('settled', 'archived'),
+  state: Schema.Literals(['settled', 'archived']),
   since: Schema.String,
 })
 const stateOf = (task: Task) =>

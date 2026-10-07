@@ -183,7 +183,7 @@ const rawIssue = mutableStruct({
               created: Schema.String,
             }),
           ),
-          total: Schema.Number.pipe(Schema.finite()),
+          total: Schema.Number.pipe(Schema.check(Schema.isFinite())),
         }),
       ),
     ),
@@ -258,7 +258,10 @@ export class JiraWork implements ForgeWorkProvider {
       throw new HttpError(409, 'Jira returned an item outside the selected project')
   }
   private key(value: string) {
-    const key = decode(Schema.String.pipe(Schema.pattern(/^[A-Z][A-Z0-9_]*-\d+$/)), value)
+    const key = decode(
+      Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Z][A-Z0-9_]*-\d+$/))),
+      value,
+    )
     if (!key.startsWith(this.binding.project + '-'))
       throw new HttpError(400, 'The Jira issue belongs to another project')
     return key
@@ -293,8 +296,13 @@ export class JiraWork implements ForgeWorkProvider {
       maxValue(
         minValue(
           CoercedNumber.pipe(
-            Schema.int(),
-            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+            Schema.check(Schema.isInt()),
+            Schema.check(
+              Schema.isBetween({
+                minimum: Number.MIN_SAFE_INTEGER,
+                maximum: Number.MAX_SAFE_INTEGER,
+              }),
+            ),
           ),
           0,
         ),

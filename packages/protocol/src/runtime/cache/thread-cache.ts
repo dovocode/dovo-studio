@@ -1,4 +1,4 @@
-import { Effect } from 'effect'
+import { Effect, Semaphore } from 'effect'
 import type { Task } from '../../workspace.js'
 import type { RuntimeSnapshot } from '../connection/runtime.js'
 import { runtimeSnapshotCacheSchema, type RuntimeReadCache } from './read-cache.js'
@@ -50,12 +50,12 @@ export function retainCachedThreads(
 type Envelope = typeof runtimeSnapshotCacheSchema.Type
 const replicas = new WeakMap<
   RuntimeReadCache,
-  { snapshot?: RuntimeSnapshot; loaded: boolean; lock: Effect.Semaphore }
+  { snapshot?: RuntimeSnapshot; loaded: boolean; lock: Semaphore.Semaphore }
 >()
 export function writeRuntimeSnapshotCache(cache: RuntimeReadCache, envelope: Envelope) {
   let replica = replicas.get(cache)
   if (!replica) {
-    replica = { loaded: false, lock: Effect.runSync(Effect.makeSemaphore(1)) }
+    replica = { loaded: false, lock: Effect.runSync(Semaphore.make(1)) }
     replicas.set(cache, replica)
   }
   const state = replica

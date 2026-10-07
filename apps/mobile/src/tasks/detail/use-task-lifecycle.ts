@@ -51,7 +51,7 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
   const onCurrentRuntime = runtimeId === undefined || runtimeId === activeId
   const owner = overviews.find((entry) => entry.profile.id === (runtimeId ?? activeId))
   const enabled = onCurrentRuntime ? connected && !!owner : !!owner?.connected
-  const ownerCall = <T extends Schema.Schema.AnyNoContext>(
+  const ownerCall = <T extends Schema.Codec<unknown, unknown>>(
     path: string,
     input: unknown,
     schema: T,
@@ -86,7 +86,7 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
           changes,
         },
         mutableStruct({
-          revision: Schema.Number.pipe(Schema.finite()),
+          revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
         }),
         'PATCH',
       ),

@@ -1,7 +1,7 @@
 import { decode, resourceSettingsSchema } from '@dovo/protocol'
 import { taskToolsServer } from '../../../agent-tools/config.js'
 import * as warmProcesses from '../../execution/warm-processes.js'
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import type { AgentRun } from '../../execution/types.js'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 

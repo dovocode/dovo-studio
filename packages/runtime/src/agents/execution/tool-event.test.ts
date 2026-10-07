@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { toolEvent } from './tool-event'
 it('recognizes tool lifecycle events from all four providers and ignores text deltas', () => {
   expect(

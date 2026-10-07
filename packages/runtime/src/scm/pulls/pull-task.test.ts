@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import { runtimeFailure } from '../../errors'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { writeFile, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'

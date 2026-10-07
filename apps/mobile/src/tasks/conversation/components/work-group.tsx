@@ -15,7 +15,7 @@ import { artifactReferences } from '@dovo/protocol'
 import { ArtifactCard } from '../../../ui/content/artifacts'
 
 const toolSchema = mutableStruct({
-  ...activitySchema.fields.events.value.fields,
+  ...activitySchema.fields.events.schema.value.fields,
   status: Schema.String,
   turnId: Schema.optional(Schema.String),
   inputPayload: Schema.optional(Schema.String),

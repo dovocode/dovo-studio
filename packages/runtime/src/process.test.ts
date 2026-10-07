@@ -2,7 +2,7 @@ import { Effect, Fiber } from 'effect'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { execFile } from 'node:child_process'
 import { exec, execEffect, ProcessError } from './process.js'
 

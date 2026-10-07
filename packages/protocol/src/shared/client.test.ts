@@ -1,7 +1,7 @@
 import { ValidationError } from './schema.js'
 import { mutableStruct } from './schema.js'
 import { decodeResult } from './schema.js'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Schema } from 'effect'
 import { runtimeRequest, clearRuntimeRequestCache, getRuntimeSnapshotTag } from './client.js'
 import { REPOSITORY_CLONE_TIMEOUT_MS } from '../scm/repositories/repositories.js'
@@ -16,7 +16,7 @@ const connection = {
   token: 'test-device-credential',
 }
 const dataSchema = mutableStruct({
-  revision: Schema.Number.pipe(Schema.finite()),
+  revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
 })
 const readSnapshot = (selected = connection) =>
   runtimeRequest(selected, selected.address, '/api/snapshot', undefined, dataSchema, 'GET')

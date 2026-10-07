@@ -14,13 +14,12 @@
   "dependencies": {
     "@dovo/client-runtime": "workspace:*",
     "@dovo/protocol": "workspace:*",
-    "@effect-atom/atom-react": "0.7.0",
+    "@effect/atom-react": "4.0.1",
     "@noble/hashes": "2.4.0",
-    "effect": "^3.22.1",
-    "react": "^19.2.8"
+    "effect": "4.0.1",
+    "react": "^19.3.0"
   },
   "devDependencies": {
-    "@types/react": "^19.2.18",
-    "vitest": "4.1.11"
+    "@types/react": "^19.3.0"
   }
 }

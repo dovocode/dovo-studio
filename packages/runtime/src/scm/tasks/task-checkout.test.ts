@@ -1,5 +1,5 @@
 import { decode } from '@dovo/protocol'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { writeFile, readFile, mkdir, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startRuntime } from '../../index'

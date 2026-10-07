@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { startRuntime } from '../index.js'
 
 it('protects concurrent CLI settings edits and accepts older client saves', async () => {

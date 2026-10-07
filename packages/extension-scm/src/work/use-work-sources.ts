@@ -1,4 +1,4 @@
-import { Effect } from 'effect'
+import { Effect, Semaphore } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
 import {
@@ -48,7 +48,7 @@ export function useWorkSources(
   const forceNext = useRef(false)
   useEffect(() => {
     const current = ++generation.current
-    const semaphore = Effect.runSync(Effect.makeSemaphore(1))
+    const semaphore = Effect.runSync(Semaphore.make(1))
     const commands = clientTaskScope()
     const update = (source: WorkSource, page: Omit<WorkSourcePage, 'source'>) => {
       if (current === generation.current)
@@ -98,7 +98,7 @@ export function useWorkSources(
                   query: options?.value.issueSearch ? search : undefined,
                 })
             }).pipe(
-              Effect.catchAll(() =>
+              Effect.catch(() =>
                 Effect.sync(() =>
                   update(source, {
                     items: [],
@@ -137,7 +137,7 @@ export function useWorkSources(
                 workPageCacheValue(page),
               )
             }).pipe(
-              Effect.catchAll(() =>
+              Effect.catch(() =>
                 Effect.sync(() =>
                   update(source, {
                     ...page,
@@ -147,7 +147,7 @@ export function useWorkSources(
               ),
             )
           }).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.sync(() =>
                 update(source, {
                   ...(pagesRef.current[source.key] ?? { items: [] }),
@@ -211,7 +211,7 @@ export function useWorkSources(
               workPageCacheValue(page),
             )
             .pipe(
-              Effect.catchAll(() =>
+              Effect.catch(() =>
                 Effect.sync(() =>
                   update(source, {
                     ...page,
@@ -221,7 +221,7 @@ export function useWorkSources(
               ),
             )
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.sync(() => update(source, { ...previous, error: error.message })),
           ),
           Effect.ensuring(

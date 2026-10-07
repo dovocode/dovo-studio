@@ -203,7 +203,7 @@ function ResourceScopeView({
             },
           },
           mutableStruct({
-            revision: Schema.Number.pipe(Schema.finite()),
+            revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
           }),
           'PATCH',
         )

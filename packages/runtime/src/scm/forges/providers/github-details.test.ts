@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import type { GithubJSON } from './github-api.js'
 import { githubThreads } from './github-threads.js'
 import { githubChecks } from './github-checks.js'

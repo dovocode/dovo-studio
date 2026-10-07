@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import type { Task } from '@dovo/protocol'
 import { Housekeeping, inactiveTaskIds } from './housekeeping'
 import { startRuntime } from '../../index'

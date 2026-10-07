@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import type { Workspace } from '@dovo/protocol'
 import { openDatabase } from './database.js'
 import { WorkspaceStore } from './workspace.js'

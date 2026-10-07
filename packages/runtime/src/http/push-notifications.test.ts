@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
 import { startRuntime } from '../index'
 const cleanups: Array<() => Promise<void>> = []

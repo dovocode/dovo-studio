@@ -13,13 +13,13 @@ const statusSchema = mutableStruct({
 const bridgeSchema = mutableStruct({
   dovo: mutableStruct({
     runtimeNetwork: Schema.Unknown.pipe(
-      Schema.filter(
+      Schema.refine(
         (value): value is (address: string, enabled?: boolean, port?: number) => Promise<unknown> =>
           typeof value === 'function',
       ),
     ),
     runtimeConnection: Schema.Unknown.pipe(
-      Schema.filter((value): value is () => Promise<unknown> => typeof value === 'function'),
+      Schema.refine((value): value is () => Promise<unknown> => typeof value === 'function'),
     ),
   }),
 })
@@ -48,7 +48,7 @@ export function DesktopNetwork({ onChanged }: { onChanged: (moved: boolean) => P
         },
         catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
       }).pipe(
-        Effect.catchAll((cause) =>
+        Effect.catch((cause) =>
           Effect.sync(() =>
             setError(
               cause.message.includes('EADDRINUSE')
@@ -99,7 +99,7 @@ export function DesktopNetwork({ onChanged }: { onChanged: (moved: boolean) => P
         },
         catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
       }).pipe(
-        Effect.catchAll((cause) =>
+        Effect.catch((cause) =>
           Effect.sync(() =>
             setError(
               cause.message.includes('EADDRINUSE')

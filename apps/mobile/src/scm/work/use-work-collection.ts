@@ -1,4 +1,4 @@
-import { Effect } from 'effect'
+import { Effect, Semaphore } from 'effect'
 import { clientTaskScope, startPolling } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { useEffect, useRef } from 'react'
@@ -133,7 +133,7 @@ export function useWorkCollection(
           if (publish) update(source.key, page)
         }
       }).pipe(
-        Effect.catchAll(() =>
+        Effect.catch(() =>
           Effect.sync(() => {
             page = {
               ...page,
@@ -246,7 +246,7 @@ export function useWorkCollection(
           [cache.writeEffect(optionsKey, options), cache.writeEffect(pageKey, data)],
           { concurrency: 2 },
         ).pipe(
-          Effect.catchAll(() =>
+          Effect.catch(() =>
             Effect.sync(() => {
               cacheError = true
               if (publish && generation.current === current)
@@ -261,7 +261,7 @@ export function useWorkCollection(
           ? { ...next, error: 'Work loaded, but could not be saved for offline use.' }
           : next
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
             const failed = { ...page, source, stale: true, error: error.message }
             if (publish && generation.current === current) update(source.key, failed)
@@ -296,7 +296,7 @@ export function useWorkCollection(
     let force = forceNext.current
     forceNext.current = false
     const commands = clientTaskScope()
-    const semaphore = Effect.runSync(Effect.makeSemaphore(1))
+    const semaphore = Effect.runSync(Semaphore.make(1))
     let hydrate = true
     const done = Effect.sync(() => {
       if (generation.current === current) setBusy(false)

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { windowsAsrGuidance } from './windows-runtime'
 
 it('interprets the exact ASR rule, including uppercase and braced identifiers', () => {

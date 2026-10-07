@@ -1,6 +1,6 @@
-import { Effect, type Utils } from 'effect'
+import { Effect } from 'effect'
 
-type NativeResult<A> = Awaited<A> extends { readonly [Effect.EffectTypeId]: unknown } ? never : A
+type NativeResult<A> = Awaited<A> extends { readonly [Effect.TypeId]: unknown } ? never : A
 
 /** Adapt SDK operations or synchronous UI callbacks, never an already composed Effect. */
 export const nativeEffect = <A>(run: (signal: AbortSignal) => A & NativeResult<A>) =>
@@ -11,10 +11,10 @@ export const nativeEffect = <A>(run: (signal: AbortSignal) => A & NativeResult<A
 
 /** SDKs may throw synchronously as well as reject. Keep both in the UI error channel. */
 export const mobileWorkflow = <A, E>(
-  body: () => Generator<Utils.YieldWrap<Effect.Effect<unknown, E>>, A, never>,
+  body: () => Generator<Effect.Effect<unknown, E>, A, never>,
 ): Effect.Effect<A, E | Error> =>
   Effect.gen(body).pipe(
-    Effect.catchAllDefect((cause) =>
+    Effect.catchDefect((cause) =>
       Effect.fail(cause instanceof Error ? cause : new Error(String(cause))),
     ),
   )

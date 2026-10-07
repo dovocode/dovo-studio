@@ -1,5 +1,5 @@
 import { mutableStruct } from '../../shared/schema.js'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { Schema } from 'effect'
 import { createRuntimeReadCache, type CacheStorage } from './read-cache.js'
 function fixture() {
@@ -105,7 +105,7 @@ it('bounds PR results and keeps the offline workspace', async () => {
       await client.read(
         'pr:104',
         mutableStruct({
-          index: Schema.Number.pipe(Schema.finite()),
+          index: Schema.Number.pipe(Schema.check(Schema.isFinite())),
         }),
       )
     )?.value.index,

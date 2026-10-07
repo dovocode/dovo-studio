@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { contextUsage, turnTokenCounter } from './context-usage'
 
 it('reads Hermes native context usage', () => {

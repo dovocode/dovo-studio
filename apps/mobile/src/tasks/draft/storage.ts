@@ -1,4 +1,4 @@
-import { Effect, Schema } from 'effect'
+import { Effect, Schema, Semaphore } from 'effect'
 import { decode, mutableStruct, mutableArray } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
 import { nativeEffect } from '../../runtime/state/native-effect'
@@ -17,7 +17,7 @@ const recordSchema = mutableStruct({
         id: Schema.String,
         text: Schema.String,
         attachmentIds: mutableArray(Schema.String),
-        mode: Schema.Literal('queue', 'steer'),
+        mode: Schema.Literals(['queue', 'steer']),
         title: Schema.optional(Schema.String),
         runId: Schema.optional(Schema.String),
       }),
@@ -37,7 +37,7 @@ const encodeRecord = (record: DraftRecord) =>
 
 /** Draft text and its delivery identity share one durable record, scoped to computer/thread. */
 export function createDraftStorage(storage: Storage) {
-  const locks = new Map<string, { semaphore: Effect.Semaphore; users: number }>()
+  const locks = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>()
   const listeners = new Map<string, Set<(value: string) => void>>()
   const records = new Map<string, DraftRecord | null>()
   // Text already published to the composer may be ahead of serialized disk writes.
@@ -45,7 +45,7 @@ export function createDraftStorage(storage: Storage) {
   const dirty = new Set<string>()
   const serialize = <A, E>(key: string, operation: Effect.Effect<A, E>) =>
     Effect.suspend(() => {
-      const lock = locks.get(key) ?? { semaphore: Effect.unsafeMakeSemaphore(1), users: 0 }
+      const lock = locks.get(key) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
       locks.set(key, lock)
       lock.users++
       return lock.semaphore

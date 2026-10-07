@@ -32,7 +32,7 @@ export function Glass({
           ),
         )
         .pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               console.warn('Could not read transparency preference; using opaque controls.', error)
             }),

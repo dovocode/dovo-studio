@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import type { ForgeIssue } from './forge-work.js'
 import { issueEditInput } from './issue-edit'
 

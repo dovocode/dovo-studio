@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { startRuntime } from '../index.js'

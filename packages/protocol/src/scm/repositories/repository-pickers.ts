@@ -1,34 +1,28 @@
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { maxValue, refine, minValue } from '../../shared/schema.js'
-import { Schema } from 'effect'
+import { Schema, Effect } from 'effect'
 export const directoryRequestSchema = mutableStruct({
-  path: Schema.optionalWith(
-    refine(maxValue(Schema.String, 4096), (value) => !value.includes('\0'), 'Invalid path'),
-    {
-      default: () => '',
-    },
+  path: refine(
+    maxValue(Schema.String, 4096),
+    (value) => !value.includes('\0'),
+    'Invalid path',
+  ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
+  hidden: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
+  query: maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 200).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => '')),
   ),
-  hidden: Schema.optionalWith(Schema.Boolean, {
-    default: () => false,
-  }),
-  query: Schema.optionalWith(maxValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 200), {
-    default: () => '',
-  }),
-  offset: Schema.optionalWith(
-    maxValue(
-      minValue(
-        Schema.Number.pipe(Schema.finite()).pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  offset: maxValue(
+    minValue(
+      Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
         ),
-        0,
       ),
-      1_000_000,
+      0,
     ),
-    {
-      default: () => 0,
-    },
-  ),
+    1_000_000,
+  ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 0))),
 })
 export const directoryPageSchema = mutableStruct({
   path: Schema.String,
@@ -43,9 +37,14 @@ export const directoryPageSchema = mutableStruct({
     ),
   ),
   total: Schema.optional(
-    Schema.Number.pipe(Schema.finite())
-      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-      .pipe(Schema.nonNegative()),
+    Schema.Number.pipe(Schema.check(Schema.isFinite()))
+      .pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      )
+      .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
   ),
   entries: mutableArray(
     mutableStruct({
@@ -54,28 +53,30 @@ export const directoryPageSchema = mutableStruct({
     }),
   ),
   nextOffset: Schema.NullOr(
-    Schema.Number.pipe(Schema.finite())
-      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-      .pipe(Schema.nonNegative()),
+    Schema.Number.pipe(Schema.check(Schema.isFinite()))
+      .pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      )
+      .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
   ),
 })
 export type DirectoryPage = Schema.Schema.Type<typeof directoryPageSchema>
 export const githubRepositoryListRequestSchema = mutableStruct({
-  page: Schema.optionalWith(
-    maxValue(
-      minValue(
-        Schema.Number.pipe(Schema.finite()).pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  page: maxValue(
+    minValue(
+      Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
         ),
-        1,
       ),
-      10000,
+      1,
     ),
-    {
-      default: () => 1,
-    },
-  ),
+    10000,
+  ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 1))),
 })
 export const githubRepositoryChoiceSchema = mutableStruct({
   name: Schema.String,
@@ -86,9 +87,14 @@ export const githubRepositoryChoiceSchema = mutableStruct({
 export const githubRepositoryPageSchema = mutableStruct({
   repositories: mutableArray(githubRepositoryChoiceSchema),
   nextPage: Schema.NullOr(
-    Schema.Number.pipe(Schema.finite())
-      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-      .pipe(Schema.positive()),
+    Schema.Number.pipe(Schema.check(Schema.isFinite()))
+      .pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      )
+      .pipe(Schema.check(Schema.isGreaterThan(0))),
   ),
 })
 export type GithubRepositoryChoice = Schema.Schema.Type<typeof githubRepositoryChoiceSchema>

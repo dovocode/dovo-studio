@@ -1,4 +1,4 @@
-import { RegistryContext, useAtomSet, useAtomValue } from '@effect-atom/atom-react'
+import { RegistryContext, useAtomSet, useAtomValue } from '@effect/atom-react'
 import { applicationState } from '@dovo/client-runtime'
 import { useContext, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 

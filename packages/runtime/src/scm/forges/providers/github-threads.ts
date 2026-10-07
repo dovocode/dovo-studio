@@ -12,9 +12,17 @@ const comments = mutableStruct({
     Schema.NullOr(
       mutableStruct({
         databaseId: Schema.NullOr(
-          Schema.Number.pipe(Schema.finite())
-            .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-            .pipe(Schema.positive()),
+          Schema.Number.pipe(Schema.check(Schema.isFinite()))
+            .pipe(
+              Schema.check(Schema.isInt()),
+              Schema.check(
+                Schema.isBetween({
+                  minimum: Number.MIN_SAFE_INTEGER,
+                  maximum: Number.MAX_SAFE_INTEGER,
+                }),
+              ),
+            )
+            .pipe(Schema.check(Schema.isGreaterThan(0))),
         ),
       }),
     ),

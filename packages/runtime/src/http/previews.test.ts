@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { startRuntime } from '../index'
 import * as previews from '../previews/devices'
 const cleanups: Array<() => Promise<void>> = []

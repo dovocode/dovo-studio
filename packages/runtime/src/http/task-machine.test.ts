@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vite-plus/test'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import { decode, taskSchema } from '@dovo/protocol'

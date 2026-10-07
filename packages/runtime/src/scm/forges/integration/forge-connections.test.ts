@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -114,7 +114,9 @@ it('rejects unsupported hosted API variants instead of applying Cloud payloads t
       baseUrl: 'https://azure.internal/collection',
     }),
   ).toThrow('Services')
-  expect(() => store.save({ ...input, provider: 'github' })).toThrow('GitHub CLI')
+  expect(
+    store.save({ ...input, provider: 'github', baseUrl: 'https://github.com' }).credential,
+  ).toBe('token')
   for (const baseUrl of ['http://dev.azure.com/org', 'https://dev.azure.com:444/org'])
     expect(() => store.save({ ...input, provider: 'azure-devops', baseUrl })).toThrow('Services')
 })
@@ -329,4 +331,23 @@ it('rolls back the workspace projection with a failed enclosing forge revision u
     connection,
   )
   expect(new WorkspaceStore(db).get()).toEqual(before)
+})
+
+it('uses GitHub token environment connections for both API and Git credentials, including rotation', async () => {
+  vi.stubEnv('DOVO_GITHUB_WORK_TOKEN', 'work-secret')
+  const account = store.save({
+    name: 'Work',
+    provider: 'github',
+    baseUrl: 'https://github.com',
+    credential: 'environment',
+    tokenEnv: 'DOVO_GITHUB_WORK_TOKEN',
+  })
+  expect(await store.githubToken(account.id)).toBe('work-secret')
+  expect(await store.gitAuthorization(account.id, 'https://github.com/team/project.git')).toBe(
+    `Basic ${Buffer.from('x-access-token:work-secret').toString('base64')}`,
+  )
+  vi.stubEnv('DOVO_GITHUB_WORK_TOKEN', 'replacement-secret')
+  expect(await store.githubToken(account.id)).toBe('replacement-secret')
+  expect(store.get(account.id).revision).not.toBe(account.revision)
+  expect(JSON.stringify(store.list())).not.toMatch(/work-secret|replacement-secret/)
 })

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import type { ForgeConnection } from '@dovo/protocol'
 import { ForgeHttp } from '../integration/forge-http.js'
 import { GiteaForge } from './forge-gitea.js'

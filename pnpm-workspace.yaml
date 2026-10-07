@@ -33,8 +33,33 @@ minimumReleaseAgeExclude:
   - '@opencode/client@2.0.22'
   - '@opencode/protocol@2.0.22'
   - '@opencode/schema@2.0.22'
+  - '@expo/cli@57.0.28'
+  - '@expo/config-plugins@57.0.10'
+  - '@expo/config@57.0.10'
+  - '@expo/image-utils@0.11.6'
+  - '@expo/metro-config@57.0.13'
+  - '@expo/metro-file-map@57.0.4'
+  - '@expo/prebuild-config@57.0.17'
+  - '@expo/require-utils@57.0.6'
+  - '@expo/router-server@57.0.12'
+  - '@expo/ui@57.0.22'
+  - babel-preset-expo@57.0.14
+  - expo-asset@57.0.19
+  - expo-constants@57.0.21
+  - expo-image-manipulator@57.0.21
+  - expo-linking@57.0.12
+  - expo-modules-autolinking@57.0.14
+  - expo-modules-core@57.0.21
+  - expo-notifications@57.0.22
+  - expo-router@57.0.25
+  - expo-widgets@57.0.23
+  - expo@57.0.27
 
 overrides:
+  # Preserve TanStack Start's npm alias during pnpm dependency resolution.
+  h3-v2: npm:h3@2.0.1-rc.20
+  # OpenCode protocol/schema still pin a v4 RC; keep their codecs on the application runtime.
+  effect: 4.0.1
   # Runtime hosts install Claude CLI themselves; retain only the Agent SDK.
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-arm64': '-'
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-x64': '-'
@@ -53,15 +78,21 @@ overrides:
   '@github/copilot-sdk>@github/copilot-sdk-linuxmusl-x64': '-'
   '@github/copilot-sdk>@github/copilot-sdk-win32-arm64': '-'
   '@github/copilot-sdk>@github/copilot-sdk-win32-x64': '-'
-  vite: npm:@voidzero-dev/vite-plus-core@0.3.0
-  vitest: 4.1.11
   linkify-it@<5.0.2: 5.0.2
   uuid@<11.1.1: 11.1.1
+  vite@*: 'catalog:'
 
 patchedDependencies:
-  '@expo/ui@57.0.18': patches/@expo__ui@57.0.18.patch
   app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
   decode-uri-component@0.2.2: patches/decode-uri-component@0.2.2.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
   react-native-diffs@1.0.3: patches/react-native-diffs@1.0.3.patch
-  react-native-enriched-markdown@1.0.2: patches/react-native-enriched-markdown@1.0.2.patch
+  react-native-enriched-markdown@1.1.0: patches/react-native-enriched-markdown@1.1.0.patch
+catalog:
+  vite: npm:@voidzero-dev/vite-plus-core@1.0.0
+  vite-plus: 1.0.0
+peerDependencyRules:
+  allowAny:
+    - vite
+  allowedVersions:
+    vite: '*'

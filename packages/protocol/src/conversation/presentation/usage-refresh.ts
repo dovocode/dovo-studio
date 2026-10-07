@@ -3,13 +3,13 @@ import type { RuntimeProfile } from '../../runtime/connection/runtime-fleet.js'
 import type { RuntimeReadCache } from '../../runtime/cache/read-cache.js'
 import { usageHistorySchema, type UsageHistoryResult } from './usage-history.js'
 import { usageLimitsReadSchema } from '../workflow/plan-limits.js'
-export type UsageRead = <S extends Schema.Schema.AnyNoContext>(
+export type UsageRead = <S extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
   path: string,
   input: unknown,
   schema: S,
   method?: 'GET' | 'POST' | 'PATCH',
-) => Promise<Schema.Schema.Type<S>>
+) => Promise<S['Type']>
 /** Independent host results, progressive history, and credential-scoped offline replicas. */
 export async function refreshUsageEntry(input: {
   profile: RuntimeProfile

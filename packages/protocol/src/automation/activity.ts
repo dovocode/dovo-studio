@@ -19,15 +19,14 @@ const toolPayload = mutableStruct({
   toolId: Schema.String,
   status: Schema.String,
   textOffset: Schema.optional(
-    Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative()),
+    Schema.Number.pipe(
+      Schema.check(Schema.isFinite()),
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
   ),
 })
-const record = Schema.mutable(
-  Schema.Record({
-    key: Schema.String,
-    value: Schema.Unknown,
-  }),
-)
+const record = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const pending = (status: string) =>
   ['started', 'running', 'in_progress', 'pending', 'inProgress'].includes(status)

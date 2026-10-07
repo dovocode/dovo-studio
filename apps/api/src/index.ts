@@ -60,7 +60,7 @@ process.on('unhandledRejection', (reason) => {
 if (process.env.DOVO_LOGIN_PATH !== 'off')
   process.env.PATH = mergePath(process.env.PATH, loginShellPath(), knownToolDirectories())
 
-const waitForShutdown = Effect.async<void>((resume) => {
+const waitForShutdown = Effect.callback<void>((resume) => {
   const signals = ['SIGINT', 'SIGTERM', 'disconnect'] as const
   const cleanup = () => {
     for (const signal of signals) process.removeListener(signal, stop)

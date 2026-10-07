@@ -8,7 +8,7 @@ import { HttpError } from '../errors.js'
 function readDesktopHost(shared = false) {
   if (!shared && process.env.DOVO_RELEASE_DISTRIBUTION !== 'desktop') return undefined
   const directory = shared
-    ? join(homedir(), '.dovo')
+    ? (process.env.DOVO_DATA_ROOT ?? join(homedir(), '.dovo'))
     : dirname(process.env.DOVO_DATABASE_PATH ?? join(homedir(), '.dovo', 'runtime.sqlite'))
   try {
     const host = decode(

@@ -19,23 +19,10 @@ export function workspacePatches(before: Workspace, after: Workspace): Workspace
         continue
       }
       const record = decode(
-          Schema.mutable(
-            Schema.Record({
-              key: Schema.String,
-              value: Schema.Unknown,
-            }),
-          ),
+          Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
           entity,
         ),
-        old = decode(
-          Schema.mutable(
-            Schema.Record({
-              key: Schema.String,
-              value: Schema.Unknown,
-            }),
-          ),
-          previous,
-        )
+        old = decode(Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)), previous)
       const changes: WorkspacePatch['changes'] = {}
       for (const key of new Set([...Object.keys(record), ...Object.keys(old)]))
         if (record[key] !== old[key] && JSON.stringify(record[key]) !== JSON.stringify(old[key]))

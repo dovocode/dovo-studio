@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { parsePatchFiles } from '@pierre/diffs'
 import { pullFilePatch } from '@dovo/studio-core'
 import { suggestionComment } from '../../../../studio-ui/src/suggestion'

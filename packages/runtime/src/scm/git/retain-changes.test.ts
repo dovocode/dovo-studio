@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { retainChangedFiles } from './retain-changes.js'
 
 const file = { path: 'app.ts', before: 'old', after: 'new', viewed: true }

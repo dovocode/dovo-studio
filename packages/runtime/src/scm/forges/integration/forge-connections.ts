@@ -127,7 +127,10 @@ export class ForgeConnections {
         409,
         'Source control connection changed on another device. Reload before saving.',
       )
-    if (input.provider === 'github' && input.credential !== 'gh')
+    if (
+      input.provider === 'github' &&
+      !['gh', 'gh-wrapper', 'token', 'environment'].includes(input.credential)
+    )
       throw new HttpError(
         400,
         'Use GitHub CLI authentication on the runtime for GitHub connections',
@@ -230,7 +233,10 @@ export class ForgeConnections {
   }
   async githubToken(id: string, cwd?: string): Promise<string | undefined> {
     const connection = this.get(id)
-    if (connection.provider !== 'github' || !connection.cliProfile) return undefined
+    if (connection.provider !== 'github') return undefined
+    if (connection.credential === 'token' || connection.credential === 'environment')
+      return this.secret(id)
+    if (connection.credential === 'gh' && !connection.cliProfile) return undefined
     const cli = this.cli
     if (!cli) throw new HttpError(400, 'CLI accounts are not configured')
     return this.cachedCli(

@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import fsPromises from 'node:fs/promises'
 import { syncBuiltinESMExports } from 'node:module'
 import { link, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'

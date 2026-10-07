@@ -2,12 +2,7 @@ import { mutableArray, mutableStruct } from '@dovo/protocol'
 import { decodeResult, minValue, maxValue } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { Agent } from '@dovo/protocol'
-const record = Schema.mutable(
-  Schema.Record({
-    key: Schema.String,
-    value: Schema.Unknown,
-  }),
-)
+const record = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const string = (value: unknown) => (typeof value === 'string' ? value : '')
 const MAX_TEXT = 64000
@@ -122,9 +117,14 @@ export class ReasoningEvents {
             itemId: minValue(Schema.String, 1),
             summaryIndex: maxValue(
               minValue(
-                Schema.Number.pipe(Schema.finite()).pipe(
-                  Schema.int(),
-                  Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+                Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+                  Schema.check(Schema.isInt()),
+                  Schema.check(
+                    Schema.isBetween({
+                      minimum: Number.MIN_SAFE_INTEGER,
+                      maximum: Number.MAX_SAFE_INTEGER,
+                    }),
+                  ),
                 ),
                 0,
               ),

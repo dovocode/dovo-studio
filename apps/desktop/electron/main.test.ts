@@ -2,25 +2,31 @@ import { expect, it, vi } from 'vite-plus/test'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-const fixture = vi.hoisted(() => ({
-  windows: 0,
-  ipc: vi.fn<
-    (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void
-  >(),
-  quit: vi.fn<() => void>(),
-  choice: undefined as import('@dovo/protocol').WindowsRuntimeChoice | undefined,
-  start: vi.fn<() => Promise<{ address: string; token: string }>>(() =>
-    Promise.reject(new Error('Runtime protocol is incompatible')),
-  ),
-  pause: vi.fn<() => Promise<void>>(() => Promise.resolve()),
-  updates: vi.fn<(...args: unknown[]) => unknown>(() =>
-    Object.assign(async () => {}, {
-      state: () => ({ status: 'idle' }),
-      refresh: async () => false,
-      install: async () => {},
+const fixture = vi.hoisted(() => {
+  const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
+  return {
+    handlers,
+    windows: 0,
+    ipc: vi.fn<
+      (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void
+    >((channel, listener) => {
+      handlers.set(channel, listener)
     }),
-  ),
-}))
+    quit: vi.fn<() => void>(),
+    choice: undefined as import('@dovo/protocol').WindowsRuntimeChoice | undefined,
+    start: vi.fn<() => Promise<{ address: string; token: string }>>(() =>
+      Promise.reject(new Error('Runtime protocol is incompatible')),
+    ),
+    pause: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+    updates: vi.fn<(...args: unknown[]) => unknown>(() =>
+      Object.assign(async () => {}, {
+        state: () => ({ status: 'idle' }),
+        refresh: async () => false,
+        install: async () => {},
+      }),
+    ),
+  }
+})
 vi.mock('electron', () => ({
   app: {
     isPackaged: true,
@@ -117,7 +123,7 @@ it('rejects untrusted senders before returning runtime credentials or activating
     'runtime:windows-connection',
     'runtime:windows-security',
   ]) {
-    const handler = fixture.ipc.mock.calls.find(([name]) => name === channel)?.[1]
+    const handler = fixture.handlers.get(channel)
     if (!handler) throw new Error(`Missing IPC handler ${channel}`)
     await expect(
       Promise.resolve().then(() => handler({ senderFrame: null }, 'extension')),
@@ -141,7 +147,7 @@ it('accepts Native Windows setup without restarting active work', async () => {
   fixture.start.mockResolvedValue(connection)
   fixture.choice = undefined
   fixture.pause.mockClear()
-  const save = fixture.ipc.mock.calls.find(([name]) => name === 'runtime:windows-save')?.[1]
+  const save = fixture.handlers.get('runtime:windows-save')
   if (!save) throw new Error('Missing environment save handler')
   try {
     expect(await save(trustedEvent(), { mode: 'native' })).toEqual(connection)
@@ -165,7 +171,7 @@ it('restores the previous environment when WSL startup fails', async () => {
       token: 'native-owned-token-at-least-thirty-two-characters',
     }
   })
-  const save = fixture.ipc.mock.calls.find(([name]) => name === 'runtime:windows-save')?.[1]
+  const save = fixture.handlers.get('runtime:windows-save')
   if (!save) throw new Error('Missing environment save handler')
   try {
     await expect(save(trustedEvent(), { mode: 'wsl', distribution: 'Ubuntu' })).rejects.toThrow(

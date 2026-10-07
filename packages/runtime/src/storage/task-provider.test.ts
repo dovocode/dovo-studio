@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vite-plus/test'
 import { defaultTaskHarness, type Agent, type Task } from '@dovo/protocol'
 import { TaskQueue } from '../agents/tasks/task-queue.js'
 import { openDatabase } from './database.js'

@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { decode } from '../../shared/schema.js'
 import { runtimeProfile } from '../../runtime/connection/runtime-fleet.js'
 import { createRuntimeReadCache, type CacheStorage } from '../../runtime/cache/read-cache.js'

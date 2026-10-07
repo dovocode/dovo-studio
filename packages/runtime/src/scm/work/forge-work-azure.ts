@@ -20,8 +20,8 @@ const person = mutableStruct({
   uniqueName: Schema.optional(Schema.String),
 })
 const item = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite()),
-  rev: Schema.Number.pipe(Schema.finite()),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+  rev: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   fields: mutableStruct({
     'System.Title': Schema.String,
     'System.TeamProject': Schema.String,
@@ -34,16 +34,11 @@ const item = mutableStruct({
     'System.Tags': Schema.optional(Schema.String),
   }),
   multilineFieldsFormat: Schema.optional(
-    Schema.mutable(
-      Schema.Record({
-        key: Schema.String,
-        value: Schema.String,
-      }),
-    ),
+    Schema.Record(Schema.String, Schema.mutableKey(Schema.String)),
   ),
 })
 const build = mutableStruct({
-  id: Schema.Number.pipe(Schema.finite()),
+  id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   buildNumber: Schema.String,
   status: Schema.String,
   result: Schema.optional(Schema.String),
@@ -55,7 +50,7 @@ const build = mutableStruct({
   reason: Schema.optional(Schema.NullOr(Schema.String)),
   requestedFor: Schema.optional(person),
   definition: mutableStruct({
-    id: Schema.Number.pipe(Schema.finite()),
+    id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
     name: Schema.String,
   }),
 })
@@ -164,9 +159,14 @@ export class AzureForgeWork implements ForgeWorkProvider {
     const before = cursor
       ? decode(
           CoercedNumber.pipe(
-            Schema.int(),
-            Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-          ).pipe(Schema.positive()),
+            Schema.check(Schema.isInt()),
+            Schema.check(
+              Schema.isBetween({
+                minimum: Number.MIN_SAFE_INTEGER,
+                maximum: Number.MAX_SAFE_INTEGER,
+              }),
+            ),
+          ).pipe(Schema.check(Schema.isGreaterThan(0))),
           cursor,
         )
       : undefined
@@ -183,7 +183,7 @@ export class AzureForgeWork implements ForgeWorkProvider {
       mutableStruct({
         workItems: mutableArray(
           mutableStruct({
-            id: Schema.Number.pipe(Schema.finite()),
+            id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
           }),
         ),
       }),
@@ -216,9 +216,11 @@ export class AzureForgeWork implements ForgeWorkProvider {
   async issue(id: string, cursor?: string) {
     const n = decode(
       CoercedNumber.pipe(
-        Schema.int(),
-        Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-      ).pipe(Schema.positive()),
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      ).pipe(Schema.check(Schema.isGreaterThan(0))),
       id,
     )
     const raw = decode(item, await this.get(`wit/workitems/${n}`)),
@@ -227,12 +229,12 @@ export class AzureForgeWork implements ForgeWorkProvider {
       mutableStruct({
         comments: mutableArray(
           mutableStruct({
-            id: Schema.Number.pipe(Schema.finite()),
+            id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
             text: Schema.String,
             createdBy: person,
             createdDate: Schema.String,
             format: Schema.optional(
-              Schema.Union(Schema.String, Schema.Number.pipe(Schema.finite())),
+              Schema.Union([Schema.String, Schema.Number.pipe(Schema.check(Schema.isFinite()))]),
             ),
           }),
         ),
@@ -301,9 +303,14 @@ export class AzureForgeWork implements ForgeWorkProvider {
   async actOnIssue(input: ForgeIssueAction) {
     const id = decode(
         CoercedNumber.pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-        ).pipe(Schema.positive()),
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ).pipe(Schema.check(Schema.isGreaterThan(0))),
         input.id,
       ),
       raw = decode(item, await this.get(`wit/workitems/${id}`)),
@@ -411,7 +418,7 @@ export class AzureForgeWork implements ForgeWorkProvider {
         mutableStruct({
           value: mutableArray(
             mutableStruct({
-              id: Schema.Number.pipe(Schema.finite()),
+              id: Schema.Number.pipe(Schema.check(Schema.isFinite())),
               name: Schema.String,
               queueStatus: Schema.optional(Schema.String),
             }),
@@ -442,9 +449,14 @@ export class AzureForgeWork implements ForgeWorkProvider {
   async pipeline(id: string) {
     const n = decode(
         CoercedNumber.pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-        ).pipe(Schema.positive()),
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ).pipe(Schema.check(Schema.isGreaterThan(0))),
         id,
       ),
       current = decode(build, await this.get(`build/builds/${n}`))
@@ -460,12 +472,17 @@ export class AzureForgeWork implements ForgeWorkProvider {
             parentId: Schema.optional(Schema.NullOr(Schema.String)),
             order: Schema.optional(
               Schema.NullOr(
-                Schema.Number.pipe(Schema.finite())
+                Schema.Number.pipe(Schema.check(Schema.isFinite()))
                   .pipe(
-                    Schema.int(),
-                    Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+                    Schema.check(Schema.isInt()),
+                    Schema.check(
+                      Schema.isBetween({
+                        minimum: Number.MIN_SAFE_INTEGER,
+                        maximum: Number.MAX_SAFE_INTEGER,
+                      }),
+                    ),
                   )
-                  .pipe(Schema.nonNegative()),
+                  .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
               ),
             ),
             startTime: Schema.optional(Schema.NullOr(Schema.String)),
@@ -529,9 +546,14 @@ export class AzureForgeWork implements ForgeWorkProvider {
     if (input.action === 'run') {
       const id = decode(
         CoercedNumber.pipe(
-          Schema.int(),
-          Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-        ).pipe(Schema.positive()),
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        ).pipe(Schema.check(Schema.isGreaterThan(0))),
         input.definition,
       )
       const value = decode(
@@ -557,9 +579,11 @@ export class AzureForgeWork implements ForgeWorkProvider {
       throw new HttpError(400, 'Manage Azure pipeline definitions on the server')
     const id = decode(
       CoercedNumber.pipe(
-        Schema.int(),
-        Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-      ).pipe(Schema.positive()),
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      ).pipe(Schema.check(Schema.isGreaterThan(0))),
       input.id,
     )
     const current = decode(build, await this.get(`build/builds/${id}`))

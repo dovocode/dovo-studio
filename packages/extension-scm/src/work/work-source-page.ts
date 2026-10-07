@@ -27,7 +27,12 @@ export type WorkSourcePage = WorkItemsPage & {
   error?: string
 }
 
-const loadedPages = Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(1, 500)))
+const loadedPages = Schema.optional(
+  Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isBetween({ minimum: 1, maximum: 500 })),
+  ),
+)
 export const cachedWorkIssuePageSchema = mutableStruct({
   ...forgeIssuePageSchema.fields,
   loadedPages,

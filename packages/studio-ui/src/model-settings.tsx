@@ -1,3 +1,4 @@
+import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode } from '@dovo/protocol'
 import { ChoicePicker } from './choice-picker'
@@ -280,7 +281,10 @@ export function ModelSettings({
                 onChange({
                   ...agent,
                   cyberAccessProgram: program
-                    ? decode(agentSchema.fields.cyberAccessProgram.from, program)
+                    ? decode(
+                        Schema.required(agentSchema.fields.cyberAccessProgram.schema.schema),
+                        program,
+                      )
                     : undefined,
                 })
               }

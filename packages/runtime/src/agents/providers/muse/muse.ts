@@ -21,7 +21,7 @@ const rows = mutableStruct({
       providerId: Schema.String,
       displayLabel: Schema.String,
       variants: Schema.optional(
-        Schema.Union(mutableArray(Schema.String), Schema.Literal('unknown')),
+        Schema.Union([mutableArray(Schema.String), Schema.Literal('unknown')]),
       ),
       isDefault: Schema.optional(Schema.Boolean),
       defaultReasoningEffort: Schema.optional(Schema.String),
@@ -39,7 +39,7 @@ const promptSchema = mutableStruct({
         mutableStruct({ label: Schema.String, description: Schema.optional(Schema.String) }),
       ),
       selection: mutableStruct({
-        mode: Schema.Literal('single', 'multiple'),
+        mode: Schema.Literals(['single', 'multiple']),
         minSelections: Schema.optional(Schema.Number),
         maxSelections: Schema.optional(Schema.Number),
       }),

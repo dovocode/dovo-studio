@@ -77,11 +77,16 @@ export function CliProfilePicker({
     }
   }, [request, connected, provider, baseUrl, cliTool, repositoryId, revision])
   const optional = provider === 'github' || provider === 'azure-devops' || cliTool === 'fj'
-  const label = provider === 'azure-devops' ? 'CLI tenant' : 'CLI profile'
+  const label =
+    provider === 'github'
+      ? 'GitHub user'
+      : provider === 'azure-devops'
+        ? 'CLI tenant'
+        : 'CLI profile'
   const items = cliProfileOptions(
     result?.profiles ?? [],
     value,
-    optional ? 'CLI default' : 'Choose profile',
+    optional ? (provider === 'github' ? 'Active GitHub account' : 'CLI default') : 'Choose profile',
   )
   return (
     <div className="grid gap-3">

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import type { PullAction } from '@dovo/protocol'
 import { ForgeHttp } from '../integration/forge-http.js'
 import { BitbucketForge } from './forge-bitbucket.js'

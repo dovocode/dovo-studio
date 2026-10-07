@@ -2,7 +2,7 @@ import { ChildProcess, spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { canUpdateServer, serverUpdateStatus, startServerUpdate } from './server-updates.js'
 
 vi.mock('node:child_process', async (importOriginal) => {

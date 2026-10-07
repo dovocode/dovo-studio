@@ -1,5 +1,5 @@
 import { decode } from '../shared/schema.js'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import {
   daybreakChoices,
   modelDisplayName,

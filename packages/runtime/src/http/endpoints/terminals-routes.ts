@@ -88,7 +88,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
           mutableStruct({
             taskId: idSchema,
             checkoutId: Schema.optional(idSchema),
-            command: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 20000),
+            command: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000),
             newTerminal: Schema.optional(Schema.Boolean),
           }),
           yield* serviceResult(body(request)),

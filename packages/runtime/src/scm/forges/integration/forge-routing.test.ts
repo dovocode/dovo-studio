@@ -1,6 +1,6 @@
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { realpath, rm } from 'node:fs/promises'
 import { Schema } from 'effect'
 import { forgeConnectionSchema, pullDetailSchema, pullPageSchema } from '@dovo/protocol'

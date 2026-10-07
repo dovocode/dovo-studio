@@ -24,13 +24,13 @@ export class RuntimeStartupError extends Data.TaggedError('RuntimeStartupError')
     return `Runtime ${this.operation} failed: ${this.cause instanceof Error ? this.cause.message : String(this.cause)}`
   }
 }
-export class RuntimeHost extends Context.Tag('dovo/RuntimeHost')<
+export class RuntimeHost extends Context.Service<
   RuntimeHost,
   {
     readonly services: Services
     readonly port: number
   }
->() {}
+>()('dovo/RuntimeHost') {}
 
 const release = (close: () => void | Promise<void>) =>
   Effect.promise(async () => {
@@ -39,7 +39,7 @@ const release = (close: () => void | Promise<void>) =>
 
 /** The host scope owns SQLite, accepted HTTP work, schedulers and native resources. */
 export const runtimeLayer = (options: RuntimeOptions) =>
-  Layer.scoped(
+  Layer.effect(
     RuntimeHost,
     Effect.gen(function* () {
       const db = yield* Effect.acquireRelease(
@@ -110,7 +110,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
             for (const result of results) yield* result
           }),
       )
-      yield* Effect.async<void, RuntimeStartupError>((resume) => {
+      yield* Effect.callback<void, RuntimeStartupError>((resume) => {
         const cleanup = () => {
           http.server.removeListener('error', error)
           http.server.removeListener('listening', listening)

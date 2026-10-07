@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { completedCompaction } from './compaction.js'
 
 it('records only provider-confirmed compactions', () => {

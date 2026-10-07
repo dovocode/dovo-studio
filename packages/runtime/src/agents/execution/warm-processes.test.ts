@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 const memory = vi.hoisted(() => ({ free: 1024 ** 3, total: 64 * 1024 ** 3 }))
 vi.mock('node:os', () => ({ freemem: () => memory.free, totalmem: () => memory.total }))
 import { releaseIdleProvider } from './warm-processes.js'

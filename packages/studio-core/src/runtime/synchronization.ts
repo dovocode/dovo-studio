@@ -1,4 +1,4 @@
-import { Data, Effect, Schema } from 'effect'
+import { Data, Effect, Schema, Semaphore } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
   decodeResult,
@@ -26,11 +26,13 @@ export const workspaceOutboxSchema = mutableStruct({
   patches: minValue(mutableArray(patchSchema), 1),
   ids: Schema.optional(mutableArray(Schema.NonEmptyString)),
 }).pipe(
-  Schema.filter(
-    (value) =>
-      !value.ids ||
-      (value.ids.length === value.patches.length && new Set(value.ids).size === value.ids.length),
-    { message: () => 'Workspace patch IDs must be unique and match the pending patches' },
+  Schema.check(
+    Schema.makeFilter(
+      (value) =>
+        !value.ids ||
+        (value.ids.length === value.patches.length && new Set(value.ids).size === value.ids.length),
+      { message: 'Workspace patch IDs must be unique and match the pending patches' },
+    ),
   ),
 )
 export type WorkspaceOutbox = Schema.Schema.Type<typeof workspaceOutboxSchema>
@@ -74,7 +76,7 @@ const sendPatch: Send = (connection, patch) =>
     '/api/workspace',
     patch,
     mutableStruct({
-      revision: Schema.Number.pipe(Schema.finite()),
+      revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
       runtimeInstanceId: Schema.optional(Schema.String),
     }),
     'PATCH',
@@ -101,7 +103,7 @@ export class WorkspaceSynchronization {
   private conflicted = false
   private workspace: Workspace | null = null
   private durable: Effect.Effect<void, SynchronizationError> = Effect.void
-  private readonly writer = Effect.runSync(Effect.makeSemaphore(1))
+  private readonly writer = Effect.runSync(Semaphore.make(1))
 
   constructor(
     private onError: (message: string | null) => void,
@@ -178,7 +180,7 @@ export class WorkspaceSynchronization {
     // Synchronous editor boundary: begin durability before allowing network flush.
     void runClientEffect(
       this.save(this.connection, this.pending, this.pendingIds).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
             if (generation === this.generation) {
               this.conflicted = true
@@ -215,12 +217,12 @@ export class WorkspaceSynchronization {
   }
   /** Preserve unsent edits without requiring the old address to be reachable. */
   savedEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       if (this.discarding)
         return yield* Effect.fail(
           new SynchronizationError({ message: 'Wait for saved edits to finish clearing.' }),
         )
-      if (this.draining) yield* this.draining.pipe(Effect.catchAll(() => Effect.void))
+      if (this.draining) yield* this.draining.pipe(Effect.catch(() => Effect.void))
       yield* this.durable
       const outbox: WorkspaceOutbox | null =
         this.pending.length && this.workspace
@@ -258,7 +260,7 @@ export class WorkspaceSynchronization {
       this.version++
       this.conflicted = false
       const generation = this.generation
-      return Effect.gen(this, function* () {
+      return Effect.gen({ self: this }, function* () {
         if (this.connection) yield* this.save(this.connection, this.pending, this.pendingIds)
         if (generation !== this.generation)
           return yield* Effect.fail(
@@ -285,7 +287,7 @@ export class WorkspaceSynchronization {
 
   discardEffect(checkpoint: Checkpoint) {
     const operation = {}
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       if (
         !this.connection ||
         this.isSending() ||
@@ -359,7 +361,7 @@ export class WorkspaceSynchronization {
       const pendingIds = this.pendingIds
       const work = Effect.runSync(
         Effect.cached(
-          Effect.gen(this, function* () {
+          Effect.gen({ self: this }, function* () {
             while (pending.length && generation === this.generation) {
               yield* this.durable
               if (generation !== this.generation) return
@@ -367,7 +369,7 @@ export class WorkspaceSynchronization {
               if (generation !== this.generation) return
               const acknowledged = decodeResult(
                 mutableStruct({
-                  revision: Schema.Number.pipe(Schema.finite()),
+                  revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
                   runtimeInstanceId: Schema.String,
                 }),
                 response,

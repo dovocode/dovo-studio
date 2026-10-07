@@ -808,13 +808,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 Could not stop the agent. {stopError}
               </p>
             )}
-            <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
-              <ResizablePanel
-                id="thread"
-                order={1}
-                defaultSize={bottomTerminalOpen ? 65 : 100}
-                minSize={30}
-              >
+            <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
+              <ResizablePanel id="thread" defaultSize={bottomTerminalOpen ? 65 : 100} minSize="30%">
                 <TaskConversation
                   historyLoaded={usingStartupDraft || historyLoaded}
                   historyError={historyError}
@@ -842,7 +837,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
               {bottomTerminalOpen && surface === 'chat' && (
                 <>
                   <ResizableHandle />
-                  <ResizablePanel id="bottom-terminal" order={2} defaultSize={35} minSize={15}>
+                  <ResizablePanel id="bottom-terminal" defaultSize="35%" minSize="15%">
                     <div
                       ref={(element) => {
                         if (!compact) panes.current.terminal = element
@@ -1138,8 +1133,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
             </div>
           )}
         </ResizableSidebar>
-        <ResizablePanelGroup direction="horizontal" className="min-w-0 flex-1">
-          <ResizablePanel id="conversation" order={2} minSize={30}>
+        <ResizablePanelGroup orientation="horizontal" className="min-w-0 flex-1">
+          <ResizablePanel id="conversation" minSize="30%">
             {usingStartupDraft ? (
               <StartupDraft
                 key={taskCollectionKey(activeRuntimeId, String(draftVersion))}
@@ -1159,7 +1154,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
           {splitTask && (
             <>
               <ResizableHandle />
-              <ResizablePanel id="split" order={3} defaultSize={36} minSize={24}>
+              <ResizablePanel id="split" defaultSize="36%" minSize="24%">
                 <section
                   aria-label={`Side by side: ${splitTask.title}`}
                   className="flex h-full min-h-0 flex-col border-l"

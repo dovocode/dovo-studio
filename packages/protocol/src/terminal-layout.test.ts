@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { splitTerminal, terminalGroups } from './terminal-layout'
 
 it('splits only the selected tab and keeps other tabs independent', () => {

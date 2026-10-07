@@ -32,7 +32,7 @@ export function execEffect(
   args: readonly string[] = [],
   options: ExecFileOptions = {},
 ): Effect.Effect<Output<string | Buffer>, ProcessError> {
-  return Effect.async((resume) => {
+  return Effect.callback((resume) => {
     // Runtime commands are background work. Without this, Windows can show a
     // console/terminal window for every Git command or executable probe.
     const child = execFile(
@@ -58,7 +58,7 @@ export function execEffect(
     )
     // Interruption must wait for the native process to exit before releasing its
     // parent scope; a canceled command may not keep writing into a closed runtime.
-    return Effect.async<void>((done) => {
+    return Effect.callback<void>((done) => {
       if (!child.pid || child.exitCode !== null || child.signalCode !== null)
         return done(Effect.void)
       child.once('close', () => done(Effect.void))
@@ -113,7 +113,7 @@ const executableAvailableEffect = (command: string) =>
     maxBuffer: 1024 * 1024,
   }).pipe(
     Effect.as(true),
-    Effect.catchAll(() => Effect.succeed(false)),
+    Effect.catch(() => Effect.succeed(false)),
   )
 export const executableAvailable = (command: string) =>
   runClientEffect(executableAvailableEffect(command))

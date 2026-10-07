@@ -1,6 +1,8 @@
+import { startMcpAppTools } from '@dovo/studio-core'
 import { memo, useEffect, useRef, useState } from 'react'
 import {
   randomUUID,
+  responses,
   mcpAppDownloads,
   mcpAppResponseSchema,
   mcpAppRpcResponseSchema,
@@ -12,7 +14,7 @@ import html from '../../../studio-ui/mcp-apps/host.json'
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)) : {}
 export const McpAppView = memo(function McpAppView({ reference }: { reference: McpAppReference }) {
-  const { request, connected, activeRuntimeId } = useWorkspace()
+  const { request, connected, activeRuntimeId, connection } = useWorkspace()
   const { chooseLink, openPullLink } = useStudioHost()
   const theme = useResolvedTheme()
   const frame = useRef<HTMLIFrameElement>(null)
@@ -23,10 +25,13 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
   const [full, setFull] = useState(false)
   const nonce = useRef(randomUUID())
   const ready = useRef(false)
+  const tools = useRef<ReturnType<typeof startMcpAppTools>>(undefined)
+  const advertisedTools = useRef<unknown[]>([])
   useEffect(() => {
     setApp(undefined)
     setError('')
     ready.current = false
+    advertisedTools.current = []
     nonce.current = randomUUID()
   }, [activeRuntimeId, reference.taskId, reference.id])
   useEffect(() => {
@@ -49,6 +54,39 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
       disposed = true
     }
   }, [request, activeRuntimeId, reference.taskId, reference.id, connected])
+  useEffect(() => {
+    if (!connected || !connection || !app?.connected || app.format !== 'apps') return
+    const key = nonce.current
+    const sendTool = (value: unknown) => frame.current?.contentWindow?.postMessage(value, '*')
+    const current = startMcpAppTools({
+      address: connection.address,
+      ticket: async () =>
+        (
+          await request(
+            '/api/mcp-apps/ticket',
+            { taskId: reference.taskId, id: reference.id },
+            responses.ticket,
+          )
+        ).ticket,
+      call: (value) => sendTool({ ...value, type: 'app-tool-call', nonce: key }),
+      cancel: (requestId) => sendTool({ type: 'app-tool-cancel', requestId, nonce: key }),
+      onError: (cause) => setNotice(cause.message),
+    })
+    tools.current = current
+    current.setTools(advertisedTools.current)
+    return () => {
+      tools.current = undefined
+      void current.stop()
+    }
+  }, [
+    connected,
+    connection?.address,
+    app?.id,
+    app?.connected,
+    request,
+    reference.taskId,
+    reference.id,
+  ])
   const send = () => {
     if (app && ready.current)
       frame.current?.contentWindow?.postMessage(
@@ -66,6 +104,16 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
       const value = object(event.data)
       if (value.type === 'ready') return
       if (value.nonce !== nonce.current) return
+      if (value.type === 'app-tools' && Array.isArray(value.tools)) {
+        advertisedTools.current = value.tools
+        tools.current?.setTools(value.tools)
+      }
+      if (value.type === 'app-tool-result' && typeof value.requestId === 'string')
+        tools.current?.reply({
+          requestId: value.requestId,
+          result: value.result,
+          error: typeof value.error === 'string' ? value.error : undefined,
+        })
       if (value.type === 'notice' && typeof value.message === 'string')
         setNotice(value.message.slice(0, 2000))
       if (

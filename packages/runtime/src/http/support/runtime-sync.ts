@@ -72,7 +72,7 @@ export async function disposeRuntimeSync(services: Services) {
 class RuntimeSync {
   private controller = new AbortController()
   private views = new Map<string, View>()
-  private timer?: Fiber.RuntimeFiber<never, never>
+  private timer?: Fiber.Fiber<never, never>
   private busy = false
   private projection?: { signature: string; checked: number; pending: Promise<RuntimeSnapshot> }
   constructor(private services: Services) {}
@@ -240,7 +240,7 @@ class RuntimeSync {
     })
     if (!this.timer) {
       this.timer = Effect.runFork(
-        Effect.forever(Effect.promise(() => this.tick()).pipe(Effect.zipRight(Effect.sleep(200)))),
+        Effect.forever(Effect.promise(() => this.tick()).pipe(Effect.andThen(Effect.sleep(200)))),
       )
     }
   }

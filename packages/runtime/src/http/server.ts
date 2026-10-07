@@ -183,6 +183,50 @@ export function createRuntimeServer(services: Services, internal = false) {
         })
         return
       }
+      if (url.pathname === '/ws/mcp-app') {
+        const ticket = services.tickets.consume(url.searchParams.get('ticket') ?? '')
+        if (!ticket.resourceId.startsWith('mcp-app:') || !ticket.taskId)
+          throw new HttpError(401, 'Invalid MCP App ticket')
+        services.devices.authenticate(ticket.token)
+        const taskId = ticket.taskId,
+          id = ticket.resourceId.slice('mcp-app:'.length)
+        sockets.handleUpgrade(request, socket, head, (client) => {
+          track(client, ticket.token)
+          try {
+            const view = services.mcpApps.attachView(
+              taskId,
+              id,
+              (value) => {
+                if (client.readyState !== WebSocket.OPEN || client.bufferedAmount > 1024 * 1024)
+                  throw new HttpError(409, 'MCP App view is unavailable')
+                client.send(JSON.stringify(value))
+              },
+              () => {
+                services.devices.authenticate(ticket.token)
+              },
+              () => client.close(1000, 'MCP App view closed'),
+            )
+            client.on('message', (data) => {
+              try {
+                const bytes = Buffer.isBuffer(data)
+                  ? data
+                  : Array.isArray(data)
+                    ? Buffer.concat(data)
+                    : Buffer.from(data)
+                view.receive(JSON.parse(bytes.toString('utf8')))
+              } catch {
+                view.close()
+                client.close(1008, 'Invalid MCP App message')
+              }
+            })
+            client.on('close', view.close)
+            client.on('error', view.close)
+          } catch {
+            client.close(1008, 'MCP App view unavailable')
+          }
+        })
+        return
+      }
       if (url.pathname === '/ws/simulator') {
         const ticket = services.simulatorTickets.consume(url.searchParams.get('ticket') ?? '')
         services.devices.authenticate(ticket.token)

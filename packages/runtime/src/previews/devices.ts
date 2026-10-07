@@ -18,10 +18,10 @@ const run = async (file: string, args: string[]) =>
     })
   ).stdout.trim()
 const iosSchema = mutableStruct({
-  devices: Schema.mutable(
-    Schema.Record({
-      key: Schema.String,
-      value: mutableArray(
+  devices: Schema.Record(
+    Schema.String,
+    Schema.mutableKey(
+      mutableArray(
         mutableStruct({
           udid: Schema.String,
           name: Schema.String,
@@ -29,7 +29,7 @@ const iosSchema = mutableStruct({
           isAvailable: Schema.Boolean,
         }),
       ),
-    }),
+    ),
   ),
 })
 export function parseIosDevices(raw: string): PreviewDevice[] {

@@ -1,3 +1,4 @@
+import { AppToolViews, appViewTools } from './views.js'
 import { startPolling } from '@dovo/client-runtime'
 import { runtimeOperation } from '../errors.js'
 import { randomBytes, randomUUID, createHash } from 'node:crypto'
@@ -71,6 +72,7 @@ const fingerprint = (server: McpServer) =>
   createHash('sha256').update(JSON.stringify(server)).digest('hex')
 /** Owns upstream MCP connections; provider proxies never receive their credentials. */
 export class McpApps {
+  private views = new AppToolViews()
   private sessions = new Map<string, Promise<Session>>()
   private resolved = new Map<string, Session>()
   private polling?: ReturnType<typeof startPolling>
@@ -366,13 +368,34 @@ export class McpApps {
     const value = object(params)
     const options = { signal, timeout: 60_000 }
     if (method === 'tools/list')
-      return { tools: session.tools.filter((tool) => visibleTo(tool, ui ? 'app' : 'model')) }
+      return {
+        tools: [
+          ...session.tools.filter((tool) => visibleTo(tool, ui ? 'app' : 'model')),
+          ...(ui ? [] : [...appViewTools, ...this.views.list(scope)]),
+        ],
+      }
     if (method === 'tools/call') {
       const request = CallToolRequestSchema.safeParse({ method, params })
       if (!request.success) throw new HttpError(400, 'Invalid MCP tools/call parameters')
       const input = request.data.params
       if (input.task)
         throw new HttpError(400, 'Task-augmented MCP calls are not supported by this bridge')
+      if (!ui && input.name === 'dovo_app_list_tools')
+        return { content: [{ type: 'text', text: JSON.stringify(this.views.list(scope)) }] }
+      if (!ui && input.name === 'dovo_app_call_tool') {
+        const args = input.arguments ?? {}
+        if (
+          typeof args.name !== 'string' ||
+          (args.arguments !== undefined &&
+            (!args.arguments ||
+              typeof args.arguments !== 'object' ||
+              Array.isArray(args.arguments)))
+        )
+          throw new HttpError(400, 'Invalid MCP App tool arguments')
+        return this.views.call(scope, args.name, args.arguments ?? {}, signal)
+      }
+      if (!ui && input.name.startsWith('dovo_app_'))
+        return this.views.call(scope, input.name, input.arguments ?? {}, signal)
       const tool = session.tools.find(
         (tool) => tool.name === input.name && visibleTo(tool, ui ? 'app' : 'model'),
       )
@@ -603,6 +626,26 @@ export class McpApps {
     }
     return app
   }
+  attachView(
+    taskId: string,
+    id: string,
+    send: (value: unknown) => void,
+    authorize: () => void,
+    disconnected: () => void,
+  ) {
+    const app = this.saved(taskId, id)
+    if (app.format !== 'apps') throw new HttpError(400, 'Legacy apps do not expose tools')
+    return this.views.attach(
+      { taskId, appId: id, server: app.server, title: app.title },
+      send,
+      () => {
+        authorize()
+        if (fingerprint(this.current(taskId, app.server).server) !== app.fingerprint)
+          throw new HttpError(403, 'MCP configuration changed')
+      },
+      disconnected,
+    )
+  }
   async action(
     taskId: string,
     id: string,
@@ -757,10 +800,12 @@ export class McpApps {
     }
   }
   cancelTask(taskId: string) {
+    this.views.cancelTask(taskId)
     for (const action of this.actions.values())
       if (action.taskId === taskId) action.controller.abort()
   }
   async dispose() {
+    this.views.dispose()
     this.stopped = true
     this.controller.abort()
     await this.polling?.stop()

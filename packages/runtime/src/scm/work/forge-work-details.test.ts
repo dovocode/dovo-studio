@@ -1,5 +1,5 @@
 import { decode } from '@dovo/protocol'
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { forgePipelineDetailSchema } from '@dovo/protocol'
 import { GitForgeWork } from './forge-work-git.js'
 import { AzureForgeWork } from './forge-work-azure.js'

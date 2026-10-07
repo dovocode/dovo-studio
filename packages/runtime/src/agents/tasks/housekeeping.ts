@@ -157,7 +157,7 @@ export class Housekeeping {
       Effect.tryPromise(async () => {
         await run()
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() => console.error(`Housekeeping could not ${name}`, error.cause)),
         ),
       )
@@ -256,9 +256,9 @@ export class Housekeeping {
     for (const entry of worktrees) {
       if (entry.state !== 'archived' || entry.dirty || !entry.taskId) continue
       const result = await Effect.runPromise(
-        Effect.either(removeWorktreeEffect(this.s, entry.path)),
+        Effect.result(removeWorktreeEffect(this.s, entry.path)),
       )
-      if (result._tag === 'Left') continue
+      if (result._tag === 'Failure') continue
       removed.push(entry.path)
       this.s.activity.add(
         'task',

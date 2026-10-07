@@ -1,7 +1,7 @@
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode, decodeResult } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
-import { Schema } from 'effect'
+import { Schema, Effect } from 'effect'
 import {
   catalogSearchSchema,
   mcpServerSchema,
@@ -20,29 +20,13 @@ const inputSchema = mutableStruct({
   isRequired: Schema.optional(Schema.Boolean),
   isSecret: Schema.optional(Schema.Boolean),
   isRepeated: Schema.optional(Schema.Boolean),
-  variables: Schema.optional(
-    Schema.mutable(
-      Schema.Record({
-        key: Schema.String,
-        value: Schema.Unknown,
-      }),
-    ),
-  ),
+  variables: Schema.optional(Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))),
 })
 const transportSchema = mutableStruct({
   type: Schema.String,
   url: Schema.optional(Schema.String),
-  headers: Schema.optionalWith(mutableArray(inputSchema), {
-    default: () => [],
-  }),
-  variables: Schema.optional(
-    Schema.mutable(
-      Schema.Record({
-        key: Schema.String,
-        value: Schema.Unknown,
-      }),
-    ),
-  ),
+  headers: mutableArray(inputSchema).pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
+  variables: Schema.optional(Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))),
 })
 const packageSchema = mutableStruct({
   registryType: Schema.String,
@@ -52,27 +36,25 @@ const packageSchema = mutableStruct({
   fileSha256: Schema.optional(Schema.String),
   runtimeHint: Schema.optional(Schema.String),
   transport: transportSchema,
-  runtimeArguments: Schema.optionalWith(mutableArray(inputSchema), {
-    default: () => [],
-  }),
-  packageArguments: Schema.optionalWith(mutableArray(inputSchema), {
-    default: () => [],
-  }),
-  environmentVariables: Schema.optionalWith(mutableArray(inputSchema), {
-    default: () => [],
-  }),
+  runtimeArguments: mutableArray(inputSchema).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
+  packageArguments: mutableArray(inputSchema).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
+  environmentVariables: mutableArray(inputSchema).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
 })
 const registryServerSchema = mutableStruct({
   name: Schema.String,
   title: Schema.optional(Schema.String),
   description: Schema.String,
   version: Schema.String,
-  remotes: Schema.optionalWith(mutableArray(transportSchema), {
-    default: () => [],
-  }),
-  packages: Schema.optionalWith(mutableArray(packageSchema), {
-    default: () => [],
-  }),
+  remotes: mutableArray(transportSchema).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
+  packages: mutableArray(packageSchema).pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
 })
 const marker = (name: string) => `__CONFIGURE_${name.replace(/[^a-zA-Z0-9_]/g, '_')}__`
 const envName = (name: string) => `MCP_${name.replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase()}`
@@ -314,14 +296,7 @@ export async function searchRegistry(input: unknown) {
       servers: mutableArray(
         mutableStruct({
           server: Schema.Unknown,
-          _meta: Schema.optional(
-            Schema.mutable(
-              Schema.Record({
-                key: Schema.String,
-                value: Schema.Unknown,
-              }),
-            ),
-          ),
+          _meta: Schema.optional(Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))),
         }),
       ),
       metadata: Schema.optional(

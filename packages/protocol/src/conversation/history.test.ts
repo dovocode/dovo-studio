@@ -1,5 +1,5 @@
 import { taskBudgetUsage } from '../tasks/task-budget'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { conversationPage, mergeConversationHistory } from './history'
 it('retains ownership records when one execution spans multiple history pages', () => {
   const turn = {

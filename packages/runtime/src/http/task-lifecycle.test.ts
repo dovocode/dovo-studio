@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vite-plus/test'
 import { startRuntime } from '../index'
 import { WorkspaceStore } from '../storage/workspace'
 import { decode, conversationPageSchema, snapshotSchema, type Task } from '@dovo/protocol'

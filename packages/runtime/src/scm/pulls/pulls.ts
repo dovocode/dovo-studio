@@ -68,6 +68,7 @@ export class PullRequests {
       host: string
       repository: string
       profile?: string
+      env?: Record<string, string>
       token?: (cwd: string) => Promise<string | undefined>
     },
   ) {}
@@ -75,7 +76,7 @@ export class PullRequests {
     const repo = decode(
       mutableStruct({
         nameWithOwner: refine(
-          Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/)),
+          Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/))),
           (value) => value.split('/').every((part) => part !== '.' && part !== '..'),
           'Use a GitHub owner/repository name',
         ),
@@ -86,7 +87,7 @@ export class PullRequests {
       this.target
         ? {
             nameWithOwner: this.target.repository,
-            url: `https://${decode(Schema.String.pipe(Schema.pattern(/^[a-zA-Z0-9.-]+(?::[0-9]+)?$/)), this.target.host)}/${this.target.repository}`,
+            url: `https://${decode(Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9.-]+(?::[0-9]+)?$/))), this.target.host)}/${this.target.repository}`,
           }
         : await this.json(cwd, ['repo', 'view', '--json', 'nameWithOwner,url']),
     )
@@ -114,6 +115,7 @@ export class PullRequests {
         ? {
             host: this.target.host,
             token,
+            ...(this.target.env ? { env: this.target.env } : {}),
           }
         : undefined,
     )
@@ -124,9 +126,11 @@ export class PullRequests {
   async identity(cwd: string, refresh = false) {
     if (refresh) this.locations.delete(cwd)
     const repo = await this.location(cwd)
+    const selectedToken = await this.target?.token?.(cwd)
     const environment = createHash('sha256')
       .update(
         JSON.stringify([
+          selectedToken,
           process.env.GH_TOKEN,
           process.env.GITHUB_TOKEN,
           process.env.GH_ENTERPRISE_TOKEN,
@@ -137,54 +141,58 @@ export class PullRequests {
     const key = JSON.stringify([repo.host, cwd, this.target?.profile, environment])
     let account = this.accounts.get(key)
     if (refresh || !account || account.expires <= Date.now()) {
-      const value = this.target?.profile
-        ? this.json(cwd, ['api', '--hostname', repo.host, 'user']).then((response) => {
-            const account = decode(
-              mutableStruct({
-                login: minValue(Schema.String, 1),
-              }),
-              response,
-            )
-            if (account.login.toLowerCase() !== this.target!.profile!.toLowerCase())
-              throw new HttpError(
-                409,
-                'The selected GitHub profile changed. Refresh before continuing.',
+      const value =
+        this.target?.profile || selectedToken
+          ? this.json(cwd, ['api', '--hostname', repo.host, 'user']).then((response) => {
+              const account = decode(
+                mutableStruct({
+                  login: minValue(Schema.String, 1),
+                }),
+                response,
               )
-            return account.login
-          })
-        : this.json(cwd, [
-            'auth',
-            'status',
-            '--active',
-            '--hostname',
-            repo.host,
-            '--json',
-            'hosts',
-          ]).then((response) => {
-            const accounts = decode(
-              mutableStruct({
-                hosts: Schema.mutable(
-                  Schema.Record({
-                    key: Schema.String,
-                    value: mutableArray(
-                      mutableStruct({
-                        login: minValue(Schema.String, 1),
-                        active: Schema.Boolean,
-                        state: Schema.String,
-                      }),
+              if (
+                this.target?.profile &&
+                account.login.toLowerCase() !== this.target.profile.toLowerCase()
+              )
+                throw new HttpError(
+                  409,
+                  'The selected GitHub profile changed. Refresh before continuing.',
+                )
+              return account.login
+            })
+          : this.json(cwd, [
+              'auth',
+              'status',
+              '--active',
+              '--hostname',
+              repo.host,
+              '--json',
+              'hosts',
+            ]).then((response) => {
+              const accounts = decode(
+                mutableStruct({
+                  hosts: Schema.Record(
+                    Schema.String,
+                    Schema.mutableKey(
+                      mutableArray(
+                        mutableStruct({
+                          login: minValue(Schema.String, 1),
+                          active: Schema.Boolean,
+                          state: Schema.String,
+                        }),
+                      ),
                     ),
-                  }),
-                ),
-              }),
-              response,
-            ).hosts[repo.host]
-            const current = accounts?.find((entry) => entry.active && entry.state === 'success')
-            if (!current)
-              throw new Error(
-                `No authenticated GitHub account is active for ${repo.host}. Run gh auth login --hostname ${repo.host} on the runtime host.`,
-              )
-            return current.login
-          })
+                  ),
+                }),
+                response,
+              ).hosts[repo.host]
+              const current = accounts?.find((entry) => entry.active && entry.state === 'success')
+              if (!current)
+                throw new Error(
+                  `No authenticated GitHub account is active for ${repo.host}. Run gh auth login --hostname ${repo.host} on the runtime host.`,
+                )
+              return current.login
+            })
       account = {
         expires: Date.now() + 60000,
         value,

@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { GitService } from '../git/git'
 import { PullRequests } from './pulls'
 const pull = {

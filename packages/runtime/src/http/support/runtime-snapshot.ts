@@ -97,7 +97,7 @@ export function runtimeSnapshot(
                     gitIdentityError: undefined,
                   }
                 }),
-                Effect.catchAll(() =>
+                Effect.catch(() =>
                   Effect.sync(() => {
                     if (repo.gitIdentity)
                       s.store.update((workspace) => ({

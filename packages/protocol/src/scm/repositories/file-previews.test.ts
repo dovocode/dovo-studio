@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { checkpointFiles, filePreviewLabel } from './file-previews'
 import { decode } from '../../shared/schema'
 import { fileSchema } from '../../workspace'

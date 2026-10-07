@@ -4,12 +4,12 @@ import {
   safeValidationIssues,
   RuntimeRequestError,
 } from '@dovo/protocol'
-import { Effect } from 'effect'
+import { Effect, Semaphore } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
 
 export function useAction() {
-  const [permit] = useApplicationState(() => Effect.runSync(Effect.makeSemaphore(1)))
+  const [permit] = useApplicationState(() => Effect.runSync(Semaphore.make(1)))
   const [state, setState] = useApplicationState<{
     busy: boolean
     error: string
@@ -26,7 +26,7 @@ export function useAction() {
               ? operation
               : Effect.tryPromise({ try: () => operation, catch: (error) => error })
           }).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.sync(() =>
                 setState((current) => ({
                   ...current,

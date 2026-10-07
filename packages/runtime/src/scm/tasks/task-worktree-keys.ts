@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { join, basename, sep } from 'node:path'
 import { homedir } from 'node:os'
-export const worktreesRoot = () => join(homedir(), '.dovo', 'worktrees')
+export const worktreesRoot = () =>
+  join(process.env.DOVO_DATA_ROOT ?? join(homedir(), '.dovo'), 'worktrees')
 
 /** Where a task's worktree lives. Tasks created before readable names keep their original
  * hashed checkout (`legacy`); newer ones end in a short suffix unique to the repository and

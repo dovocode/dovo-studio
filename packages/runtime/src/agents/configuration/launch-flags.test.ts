@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { claudeLaunchFlags } from './launch-flags'
 it('passes boolean flags and exact values without shell interpretation', () => {
   expect(claudeLaunchFlags(['--verbose', '--settings=/path with spaces', '--value=a=b'])).toEqual({

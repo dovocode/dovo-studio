@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { encodeIco } from 'icojs'
 import sharp from 'sharp'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { discoverProjectIcon } from './project-icon'
 
 it('discovers a local app icon and returns a bounded PNG thumbnail', async () => {

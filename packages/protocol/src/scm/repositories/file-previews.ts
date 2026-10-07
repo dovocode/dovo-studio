@@ -4,17 +4,23 @@ import type { ChangedFile, TaskTurn } from '../../workspace.js'
 
 const savedFileSchema = mutableStruct({
   hash: Schema.String,
-  size: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+  size: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+  ),
   mode: Schema.String,
 })
 export const filePreviewMetadataSchema = mutableStruct({
-  kind: Schema.Literal('image', 'binary', 'large', 'deferred', 'symlink', 'submodule'),
+  kind: Schema.Literals(['image', 'binary', 'large', 'deferred', 'symlink', 'submodule']),
   before: Schema.optional(savedFileSchema),
   after: Schema.optional(savedFileSchema),
 })
 const previewSideSchema = mutableStruct({
-  kind: Schema.Literal('text', 'image', 'binary', 'submodule'),
-  size: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+  kind: Schema.Literals(['text', 'image', 'binary', 'submodule']),
+  size: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+  ),
   text: Schema.optional(Schema.String),
   image: Schema.optional(Schema.String),
   truncated: Schema.Boolean,

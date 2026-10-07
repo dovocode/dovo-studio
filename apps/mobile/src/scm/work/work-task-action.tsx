@@ -120,7 +120,7 @@ export function WorkTaskAction({
           setCreated(result.id)
           yield* refreshEffect()
         }).pipe(
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             nativeEffect(() => {
               if (current.current) setError(cause instanceof Error ? cause.message : String(cause))
             }),

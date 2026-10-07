@@ -232,7 +232,7 @@ export function HarnessSettings({
                   changes: taskHarnessChanges(task, selection, agent),
                 },
                 mutableStruct({
-                  revision: Schema.Number.pipe(Schema.finite()),
+                  revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
                 }),
                 'PATCH',
               )

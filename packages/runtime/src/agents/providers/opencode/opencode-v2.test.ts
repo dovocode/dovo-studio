@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { opencodeAdapter } from './opencode.js'
 import { decode, mcpServerSchema } from '@dovo/protocol'
 

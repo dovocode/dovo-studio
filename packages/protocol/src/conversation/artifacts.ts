@@ -9,13 +9,13 @@ import {
 } from '../shared/schema.js'
 
 export const ARTIFACT_MAX_BYTES = 2 * 1024 * 1024
-export const artifactRetentionSchema = Schema.Literal(
+export const artifactRetentionSchema = Schema.Literals([
   'forever',
   'immediately',
   '7-days',
   '30-days',
   '90-days',
-)
+])
 export type ArtifactRetention = Schema.Schema.Type<typeof artifactRetentionSchema>
 export const artifactRetentionChoices: ReadonlyArray<{ value: ArtifactRetention; label: string }> =
   [
@@ -30,9 +30,12 @@ export function artifactDeletionAt(since: string, policy: ArtifactRetention) {
   const days = { immediately: 0, '7-days': 7, '30-days': 30, '90-days': 90 }[policy]
   return new Date(Date.parse(since) + days * 86_400_000).toISOString()
 }
-const revisionSchema = Schema.Number.pipe(Schema.int(), Schema.positive())
-export const artifactFormatSchema = Schema.Literal('markdown', 'html', 'svg', 'code')
-const titleSchema = maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 200)
+const revisionSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThan(0)),
+)
+export const artifactFormatSchema = Schema.Literals(['markdown', 'html', 'svg', 'code'])
+const titleSchema = maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 200)
 export const artifactScopeSchema = mutableStruct({
   taskId: maxValue(minValue(Schema.String, 1), 200),
 })
@@ -73,7 +76,7 @@ export const artifactReadSchema = mutableStruct({
 export const artifactLinkSchema = mutableStruct({
   url: Schema.String,
   title: titleSchema,
-  provider: Schema.Literal('claude', 'chatgpt'),
+  provider: Schema.Literals(['claude', 'chatgpt']),
 })
 export type ArtifactLink = Schema.Schema.Type<typeof artifactLinkSchema>
 export const artifactListSchema = mutableStruct({
@@ -83,7 +86,7 @@ export const artifactListSchema = mutableStruct({
 export const artifactLibraryEntrySchema = mutableStruct({
   ...artifactMetadataSchema.fields,
   threadTitle: Schema.String,
-  threadState: Schema.Literal('active', 'settled', 'archived'),
+  threadState: Schema.Literals(['active', 'settled', 'archived']),
   deleteAt: Schema.optional(Schema.String),
 })
 export const artifactLibrarySchema = mutableStruct({

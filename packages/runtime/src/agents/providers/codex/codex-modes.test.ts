@@ -1,7 +1,7 @@
 import { mutableStruct } from '@dovo/protocol'
 import { decode, resourceSettingsSchema } from '@dovo/protocol'
 import { taskToolsServer } from '../../../agent-tools/config.js'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -88,12 +88,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
           mutableStruct({
             method: Schema.String,
             pid: Schema.Number,
-            params: Schema.mutable(
-              Schema.Record({
-                key: Schema.String,
-                value: Schema.Unknown,
-              }),
-            ),
+            params: Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
           }),
           JSON.parse(line),
         ),

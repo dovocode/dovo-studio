@@ -52,7 +52,7 @@ export function TitleSettings() {
             ),
           )
           .pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               nativeEffect(() => {
                 if (active) setLoadError(String(error))
               }),

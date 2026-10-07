@@ -1,3 +1,4 @@
+import { Schema } from 'effect'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Check } from 'lucide-react'
 import {
@@ -225,7 +226,13 @@ export function AgentEditor({
                         aria-label={label}
                         checked={(agent.icon ?? 'bot') === id}
                         onChange={() =>
-                          setAgent({ ...agent, icon: decode(agentSchema.fields.icon.from, id) })
+                          setAgent({
+                            ...agent,
+                            icon: decode(
+                              Schema.required(agentSchema.fields.icon.schema.schema),
+                              id,
+                            ),
+                          })
                         }
                         className="peer sr-only"
                       />

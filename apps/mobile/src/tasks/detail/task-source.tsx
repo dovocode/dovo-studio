@@ -59,7 +59,7 @@ export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () =
           onPress={() =>
             void runClientEffect(
               nativeEffect(() => openAppLink(source.url)).pipe(
-                Effect.catchAll((cause) => nativeEffect(() => setError(String(cause)))),
+                Effect.catch((cause) => nativeEffect(() => setError(String(cause)))),
               ),
             )
           }

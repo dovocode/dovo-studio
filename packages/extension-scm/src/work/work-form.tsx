@@ -197,12 +197,7 @@ export function WorkForm({
                 definition,
                 ref,
                 inputs: decode(
-                  Schema.mutable(
-                    Schema.Record({
-                      key: Schema.String,
-                      value: Schema.String,
-                    }),
-                  ),
+                  Schema.Record(Schema.String, Schema.mutableKey(Schema.String)),
                   JSON.parse(inputs),
                 ),
               }

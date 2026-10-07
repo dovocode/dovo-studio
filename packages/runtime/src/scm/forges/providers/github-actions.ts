@@ -11,9 +11,14 @@ import {
 import { HttpError } from '../../../errors.js'
 import { githubApi, githubGraphql, type GithubJSON, type GithubLocation } from './github-api.js'
 const pull = mutableStruct({
-  number: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.positive()),
+  number: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThan(0))),
   html_url: urlSchema(),
   head: mutableStruct({
     sha: Schema.String,
@@ -26,9 +31,17 @@ export async function createGithubPull(json: GithubJSON, repo: GithubLocation, v
   const input = decode(pullCreateSchema, value)
   const result = decode(
     mutableStruct({
-      number: Schema.Number.pipe(Schema.finite())
-        .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-        .pipe(Schema.positive()),
+      number: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+        .pipe(
+          Schema.check(Schema.isInt()),
+          Schema.check(
+            Schema.isBetween({
+              minimum: Number.MIN_SAFE_INTEGER,
+              maximum: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+        )
+        .pipe(Schema.check(Schema.isGreaterThan(0))),
       html_url: urlSchema(),
     }),
     await githubApi(json, repo, 'pulls', 'POST', [
@@ -104,18 +117,34 @@ export async function actOnGithubPull(json: GithubJSON, repo: GithubLocation, va
     }
     case 'reply': {
       const id = decode(
-        Schema.String.pipe(Schema.pattern(/^(?:inline-)?[1-9]\d*$/)),
+        Schema.String.pipe(Schema.check(Schema.isPattern(/^(?:inline-)?[1-9]\d*$/))),
         input.commentId,
       ).replace(/^inline-/, '')
       const original = decode(
         mutableStruct({
-          id: Schema.Number.pipe(Schema.finite())
-            .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-            .pipe(Schema.positive()),
+          id: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+            .pipe(
+              Schema.check(Schema.isInt()),
+              Schema.check(
+                Schema.isBetween({
+                  minimum: Number.MIN_SAFE_INTEGER,
+                  maximum: Number.MAX_SAFE_INTEGER,
+                }),
+              ),
+            )
+            .pipe(Schema.check(Schema.isGreaterThan(0))),
           in_reply_to_id: Schema.optional(
-            Schema.Number.pipe(Schema.finite())
-              .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-              .pipe(Schema.positive()),
+            Schema.Number.pipe(Schema.check(Schema.isFinite()))
+              .pipe(
+                Schema.check(Schema.isInt()),
+                Schema.check(
+                  Schema.isBetween({
+                    minimum: Number.MIN_SAFE_INTEGER,
+                    maximum: Number.MAX_SAFE_INTEGER,
+                  }),
+                ),
+              )
+              .pipe(Schema.check(Schema.isGreaterThan(0))),
           ),
           pull_request_url: urlSchema(),
         }),
@@ -150,7 +179,7 @@ export async function actOnGithubPull(json: GithubJSON, repo: GithubLocation, va
               viewerCanResolve: Schema.Boolean,
               viewerCanUnresolve: Schema.Boolean,
               pullRequest: mutableStruct({
-                number: Schema.Number.pipe(Schema.finite()),
+                number: Schema.Number.pipe(Schema.check(Schema.isFinite())),
                 repository: mutableStruct({
                   nameWithOwner: Schema.String,
                 }),
@@ -177,16 +206,16 @@ export async function actOnGithubPull(json: GithubJSON, repo: GithubLocation, va
         const mutation = input.resolved ? 'resolveReviewThread' : 'unresolveReviewThread'
         const changed = decode(
           mutableStruct({
-            data: Schema.mutable(
-              Schema.Record({
-                key: Schema.String,
-                value: mutableStruct({
+            data: Schema.Record(
+              Schema.String,
+              Schema.mutableKey(
+                mutableStruct({
                   thread: mutableStruct({
                     id: Schema.String,
                     isResolved: Schema.Boolean,
                   }),
                 }),
-              }),
+              ),
             ),
           }),
           await githubGraphql(

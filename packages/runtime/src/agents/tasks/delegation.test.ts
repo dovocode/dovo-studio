@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration'

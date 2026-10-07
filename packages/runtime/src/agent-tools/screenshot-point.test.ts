@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { screenshotPoint } from './screenshot-point.js'
 
 function screenshot(width: number, height: number) {

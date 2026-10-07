@@ -1,62 +1,35 @@
 import { mutableArray, mutableStruct } from './schema.js'
 import { maxValue, refine, minValue } from './schema.js'
-import { Schema } from 'effect'
+import { Schema, Effect } from 'effect'
 const executable = refine(
-  maxValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 4096),
+  maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 4096),
   (value) => !/[\0\r\n]/.test(value),
   'Enter one executable name or path',
 )
 export const commandsSchema = mutableStruct({
-  shell: Schema.optionalWith(executable, {
-    default: () => '',
-  }),
-  shellArgs: Schema.optionalWith(
-    maxValue(
-      mutableArray(refine(maxValue(Schema.String, 4096), (value) => !value.includes('\0'))),
-      30,
-    ),
-    {
-      default: () => ['-l'],
-    },
+  shell: executable.pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
+  shellArgs: maxValue(
+    mutableArray(refine(maxValue(Schema.String, 4096), (value) => !value.includes('\0'))),
+    30,
+  ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => ['-l']))),
+  git: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'git'))),
+  gh: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'gh'))),
+  az: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'az'))),
+  tea: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'tea'))),
+  bb: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'bb'))),
+  fj: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'fj'))),
+  acli: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'acli'))),
+  codex: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'codex'))),
+  claude: executable.pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
+  hermes: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'hermes'))),
+  copilot: minValue(executable, 1).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 'copilot')),
   ),
-  git: Schema.optionalWith(minValue(executable, 1), {
-    default: () => 'git',
-  }),
-  gh: Schema.optionalWith(minValue(executable, 1), {
-    default: () => 'gh',
-  }),
-  az: Schema.optionalWith(minValue(executable, 1), {
-    default: () => 'az',
-  }),
-  tea: Schema.optionalWith(minValue(executable, 1), {
-    default: () => 'tea',
-  }),
-  bb: Schema.optionalWith(minValue(executable, 1), {
-    default: () => 'bb',
-  }),
-  fj: Schema.optionalWith(minValue(executable, 1), {
-    default: () => 'fj',
-  }),
-  acli: Schema.optionalWith(minValue(executable, 1), {
-    default: () => 'acli',
-  }),
-  codex: Schema.optionalWith(minValue(executable, 1), {
-    default: () => 'codex',
-  }),
-  claude: Schema.optionalWith(executable, {
-    default: () => '',
-  }),
-  hermes: Schema.optionalWith(minValue(executable, 1), {
-    default: () => 'hermes',
-  }),
-  copilot: Schema.optionalWith(minValue(executable, 1), { default: () => 'copilot' }),
-  grok: Schema.optionalWith(minValue(executable, 1), { default: () => 'grok' }),
-  muse: Schema.optionalWith(minValue(executable, 1), { default: () => 'muse' }),
-  acp: Schema.optionalWith(executable, {
-    default: () => '',
-  }),
-  cua: Schema.optionalWith(executable, { default: () => '' }),
-  cuaEnabled: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  grok: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'grok'))),
+  muse: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'muse'))),
+  acp: executable.pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
+  cua: executable.pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
+  cuaEnabled: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
 })
 export type CommandSettings = Schema.Schema.Type<typeof commandsSchema>
 export const cuaCheckRequest = mutableStruct({ path: executable })
@@ -76,9 +49,15 @@ export const cuaCheckResponse = mutableStruct({
   daemon: Schema.NullOr(Schema.String),
   permissions: Schema.NullOr(Schema.String),
   platform: Schema.String,
-  historyState: Schema.optionalWith(Schema.NullOr(cuaHistoryStateSchema), { default: () => null }),
-  history: Schema.optionalWith(Schema.NullOr(Schema.String), { default: () => null }),
-  skills: Schema.optionalWith(Schema.NullOr(Schema.String), { default: () => null }),
+  historyState: Schema.NullOr(cuaHistoryStateSchema).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => null)),
+  ),
+  history: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => null)),
+  ),
+  skills: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => null)),
+  ),
 })
 export type CuaCheck = Schema.Schema.Type<typeof cuaCheckResponse>
 export const commandSettingsResponse = mutableStruct({
@@ -171,7 +150,7 @@ export const cuaActions = [
 export type CuaAction = (typeof cuaActions)[number]['id']
 export const cuaActionRequest = mutableStruct({
   path: executable,
-  action: Schema.Literal(...cuaActions.map((action) => action.id)),
+  action: Schema.Literals([...cuaActions.map((action) => action.id)]),
 })
 export const cuaActionResponse = mutableStruct({ output: Schema.String, check: cuaCheckResponse })
 

@@ -144,7 +144,7 @@ function previewPatch(workspace: Workspace, patch: WorkspacePatch): Workspace {
   if (!previous && !patch.create)
     throw new Error('Saved patch has no workspace entity; the pending edits were preserved')
   const record = decode(
-    Schema.mutable(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+    Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
     previous ?? patch.create,
   )
   for (const [key, change] of Object.entries(patch.changes)) {

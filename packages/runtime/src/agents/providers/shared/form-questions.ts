@@ -22,18 +22,17 @@ const choices = mutableStruct({
   oneOf: Schema.optional(mutableArray(option)),
   anyOf: Schema.optional(mutableArray(option)),
 })
-const field = Schema.Struct(
-  mutableStruct({
-    type: Schema.Literal('string', 'number', 'integer', 'boolean', 'array'),
-    title: Schema.optional(Schema.String),
-    description: Schema.optional(Schema.String),
-    format: Schema.optional(Schema.String),
-    items: Schema.optional(Schema.Unknown),
-  }).fields,
-  {
-    key: Schema.String,
-    value: Schema.Unknown,
-  },
+const field = Schema.StructWithRest(
+  Schema.Struct(
+    mutableStruct({
+      type: Schema.Literals(['string', 'number', 'integer', 'boolean', 'array']),
+      title: Schema.optional(Schema.String),
+      description: Schema.optional(Schema.String),
+      format: Schema.optional(Schema.String),
+      items: Schema.optional(Schema.Unknown),
+    }).fields,
+  ),
+  [Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))],
 )
 // ACP permits null for omitted annotations; JSON Schema expects those keys to be absent.
 function withoutNulls(value: unknown): unknown {
@@ -53,22 +52,12 @@ export async function formQuestions(
   signal?: AbortSignal,
 ) {
   const raw = decode(
-    Schema.mutable(
-      Schema.Record({
-        key: Schema.String,
-        value: Schema.Unknown,
-      }),
-    ),
+    Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
     withoutNulls(schema),
   )
   const form = decode(
     mutableStruct({
-      properties: Schema.mutable(
-        Schema.Record({
-          key: Schema.String,
-          value: field,
-        }),
-      ),
+      properties: Schema.Record(Schema.String, Schema.mutableKey(field)),
       required: Schema.optional(mutableArray(Schema.String)),
     }),
     raw,

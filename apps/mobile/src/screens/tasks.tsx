@@ -296,7 +296,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               id: item.task.id,
               changes: { [field]: { before, after } },
             },
-            mutableStruct({ revision: Schema.Number.pipe(Schema.finite()) }),
+            mutableStruct({ revision: Schema.Number.pipe(Schema.check(Schema.isFinite())) }),
             'PATCH',
           )
         }
@@ -445,7 +445,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           void runClientEffect(
             nativeEffect(() => refreshAll())
               .pipe(
-                Effect.catchAll((error) =>
+                Effect.catch((error) =>
                   nativeEffect(() =>
                     setRefreshError(error instanceof Error ? error.message : String(error)),
                   ),

@@ -8,10 +8,10 @@ import { jiraBindingSchema, jiraSourceSchema, jiraIssueLinkSchema } from './scm/
 import { taskWorkItemSchema } from './scm/work/work-task.js'
 import { resourceSettingsSchema } from './shared/resources.js'
 import { attachmentSchema, MAX_ATTACHMENTS } from './shared/attachments.js'
-import { Schema } from 'effect'
+import { Schema, Struct } from 'effect'
 import { forgeBindingSchema, forgeProviderSchema } from './scm/forges/forges.js'
-export const executionSchema = Schema.Literal('main', 'worktree')
-export const providerSchema = Schema.Literal(
+export const executionSchema = Schema.Literals(['main', 'worktree'])
+export const providerSchema = Schema.Literals([
   'codex',
   'opencode',
   'claude',
@@ -21,8 +21,8 @@ export const providerSchema = Schema.Literal(
   'muse',
   'cursor',
   'acp',
-)
-export const agentIconSchema = Schema.Literal(
+])
+export const agentIconSchema = Schema.Literals([
   'bot',
   'code',
   'wrench',
@@ -34,7 +34,7 @@ export const agentIconSchema = Schema.Literal(
   'pen',
   'brain',
   'flask',
-)
+])
 export const agentPresetSchema = mutableStruct({
   icon: Schema.optional(agentIconSchema),
   resources: Schema.optional(resourceSettingsSchema),
@@ -44,42 +44,44 @@ export const agentPresetSchema = mutableStruct({
   model: Schema.String,
   reasoning: Schema.optional(maxValue(Schema.String, 100)),
   serviceTier: Schema.optional(maxValue(Schema.String, 100)),
-  cyberAccessProgram: Schema.optional(Schema.Literal('standard', 'daybreakBlue', 'daybreakRed')),
+  cyberAccessProgram: Schema.optional(Schema.Literals(['standard', 'daybreakBlue', 'daybreakRed'])),
   instructions: Schema.String,
-  permission: Schema.Literal('ask', 'read-only', 'workspace-write', 'auto', 'full-access'),
+  permission: Schema.Literals(['ask', 'read-only', 'workspace-write', 'auto', 'full-access']),
   endpoint: Schema.String,
   executablePath: Schema.optional(Schema.String),
   configDirectory: Schema.optional(Schema.String),
   args: Schema.optional(mutableArray(Schema.String)),
   env: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.String }).pipe(
-      Schema.filter((env) =>
-        Object.keys(env).every(
-          (name) =>
-            /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) &&
-            name !== 'DOVO_OWNER_TOKEN' &&
-            name !== 'ELECTRON_RUN_AS_NODE',
+    Schema.Record(Schema.String, Schema.String).pipe(
+      Schema.check(
+        Schema.makeFilter((env) =>
+          Object.keys(env).every(
+            (name) =>
+              /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) &&
+              name !== 'DOVO_OWNER_TOKEN' &&
+              name !== 'ELECTRON_RUN_AS_NODE',
+          ),
         ),
       ),
     ),
   ),
   acpInstallationId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   acpMode: Schema.optional(maxValue(Schema.String, 200)),
-  acpConfig: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+  acpConfig: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 })
 export const agentSchema = mutableStruct({
   ...agentPresetSchema.fields,
   globalPreset: Schema.optional(agentPresetSchema),
   serverOverride: Schema.optional(Schema.Boolean),
 })
-export const taskHarnessSchema = agentPresetSchema.omit('id', 'name', 'icon')
+export const taskHarnessSchema = agentPresetSchema.mapFields(Struct.omit(['id', 'name', 'icon']))
 export type TaskHarness = Schema.Schema.Type<typeof taskHarnessSchema>
 export const projectTaskDefaultsSchema = mutableStruct({
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
   permission: Schema.optional(agentSchema.fields.permission),
-  harness: Schema.optional(taskHarnessSchema.omit('resources')),
+  harness: Schema.optional(taskHarnessSchema.mapFields(Struct.omit(['resources']))),
   execution: Schema.optional(executionSchema),
-  submodules: Schema.optional(Schema.Literal('none', 'direct', 'recursive')),
+  submodules: Schema.optional(Schema.Literals(['none', 'direct', 'recursive'])),
   // A fixed default base branch was replaced by Start from origin; older saved values are dropped
   // on read. A task can still pick its own base branch before its first message.
   /** Start worktrees from origin (fetched first) instead of the local branch. */
@@ -89,21 +91,21 @@ export type ProjectTaskDefaults = Schema.Schema.Type<typeof projectTaskDefaultsS
 /** A one-tap command for a project, such as "Run tests", run in the task's terminal. */
 export const projectActionSchema = mutableStruct({
   id: maxValue(minValue(Schema.String, 1), 100),
-  name: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 60),
-  command: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 4000),
+  name: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 60),
+  command: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 4000),
 })
 export type ProjectAction = Schema.Schema.Type<typeof projectActionSchema>
 /** A reusable prompt for a project, inserted in the composer by typing "#" and its name. */
 export const savedPromptSchema = mutableStruct({
   id: maxValue(minValue(Schema.String, 1), 100),
-  name: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 60),
-  text: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 20000),
+  name: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 60),
+  text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000),
 })
 export type SavedPrompt = Schema.Schema.Type<typeof savedPromptSchema>
 /** A saved starting point for new tasks in a project: goal, agent and checkout choices. */
 export const taskTemplateSchema = mutableStruct({
   id: maxValue(minValue(Schema.String, 1), 100),
-  name: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 80),
+  name: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 80),
   objective: maxValue(Schema.String, 20000),
   agentId: Schema.optional(maxValue(Schema.String, 200)),
   harness: Schema.optional(taskHarnessSchema),
@@ -119,7 +121,12 @@ export const taskBehaviorSchema = mutableStruct({
   settleMerged: Schema.optional(Schema.Boolean),
   settleClosed: Schema.optional(Schema.Boolean),
   settleInactive: Schema.optional(Schema.Boolean),
-  inactiveDays: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(1, 365))),
+  inactiveDays: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 1, maximum: 365 })),
+    ),
+  ),
   continueAfterRestart: Schema.optional(Schema.Boolean),
 })
 export type TaskBehavior = Schema.Schema.Type<typeof taskBehaviorSchema>
@@ -134,18 +141,22 @@ export const scopedSettingsValueSchema = mutableStruct({
 export type ScopedSettingsValue = Schema.Schema.Type<typeof scopedSettingsValueSchema>
 export const sharedSettingsEntrySchema = mutableStruct({
   key: maxValue(minValue(Schema.String, 1), 600),
-  updatedAt: Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative()),
+  updatedAt: Schema.Number.pipe(
+    Schema.check(Schema.isFinite()),
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+  ),
   changeId: maxValue(minValue(Schema.String, 1), 100),
   value: scopedSettingsValueSchema,
 })
 export const sharedSettingsSchema = maxValue(mutableArray(sharedSettingsEntrySchema), 300)
 export type SharedSettingsEntry = Schema.Schema.Type<typeof sharedSettingsEntrySchema>
-export const settingsScopeSchema = Schema.Literal(
+export const settingsScopeSchema = Schema.Literals([
   'global',
   'environment',
   'project',
   'environment-project',
-)
+])
 export type SettingsScope = Schema.Schema.Type<typeof settingsScopeSchema>
 export const scopedSettingsSchema = mutableStruct({
   environment: scopedSettingsValueSchema,
@@ -154,14 +165,24 @@ export const scopedSettingsSchema = mutableStruct({
 export const SCRATCH_PROJECT_ID = 'dovo:scratch'
 export const repositorySchema = mutableStruct({
   /** Missing means a Git project, preserving existing workspaces. */
-  kind: Schema.optional(Schema.Literal('folder', 'scratch')),
+  kind: Schema.optional(Schema.Literals(['folder', 'scratch'])),
   /** User-selected project icon, stored as a small PNG for every client. */
   iconOverride: Schema.optional(
-    maxValue(Schema.String.pipe(Schema.pattern(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)), 50000),
+    maxValue(
+      Schema.String.pipe(
+        Schema.check(Schema.isPattern(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)),
+      ),
+      50000,
+    ),
   ),
   /** Derived from files in the project checkout by the runtime. */
   discoveredIcon: Schema.optional(
-    maxValue(Schema.String.pipe(Schema.pattern(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)), 50000),
+    maxValue(
+      Schema.String.pipe(
+        Schema.check(Schema.isPattern(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)),
+      ),
+      50000,
+    ),
   ),
   /** Exact commands the owner has approved for this project. */
   approvedCommands: Schema.optional(
@@ -192,15 +213,25 @@ export const fileSchema = mutableStruct({
   preview: Schema.optional(filePreviewMetadataSchema),
 })
 export const diffCommentSchema = mutableStruct({
-  side: Schema.Literal('additions', 'deletions'),
-  start: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.positive()),
-  end: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.positive()),
+  side: Schema.Literals(['additions', 'deletions']),
+  start: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThan(0))),
+  end: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThan(0))),
   excerpt: Schema.String,
-  body: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 10000),
+  body: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 10000),
 })
 export const taskFeedbackSchema = refine(
   mutableStruct({
@@ -215,12 +246,19 @@ export const taskFeedbackSchema = refine(
 )
 export const messageSchema = mutableStruct({
   id: Schema.String,
-  role: Schema.Literal('user', 'assistant'),
+  role: Schema.Literals(['user', 'assistant']),
   text: Schema.String,
   /** Physical execution owning this input or response; steering retains the same execution. */
   turnId: Schema.optional(Schema.String),
   /** Exact completed provider-message offsets within accumulated assistant text. */
-  textBreaks: Schema.optional(mutableArray(Schema.Number.pipe(Schema.int(), Schema.nonNegative()))),
+  textBreaks: Schema.optional(
+    mutableArray(
+      Schema.Number.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
+    ),
+  ),
   bookmarked: Schema.optional(Schema.Boolean),
   file: Schema.optional(Schema.String),
   attachments: Schema.optional(maxValue(mutableArray(attachmentSchema), MAX_ATTACHMENTS)),
@@ -240,17 +278,22 @@ export const taskPullSchema = mutableStruct({
       protocol: /^https?$/,
     }),
   ),
-  number: Schema.Number.pipe(Schema.finite())
-    .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-    .pipe(Schema.positive()),
+  number: Schema.Number.pipe(Schema.check(Schema.isFinite()))
+    .pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(
+        Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+      ),
+    )
+    .pipe(Schema.check(Schema.isGreaterThan(0))),
   url: urlSchema({
     protocol: /^https?$/,
   }),
   repositoryUrl: urlSchema({
     protocol: /^https?$/,
   }),
-  headSha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
-  baseSha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+  headSha: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
+  baseSha: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
 })
 export const queuedMessageSchema = mutableStruct({
   ...messageSchema.fields,
@@ -260,13 +303,16 @@ export const queuedMessageSchema = mutableStruct({
   },
 })
 export const linkedCheckoutSchema = mutableStruct({
-  id: maxValue(minValue(Schema.String.pipe(Schema.pattern(/^[a-zA-Z0-9_-]+$/)), 1), 100),
+  id: maxValue(
+    minValue(Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]+$/))), 1),
+    100,
+  ),
   repositoryId: maxValue(minValue(Schema.String, 1), 200),
   execution: executionSchema,
   existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 4096)),
   baseBranch: Schema.optional(maxValue(minValue(Schema.String, 1), 300)),
   branch: Schema.optional(maxValue(minValue(Schema.String, 1), 300)),
-  access: Schema.Literal('read-only', 'edit'),
+  access: Schema.Literals(['read-only', 'edit']),
 })
 export type LinkedCheckout = Schema.Schema.Type<typeof linkedCheckoutSchema>
 export const linkedCheckoutsSchema = maxValue(mutableArray(linkedCheckoutSchema), 12)
@@ -315,44 +361,82 @@ export const turnSchema = mutableStruct({
   reasoning: Schema.optional(Schema.String),
   startedAt: Schema.String,
   finishedAt: Schema.optional(Schema.String),
-  status: Schema.Literal('running', 'completed', 'failed', 'cancelled'),
+  status: Schema.Literals(['running', 'completed', 'failed', 'cancelled']),
   error: Schema.optional(Schema.String),
   /** Tokens this turn used, when the provider reports them. */
-  tokens: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.nonNegative())),
+  tokens: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isFinite()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
   tokenUsage: Schema.optional(
     mutableStruct({
-      input: Schema.Number.pipe(Schema.finite(), Schema.nonNegative()),
-      output: Schema.Number.pipe(Schema.finite(), Schema.nonNegative()),
-      cacheRead: Schema.Number.pipe(Schema.finite(), Schema.nonNegative()),
-      cacheWrite: Schema.Number.pipe(Schema.finite(), Schema.nonNegative()),
+      input: Schema.Number.pipe(
+        Schema.check(Schema.isFinite()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
+      output: Schema.Number.pipe(
+        Schema.check(Schema.isFinite()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
+      cacheRead: Schema.Number.pipe(
+        Schema.check(Schema.isFinite()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
+      cacheWrite: Schema.Number.pipe(
+        Schema.check(Schema.isFinite()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
     }),
   ),
   mixedModels: Schema.optional(Schema.Boolean),
-  costSource: Schema.optional(Schema.Literal('provider', 'estimated')),
+  costSource: Schema.optional(Schema.Literals(['provider', 'estimated'])),
   pricingVersion: Schema.optional(Schema.String),
   /** Local standard API price estimate, not an amount billed by a subscription. */
-  estimatedCostUsd: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.nonNegative())),
+  estimatedCostUsd: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isFinite()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
 })
 export const taskModelSchema = mutableStruct({
-  acpInstallationId: Schema.optional(Schema.NullOr(agentSchema.fields.acpInstallationId.from)),
+  acpInstallationId: Schema.optional(
+    Schema.NullOr(Schema.required(agentSchema.fields.acpInstallationId.schema.schema)),
+  ),
   acpMode: agentSchema.fields.acpMode,
   acpConfig: agentSchema.fields.acpConfig,
   model: Schema.optional(agentSchema.fields.model),
   reasoning: agentSchema.fields.reasoning,
   permission: Schema.optional(agentSchema.fields.permission),
-  serviceTier: Schema.optional(Schema.NullOr(agentSchema.fields.serviceTier.from)),
-  cyberAccessProgram: Schema.optional(Schema.NullOr(agentSchema.fields.cyberAccessProgram.from)),
+  serviceTier: Schema.optional(
+    Schema.NullOr(Schema.required(agentSchema.fields.serviceTier.schema.schema)),
+  ),
+  cyberAccessProgram: Schema.optional(
+    Schema.NullOr(Schema.required(agentSchema.fields.cyberAccessProgram.schema.schema)),
+  ),
 })
 export const linkedPullRequestSchema = mutableStruct({
-  ...taskPullSchema.pick('number', 'url', 'provider', 'repositoryUrl').fields,
+  ...taskPullSchema.mapFields(Struct.pick(['number', 'url', 'provider', 'repositoryUrl'])).fields,
   title: maxValue(Schema.String, 2000),
 })
 export const taskSchema = mutableStruct({
   budget: Schema.optional(
     mutableStruct({
-      tokens: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.positive())),
+      tokens: Schema.optional(
+        Schema.Number.pipe(
+          Schema.check(Schema.isFinite()),
+          Schema.check(Schema.isInt()),
+          Schema.check(Schema.isGreaterThan(0)),
+        ),
+      ),
       minutes: Schema.optional(
-        Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.positive()),
+        Schema.Number.pipe(
+          Schema.check(Schema.isFinite()),
+          Schema.check(Schema.isInt()),
+          Schema.check(Schema.isGreaterThan(0)),
+        ),
       ),
     }),
   ),
@@ -376,12 +460,12 @@ export const taskSchema = mutableStruct({
       text: maxValue(Schema.String, 20000),
     }),
   ),
-  runPhase: Schema.optional(Schema.Literal('preparing', 'provider', 'finalizing')),
+  runPhase: Schema.optional(Schema.Literals(['preparing', 'provider', 'finalizing'])),
   /** Control token for the current attempt, allocated before checkout preparation. */
   activeRunId: Schema.optional(Schema.String),
   historyBefore: Schema.optional(Schema.String),
   /** Changes on conversation removals; append/stream updates preserve loaded pages. */
-  historyRevision: Schema.optional(Schema.NonNegativeInt),
+  historyRevision: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   /** Derived metadata for turns outside a paged conversation. Never persisted by clients. */
   historyTotals: Schema.optional(
     mutableStruct({
@@ -418,7 +502,7 @@ export const taskSchema = mutableStruct({
             question: Schema.String,
             answer: Schema.optional(Schema.String),
             error: Schema.optional(Schema.String),
-            status: Schema.Literal('pending', 'completed', 'failed'),
+            status: Schema.Literals(['pending', 'completed', 'failed']),
             createdAt: Schema.String,
           }),
         ),
@@ -437,8 +521,15 @@ export const taskSchema = mutableStruct({
   // Runtime-owned: how full the agent's context window is, from its latest usage report.
   contextUsage: Schema.optional(
     mutableStruct({
-      used: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.nonNegative())),
-      limit: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.positive())),
+      used: Schema.optional(
+        Schema.Number.pipe(
+          Schema.check(Schema.isFinite()),
+          Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+        ),
+      ),
+      limit: Schema.optional(
+        Schema.Number.pipe(Schema.check(Schema.isFinite()), Schema.check(Schema.isGreaterThan(0))),
+      ),
       updatedAt: Schema.String,
     }),
   ),
@@ -450,11 +541,15 @@ export const taskSchema = mutableStruct({
         turnId: Schema.String,
         messageId: Schema.optional(Schema.String),
         textOffset: Schema.optional(
-          Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.nonNegative()),
+          Schema.Number.pipe(
+            Schema.check(Schema.isFinite()),
+            Schema.check(Schema.isInt()),
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+          ),
         ),
         sessionId: Schema.String,
         provider: providerSchema,
-        trigger: Schema.Literal('manual', 'auto'),
+        trigger: Schema.Literals(['manual', 'auto']),
       }),
     ),
   ),
@@ -463,7 +558,11 @@ export const taskSchema = mutableStruct({
   pullStatus: Schema.optional(
     mutableStruct({
       stack: Schema.optional(pullStackSummarySchema),
-      number: Schema.Number.pipe(Schema.finite(), Schema.int(), Schema.positive()),
+      number: Schema.Number.pipe(
+        Schema.check(Schema.isFinite()),
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isGreaterThan(0)),
+      ),
       url: maxValue(Schema.String, 2000),
       state: maxValue(Schema.String, 40),
       // 'passed', 'failed' or 'pending'; absent when the pull request has no checks.
@@ -512,7 +611,7 @@ export const taskSchema = mutableStruct({
   agentName: Schema.optional(maxValue(Schema.String, 200)),
   agentIcon: Schema.optional(agentIconSchema),
   agentId: Schema.String,
-  status: Schema.Literal('draft', 'running', 'review', 'done', 'failed', 'cancelled'),
+  status: Schema.Literals(['draft', 'running', 'review', 'done', 'failed', 'cancelled']),
   createdAt: Schema.String,
   /** Most recent accepted prompt, excluding question answers and generated agent input. */
   lastPromptAt: Schema.optional(Schema.String),
@@ -536,9 +635,14 @@ export const taskSchema = mutableStruct({
   updatedAt: Schema.optional(Schema.String),
   lastViewedTurnId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   viewedRevision: Schema.optional(
-    Schema.Number.pipe(Schema.finite())
-      .pipe(Schema.int(), Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
-      .pipe(Schema.nonNegative()),
+    Schema.Number.pipe(Schema.check(Schema.isFinite()))
+      .pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+        ),
+      )
+      .pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
   ),
   pinned: Schema.optional(Schema.Boolean),
   autoSettled: Schema.optional(Schema.Boolean),
@@ -559,15 +663,15 @@ export const taskSchema = mutableStruct({
   queue: Schema.optional(mutableArray(queuedMessageSchema)),
   queuePaused: Schema.optional(Schema.Boolean),
   restartRecovery: Schema.optional(
-    mutableStruct({ kind: Schema.Literal('turn', 'queue'), automatic: Schema.Boolean }),
+    mutableStruct({ kind: Schema.Literals(['turn', 'queue']), automatic: Schema.Boolean }),
   ),
   turns: Schema.optional(mutableArray(turnSchema)),
   consumedMessageIds: Schema.optional(mutableArray(Schema.String)),
 })
 export const nodeDataSchema = mutableStruct({
-  kind: Schema.Literal('trigger', 'task', 'review'),
+  kind: Schema.Literals(['trigger', 'task', 'review']),
   label: Schema.String,
-  trigger: Schema.Literal('manual', 'schedule', 'webhook', 'github'),
+  trigger: Schema.Literals(['manual', 'schedule', 'webhook', 'github']),
   github: Schema.optional(githubTriggerSchema),
   schedule: Schema.String,
   timezone: Schema.String,
@@ -583,8 +687,8 @@ export const flowNodeSchema = mutableStruct({
   id: Schema.String,
   type: Schema.Literal('automation'),
   position: mutableStruct({
-    x: Schema.Number.pipe(Schema.finite()),
-    y: Schema.Number.pipe(Schema.finite()),
+    x: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+    y: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   }),
   data: nodeDataSchema,
 })
@@ -610,16 +714,21 @@ export const workspaceSchema = mutableStruct({
   planLimits: Schema.optional(
     mutableArray(
       mutableStruct({
-        provider: Schema.Literal('codex', 'claude'),
+        provider: Schema.Literals(['codex', 'claude']),
         account: Schema.optional(usageAccountSchema),
         sourceTaskId: Schema.optional(Schema.String),
         agentId: Schema.optional(Schema.String),
         bucketId: Schema.optional(Schema.String),
         windowId: Schema.optional(Schema.String),
-        durationMins: Schema.optional(Schema.Number.pipe(Schema.finite(), Schema.positive())),
+        durationMins: Schema.optional(
+          Schema.Number.pipe(
+            Schema.check(Schema.isFinite()),
+            Schema.check(Schema.isGreaterThan(0)),
+          ),
+        ),
         window: Schema.String,
-        usedPercent: Schema.Number.pipe(Schema.finite()),
-        resetsAt: Schema.optional(Schema.Number.pipe(Schema.finite())),
+        usedPercent: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+        resetsAt: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
         updatedAt: Schema.String,
       }),
     ),

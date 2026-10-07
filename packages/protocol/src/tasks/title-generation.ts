@@ -1,48 +1,38 @@
-import { mutableStruct } from '../shared/schema.js'
+import { mutableStruct, strictStruct } from '../shared/schema.js'
 import { maxValue, minValue } from '../shared/schema.js'
-import { Schema } from 'effect'
+import { Schema, Effect, Struct } from 'effect'
 import { agentSchema, defaultTaskHarness, type Agent, type TaskHarness } from '../workspace.js'
 export const titleGenerationSettingsSchema = mutableStruct({
   harness: Schema.optional(
-    agentSchema.pick(
-      'provider',
-      'endpoint',
-      'args',
-      'env',
-      'executablePath',
-      'configDirectory',
-      'acpInstallationId',
+    agentSchema.mapFields(
+      Struct.pick([
+        'provider',
+        'endpoint',
+        'args',
+        'env',
+        'executablePath',
+        'configDirectory',
+        'acpInstallationId',
+      ]),
     ),
   ),
-  agentId: Schema.optionalWith(maxValue(Schema.String, 200), {
-    default: () => '',
-  }),
-  model: Schema.optionalWith(maxValue(Schema.String, 300), {
-    default: () => '',
-  }),
-  reasoning: Schema.optionalWith(maxValue(Schema.String, 100), {
-    default: () => '',
-  }),
+  agentId: maxValue(Schema.String, 200).pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
+  model: maxValue(Schema.String, 300).pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
+  reasoning: maxValue(Schema.String, 100).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => '')),
+  ),
 })
 export const generateTitleSchema = mutableStruct({
-  text: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 120000),
+  text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 120000),
 })
 export const generatedTitleSchema = mutableStruct({
-  title: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 120),
+  title: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 120),
 })
-export const cleanupDictationSchema = mutableStruct({
-  text: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 12000),
-}).annotations({
-  parseOptions: {
-    onExcessProperty: 'error',
-  },
+export const cleanupDictationSchema = strictStruct({
+  text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 12000),
 })
-export const cleanedDictationSchema = mutableStruct({
-  text: maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 16000),
-}).annotations({
-  parseOptions: {
-    onExcessProperty: 'error',
-  },
+export const cleanedDictationSchema = strictStruct({
+  text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 16000),
 })
 export type TitleGenerationSettings = Schema.Schema.Type<typeof titleGenerationSettingsSchema>
 

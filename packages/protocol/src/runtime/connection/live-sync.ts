@@ -127,7 +127,7 @@ export function startRuntimeSync(
   let socketStarted = 0
   let failures = 0
   let publishedAt = 0
-  let retry: Fiber.RuntimeFiber<void, never> | undefined
+  let retry: Fiber.Fiber<void, never> | undefined
   let connecting = false
   let request: AbortController | undefined
   const activities = value.events
@@ -180,7 +180,7 @@ export function startRuntimeSync(
     const delay = Math.min(30000, 500 * 2 ** Math.min(failures++, 6))
     retry = Effect.runFork(
       Effect.sleep(Math.round(delay * (0.8 + Math.random() * 0.4))).pipe(
-        Effect.zipRight(
+        Effect.andThen(
           Effect.sync(() => {
             retry = undefined
             void connect()
@@ -313,7 +313,7 @@ export function startRuntimeSync(
   const timer = Effect.runFork(
     Effect.forever(
       Effect.sleep(1000).pipe(
-        Effect.zipRight(
+        Effect.andThen(
           Effect.sync(() => {
             if (options.active?.() === false) {
               request?.abort()

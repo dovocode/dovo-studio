@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vite-plus/test'
 import { hasUnviewedTaskCompletion, type Task, type TaskTurn } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
 import { WorkspaceStore } from '../storage/workspace.js'

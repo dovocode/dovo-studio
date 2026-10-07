@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Scope } from 'effect'
+import { Cause, Effect, Exit, Scope, Semaphore } from 'effect'
 import { CommandRegistry } from '../state/commands.js'
 import { EventBus } from '../state/events.js'
 import { StateStore } from '../state/state.js'
@@ -11,8 +11,8 @@ interface ExtensionRecord {
   state: ExtensionInfo['state']
   error?: string
   activation?: Effect.Effect<void, ExtensionError>
-  scope?: Scope.CloseableScope
-  lock: Effect.Semaphore
+  scope?: Scope.Closeable
+  lock: Semaphore.Semaphore
   localState: StateStore
 }
 
@@ -32,7 +32,7 @@ export class ExtensionHost implements Disposable {
       extension,
       state: 'registered',
       localState: new StateStore(),
-      lock: Effect.runSync(Effect.makeSemaphore(1)),
+      lock: Effect.runSync(Semaphore.make(1)),
     })
     return {
       dispose: () =>
@@ -89,7 +89,7 @@ export class ExtensionHost implements Disposable {
   }
 
   private activateRecord(record: ExtensionRecord): Effect.Effect<void, ExtensionError> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       if (record.state === 'active') return
       record.state = 'activating'
       const id = record.extension.manifest.id
@@ -128,14 +128,16 @@ export class ExtensionHost implements Disposable {
             Effect.flatMap((results) => {
               const causes = results.filter(Exit.isFailure).map((result) => result.cause)
               return causes.length
-                ? Effect.failCause(causes.reduce(Cause.sequential)).pipe(Effect.orDie)
+                ? Effect.failCause(causes.reduce((left, right) => Cause.combine(left, right))).pipe(
+                    Effect.orDie,
+                  )
                 : Effect.void
             }),
           )
         }),
       )
       yield* extensionOperation(`activate ${id}`, () => record.extension.activate(context)).pipe(
-        Effect.zipRight(this.events.emit('runtime:extension-activated', { id })),
+        Effect.andThen(this.events.emit('runtime:extension-activated', { id })),
         Effect.tap(() =>
           Effect.sync(() => {
             record.state = 'active'
@@ -210,13 +212,14 @@ export class ExtensionHost implements Disposable {
   }
 
   disposeEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       this.closing = true
       const results = yield* Effect.forEach([...this.records.keys()].reverse(), (id) =>
         Effect.exit(this.deactivateEffect(id)),
       )
       const causes = results.filter(Exit.isFailure).map((result) => result.cause)
-      if (causes.length) yield* Effect.failCause(causes.reduce(Cause.sequential))
+      if (causes.length)
+        yield* Effect.failCause(causes.reduce((left, right) => Cause.combine(left, right)))
     })
   }
 

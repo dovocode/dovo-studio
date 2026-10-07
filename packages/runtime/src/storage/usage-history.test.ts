@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { openDatabase } from './database.js'
 import { WorkspaceStore } from './workspace.js'
 import { type Task } from '@dovo/protocol'
@@ -61,7 +61,7 @@ it('preserves unrelated validated entities during streamed updates and still rej
         ...t,
         turns: t.turns?.map((turn) => ({ ...turn, tokens: -1 })),
       })),
-    ).toThrow(/non-negative/)
+    ).toThrow(/greater than or equal to 0/)
   } finally {
     db.close()
   }

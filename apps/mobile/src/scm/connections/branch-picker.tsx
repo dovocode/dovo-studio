@@ -54,7 +54,7 @@ export function BranchPicker({
           setName('')
           if (action) onChanged?.()
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               setError(String(error))
             }),

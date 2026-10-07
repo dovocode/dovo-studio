@@ -1,6 +1,6 @@
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { isoDateTime, decode } from '../../shared/schema.js'
-import { Data, Effect, Either, Schema } from 'effect'
+import { Data, Effect, Result, Schema, Semaphore } from 'effect'
 import type { RuntimeConnection } from '../connection/runtime.js'
 import { snapshotSchema } from '../connection/runtime.js'
 export const runtimeSnapshotCacheSchema = mutableStruct({
@@ -8,9 +8,9 @@ export const runtimeSnapshotCacheSchema = mutableStruct({
   lastSeen: Schema.NullOr(isoDateTime(Schema.String)),
   pulls: Schema.NullOr(
     mutableStruct({
-      total: Schema.Number.pipe(Schema.finite()),
-      needsAttention: Schema.Number.pipe(Schema.finite()),
-      reviewRequested: Schema.Number.pipe(Schema.finite()),
+      total: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+      needsAttention: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+      reviewRequested: Schema.Number.pipe(Schema.check(Schema.isFinite())),
       partial: Schema.Boolean,
     }),
   ),
@@ -35,18 +35,18 @@ export class ReadCacheError extends Data.TaggedError('ReadCacheError')<{
   }
 }
 export interface RuntimeReadCache {
-  readEffect<T extends Schema.Schema.AnyNoContext>(
+  readEffect<T extends Schema.Codec<unknown, unknown>>(
     key: string,
     schema: T,
-  ): Effect.Effect<CachedRead<Schema.Schema.Type<T>> | null, ReadCacheError>
+  ): Effect.Effect<CachedRead<T['Type']> | null, ReadCacheError>
   writeEffect(key: string, value: unknown): Effect.Effect<void, ReadCacheError>
   removeEffect(key: string): Effect.Effect<void, ReadCacheError>
   clearEffect(): Effect.Effect<void, ReadCacheError>
   closeEffect(): Effect.Effect<void, ReadCacheError>
-  read<T extends Schema.Schema.AnyNoContext>(
+  read<T extends Schema.Codec<unknown, unknown>>(
     key: string,
     schema: T,
-  ): Promise<CachedRead<Schema.Schema.Type<T>> | null>
+  ): Promise<CachedRead<T['Type']> | null>
   write(key: string, value: unknown): Promise<void>
   remove(key: string): Promise<void>
   clear(): Promise<void>
@@ -56,13 +56,13 @@ const instances = new WeakMap<
   CacheStorage,
   Map<string, Set<{ closeEffect: () => Effect.Effect<void, ReadCacheError> }>>
 >()
-const writers = new WeakMap<CacheStorage, Effect.Semaphore>()
+const writers = new WeakMap<CacheStorage, Semaphore.Semaphore>()
 const storageEffect = <A>(run: () => Promise<A>) =>
   Effect.tryPromise({ try: run, catch: (cause) => new ReadCacheError({ cause }) })
 const runCache = async <A>(effect: Effect.Effect<A, ReadCacheError>): Promise<A> => {
-  const result = await Effect.runPromise(Effect.either(effect))
-  if (Either.isLeft(result)) throw result.left
-  return result.right
+  const result = await Effect.runPromise(Effect.result(effect))
+  if (Result.isFailure(result)) throw result.failure
+  return result.success
 }
 const envelope = mutableStruct({
   version: Schema.Literal(1),
@@ -109,7 +109,7 @@ export function createRuntimeReadCache(
   let closed = false
   let writer = writers.get(storage)
   if (!writer) {
-    writer = Effect.runSync(Effect.makeSemaphore(1))
+    writer = Effect.runSync(Semaphore.make(1))
     writers.set(storage, writer)
   }
   const sharedWriter = writer
@@ -131,13 +131,13 @@ export function createRuntimeReadCache(
       const { prefix } = yield* scope
       const raw = yield* storageEffect(() => storage.getItem(prefix + key))
       if (!raw || closed) return null
-      const parsed = yield* Effect.either(
+      const parsed = yield* Effect.result(
         Effect.try(() => {
           const cached = decode(envelope, JSON.parse(raw))
           return { value: decode(schema, cached.value), cachedAt: cached.cachedAt }
         }),
       )
-      if (Either.isRight(parsed)) return parsed.right
+      if (Result.isSuccess(parsed)) return parsed.success
       yield* sharedWriter
         .withPermits(1)(
           Effect.gen(function* () {
@@ -170,10 +170,10 @@ export function createRuntimeReadCache(
           }
           yield* storageEffect(() => storage.setItem(prefix + key, encoded))
           const raw = yield* storageEffect(() => storage.getItem(prefix + '_index'))
-          const parsed = yield* Effect.either(
+          const parsed = yield* Effect.result(
             Effect.try(() => decode(mutableArray(Schema.String), JSON.parse(raw ?? '[]'))),
           )
-          const previous = Either.isRight(parsed) ? parsed.right : []
+          const previous = Result.isSuccess(parsed) ? parsed.success : []
           const keys = [...previous.filter((item) => item !== key), key]
           yield* Effect.forEach(
             keys.slice(0, -100),

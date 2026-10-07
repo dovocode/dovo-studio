@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
 import { startRuntime } from '../../index.js'
 

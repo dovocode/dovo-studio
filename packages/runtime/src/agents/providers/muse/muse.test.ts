@@ -1,5 +1,5 @@
 import { decode, mcpServerSchema } from '@dovo/protocol'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { rm } from 'node:fs/promises'
 import { createMuseAdapter } from './muse.js'
 import { providerFixture } from '../shared/provider-fixture.js'

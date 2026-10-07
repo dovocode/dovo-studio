@@ -75,7 +75,11 @@ export class GitService {
       remote: string,
       cwd: string,
     ) => string | Promise<string>,
+    private repositoryGithubEnvironment?: (cwd: string) => Promise<Record<string, string>>,
   ) {}
+  async githubEnvironment(cwd: string) {
+    return this.repositoryGithubEnvironment?.(cwd) ?? {}
+  }
   private async run(
     cwd: string,
     executable: string,
@@ -210,8 +214,9 @@ export class GitService {
           409,
           'This folder already has a Git remote. Existing remotes will not be replaced.',
         )
-      // Validate GitHub authentication before initializing a local repository.
-      await this.run(cwd, this.settings().gh, ['auth', 'status'], 30000, 1024 * 1024)
+      // Validate the selected GitHub account before initializing a local repository.
+      const env = { ...processEnvironment(), ...(await this.githubEnvironment(cwd)) }
+      await this.run(cwd, this.settings().gh, ['auth', 'status'], 30000, 1024 * 1024, env)
       if (!status.initialized) await this.command(cwd, ['init', '-b', 'main'])
       await this.run(
         cwd,
@@ -219,6 +224,7 @@ export class GitService {
         ['repo', 'create', name, `--${visibility}`, '--source', cwd, '--remote', 'origin'],
         60000,
         1024 * 1024,
+        env,
       )
       return this.inspect(cwd)
     } finally {
@@ -256,21 +262,26 @@ export class GitService {
           ])
         ).trim()
       : `refs/heads/${branch}`
+    const env: NodeJS.ProcessEnv = {
+      ...this.nonInteractive(),
+      ...(await this.githubEnvironment(cwd)),
+    }
+    const host = env.GH_HOST || 'github.com'
     const gh = "'" + this.settings().gh.replaceAll("'", "'\"'\"'") + "'"
     await this.command(
       cwd,
       [
         '-c',
-        'credential.https://github.com.helper=',
+        `credential.https://${host}.helper=`,
         '-c',
-        `credential.https://github.com.helper=!${gh} auth git-credential`,
+        `credential.https://${host}.helper=!${gh} auth git-credential`,
         'push',
         '--set-upstream',
         '--',
         destination,
         `HEAD:${ref}`,
       ],
-      this.nonInteractive(),
+      env,
     )
   }
   async openFolder(path: string, target: 'finder' | 'vscode' | 'cursor') {
@@ -930,9 +941,12 @@ export class GitService {
   }
   async github(path: string, args: string[]) {
     const { path: cwd } = await this.inspect(path)
-    return this.githubRequest(cwd, args, 60000, 32 * 1024 * 1024, processEnvironment())
+    return this.githubRequest(cwd, args, 60000, 32 * 1024 * 1024, {
+      ...processEnvironment(),
+      ...(await this.githubEnvironment(cwd)),
+    })
   }
-  githubAccount(
+  async githubAccount(
     args: string[],
     limits?: {
       timeout: number
@@ -942,6 +956,7 @@ export class GitService {
     account?: {
       host: string
       token: string
+      env?: Record<string, string>
     },
   ) {
     // Account discovery must work before any local checkout has been registered.
@@ -953,6 +968,7 @@ export class GitService {
       {
         ...processEnvironment(),
         GH_PROMPT_DISABLED: '1',
+        ...(account ? account.env : cwd ? await this.githubEnvironment(cwd) : {}),
         ...(account
           ? {
               GH_HOST: account.host,
@@ -975,9 +991,9 @@ export class GitService {
     return decode(
       mutableArray(
         mutableStruct({
-          number: Schema.Number.pipe(Schema.finite()),
+          number: Schema.Number.pipe(Schema.check(Schema.isFinite())),
           title: Schema.String,
-          url: Schema.String.pipe(Schema.compose(urlSchema())),
+          url: Schema.String.pipe(Schema.decodeTo(urlSchema())),
           state: Schema.String,
           headRefName: Schema.String,
         }),

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { McpSecrets } from './mcp-secrets'
 import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'

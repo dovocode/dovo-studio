@@ -1,6 +1,6 @@
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { decode, minValue, refine } from '../../shared/schema.js'
-import { Effect, Either, Schema } from 'effect'
+import { Effect, Result, Schema } from 'effect'
 import { RuntimeRequestError, runtimeRequestEffect } from '../../shared/client.js'
 import { connectionSchema, snapshotSchema } from './runtime.js'
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
@@ -178,7 +178,7 @@ export function loadRuntimeOverviewEffect(
       previous.profile.connection.address === profile.connection.address
         ? previous
         : undefined
-    const result = yield* Effect.either(
+    const result = yield* Effect.result(
       useLiveSnapshot && cached?.connected && cached.snapshot
         ? Effect.succeed(cached.snapshot)
         : runtimeRequestEffect(
@@ -191,18 +191,18 @@ export function loadRuntimeOverviewEffect(
             10000,
           ),
     )
-    if (Either.isLeft(result))
+    if (Result.isFailure(result))
       return {
         profile,
         snapshot: cached?.snapshot ?? null,
         connected: false,
         lastSeen: cached?.lastSeen ?? null,
-        error: errorText(result.left),
+        error: errorText(result.failure),
         pulls: cached?.pulls ? { ...cached.pulls, partial: true } : null,
         pullError: cached?.pullError ?? null,
-        unauthorized: isUnauthorizedRuntimeError(result.left),
+        unauthorized: isUnauthorizedRuntimeError(result.failure),
       }
-    const snapshot = result.right
+    const snapshot = result.success
     const lastSeen = new Date().toISOString()
     onSnapshot?.({
       profile,
@@ -228,7 +228,7 @@ export function loadRuntimeOverviewEffect(
     const pages = yield* Effect.forEach(
       repositories,
       (repository) =>
-        Effect.either(
+        Effect.result(
           runtimeRequestEffect(
             profile.connection,
             profile.connection.address,
@@ -246,16 +246,16 @@ export function loadRuntimeOverviewEffect(
     let partial = false
     let loaded = 0
     for (const [index, page] of pages.entries()) {
-      if (Either.isLeft(page)) {
+      if (Result.isFailure(page)) {
         partial = true
-        errors.push(`${repositories[index].name}: ${errorText(page.left)}`)
+        errors.push(`${repositories[index].name}: ${errorText(page.failure)}`)
         continue
       }
       loaded++
-      partial ||= page.right.hasMore || !!page.right.stale || !!page.right.refreshError
-      if (page.right.refreshError)
-        errors.push(`${repositories[index].name}: ${page.right.refreshError}`)
-      for (const pull of page.right.pulls)
+      partial ||= page.success.hasMore || !!page.success.stale || !!page.success.refreshError
+      if (page.success.refreshError)
+        errors.push(`${repositories[index].name}: ${page.success.refreshError}`)
+      for (const pull of page.success.pulls)
         if (pull.state === 'open') {
           const existing = pulls.get(pull.url)
           if (!existing || existing.updatedAt < pull.updatedAt) pulls.set(pull.url, pull)

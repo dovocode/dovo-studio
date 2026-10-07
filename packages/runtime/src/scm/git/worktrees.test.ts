@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vite-plus/test'
 import { existsSync } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'

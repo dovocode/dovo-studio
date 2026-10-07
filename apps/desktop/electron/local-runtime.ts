@@ -1,3 +1,4 @@
+import { desktopRuntimeDirectory } from './runtime-data-directory.js'
 import { runtimeRequest, RUNTIME_PROTOCOL_VERSION, mutableStruct } from '@dovo/protocol'
 import { homedir } from 'node:os'
 import { ensureBackgroundRuntime, stopBackgroundRuntimeForUpdate } from './background-runtime.js'
@@ -5,7 +6,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
-import { Effect, Exit, Scope, Schema } from 'effect'
+import { Effect, Exit, Scope, Schema, Semaphore } from 'effect'
 import { readConnection } from '../../api/src/connection.js'
 import { runtimeOwnerToken } from '../../api/src/owner-token.js'
 import {
@@ -19,12 +20,12 @@ type Connection = {
   address: string
   token: string
 }
-const lifecycle = Effect.runSync(Effect.makeSemaphore(1))
+const lifecycle = Effect.runSync(Semaphore.make(1))
 let updateOwner: symbol | undefined
 let owned:
   | {
       child: ChildProcess
-      scope: Scope.CloseableScope
+      scope: Scope.Closeable
       connection: Connection
       stopping?: boolean
     }
@@ -40,7 +41,7 @@ class RuntimeCompatibilityError extends Error {}
 function backgroundStartupFailure(port: string) {
   let tail = ''
   try {
-    tail = readFileSync(join(app.getPath('userData'), 'runtime-service.log'), 'utf8').slice(-4000)
+    tail = readFileSync(join(desktopRuntimeDirectory(), 'runtime-service.log'), 'utf8').slice(-4000)
   } catch {
     /* No log yet: launchd has not started the runtime. */
   }
@@ -58,7 +59,7 @@ const existingRuntime = (requireCompatible = true) =>
     const saved = yield* Effect.try({
       try: () => {
         try {
-          return readConnection(join(app.getPath('userData'), 'runtime-connection.json'))
+          return readConnection(join(desktopRuntimeDirectory(), 'runtime-connection.json'))
         } catch (error) {
           if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
           throw error
@@ -100,11 +101,11 @@ const existingRuntime = (requireCompatible = true) =>
       },
       catch: failure,
     }).pipe(
-      Effect.timeoutFail({
+      Effect.timeoutOrElse({
         duration: '3 seconds',
-        onTimeout: () => new Error('Runtime health check timed out'),
+        orElse: () => Effect.fail((() => new Error('Runtime health check timed out'))()),
       }),
-      Effect.catchAll((cause) =>
+      Effect.catch((cause) =>
         cause instanceof RuntimeCompatibilityError
           ? Effect.fail(cause)
           : Effect.try({
@@ -138,7 +139,7 @@ const existingRuntime = (requireCompatible = true) =>
 // Windows has no SIGTERM: kill() there ends the process at once and no finalizer runs. The
 // runtime treats a closed IPC channel as a shutdown request on every platform, so ask first.
 function disconnect(child: ChildProcess) {
-  return Effect.async<void, Error>((resume) => {
+  return Effect.callback<void, Error>((resume) => {
     if (exited(child) || child.pid === undefined) {
       resume(Effect.void)
       return
@@ -160,7 +161,7 @@ function disconnect(child: ChildProcess) {
 }
 // Subscribe before signalling so a fast exit cannot be missed. Interruption removes the listener.
 function terminate(child: ChildProcess, signal: NodeJS.Signals) {
-  return Effect.async<void, Error>((resume) => {
+  return Effect.callback<void, Error>((resume) => {
     if (exited(child) || child.pid === undefined) {
       resume(Effect.void)
       return
@@ -179,25 +180,25 @@ function terminate(child: ChildProcess, signal: NodeJS.Signals) {
 function stopChild(child: ChildProcess) {
   return disconnect(child).pipe(
     Effect.interruptible,
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: '5 seconds',
-      onTimeout: () => new Error('Runtime did not stop after disconnect'),
+      orElse: () => Effect.fail((() => new Error('Runtime did not stop after disconnect'))()),
     }),
-    Effect.catchAll(() =>
+    Effect.catch(() =>
       terminate(child, 'SIGTERM').pipe(
         Effect.interruptible,
-        Effect.timeoutFail({
+        Effect.timeoutOrElse({
           duration: '5 seconds',
-          onTimeout: () => new Error('Runtime did not stop gracefully'),
+          orElse: () => Effect.fail((() => new Error('Runtime did not stop gracefully'))()),
         }),
       ),
     ),
-    Effect.catchAll(() =>
+    Effect.catch(() =>
       terminate(child, 'SIGKILL').pipe(
         Effect.interruptible,
-        Effect.timeoutFail({
+        Effect.timeoutOrElse({
           duration: '5 seconds',
-          onTimeout: () => new Error('Runtime did not exit after SIGKILL'),
+          orElse: () => Effect.fail((() => new Error('Runtime did not exit after SIGKILL'))()),
         }),
       ),
     ),
@@ -208,15 +209,15 @@ function stopChild(child: ChildProcess) {
 const runtimeOptions = () =>
   Effect.try({
     try: () => {
-      const token = runtimeOwnerToken(app.getPath('userData'), process.env.DOVO_OWNER_TOKEN)
-      const listenPath = join(app.getPath('userData'), 'runtime-listen.json')
+      const token = runtimeOwnerToken(desktopRuntimeDirectory(), process.env.DOVO_OWNER_TOKEN)
+      const listenPath = join(desktopRuntimeDirectory(), 'runtime-listen.json')
       let saved:
         | {
             port: string
             host: string
           }
         | undefined
-      for (const path of [listenPath, join(app.getPath('userData'), 'runtime-connection.json')]) {
+      for (const path of [listenPath, join(desktopRuntimeDirectory(), 'runtime-connection.json')]) {
         let value: unknown
         try {
           value = JSON.parse(readFileSync(path, 'utf8'))
@@ -241,20 +242,25 @@ const runtimeOptions = () =>
         }
         break
       }
+      const defaultPort = app.isPackaged ? '8787' : '8788'
+      const savedPort =
+        !app.isPackaged && (saved?.port === '8787' || saved?.port === '0') ? undefined : saved?.port
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         DOVO_RELEASE_DISTRIBUTION: 'desktop',
         DOVO_DESKTOP_DUAL_LISTENER: '1',
         ...(app.isPackaged ? { DOVO_RELEASE_VERSION: app.getVersion() } : {}),
         DOVO_OWNER_TOKEN: token,
-        DOVO_DATABASE_PATH: join(app.getPath('userData'), 'runtime.sqlite'),
-        DOVO_SETTINGS_PATH: join(homedir(), '.dovo', 'settings.json'),
+        DOVO_DATABASE_PATH: join(desktopRuntimeDirectory(), 'runtime.sqlite'),
+        DOVO_SETTINGS_PATH: process.env.DOVO_SETTINGS_PATH,
         PORT:
           process.env.DOVO_PORT && process.env.DOVO_PORT !== '0'
             ? process.env.DOVO_PORT
-            : (saved?.port ?? process.env.DOVO_PORT ?? '8787'),
+            : (savedPort ?? process.env.DOVO_PORT ?? defaultPort),
         DOVO_HOST: process.env.DOVO_HOST ?? saved?.host ?? '127.0.0.1',
       }
+      // Owned children get their credentials from this workspace, never an inherited supervisor file.
+      delete env.DOVO_RUNTIME_ENV_FILE
       delete env.ELECTRON_RUN_AS_NODE
       return {
         token,
@@ -337,7 +343,7 @@ function launch(directory: string) {
       child.removeListener('exit', crashed)
     }
     let cleanup = () => {}
-    const connection = yield* Effect.async<Connection, Error>((resume) => {
+    const connection = yield* Effect.callback<Connection, Error>((resume) => {
       const error = (cause: Error) => resume(Effect.fail(cause))
       const exit = (code: number | null, signal: NodeJS.Signals | null) =>
         resume(Effect.fail(new Error(`Local runtime exited (${signal ?? code}). ${diagnostics}`)))
@@ -388,9 +394,10 @@ function launch(directory: string) {
         child.removeListener('message', message)
       }
     }).pipe(
-      Effect.timeoutFail({
+      Effect.timeoutOrElse({
         duration: '30 seconds',
-        onTimeout: () => new Error('Local runtime did not start within 30 seconds'),
+        orElse: () =>
+          Effect.fail((() => new Error('Local runtime did not start within 30 seconds'))()),
       }),
       Effect.ensuring(Effect.sync(() => cleanup())),
     )
@@ -438,7 +445,7 @@ export function startLocalRuntime(
           yield* ensureBackgroundRuntime({
             home: homedir(),
             uid,
-            directory: app.getPath('userData'),
+            directory: desktopRuntimeDirectory(),
             node: join(process.resourcesPath, 'runtime/bin/node'),
             entrypoint: join(process.resourcesPath, 'runtime/dist/index.js'),
             host: env.DOVO_HOST ?? '127.0.0.1',
@@ -454,15 +461,16 @@ export function startLocalRuntime(
               yield* Effect.sleep(100)
             }
           }).pipe(
-            Effect.timeoutFail({
+            Effect.timeoutOrElse({
               duration: '30 seconds',
-              onTimeout: () => new Error(backgroundStartupFailure(env.PORT ?? '8787')),
+              orElse: () =>
+                Effect.fail((() => new Error(backgroundStartupFailure(env.PORT ?? '8787')))()),
             }),
           )
         }
         const scope = yield* Scope.make()
         const result = yield* launch(directory).pipe(
-          Scope.extend(scope),
+          Scope.provide(scope),
           Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void)),
         )
         owned = {
@@ -518,10 +526,10 @@ export async function prepareLocalRuntimeUpdate(directory: string) {
               new Error('Stop the externally managed runtime before updating desktop.'),
             )
           const connection = yield* Effect.try({
-            try: () => readConnection(join(app.getPath('userData'), 'runtime-connection.json')),
+            try: () => readConnection(join(desktopRuntimeDirectory(), 'runtime-connection.json')),
             catch: failure,
           })
-          yield* stopBackgroundRuntimeForUpdate(app.getPath('userData'), uid, connection.pid)
+          yield* stopBackgroundRuntimeForUpdate(desktopRuntimeDirectory(), uid, connection.pid)
         }),
       ),
     )
@@ -636,7 +644,7 @@ export async function setLocalRuntimeNetwork(
   // WSL persists its listener beside its Linux database. Never overwrite native Windows settings.
   if (process.platform === 'win32' && readWindowsRuntimeChoice()?.mode === 'wsl')
     return localRuntimeNetwork(directory, address)
-  const path = join(app.getPath('userData'), 'runtime-listen.json')
+  const path = join(desktopRuntimeDirectory(), 'runtime-listen.json')
   try {
     writeFileSync(
       path + '.tmp',

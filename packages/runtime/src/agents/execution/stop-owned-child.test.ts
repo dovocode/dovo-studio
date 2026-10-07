@@ -3,7 +3,7 @@ import { once } from 'node:events'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { stopOwnedChild } from './stop-owned-child'
 
 function killIfRunning(pid: number) {

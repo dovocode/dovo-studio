@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { reportedUsageAccount } from './usage-account'
 it('uses provider identity without retaining credentials and separates workspaces', () => {
   const payload = {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { runClientEffect } from '../effects/effect-boundary'
 
 import { ExtensionHost } from './extension-host'
@@ -165,7 +165,7 @@ it('releases an interrupted activation so the extension can be activated again',
   const pending = runClientEffect(host.activateEffect('slow'), controller.signal)
   await startedPromise
   controller.abort()
-  await expect(pending).rejects.toThrow('An error has occurred')
+  await expect(pending).rejects.toThrow(/interrupted/i)
   expect(disposed).toBe(1)
   expect(host.get('slow')?.state).toBe('failed')
   release()

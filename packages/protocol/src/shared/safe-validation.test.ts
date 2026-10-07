@@ -1,6 +1,6 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { Schema } from 'effect'
-import { decodeResult, safeValidationIssues, safeValidationMessage } from './schema'
+import { decodeResult, safeValidationIssues, safeValidationMessage, strictStruct } from './schema'
 it('identifies declared fields and expected primitive types without submitted values', () => {
   const result = decodeResult(Schema.Struct({ name: Schema.String, enabled: Schema.Boolean }), {
     name: { key: 'secret' },
@@ -13,10 +13,12 @@ it('identifies declared fields and expected primitive types without submitted va
   expect(safeValidationMessage(result.error)).not.toContain('secret')
 })
 it('hides dynamic record keys, excess keys and refinement diagnostic messages', () => {
-  const schema = Schema.Struct({
-    values: Schema.Record({ key: Schema.String, value: Schema.Number }),
-    code: Schema.String.pipe(Schema.filter(() => false, { message: () => 'secret-in-refinement' })),
-  }).annotations({ parseOptions: { onExcessProperty: 'error' } })
+  const schema = strictStruct({
+    values: Schema.Record(Schema.String, Schema.Number),
+    code: Schema.String.pipe(
+      Schema.check(Schema.makeFilter(() => false, { message: 'secret-in-refinement' })),
+    ),
+  })
   const result = decodeResult(schema, {
     values: { 'secret-key': 'secret-value' },
     code: 'secret-code',

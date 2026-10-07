@@ -3,7 +3,7 @@ import { once } from 'node:events'
 import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir, uptime } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vite-plus/test'
 import { acquireProcessLock } from './process-lock.js'
 
 const directories: string[] = []

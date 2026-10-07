@@ -180,7 +180,7 @@ export function createDictation(
         const result = yield* nativeEffect(() => driver.locales()).pipe(
           Effect.timeoutOption('3 seconds'),
           Effect.map(Option.getOrNull),
-          Effect.catchAll(() => Effect.succeed(null)),
+          Effect.catch(() => Effect.succeed(null)),
         )
         const locale = resolveDictationLocale(preferredLocales(), result?.locales ?? [])
         const onDevice = !supported
@@ -196,7 +196,7 @@ export function createDictation(
           available: available || onDevice === true,
         })
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           nativeEffect(() => {
             fail(
               error instanceof Error
@@ -378,7 +378,7 @@ export function createDictation(
             iosTaskHint: 'dictation',
           })
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             nativeEffect(() => {
               if (!session.canceled && current === session)
                 fail(error instanceof Error ? error.message : 'Could not start dictation.', session)

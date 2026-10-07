@@ -1,3 +1,4 @@
+import { Schema } from 'effect'
 import { useState, type ComponentProps } from 'react'
 import {
   Check,
@@ -208,7 +209,10 @@ export function ComposerSettingsControls({
                         void onChange({
                           ...value,
                           cyberAccessProgram: program
-                            ? decode(taskHarnessSchema.fields.cyberAccessProgram.from, program)
+                            ? decode(
+                                Schema.required(taskHarnessSchema.fields.cyberAccessProgram.schema),
+                                program,
+                              )
                             : undefined,
                         })
                       }

@@ -1,5 +1,5 @@
 import { decode, defaultTaskHarness } from '@dovo/protocol'
-import { expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vite-plus/test'
 import { taskHarnessSchema, type Task, type Workspace, type WorkspacePatch } from '@dovo/protocol'
 import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'

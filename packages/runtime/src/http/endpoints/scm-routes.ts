@@ -93,7 +93,10 @@ export function scmRoute(request: IncomingMessage, path: string) {
           mutableStruct({
             repositoryId: idSchema,
             data: Schema.optional(
-              maxValue(Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9+/=]+$/)), 3 * 1024 * 1024),
+              maxValue(
+                Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9+/=]+$/))),
+                3 * 1024 * 1024,
+              ),
             ),
           }),
           yield* serviceResult(body(request, 4 * 1024 * 1024)),
@@ -131,7 +134,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
         const input = decode(
           mutableStruct({
             repositoryId: idSchema,
-            name: Schema.Literal('AGENTS.md', 'CLAUDE.md'),
+            name: Schema.Literals(['AGENTS.md', 'CLAUDE.md']),
             text: Schema.optional(maxValue(Schema.String, 200_000)),
             version: Schema.optional(Schema.String),
           }),
@@ -185,15 +188,14 @@ export function scmRoute(request: IncomingMessage, path: string) {
       if (method === 'POST' && path.startsWith('/api/scm/work/')) {
         const input = decode(
           refine(
-            Schema.Struct(
-              mutableStruct({
-                repositoryId: Schema.optional(idSchema),
-                jiraSourceId: Schema.optional(idSchema),
-              }).fields,
-              {
-                key: Schema.String,
-                value: Schema.Unknown,
-              },
+            Schema.StructWithRest(
+              Schema.Struct(
+                mutableStruct({
+                  repositoryId: Schema.optional(idSchema),
+                  jiraSourceId: Schema.optional(idSchema),
+                }).fields,
+              ),
+              [Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))],
             ),
             (input) => !!input.repositoryId !== !!input.jiraSourceId,
             'Choose one issue source',
@@ -268,24 +270,24 @@ export function scmRoute(request: IncomingMessage, path: string) {
         const input = decode(
           mutableStruct({
             connectionId: idSchema,
-            repository: Schema.optionalWith(maxValue(Schema.String, 500), {
-              default: () => '',
-            }),
-            page: Schema.optionalWith(
-              maxValue(
-                minValue(
-                  Schema.Number.pipe(Schema.finite()).pipe(
-                    Schema.int(),
-                    Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
-                  ),
-                  1,
-                ),
-                1000,
-              ),
-              {
-                default: () => 1,
-              },
+            repository: maxValue(Schema.String, 500).pipe(
+              Schema.withDecodingDefaultType(Effect.sync(() => '')),
             ),
+            page: maxValue(
+              minValue(
+                Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+                  Schema.check(Schema.isInt()),
+                  Schema.check(
+                    Schema.isBetween({
+                      minimum: Number.MIN_SAFE_INTEGER,
+                      maximum: Number.MAX_SAFE_INTEGER,
+                    }),
+                  ),
+                ),
+                1,
+              ),
+              1000,
+            ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 1))),
             repositoryId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
@@ -317,15 +319,14 @@ export function scmRoute(request: IncomingMessage, path: string) {
         return yield* addRepositoryEffect(s, yield* serviceResult(body(request)))
       if (method === 'POST' && path.startsWith('/api/scm/')) {
         const input = decode(
-          Schema.Struct(
-            mutableStruct({
-              repositoryId: idSchema,
-              taskId: Schema.optional(idSchema),
-            }).fields,
-            {
-              key: Schema.String,
-              value: Schema.Unknown,
-            },
+          Schema.StructWithRest(
+            Schema.Struct(
+              mutableStruct({
+                repositoryId: idSchema,
+                taskId: Schema.optional(idSchema),
+              }).fields,
+            ),
+            [Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))],
           ),
           yield* serviceResult(body(request)),
         )
@@ -442,12 +443,17 @@ export function scmRoute(request: IncomingMessage, path: string) {
           s.pullCache.invalidate(
             cwd,
             decode(
-              Schema.Number.pipe(Schema.finite())
+              Schema.Number.pipe(Schema.check(Schema.isFinite()))
                 .pipe(
-                  Schema.int(),
-                  Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+                  Schema.check(Schema.isInt()),
+                  Schema.check(
+                    Schema.isBetween({
+                      minimum: Number.MIN_SAFE_INTEGER,
+                      maximum: Number.MAX_SAFE_INTEGER,
+                    }),
+                  ),
                 )
-                .pipe(Schema.positive()),
+                .pipe(Schema.check(Schema.isGreaterThan(0))),
               input.number,
             ),
           )
@@ -459,16 +465,21 @@ export function scmRoute(request: IncomingMessage, path: string) {
           return yield* s.pullCache.overviewEffect(
             cwd,
             decode(
-              withDefault(Schema.Literal('open', 'closed', 'all'), () => 'open' as const),
+              withDefault(Schema.Literals(['open', 'closed', 'all']), () => 'open' as const),
               input.state,
             ),
             decode(
               withDefault(
                 maxValue(
                   minValue(
-                    Schema.Number.pipe(Schema.finite()).pipe(
-                      Schema.int(),
-                      Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+                    Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+                      Schema.check(Schema.isInt()),
+                      Schema.check(
+                        Schema.isBetween({
+                          minimum: Number.MIN_SAFE_INTEGER,
+                          maximum: Number.MAX_SAFE_INTEGER,
+                        }),
+                      ),
                     ),
                     1,
                   ),
@@ -487,12 +498,17 @@ export function scmRoute(request: IncomingMessage, path: string) {
           return yield* s.pullCache.detailWithStackEffect(
             cwd,
             decode(
-              Schema.Number.pipe(Schema.finite())
+              Schema.Number.pipe(Schema.check(Schema.isFinite()))
                 .pipe(
-                  Schema.int(),
-                  Schema.between(Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+                  Schema.check(Schema.isInt()),
+                  Schema.check(
+                    Schema.isBetween({
+                      minimum: Number.MIN_SAFE_INTEGER,
+                      maximum: Number.MAX_SAFE_INTEGER,
+                    }),
+                  ),
                 )
-                .pipe(Schema.positive()),
+                .pipe(Schema.check(Schema.isGreaterThan(0))),
               input.number,
             ),
             decode(
@@ -557,7 +573,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
               s.git.commit(
                 cwd,
                 decode(
-                  maxValue(minValue(Schema.String.pipe(Schema.compose(Schema.Trim)), 1), 4000),
+                  maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 4000),
                   input.message,
                 ),
               ),

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { insertMention, mentionQuery, rankPaths } from './file-mentions.js'
 
 it('finds the mention being typed and ignores e-mail addresses', () => {

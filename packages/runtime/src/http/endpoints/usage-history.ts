@@ -11,7 +11,10 @@ export const usageHistory = (request: IncomingMessage, path: string) =>
     if (path === '/api/usage/prices/write') {
       const input = decode(
         mutableStruct({
-          model: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(300)),
+          model: Schema.String.pipe(
+            Schema.check(Schema.isMinLength(1)),
+            Schema.check(Schema.isMaxLength(300)),
+          ),
           price: Schema.optional(usagePriceSchema),
         }),
         yield* serviceResult(body(request)),
@@ -23,8 +26,10 @@ export const usageHistory = (request: IncomingMessage, path: string) =>
       mutableStruct({
         force: Schema.optional(Schema.Boolean),
         since: Schema.String.pipe(
-          Schema.filter(
-            (value) => /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value)),
+          Schema.check(
+            Schema.makeFilter(
+              (value) => /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value)),
+            ),
           ),
         ),
       }),
@@ -35,7 +40,7 @@ export const usageHistory = (request: IncomingMessage, path: string) =>
     ).toISOString()
     const notices: string[] = []
     yield* serviceResult(s.store.usagePricing.refresh(input.force ?? false)).pipe(
-      Effect.catchAll((cause) =>
+      Effect.catch((cause) =>
         Effect.sync(() => {
           notices.push(`${errorMessage(cause)}. Showing available cached or local rates.`)
         }),

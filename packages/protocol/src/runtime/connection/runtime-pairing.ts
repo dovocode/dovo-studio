@@ -1,4 +1,4 @@
-import { Effect, Either } from 'effect'
+import { Effect, Result } from 'effect'
 import { runtimeRequestEffect, RuntimeRequestError } from '../../shared/client.js'
 import { responses, snapshotSchema, type RuntimeConnection } from './runtime.js'
 import {
@@ -127,7 +127,7 @@ export function recoverRuntimePairings(
       }
       yield* checkReplacement(current, entry.profile.connection, beforeReplace)
       const expired = Date.parse(entry.proof.expiresAt) <= Date.now()
-      const result = yield* Effect.either(
+      const result = yield* Effect.result(
         expired
           ? runtimeRequestEffect(
               entry.profile.connection,
@@ -140,13 +140,13 @@ export function recoverRuntimePairings(
             ).pipe(Effect.asVoid)
           : confirm(entry).pipe(Effect.asVoid),
       )
-      if (Either.isRight(result)) {
+      if (Result.isSuccess(result)) {
         yield* checkReplacement(current, entry.profile.connection, beforeReplace)
         next = { ...confirmed(next, entry), activeId: next.activeId ?? entry.profile.id }
       } else if (
         expired &&
-        result.left instanceof RuntimeRequestError &&
-        result.left.status === 401
+        result.failure instanceof RuntimeRequestError &&
+        result.failure.status === 401
       )
         next = removePending(next, entry.proof.id, entry.profile.connection.address)
       else continue // Offline: retain the durable candidate and existing connection for another recovery.
@@ -167,7 +167,7 @@ export function cancelRuntimePairing(
       (item) => item.proof.id === proof.id && item.profile.connection.address === address,
     )
     yield* runtimeRequestEffect(null, address, '/api/pair/cancel', proof, responses.ok).pipe(
-      Effect.catchAll((error) => {
+      Effect.catch((error) => {
         if (!(error instanceof RuntimeRequestError) || error.status !== 404)
           return Effect.fail(error)
         if (!entry) return Effect.void // No credential was ever staged by this client.
@@ -179,7 +179,7 @@ export function cancelRuntimePairing(
           responses.ok,
         ).pipe(
           Effect.asVoid,
-          Effect.catchAll((failure) =>
+          Effect.catch((failure) =>
             failure instanceof RuntimeRequestError && failure.status === 401
               ? Effect.void
               : Effect.fail(failure),

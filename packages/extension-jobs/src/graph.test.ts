@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { createWorkspace } from '../../studio-core/src/workspace/seed'
 import { canConnect, validateGraph } from './graph'
 describe('automation validation', () => {
