@@ -3,6 +3,7 @@ import { Terminals } from './terminals'
 import { fixture } from '../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration'
 import { stripVTControlCharacters } from 'node:util'
+import { Terminal } from '@xterm/headless'
 vi.setConfig(runtimeIntegration)
 function killIfRunning(pid: number) {
   try {
@@ -131,9 +132,13 @@ it('reuses a live shell across simultaneous terminal openings', async () => {
 })
 it('runs a real PTY and retains output when clients detach', async () => {
   const f = await fixture(),
-    terminals = new Terminals()
+    terminals = new Terminals(),
+    display = new Terminal({ cols: 100, rows: 24 })
   try {
     const session = terminals.create('task', f.directory)
+    // Act like the app's xterm client: ConPTY waits for terminal query replies at startup.
+    display.onData((data) => terminals.input(session.id, data))
+    const detachDisplay = terminals.attach(session.id, (data) => display.write(data))
     let output = ''
     const detachOutput = terminals.attach(session.id, (data) => {
       output += data
@@ -149,6 +154,7 @@ it('runs a real PTY and retains output when clients detach', async () => {
     })
     terminals.input(session.id, outputCommand)
     await waitForRuntime(() => expect(output).toContain('dovo-pty-verified'))
+    detachDisplay()
     detachOutput()
     let replay = ''
     const detach = terminals.attach(session.id, (data) => {
@@ -160,16 +166,21 @@ it('runs a real PTY and retains output when clients detach', async () => {
     terminals.close(session.id)
     expect(terminals.list()).toEqual([])
   } finally {
+    display.dispose()
     await terminals.dispose()
     await f.cleanup()
   }
 })
 it('keeps delivering terminal output when one client throws', async () => {
   const f = await fixture(),
-    terminals = new Terminals()
+    terminals = new Terminals(),
+    display = new Terminal({ cols: 100, rows: 24 })
   const reported = vi.spyOn(console, 'error').mockImplementation(() => {})
   try {
     const session = terminals.create('task', f.directory)
+    // Act like the app's xterm client: ConPTY waits for terminal query replies at startup.
+    display.onData((data) => terminals.input(session.id, data))
+    terminals.attach(session.id, (data) => display.write(data))
     let armed = false
     terminals.attach(session.id, (data) => {
       if (armed && data) throw new Error('closed client')
@@ -191,6 +202,7 @@ it('keeps delivering terminal output when one client throws', async () => {
     expect(reported).toHaveBeenCalled()
     terminals.close(session.id)
   } finally {
+    display.dispose()
     reported.mockRestore()
     await terminals.dispose()
     await f.cleanup()
