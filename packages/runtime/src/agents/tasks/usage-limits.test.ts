@@ -23,7 +23,10 @@ it('uses the Claude control channel without sending a model prompt and closes it
     usage = vi.fn<(options?: { skipBehaviors?: boolean }) => Promise<unknown>>().mockResolvedValue({
       subscription_type: 'pro',
       rate_limits_available: true,
-      rate_limits: { five_hour: { utilization: 25, resets_at: '2026-10-03T00:00:00Z' } },
+      // A window that already reset is not a current limit; keep the fixture in the future.
+      rate_limits: {
+        five_hour: { utilization: 25, resets_at: new Date(Date.now() + 3_600_000).toISOString() },
+      },
     })
   mocks.query.mockReturnValue({
     accountInfo: async () => ({
