@@ -129,10 +129,13 @@ jobs:
           packages/runtime/src/agents/execution/stop-owned-child
           packages/runtime/src/process.test.ts
           apps/desktop/electron/windows-runtime.test.ts
-          apps/desktop/electron/windows-security.test.ts
+          apps/desktop/electron/runtime-connection-health.test.ts
+          apps/desktop/electron/wsl-runtime-health.test.ts
           apps/desktop/electron/local-runtime.test.ts
           apps/desktop/electron/main.test.ts
           apps/desktop/electron/task-launcher.test.ts
           apps/api/src/server-manager.test.ts
           apps/api/src/server-service.test.ts
           apps/api/src/server-cli.test.ts
+      # Keep cold PowerShell startup separate from concurrent PTY and server tests.
+      - run: pnpm exec vp test --maxWorkers=1 apps/desktop/electron/windows-security.test.ts
