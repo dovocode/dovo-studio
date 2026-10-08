@@ -161,7 +161,7 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
   expect(await s.checkouts.directory(isolated.id)).toBe(cwd)
 })
 
-it('starts worktrees from the local branch, or with Start from origin from the latest origin branch', async () => {
+it('defaults worktrees to the latest origin branch and still supports local branches and opt-outs', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const runtime = await startRuntime({
@@ -189,7 +189,7 @@ it('starts worktrees from the local branch, or with Start from origin from the l
   await git('commit', '-am', 'Local branch work')
   const local = await git('rev-parse', 'HEAD')
   await git('branch', 'chosen-base')
-  const make = async (fromOrigin: boolean, base?: string) => {
+  const make = async (fromOrigin?: boolean, base?: string) => {
     const task = s.tasks.create({
       title: 'Base test',
       repositoryId: 'repo',
@@ -200,7 +200,13 @@ it('starts worktrees from the local branch, or with Start from origin from the l
     s.store.update((w) => ({
       ...w,
       tasks: w.tasks.map((t) =>
-        t.id === task.id ? { ...t, worktreeBaseBranch: base, worktreeFromOrigin: fromOrigin } : t,
+        t.id === task.id
+          ? {
+              ...t,
+              worktreeBaseBranch: base,
+              worktreeFromOrigin: fromOrigin ?? task.worktreeFromOrigin,
+            }
+          : t,
       ),
     }))
     const cwd = await s.checkouts.directory(task.id)
@@ -209,14 +215,18 @@ it('starts worktrees from the local branch, or with Start from origin from the l
   }
   expect(await make(false)).toBe(local)
   // Fetched first, so the worktree starts from origin's newest commit.
-  expect(await make(true)).toBe(remote)
+  expect(await make()).toBe(remote)
   // A branch origin does not have falls back to origin's detected default branch.
   await git('checkout', '--quiet', '-b', 'feature-only-here')
   expect(await make(true)).toBe(remote)
   expect(await make(false)).toBe(local)
-  expect(await make(true, 'refs/heads/chosen-base')).toBe(local)
+  const commands = vi.spyOn(s.git, 'command')
+  expect(await make(undefined, 'refs/heads/chosen-base')).toBe(local)
+  expect(commands.mock.calls.some(([, args]) => args[0] === 'fetch')).toBe(false)
   await expect(make(false, 'refs/heads/missing')).rejects.toThrow('Choose an existing base branch')
   expect(await git('rev-parse', 'HEAD')).toBe(local)
+  await git('remote', 'remove', 'origin')
+  expect(await make()).toBe(local)
 })
 
 it('snapshots project defaults and retries failed worktree setup without rerunning completed setup', async () => {
@@ -307,8 +317,8 @@ it('publishes worktree setup progress step by step and clears it once the agent 
   await (
     await s.tasks.start(task.id)
   ).done
-  expect(seen).toEqual(['worktree', 'setup', 'agent'])
-  expect([...stepLists]).toEqual(['worktree,setup,agent'])
+  expect(seen).toEqual(['fetch', 'worktree', 'setup', 'agent'])
+  expect([...stepLists]).toEqual(['fetch,worktree,setup,agent'])
   expect(during).toBeUndefined()
   expect(s.store.task(task.id).preparation).toBeUndefined()
 })

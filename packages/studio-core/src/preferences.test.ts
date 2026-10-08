@@ -73,6 +73,16 @@ it('persists updates and notifies subscribers', async () => {
   })
 })
 
+it('hides finished subagents by default and remembers showing their history', async () => {
+  vi.stubGlobal('localStorage', storage())
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().hideFinishedSubagents).toBe(true)
+  updateAppPreferences({ hideFinishedSubagents: false })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences().hideFinishedSubagents).toBe(false)
+})
+
 it('persists a palette independently of color scheme and restores it on reopening', async () => {
   vi.stubGlobal('localStorage', storage())
   const { updateAppPreferences } = await import('./preferences')
@@ -137,3 +147,54 @@ it('keeps the changed-files expansion preference across reopening', async () => 
   expect(readAppPreferences().collapseChangedFiles).toBe(false)
   expect(readAppPreferences().showToolDetails).toBe(true)
 })
+
+it('restores independent fonts and terminal size without losing older preferences', async () => {
+  vi.stubGlobal('localStorage', storage())
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences()).toMatchObject({
+    appFontFamily: '',
+    codeFontFamily: '',
+    terminalFontFamily: '',
+    terminalFontSize: 12,
+  })
+  updateAppPreferences({
+    appFontFamily: 'Georgia',
+    codeFontFamily: 'Fira Code',
+    terminalFontFamily: 'JetBrains Mono Nerd Font',
+    terminalFontSize: 18,
+  })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences()).toMatchObject({
+    appFontFamily: 'Georgia',
+    codeFontFamily: 'Fira Code',
+    terminalFontFamily: 'JetBrains Mono Nerd Font',
+    terminalFontSize: 18,
+  })
+})
+
+it.each([0, 33, 12.5, '18', null])(
+  'rejects invalid saved terminal size %s independently',
+  async (terminalFontSize) => {
+    vi.stubGlobal(
+      'localStorage',
+      storage({
+        'dovo.app-preferences.v1': JSON.stringify({
+          theme: 'light',
+          terminalFontSize,
+          appFontFamily: 'Georgia',
+          codeFontFamily: 'invalid\nfont',
+          terminalFontFamily: 'x'.repeat(101),
+        }),
+      }),
+    )
+    const { readAppPreferences } = await import('./preferences')
+    expect(readAppPreferences()).toMatchObject({
+      theme: 'light',
+      terminalFontSize: 12,
+      appFontFamily: 'Georgia',
+      codeFontFamily: '',
+      terminalFontFamily: '',
+    })
+  },
+)

@@ -10,9 +10,11 @@ import { Schema } from 'effect'
 import { responses } from '@dovo/protocol'
 import terminalHtml from '../../assets/terminal.json'
 import { useRuntime } from '../runtime/connection/provider'
+import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { useTheme } from '../ui/theme'
 export function TerminalSession({ id }: { id: string }) {
   const { styles } = useTheme()
+  const { terminalFontFamily, terminalFontSize } = useMobilePreferences()
 
   const { call, connection } = useRuntime(),
     view = useRef<WebView>(null),
@@ -30,6 +32,12 @@ export function TerminalSession({ id }: { id: string }) {
     })
     return () => subscription.remove()
   }, [setBackgrounded])
+  useEffect(() => {
+    if (ready)
+      view.current?.injectJavaScript(
+        `window.setTerminalFont(${JSON.stringify(terminalFontFamily)},${terminalFontSize});true;`,
+      )
+  }, [ready, terminalFontFamily, terminalFontSize])
   const sequence = useRef(0)
   const session = useRef<{
     attempt: number

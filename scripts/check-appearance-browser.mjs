@@ -38,7 +38,7 @@ function App(){useAppearance();return <TooltipProvider><div className="flex h-sc
 <aside style={{width:400}} className="flex shrink-0 flex-col gap-4 overflow-auto border-l p-4">
 <Button>Start task</Button><Message from="user"><MessageContent>Build this interface.</MessageContent></Message>
 <MessageResponse>{'Read the [docs](https://dovocode.com).\\n\\n~~~typescript\\n'+sample+'\\n~~~'}</MessageResponse>
-<div data-testid="diff"><Diff/></div>
+<div data-testid="diff" className="studio-code"><Diff/></div>
 <div className="flex h-40 shrink-0 flex-col"><TerminalSession id="fixture" active/></div>
 </aside></main></div></TooltipProvider>}
 createRoot(document.getElementById('app')).render(<App/>);`,
@@ -111,6 +111,11 @@ try {
     const path = new URL(route.request().url()).pathname
     if (path === '/app.mjs')
       return route.fulfill({ contentType: 'text/javascript', body: built.outputFiles[0].text })
+    if (path.startsWith('/assets/') && path.endsWith('.woff2'))
+      return route.fulfill({
+        contentType: 'font/woff2',
+        body: await readFile(assets + '/' + path.split('/').at(-1)),
+      })
     if (path === '/assets/dovo-logo.png')
       return route.fulfill({ contentType: 'image/png', body: logo })
     return route.fulfill({
@@ -230,6 +235,75 @@ try {
   await ready()
   assert.equal(await page.getByRole('radio', { name: 'Claude', exact: true }).isChecked(), true)
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light')
+  await page.getByLabel('App font', { exact: true }).fill('Georgia')
+  await page.getByLabel('Code font', { exact: true }).fill('JetBrains Mono Nerd Font')
+  await page.getByLabel('Terminal font', { exact: true }).fill('JetBrains Mono Nerd Font')
+  await page.getByRole('button', { name: 'Terminal font size', exact: true }).click()
+  await page.getByRole('option', { name: '18 px', exact: true }).click()
+  await page.waitForFunction(
+    () =>
+      window.terminals[0].options.fontSize === 18 &&
+      window.terminals[0].options.fontFamily.includes('JetBrains Mono Nerd Font'),
+  )
+  const fontState = await page.evaluate(async () => {
+    await document.fonts.ready
+    const canvas = document.createElement('canvas').getContext('2d')
+    canvas.font = '18px "JetBrains Mono Nerd Font"'
+    return {
+      app: getComputedStyle(document.documentElement).fontFamily,
+      code: getComputedStyle(document.querySelector('[data-streamdown=code-block] code'))
+        .fontFamily,
+      diffText: getComputedStyle(
+        document
+          .querySelector('[data-testid=diff] diffs-container')
+          .shadowRoot.querySelector('pre'),
+      ).fontFamily,
+      diff: getComputedStyle(
+        document.querySelector('[data-testid=diff] diffs-container'),
+      ).getPropertyValue('--diffs-font-family'),
+      faces: [...document.fonts]
+        .filter((font) => font.family.includes('JetBrains Mono Nerd Font'))
+        .map((font) => font.status),
+      widths: ['M', '\ue0a0', '\uf07b', '\uf121', '\u{f0001}'].map(
+        (glyph) => canvas.measureText(glyph).width,
+      ),
+      buffer: window.terminals[0].buffer.active.getLine(0).translateToString(),
+      sockets: window.sockets.length,
+    }
+  })
+  assert.ok(fontState.app.startsWith('Georgia'))
+  assert.ok(fontState.code.includes('JetBrains Mono Nerd Font'))
+  assert.ok(fontState.diff.includes('JetBrains Mono Nerd Font'))
+  assert.ok(fontState.diffText.includes('JetBrains Mono Nerd Font'))
+  assert.deepEqual(fontState.faces, ['loaded', 'loaded'])
+  for (const width of fontState.widths)
+    assert.ok(Math.abs(width - fontState.widths[0]) < 0.1, 'Nerd icons fit one monospace cell')
+  assert.equal(fontState.sockets, 1, 'Changing fonts must not reconnect the terminal')
+  assert.ok(fontState.buffer.includes('theme session preserved'))
+  await page.reload()
+  await ready()
+  assert.equal(await page.getByLabel('App font', { exact: true }).inputValue(), 'Georgia')
+  assert.equal(
+    await page.getByLabel('Code font', { exact: true }).inputValue(),
+    'JetBrains Mono Nerd Font',
+  )
+  assert.equal(
+    await page.getByLabel('Terminal font', { exact: true }).inputValue(),
+    'JetBrains Mono Nerd Font',
+  )
+  await page.waitForFunction(() => window.terminals[0].options.fontSize === 18)
+  // A generic family works as CSS, and clearing a field restores the device default.
+  await page.getByLabel('App font', { exact: true }).fill('serif')
+  assert.ok(
+    (
+      await page.locator('html').evaluate((element) => getComputedStyle(element).fontFamily)
+    ).startsWith('serif'),
+  )
+  await page.getByLabel('App font', { exact: true }).fill('')
+  await page.getByLabel('Terminal font', { exact: true }).fill('')
+  await page.waitForFunction(() =>
+    window.terminals[0].options.fontFamily.startsWith('ui-monospace'),
+  )
   // Native radio cards support keyboard navigation as well as pointer selection.
   await page.getByRole('radio', { name: 'Claude', exact: true }).focus()
   await page.keyboard.press('ArrowRight')
@@ -258,7 +332,7 @@ try {
     await page.screenshot({ path: process.env.DOVO_APPEARANCE_SCREENSHOT })
   assert.deepEqual(errors, [])
   console.log(
-    'Appearance: all 28 palette/mode combinations, markdown/diff syntax, terminal continuity, system mode, persistence, keyboard selection, logo and narrow layout passed.',
+    'Appearance: all 28 palette/mode combinations, markdown/diff syntax, font persistence, bundled Nerd glyphs, terminal continuity, system mode, persistence, keyboard selection, logo and narrow layout passed.',
   )
 } finally {
   await browser.close()

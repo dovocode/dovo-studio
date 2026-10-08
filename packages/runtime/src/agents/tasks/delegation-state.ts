@@ -1,4 +1,10 @@
-import { resolveTaskAgent, type Task, type Agent, type Subagent } from '@dovo/protocol'
+import {
+  resolveTaskAgent,
+  indexTaskFamilyWorking,
+  type Task,
+  type Agent,
+  type Subagent,
+} from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
 /** Dovo-owned records mirror child tasks in this workspace; provider-native records
  * (no `source`) come from the harness itself and are never derived here. */
@@ -9,6 +15,7 @@ function ownedBy(record: Subagent) {
  * Records for children that no longer exist are dropped so parents never link to a
  * missing task. */
 export function projectDelegatedAgents(tasks: Task[], agents: Agent[]) {
+  const familyWorking = indexTaskFamilyWorking(tasks)
   const children = new Map<string, Task[]>()
   for (const task of tasks)
     if (task.delegation) {
@@ -31,14 +38,13 @@ export function projectDelegatedAgents(tasks: Task[], agents: Agent[]) {
     )
     for (const child of group) {
       const agent = resolveTaskAgent(child, agents)
-      const status: Subagent['status'] =
-        child.activeRunId || child.status === 'running' || child.status === 'draft'
-          ? 'working'
-          : child.status === 'review' || child.status === 'done'
-            ? 'completed'
-            : child.status === 'cancelled'
-              ? 'stopped'
-              : 'failed'
+      const status: Subagent['status'] = familyWorking(child.id)
+        ? 'working'
+        : child.status === 'review' || child.status === 'done'
+          ? 'completed'
+          : child.status === 'cancelled'
+            ? 'stopped'
+            : 'failed'
       const old = merged.get(child.id)
       const finishedAt =
         status === 'working'
@@ -54,7 +60,10 @@ export function projectDelegatedAgents(tasks: Task[], agents: Agent[]) {
         prompt: child.messages.find((message) => message.role === 'user')?.text,
         model: agent?.model,
         reasoning: agent?.reasoning,
-        activity: child.error ?? child.activity,
+        activity:
+          child.error ??
+          child.activity ??
+          (status === 'working' && child.status === 'review' ? 'Waiting for children' : undefined),
         startedAt: child.createdAt,
         updatedAt: old?.updatedAt ?? child.createdAt,
         finishedAt,

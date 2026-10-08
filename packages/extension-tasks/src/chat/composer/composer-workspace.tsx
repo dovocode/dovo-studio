@@ -219,7 +219,11 @@ export function ComposerWorkspace({
           title="Checkout cannot be changed after a task starts."
         >
           <Folder className="size-3" />
-          {task.execution === 'worktree' ? 'Worktree' : 'Local checkout'}
+          {task.execution === 'worktree'
+            ? task.checkoutBranch
+              ? 'Worktree'
+              : 'New worktree'
+            : 'Local checkout'}
         </span>
       )}
       <Popover.Root
@@ -259,7 +263,11 @@ export function ComposerWorkspace({
                 ? task.existingWorktreePath.split('/').at(-1)
                 : choosingBase
                   ? `From ${(task.worktreeBaseBranch ?? (branches && defaultWorktreeBase(branches.branches, branches.current, task.worktreeFromOrigin, branches.originDefault)) ?? (task.worktreeFromOrigin ? 'origin' : 'current branch')).replace(/^refs\/(heads|remotes)\//, '')}`
-                  : (task.checkoutBranch ?? repository?.branch ?? 'Branch')}
+                  : (task.checkoutBranch ??
+                    (task.pullRequest
+                      ? `${task.pullRequest.checkoutMode === 'pr-branch' ? 'PR branch' : 'From'} ${task.pullRequest.headBranch || `PR #${task.pullRequest.number}`}`
+                      : repository?.branch) ??
+                    'Branch')}
             </span>
             <ChevronDown className="size-3" />
           </Button>

@@ -1,4 +1,10 @@
-import { startReconnecting, startSocketHeartbeat } from '@dovo/studio-core'
+import {
+  startReconnecting,
+  startSocketHeartbeat,
+  useAppPreferences,
+  fontStack,
+  systemMonoFont,
+} from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
@@ -7,7 +13,9 @@ import { responses, useWorkspace, useStudioTheme, useResolvedTheme } from '@dovo
 export function TerminalSession({ id, active }: { id: string; active: boolean }) {
   const { connection, request } = useWorkspace(),
     container = useRef<HTMLDivElement>(null),
-    [error, setError] = useApplicationState('')
+    [error, setError] = useApplicationState(''),
+    [fontError, setFontError] = useApplicationState('')
+  const { terminalFontFamily, terminalFontSize } = useAppPreferences()
   const colors = useStudioTheme()
   const mode = useResolvedTheme()
   const terminalTheme = useMemo(
@@ -38,13 +46,14 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
   )
   const themeRef = useRef(terminalTheme)
   themeRef.current = terminalTheme
+  const resizeRef = useRef<(() => void) | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
   useEffect(() => {
     if (!container.current || !connection) return
     let socket: WebSocket | undefined
     const terminal = new Terminal({
         fontSize: 12,
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontFamily: systemMonoFont,
         theme: themeRef.current,
         scrollback: 5000,
       }),
@@ -65,6 +74,7 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
           )
       }
     }
+    resizeRef.current = resize
     const observer = new ResizeObserver(resize)
     observer.observe(container.current)
     const input = terminal.onData((data) => {
@@ -146,17 +156,43 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
       observer.disconnect()
       terminal.dispose()
       terminalRef.current = null
+      resizeRef.current = null
     }
   }, [id, connection, request])
   useEffect(() => {
     if (terminalRef.current) terminalRef.current.options.theme = terminalTheme
   }, [terminalTheme])
+  useEffect(() => {
+    const terminal = terminalRef.current
+    if (!terminal) return
+    let cancelled = false
+    const family = fontStack(terminalFontFamily, systemMonoFont)
+    // Measure cells only once the font is available, including bold prompt/icon text.
+    void Promise.all([
+      document.fonts.load(`400 ${terminalFontSize}px ${family}`),
+      document.fonts.load(`700 ${terminalFontSize}px ${family}`),
+    ])
+      .then(() => {
+        if (cancelled) return
+        setFontError('')
+        terminal.options.fontFamily = family
+        terminal.options.fontSize = terminalFontSize
+        resizeRef.current?.()
+        terminal.refresh(0, terminal.rows - 1)
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setFontError(`Could not load terminal font: ${String(error)}`)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [terminalFontFamily, terminalFontSize, id, connection, request, active, setFontError])
   return (
     <div className={active ? 'relative min-h-0 flex-1' : 'hidden'}>
       <div ref={container} className="h-full p-2" />
-      {error && (
+      {(error || fontError) && (
         <p role="alert" className="absolute bottom-0 bg-card p-2 text-xs text-destructive">
-          {error}
+          {error || fontError}
         </p>
       )}
     </div>

@@ -257,7 +257,11 @@ it('enriches full detail without losing review decisions, requested teams, or cl
         merged_at: null,
         user: { login: 'dominic' },
         updated_at: '2026-09-20T08:00:00Z',
-        head: { label: 'team:fix', sha },
+        head: {
+          label: 'team:fix',
+          sha,
+          repo: { clone_url: 'https://github.com/contributor/fork.git' },
+        },
         base: { label: 'team:main', sha: 'b'.repeat(40) },
         labels: [],
         body: 'Description',
@@ -334,6 +338,7 @@ it('enriches full detail without losing review decisions, requested teams, or cl
   expect(detail.pull).toMatchObject({
     provider: 'github',
     cloneUrl: `${repo.url}.git`,
+    headCloneUrl: 'https://github.com/contributor/fork.git',
     headRef: 'refs/pull/7/head',
     reviewers: ['maintainers'],
   })

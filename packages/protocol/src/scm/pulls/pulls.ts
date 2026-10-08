@@ -99,8 +99,9 @@ export const pullDetailSchema = mutableStruct({
     ...pullSummarySchema.fields,
     ...{
       ...taskPullSchema.mapFields(Struct.pick(['headSha', 'baseSha', 'repositoryUrl'])).fields,
-      ...taskPullSchema.mapFields(Struct.pick(['provider', 'connectionId', 'headRef', 'cloneUrl']))
-        .fields,
+      ...taskPullSchema.mapFields(
+        Struct.pick(['provider', 'connectionId', 'headRef', 'cloneUrl', 'headCloneUrl']),
+      ).fields,
       body: Schema.String,
       additions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       deletions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
@@ -166,6 +167,7 @@ export const pullTaskInputSchema = refine(
     ),
     harness: Schema.optional(taskHarnessSchema),
     stackAction: Schema.optional(Schema.Literal('update')),
+    checkoutMode: taskPullSchema.fields.checkoutMode,
     objective: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 12000),
     headSha: taskPullSchema.fields.headSha,
     run: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),

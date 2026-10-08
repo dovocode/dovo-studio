@@ -1,9 +1,11 @@
 # Queue, steer and agent questions
 
-A successful completed turn shows **Done** in the task list until you view its chat. Read status
-syncs across your connected devices. A later completion shows Done again; opening a list, keeping
-the app in the background, or viewing a different mobile task pane does not clear it. This does not
-settle the task. Failed tasks show a failure indicator, and a branch icon identifies task worktrees.
+Running threads keep unread title styling, including while saving changes. Viewing a running chat
+does not mark it read; its completed response must be viewed first. A successful completed turn
+shows **Done** in the task list until you view its chat. Read status syncs across your connected
+devices. A later completion shows Done again; opening a list, keeping the app in the background, or
+viewing a different mobile task pane does not clear it. This does not settle the task. Failed tasks
+show a failure indicator, and a branch icon identifies task worktrees.
 
 Right-click a desktop task (or press Shift+F10 on its row) for task actions, including rename,
 pinning, snooze, settle/reopen, read/unread, project filtering and copying task details. Marking the
@@ -52,9 +54,15 @@ task only. On desktop, **Use [provider] directly** switches back to a fresh buil
 on mobile, select the built-in agent in the same picker. Reselecting the current custom agent keeps
 its task-specific settings.
 
-Tasks opened from a PR also start as unsent drafts, with the description and review feedback ready
-in the composer. Choose the agent and edit the message before sending; the linked PR still
-determines the task's worktree and commit.
+Tasks opened from a PR also start as unsent drafts, with “I want to work on this PR.” and the PR
+link in the composer. Choose the agent and edit the message before sending; the linked PR still
+determines the task's worktree and commit. In the **New task** dropdown (mobile: **PR actions**),
+choose **New branch from PR** (the default) for a separate Dovo branch, or **Use PR branch** to
+check out the actual PR branch in a new worktree and push updates to its source repository,
+including fork PRs. Direct checkout refuses branches checked out elsewhere, divergent local tips and
+incompatible upstreams. Both choices start at the PR's recorded head commit, even when **Start from
+origin** is enabled. Draft checkout controls show that source branch; older drafts without a
+recorded branch name show the PR number.
 
 Before the first message, a draft can switch providers freely. Sending or queueing that first
 message fixes the conversation's provider, including if the queued message is later removed. Between

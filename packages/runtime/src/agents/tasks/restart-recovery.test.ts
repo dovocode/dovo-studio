@@ -533,3 +533,120 @@ it('holds an unconfirmed provider action for manual review even when automatic r
   expect(runtime.services.store.task(id).error).toContain('not confirmed')
   expect(runtime.services.store.task(id).activeRunId).toBeUndefined()
 })
+
+it('recovers a durable child completion exactly once and holds it for manual continuation', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const options = {
+    databasePath: join(f.directory, '.git', 'completion.sqlite'),
+    ownerToken: 'synthetic-owner-token-for-restart-test',
+    port: 0,
+  }
+  const first = await startRuntime(options)
+  first.services.store.update(() => f.workspace)
+  const parent = first.services.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  first.services.store.updateTask(parent.id, (task) => ({ ...task, status: 'review' }))
+  const child = first.services.tasks.create({
+    title: 'Child',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Inspect',
+  })
+  first.services.store.updateTask(child.id, (task) => ({
+    ...task,
+    status: 'review',
+    messages: [
+      ...task.messages,
+      { id: 'answer', role: 'assistant', text: 'Recovered child answer' },
+    ],
+    delegation: {
+      parentTaskId: parent.id,
+      parentRunId: 'finished-run',
+      key: 'child',
+      completion: 'pending',
+    },
+  }))
+  await first.close()
+  const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Handled result'))
+  adapter(run)
+  const second = await startRuntime(options)
+  cleanups.push(second.close)
+  expect(second.services.store.task(parent.id).queue?.[0]?.text).toContain('Recovered child answer')
+  expect(second.services.store.task(parent.id).queuePaused).toBe(true)
+  expect(run).not.toHaveBeenCalled()
+  expect(second.services.store.task(child.id).delegation?.completion).toBe('queued')
+  await second.close()
+  const third = await startRuntime(options)
+  cleanups.push(third.close)
+  expect(third.services.store.task(parent.id).queue).toHaveLength(1)
+  expect(run).not.toHaveBeenCalled()
+  await (
+    await third.services.tasks.start(parent.id)
+  ).done
+  expect(run).toHaveBeenCalledOnce()
+  expect(run.mock.calls[0][0].prompt).toContain('Recovered child answer')
+  expect(third.services.store.task(parent.id).queue).toEqual([])
+})
+
+it('retains interruption delivery when the runtime shuts down with an idle parent and a working child', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const options = {
+    databasePath: join(f.directory, '.git', 'working-child.sqlite'),
+    ownerToken: 'synthetic-owner-token-for-restart-test',
+    port: 0,
+  }
+  let childId = ''
+  const lookup = adapter(async (run) => {
+    if (run.agent.provider === 'claude') {
+      await new Promise<void>((resolve) =>
+        run.signal.addEventListener('abort', () => resolve(), { once: true }),
+      )
+      run.signal.throwIfAborted()
+    } else {
+      if (!run.taskId) throw new Error('Expected a task')
+      childId = first.services.tasks.subagentSpawn({
+        taskId: run.taskId,
+        key: 'shutdown',
+        name: 'Inspect',
+        prompt: 'Inspect',
+        provider: 'claude',
+      }).id
+      run.onText('Parent reply')
+    }
+  })
+  const first = await startRuntime(options)
+  cleanups.push(first.close)
+  first.services.store.update(() => f.workspace)
+  const parent = first.services.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  await (
+    await first.services.tasks.start(parent.id)
+  ).done
+  await waitForRecovery(() => expect(first.services.store.task(childId).status).toBe('running'))
+  await first.close()
+  const resumed = vi.fn<AgentAdapter['run']>(async (run) => run.onText('Handled interruption'))
+  lookup.mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run: resumed })
+  const restarted = await startRuntime(options)
+  cleanups.push(restarted.close)
+  const task = restarted.services.store.task(parent.id)
+  expect(task.status).toBe('review')
+  expect(task.queuePaused).toBe(true)
+  expect(task.queue?.[0]?.text).toContain('Child interrupted by runtime restart')
+  expect(restarted.services.store.task(childId).delegation?.completion).toBe('queued')
+  expect(resumed).not.toHaveBeenCalled()
+  await (
+    await restarted.services.tasks.start(parent.id)
+  ).done
+  expect(resumed).toHaveBeenCalledOnce()
+  expect(resumed.mock.calls[0][0].prompt).toContain('Child interrupted by runtime restart')
+})

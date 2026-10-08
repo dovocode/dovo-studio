@@ -374,6 +374,12 @@ function Message() {
   const pendingMessage = usePendingConversationMessage()
   const id = useAuiState((state) => state.message.id)
   const user = useAuiState((state) => state.message.role === 'user')
+  const childResult = useConversationSelector(
+    useCallback(
+      (value) => !!value.task.messages.find((message) => message.id === id)?.subagentResultId,
+      [id],
+    ),
+  )
   const createdAt = useAuiState((state) => state.message.createdAt)
   const streaming = useAuiState((state) => state.message.status?.type === 'running')
   const presentation = useConversationPresentation(id)
@@ -431,6 +437,7 @@ function Message() {
               }
         }
       >
+        {childResult && <Text style={[styles.muted, { fontSize: 11 }]}>Dovo child result</Text>}
         {user ? <MessagePrimitive.Parts components={userParts} /> : <AssistantParts />}
       </Pressable>
       {pendingMessage?.message.id === id && (

@@ -1,6 +1,5 @@
-/** Where a new worktree starts. By default that is the project's current local branch. With
- * "Start from origin" it is origin's copy of that branch, or origin's default branch when the
- * current branch has no counterpart there. */
+/** Automatic base for a task: with "Start from origin", prefer origin's matching or default
+ * branch; otherwise use the current local branch. Unset flags retain older tasks' local behavior. */
 export function defaultWorktreeBase(
   branches: ReadonlyArray<{ ref: string }>,
   current: string,

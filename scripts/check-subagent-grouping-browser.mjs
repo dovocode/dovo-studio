@@ -7,6 +7,8 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,set]=useState(initial);const ref=useRef(value);ref.current=value;return [value,set,ref]}`
 const controls = `
 export const Button=({children,onClick,disabled,...props})=><button disabled={disabled} onClick={onClick} {...props}>{children}</button>;
+export const Toggle=({label,checked,onChange})=><button role="switch" aria-label={label} aria-checked={checked} onClick={()=>onChange(!checked)}/>;
+export const Switch=({accessibilityLabel,value,onValueChange})=><Toggle label={accessibilityLabel} checked={value} onChange={onValueChange}/>;
 export const Input=props=><input {...props}/>;
 export const ChoicePicker=({children,value,onValueChange,...props})=><select value={value} onChange={e=>onValueChange(e.target.value)} {...props}>{children}</select>;
 export const cn=(...values)=>values.filter(Boolean).join(' ');
@@ -30,7 +32,7 @@ const base={repositoryId:'repo',agentId:'',status:'running',createdAt:'2026-10-0
 const record=(id,name,status='working',source='dovo')=>({id,taskId:source==='dovo'?id:undefined,source:source==='dovo'?'dovo':undefined,name,provider:'codex',status,activity:status==='working'?'Inspecting tests':'Saved result',startedAt:'2026-10-03T12:00:00Z',updatedAt:'2026-10-03T12:01:00Z'});
 const parent={...base,id:'parent',title:'Main thread',subagents:[record('child','Live child'),record('done','Ended child','completed'),record('native','Native worker','working','native')]};
 const child={...base,id:'child',title:'Independent child title',delegation:{parentTaskId:'parent',parentRunId:'run',key:'child'},subagents:[record('nested','Nested child'),record('nested-native','Nested native','working','native')]};
-const nested={...base,id:'nested',title:'Independent nested title',delegation:{parentTaskId:'child',parentRunId:'child-run',key:'nested'}};
+const nested={...base,activeRunId:'nested-run',id:'nested',title:'Independent nested title',delegation:{parentTaskId:'child',parentRunId:'child-run',key:'nested'}};
 const done={...base,id:'done',title:'Independent ended title',status:'done',delegation:{parentTaskId:'parent',parentRunId:'run',key:'done'}};
 const second={...base,id:'second',title:'Another main thread'};
 window.workspace={repositories:[{id:'repo',name:'Project',path:'/project',branch:'main'}],tasks:[parent,child,nested,done,second],agents:[]};
@@ -38,16 +40,19 @@ const snapshot={workspace:window.workspace,questions:[],approvals:[],terminals:[
 const profile={id:'linux',name:'Linux',connection:{address:'http://linux.local:51464',token:'test-token'}};
 window.source={runtimeId:'linux',address:profile.connection.address,name:'Linux',workspace:window.workspace,snapshot,online:true};
 window.overview={profile,snapshot,connected:true,lastSeen:null,error:null,pulls:null,pullError:null};
-window.opened=[];window.routes=[];window.switches=[];window.orders=[];
+window.opened=[];window.routes=[];window.switches=[];window.orders=[];window.requests=[];
+window.request=async(path,input)=>{window.requests.push({path,input});return {ok:true}};
 window.host={navigate:target=>window.routes.push(target)};
-window.store={workspace:window.workspace,snapshot,connected:true,activeRuntimeId:'mac',activeId:'mac',runtimeRegistry:{profiles:[profile]},profiles:[profile],overviews:[window.overview],runtimes:[window.overview],profile,ready:true,refreshAll:async()=>{},refreshRuntimes:async()=>{},selectRuntimeEffect:id=>Effect.sync(()=>window.switches.push(id))};
+window.store={request:window.request,call:window.request,callEffect:(path,input)=>Effect.promise(()=>window.request(path,input)),workspace:window.workspace,snapshot,connected:true,activeRuntimeId:'mac',activeId:'mac',runtimeRegistry:{profiles:[profile]},profiles:[profile],overviews:[window.overview],runtimes:[window.overview],profile,ready:true,refreshAll:async()=>{},refreshRuntimes:async()=>{},selectRuntimeEffect:id=>Effect.sync(()=>window.switches.push(id))};
 window.publishTasks=tasks=>{window.workspace={...window.workspace,tasks};const next={...window.store.snapshot,workspace:window.workspace};window.source={...window.source,workspace:window.workspace,snapshot:next};window.overview={...window.overview,snapshot:next};window.store={...window.store,workspace:window.workspace,snapshot:next,overviews:[window.overview],runtimes:[window.overview]};};
-window.preferences={taskSort:'newest',taskGrouping:'none'};
+window.preferences={taskSort:'newest',taskGrouping:'none',hideFinishedSubagents:true};
+window.preferenceListeners=new Set();window.subscribePreferences=listener=>{window.preferenceListeners.add(listener);return ()=>window.preferenceListeners.delete(listener)};
+window.updatePreferences=changes=>{window.preferences={...window.preferences,...changes};window.preferenceListeners.forEach(listener=>listener())};
 `
 
 async function bundle(contents) {
   const mocks = {
-    '@dovo/studio-core': `export * from '@dovo/protocol';export const providers={codex:{short:'Codex',name:'Codex'}};export const useWorkspace=()=>window.store;export const useStudioHost=()=>window.host;export const useAppPreferences=()=>window.preferences;export const readAppPreferences=()=>window.preferences;export const useRuntimeSources=()=>[window.overview];export const formatDateTime=x=>String(x);`,
+    '@dovo/studio-core': `import {useSyncExternalStore} from 'react';export * from '@dovo/protocol';export const providers={codex:{short:'Codex',name:'Codex'}};export const useWorkspace=()=>window.store;export const useStudioHost=()=>window.host;export const useAppPreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateAppPreferences=changes=>window.updatePreferences(changes);export const readAppPreferences=()=>window.preferences;export const useRuntimeSources=()=>[window.overview];export const formatDateTime=x=>String(x);`,
     '@dovo/studio-core/state': state,
     '@dovo/studio-ui': controls,
     '@dovo/extension-scm/projects': 'export const ProjectsMenu=()=>null;',
@@ -116,7 +121,7 @@ async function bundle(contents) {
                 navigation:
                   'export const useNavigation=()=>({focused:true,navigate:(view,entityId,runtimeId)=>window.routes.push({view,entityId,runtimeId})});',
                 preferences:
-                  'export const useCarMode=()=>false;export const useMobilePreferences=()=>window.preferences;export const updateMobilePreferences=()=>{};',
+                  'import {useSyncExternalStore} from "react";export const useCarMode=()=>false;export const useMobilePreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateMobilePreferences=changes=>window.updatePreferences(changes);',
                 workflow:
                   'import {Effect} from "effect";export const mobileWorkflow=Effect.gen;export const nativeEffect=fn=>Effect.tryPromise(fn);',
                 lifecycle:
@@ -227,6 +232,31 @@ try {
     await page.getByText('Nested native · codex', { exact: true }).waitFor({ state: 'detached' })
     await page.getByRole('button', { name: /^Open subagent Nested child/ }).waitFor()
     await page.evaluate(() => window.renderAgents())
+    await page.getByRole('button', { name: 'Stop agents', exact: true }).click()
+    await page.waitForFunction(() => window.requests.length === 1)
+    const groupStop = await page.evaluate(() => window.requests[0])
+    assert.equal(groupStop.path, '/api/tasks/stop-agents')
+    assert.equal(groupStop.input.id, 'parent')
+    assert.ok(
+      JSON.parse(groupStop.input.runToken).some(
+        ([id, run]) => id === 'nested' && run === 'nested-run',
+      ),
+    )
+    await page.getByText('Nested child', { exact: true }).click()
+    await page.getByRole('button', { name: 'Stop child', exact: true }).click()
+    await page.waitForFunction(() => window.requests.length === 2)
+    assert.deepEqual(await page.evaluate(() => window.requests[1]), {
+      path: '/api/tasks/cancel',
+      input: { id: 'nested', runId: 'nested-run' },
+    })
+    await page.getByText('Nested child', { exact: true }).click()
+    const hideFinished = page.getByRole('switch', { name: 'Hide finished', exact: true })
+    await hideFinished.waitFor()
+    assert.equal(await hideFinished.getAttribute('aria-checked'), 'true')
+    assert.equal(await page.getByText('Ended child', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('Live child', { exact: true }).count(), 0)
+    await page.getByText(/2 hidden/).waitFor()
+    await hideFinished.click()
     await page.getByText('Ended child', { exact: true }).waitFor()
     await page.getByText('Nested child', { exact: true }).waitFor()
     assert.equal(await page.getByText('Last seen working', { exact: true }).count(), 2)
@@ -239,6 +269,102 @@ try {
     assert.equal(await page.evaluate(() => window.routes.at(-1).entityId), 'done')
     await page.evaluate(() => {
       window.publishTasks(
+        window.workspace.tasks.map((task) =>
+          task.id === 'parent'
+            ? {
+                ...task,
+                subagents: [
+                  ...task.subagents,
+                  {
+                    ...task.subagents[0],
+                    id: 'failed',
+                    taskId: undefined,
+                    source: undefined,
+                    name: 'Failed worker',
+                    status: 'failed',
+                  },
+                  {
+                    ...task.subagents[0],
+                    id: 'stopped',
+                    taskId: undefined,
+                    source: undefined,
+                    name: 'Stopped worker',
+                    status: 'stopped',
+                  },
+                  {
+                    ...task.subagents[0],
+                    id: 'unknown',
+                    taskId: undefined,
+                    source: undefined,
+                    name: 'Unknown worker',
+                    status: 'unknown',
+                  },
+                  {
+                    ...task.subagents[0],
+                    id: 'timestamp',
+                    taskId: undefined,
+                    source: undefined,
+                    name: 'Finished timestamp',
+                    status: 'working',
+                    finishedAt: '2026-10-03T12:02:00Z',
+                  },
+                ],
+              }
+            : task,
+        ),
+      )
+      window.renderAgents()
+    })
+    await page.getByText('Failed worker', { exact: true }).waitFor()
+    await page.getByText('Stopped worker', { exact: true }).waitFor()
+    await hideFinished.click()
+    for (const name of [
+      'Ended child',
+      'Live child',
+      'Failed worker',
+      'Stopped worker',
+      'Finished timestamp',
+    ]) {
+      await page.getByText(name, { exact: true }).waitFor({ state: 'detached' })
+    }
+    await page.getByText('Unknown worker', { exact: true }).waitFor()
+    await page.getByText('Nested child', { exact: true }).waitFor()
+    await page.getByText(/5 hidden/).waitFor()
+    await page.evaluate(() => {
+      window.store = { ...window.store, connected: false }
+      window.renderAgents()
+    })
+    await page.getByText(/Offline · saved state/).waitFor()
+    await page.getByText('Unknown worker', { exact: true }).waitFor()
+    await page.getByText('Nested child', { exact: true }).waitFor()
+    await page.evaluate(() => {
+      window.publishTasks(
+        window.workspace.tasks.map((task) => ({
+          ...task,
+          subagents: task.subagents?.map((agent) => ({
+            ...agent,
+            status: 'completed',
+            finishedAt: '2026-10-03T12:02:00Z',
+          })),
+        })),
+      )
+      window.renderAgents()
+    })
+    await page.getByText(/All subagents have finished/).waitFor()
+    await page.getByText(/9 hidden/).waitFor()
+    await page.evaluate(() => window.renderList(false))
+    await page.getByText('Main thread', { exact: true }).waitFor()
+    await page.evaluate(() => window.renderAgents())
+    assert.equal(await hideFinished.getAttribute('aria-checked'), 'true')
+    await hideFinished.click()
+    await page.getByText('Ended child', { exact: true }).waitFor()
+    await page.evaluate(() => window.renderList(false))
+    await page.getByText('Main thread', { exact: true }).waitFor()
+    await page.evaluate(() => window.renderAgents())
+    await page.getByText('Ended child', { exact: true }).waitFor()
+    assert.equal(await hideFinished.getAttribute('aria-checked'), 'false')
+    await page.evaluate(() => {
+      window.publishTasks(
         window.workspace.tasks.map((task) => ({ ...task, archivedAt: '2026-10-03T12:02:00Z' })),
       )
       window.renderList(true)
@@ -248,7 +374,7 @@ try {
     assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
     assert.deepEqual(errors, [])
     console.log(
-      `${mobile ? 'Mobile' : 'Desktop'}: parent-only active/archive rows, native/live/nested pills, ended Agents results, runtime-scoped navigation and selection passed.`,
+      `${mobile ? 'Mobile' : 'Desktop'}: parent-only rows, live pills, finished-agent filtering, group/child stop controls, unknown/offline visibility, remembered toggle, ended results and navigation passed.`,
     )
     await page.close()
   }

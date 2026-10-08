@@ -163,3 +163,101 @@ it('accepts token usage only for identified child threads, never parent totals',
     ),
   ).toBe(started)
 })
+
+it('discovers Codex children before a collaboration event and ignores root events', () => {
+  const child = updateSubagents(
+    [],
+    'codex',
+    { threadId: 'child', item: { type: 'commandExecution' } },
+    now,
+    'item/started',
+    'root',
+  )
+  expect(child).toMatchObject([
+    { id: 'child', status: 'working', sessionLive: true, activity: 'commandExecution' },
+  ])
+  expect(
+    updateSubagents(
+      child,
+      'codex',
+      { threadId: 'root', item: { type: 'commandExecution' } },
+      now,
+      'item/started',
+      'root',
+    ),
+  ).toBe(child)
+  const completed = updateSubagents(
+    child,
+    'codex',
+    { threadId: 'child', turn: { status: 'completed' } },
+    now,
+    'turn/completed',
+    'root',
+  )
+  expect(completed[0]?.status).toBe('completed')
+})
+
+it('recovers missed Claude starts from its full roster without counting shells or ambient work', () => {
+  const roster = {
+    type: 'system',
+    subtype: 'background_tasks_changed',
+    tasks: [
+      { task_id: 'agent', task_type: 'local_agent', description: 'Explore' },
+      { task_id: 'shell', task_type: 'local_bash', description: 'Build' },
+      { task_id: 'ambient', task_type: 'local_agent', description: 'Watch', ambient: true },
+    ],
+  }
+  const discovered = updateSubagents([], 'claude', roster, now, 'system', 'session')
+  expect(discovered).toMatchObject([
+    { id: 'agent', name: 'Explore', status: 'working', background: true, sessionLive: true },
+  ])
+  expect(discovered).toHaveLength(1)
+  const patch = updateSubagents(
+    discovered,
+    'claude',
+    {
+      type: 'system',
+      subtype: 'task_updated',
+      task_id: 'agent',
+      patch: { status: 'killed', error: 'Stopped', description: 'Review' },
+    },
+    now,
+    'system',
+    'session',
+  )
+  expect(patch[0]).toMatchObject({ name: 'Review', status: 'stopped', activity: 'Stopped' })
+  const removed = updateSubagents(
+    discovered,
+    'claude',
+    { ...roster, tasks: [] },
+    now,
+    'system',
+    'session',
+  )
+  expect(removed[0]).toMatchObject({ status: 'unknown', background: false })
+  expect(
+    updateSubagents(
+      discovered,
+      'claude',
+      { ...roster, tasks: 'malformed' },
+      now,
+      'system',
+      'session',
+    ),
+  ).toBe(discovered)
+})
+
+it('clears native liveness when a provider process closes without modifying Dovo-owned records', () => {
+  const native = updateSubagents(
+    [],
+    'codex',
+    { threadId: 'child', item: { type: 'commandExecution' } },
+    now,
+    'item/started',
+    'root',
+  )[0]
+  const owned = { ...native, id: 'dovo-child', source: 'dovo' as const }
+  const closed = updateSubagents([native, owned], 'codex', {}, now, 'dovo/session/closed')
+  expect(closed[0]).toMatchObject({ status: 'unknown', sessionLive: false })
+  expect(closed[1]).toBe(owned)
+})

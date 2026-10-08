@@ -27,6 +27,7 @@ import {
   projectTaskDefaultsSchema,
   providerSchema,
   runtimeDefaultsSchema,
+  defaultWorktreeFromOrigin,
   agentConnectionValue,
   changeAgentConnection,
   taskHarnessSchema,
@@ -396,13 +397,17 @@ function TaskDefaultSettingsForm({
               <Switch
                 accessibilityLabel="Start from origin"
                 disabled={disabled}
-                value={draft.worktreeFromOrigin ?? setup?.defaults.worktreeFromOrigin ?? false}
+                value={
+                  draft.worktreeFromOrigin ??
+                  setup?.defaults.worktreeFromOrigin ??
+                  defaultWorktreeFromOrigin
+                }
                 onValueChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
               />
             </View>
             <Text style={styles.muted}>
-              Creates the worktree from the latest matching branch on origin instead of your local
-              branch. Without a matching branch, origin’s default branch is used.
+              Prefers the latest matching origin branch for new worktrees, falling back to origin’s
+              default branch. You can still select a local base branch for a task.
             </Text>
             {source('worktreeFromOrigin')}
           </View>

@@ -93,7 +93,7 @@ it('resolves project overrides field by field and allows disabling inherited set
   expect(resolveTaskDefaults(runtime, project)).toEqual({
     harness: runtime.harness,
     execution: 'worktree',
-    worktreeFromOrigin: false,
+    worktreeFromOrigin: true,
     setupCommand: '',
   })
   // Start from origin: the project inherits its computer's choice until it overrides it.
@@ -125,4 +125,42 @@ it('picks the worktree base: local branch, or origin’s matching or default bra
   expect(
     defaultWorktreeBase(refs('refs/heads/main', 'refs/remotes/origin/main'), 'main', true),
   ).toBe('refs/remotes/origin/main')
+})
+
+it('defaults new Git tasks to origin while preserving explicit opt-outs and folder checkouts', async () => {
+  const { resolveTaskDefaults } = await import('./runtime-setup')
+  const project = { id: 'repo', name: 'Repo', path: '/repo', branch: 'main' }
+  expect(resolveTaskDefaults(undefined, project).worktreeFromOrigin).toBe(true)
+  expect(resolveTaskDefaults(decode(runtimeDefaultsSchema, {}), project).worktreeFromOrigin).toBe(
+    true,
+  )
+  const disabled = decode(runtimeDefaultsSchema, { worktreeFromOrigin: false })
+  expect(resolveTaskDefaults(disabled, project).worktreeFromOrigin).toBe(false)
+  expect(
+    resolveTaskDefaults(undefined, { ...project, taskDefaults: { worktreeFromOrigin: false } })
+      .worktreeFromOrigin,
+  ).toBe(false)
+  expect(
+    resolveTaskDefaults(disabled, { ...project, taskDefaults: { worktreeFromOrigin: true } })
+      .worktreeFromOrigin,
+  ).toBe(true)
+  const globalOptOut = decode(runtimeDefaultsSchema, {
+    scopedSettings: {
+      environment: {},
+      shared: [
+        {
+          key: 'global',
+          value: { taskDefaults: { worktreeFromOrigin: false } },
+          updatedAt: 1,
+          changeId: 'off',
+        },
+      ],
+    },
+  })
+  expect(resolveTaskDefaults(globalOptOut, project).worktreeFromOrigin).toBe(false)
+  for (const kind of ['folder', 'scratch'] as const)
+    expect(resolveTaskDefaults(undefined, { ...project, kind })).toMatchObject({
+      execution: 'main',
+      worktreeFromOrigin: false,
+    })
 })

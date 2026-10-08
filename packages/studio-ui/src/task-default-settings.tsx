@@ -8,6 +8,7 @@ import {
   changeAgentConnection,
   decode,
   defaultTaskHarness,
+  defaultWorktreeFromOrigin,
   executionSchema,
   modelCatalogSchema,
   modelDisplayName,
@@ -451,12 +452,16 @@ function TaskDefaultSettingsForm({
             </SettingRow>
             <SettingRow
               label="Start from origin"
-              description="Fetch the matching origin branch before creating a worktree. Falls back to origin’s default branch."
+              description="Prefer the latest matching origin branch for new worktrees, falling back to origin’s default branch. You can still select a local base branch for a task."
               source={source('worktreeFromOrigin')}
             >
               <Toggle
                 label="Start from origin"
-                checked={draft.worktreeFromOrigin ?? inherited.worktreeFromOrigin ?? false}
+                checked={
+                  draft.worktreeFromOrigin ??
+                  inherited.worktreeFromOrigin ??
+                  defaultWorktreeFromOrigin
+                }
                 onChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
               />
             </SettingRow>

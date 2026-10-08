@@ -14,8 +14,8 @@ const built = await build({
   stdin: {
     contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Context} from '@dovo/studio-core';import {StartupDraft} from '../extension-tasks/src/task-creation/startup-draft';
-window.requests=[];window.commits=[];
-function App(){const [runtimeId,setRuntimeId]=useState('machine');const [workspace,setWorkspace]=useState({tasks:[],repositories:[{id:'chat',kind:'scratch',name:'Temporary',path:'/scratch',branch:''},{id:'git',name:'Git project',path:'/git',branch:'main'},{id:'folder',kind:'folder',name:'Plain folder',path:'/folder',branch:''}]});window.saved=workspace.tasks;return <Context.Provider value={{workspace,setWorkspace,activeRuntimeId:runtimeId,runtimeRegistry:{profiles:[{id:'machine'},{id:'remote-machine'}]},otherSources:[{runtimeId:'remote-machine',name:'Remote machine',online:true,snapshot:null,workspace:{tasks:[],repositories:[{id:'remote-git',name:'Remote Git project',path:'/remote/git',branch:'main'}]}}],refreshRuntimes:async()=>{},switchRuntime:async(id)=>{setRuntimeId(id);setWorkspace({tasks:[],repositories:[{id:'remote-chat',kind:'scratch',name:'Temporary',path:'/remote/scratch',branch:''},{id:'remote-git',name:'Remote Git project',path:'/remote/git',branch:'main'}]})},connected:true,flush:async()=>{},request:async(path,input)=>{window.requests.push({path,input});if(path==='/api/scm/branches')return {current:'main',branches:[{name:'main',ref:'refs/heads/main'}]};if(path==='/api/scm/worktrees/choices')return {worktrees:[{path:'/git/existing',branch:'feature',dirty:true}]};throw Error('Unexpected request '+path)}}}><StartupDraft onProject={()=>{}} onCommit={task=>window.commits.push(task)}/></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
+window.requests=[];window.commits=[];window.fleetRefreshes=0;
+function App(){const [runtimeId,setRuntimeId]=useState('machine');const [workspace,setWorkspace]=useState({tasks:[],repositories:[{id:'chat',kind:'scratch',name:'Temporary',path:'/scratch',branch:''},{id:'git',name:'Git project',path:'/git',branch:'main'},{id:'folder',kind:'folder',name:'Plain folder',path:'/folder',branch:''}]});window.saved=workspace.tasks;return <Context.Provider value={{workspace,setWorkspace,activeRuntimeId:runtimeId,runtimeRegistry:{profiles:[{id:'machine'},{id:'remote-machine'}]},otherSources:[{runtimeId:'remote-machine',name:'Remote machine',online:true,snapshot:null,workspace:{tasks:[],repositories:[{id:'remote-git',name:'Remote Git project',path:'/remote/git',branch:'main'}]}}],refreshRuntimes:async()=>{window.fleetRefreshes++;await new Promise(()=>{})},switchRuntime:async(id)=>{setRuntimeId(id);setWorkspace({tasks:[],repositories:[{id:'remote-chat',kind:'scratch',name:'Temporary',path:'/remote/scratch',branch:''},{id:'remote-git',name:'Remote Git project',path:'/remote/git',branch:'main'}]})},connected:true,flush:async()=>{},request:async(path,input)=>{window.requests.push({path,input});if(path==='/api/scm/branches')return {current:'main',revision:'one',originDefault:'refs/remotes/origin/main',branches:[{name:'main',ref:'refs/heads/main',remote:false,checkedOut:true},{name:'origin/main',ref:'refs/remotes/origin/main',remote:true,checkedOut:false},{name:'local-only',ref:'refs/heads/local-only',remote:false,checkedOut:false}]};if(path==='/api/scm/worktrees/choices')return {worktrees:[{path:'/git/existing',branch:'feature',dirty:true}]};throw Error('Unexpected request '+path)}}}><StartupDraft onProject={()=>{}} onCommit={task=>window.commits.push(task)}/></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: new URL('../packages/studio-ui/', import.meta.url).pathname,
     loader: 'tsx',
@@ -45,6 +45,7 @@ function App(){const [runtimeId,setRuntimeId]=useState('machine');const [workspa
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
+  page.setDefaultTimeout(5000)
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   await page.setContent('<div id="app"></div>')
@@ -55,7 +56,7 @@ try {
   )
   const chooseFolder = async (name) => {
     await page.getByRole('button', { name: 'Task project', exact: true }).click()
-    await page.getByRole('menuitem', { name, exact: true }).click()
+    await page.getByRole('button', { name, exact: true }).click()
   }
   await chooseFolder('Git project')
   await page.getByRole('button', { name: 'Working directory', exact: true }).waitFor()
@@ -69,6 +70,14 @@ try {
     await page.getByRole('button', { name: 'Working directory', exact: true }).innerText(),
     /New worktree/,
   )
+  const base = page.getByRole('button', { name: 'Checkout branch', exact: true })
+  await page.getByRole('button', { name: 'origin/main', exact: true }).waitFor()
+  assert.equal((await base.innerText()).trim(), 'From origin/main')
+  const local = page.getByRole('button', { name: 'local-only', exact: true })
+  assert.equal(await local.isEnabled(), true)
+  await local.click()
+  assert.equal((await base.innerText()).trim(), 'From local-only')
+  await base.click()
   await page.getByRole('button', { name: 'main', exact: true }).click()
   assert.equal(
     await page
@@ -108,8 +117,7 @@ try {
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('button', { name: 'Task project', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Remote machine', exact: true }).hover()
-  await page.getByRole('menuitem', { name: 'Remote Git project', exact: true }).click()
+  await page.getByRole('button', { name: 'Remote Git project', exact: true }).click()
   await page.getByRole('button', { name: 'Working directory', exact: true }).waitFor()
   assert.deepEqual(
     await page.evaluate(() => [window.saved.length, window.commits.length, window.requests.length]),
@@ -117,6 +125,7 @@ try {
   )
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Remote draft')
   assert.equal(await page.evaluate(() => window.saved[0].repositoryId), 'remote-git')
+  assert.equal(await page.evaluate(() => window.fleetRefreshes), 0)
   assert.deepEqual(errors, [])
   console.log('Startup checkout controls and temporary draft persistence passed')
 } finally {

@@ -8,10 +8,11 @@ const text = (value: unknown) => (typeof value === 'string' && value ? value : u
 const number = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
 const status = (value: unknown): Subagent['status'] => {
-  if (['running', 'pendingInit', 'started', 'interacted'].includes(String(value))) return 'working'
+  if (['running', 'pending', 'pendingInit', 'started', 'interacted'].includes(String(value)))
+    return 'working'
   if (value === 'completed') return 'completed'
   if (['failed', 'errored'].includes(String(value))) return 'failed'
-  if (['stopped', 'shutdown', 'interrupted'].includes(String(value))) return 'stopped'
+  if (['stopped', 'shutdown', 'interrupted', 'killed'].includes(String(value))) return 'stopped'
   return 'unknown'
 }
 
@@ -22,12 +23,15 @@ export function updateSubagents(
   payload: unknown,
   now: string,
   method?: string,
+  rootThreadId?: string,
 ): Subagent[] {
   const event = object(payload),
     item = object(event.item)
   let next = current
   const put = (id: string, fields: Partial<Subagent>) => {
-    const previous = next.find((agent) => agent.id === id && agent.provider === provider)
+    const previous = next.find(
+      (agent) => agent.id === id && agent.provider === provider && agent.source !== 'dovo',
+    )
     const agent: Subagent = {
       id,
       provider,
@@ -37,16 +41,36 @@ export function updateSubagents(
       ...previous,
       ...fields,
       updatedAt: now,
+      sessionLive: rootThreadId !== undefined || previous?.sessionLive,
     }
     if (agent.status === 'working') agent.finishedAt = undefined
     else if (agent.status !== 'unknown') agent.finishedAt = previous?.finishedAt ?? now
-    next = [...next.filter((entry) => entry.id !== id || entry.provider !== provider), agent]
+    next = [
+      ...next.filter(
+        (entry) => entry.id !== id || entry.provider !== provider || entry.source === 'dovo',
+      ),
+      agent,
+    ]
   }
+  if (method === 'dovo/session/closed')
+    return current.map((agent) =>
+      agent.provider === provider && agent.source !== 'dovo'
+        ? {
+            ...agent,
+            sessionLive: false,
+            status: agent.status === 'working' ? 'unknown' : agent.status,
+            updatedAt: now,
+          }
+        : agent,
+    )
   const childId = text(event.threadId)
   if (
     provider === 'codex' &&
     childId &&
-    current.some((agent) => agent.provider === provider && agent.id === childId)
+    (current.some(
+      (agent) => agent.provider === provider && agent.id === childId && agent.source !== 'dovo',
+    ) ||
+      (rootThreadId && childId !== rootThreadId))
   ) {
     if (method === 'thread/tokenUsage/updated') {
       const tokens = number(object(object(event.tokenUsage).total).totalTokens)
@@ -78,8 +102,11 @@ export function updateSubagents(
       ...Object.keys(states),
     ])
     for (const id of ids) {
+      if (id === rootThreadId) continue
       const state = object(states[id])
-      const previous = next.find((agent) => agent.id === id)
+      const previous = next.find(
+        (agent) => agent.id === id && agent.provider === provider && agent.source !== 'dovo',
+      )
       const fields: Partial<Subagent> = {}
       if (text(item.senderThreadId)) fields.parentId = text(item.senderThreadId)
       if (state.status) fields.status = status(state.status)
@@ -99,17 +126,56 @@ export function updateSubagents(
       status: status(item.kind),
     })
   }
+  if (
+    provider === 'claude' &&
+    event.type === 'system' &&
+    event.subtype === 'background_tasks_changed'
+  ) {
+    const tasks = decodeResult(mutableArray(record), event.tasks).data
+    if (!tasks) return next
+    const live = new Set<string>()
+    for (const task of tasks) {
+      const id = text(task.task_id)
+      if (!id || task.task_type !== 'local_agent' || task.ambient === true) continue
+      live.add(id)
+      put(id, { name: text(task.description) ?? id, status: 'working', background: true })
+    }
+    for (const agent of next)
+      if (
+        agent.provider === provider &&
+        agent.source !== 'dovo' &&
+        agent.background &&
+        agent.status === 'working' &&
+        !live.has(agent.id)
+      )
+        put(agent.id, { status: 'unknown', background: false })
+  }
   if (provider === 'claude' && event.type === 'system' && text(event.task_id)) {
     const id = String(event.task_id),
-      previous = next.find((agent) => agent.id === id && agent.provider === provider)
+      previous = next.find(
+        (agent) => agent.id === id && agent.provider === provider && agent.source !== 'dovo',
+      )
     if (
       event.subtype === 'task_started' &&
-      (event.task_type === 'local_agent' || text(event.subagent_type))
+      (event.task_type === 'local_agent' || text(event.subagent_type)) &&
+      event.ambient !== true &&
+      event.skip_transcript !== true
     ) {
       put(id, {
         name: text(event.description) ?? text(event.subagent_type) ?? id,
         status: 'working',
+        background:
+          typeof event.is_backgrounded === 'boolean' ? event.is_backgrounded : previous?.background,
         prompt: text(event.prompt),
+      })
+    } else if (previous && event.subtype === 'task_updated') {
+      const patch = object(event.patch)
+      put(id, {
+        status: patch.status ? status(patch.status) : previous.status,
+        name: text(patch.description) ?? previous.name,
+        activity: text(patch.error) ?? previous.activity,
+        background:
+          typeof patch.is_backgrounded === 'boolean' ? patch.is_backgrounded : previous.background,
       })
     } else if (previous && ['task_progress', 'task_notification'].includes(String(event.subtype))) {
       const usage = object(event.usage)

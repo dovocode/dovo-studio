@@ -164,6 +164,8 @@ try {
   await page.waitForFunction(() => window.currentTheme.mode === 'light')
   await page.evaluate(() => window.setSystemScheme('dark'))
   await page.waitForFunction(() => window.currentTheme.mode === 'dark')
+  await page.getByLabel('Terminal font', { exact: true }).selectOption('JetBrains Mono Nerd Font')
+  await page.getByLabel('Terminal font size').selectOption('18')
   await page.getByLabel('Color scheme').selectOption('light')
   await page.evaluate(() => window.setSystemScheme('dark'))
   assert.equal(await page.evaluate(() => window.currentTheme.mode), 'light')
@@ -175,6 +177,11 @@ try {
   assert.equal(await page.evaluate(() => window.currentTheme.palette), 'claude')
   assert.equal(await input.inputValue(), 'Draft survives theme changes')
   assert.equal(await page.evaluate(() => window.preferences.confirmArchive), true)
+  assert.equal(
+    await page.getByLabel('Terminal font', { exact: true }).inputValue(),
+    'JetBrains Mono Nerd Font',
+  )
+  assert.equal(await page.getByLabel('Terminal font size').inputValue(), '18')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile Appearance: all 14 shared palettes in light/dark, live system changes, explicit override, migration and persistence; theme changes keep draft, editor, focus, caret and pending-send restoration mounted.',

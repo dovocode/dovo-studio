@@ -1,17 +1,49 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo } from 'react'
 import { subagentElapsed, subagentMetadata } from '@dovo/studio-core'
-import { type Task, useWorkspace } from '@dovo/studio-core'
+import {
+  type Task,
+  useWorkspace,
+  useAppPreferences,
+  updateAppPreferences,
+  responses,
+} from '@dovo/studio-core'
 import { Bot, ChevronRight } from 'lucide-react'
 import { useStudioHost } from '@dovo/studio-core'
-import { Button, cn } from '@dovo/studio-ui'
-import { indexTaskSubagents } from '@dovo/protocol'
+import { Button, Toggle, cn } from '@dovo/studio-ui'
+import { indexTaskSubagents, taskFamilyRunToken } from '@dovo/protocol'
 export function TaskAgents({ task }: { task: Task }) {
   const host = useStudioHost()
-  const { connected, workspace } = useWorkspace()
+  const { connected, workspace, request } = useWorkspace()
+  const { hideFinishedSubagents } = useAppPreferences()
+  const [stopping, setStopping] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const stopAgents = async (target = task, stopTurn = false) => {
+    setStopping(true)
+    setError('')
+    try {
+      await request(
+        stopTurn ? '/api/tasks/cancel' : '/api/tasks/stop-agents',
+        stopTurn
+          ? { id: target.id, runId: target.activeRunId }
+          : { id: target.id, runToken: taskFamilyRunToken(workspace.tasks, target.id) },
+        responses.ok,
+      )
+    } catch (error) {
+      setError(String(error))
+    } finally {
+      setStopping(false)
+    }
+  }
   const [now, setNow] = useApplicationState(Date.now)
   const indexed = useMemo(() => indexTaskSubagents(workspace.tasks), [workspace.tasks])
   const agents = indexed(task)
+  const visibleAgents = agents.filter(
+    (agent) =>
+      !hideFinishedSubagents ||
+      (!agent.finishedAt && (agent.status === 'working' || agent.status === 'unknown')),
+  )
+  const hidden = agents.length - visibleAgents.length
   const activeAgents = new Set(connected ? indexed(task, true) : [])
   const live = connected
   const working = activeAgents.size
@@ -33,9 +65,33 @@ export function TaskAgents({ task }: { task: Task }) {
           Back to parent thread
         </Button>
       )}
-      <div className="px-4 py-4 text-[0.625rem] uppercase tracking-wider text-muted-foreground">
-        Spawned agents
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 text-muted-foreground">
+        <span className="text-[0.625rem] uppercase tracking-wider">Spawned agents</span>
+        <div className="flex items-center gap-2 text-xs">
+          <span>Hide finished</span>
+          <Toggle
+            label="Hide finished"
+            checked={hideFinishedSubagents}
+            onChange={(hideFinishedSubagents) => updateAppPreferences({ hideFinishedSubagents })}
+          />
+        </div>
       </div>
+      {[...activeAgents].some((agent) => agent.source === 'dovo') && (
+        <Button
+          className="mx-4 mb-3"
+          variant="outline"
+          size="sm"
+          disabled={stopping}
+          onClick={() => stopAgents()}
+        >
+          {stopping ? 'Stopping…' : 'Stop agents'}
+        </Button>
+      )}
+      {error && (
+        <p role="alert" className="mx-4 mb-3 text-xs text-destructive">
+          {error}
+        </p>
+      )}
       {!agents.length && (
         <div className="px-4 py-8 text-center text-xs text-muted-foreground">
           <Bot className="mx-auto mb-3 size-5" />
@@ -43,10 +99,16 @@ export function TaskAgents({ task }: { task: Task }) {
           <p className="mt-2">Agents spawned by a supported harness appear here as they work.</p>
         </div>
       )}
+      {!!agents.length && !visibleAgents.length && (
+        <p className="px-4 py-8 text-center text-xs text-muted-foreground">
+          All subagents have finished. Turn off Hide finished to view them.
+        </p>
+      )}
       <div className="flex-1 px-2">
-        {agents.map((agent, index) => {
+        {visibleAgents.map((agent, index) => {
           const active = live && activeAgents.has(agent)
           const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
+          const child = childId ? workspace.tasks.find((item) => item.id === childId) : undefined
           const state =
             !active && agent.status === 'working'
               ? 'Last seen working'
@@ -107,6 +169,16 @@ export function TaskAgents({ task }: { task: Task }) {
                     Open child thread · {agent.provider}
                   </Button>
                 )}
+                {active && child?.activeRunId && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={stopping}
+                    onClick={() => stopAgents(child, true)}
+                  >
+                    Stop child
+                  </Button>
+                )}
                 <p className="text-[0.625rem]">
                   {agent.source === 'dovo' ? 'Dovo child agent' : agent.id}
                 </p>
@@ -118,6 +190,7 @@ export function TaskAgents({ task }: { task: Task }) {
       <footer className="sticky bottom-0 mt-4 flex gap-3 border-t bg-background px-4 py-3 text-[0.6875rem] text-muted-foreground">
         <span className={working ? 'text-blue-400' : ''}>{working} working</span>
         <span>{agents.length} total</span>
+        {hidden > 0 && <span>{hidden} hidden</span>}
         {!connected && <span className="ml-auto">Offline · saved state</span>}
       </footer>
     </section>

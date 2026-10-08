@@ -206,7 +206,7 @@ export default function ArtifactsScreen() {
           ) : (
             <View style={[styles.empty, { gap: 12 }]}>
               <Icon name="artifactList" size={36} color={colors.muted} />
-              <Text style={{ fontSize: 18, fontWeight: '600' }}>
+              <Text style={[styles.text, { fontSize: 18, fontWeight: '600' }]}>
                 {filtered ? 'No matching artifacts' : 'Your next idea belongs here'}
               </Text>
               <Text style={[styles.muted, { textAlign: 'center' }]}>
@@ -250,7 +250,7 @@ export default function ArtifactsScreen() {
           >
             <ArtifactFormatIcon format={item.artifact.format} large />
             <View style={{ flex: 1, gap: 6 }}>
-              <Text numberOfLines={2} style={{ fontWeight: '600' }}>
+              <Text numberOfLines={2} style={[styles.text, { fontWeight: '600' }]}>
                 {item.artifact.title}
               </Text>
               <Text numberOfLines={1} style={styles.muted}>

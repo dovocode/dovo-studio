@@ -205,6 +205,7 @@ type WarmClaude = {
   closed: boolean
   closing?: Promise<void>
   accountInfo?: Promise<AccountInfo | undefined>
+  onSubagentEvent?: AgentRun['onSubagentEvent']
 }
 
 export function createClaudeAdapter(): AgentAdapter {
@@ -215,6 +216,7 @@ export function createClaudeAdapter(): AgentAdapter {
     idle.delete(session.taskId)
     active.delete(session)
     session.closed = true
+    session.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)
     session.input.close()
     session.closing = (async () => {
       let closeError: unknown
@@ -274,14 +276,20 @@ export function createClaudeAdapter(): AgentAdapter {
         sessionId: run.sessionId,
         consumer: Promise.resolve(),
         closed: false,
+        onSubagentEvent: run.onSubagentEvent,
       }
       active.add(session)
       session.consumer = (async () => {
         try {
           for await (const message of stream) {
+            if (session.closed) break
             const turn = session.turn
+            if (message.session_id) {
+              session.sessionId = message.session_id
+              turn?.run.onSession(message.session_id)
+            }
+            session.onSubagentEvent?.(message.type, message, session.sessionId)
             if (!turn) continue
-            if (message.session_id) session.sessionId = message.session_id
             try {
               handleMessage(turn.run, message, () => (turn.compacted = true))
               if (message.type === 'result') {
@@ -301,6 +309,7 @@ export function createClaudeAdapter(): AgentAdapter {
           session.turn?.reject(error instanceof Error ? error : new Error(String(error)))
           session.turn = undefined
           session.closed = true
+          session.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)
           active.delete(session)
           idle.delete(session.taskId)
           session.input.close()
@@ -313,6 +322,7 @@ export function createClaudeAdapter(): AgentAdapter {
       })()
       void session.consumer.catch((error) => console.error('Claude stream failed:', error))
     }
+    session.onSubagentEvent = run.onSubagentEvent
     const completion = new Promise<void>((resolve, reject) => {
       session.turn = { run, compacted: false, resolve, reject }
     })

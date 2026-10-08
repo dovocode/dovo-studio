@@ -40,7 +40,12 @@ export async function moveTaskDraft(
     },
     Schema.Struct({ ok: Schema.Boolean }),
   )
-  await store.refreshRuntimes()
+  // Read the received draft before opening it, without waiting for unrelated servers or PRs.
+  await store.refreshRuntime(profile)
   await store.switchRuntime(profile.id)
   host.navigate({ viewId: 'tasks', entityId: task.id })
+  if (origin)
+    void store.refreshRuntime(origin).catch((error: unknown) => {
+      console.error('Could not refresh the source server after moving the draft', error)
+    })
 }

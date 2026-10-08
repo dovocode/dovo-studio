@@ -48,4 +48,13 @@ it('turns a task into a template and a template into draft fields', () => {
     worktreeFromOrigin: true,
     setupCommand: 'pnpm install',
   })
+  const localTemplate = templateFromTask({ ...task, worktreeFromOrigin: false }, 'Local', 'local')
+  expect(localTemplate.worktreeFromOrigin).toBe(false)
+  expect(templateTaskFields(localTemplate).worktreeFromOrigin).toBe(false)
+  const inheritedTemplate = templateFromTask(
+    { ...task, worktreeFromOrigin: undefined },
+    'Inherited',
+    'inherited',
+  )
+  expect(inheritedTemplate).not.toHaveProperty('worktreeFromOrigin')
 })

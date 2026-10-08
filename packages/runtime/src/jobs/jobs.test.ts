@@ -850,3 +850,84 @@ it('runs polled GitHub events through task instructions and review gates without
   expect(s.store.task(s.jobs.list()[0].taskIds[0]).messages[0].text).toContain('Issue 2')
   expect(report).not.toHaveBeenCalled()
 })
+
+it.each(['complete', 'cancel'] as const)(
+  'keeps an automation step owned while asynchronous children work (%s)',
+  async (outcome) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const runtime = await startRuntime({
+      databasePath: ':memory:',
+      ownerToken: 'test-owner-token-with-at-least-32-characters',
+      port: 0,
+    })
+    cleanups.push(() => runtime.close())
+    runtime.services.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+    let release = () => {}
+    const childRelease = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let rootId = ''
+    let childId = ''
+    let rootTurns = 0
+    let resultPrompt = ''
+    vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        if (run.agent.provider === 'claude') {
+          await Promise.race([
+            childRelease,
+            new Promise<void>((resolve) =>
+              run.signal.addEventListener('abort', () => resolve(), { once: true }),
+            ),
+          ])
+          run.signal.throwIfAborted()
+          run.onText('Automation child answer')
+        } else if (++rootTurns === 1) {
+          if (!run.taskId) throw new Error('Expected a task')
+          rootId = run.taskId
+          childId = runtime.services.tasks.subagentSpawn({
+            taskId: rootId,
+            key: 'job-child',
+            name: 'Inspect',
+            prompt: 'Inspect',
+            provider: 'claude',
+          }).id
+          run.onText('Delegated inspection')
+        } else {
+          resultPrompt = run.prompt
+          run.onText('Inspection incorporated')
+        }
+      },
+    })
+    try {
+      const jobId = runtime.services.jobs.start('flow')
+      await waitForJob(() => {
+        expect(runtime.services.store.task(rootId).status).toBe('review')
+        expect(runtime.services.store.task(rootId).activeRunId).toBeUndefined()
+        expect(runtime.services.store.task(childId).status).toBe('running')
+      })
+      expect(runtime.services.jobs.list()[0].status).toBe('running')
+      if (outcome === 'complete') release()
+      else runtime.services.jobs.cancel(jobId)
+      await waitForJob(() =>
+        expect(runtime.services.jobs.list()[0].status).toBe(
+          outcome === 'complete' ? 'waiting' : 'cancelled',
+        ),
+      )
+      await waitForJob(() =>
+        expect(runtime.services.store.task(childId).activeRunId).toBeUndefined(),
+      )
+      expect(rootTurns).toBe(outcome === 'complete' ? 2 : 1)
+      expect(runtime.services.store.task(rootId).status).toBe(
+        outcome === 'complete' ? 'review' : 'cancelled',
+      )
+      expect(runtime.services.store.task(childId).delegation?.completion).toBe(
+        outcome === 'complete' ? 'queued' : 'disposed',
+      )
+      expect(resultPrompt.includes('Automation child answer')).toBe(outcome === 'complete')
+    } finally {
+      release()
+    }
+  },
+)

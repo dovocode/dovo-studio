@@ -1,16 +1,18 @@
 declare global {
   interface Window {
     ReactNativeWebView: { postMessage(message: string): void }
+    setTerminalFont(family: string, size: number): void
     connectTerminal(url: string, attempt: number): void
     disconnectTerminal(attempt: number | undefined): void
   }
 }
+import { fontStack, nerdFontFamily, systemMonoFont } from '@dovo/studio-core/fonts'
 import { startSocketHeartbeat } from '@dovo/client-runtime'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 const terminal = new Terminal({
   fontSize: 12,
-  fontFamily: 'monospace',
+  fontFamily: systemMonoFont,
   theme: { background: '#101113', foreground: '#ededee' },
   scrollback: 2000,
 })
@@ -26,6 +28,35 @@ const resize = () => {
   fit.fit()
   if (socket?.readyState === WebSocket.OPEN)
     socket.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }))
+}
+let fontRevision = 0
+window.setTerminalFont = (family, size) => {
+  if (
+    (family !== '' && family !== nerdFontFamily) ||
+    !Number.isInteger(size) ||
+    size < 8 ||
+    size > 32
+  )
+    return
+  const revision = ++fontRevision
+  const stack = fontStack(family, systemMonoFont)
+  void Promise.all([
+    document.fonts.load(`400 ${size}px ${stack}`),
+    document.fonts.load(`700 ${size}px ${stack}`),
+  ])
+    .then(() => {
+      if (revision !== fontRevision) return
+      terminal.options.fontFamily = stack
+      terminal.options.fontSize = size
+      resize()
+      terminal.refresh(0, terminal.rows - 1)
+    })
+    .catch((error: unknown) => {
+      if (revision === fontRevision)
+        window.ReactNativeWebView.postMessage(
+          JSON.stringify({ error: `Could not load terminal font: ${String(error)}` }),
+        )
+    })
 }
 new ResizeObserver(resize).observe(document.body)
 terminal.onData((data) => {

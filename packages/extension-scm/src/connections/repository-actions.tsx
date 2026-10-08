@@ -10,7 +10,7 @@ import {
   type Repository,
   type ChangedFile,
 } from '@dovo/studio-core'
-import { Button, Input } from '@dovo/studio-ui'
+import { Button, Input, DropdownMenu, RepositoryOpenItems } from '@dovo/studio-ui'
 export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?: string }) {
   const host = useStudioHost()
   const { request, connected } = useWorkspace(),
@@ -44,28 +44,30 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
     <div className="mt-4 space-y-3">
       <CreateGithub path={repo.path} disabled={busy} />
       <div className="flex flex-wrap gap-2">
-        {(
-          [
-            ['finder', 'Open in Finder'],
-            ['vscode', 'Open in VS Code'],
-            ['cursor', 'Open in Cursor'],
-          ] as const
-        ).map(([target, label]) => (
-          <Button
-            key={target}
-            size="sm"
-            variant="ghost"
-            disabled={!connected || busy}
-            onClick={() =>
-              act(async () => {
-                await request('/api/scm/open-folder', { ...input, target }, responses.ok)
-                setStatus('Opened on the runtime computer.')
-              })
-            }
-          >
-            {label}
-          </Button>
-        ))}
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button size="sm" variant="ghost" disabled={!connected || busy}>
+              Open…
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              sideOffset={4}
+              className="z-50 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+            >
+              <RepositoryOpenItems
+                itemClass="flex items-center gap-2 rounded px-2 py-1.5 text-xs outline-none focus:bg-accent"
+                disabled={busy}
+                onSelect={(target) =>
+                  act(async () => {
+                    await request('/api/scm/open-folder', { ...input, target }, responses.ok)
+                    setStatus('Opened on the runtime computer.')
+                  })
+                }
+              />
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
         <Button
           size="sm"
           variant="outline"

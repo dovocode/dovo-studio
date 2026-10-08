@@ -16,7 +16,7 @@ const mocks = {
   '@dovo/studio-core/state': `export * from '${root}/packages/studio-core/src/runtime/application-state.ts';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
   './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
-  '../list/start-task': `export const StartPullTask=()=> <div role="dialog">Start PR task</div>;`,
+  '../list/start-task': `export const StartPullTask=()=> <button>New task</button>;`,
   './create': `export const CreatePull=()=>null;`,
   '../../connections/forge-connections': `export const ForgeConnections=()=>null;`,
   '../../connections/source-picker': `export const SourcePicker=()=>null;`,

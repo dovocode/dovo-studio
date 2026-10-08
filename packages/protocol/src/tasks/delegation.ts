@@ -47,6 +47,45 @@ export function taskFamilyIds(tasks: readonly Pick<Task, 'id' | 'delegation'>[],
   return familyIds(childIds(tasks), id)
 }
 
+/** Includes descendants whose saved results still need a parent turn. */
+export function taskFamilyWorking(tasks: readonly Task[], id: string) {
+  return indexTaskFamilyWorking(tasks)(id)
+}
+
+/** Project once per workspace update; progress events must not rescan every family. */
+export function indexTaskFamilyWorking(tasks: readonly Task[]) {
+  const owners = new Map(tasks.map((task) => [task.id, task]))
+  const working = new Set<string>()
+  const mark = (task: Task | undefined) => {
+    while (task && !working.has(task.id)) {
+      working.add(task.id)
+      task = task.delegation ? owners.get(task.delegation.parentTaskId) : undefined
+    }
+  }
+  for (const task of tasks) {
+    if (
+      task.activeRunId ||
+      task.status === 'running' ||
+      task.status === 'draft' ||
+      task.queue?.some((message) => message.subagentResultId)
+    )
+      mark(task)
+    if (task.delegation?.completion === 'pending') mark(owners.get(task.delegation.parentTaskId))
+  }
+  return (id: string) => working.has(id)
+}
+
+/** Compare the whole family before stopping: a stale panel must not stop a newer run. */
+export function taskFamilyRunToken(tasks: readonly Task[], id: string) {
+  const ids = taskFamilyIds(tasks, id)
+  return JSON.stringify(
+    tasks
+      .filter((task) => ids.has(task.id))
+      .map((task) => [task.id, task.activeRunId ?? null, task.status])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+  )
+}
+
 function childIds(tasks: readonly Pick<Task, 'id' | 'delegation'>[]) {
   const children = new Map<string, string[]>()
   for (const task of tasks) {
@@ -90,7 +129,7 @@ export function indexTaskSubagents(tasks: readonly Task[]) {
           workingOnly &&
           (record.status !== 'working' ||
             record.finishedAt ||
-            (record.source !== 'dovo' && owner?.status !== 'running'))
+            (record.source !== 'dovo' && !record.sessionLive && owner?.status !== 'running'))
         )
           continue
         const child = record.source === 'dovo' ? (record.taskId ?? record.id) : undefined

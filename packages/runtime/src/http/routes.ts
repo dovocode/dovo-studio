@@ -174,10 +174,10 @@ export function route(
         if (path === '/api/subagents/spawn')
           return yield* serviceResult(s.tasks.subagentSpawn(decode(subagentSpawnSchema, raw)))
         if (path === '/api/subagents/list') {
-          const { taskId } = decode(subagentScopeSchema, raw)
+          const { taskId, parentRunId } = decode(subagentScopeSchema, raw)
           const parent = s.store.task(taskId)
           return yield* serviceResult({
-            agents: s.tasks.subagentList(taskId),
+            agents: s.tasks.subagentList(taskId, parentRunId),
             configurations: s.store
               .agentsFor(parent.repositoryId)
               .map(({ id, name, provider, model, permission }) => ({
@@ -191,11 +191,17 @@ export function route(
         }
         const input = decode(subagentReadSchema, raw)
         if (path === '/api/subagents/read')
-          return yield* serviceResult(s.tasks.subagentResult(input.taskId, input.id))
+          return yield* serviceResult(
+            s.tasks.subagentResult(input.taskId, input.id, true, input.parentRunId),
+          )
         if (path === '/api/subagents/wait')
-          return yield* serviceResult(s.tasks.subagentWait(input.taskId, input.id, input.timeoutMs))
+          return yield* serviceResult(
+            s.tasks.subagentWait(input.taskId, input.id, input.timeoutMs, input.parentRunId),
+          )
         if (path === '/api/subagents/cancel')
-          return yield* serviceResult(s.tasks.subagentCancel(input.taskId, input.id))
+          return yield* serviceResult(
+            s.tasks.subagentCancel(input.taskId, input.id, input.parentRunId),
+          )
         throw new HttpError(404, 'Unknown child agent action')
       }
       if (method === 'POST' && path.startsWith('/api/artifacts/')) {

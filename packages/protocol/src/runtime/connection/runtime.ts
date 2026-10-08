@@ -1,5 +1,6 @@
 import { browserProfilesSchema, defaultBrowserProfiles } from '../previews/browser-profiles.js'
 import { artifactRetentionSchema } from '../../conversation/artifacts.js'
+import { repositoryOpenTargetsSchema } from '../../scm/repositories/repository-tools.js'
 export const RUNTIME_PROTOCOL_VERSION = 2
 export const PAIRING_PROTOCOL_VERSION = 2
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
@@ -207,6 +208,7 @@ export type JobRun = Schema.Schema.Type<typeof jobRunSchema>
 export type JobRunStep = Schema.Schema.Type<typeof jobRunStepSchema>
 export type ProviderStatus = Schema.Schema.Type<typeof providerStatusSchema>
 export const responses = {
+  repositoryOpenTargets: repositoryOpenTargetsSchema,
   ok: mutableStruct({
     ok: Schema.Boolean,
   }),

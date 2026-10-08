@@ -46,6 +46,7 @@ import {
   DialogTitle,
   DialogDescription,
   DropdownMenu,
+  RepositoryOpenItems,
   ProjectIcon,
   cn,
 } from '@dovo/studio-ui'
@@ -266,33 +267,23 @@ export function TaskHeader({
               sideOffset={6}
               className="z-50 min-w-40 rounded-md border bg-popover p-1 text-xs text-popover-foreground shadow-md"
             >
-              {(
-                [
-                  ['finder', 'Open in Finder'],
-                  ['vscode', 'Open in VS Code'],
-                  ['cursor', 'Open in Cursor'],
-                ] as const
-              ).map(([target, label]) => (
-                <DropdownMenu.Item
-                  key={target}
-                  className="cursor-default rounded px-2 py-1.5 outline-none focus:bg-accent"
-                  onSelect={() => {
-                    setOpenBusy(true)
-                    setOpenError('')
-                    void request(
-                      '/api/scm/open-folder',
-                      { repositoryId: repo.id, taskId: task.id, target },
-                      responses.ok,
+              <RepositoryOpenItems
+                itemClass="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent"
+                disabled={openBusy}
+                onSelect={(target) => {
+                  setOpenBusy(true)
+                  setOpenError('')
+                  void request(
+                    '/api/scm/open-folder',
+                    { repositoryId: repo.id, taskId: task.id, target },
+                    responses.ok,
+                  )
+                    .catch((cause: unknown) =>
+                      setOpenError(cause instanceof Error ? cause.message : String(cause)),
                     )
-                      .catch((cause: unknown) =>
-                        setOpenError(cause instanceof Error ? cause.message : String(cause)),
-                      )
-                      .finally(() => setOpenBusy(false))
-                  }}
-                >
-                  {label}
-                </DropdownMenu.Item>
-              ))}
+                    .finally(() => setOpenBusy(false))
+                }}
+              />
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>

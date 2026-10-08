@@ -536,6 +536,7 @@ export class BitbucketForge implements ForgeAdapter {
         baseSha: value.destination.commit.hash,
         repositoryUrl: value.destination.repository.links.html.href,
         cloneUrl: head.cloneUrl,
+        headCloneUrl: head.cloneUrl,
         headRef: `refs/heads/${value.source.branch.name}`,
         body: value.description,
         additions: completeCounts

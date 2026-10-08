@@ -28,7 +28,7 @@ import { useTheme } from '../../../ui/theme'
 import { Icon } from '../../../ui/controls/icon'
 import { PullComments } from './pull-comments'
 import { PullChanges } from './pull-changes'
-import { StartPullTask } from '../list/start-pull-task'
+import { usePullTaskCreation } from '../list/start-pull-task'
 import { PullTabs } from './pull-tabs'
 import { PullStatus, Signal } from './pull-status'
 import { ScreenHeader } from '../../../ui/layout/screen-header'
@@ -59,10 +59,9 @@ export function PullDetail({
     invalidate()
     invalidatePullList(readCache, repositoryId)
   }
-  const [stackAction, setStackAction] = useApplicationState<'update' | undefined>(undefined)
+  const taskCreation = usePullTaskCreation(repositoryId, detail?.pull)
   const [creatingStack, setCreatingStack] = useApplicationState(false)
-  const [starting, setStarting] = useApplicationState(false),
-    [tab, setTab] = useApplicationState('overview'),
+  const [tab, setTab] = useApplicationState('overview'),
     [changesOpened, setChangesOpened] = useApplicationState(false),
     [metadataOpen, setMetadataOpen] = useApplicationState(false)
   const [action, setAction] = useApplicationState<PullActionTarget | null>(null)
@@ -102,9 +101,10 @@ export function PullDetail({
               providerName={forgeLabels[detail.pull.provider ?? 'github']}
               onRefresh={refresh}
               onOpen={() => open(detail.pull.url, true)}
-              onStartTask={() => setStarting(true)}
+              onStartTask={taskCreation.start}
+              prBranchAvailable={!!detail.pull.headCloneUrl}
               refreshDisabled={!connected || refreshing}
-              taskDisabled={!connected}
+              taskDisabled={!connected || taskCreation.busy}
               actions={actions?.secondary ?? []}
               onAction={openAction}
               actionDisabled={actionDisabled}
@@ -119,6 +119,11 @@ export function PullDetail({
           )
         }
       />
+      {!!taskCreation.error && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {taskCreation.error}
+        </Text>
+      )}
       {!detail && (
         <Text style={[styles.muted, styles.content]}>
           {error || (connected ? 'Loading PR details…' : 'Connect to the runtime.')}
@@ -276,11 +281,8 @@ export function PullDetail({
                       <Action
                         secondary
                         label="Ask agent to update stack"
-                        disabled={!connected || detail.stale}
-                        onPress={() => {
-                          setStackAction('update')
-                          setStarting(true)
-                        }}
+                        disabled={!connected || detail.stale || taskCreation.busy}
+                        onPress={() => taskCreation.start('new-branch', 'update')}
                       />
                     )}
                   </View>
@@ -458,17 +460,6 @@ export function PullDetail({
             onPosted()
             setCreatingStack(false)
             if (profile) router.push(pullHref(profile.id, repo, next))
-          }}
-        />
-      )}
-      {starting && detail && (
-        <StartPullTask
-          repositoryId={repositoryId}
-          pull={detail.pull}
-          stackAction={stackAction}
-          onBack={() => {
-            setStarting(false)
-            setStackAction(undefined)
           }}
         />
       )}

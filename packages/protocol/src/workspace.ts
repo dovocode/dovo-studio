@@ -252,6 +252,8 @@ export const messageSchema = mutableStruct({
   id: Schema.String,
   role: Schema.Literals(['user', 'assistant']),
   text: Schema.String,
+  /** Runtime-generated delegated result, distinct from a user prompt. */
+  subagentResultId: Schema.optional(Schema.String),
   /** Physical execution owning this input or response; steering retains the same execution. */
   turnId: Schema.optional(Schema.String),
   /** Exact completed provider-message offsets within accumulated assistant text. */
@@ -276,6 +278,11 @@ export const messageSchema = mutableStruct({
 export const taskPullSchema = mutableStruct({
   provider: Schema.optional(forgeProviderSchema),
   connectionId: Schema.optional(Schema.String),
+  /** The PR's source branch for display; headRef and headSha determine its checkout. */
+  headBranch: Schema.optional(Schema.String),
+  /** Source repository for updates, which can differ from the PR's target repository. */
+  headCloneUrl: Schema.optional(urlSchema({ protocol: /^https?$/ })),
+  checkoutMode: Schema.optional(Schema.Literals(['new-branch', 'pr-branch'])),
   headRef: Schema.optional(Schema.String),
   cloneUrl: Schema.optional(
     urlSchema({
@@ -602,6 +609,8 @@ export const taskSchema = mutableStruct({
   delegation: Schema.optional(
     mutableStruct({
       fingerprint: Schema.optional(maxValue(Schema.String, 64)),
+      /** Present on durable children; absent on legacy turn-owned children. */
+      completion: Schema.optional(Schema.Literals(['pending', 'queued', 'read', 'disposed'])),
       parentTaskId: maxValue(minValue(Schema.String, 1), 200),
       parentRunId: maxValue(minValue(Schema.String, 1), 200),
       checkoutId: Schema.optional(Schema.String),
@@ -790,6 +799,12 @@ export function hasUnviewedTaskCompletion(task: Task): boolean {
   if (task.archived || task.archivedAt) return false
   const turn = latestCompletedTaskTurn(task)
   return !!turn && turn.id !== task.lastViewedTurnId
+}
+
+/** Keep active work unread until its completed response has been viewed. */
+export function hasUnreadTaskActivity(task: Task): boolean {
+  if (task.archived || task.archivedAt) return false
+  return task.status === 'running' || hasUnviewedTaskCompletion(task)
 }
 
 /** A submitted message binds a task to its project and checkout, including queued input. */

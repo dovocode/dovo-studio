@@ -1041,6 +1041,14 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           ok: true,
         })
       }
+      if (method === 'POST' && path === '/api/tasks/stop-agents') {
+        const input = decode(
+          mutableStruct({ id: idSchema, runToken: maxValue(Schema.String, 100000) }),
+          yield* serviceResult(body(request)),
+        )
+        s.tasks.stopAgents(input.id, input.runToken)
+        return yield* serviceResult({ ok: true })
+      }
       if (method === 'POST' && path === '/api/tasks/cancel') {
         const input = decode(
           mutableStruct({ id: idSchema, runId: Schema.optional(idSchema) }),

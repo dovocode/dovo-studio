@@ -1124,8 +1124,21 @@ returns. On desktop, address replacement preserves unsent edits under the new co
 ### Project Git actions
 
 Project checkout controls and the desktop thread’s **Commit & push** button offer staging,
-committing, pushing, and opening the working folder in Finder, VS Code, or Cursor on the runtime
-Mac. Commit actions use staged files; **Push branch** retries a failed push without creating another
+committing, pushing, and opening the working folder on the runtime computer. **Open** detects
+installed applications each time you open the menu and shows only available choices: Finder on
+macOS, File Explorer on Windows, a file manager on Linux, VS Code, VS Code Insiders, VSCodium,
+Cursor, Antigravity IDE, Devin Desktop, Windsurf, Zed, and installed JetBrains IDEs. JetBrains IDEs
+share a submenu. Applications must be installed on the computer running the repository, including
+when you connect remotely; detection does not use your client computer’s applications.
+
+Detection checks application bundles, Windows registry and install locations, PATH, JetBrains
+Toolbox, Linux desktop entries, Snap launchers, and installed Flatpak packages. Removed launchers
+are excluded. Updated Windsurf installations are identified as Devin Desktop when their installed
+metadata has the new name. Devin’s separate agent CLI does not count as the desktop app. On WSL,
+Windows VS Code variants open the Linux checkout through WSL integration; other Windows apps receive
+its Windows folder path. Opening a task uses that task’s checkout.
+
+Commit actions use staged files; **Push branch** retries a failed push without creating another
 commit. Push respects the branch’s upstream, or sets one using origin (or its sole remote), and
 never force-pushes.
 

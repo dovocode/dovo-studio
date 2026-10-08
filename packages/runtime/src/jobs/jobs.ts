@@ -2,7 +2,7 @@ import { GithubTriggers } from './github-triggers.js'
 import { GithubEvents } from './github-events.js'
 import type { GitService } from '../scm/git/git.js'
 import { mutableStruct } from '@dovo/protocol'
-import { decode } from '@dovo/protocol'
+import { decode, taskFamilyRunToken } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
@@ -326,10 +326,19 @@ export class Jobs {
   }
   private stopTask(run: StoredRun) {
     const taskId = runSteps(run).find((step) => step.nodeId === run.currentNodeId)?.taskId
-    if (!taskId || this.store.get().tasks.find((task) => task.id === taskId)?.status !== 'running')
-      return
+    if (!taskId || !this.tasks.hasWorkingFamily(taskId)) return
     try {
-      this.tasks.cancel(taskId)
+      const task = this.store.task(taskId)
+      if (task.activeRunId) this.tasks.cancel(taskId, task.activeRunId)
+      else {
+        this.tasks.stopAgents(taskId, taskFamilyRunToken(this.store.get().tasks, taskId))
+        this.store.updateTask(taskId, (task) => ({
+          ...task,
+          status: 'cancelled',
+          queuePaused: true,
+          error: 'Automation stopped while delegated work was unfinished',
+        }))
+      }
     } catch (error) {
       if (!(error instanceof HttpError && error.status === 409)) throw error
     }
@@ -480,7 +489,10 @@ export class Jobs {
               })
           }
           if (this.stopping || this.runs.get(id)?.status !== 'running') return
-          if (!['review', 'done'].includes(task.status)) {
+          if (
+            !['review', 'done'].includes(task.status) ||
+            task.queue?.some((message) => message.subagentResultId)
+          ) {
             const execution = yield* this.tasks.startEffect(task.id)
             const current = this.runs.get(id)
             if (!current || current.status !== 'running' || this.stopping) {
@@ -494,6 +506,17 @@ export class Jobs {
             }
             yield* execution.completion
           }
+          // A normal reply can leave durable children working. Keep this step owned
+          // until their results have been incorporated, so later steps cannot race writes.
+          while (this.tasks.hasWorkingFamily(task.id)) {
+            if (this.stopping || this.runs.get(id)?.status !== 'running') return
+            yield* Effect.sleep('250 millis')
+          }
+          const completed = this.store.task(task.id)
+          if (!['review', 'done'].includes(completed.status))
+            return yield* Effect.fail(
+              new HttpError(409, completed.error ?? 'Delegated task did not complete'),
+            )
         }
         const current = this.runs.get(id)
         if (!current || current.status !== 'running' || this.stopping) return

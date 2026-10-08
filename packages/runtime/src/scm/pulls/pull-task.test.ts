@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'
 import { startRuntime } from '../../index'
 import { createPullTask } from './pull-task'
+import { listWorktreesEffect } from '../git/worktrees'
 import {
   canChangeTaskCheckout,
   canChangeTaskProvider,
@@ -29,7 +30,7 @@ async function setup() {
   cleanups.push(() => runtime.close())
   const s = runtime.services
   s.store.update(() => f.workspace)
-  return { f, s }
+  return { f, s, runtime }
 }
 function detail(sha: string, base: string): PullDetail {
   return {
@@ -102,13 +103,22 @@ it('creates a linked task at the PR head and leaves main edits untouched on firs
   })
   expect(s.store.task(id)).toMatchObject({
     execution: 'worktree',
+    worktreeFromOrigin: false,
     status: 'draft',
-    pullRequest: { number: 7, headSha: sha },
+    pullRequest: { number: 7, headSha: sha, headBranch: 'test:fix' },
   })
   expect(s.store.task(id).messages).toEqual([])
-  expect(s.store.task(id).draft).toContain('Keep cancellation idempotent')
+  expect(s.store.task(id).draft).toBe(
+    'Address review feedback\n\nhttps://github.com/test/repo/pull/7',
+  )
   expect(canChangeTaskProvider(s.store.task(id))).toBe(true)
   expect(canChangeTaskCheckout(s.store.task(id))).toBe(false)
+  // A saved origin preference and unrelated base selection must never replace the PR head.
+  s.store.updateTask(id, (task) => ({
+    ...task,
+    worktreeFromOrigin: true,
+    worktreeBaseBranch: 'refs/remotes/origin/main',
+  }))
   const cwd = await s.checkouts.directory(id)
   cleanups.push(() => rm(cwd, { recursive: true, force: true }))
   expect((await s.git.command(cwd, ['rev-parse', 'HEAD'])).trim()).toBe(sha)
@@ -118,6 +128,13 @@ it('creates a linked task at the PR head and leaves main edits untouched on firs
   await writeFile(join(cwd, 'hello.txt'), 'Task draft\n')
   expect(await s.checkouts.directory(id)).toBe(cwd)
   expect(fetch).toHaveBeenCalledTimes(1)
+  expect(fetch).toHaveBeenCalledWith(
+    f.directory,
+    'https://github.com/test/repo',
+    7,
+    expect.stringMatching(/^refs\/dovo\/pull-tasks\//),
+    expect.objectContaining({ headBranch: 'test:fix', headSha: sha }),
+  )
   expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('Task draft\n')
   expect(canChangeTaskProvider(s.store.task(id))).toBe(true)
   expect(s.store.task(id).providerLock).toBeUndefined()
@@ -159,7 +176,9 @@ it('rejects changed PRs before creating a task, and keeps tasks whose startup fa
   })
   expect(result.error).toBe('Fetch denied')
   expect(s.store.task(result.id)).toMatchObject({ status: 'failed', error: 'Fetch denied' })
-  expect(s.store.task(result.id).messages[0].text).toContain('Keep cancellation idempotent')
+  expect(s.store.task(result.id).messages[0].text).toBe(
+    'Review\n\nhttps://github.com/test/repo/pull/7',
+  )
   expect(s.store.task(result.id).draft).toBe('')
   expect(s.store.task(result.id).providerLock).toBe('codex')
   expect(() =>
@@ -192,8 +211,7 @@ it('opens a PR draft without configured agents and allows choosing its agent bef
     messages: [],
     pullRequest: { number: 7, headSha: sha },
   })
-  expect(task.draft).toContain('Review this change')
-  expect(task.draft).toContain('Source PR: https://github.com/test/repo/pull/7')
+  expect(task.draft).toBe('Review this change\n\nhttps://github.com/test/repo/pull/7')
   expect(task.providerLock).toBeUndefined()
   expect(canChangeTaskProvider(task)).toBe(true)
   expect(canChangeTaskCheckout(task)).toBe(false)
@@ -241,6 +259,125 @@ it('accepts a built-in harness directly and rejects missing or ambiguous saved a
   ).rejects.toThrow('either a saved agent or a built-in harness')
   expect(s.store.get().tasks).toHaveLength(1)
 })
+it('uses the actual PR branch, pushes to its fork, and restores committed work without touching the project checkout', async () => {
+  const { f, s, runtime } = await setup()
+  const git = (...args: string[]) => s.git.command(f.directory, args).then((out) => out.trim())
+  const base = await git('rev-parse', 'HEAD')
+  await writeFile(join(f.directory, 'hello.txt'), 'PR commit\n')
+  await git('commit', '-am', 'PR head')
+  const sha = await git('rev-parse', 'HEAD')
+  const fork = join(f.directory, '.git', 'fork.git')
+  await git('clone', '--quiet', '--bare', f.directory, fork)
+  await git('--git-dir', fork, 'update-ref', 'refs/heads/fix', sha)
+  await git('--git-dir', fork, 'update-ref', 'refs/pull/7/head', sha)
+  await git('checkout', '--detach', base)
+  await writeFile(join(f.directory, 'hello.txt'), 'Unrelated local edit\n')
+  const source = detail(sha, base)
+  source.pull.headCloneUrl = 'https://github.com/contributor/fork.git'
+  vi.spyOn(s.pulls, 'detail').mockResolvedValue(source)
+  await git('config', `url.${fork}.insteadOf`, source.pull.headCloneUrl)
+  await git('config', '--add', `url.${fork}.insteadOf`, 'https://github.com/test/repo.git')
+  vi.spyOn(s.git, 'githubEnvironment').mockResolvedValue({})
+  const fetchPull = vi.spyOn(s.git, 'fetchPull')
+  const input = {
+    number: 7,
+    headSha: sha,
+    objective: 'I want to work on this PR.',
+    checkoutMode: 'pr-branch',
+  }
+  const { id } = await createPullTask(s, 'repo', f.directory, input)
+  expect(s.store.task(id).pullRequest).toMatchObject({
+    checkoutMode: 'pr-branch',
+    headBranch: 'test:fix',
+    headCloneUrl: source.pull.headCloneUrl,
+  })
+  const command = s.git.command.bind(s.git)
+  let failUpstream = true
+  vi.spyOn(s.git, 'command').mockImplementation((cwd, args, env) => {
+    if (failUpstream && args[0] === 'config' && args[1] === 'branch.fix.remote') {
+      failUpstream = false
+      return Promise.reject(new Error('Upstream setup interrupted'))
+    }
+    return command(cwd, args, env)
+  })
+  await expect(s.checkouts.directory(id)).rejects.toThrow('Upstream setup interrupted')
+  const cwd = await s.checkouts.directory(id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  expect((await s.git.command(cwd, ['branch', '--show-current'])).trim()).toBe('fix')
+  expect((await s.git.command(cwd, ['rev-parse', 'HEAD'])).trim()).toBe(sha)
+  expect(
+    (await Effect.runPromise(listWorktreesEffect(s))).worktrees.find((item) => item.path === cwd)
+      ?.taskId,
+  ).toBe(id)
+  await writeFile(join(cwd, 'hello.txt'), 'Direct update\n')
+  await s.git.command(cwd, ['commit', '-am', 'Update the PR'])
+  const updated = (await s.git.command(cwd, ['rev-parse', 'HEAD'])).trim()
+  const pushed = await fetch(`http://127.0.0.1:${runtime.port}/api/scm/push`, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer pull-task-test-owner-token-at-least-32-characters',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ repositoryId: 'repo', taskId: id }),
+  })
+  expect(pushed.status).toBe(200)
+  expect(await pushed.json()).toEqual({ ok: true })
+  expect(await git('--git-dir', fork, 'rev-parse', 'refs/heads/fix')).toBe(updated)
+  expect((await s.git.command(cwd, ['rev-parse', '@{upstream}'])).trim()).toBe(updated)
+  expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('Unrelated local edit\n')
+  expect(await git('rev-parse', 'HEAD')).toBe(base)
+  await expect(createPullTask(s, 'repo', f.directory, input)).rejects.toThrow(
+    'already checked out elsewhere',
+  )
+  expect(await git('rev-parse', 'refs/heads/fix')).toBe(updated)
+  await rm(cwd, { recursive: true, force: true })
+  expect(await s.checkouts.directory(id)).toBe(cwd)
+  expect((await s.git.command(cwd, ['rev-parse', 'HEAD'])).trim()).toBe(updated)
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('Direct update\n')
+  expect(fetchPull).toHaveBeenCalledTimes(2)
+})
+
+it('keeps divergent local PR branches and rejects direct checkout when source details are unavailable', async () => {
+  const { f, s } = await setup()
+  const base = (await s.git.command(f.directory, ['rev-parse', 'HEAD'])).trim()
+  await s.git.command(f.directory, ['branch', 'fix', base])
+  const source = detail('a'.repeat(40), base)
+  source.pull.headCloneUrl = 'https://github.com/test/repo.git'
+  const read = vi.spyOn(s.pulls, 'detail').mockResolvedValue(source)
+  const input = {
+    number: 7,
+    headSha: source.pull.headSha,
+    objective: 'Work on this PR',
+    checkoutMode: 'pr-branch',
+  }
+  await expect(createPullTask(s, 'repo', f.directory, input)).rejects.toThrow('differs from the PR')
+  expect(s.store.get().tasks).toHaveLength(0)
+  expect((await s.git.command(f.directory, ['rev-parse', 'fix'])).trim()).toBe(base)
+  await s.git.command(f.directory, [
+    'remote',
+    'add',
+    'elsewhere',
+    'https://github.com/other/repo.git',
+  ])
+  await s.git.command(f.directory, ['config', 'branch.fix.remote', 'elsewhere'])
+  await s.git.command(f.directory, ['config', 'branch.fix.merge', 'refs/heads/fix'])
+  await s.git.command(f.directory, ['update-ref', 'refs/remotes/elsewhere/fix', base])
+  read.mockResolvedValue({ ...source, pull: { ...source.pull, headSha: base } })
+  await expect(createPullTask(s, 'repo', f.directory, { ...input, headSha: base })).rejects.toThrow(
+    'tracks a different destination',
+  )
+  expect((await s.git.command(f.directory, ['config', 'branch.fix.remote'])).trim()).toBe(
+    'elsewhere',
+  )
+  read.mockResolvedValue(detail(source.pull.headSha, base))
+  await expect(createPullTask(s, 'repo', f.directory, input)).rejects.toThrow(
+    'source repository is unavailable',
+  )
+  await expect(
+    createPullTask(s, 'repo', f.directory, { ...input, checkoutMode: 'unknown' }),
+  ).rejects.toThrow('checkoutMode')
+})
+
 it('creates an editable stack-update draft from fresh dependencies and rejects a disappeared stack', async () => {
   const { f, s } = await setup()
   const sha = 'a'.repeat(40),

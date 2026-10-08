@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./fonts": "./src/fonts.ts",
     "./themes": "./src/themes.ts",
     "./state": "./src/runtime/application-state.ts"
   },

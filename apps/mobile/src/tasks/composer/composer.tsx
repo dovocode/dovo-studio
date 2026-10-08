@@ -401,6 +401,14 @@ export function Composer({
           )}
         </View>
       )}
+      {task.execution === 'worktree' && task.pullRequest && !task.checkoutBranch && (
+        <Text style={styles.muted}>
+          {task.pullRequest.checkoutMode === 'pr-branch'
+            ? 'PR branch in new worktree:'
+            : 'New worktree from'}{' '}
+          {task.pullRequest.headBranch || `PR #${task.pullRequest.number}`}
+        </Text>
+      )}
       <Glass
         style={{
           borderRadius: 26,

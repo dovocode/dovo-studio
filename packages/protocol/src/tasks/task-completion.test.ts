@@ -1,5 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import {
+  hasUnreadTaskActivity,
   hasUnviewedTaskCompletion,
   latestCompletedTaskTurn,
   type Task,
@@ -28,6 +29,37 @@ const task: Task = {
   example: false,
   turns: [turn],
 }
+it('keeps a new run unread through completion until its response is viewed', () => {
+  const previous = { ...task, lastViewedTurnId: turn.id }
+  expect(hasUnreadTaskActivity(previous)).toBe(false)
+  const running: Task = {
+    ...previous,
+    status: 'running',
+    turns: [turn, { ...turn, id: 'next', status: 'running', finishedAt: undefined }],
+  }
+  expect(hasUnreadTaskActivity(running)).toBe(true)
+  expect(hasUnviewedTaskCompletion(running)).toBe(false)
+  expect(latestCompletedTaskTurn(running)).toBeUndefined()
+  expect(hasUnreadTaskActivity({ ...running, runPhase: 'finalizing' })).toBe(true)
+  const completed: Task = { ...previous, turns: [turn, { ...turn, id: 'next' }] }
+  expect(hasUnreadTaskActivity(completed)).toBe(true)
+  expect(hasUnreadTaskActivity({ ...completed, lastViewedTurnId: 'next' })).toBe(false)
+})
+it('highlights the first run before any successful completion exists', () => {
+  expect(hasUnreadTaskActivity({ ...task, status: 'running', turns: [] })).toBe(true)
+})
+it.each(['draft', 'failed', 'cancelled'] as const)(
+  'preserves read styling for a %s thread',
+  (status) => {
+    expect(hasUnreadTaskActivity({ ...task, status })).toBe(false)
+  },
+)
+it('keeps settled and archived threads read even with cached running state', () => {
+  expect(hasUnreadTaskActivity({ ...task, status: 'running', archived: true })).toBe(false)
+  expect(
+    hasUnreadTaskActivity({ ...task, status: 'running', archivedAt: '2026-10-08T00:00:00Z' }),
+  ).toBe(false)
+})
 it('marks only a new successful completion as unviewed', () => {
   expect(latestCompletedTaskTurn(task)).toEqual(turn)
   expect(hasUnviewedTaskCompletion(task)).toBe(true)

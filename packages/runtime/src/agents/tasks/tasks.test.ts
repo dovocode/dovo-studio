@@ -1953,3 +1953,51 @@ it('retains separate subscription quotas and identifies a reading that arrives b
     { account: { label: 'account2@example.com' }, usedPercent: 20 },
   ])
 })
+
+it('persists session-owned native agents after a reply while keeping late output and replaced sessions fenced', async () => {
+  const s = await setup()
+  let provider: AgentRun | undefined
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      provider = run
+      run.onSession('native-session')
+      run.onText('Parent reply')
+      run.onSubagentEvent?.(
+        'item/started',
+        { threadId: 'native-child', item: { type: 'commandExecution' } },
+        'native-session',
+      )
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Native lifecycle',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Inspect',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(s.store.task(task.id).subagents?.[0]).toMatchObject({
+    id: 'native-child',
+    status: 'working',
+    sessionLive: true,
+  })
+  provider?.onSubagentEvent?.(
+    'turn/completed',
+    { threadId: 'native-child', turn: { status: 'completed' } },
+    'native-session',
+  )
+  expect(s.store.task(task.id).subagents?.[0]?.status).toBe('completed')
+  provider?.onText('Late parent output')
+  expect(s.store.task(task.id).messages.at(-1)?.text).toBe('Parent reply')
+  s.store.updateTask(task.id, (task) => ({ ...task, sessionId: 'replacement-session' }))
+  const revision = s.store.version()
+  provider?.onSubagentEvent?.(
+    'item/started',
+    { threadId: 'stale-child', item: { type: 'commandExecution' } },
+    'native-session',
+  )
+  expect(s.store.version()).toBe(revision)
+})

@@ -116,17 +116,17 @@ export function QuestionForm({
           />
         ))}
       </ScrollView>
-      <View style={styles.row}>
-        <Action
-          label="Send answers"
-          disabled={busy || !connected}
-          onPress={() => void submit(questionDraftAnswers(drafts))}
-        />
+      <View style={[styles.row, { justifyContent: 'space-between' }]}>
         <Action
           secondary
           label="Decline"
           disabled={busy || !connected}
           onPress={() => void submit(null)}
+        />
+        <Action
+          label="Send answers"
+          disabled={busy || !connected}
+          onPress={() => void submit(questionDraftAnswers(drafts))}
         />
       </View>
       {!connected && <Text style={styles.muted}>Reconnect to answer</Text>}

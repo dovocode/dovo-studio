@@ -1,9 +1,9 @@
 import { Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
 import { useEffect } from 'react'
-import { ArrowRightLeft, Check, Copy, FolderOpen, GitBranch } from 'lucide-react'
+import { ArrowRightLeft, Check, Copy, GitBranch } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { canChangeTaskCheckout } from '@dovo/protocol'
+import { canChangeTaskCheckout, type RepositoryOpenTarget } from '@dovo/protocol'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
 import {
   Button,
@@ -12,13 +12,14 @@ import {
   DialogDescription,
   DialogTitle,
   DropdownMenu,
+  RepositoryOpenItems,
 } from '@dovo/studio-ui'
 
 const item =
   'flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[disabled]:opacity-50 data-[highlighted]:bg-accent/55 motion-reduce:transition-none'
 
 /** The header's branch label, with quick actions: copy the branch name, or open the task's
- * checkout in Finder, VS Code or Cursor on the computer that runs it. */
+ * checkout in an installed editor or file manager on the computer that runs it. */
 export function TaskBranchMenu({ task, label }: { task: Task; label: string }) {
   const { request, connected } = useWorkspace()
   const host = useStudioHost()
@@ -72,7 +73,7 @@ export function TaskBranchMenu({ task, label }: { task: Task; label: string }) {
   const branch = task.checkoutBranch
   // Only a started task has a checkout; opening one earlier would create it as a side effect.
   const canOpen = connected && !!branch
-  const open = (target: 'finder' | 'vscode' | 'cursor', name: string) =>
+  const open = (target: RepositoryOpenTarget, name: string) =>
     void request(
       '/api/scm/open-folder',
       { repositoryId: task.repositoryId, taskId: task.id, target },
@@ -136,22 +137,7 @@ export function TaskBranchMenu({ task, label }: { task: Task; label: string }) {
             <Copy className="size-3.5" /> Copy branch name
           </DropdownMenu.Item>
           <DropdownMenu.Separator className="my-1 h-px bg-border" />
-          {(
-            [
-              ['finder', 'Finder'],
-              ['vscode', 'VS Code'],
-              ['cursor', 'Cursor'],
-            ] as const
-          ).map(([target, name]) => (
-            <DropdownMenu.Item
-              key={target}
-              className={item}
-              disabled={!canOpen}
-              onSelect={() => open(target, name)}
-            >
-              <FolderOpen className="size-3.5" /> Open in {name}
-            </DropdownMenu.Item>
-          ))}
+          <RepositoryOpenItems itemClass={item} disabled={!canOpen} onSelect={open} />
           <DropdownMenu.Separator className="my-1 h-px bg-border" />
           <DropdownMenu.Item className={item} disabled={!canMove} onSelect={() => setMoving(true)}>
             <ArrowRightLeft className="size-3.5" />

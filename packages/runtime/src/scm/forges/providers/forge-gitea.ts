@@ -489,6 +489,7 @@ export class GiteaForge implements ForgeAdapter {
         repositoryUrl: repo.html_url,
         connectionId: this.http.connection.id,
         cloneUrl: repo.clone_url,
+        headCloneUrl: pull.head.repo?.clone_url,
         headRef: `refs/pull/${number}/head`,
         body: pull.body ?? '',
         additions: pull.additions ?? null,

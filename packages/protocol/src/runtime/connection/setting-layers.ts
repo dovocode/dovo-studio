@@ -5,7 +5,7 @@ import {
   settingsProjectId,
   type SettingsTarget,
 } from './scoped-settings.js'
-import type { RuntimeDefaults } from './runtime-setup.js'
+import { defaultWorktreeFromOrigin, type RuntimeDefaults } from './runtime-setup.js'
 import type { Repository, ScopedSettingsValue, SettingsScope } from '../../workspace.js'
 
 export type SettingField =
@@ -71,7 +71,7 @@ export function settingBaseLabel(field: SettingField) {
     case 'submodules':
       return 'None · Dovo default'
     case 'worktreeFromOrigin':
-      return 'Off · Dovo default'
+      return `${defaultWorktreeFromOrigin ? 'On' : 'Off'} · Dovo default`
     case 'setupCommand':
       return 'No setup command · Dovo default'
   }

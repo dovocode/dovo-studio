@@ -43,6 +43,8 @@ export interface AgentRun {
   onTextBoundary?: () => void
   onActivity: (text: string) => void
   onEvent?: (name: string, payload: unknown) => void
+  /** Session-owned native-agent metadata; may arrive after the parent provider turn ends. */
+  onSubagentEvent?: (name: string, payload: unknown, sessionId?: string) => void
   approve: (title: string, detail: string) => Promise<boolean>
   ask: (
     prompt: QuestionPrompt,

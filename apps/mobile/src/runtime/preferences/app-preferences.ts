@@ -1,4 +1,5 @@
 import { mergeSharedSettings, sharedSettingsSchema } from '@dovo/protocol'
+import { nerdFontFamily, terminalFontSizeSchema } from '@dovo/studio-core/fonts'
 import { studioThemeIds } from '@dovo/studio-core/themes'
 import { useSyncExternalStore } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
@@ -14,6 +15,8 @@ import {
 /** Local preferences for this phone. Never synced to computers. */
 const schema = mutableStruct({
   theme: Schema.Literals(['system', 'light', 'dark']),
+  terminalFontFamily: Schema.Literals(['', nerdFontFamily]),
+  terminalFontSize: terminalFontSizeSchema,
   themePalette: Schema.Literals([...studioThemeIds]),
   sharedScopedSettings: sharedSettingsSchema,
   globalModelPreferencesUpdatedAt: Schema.Number,
@@ -22,6 +25,7 @@ const schema = mutableStruct({
   retiredGlobalAgentPresets: mutableArray(Schema.String),
   taskSort: Schema.Literals(['priority', 'activity', 'newest', 'oldest', 'title', 'project']),
   taskGrouping: Schema.Literals(['none', 'status', 'project']),
+  hideFinishedSubagents: Schema.Boolean,
   workingSection: Schema.Boolean,
   confirmArchive: Schema.Boolean,
   confirmStop: Schema.Boolean,
@@ -46,6 +50,8 @@ export type MobilePreferences = Schema.Schema.Type<typeof schema>
 const defaults: MobilePreferences = {
   theme: 'dark',
   themePalette: 'dovo',
+  terminalFontFamily: '',
+  terminalFontSize: 12,
   sharedScopedSettings: [],
   globalModelPreferencesUpdatedAt: 0,
   globalModelPreferences: null,
@@ -53,6 +59,7 @@ const defaults: MobilePreferences = {
   retiredGlobalAgentPresets: [],
   taskSort: 'priority',
   taskGrouping: 'none',
+  hideFinishedSubagents: true,
   workingSection: false,
   confirmArchive: false,
   confirmStop: false,

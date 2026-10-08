@@ -528,6 +528,7 @@ export class PullRequests {
         ...summary(pull),
         provider: 'github',
         cloneUrl: `${repo.url.replace(/\/$/, '')}.git`,
+        headCloneUrl: pull.head.repo?.clone_url,
         headRef: `refs/pull/${number}/head`,
         headSha: pull.head.sha,
         baseSha: pull.base.sha,

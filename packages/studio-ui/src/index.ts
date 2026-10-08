@@ -65,3 +65,5 @@ export { TaskBehaviorSettings } from './task-behavior-settings'
 export { HarnessUpdates } from './harness-updates'
 export { SettingSource, type SettingOrigin } from './setting-source'
 export { HostSettingsPage } from './host-settings-page'
+
+export { RepositoryOpenItems } from './repository-open-items'

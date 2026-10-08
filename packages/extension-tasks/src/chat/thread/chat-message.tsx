@@ -190,6 +190,11 @@ export const ChatMessage = memo(function ChatMessage({
           showContent && (
             <MessageContent>
               <MessageAttachments taskId={taskId} files={message.attachments} />
+              {message.subagentResultId && (
+                <span className="mb-1 w-fit rounded bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium text-muted-foreground">
+                  Dovo child result
+                </span>
+              )}
               {message.review && (
                 <span className="mb-1 w-fit rounded bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium text-muted-foreground">
                   Review

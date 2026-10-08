@@ -3,15 +3,29 @@ import { Action } from '../../ui/controls/action'
 import { useForegroundInterval } from '../../runtime/state/app-active'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { ScrollView, View, Pressable } from 'react-native'
-import { subagentElapsed, subagentMetadata, indexTaskSubagents, type Task } from '@dovo/protocol'
+import {
+  subagentElapsed,
+  subagentMetadata,
+  indexTaskSubagents,
+  taskFamilyRunToken,
+  responses,
+  type Task,
+} from '@dovo/protocol'
 import { useMemo } from 'react'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { useRuntime } from '../../runtime/connection/provider'
+import {
+  useMobilePreferences,
+  updateMobilePreferences,
+} from '../../runtime/preferences/app-preferences'
+import { useAction } from '../../ui/controls/use-action'
+import { Switch } from '../../ui/controls/switch'
 export function TaskAgents({ task }: { task: Task }) {
   const { colors, styles } = useTheme()
 
-  const { connected, profile, snapshot } = useRuntime()
+  const { connected, profile, snapshot, callEffect } = useRuntime()
+  const { hideFinishedSubagents } = useMobilePreferences()
   const { navigate } = useNavigation()
   const [now, setNow] = useApplicationState(Date.now)
   const [expanded, setExpanded] = useApplicationState<string | null>(null)
@@ -19,7 +33,14 @@ export function TaskAgents({ task }: { task: Task }) {
     () => indexTaskSubagents(snapshot?.workspace.tasks ?? []),
     [snapshot?.workspace.tasks],
   )
+  const cancellation = useAction()
   const agents = indexed(task)
+  const visibleAgents = agents.filter(
+    (agent) =>
+      !hideFinishedSubagents ||
+      (!agent.finishedAt && (agent.status === 'working' || agent.status === 'unknown')),
+  )
+  const hidden = agents.length - visibleAgents.length
   const activeAgents = new Set(connected ? indexed(task, true) : [])
   const live = connected
   const working = activeAgents.size
@@ -43,26 +64,65 @@ export function TaskAgents({ task }: { task: Task }) {
             onPress={() => navigate('tasks', task.delegation?.parentTaskId, profile?.id)}
           />
         )}
-        <Text
-          style={[
-            styles.muted,
-            {
-              fontSize: 11,
-              marginBottom: 12,
-            },
-          ]}
+        <View
+          style={{
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            marginBottom: 12,
+          }}
         >
-          SPAWNED AGENTS
-        </Text>
+          <Text style={[styles.muted, { fontSize: 11 }]}>SPAWNED AGENTS</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={[styles.muted, { fontSize: 12 }]}>Hide finished</Text>
+            <Switch
+              accessibilityLabel="Hide finished"
+              value={hideFinishedSubagents}
+              onValueChange={(hideFinishedSubagents) =>
+                updateMobilePreferences({ hideFinishedSubagents })
+              }
+            />
+          </View>
+        </View>
+        {[...activeAgents].some((agent) => agent.source === 'dovo') && (
+          <Action
+            secondary
+            label={cancellation.busy ? 'Stopping…' : 'Stop agents'}
+            disabled={cancellation.busy}
+            onPress={() =>
+              cancellation.act(() =>
+                callEffect(
+                  '/api/tasks/stop-agents',
+                  {
+                    id: task.id,
+                    runToken: taskFamilyRunToken(snapshot?.workspace.tasks ?? [], task.id),
+                  },
+                  responses.ok,
+                ),
+              )
+            }
+          />
+        )}
+        {!!cancellation.error && <Text style={{ color: colors.error }}>{cancellation.error}</Text>}
         {!agents.length && (
           <Text style={styles.muted}>
             No subagents yet. Agents spawned by a supported harness appear here as they work.
           </Text>
         )}
-        {agents.map((agent, index) => {
+        {!!agents.length && !visibleAgents.length && (
+          <Text style={styles.muted}>
+            All subagents have finished. Turn off Hide finished to view them.
+          </Text>
+        )}
+        {visibleAgents.map((agent, index) => {
           const key = `${agent.provider}:${agent.id}:${index}`
           const active = live && activeAgents.has(agent)
           const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
+          const child = childId
+            ? snapshot?.workspace.tasks.find((item) => item.id === childId)
+            : undefined
           const state =
             !active && agent.status === 'working'
               ? 'Last seen working'
@@ -173,6 +233,25 @@ export function TaskAgents({ task }: { task: Task }) {
                       onPress={() => navigate('tasks', childId, profile?.id)}
                     />
                   )}
+                  {active && child?.activeRunId && (
+                    <Action
+                      secondary
+                      label="Stop child"
+                      disabled={cancellation.busy}
+                      onPress={() =>
+                        cancellation.act(() =>
+                          callEffect(
+                            '/api/tasks/cancel',
+                            {
+                              id: child.id,
+                              runId: child.activeRunId,
+                            },
+                            responses.ok,
+                          ),
+                        )
+                      }
+                    />
+                  )}
                   <Text
                     selectable
                     style={[
@@ -200,7 +279,8 @@ export function TaskAgents({ task }: { task: Task }) {
           },
         ]}
       >
-        {working} working · {agents.length} total{!connected ? ' · Offline · saved state' : ''}
+        {working} working · {agents.length} total{hidden > 0 ? ` · ${hidden} hidden` : ''}
+        {!connected ? ' · Offline · saved state' : ''}
       </Text>
     </View>
   )

@@ -59,7 +59,7 @@ export const ArtifactCard = memo(function ArtifactCard({
       >
         <ArtifactFormatIcon format={reference.format} />
         <View style={{ flex: 1, gap: 4 }}>
-          <Text numberOfLines={2} style={{ fontWeight: '600' }}>
+          <Text numberOfLines={2} style={[styles.text, { fontWeight: '600' }]}>
             {reference.title}
           </Text>
           <Text style={styles.muted}>
@@ -311,7 +311,7 @@ export function ArtifactBrowser({
           {items?.length === 0 && links.length === 0 && (
             <View style={{ alignItems: 'center', gap: 8, paddingVertical: 32 }}>
               <Icon name="artifactList" size={32} color={colors.muted} />
-              <Text style={{ fontWeight: '600' }}>No artifacts yet</Text>
+              <Text style={[styles.text, { fontWeight: '600' }]}>No artifacts yet</Text>
               <Text style={[styles.muted, { textAlign: 'center' }]}>
                 Ask your agent to create a document, an interactive preview or a graphic.
               </Text>
@@ -363,7 +363,9 @@ export function ArtifactBrowser({
               >
                 <ArtifactFormatIcon format={item.format} />
                 <View style={{ flex: 1, gap: 4 }}>
-                  <Text>{picker === 'artifacts' ? item.title : `Version ${item.revision}`}</Text>
+                  <Text style={styles.text}>
+                    {picker === 'artifacts' ? item.title : `Version ${item.revision}`}
+                  </Text>
                   <Text style={styles.muted}>
                     {artifactFormatLabels[item.format]} ·{' '}
                     {new Date(item.updatedAt).toLocaleString()}
@@ -392,7 +394,7 @@ export function ArtifactBrowser({
                     setPicker(undefined)
                   }}
                 >
-                  <Text>{item.title}</Text>
+                  <Text style={styles.text}>{item.title}</Text>
                   <Text style={styles.muted}>{artifactLinkLabel(item.provider)}</Text>
                 </Pressable>
               ))}
@@ -408,7 +410,7 @@ export function ArtifactBrowser({
             }}
           >
             <Icon name="external" size={36} color={colors.muted} />
-            <Text style={{ fontWeight: '600', fontSize: 18 }}>{link.title}</Text>
+            <Text style={[styles.text, { fontWeight: '600', fontSize: 18 }]}>{link.title}</Text>
             <Text style={styles.muted}>{artifactLinkLabel(link.provider)}</Text>
             <Text selectable style={[styles.muted, { textAlign: 'center' }]}>
               {link.url}
@@ -434,6 +436,7 @@ export function ArtifactBrowser({
                 <Text
                   selectable
                   style={{
+                    color: colors.text,
                     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                     fontSize: 13,
                     lineHeight: 22,

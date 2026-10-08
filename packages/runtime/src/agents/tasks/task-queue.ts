@@ -41,6 +41,7 @@ export class TaskQueue {
     response?: { id: string; fingerprint: string },
     review = false,
     resumePaused = false,
+    subagentResultId?: string,
   ) {
     if (this.accepted(id, messageId, text, attachments)) return false
     const task = this.store.task(id)
@@ -54,7 +55,9 @@ export class TaskQueue {
       (t) => ({
         ...t,
         checkoutLocked: true,
-        ...(!response && !review && text.trim() !== '/compact' ? { lastPromptAt: createdAt } : {}),
+        ...(!response && !review && !subagentResultId && text.trim() !== '/compact'
+          ? { lastPromptAt: createdAt }
+          : {}),
         draft: t.draft.trim() === text.trim() ? '' : t.draft,
         ...(resumePaused ? { queuePaused: false, restartRecovery: undefined } : {}),
         draftAttachments: t.draftAttachments?.filter(
@@ -68,6 +71,7 @@ export class TaskQueue {
             text,
             ...(attachments.length ? { attachments } : {}),
             ...(review ? { review: true } : {}),
+            ...(subagentResultId ? { subagentResultId } : {}),
             createdAt,
           },
         ],

@@ -4,7 +4,7 @@ import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
 import assert from 'node:assert/strict'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState} from 'react';export const useApplicationState=useState;`
-const controls = `import {useState,cloneElement,isValidElement} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)?cloneElement(children,{"aria-label":label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,disabled,...props})=><select aria-label={props["aria-label"]} value={value} disabled={disabled} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const Text=({children})=><div>{children}</div>;export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Alert={alert:(title,message,buttons)=>buttons.at(-1).onPress?.()};export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} disabled={disabled} value={value} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} disabled={editable===false} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} disabled={editable===false} value={value} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const Switch=({value,onValueChange,disabled})=><input type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);setError('');try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}}`
+const controls = `import {useState,cloneElement,isValidElement} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)?cloneElement(children,{"aria-label":label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,disabled,...props})=><select aria-label={props["aria-label"]} value={value} disabled={disabled} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const Text=({children})=><div>{children}</div>;export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Alert={alert:(title,message,buttons)=>buttons.at(-1).onPress?.()};export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} disabled={disabled} value={value} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} disabled={editable===false} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} disabled={editable===false} value={value} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const Switch=({value,onValueChange,disabled,accessibilityLabel})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);setError('');try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}}`
 const mocks = {
   '@dovo/studio-core': `export const useWorkspace=()=>window.store;export const useSettingsDraft=()=>{};export const useOptionalSettingsTarget=()=>null;`,
   '@dovo/studio-core/state': state,
@@ -18,7 +18,7 @@ try {
   for (const mobile of [false, true]) {
     const built = await build({
       stdin: {
-        contents: `import {createRoot} from 'react-dom/client';import {TaskDefaultSettings} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences' : 'packages/studio-ui/src'}/task-default-settings.tsx';import {defaultTaskHarness} from '@dovo/protocol';const repo={id:'project',name:'Project',path:'/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.writes=[];window.scopes={global:{taskDefaults:{harness:defaultTaskHarness('claude'),setupCommand:'global setup'},resources:{mcpServers:[],skills:[]},prompts:[{id:'review',name:'review',text:'Shared review'}]},environment:{},project:{},'environment-project':{}};const request=async(path,input)=>{if(path.endsWith('/read')){if(input.scope==='project'&&window.delayProject)await new Promise(resolve=>window.releaseProject=resolve);return {value:structuredClone(window.scopes[input.scope]),inherited:input.scope==='global'?{}:structuredClone(window.scopes.global),projectKey:'project:github.com/team/repo'}}if(path.endsWith('/save')){window.writes.push(input);window.scopes[input.scope]=structuredClone(input.after);return {value:input.after,inherited:{},projectKey:'project:github.com/team/repo'}}throw new Error(path)};const snapshot={defaults:{configured:true,harness:defaultTaskHarness('codex'),permission:'full-access',scopedSettings:{environment:{taskDefaults:{execution:'worktree'}},shared:[{key:'global',updatedAt:1,changeId:'one',value:window.scopes.global}]}},workspace:{repositories:[repo],agents:[]}};const runtimes=[{profile:{id:'local',name:'Mac',connection:{address:'http://local',token:'local'}},snapshot,connected:true},{profile:{id:'remote',name:'Linux',connection:{address:'http://remote',token:'remote'}},snapshot:{...snapshot,defaults:{...snapshot.defaults,scopedSettings:{...snapshot.defaults.scopedSettings,environment:{taskDefaults:{execution:'main'}}}}},connected:false}];window.store={connected:true,request,call:request,snapshot,runtimes,overviews:runtimes,activeRuntimeId:'local',activeId:'local'};createRoot(document.getElementById('app')).render(<TaskDefaultSettings repository={repo} ${mobile ? '' : 'inline'}/>);`,
+        contents: `import {createRoot} from 'react-dom/client';import {TaskDefaultSettings} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences' : 'packages/studio-ui/src'}/task-default-settings.tsx';import {defaultTaskHarness} from '@dovo/protocol';const repo={id:'project',name:'Project',path:'/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.writes=[];window.scopes={global:{taskDefaults:{harness:defaultTaskHarness('claude'),setupCommand:'global setup'},resources:{mcpServers:[],skills:[]},prompts:[{id:'review',name:'review',text:'Shared review'}]},environment:{},project:{},'environment-project':{}};const request=async(path,input)=>{if(path.endsWith('/read')){if(input.scope==='project'&&window.delayProject)await new Promise(resolve=>window.releaseProject=resolve);return {value:structuredClone(window.scopes[input.scope]),inherited:input.scope==='global'?{}:structuredClone(window.scopes.global),projectKey:'project:github.com/team/repo'}}if(path.endsWith('/save')){window.writes.push(input);window.scopes[input.scope]=structuredClone(input.after);return {value:input.after,inherited:input.scope==='global'?{}:structuredClone(window.scopes.global),projectKey:'project:github.com/team/repo'}}throw new Error(path)};const snapshot={defaults:{configured:true,harness:defaultTaskHarness('codex'),permission:'full-access',scopedSettings:{environment:{taskDefaults:{execution:'worktree'}},shared:[{key:'global',updatedAt:1,changeId:'one',value:window.scopes.global}]}},workspace:{repositories:[repo],agents:[]}};const runtimes=[{profile:{id:'local',name:'Mac',connection:{address:'http://local',token:'local'}},snapshot,connected:true},{profile:{id:'remote',name:'Linux',connection:{address:'http://remote',token:'remote'}},snapshot:{...snapshot,defaults:{...snapshot.defaults,scopedSettings:{...snapshot.defaults.scopedSettings,environment:{taskDefaults:{execution:'main'}}}}},connected:false}];window.store={connected:true,request,call:request,snapshot,runtimes,overviews:runtimes,activeRuntimeId:'local',activeId:'local'};createRoot(document.getElementById('app')).render(<TaskDefaultSettings repository={repo} ${mobile ? '' : 'inline'}/>);`,
         loader: 'tsx',
         resolveDir: root,
       },
@@ -65,6 +65,13 @@ try {
     await scopes.waitFor()
     assert.equal(await scopes.locator('option').count(), 4)
     assert.equal(await scopes.inputValue(), 'environment-project')
+    const origin = page.getByRole(mobile ? 'checkbox' : 'switch', {
+      name: 'Start from origin',
+      exact: true,
+    })
+    const originOn = async () =>
+      mobile ? origin.isChecked() : (await origin.getAttribute('aria-checked')) === 'true'
+    assert.equal(await originOn(), true)
     await page.getByRole('button', { name: 'Sources for working directory', exact: true }).click()
     await page.getByText('Mac · editing', { exact: true }).waitFor()
     await page.getByText('Linux · offline, saved snapshot', { exact: true }).waitFor()
@@ -86,17 +93,22 @@ try {
     if (mobile) await page.getByRole('button', { name: 'Hide sources', exact: true }).click()
     else await page.keyboard.press('Escape')
     await scopes.selectOption('global')
+    assert.equal(await originOn(), true)
+    await origin.click()
+    assert.equal(await originOn(), false)
     await page.getByLabel('Setup command', { exact: true }).fill('global new setup')
     await page.getByLabel('Prompt text', { exact: true }).fill('Updated shared review')
     await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
     await page.getByText('Defaults saved for new tasks.', { exact: true }).waitFor()
     let write = await page.evaluate(() => window.writes.at(-1))
     assert.equal(write.scope, 'global')
+    assert.equal(write.after.taskDefaults.worktreeFromOrigin, false)
     assert.equal(write.after.taskDefaults.setupCommand, 'global new setup')
     assert.equal(write.after.prompts[0].text, 'Updated shared review')
     assert.deepEqual(write.after.resources, { mcpServers: [], skills: [] })
     await scopes.selectOption('environment-project')
     await page.getByRole('button', { name: 'Override inherited #review', exact: true }).click()
+    assert.equal(await originOn(), false)
     await page.getByLabel('Prompt text', { exact: true }).fill('Local override')
     await page
       .getByRole('button', { name: 'Reset task defaults to inherited settings', exact: true })
@@ -106,6 +118,7 @@ try {
     write = await page.evaluate(() => window.writes.at(-1))
     assert.equal(write.scope, 'environment-project')
     assert.deepEqual(write.after.taskDefaults, {})
+    assert.equal(await originOn(), false)
     assert.equal(write.after.prompts[0].text, 'Local override')
     assert.equal(write.repositoryId, 'project')
     await scopes.selectOption('project')
@@ -149,10 +162,11 @@ try {
       await page.getByLabel('Setup command', { exact: true }).inputValue(),
       'global new setup',
     )
+    assert.equal(await originOn(), false)
     assert.deepEqual(errors, [])
     console.log(
       (mobile ? 'Mobile' : 'Desktop') +
-        ': four scope selection, shared prompt editing, preserved resources, local prompt overrides, resetting defaults and stale read cancellation passed.',
+        ': four scope selection, shared prompt editing, preserved resources, local prompt overrides, resetting defaults, origin on by default, persistent origin opt-outs and stale read cancellation passed.',
     )
     await page.close()
   }

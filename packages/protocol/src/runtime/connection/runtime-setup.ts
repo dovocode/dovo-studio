@@ -42,6 +42,8 @@ export const runtimeSetupSchema = mutableStruct({
 export type RuntimeDefaults = Schema.Schema.Type<typeof runtimeDefaultsSchema>
 export type RuntimeSetup = Schema.Schema.Type<typeof runtimeSetupSchema>
 
+export const defaultWorktreeFromOrigin = true
+
 /** Copy these settings into a new task; later changes never mutate existing conversations. */
 export function resolveTaskDefaults(
   runtime: RuntimeDefaults | undefined,
@@ -58,7 +60,9 @@ export function resolveTaskDefaults(
       permission: resolveProviderAccess(selected.provider, permission),
     },
     execution: repository?.kind ? ('main' as const) : (defaults.execution ?? 'main'),
-    worktreeFromOrigin: repository?.kind ? false : (defaults.worktreeFromOrigin ?? false),
+    worktreeFromOrigin: repository?.kind
+      ? false
+      : (defaults.worktreeFromOrigin ?? defaultWorktreeFromOrigin),
   }
 }
 

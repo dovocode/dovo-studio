@@ -844,6 +844,7 @@ export class AzureForge implements ForgeAdapter {
         baseSha: latest?.commonRefCommit.commitId ?? value.lastMergeTargetCommit.commitId,
         repositoryUrl: value.repository.webUrl,
         cloneUrl: this.repo(headRepository).cloneUrl,
+        headCloneUrl: this.repo(headRepository).cloneUrl,
         headRef: value.sourceRefName,
         body: value.description ?? '',
         additions: countsKnown ? files.reduce((sum, file) => sum + (file.additions ?? 0), 0) : null,

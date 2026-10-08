@@ -4,6 +4,9 @@ import { Schema } from 'effect'
 export const subagentSchema = mutableStruct({
   source: Schema.optional(Schema.Literal('dovo')),
   taskId: Schema.optional(Schema.String),
+  /** Native metadata belongs to a live provider session, including between parent turns. */
+  sessionLive: Schema.optional(Schema.Boolean),
+  background: Schema.optional(Schema.Boolean),
   id: Schema.String,
   provider: Schema.String,
   name: Schema.String,

@@ -72,7 +72,6 @@ export function StartupDraft({
         renderThread={renderThread}
         temporary={!committedTask}
         onSelectRemote={async (source, target) => {
-          await store.refreshRuntimes()
           setSelection({ runtimeId: source.runtimeId, repositoryId: target.id })
           await store.switchRuntime(source.runtimeId ?? '')
         }}

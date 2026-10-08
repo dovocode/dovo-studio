@@ -11,7 +11,9 @@ export function templateFromTask(task: Task, name: string, id: string): TaskTemp
     objective: objective.trim(),
     ...(task.harness ? { harness: task.harness } : task.agentId ? { agentId: task.agentId } : {}),
     ...(task.execution ? { execution: task.execution } : {}),
-    ...(task.worktreeFromOrigin ? { worktreeFromOrigin: true } : {}),
+    ...(task.worktreeFromOrigin !== undefined
+      ? { worktreeFromOrigin: task.worktreeFromOrigin }
+      : {}),
     ...(task.setupCommand?.trim() ? { setupCommand: task.setupCommand } : {}),
   }
 }

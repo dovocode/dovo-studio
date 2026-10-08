@@ -333,6 +333,8 @@ export function scmRoute(request: IncomingMessage, path: string) {
           path.endsWith('/inspect') ? adapter.repository() : adapter.repositories(input.page),
         )
       }
+      if (method === 'POST' && path === '/api/scm/open-targets')
+        return yield* serviceResult(s.git.openTargets())
       if (method === 'POST' && path === '/api/scm/directories/read')
         return yield* serviceResult(listDirectories(yield* serviceResult(body(request))))
       if (method === 'POST' && path === '/api/scm/repositories/github/read')
@@ -379,7 +381,9 @@ export function scmRoute(request: IncomingMessage, path: string) {
           return gitActionState(status, remotes)
         }
         if (path === '/api/scm/push') {
-          yield* serviceResult(s.git.push(cwd))
+          yield* serviceResult(
+            s.git.push(cwd, input.taskId ? s.store.task(input.taskId).pullRequest : undefined),
+          )
           return { ok: true }
         }
         if (path === '/api/scm/open-folder') {

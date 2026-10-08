@@ -1,6 +1,7 @@
 import { sharedSettingsSchema } from '@dovo/protocol'
 import { useMemo, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
+import { fontFamilySchema, terminalFontSizeSchema } from './fonts'
 import { studioThemeIds, studioSyntaxTheme, studioThemes } from './themes'
 import {
   modelPreferencesSchema,
@@ -38,6 +39,10 @@ const schema = mutableStruct({
   quitShortcut: Schema.Literals(['immediate', 'hold', 'disabled']),
   theme: Schema.Literals(['dark', 'light', 'system']),
   themePalette: Schema.Literals([...studioThemeIds]),
+  appFontFamily: fontFamilySchema,
+  codeFontFamily: fontFamilySchema,
+  terminalFontFamily: fontFamilySchema,
+  terminalFontSize: terminalFontSizeSchema,
   textSize: Schema.Literals(['small', 'default', 'large']),
   sendWith: Schema.Literals(['enter', 'mod-enter']),
   followUp: Schema.Literals(['queue', 'steer']),
@@ -65,6 +70,7 @@ const schema = mutableStruct({
   motion: Schema.Literals(['system', 'reduce']),
   taskSort: Schema.Literals(['priority', 'activity', 'newest', 'oldest', 'title', 'project']),
   taskGrouping: Schema.Literals(['none', 'status', 'project']),
+  hideFinishedSubagents: Schema.Boolean,
   showToolDetails: Schema.Boolean,
   toolActivity: Schema.Literals(['collapsed', 'expanded', 'hidden']),
   threadSidebarWidth: Schema.Number.pipe(
@@ -117,6 +123,10 @@ export const defaultAppPreferences: AppPreferences = {
   quitShortcut: 'immediate',
   theme: 'dark',
   themePalette: 'dovo',
+  appFontFamily: '',
+  codeFontFamily: '',
+  terminalFontFamily: '',
+  terminalFontSize: 12,
   textSize: 'default',
   sendWith: 'enter',
   followUp: 'queue',
@@ -140,6 +150,7 @@ export const defaultAppPreferences: AppPreferences = {
   motion: 'system',
   taskSort: 'priority',
   taskGrouping: 'status',
+  hideFinishedSubagents: true,
   showToolDetails: false,
   toolActivity: 'collapsed',
   threadSidebarWidth: 280,

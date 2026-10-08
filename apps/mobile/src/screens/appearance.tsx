@@ -4,6 +4,7 @@ import {
   useMobilePreferences,
   updateMobilePreferences,
 } from '../runtime/preferences/app-preferences'
+import { nerdFontFamily } from '@dovo/studio-core/fonts'
 import { Choice } from '../ui/controls/choice'
 import { Icon } from '../ui/controls/icon'
 import { Text } from '../ui/content/text'
@@ -13,7 +14,7 @@ import { SettingsGroup } from './settings-group'
 
 export default function AppearanceScreen() {
   const { colors, styles } = useTheme()
-  const { theme, themePalette } = useMobilePreferences()
+  const { theme, themePalette, terminalFontFamily, terminalFontSize } = useMobilePreferences()
   const { width } = useWindowDimensions()
   const columns = width >= 600 ? 3 : 2
   return (
@@ -94,6 +95,38 @@ export default function AppearanceScreen() {
             })}
           </View>
         </View>
+        <SettingsGroup
+          title="Terminal"
+          footer="JetBrains Mono Nerd Font is bundled for offline shell and developer icons. Changes apply to open terminals."
+        >
+          <View style={{ padding: 12, gap: 16 }}>
+            <Choice
+              label="Terminal font"
+              value={terminalFontFamily}
+              items={[
+                { id: '', name: 'System monospace' },
+                { id: nerdFontFamily, name: nerdFontFamily },
+              ]}
+              onChange={(value) => {
+                if (value === '' || value === nerdFontFamily)
+                  updateMobilePreferences({ terminalFontFamily: value })
+              }}
+            />
+            <Choice
+              label="Terminal font size"
+              value={String(terminalFontSize)}
+              items={Array.from({ length: 25 }, (_, index) => ({
+                id: String(index + 8),
+                name: `${index + 8} px`,
+              }))}
+              onChange={(value) => {
+                const size = Number(value)
+                if (Number.isInteger(size) && size >= 8 && size <= 32)
+                  updateMobilePreferences({ terminalFontSize: size })
+              }}
+            />
+          </View>
+        </SettingsGroup>
       </ScrollView>
     </View>
   )

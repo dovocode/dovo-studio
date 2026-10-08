@@ -3,7 +3,7 @@ import { taskPullLinks } from '../detail/task-pull-links'
 import { AgentAvatar, ProjectIcon, useModelLabel } from '@dovo/studio-ui'
 import { acpHarnessName, resolveTaskAgent, formatDateTime } from '@dovo/studio-core'
 import { TaskLifecycleActions } from '../detail/task-lifecycle-actions'
-import { hasUnviewedTaskCompletion } from '@dovo/protocol'
+import { hasUnreadTaskActivity } from '@dovo/protocol'
 import { isSnoozed } from './task-priority'
 import { taskPresentation } from './task-presentation'
 import {
@@ -105,7 +105,7 @@ function TaskRowView({
   const queue = task.queue?.length ?? 0
   const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
   const presentation = taskPresentation(task, !!needsInput, now)
-  const unread = hasUnviewedTaskCompletion(task)
+  const unread = hasUnreadTaskActivity(task)
   const status = !source.online && source.runtimeId ? 'Offline · Cached' : presentation.label
   const offline = !source.online && !!source.runtimeId
   const compactStatus = offline ? 'Offline' : presentation.compactLabel

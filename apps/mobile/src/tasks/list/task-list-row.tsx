@@ -1,7 +1,12 @@
 import { HarnessIcon } from '../../agents/harness-icon'
 import { useCachedModelCatalog } from '../../agents/use-model-catalog'
 import { harnessNames } from '../creation/harness-choices'
-import { pullStackLabel, subagentMetadata, type Subagent } from '@dovo/protocol'
+import {
+  hasUnreadTaskActivity,
+  pullStackLabel,
+  subagentMetadata,
+  type Subagent,
+} from '@dovo/protocol'
 import {
   Archive,
   CircleCheck,
@@ -226,7 +231,7 @@ export function TaskListRow({
                 style={{
                   flex: 1,
                   color: colors.text,
-                  opacity: actions.unread ? 1 : 0.4,
+                  opacity: hasUnreadTaskActivity(task) ? 1 : 0.4,
                   fontSize: 17,
                   lineHeight: 22,
                   fontWeight: '500',

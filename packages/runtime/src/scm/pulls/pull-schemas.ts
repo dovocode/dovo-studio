@@ -32,6 +32,7 @@ export const restDetail = mutableStruct({
     head: mutableStruct({
       label: Schema.String,
       sha: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
+      repo: Schema.optional(Schema.NullOr(mutableStruct({ clone_url: Schema.String }))),
     }),
     base: mutableStruct({
       label: Schema.String,

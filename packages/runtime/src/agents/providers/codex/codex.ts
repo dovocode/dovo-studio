@@ -11,7 +11,7 @@ import { releaseIdleProvider } from '../../execution/warm-processes.js'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createMessageConnection } from 'vscode-jsonrpc/node'
 import { Schema } from 'effect'
-import type { AgentAdapter, AgentInput } from '../../execution/types.js'
+import type { AgentAdapter, AgentInput, AgentRun } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
 import { JsonLineReader, JsonLineWriter } from './codex-transport.js'
 const turnInput = (input: Pick<AgentInput, 'prompt' | 'attachments'>) => [
@@ -35,10 +35,14 @@ type CodexConnection = {
   cwd: string
   initialized: unknown
   stderr: string
+  onSubagentEvent?: AgentRun['onSubagentEvent']
+  consumeNotification?: (method: string, params: unknown) => void
 }
 export function createCodexAdapter(): AgentAdapter {
   const idle = new Map<string, CodexConnection>()
   const close = async (connection: CodexConnection) => {
+    connection.onSubagentEvent?.('dovo/session/closed', {}, connection.sessionId)
+    connection.onSubagentEvent = undefined
     connection.rpc.dispose()
     await stopOwnedChild(connection.child)
   }
@@ -90,19 +94,27 @@ export function createCodexAdapter(): AgentAdapter {
       const transport: CodexConnection = reusable ?? {
         child,
         rpc,
-        sessionId: '',
+        sessionId: run.sessionId ?? '',
         endpoint,
         launchConfig,
         cwd: run.cwd,
         initialized: undefined,
         stderr: '',
       }
+      transport.onSubagentEvent = run.onSubagentEvent
+      if (!reusable)
+        rpc.onNotification((method, params) => {
+          transport.onSubagentEvent?.(method, params, transport.sessionId)
+          transport.consumeNotification?.(method, params)
+        })
       if (!reusable)
         child.stderr.on('data', (data: Buffer) => {
           transport.stderr = (transport.stderr + String(data)).slice(-4000)
         })
       if (!reusable)
         child.on('exit', () => {
+          transport.onSubagentEvent?.('dovo/session/closed', {}, transport.sessionId)
+          transport.onSubagentEvent = undefined
           for (const [taskId, connection] of idle) if (connection === transport) idle.delete(taskId)
           rpc.dispose()
         })
@@ -313,7 +325,7 @@ export function createCodexAdapter(): AgentAdapter {
           } else rejectTurn(new Error(turn.data.error?.message ?? `Turn ${turn.data.status}`))
         }
       }
-      const notifications = rpc.onNotification(consumeNotification)
+      transport.consumeNotification = consumeNotification
       const abort = () => {
         void stopOwnedChild(child)
         rejectTurn(new Error('Task cancelled'))
@@ -458,6 +470,7 @@ export function createCodexAdapter(): AgentAdapter {
           response,
         ).thread
         threadId = thread.id
+        transport.sessionId = thread.id
         run.onSession(thread.id)
         if (
           run.tools !== 'none' &&
@@ -545,7 +558,7 @@ export function createCodexAdapter(): AgentAdapter {
         clearTimeout(timeout)
         run.signal.removeEventListener('abort', abort)
         requests.dispose()
-        notifications.dispose()
+        transport.consumeNotification = undefined
         child.off('error', rejectTurn)
         child.off('exit', onExit)
         if (succeeded && run.taskId && run.tools !== 'none' && threadId && !run.signal.aborted) {

@@ -227,3 +227,5 @@ export { whitespaceOnlyFile, whitespaceOnlyPatch } from './whitespace-changes'
 export { projectActivity } from './project-order'
 
 export { WorkspaceScope } from './workspace/scope'
+
+export * from './fonts'

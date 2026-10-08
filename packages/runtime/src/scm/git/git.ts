@@ -2,6 +2,9 @@ import { stopOwnedChild } from '../../agents/execution/stop-owned-child.js'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createFilePreview } from './file-preview.js'
+import { detectInstalledOpeners, type InstalledOpener } from './installed-openers.js'
+import { folderOpenCommand, launchDesktop } from './open-folder.js'
+import type { RepositoryOpenTarget } from '@dovo/protocol'
 import type { FilePreviewMetadata } from '@dovo/protocol'
 import { GithubBudget } from './github-budget.js'
 import { GithubCredentials, GithubTransport, parseGithubApiArgs } from './github-transport.js'
@@ -297,7 +300,7 @@ export class GitService {
       this.publishing.delete(cwd)
     }
   }
-  async push(path: string) {
+  async push(path: string, source?: NonNullable<Task['pullRequest']>) {
     const { path: cwd } = await this.inspect(path)
     const branch = (await this.command(cwd, ['branch', '--show-current'])).trim()
     if (!branch) throw new HttpError(409, 'Check out a branch before pushing')
@@ -328,9 +331,15 @@ export class GitService {
           ])
         ).trim()
       : `refs/heads/${branch}`
+    const sourceUrl = source?.checkoutMode === 'pr-branch' ? source.headCloneUrl : undefined
+    const authorization =
+      sourceUrl && source?.connectionId
+        ? await this.forgeAuthorization?.(source.connectionId, sourceUrl, cwd)
+        : undefined
     const env: NodeJS.ProcessEnv = {
       ...this.nonInteractive(),
       ...(await this.githubEnvironment(cwd)),
+      ...(sourceUrl ? this.remoteEnvironment(sourceUrl, authorization) : {}),
     }
     const host = env.GH_HOST || 'github.com'
     const gh = "'" + this.settings().gh.replaceAll("'", "'\"'\"'") + "'"
@@ -350,19 +359,36 @@ export class GitService {
       env,
     )
   }
-  async openFolder(path: string, target: 'finder' | 'vscode' | 'cursor') {
+  private installedOpeners: Promise<InstalledOpener[]> | undefined
+  async openTargets() {
+    const installed = detectInstalledOpeners()
+    this.installedOpeners = installed
+    try {
+      return { targets: (await installed).map((opener) => opener.target) }
+    } catch (error) {
+      if (this.installedOpeners === installed) this.installedOpeners = undefined
+      throw error
+    }
+  }
+  async openFolder(path: string, target: RepositoryOpenTarget) {
     const cwd = await repositoryPath(path)
-    if (process.platform !== 'darwin')
-      throw new HttpError(400, 'Opening Finder or a Mac editor requires a macOS runtime')
-    await this.run(
+    const { executable, args, detached } = await folderOpenCommand(
       cwd,
-      '/usr/bin/open',
-      target === 'finder'
-        ? [cwd]
-        : ['-a', target === 'vscode' ? 'Visual Studio Code' : 'Cursor', cwd],
-      10000,
-      1024 * 1024,
+      target,
+      this.installedOpeners ? await this.installedOpeners : undefined,
     )
+    if (!detached) {
+      await this.run(cwd, executable, args, 10000, 1024 * 1024)
+      return
+    }
+    this.audit?.(cwd, [executable, ...args])
+    try {
+      await launchDesktop(executable, args, cwd)
+      this.audit?.(cwd, [executable, ...args], {})
+    } catch (error) {
+      this.audit?.(cwd, [executable, ...args], { error: errorMessage(error) })
+      throw error
+    }
   }
   private identities = new Map<string, { expires: number; result: Promise<string | undefined> }>()
   repositoryIdentity(path: string, refresh = false) {

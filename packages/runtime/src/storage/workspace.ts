@@ -173,6 +173,18 @@ export class WorkspaceStore {
       ...w,
       tasks: w.tasks
         .filter((task) => !task.example)
+        .map((task) => ({
+          ...task,
+          subagents: task.subagents?.map((agent) =>
+            agent.source === 'dovo'
+              ? agent
+              : {
+                  ...agent,
+                  sessionLive: false,
+                  status: agent.status === 'working' ? ('unknown' as const) : agent.status,
+                },
+          ),
+        }))
         // Older branch switching wrote checkoutBranch to untouched local drafts.
         // That metadata is not a prepared checkout and must not lock the picker.
         .map((task) =>
@@ -496,7 +508,8 @@ export class WorkspaceStore {
               previous.agentId !== task.agentId ||
               !isDeepStrictEqual(previous.harness, task.harness) ||
               !isDeepStrictEqual(previous.agentOverrides, task.agentOverrides) ||
-              !isDeepStrictEqual(previous.delegation, task.delegation))
+              previous.delegation?.parentTaskId !== task.delegation.parentTaskId ||
+              previous.delegation?.checkoutId !== task.delegation.checkoutId)
           if (previous && task.messages.length < previous.messages.length)
             task = { ...task, historyRevision: (previous.historyRevision ?? 0) + 1 }
           if (
@@ -577,7 +590,7 @@ export class WorkspaceStore {
               ? {
                   ...task,
                   subagents: task.subagents?.map((agent) =>
-                    agent.status === 'working'
+                    agent.status === 'working' && !agent.sessionLive
                       ? {
                           ...agent,
                           status: 'unknown' as const,

@@ -554,12 +554,14 @@ controls are available on mobile under the device and project settings.
 
 - Choose the harness, model/reasoning/service tier, access mode, instructions and optional
   executable or server URL.
-- Choose local checkout or a new worktree. New worktrees start from the project's current local
-  branch. With **Start from origin**, Dovo first fetches origin, then starts from origin's copy of
-  that branch, or origin's default branch (detected from `origin/HEAD`) when origin has no matching
+- Choose local checkout or a new worktree. **Start from origin** is on by default for new tasks:
+  Dovo first fetches origin, then starts new worktrees from origin's copy of the current local
+  branch, or origin's default branch (detected from `origin/HEAD`) when origin has no matching
   branch. A failed fetch falls back to the last fetched origin refs. Projects follow their
   computer's choice until they override it. A branch picked for one task, before its first message,
-  still wins. The project checkout itself is never switched.
+  still wins, including a local branch. Turn **Start from origin** off to use the current local
+  branch automatically. Repositories without origin also use their local branch. The project
+  checkout itself is never switched.
 - Projects inherit unset fields. An agent configuration override replaces the runtime's complete
   agent configuration. **Reset to runtime defaults**, followed by **Save defaults**, removes project
   overrides.
@@ -642,6 +644,13 @@ Native mode uses the bundled Windows runtime and your Windows Git, agent install
 WSL mode lists installed WSL 2 distributions, including distributions with spaces in their names.
 Install WSL and a distribution separately with `wsl --install`, then use Refresh. WSL 1 and
 musl-based distributions are unsupported; use a glibc distribution such as Ubuntu or Debian.
+
+The repository and task **Open** menus detect installed editors on the selected runtime and hide
+missing applications. Native Windows supports File Explorer and installed editors, including VS Code
+variants, Cursor, Antigravity IDE, Devin Desktop/Windsurf, Zed, and JetBrains IDEs. WSL discovers
+Linux editors and Windows installations through interop. Windows VS Code variants use WSL
+integration to open the Linux checkout; File Explorer and other Windows apps receive the converted
+Windows folder path. Reopen the menu after installing or removing an editor.
 
 Dovo downloads the exact desktop version’s Linux x64 or ARM64 server archive into the selected WSL
 distribution and verifies the published SHA-256 before extracting it. This requires a published

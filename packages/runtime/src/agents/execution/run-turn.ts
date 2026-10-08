@@ -15,7 +15,7 @@ import {
   CUA_SERVER_NAME,
 } from '../../computer-use/cua.js'
 import { runWithHooks } from './agent-hooks.js'
-import { Cause, Effect } from 'effect'
+import { Cause, Effect, Exit } from 'effect'
 import { OwnedProcessShutdownError } from './stop-owned-child.js'
 import { contextUsage, turnTokenCounter } from '../tasks/context-usage.js'
 import { estimatedTurnCost } from '../tasks/estimated-cost.js'
@@ -172,7 +172,7 @@ export class TaskTurnRunner {
     onSteer?: (steer: ((messageId: string) => Promise<void>) | undefined) => void,
     onQuestions?: AgentRun['onQuestions'],
     continuingAfterRestart = false,
-    retire?: () => Effect.Effect<void>,
+    retire?: (completed: boolean) => Effect.Effect<void>,
   ) {
     return Effect.scoped(
       Effect.gen({ self: this }, function* () {
@@ -682,7 +682,7 @@ ${
                     agent.instructions,
                     browserCdpInstructions(id),
                     this.taskTools
-                      ? 'Dovo supports child agents across harnesses with dovo_task subagent_spawn. Use subagent_list to find named configurations. Delegate only when the user’s instructions allow it. Include the child’s goal, relevant context and constraints in its prompt; prefer read-only for investigation. Children share this checkout, so avoid overlapping writes. Use a stable key for each child. Call subagent_wait/read and incorporate the returned answer in this thread before finishing. subagent_cancel stops a child; ending this parent turn stops unfinished children.'
+                      ? 'Dovo supports child agents across harnesses with dovo_task subagent_spawn. Use subagent_list to find named configurations. Delegate only when the user’s instructions allow it. Include the child’s goal, relevant context and constraints in its prompt; prefer read-only for investigation. Children share this checkout, so avoid overlapping writes. Use a stable key for each child. Prefer Dovo delegation for cross-harness work, named configurations, or work that should survive your reply; native same-harness agents remain available. Children continue after a normal reply and automatically queue their final result here. Use subagent_wait/read when you need the result now; a timeout leaves the child running. Incorporate results when they arrive. Explicit Stop cancels descendants. Start a fresh child with a new key for each review round, supplying the original brief and previous findings.'
                       : '',
                     this.taskTools && artifactsEnabled && configured.permission !== 'read-only'
                       ? 'Dovo Artifacts is available. Prefer normal replies and repository files for routine explanations, plans, reports and code changes. Create an artifact when the user asks for one or when a persistent, viewable deliverable adds clear value, such as an interactive preview. Avoid artifacts for ordinary progress updates or to duplicate files or answers. Reuse an existing artifact with artifact_list/read and artifact_update when appropriate. Artifact HTML has no external network access; embed assets and scripts.'
@@ -791,6 +791,31 @@ ${
                     steering = apply(messageId, steer)
                     return steering
                   })
+                },
+                onSubagentEvent: (name, payload, ownerSessionId) => {
+                  const current = this.store.get().tasks.find((task) => task.id === id)
+                  if (
+                    !current ||
+                    !ownerSessionId ||
+                    current.sessionId !== ownerSessionId ||
+                    current.sessionAgentId !== fingerprint ||
+                    (current.activeRunId &&
+                      current.activeRunId !== turnId &&
+                      name !== 'dovo/session/closed') ||
+                    (controller.signal.aborted && name !== 'dovo/session/closed')
+                  )
+                    return
+                  const records = current.subagents ?? []
+                  const subagents = updateSubagents(
+                    records,
+                    agent.provider,
+                    payload,
+                    new Date().toISOString(),
+                    name,
+                    ownerSessionId,
+                  )
+                  if (subagents !== records)
+                    this.store.updateTask(id, (task) => ({ ...task, subagents }))
                 },
                 onSession: (sessionId) => {
                   if (!acceptsProviderEvents()) return
@@ -1044,16 +1069,17 @@ ${
               },
             ),
           ).pipe(
-            Effect.ensuring(
+            Effect.onExit((exit) =>
               Effect.gen(function* () {
                 providerOpen = false
                 onSteer?.(undefined)
                 // The provider may finish before its final steering acknowledgement.
                 if (steering) yield* Effect.exit(runtimeOperation(() => steering))
                 questionController.abort()
-                // Descendants share these files. Stop admission and drain their final
-                // writes before any success, failure or cancellation checkpoint.
-                if (retire) yield* retire()
+                // Successful turns release admission but leave durable children working.
+                // Failure and cancellation drain final writes before their checkpoint.
+                if (retire)
+                  yield* retire(Exit.isSuccess(exit) && !controller.signal.aborted && !flushError)
               }),
             ),
           )
@@ -1161,7 +1187,7 @@ ${
                 return
               }
               // Preparation can fail before entering the provider's finalizer.
-              if (retire) yield* retire()
+              if (retire) yield* retire(false)
               flush()
               const finishedAt = new Date().toISOString()
               const cancelled = controller.signal.aborted && !flushError

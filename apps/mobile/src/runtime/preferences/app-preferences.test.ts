@@ -79,6 +79,26 @@ it('persists the latest preferences when saves overlap', async () => {
   expect(JSON.parse(writes.at(-1) ?? '{}').taskSort).toBe('oldest')
 })
 
+it('hides finished subagents by default and remembers showing their history', async () => {
+  storage.getItem = async () => JSON.stringify({ taskSort: 'title' })
+  let saved = ''
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences().hideFinishedSubagents).toBe(true)
+  preferences.updateMobilePreferences({ hideFinishedSubagents: false })
+  await vi.waitFor(() => expect(saved).not.toBe(''))
+  storage.getItem = async () => saved
+  const reopened = await loadPreferences()
+  await reopened.preferencesReady
+  expect(reopened.readMobilePreferences()).toMatchObject({
+    hideFinishedSubagents: false,
+    taskSort: 'title',
+  })
+})
+
 it('defaults changed files to collapsed and restores an expanded preference', async () => {
   storage.getItem = async () => JSON.stringify({ taskSort: 'title' })
   const first = await loadPreferences()
@@ -182,5 +202,34 @@ it('keeps Working optional and restores the saved choice', async () => {
   expect(preferences.readMobilePreferences()).toMatchObject({
     workingSection: true,
     taskSort: 'title',
+  })
+})
+
+it('migrates older font settings, rejects invalid values and persists Nerd Font choices', async () => {
+  storage.getItem = async () =>
+    JSON.stringify({ theme: 'light', terminalFontFamily: 'not bundled', terminalFontSize: 100 })
+  let saved = ''
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences()).toMatchObject({
+    theme: 'light',
+    terminalFontFamily: '',
+    terminalFontSize: 12,
+  })
+  preferences.updateMobilePreferences({
+    terminalFontFamily: 'JetBrains Mono Nerd Font',
+    terminalFontSize: 18,
+  })
+  await vi.waitFor(() => expect(saved).not.toBe(''))
+  storage.getItem = async () => saved
+  const reopened = await loadPreferences()
+  await reopened.preferencesReady
+  expect(reopened.readMobilePreferences()).toMatchObject({
+    theme: 'light',
+    terminalFontFamily: 'JetBrains Mono Nerd Font',
+    terminalFontSize: 18,
   })
 })

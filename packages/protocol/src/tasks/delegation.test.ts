@@ -67,3 +67,16 @@ it('hides native workers whose owning run ended while retaining a working Dovo d
   expect(indexed(parent).map((record) => record.id)).toEqual(['child', 'native', 'nested-native'])
   expect(indexed(parent, true).map((record) => record.id)).toEqual(['child', 'nested-native'])
 })
+
+it('keeps live native agents in an idle thread and drops liveness when the provider disconnects', () => {
+  const native: Subagent = {
+    ...agent('native'),
+    source: undefined,
+    taskId: undefined,
+    sessionLive: true,
+  }
+  const parent: Task = { ...task('parent'), status: 'review', subagents: [native] }
+  expect(taskSubagents(parent, [parent], true)).toEqual([native])
+  const closed: Task = { ...parent, subagents: [{ ...native, sessionLive: false }] }
+  expect(taskSubagents(closed, [closed], true)).toEqual([])
+})

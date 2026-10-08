@@ -1,14 +1,28 @@
 import {
+  fontStack,
+  systemMonoFont,
+  nerdFontFamily,
   studioThemeIds,
   studioThemes,
   updateAppPreferences,
   useAppPreferences,
   type StudioThemeColors,
 } from '@dovo/studio-core'
+import { ChoicePicker, Input } from '@dovo/studio-ui'
 import { SettingRow, SettingsGroup, SettingsPage, Segmented } from './layout'
 
 export default function AppearanceSettings() {
-  const { theme, themePalette, textSize, motion, chatWidth } = useAppPreferences()
+  const {
+    theme,
+    themePalette,
+    textSize,
+    motion,
+    chatWidth,
+    appFontFamily,
+    codeFontFamily,
+    terminalFontFamily,
+    terminalFontSize,
+  } = useAppPreferences()
   return (
     <SettingsPage local title="Appearance" description="How Dovo looks on this device.">
       <SettingsGroup title="Theme">
@@ -71,7 +85,51 @@ export default function AppearanceSettings() {
           </div>
         </fieldset>
       </SettingsGroup>
+      <datalist id="app-fonts">
+        {['system-ui', 'Arial', 'Helvetica Neue', 'Georgia', 'serif'].map((font) => (
+          <option key={font} value={font} />
+        ))}
+      </datalist>
+      <datalist id="mono-fonts">
+        {[
+          nerdFontFamily,
+          'SF Mono',
+          'Menlo',
+          'Consolas',
+          'Cascadia Code',
+          'Fira Code',
+          'monospace',
+        ].map((font) => (
+          <option key={font} value={font} />
+        ))}
+      </datalist>
       <SettingsGroup title="Text">
+        <SettingRow
+          label="App font"
+          description="Choose a font or enter an installed font’s family name. Leave empty for the default."
+        >
+          <Input
+            aria-label="App font"
+            list="app-fonts"
+            placeholder="Default"
+            value={appFontFamily}
+            maxLength={100}
+            onChange={(event) => updateAppPreferences({ appFontFamily: event.target.value })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Code font"
+          description="Used in code blocks and diffs. JetBrains Mono Nerd Font is bundled; other fonts need to be installed on this device."
+        >
+          <Input
+            aria-label="Code font"
+            list="mono-fonts"
+            placeholder="System monospace"
+            value={codeFontFamily}
+            maxLength={100}
+            onChange={(event) => updateAppPreferences({ codeFontFamily: event.target.value })}
+          />
+        </SettingRow>
         <SettingRow label="Text size" description="Scales text and spacing across the app.">
           <Segmented
             label="Text size"
@@ -84,6 +142,47 @@ export default function AppearanceSettings() {
             onChange={(textSize) => updateAppPreferences({ textSize })}
           />
         </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup
+        title="Terminal"
+        description="Changes apply to open terminals without restarting them."
+      >
+        <SettingRow
+          label="Terminal font"
+          description="JetBrains Mono Nerd Font includes shell and developer icons and works offline. Leave empty for system monospace."
+        >
+          <Input
+            aria-label="Terminal font"
+            list="mono-fonts"
+            placeholder="System monospace"
+            value={terminalFontFamily}
+            maxLength={100}
+            onChange={(event) => updateAppPreferences({ terminalFontFamily: event.target.value })}
+          />
+        </SettingRow>
+        <SettingRow label="Terminal font size" description="In pixels, from 8 to 32.">
+          <ChoicePicker
+            aria-label="Terminal font size"
+            value={String(terminalFontSize)}
+            onValueChange={(value) => updateAppPreferences({ terminalFontSize: Number(value) })}
+          >
+            {Array.from({ length: 25 }, (_, index) => (
+              <option key={index + 8} value={String(index + 8)}>
+                {index + 8} px
+              </option>
+            ))}
+          </ChoicePicker>
+        </SettingRow>
+        <div
+          className="overflow-x-auto px-4 py-4 text-sm"
+          aria-label="Terminal font preview"
+          style={{
+            fontFamily: fontStack(terminalFontFamily, systemMonoFont),
+            fontSize: terminalFontSize,
+          }}
+        >
+          <span aria-hidden="true">{'❯ ~ git status  \ue0a0 main  \uf07b src  \uf121 code'}</span>
+        </div>
       </SettingsGroup>
       <SettingsGroup title="Conversation">
         <SettingRow label="Chat width" description="How wide conversations grow on large screens.">

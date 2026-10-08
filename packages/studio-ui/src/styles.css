@@ -12,7 +12,24 @@
 @source '../node_modules/@streamdown/mermaid/dist/*.js';
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+  font-family: 'JetBrains Mono Nerd Font';
+  src: url('./assets/fonts/jetbrains-mono-nerd-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono Nerd Font';
+  src: url('./assets/fonts/jetbrains-mono-nerd-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme inline {
+  --font-sans: var(--app-font-family);
+  --font-mono: var(--code-font-family);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -61,13 +78,10 @@
   --pink: #7cc9ff;
   --destructive: #ff7e97;
   --destructive-foreground: #341520;
-  font-family:
-    Inter,
-    ui-sans-serif,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+  --app-font-family:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --code-font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--app-font-family);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -386,7 +400,7 @@ textarea {
 .studio-code {
   --diffs-font-size: 12px;
   --diffs-line-height: 22px;
-  --diffs-font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --diffs-font-family: var(--code-font-family);
 }
 .studio-navigation {
   display: flex;

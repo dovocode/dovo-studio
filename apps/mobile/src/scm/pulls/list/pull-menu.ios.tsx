@@ -48,13 +48,21 @@ export function PullMenu(props: PullMenuProps) {
           />
         ))}
         {props.actions.length > 0 && <Divider />}
-        <NativeMenuButton
-          testID="Start task from PR"
-          label="Start task from PR"
-          icon="newChat"
-          onPress={props.onStartTask}
-          modifiers={[disabled(props.taskDisabled)]}
-        />
+        <Menu label="Start task from PR" modifiers={[disabled(props.taskDisabled)]}>
+          <NativeMenuButton
+            testID="New branch from PR"
+            label="New branch from PR"
+            icon="newChat"
+            onPress={() => props.onStartTask('new-branch')}
+          />
+          <NativeMenuButton
+            testID="Use PR branch"
+            label="Use PR branch"
+            icon="changes"
+            onPress={() => props.onStartTask('pr-branch')}
+            modifiers={[disabled(!props.prBranchAvailable)]}
+          />
+        </Menu>
         <NativeMenuButton
           testID={`Open on ${props.providerName ?? 'GitHub'}`}
           label={`Open on ${props.providerName ?? 'GitHub'}`}

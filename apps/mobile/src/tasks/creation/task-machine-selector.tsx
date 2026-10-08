@@ -83,9 +83,11 @@ export function TaskMachineSelector({
             },
             Schema.Struct({ ok: Schema.Boolean }),
           )
-          await runtime.refreshRuntime(origin)
           await runtime.refreshRuntime(destination.profile)
           navigate('tasks', task.id, runtimeId)
+          void runtime.refreshRuntime(origin).catch((error: unknown) => {
+            console.error('Could not refresh the source server after moving the draft', error)
+          })
         }}
       />
     </View>

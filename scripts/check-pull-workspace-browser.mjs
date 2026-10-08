@@ -18,7 +18,7 @@ const mocks = {
   './use-pull-detail': `export const usePullDetail=()=>({detail:window.detail,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
   './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
-  '../list/start-task': `export const StartPullTask=()=> <div role="dialog">Start PR task</div>;`,
+  '../list/start-task': `export const StartPullTask=()=> <button>New task</button>;`,
   './create': `export const CreatePull=()=>null;`,
   '../../connections/forge-connections': `export const ForgeConnections=()=>null;`,
   '../../connections/source-picker': `export const SourcePicker=()=>null;`,

@@ -51,6 +51,7 @@
     "protobufjs": "^8.8.0",
     "semver": "^7.8.5",
     "sharp": "^0.35.5",
+    "shell-quote": "1.12.0",
     "tar": "7.5.22",
     "turndown": "^7.2.4",
     "unzipper": "0.12.5",

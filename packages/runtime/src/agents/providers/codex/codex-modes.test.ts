@@ -22,6 +22,7 @@ async function fixture(
   savedDaybreak = false,
   slowShutdown = false,
   compactBeforeResponse = false,
+  lateChild = false,
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-codex-modes-'))
   cleanups.push(directory)
@@ -52,6 +53,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
  if(m.method==='turn/start') {
    send({method:'item/agentMessage/delta',params:{delta:JSON.stringify(mcpServers.dovo_task?.env ?? {})}});
    send({method:'turn/completed',params:{turn:{status:'completed'}}});
+   if (${lateChild}) setTimeout(() => send({method:'item/started',params:{threadId:'native-child',item:{type:'commandExecution'}}}), 50);
  }
  if(m.method==='thread/compact/start' && !${compactBeforeResponse})send({method:'item/completed',params:{threadId:'thread',item:{type:'contextCompaction',id:'compact'}}});
 });`,
@@ -278,3 +280,32 @@ it.skipIf(process.platform === 'win32')(
     expect(await readFile(join(run.cwd, 'late.txt'), 'utf8')).toBe('saved')
   },
 )
+
+it('keeps native-agent notifications subscribed after the root turn finishes', async () => {
+  const { run } = await fixture('0.155.1', false, false, false, true)
+  run.taskId = 'late-native-codex'
+  const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  const events = vi.fn<NonNullable<AgentRun['onEvent']>>()
+  run.onSubagentEvent = native
+  run.onEvent = events
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  try {
+    await codexAdapter.run(run)
+    await vi.waitFor(() =>
+      expect(native).toHaveBeenCalledWith(
+        'item/started',
+        expect.objectContaining({ threadId: 'native-child' }),
+        'thread',
+      ),
+    )
+    expect(events).not.toHaveBeenCalledWith(
+      'item/started',
+      expect.objectContaining({ threadId: 'native-child' }),
+    )
+    await codexAdapter.dispose?.()
+    expect(native).toHaveBeenCalledWith('dovo/session/closed', {}, 'thread')
+  } finally {
+    await codexAdapter.dispose?.()
+    pressure.mockRestore()
+  }
+})

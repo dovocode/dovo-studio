@@ -13,7 +13,7 @@ vi.mock('../../configuration/claude-command.js', () => ({
   claudeCommand: async () => '/bin/claude',
 }))
 
-import { claudeAdapter } from './claude.js'
+import { claudeAdapter, createClaudeAdapter } from './claude.js'
 
 it('runs the Claude compact command and reports its boundary', async () => {
   mocks.query.mockImplementation(() => ({
@@ -204,4 +204,83 @@ it('keeps a streaming Claude connection across turns', async () => {
     pressure.mockRestore()
   }
   expect(close).toHaveBeenCalled()
+})
+
+it('continues native-agent discovery after a warm parent turn ends and rebinds it for the next turn', async () => {
+  const adapter = createClaudeAdapter()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  let release = () => {}
+  const late = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  mocks.query.mockImplementation(({ prompt }) => ({
+    async *[Symbol.asyncIterator]() {
+      if (typeof prompt === 'string') throw new Error('Expected streaming input')
+      for await (const _message of prompt) {
+        yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+        await late
+        yield {
+          type: 'system',
+          subtype: 'background_tasks_changed',
+          session_id: 'session',
+          tasks: [{ task_id: 'native-child', task_type: 'local_agent', description: 'Explore' }],
+        }
+      }
+    },
+    close: release,
+  }))
+  const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  const events = vi.fn<NonNullable<AgentRun['onEvent']>>()
+  const run: AgentRun = {
+    taskId: 'native-claude',
+    agent: {
+      id: 'agent',
+      name: 'Claude',
+      provider: 'claude',
+      endpoint: '',
+      model: '',
+      instructions: '',
+      permission: 'ask',
+    },
+    cwd: '/tmp',
+    prompt: 'First',
+    signal: new AbortController().signal,
+    onSession: () => {},
+    onText: () => {},
+    onActivity: () => {},
+    onEvent: events,
+    onSubagentEvent: native,
+    approve: async () => false,
+    ask: async () => null,
+  }
+  try {
+    await adapter.run(run)
+    release()
+    await vi.waitFor(() =>
+      expect(native).toHaveBeenCalledWith(
+        'system',
+        expect.objectContaining({ subtype: 'background_tasks_changed' }),
+        'session',
+      ),
+    )
+    expect(events).not.toHaveBeenCalledWith(
+      'system',
+      expect.objectContaining({ subtype: 'background_tasks_changed' }),
+    )
+    const rebound = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+    await adapter.run({ ...run, sessionId: 'session', prompt: 'Second', onSubagentEvent: rebound })
+    await vi.waitFor(() =>
+      expect(rebound).toHaveBeenCalledWith(
+        'system',
+        expect.objectContaining({ subtype: 'background_tasks_changed' }),
+        'session',
+      ),
+    )
+    await adapter.dispose?.()
+    expect(rebound).toHaveBeenCalledWith('dovo/session/closed', {}, 'session')
+  } finally {
+    release()
+    await adapter.dispose?.()
+    pressure.mockRestore()
+  }
 })

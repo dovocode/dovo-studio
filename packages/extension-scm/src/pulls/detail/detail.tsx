@@ -21,7 +21,6 @@ import {
   GitBranch,
   ListChecks,
   MessageSquare,
-  Plus,
   RefreshCw,
 } from 'lucide-react'
 import { PullComments } from './comments'
@@ -129,20 +128,18 @@ function PullDetailContent({
             <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />
           </Button>
           {detail && (
-            <Button
-              size="sm"
-              variant="outline"
-              aria-label="New task"
-              title="Start a task from this PR"
-              disabled={!connected}
-              onClick={() => {
+            <StartPullTask
+              repositoryId={repositoryId}
+              pull={detail.pull}
+              initialObjective={objective}
+              stackAction={stackAction}
+              open={starting}
+              onOpenChange={(open) => {
+                setStarting(open)
                 setObjective(undefined)
-                setStarting(true)
+                setStackAction(undefined)
               }}
-            >
-              <Plus className="size-3.5" />
-              <span className="hidden @lg/pr-detail:inline">New task</span>
-            </Button>
+            />
           )}
           {detail && (
             <PullActions
@@ -532,18 +529,6 @@ function PullDetailContent({
               onCreated={(_repo, next) => {
                 changed()
                 selectPull(next)
-              }}
-            />
-          )}
-          {starting && (
-            <StartPullTask
-              initialObjective={objective}
-              stackAction={stackAction}
-              repositoryId={repositoryId}
-              pull={detail.pull}
-              onClose={() => {
-                setStarting(false)
-                setStackAction(undefined)
               }}
             />
           )}

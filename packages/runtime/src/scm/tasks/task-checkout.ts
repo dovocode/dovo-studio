@@ -7,6 +7,7 @@ import { taskBranchName, taskWorktreePath } from './task-branch.js'
 import { defaultWorktreeBase, canChangeTaskCheckout } from '@dovo/protocol'
 import { listBranches } from '../git/branches.js'
 import { fetchPullHead } from '../pulls/pull-head.js'
+import { createPullBranchWorktree, pullSourceBranch } from '../pulls/pull-branch.js'
 import { mkdir, stat, realpath } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { WorkspaceStore } from '../../storage/workspace.js'
@@ -163,8 +164,44 @@ export class TaskCheckout {
     })[0]
     const setup = !!task.setupCommand?.trim()
     if (existing) {
+      // Finish upstream setup if a previous checkout attempt stopped after creating the folder.
+      if (task.pullRequest?.checkoutMode === 'pr-branch' && !task.checkoutBranch) {
+        const branch = await createPullBranchWorktree(
+          this.git,
+          root,
+          task.pullRequest,
+          existing,
+          key,
+          false,
+        )
+        this.store.updateTask(id, (current) => ({ ...current, checkoutBranch: branch }))
+      }
       const steps = setup && !task.worktreeSetupComplete ? ['setup', 'agent'] : []
       return this.prepare(id, existing, steps, undefined, signal)
+    }
+    if (task.pullRequest?.checkoutMode === 'pr-branch') {
+      const branch = pullSourceBranch(task.pullRequest)
+      const identity = await this.git.repositoryIdentity(root).catch(() => undefined)
+      const directory = join(worktrees, taskWorktreePath(identity, root, `${branch}-${suffix}`))
+      const restoring = task.checkoutBranch === branch
+      const steps = [
+        restoring ? 'restore' : 'pull',
+        'worktree',
+        ...(task.submodules && task.submodules !== 'none' ? ['submodules'] : []),
+        ...(setup ? ['setup'] : []),
+        'agent',
+      ]
+      this.progress(id, steps, steps[0], branch)
+      await mkdir(dirname(directory), { recursive: true })
+      signal?.throwIfAborted()
+      await createPullBranchWorktree(this.git, root, task.pullRequest, directory, key, restoring)
+      this.store.updateTask(id, (current) => ({
+        ...current,
+        checkoutBranch: branch,
+        worktreeSetupComplete: false,
+        worktreeSubmodulesComplete: false,
+      }))
+      return this.prepare(id, directory, steps, branch, signal)
     }
     // A removed worktree keeps its branch (Settings → Worktrees, or the archive cleanup). Reattach
     // that branch so committed work carries on, even if the title or prefix changed since.

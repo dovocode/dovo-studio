@@ -10,7 +10,8 @@ export type PullMenuProps = {
   providerName?: string
   onRefresh: () => void
   onOpen: () => void
-  onStartTask: () => void
+  onStartTask: (checkoutMode: 'new-branch' | 'pr-branch') => void
+  prBranchAvailable: boolean
   refreshDisabled: boolean
   taskDisabled: boolean
   actions: PullActionOption[]
@@ -68,9 +69,15 @@ export function PullMenu(props: PullMenuProps) {
           ))}
           <Action
             secondary
-            label="Start task from PR"
+            label="New branch from PR"
             disabled={props.taskDisabled}
-            onPress={() => choose(props.onStartTask)}
+            onPress={() => choose(() => props.onStartTask('new-branch'))}
+          />
+          <Action
+            secondary
+            label="Use PR branch"
+            disabled={props.taskDisabled || !props.prBranchAvailable}
+            onPress={() => choose(() => props.onStartTask('pr-branch'))}
           />
           <Action
             secondary

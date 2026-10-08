@@ -1,4 +1,4 @@
-import { mutableStruct } from '@dovo/protocol'
+import { mutableStruct, taskFamilyWorking } from '@dovo/protocol'
 import { automationSchema, jobRunSchema, type JobRunStep, type Task } from '@dovo/protocol'
 import { Schema } from 'effect'
 export const storedRunSchema = mutableStruct({
@@ -74,7 +74,8 @@ export function reconcileCompletedTasks(run: StoredRun, tasks: Task[]): StoredRu
   const steps = runSteps(run).map((step) => {
     if (completedNodes.includes(step.nodeId) || !step.taskId) return step
     const task = tasks.find((task) => task.id === step.taskId)
-    if (!task || !['review', 'done'].includes(task.status)) return step
+    if (!task || !['review', 'done'].includes(task.status) || taskFamilyWorking(tasks, task.id))
+      return step
     completedNodes.push(step.nodeId)
     return {
       ...step,
