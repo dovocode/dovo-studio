@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
@@ -58,11 +59,25 @@ try {
       ],
     }),
   )
-  for (const width of [375, 768, 1440]) {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  for (const width of [320, 375, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     for (const route of ['/', '/download/', '/docs/']) {
       await page.goto(origin + route)
       await page.getByRole('heading', { level: 1 }).waitFor()
+      const command = await page.locator('.command-panel pre').textContent()
+      assert.match(command, /--channel stable --host 0\.0\.0\.0/)
+      execFileSync('bash', ['-n', '-c', command])
+      assert.equal(
+        await page.evaluate(() => getComputedStyle(document.body).backgroundColor),
+        'rgb(8, 8, 8)',
+      )
+      if (route !== '/docs/') {
+        const mobile = page.getByRole('region', { name: 'Mobile availability' })
+        assert.equal(await mobile.getByText('Work in progress', { exact: true }).isVisible(), true)
+        assert.equal(await mobile.getByText('Coming soon', { exact: true }).isVisible(), true)
+      }
+
       assert.equal(
         await page.locator('link[rel="canonical"]').getAttribute('href'),
         'https://dovo.studio' + route,
@@ -103,6 +118,30 @@ try {
     await page.getByRole('link', { name: /View Linux nightlies/ }).getAttribute('href'),
     'https://github.com/dovocode/dovo-studio/releases?q=nightly&expanded=true',
   )
+  await page.goto(origin + '/docs/')
+  await page.getByRole('button', { name: 'Nightly server', exact: true }).click()
+  const nightlyCommand = await page.locator('.command-panel pre').textContent()
+  execFileSync('bash', ['-n', '-c', nightlyCommand])
+  assert.match(nightlyCommand, /--channel nightly --host 0\.0\.0\.0/)
+  assert.match(nightlyCommand, /dovo-server-nightly" pair/)
+  await page.getByRole('button', { name: 'Copy command', exact: true }).click()
+  await page.getByRole('button', { name: 'Copied', exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), nightlyCommand)
+  await page.getByRole('button', { name: 'Stable server', exact: true }).click()
+  const stableCommand = await page.locator('.command-panel pre').textContent()
+  assert.match(stableCommand, /dovo-server" pair/)
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw Error('Clipboard unavailable')
+        },
+      },
+    }),
+  )
+  await page.getByRole('button', { name: 'Copy command', exact: true }).click()
+  await page.getByRole('status').getByText('Clipboard unavailable.', { exact: false }).waitFor()
   assert.equal((await page.request.get(origin + '/robots.txt')).status(), 200)
   assert.match(
     await (await page.request.get(origin + '/sitemap.xml')).text(),
@@ -110,11 +149,17 @@ try {
   )
   assert.deepEqual(errors, [])
   await page.goto(origin + '/')
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll('.product-screenshot img')).every(
+      (image) => image.complete && image.naturalWidth > 0,
+    ),
+  )
+  assert.equal(await page.locator('.product-screenshot img').count(), 2)
   await page.screenshot({ path: '/tmp/dovo-site-desktop.png', fullPage: true })
   await page.setViewportSize({ width: 375, height: 812 })
   await page.screenshot({ path: '/tmp/dovo-site-mobile.png', fullPage: true })
   console.log(
-    'Dovo site: production routes, canonical URLs, responsive layouts, navigation, stable/nightly selection, published release filtering and API failure fallback passed.',
+    'Dovo site: production routes, canonical URLs, responsive layouts, navigation, stable/nightly selection, published release filtering, API failure fallback, actual screenshots and copyable stable/nightly server setup passed.',
   )
 } finally {
   await browser.close()

@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { WorkspacePreview } from '../components/workspace-preview'
+import { WorkspaceScreenshot } from '../components/workspace-screenshots'
+import { MobileAvailability } from '../components/mobile-availability'
+import { ServerQuickStart } from '../components/server-quick-start'
 
 export const metadata: Metadata = { alternates: { canonical: '/' } }
 
@@ -20,7 +22,7 @@ export default function Home() {
         </h1>
         <p className="hero-description">
           Bring coding agents, Git and automations into one calm workspace. Run it on your computer.
-          Pick up the work from desktop, web or iPhone.
+          Pick up the work from desktop or web.
         </p>
         <div className="actions">
           <Link href="/download/" className="button">
@@ -33,7 +35,7 @@ export default function Home() {
         <p className="hero-note">macOS, Windows & Linux · Your runtime, your data</p>
       </section>
       <div className="wrap">
-        <WorkspacePreview />
+        <WorkspaceScreenshot />
       </div>
       <section className="platform-strip wrap" aria-label="Supported coding agents">
         <span>WORK WITH YOUR AGENTS</span>
@@ -87,6 +89,11 @@ export default function Home() {
             <span className="feature-tag">Jobs & automations</span>
           </article>
         </div>
+        <div className="automation-showcase">
+          <h3>Build the flow. Keep a human in the loop.</h3>
+          <p>Connect schedules, agent tasks and review steps in the actual automation editor.</p>
+          <WorkspaceScreenshot automation />
+        </div>
       </section>
       <section className="ownership wrap">
         <div>
@@ -106,12 +113,12 @@ export default function Home() {
         </div>
         <div
           className="connection-map"
-          aria-label="Desktop, web and iPhone connect directly to your runtime"
+          aria-label="Desktop and web connect directly to your runtime; iPhone is work in progress"
         >
           <div className="map-clients">
             <span>Desktop</span>
             <span>Web</span>
-            <span>iPhone</span>
+            <span>iPhone · WIP</span>
           </div>
           <div className="map-line" aria-hidden="true" />
           <div className="map-host">
@@ -126,6 +133,10 @@ export default function Home() {
           </p>
         </div>
       </section>
+      <div className="wrap">
+        <MobileAvailability />
+        <ServerQuickStart />
+      </div>
       <section className="closing wrap">
         <p className="eyebrow">MAKE SPACE FOR YOUR NEXT IDEA</p>
         <h2>Let’s get to work.</h2>

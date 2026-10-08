@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { ServerQuickStart } from '../../components/server-quick-start'
 import { guide, serverGuide, mobileGuide, repository } from '../../components/site-links'
 
 export const metadata: Metadata = {
@@ -22,9 +23,11 @@ export default function Docs() {
         Start with the desktop app. Add the agents you already use, choose a project and give the
         work a place to live.
       </p>
+      <ServerQuickStart />
       <div className="docs-layout">
         <nav className="docs-nav" aria-label="On this page">
           <span>GETTING STARTED</span>
+          <a href="#server">Quick server setup</a>
           <a href="#install">01 · Install</a>
           <a href="#agents">02 · Connect agents</a>
           <a href="#project">03 · Add a project</a>
@@ -88,8 +91,9 @@ export default function Docs() {
               </p>
             </div>
             <p>
-              The host must be running and reachable for live work. For iPhone installation, follow
-              the <a href={mobileGuide}>local build instructions</a>.
+              The host must be running and reachable for live work. iPhone is work in progress;
+              follow the <a href={mobileGuide}>local build instructions</a> to try it. Android is
+              coming soon.
             </p>
           </section>
         </div>

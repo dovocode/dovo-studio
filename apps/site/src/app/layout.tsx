@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://dovo.studio'),
   title: { default: 'Dovo Studio — A workspace for coding agents', template: '%s · Dovo Studio' },
   description:
-    'Bring coding agents, projects, Git and automations together. Run Dovo Studio on your computer and connect from desktop, web or iPhone.',
+    'Bring coding agents, projects, Git and automations together. Run Dovo Studio on your computer and connect from desktop or web. iPhone is work in progress; Android is coming soon.',
   applicationName: 'Dovo Studio',
   icons: { icon: '/dovo-logo.png', apple: '/dovo-logo.png' },
   openGraph: {

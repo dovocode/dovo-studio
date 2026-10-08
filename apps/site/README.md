@@ -20,9 +20,25 @@ served from the domain root.
 Routes: `/`, `/download/`, `/docs/`. Download links use the latest stable GitHub release rather than
 hardcoding versioned asset filenames. The Nightly channel loads the newest published nightly from
 the public GitHub releases API in the browser, with a link to browse releases if lookup fails. The
-iPhone guide describes local builds, not an App Store release. Detailed guides link to the
-repository documentation so there is one maintained full manual. The homepage preview is explicitly
-labeled as an illustration.
+iPhone app is marked work in progress and Android is marked coming soon. The iPhone guide describes
+local builds, not an App Store release. Detailed guides link to the repository documentation so
+there is one maintained full manual. The homepage uses real screenshots of the production workbench
+with an isolated demo runtime. The site uses the Dovo graphite-and-blue palette from
+`packages/studio-core/src/themes.ts`.
+
+Stable and Nightly Linux setup commands are shown directly on the homepage, downloads and docs,
+including service installation, pairing, and the separate Nightly launcher name. Commands use the
+maintained `scripts/install-linux-server.sh`; HTTP LAN/VPN access and device pairing stay supported.
+
+To refresh the committed screenshots after changing the app:
+
+```sh
+pnpm --filter @dovo/desktop... --filter @dovo/api... -r build
+node scripts/capture-site-screenshots.mjs
+```
+
+The capture script starts a temporary runtime, seeds a demo project and uses the actual compiled
+workbench. It cleans up that runtime and does not connect to your personal workspace.
 
 Brand assets come from the existing shared Dovo logo. Canonical URLs, sitemap and robots metadata
 use `https://dovo.studio`.
