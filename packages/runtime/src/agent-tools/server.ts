@@ -19,6 +19,7 @@ const base = address
 const credential = token
 const readOnly = process.env.DOVO_TASK_READ_ONLY === '1'
 const artifactsEnabled = process.env.DOVO_TASK_ARTIFACTS_ENABLED === '1'
+const pullRequestWatchingEnabled = process.env.DOVO_TASK_PR_WATCHING_ENABLED === '1'
 const artifacts = () => {
   if (!artifactsEnabled) throw new Error('Dovo Artifacts is disabled')
 }
@@ -224,12 +225,29 @@ const tools: Array<
   },
   ...(!readOnly
     ? [
+        ...(pullRequestWatchingEnabled
+          ? [
+              {
+                name: 'pull_request_watch',
+                description:
+                  'Hand PR feedback monitoring to Dovo. Use action watch with a PR URL in this thread’s project; replaces this thread’s previous watch. Returns current failed checks. Dovo queues new comments, reviews and check failures and wakes the thread without an agent polling loop. Survives turns and runtime restarts, stops when the PR closes. Use status to inspect the watch or stop to cancel it. Respects paused queues and archived threads.',
+                inputSchema: {
+                  type: 'object' as const,
+                  properties: {
+                    action: { type: 'string' as const, enum: ['watch', 'status', 'stop'] },
+                    url: { type: 'string' as const, description: 'Required for action watch.' },
+                  },
+                  required: ['action'],
+                },
+              },
+            ]
+          : []),
         ...(artifactsEnabled
           ? [
               {
                 name: 'artifact_create',
                 description:
-                  'Create a persistent artifact in this thread. Dovo shows a preview card on desktop and mobile. Use markdown for documents, html for self-contained interactive pages, svg for diagrams, code for source files. HTML runs in a sandbox without external network access; embed assets and scripts. Returns the artifact ID and revision, not its body.',
+                  'Create a persistent artifact when the user requests one or a viewable deliverable adds clear value. Prefer normal replies and repository files for routine work; reuse an existing artifact where appropriate. Dovo shows a preview card on desktop and mobile. Formats: markdown, self-contained html, svg and code. HTML has no external network access; embed assets and scripts. Returns the ID and revision, not the body.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
@@ -332,6 +350,16 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
   try {
     const input = decode(args, arguments_ ?? {})
     switch (name) {
+      case 'pull_request_watch':
+        writable()
+        if (!pullRequestWatchingEnabled) throw new Error('Experimental PR watching is disabled')
+        return text(
+          await post('/api/pull-request-watch', {
+            ...input,
+            taskId: task,
+            parentRunId,
+          }),
+        )
       case 'subagent_spawn':
         return text(await post('/api/subagents/spawn', { ...input, taskId: task, parentRunId }))
       case 'subagent_list':

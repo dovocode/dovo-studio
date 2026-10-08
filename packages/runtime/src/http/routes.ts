@@ -1,4 +1,5 @@
 import { cuaCheckRequest, cuaActionRequest } from '@dovo/protocol'
+import { pullRequestWatchRequestSchema } from '../scm/tasks/pull-request-watch.js'
 import { checkCua, cuaAction } from '../computer-use/cua.js'
 import { subagentSpawnSchema, subagentScopeSchema, subagentReadSchema } from '@dovo/protocol'
 import { conversationPage } from '@dovo/protocol'
@@ -149,6 +150,15 @@ export function route(
         )
       }
       const device = s.devices.authenticate(token)
+      if (method === 'POST' && path === '/api/pull-request-watch') {
+        if (!device.owner)
+          throw new HttpError(403, 'PR watches are controlled by the thread’s agent')
+        const input = decode(
+          pullRequestWatchRequestSchema,
+          yield* serviceResult(body(request, 4096)),
+        )
+        return yield* serviceResult(s.pullRequestWatch.command(input))
+      }
       if (method === 'POST' && path.startsWith('/api/subagents/')) {
         if (!device.owner)
           throw new HttpError(403, 'Child agents are controlled by the parent agent')

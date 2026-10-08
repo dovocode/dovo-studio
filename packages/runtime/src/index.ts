@@ -65,6 +65,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       const finalizers = [
         () => housekeeping.dispose(),
         () => taskPulls.dispose(),
+        () => services.pullRequestWatch.dispose(),
         () => services.acpInstallations.dispose(),
         () => services.acpController.abort(),
         closeTitles,
@@ -162,6 +163,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         services.mcpApps.start()
         housekeeping.start()
         taskPulls.start()
+        services.pullRequestWatch.start()
       })
       return { services, port: address.port }
     }),

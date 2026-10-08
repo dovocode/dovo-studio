@@ -238,6 +238,23 @@ export class ForgePullRequests {
     if (binding) detail.pull.connectionId = binding.connectionId
     return detail
   }
+  // PullCache calls this through its structural provider contract.
+  // fallow-ignore-next-line unused-class-member
+  async feedback(cwd: string, number: number) {
+    const binding = await this.binding(cwd)
+    if (!binding) return this.github.feedback(cwd, number)
+    const connection = this.connections.get(binding.connectionId)
+    if (connection.provider !== 'github') return this.detail(cwd, number)
+    const detail = await this.githubTarget(
+      connection.id,
+      connection.revision,
+      new URL(connection.baseUrl).hostname,
+      binding.repository,
+      connection.cliProfile,
+    ).feedback(cwd, number)
+    detail.pull.connectionId = binding.connectionId
+    return detail
+  }
   async comment(cwd: string, value: unknown) {
     const input = decode(pullLineCommentSchema, value)
     return (await this.target(cwd))?.comment(input) ?? this.github.comment(cwd, input)

@@ -34,6 +34,7 @@
     "test:turn-grouping:browser": "node scripts/check-turn-grouping-browser.mjs",
     "test:thread-scroll:browser": "node scripts/check-thread-scroll-browser.mjs",
     "test:thread-streaming:browser": "node scripts/check-thread-streaming-browser.mjs",
+    "test:composer-project:browser": "node scripts/check-composer-project-browser.mjs && node scripts/check-mobile-project-browser.mjs",
     "test:composer-send:browser": "node scripts/check-composer-send-browser.mjs",
     "test:composer-providers:browser": "node scripts/check-composer-providers-browser.mjs",
     "test:composer-unification:browser": "pnpm --filter @dovo/desktop build && node scripts/check-composer-unification-browser.mjs && node scripts/check-composer-layout-browser.mjs",

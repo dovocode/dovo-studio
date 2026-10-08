@@ -66,6 +66,7 @@ export class Tasks {
     private activity?: Pick<Activity, 'add'>,
     artifactsEnabled: () => boolean = () => false,
     skillCacheDirectory?: string,
+    pullRequestWatchingEnabled: () => boolean = () => false,
   ) {
     this.runner = new TaskTurnRunner(
       store,
@@ -78,6 +79,7 @@ export class Tasks {
       activity,
       artifactsEnabled,
       skillCacheDirectory,
+      pullRequestWatchingEnabled,
     )
     this.runner.setLinkedCheckouts(checkouts.linked)
     this.queue = new TaskQueue(store, activity)

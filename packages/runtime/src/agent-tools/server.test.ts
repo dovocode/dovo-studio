@@ -15,6 +15,7 @@ import {
   mutableStruct,
   artifactWriteResponseSchema,
   artifactResponseSchema,
+  pullDetailSchema,
 } from '@dovo/protocol'
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
 
@@ -274,6 +275,9 @@ it('does not advertise or execute artifacts unless explicitly enabled', async ()
       false,
     )
     expect(
+      (await client.listTools()).tools.some((tool) => tool.name === 'pull_request_watch'),
+    ).toBe(false)
+    expect(
       (
         await client.callTool({
           name: 'artifact_create',
@@ -283,6 +287,178 @@ it('does not advertise or execute artifacts unless explicitly enabled', async ()
     ).toBe(true)
     expect(
       (await client.callTool({ name: 'artifact_read', arguments: { id: 'blocked' } })).isError,
+    ).toBe(true)
+  } finally {
+    await client.close()
+    await transport.close()
+  }
+})
+
+it('registers a project-scoped PR watch through MCP and immediately rejects old sessions when disabled', async () => {
+  const f = await fixture()
+  const token = 'pr-watch-mcp-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  const s = runtime.services
+  const client = new Client({ name: 'pr-watch-test', version: '1' })
+  let transport: StdioClientTransport | undefined
+  try {
+    s.store.update(() => f.workspace)
+    const task = s.tasks.create({
+      title: 'PR',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: '',
+    })
+    const url = 'https://github.com/team/project/pull/7'
+    const read = vi.spyOn(s.pullCache, 'feedback').mockResolvedValue(
+      decode(pullDetailSchema, {
+        pull: {
+          number: 7,
+          title: 'PR',
+          url,
+          state: 'open',
+          draft: false,
+          author: 'me',
+          updatedAt: '2026-10-07',
+          head: 'fix',
+          base: 'main',
+          labels: [],
+          repositoryUrl: 'https://github.com/team/project',
+          headSha: 'a'.repeat(40),
+          baseSha: 'b'.repeat(40),
+          body: '',
+          additions: 0,
+          deletions: 0,
+          changedFiles: 0,
+          mergeable: true,
+          reviewers: [],
+          assignees: [],
+        },
+        comments: [],
+        checks: [],
+        files: [],
+        warnings: [],
+      }),
+    )
+    s.preferences.save({ enablePullRequestWatching: true })
+    const server = taskToolsServer(
+      task.id,
+      runtime.port,
+      token,
+      '127.0.0.1',
+      false,
+      false,
+      undefined,
+      true,
+    )
+    transport = new StdioClientTransport({
+      command: server.command,
+      args: server.args,
+      env: { ...server.envValues },
+      stderr: 'ignore',
+    })
+    await client.connect(transport)
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain(
+      'pull_request_watch',
+    )
+    const watch = await client.callTool({
+      name: 'pull_request_watch',
+      arguments: { action: 'watch', url, taskId: 'another-thread' },
+    })
+    expect(watch.isError).not.toBe(true)
+    expect(JSON.parse(decodeToolText(watch))).toMatchObject({
+      watch: { number: 7, url, status: 'watching' },
+      failedChecks: [],
+    })
+    expect(read).toHaveBeenCalledWith(f.directory, 7, true)
+    expect(s.db.prepare('SELECT task_id FROM task_pull_watches').all()).toEqual([
+      { task_id: task.id },
+    ])
+    expect(
+      (await client.callTool({ name: 'pull_request_watch', arguments: { action: 'watch' } }))
+        .isError,
+    ).toBe(true)
+    expect(
+      (await client.callTool({ name: 'pull_request_watch', arguments: { action: 'invalid' } }))
+        .isError,
+    ).toBe(true)
+    expect(
+      JSON.parse(
+        decodeToolText(
+          await client.callTool({ name: 'pull_request_watch', arguments: { action: 'stop' } }),
+        ),
+      ),
+    ).toMatchObject({ watch: { status: 'stopped' } })
+    s.preferences.save({ enablePullRequestWatching: false })
+    const disabled = await client.callTool({
+      name: 'pull_request_watch',
+      arguments: { action: 'watch', url },
+    })
+    expect(disabled.isError).toBe(true)
+    expect(decodeToolText(disabled)).toContain('Enable the experimental PR feedback watcher')
+    const unauthenticated = await fetch(`http://127.0.0.1:${runtime.port}/api/pull-request-watch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: task.id, action: 'status' }),
+    })
+    expect(unauthenticated.status).toBe(401)
+    const pairedToken = 'paired-pr-watch-test-token'
+    s.devices.add('Test phone', pairedToken)
+    s.preferences.save({ enablePullRequestWatching: true })
+    const paired = await fetch(`http://127.0.0.1:${runtime.port}/api/pull-request-watch`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${pairedToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: task.id, action: 'watch', url }),
+    })
+    expect(paired.status).toBe(403)
+    s.store.update((workspace) => ({
+      ...workspace,
+      agents: workspace.agents.map((agent) => ({ ...agent, permission: 'read-only' })),
+    }))
+    const readOnly = await client.callTool({
+      name: 'pull_request_watch',
+      arguments: { action: 'watch', url },
+    })
+    expect(readOnly.isError).toBe(true)
+    expect(decodeToolText(readOnly)).toContain('read-only threads')
+  } finally {
+    await client.close()
+    await transport?.close()
+    await runtime.close()
+    await f.cleanup()
+  }
+})
+
+it('does not advertise the PR watcher in read-only harnesses, even with the flag enabled', async () => {
+  const server = taskToolsServer(
+    'task',
+    1,
+    'unused-token',
+    '127.0.0.1',
+    true,
+    false,
+    undefined,
+    true,
+  )
+  const client = new Client({ name: 'readonly-pr-watch-test', version: '1' })
+  const transport = new StdioClientTransport({
+    command: server.command,
+    args: server.args,
+    env: { ...server.envValues },
+    stderr: 'ignore',
+  })
+  try {
+    await client.connect(transport)
+    expect(
+      (await client.listTools()).tools.some((tool) => tool.name === 'pull_request_watch'),
+    ).toBe(false)
+    expect(
+      (
+        await client.callTool({
+          name: 'pull_request_watch',
+          arguments: { action: 'watch', url: 'https://github.com/a/b/pull/7' },
+        })
+      ).isError,
     ).toBe(true)
   } finally {
     await client.close()

@@ -32,27 +32,32 @@ const built = await build({
       import {useState} from 'react';
       import {createRoot} from 'react-dom/client';
       import {Context,defaultTaskHarness} from '@dovo/studio-core';
-      import {TooltipProvider} from '@dovo/studio-ui';
+      import {TooltipProvider,TaskDefaultSettings} from '@dovo/studio-ui';
       import {StartupDraft} from '../extension-tasks/src/task-creation/startup-draft';
       import {ChatThread} from '../extension-tasks/src/chat/thread/chat-thread';
       import {Composer} from '../extension-tasks/src/chat/composer/composer';
       const repositories=[
         {id:'scratch',kind:'scratch',name:'Thread folder',path:'/private/thread',branch:''},
-        {id:'git',name:'dovo-studio',path:'/repo',branch:'main'},
+        {id:'git',name:'dovo-studio',path:'/repo',branch:'main',gitIdentity:'github.com/dovo/studio'},
         {id:'folder',kind:'folder',name:'Design notes',path:'/notes',branch:''}
       ];
-      const defaults={harness:{...defaultTaskHarness('codex'),model:'gpt-6.1-sol',reasoning:'xhigh',permission:'full-access'}};
+      const harness={...defaultTaskHarness('codex'),model:'gpt-6.1-sol',reasoning:'xhigh',permission:'full-access'};
+      const defaults={scopedSettings:{environment:{taskDefaults:{harness}},shared:[{key:'project:github.com/dovo/studio',updatedAt:1,changeId:'fixture',value:{taskDefaults:{defaultServerId:'linux'}}}]},harness};
       const profile={id:'mac',name:'MacBook',nameIsCustom:true,connection:{address:'http://runtime.test',token:'fixture-token'}};
+      const remoteProfile={...profile,id:'linux',name:'Linux workstation'};
       window.requests=[];
       function App(){
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
         const [id,setId]=useState(null);
         const [pending,setPending]=useState(null);
+        const [multiple,setMultiple]=useState(false);window.setMultiple=setMultiple;
+        const [settings,setSettings]=useState(false);window.showSettings=()=>setSettings(true);
         const task=workspace.tasks.find(task=>task.id===id);
         window.task=task;window.reset=()=>{setId(null);setPending(null);setWorkspace({repositories,agents:[],tasks:[],automations:[]})};
         window.setTask=update=>setWorkspace(w=>({...w,tasks:w.tasks.map(t=>t.id===id?{...t,...update}:t)}));
         const request=async(path,input)=>{
           window.requests.push({path,input});
+          if(path==='/api/agents/settings/read')return {value:{taskDefaults:{defaultServerId:'linux'}},inherited:{taskDefaults:{}},projectKey:'project:github.com/dovo/studio'};
           if(path==='/api/agents/models')return {models:[{id:'gpt-6.1-sol',name:'GPT-6.1-Sol',isDefault:true,defaultReasoning:'xhigh',reasoning:[{id:'xhigh',name:'Extra High'}]}],reasoning:[]};
           if(path==='/api/agents/availability')return [{id:'harness:codex',available:true}];
           if(path==='/api/scm/branches')return {current:'main',branches:[{name:'main',ref:'refs/heads/main'}]};
@@ -63,9 +68,9 @@ const built = await build({
           }
           throw Error('Unexpected request '+path);
         };
-        const value={workspace,setWorkspace,snapshot:{workspace,defaults,questions:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,runtimeHost:'MacBook'},connected:true}],request,flush:async()=>{}};
+        const value={workspace,setWorkspace,snapshot:{workspace,defaults,questions:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{}};
         const displayed=task&&{...task,messages:pending?.destination==='thread'&&!task.messages.some(m=>m.id===pending.message.id)?[...task.messages,pending.message]:task.messages};
-        return <Context.Provider value={value}><main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?<><ChatThread task={displayed} pending={pending}/><Composer key={task.id} task={task} onPending={setPending}/></>:<StartupDraft onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main></Context.Provider>
+        return <Context.Provider value={value}>{settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?<><ChatThread task={displayed} pending={pending}/><Composer key={task.id} task={task} onPending={setPending}/></>:<StartupDraft onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
       }
       createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
     `,
@@ -134,7 +139,7 @@ try {
       await page.locator('[data-saved="false"]').waitFor()
       if (project !== 'No project') {
         await page.getByRole('button', { name: 'Task project', exact: true }).click()
-        await page.getByRole('menuitem', { name: project, exact: true }).click()
+        await page.getByRole('button', { name: project, exact: true }).click()
       }
       await page.waitForFunction(() =>
         document
@@ -209,6 +214,58 @@ try {
     await page.getByRole('heading', { name: 'What would you like to work on?' }).count(),
     0,
   )
+  if (screenshots) {
+    for (const device of [
+      { name: 'desktop', width: 1440, height: 900 },
+      { name: 'mobile', width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(device)
+      await page.evaluate(() => {
+        window.reset()
+        window.setMultiple(false)
+      })
+      await page.locator('[data-saved="false"]').waitFor()
+      await page.getByRole('button', { name: 'Task project', exact: true }).click()
+      await page.getByRole('textbox', { name: 'Search projects' }).waitFor()
+      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+      await page.screenshot({
+        path: screenshots + '/' + device.name + '-single-server-projects.png',
+      })
+      await page.keyboard.press('Escape')
+      await page.evaluate(() => window.setMultiple(true))
+      await page.getByRole('button', { name: 'Task project', exact: true }).click()
+      await page.getByRole('button', { name: 'Project notes', exact: true }).waitFor()
+      await page.screenshot({
+        path: screenshots + '/' + device.name + '-all-projects.png',
+      })
+      assert.equal(
+        await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+        false,
+      )
+      await page.getByRole('textbox', { name: 'Search projects' }).fill('notes')
+      assert.equal(
+        await page.getByRole('button', { name: 'No project', exact: true }).isVisible(),
+        true,
+      )
+      await page.screenshot({ path: screenshots + '/' + device.name + '-searched-projects.png' })
+      await page.keyboard.press('Escape')
+      await page.getByRole('button', { name: 'Task server', exact: true }).click()
+      await page.getByRole('dialog', { name: 'Choose a server' }).waitFor()
+      await page.screenshot({ path: screenshots + '/' + device.name + '-server-choice.png' })
+      await page.keyboard.press('Escape')
+    }
+  }
+  if (screenshots) {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.evaluate(() => window.showSettings())
+    await page.getByRole('button', { name: 'Default server', exact: true }).waitFor()
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[aria-label="Default server"]')
+        ?.textContent.includes('Linux workstation'),
+    )
+    await page.screenshot({ path: screenshots + '/desktop-project-default-server.png' })
+  }
   assert.deepEqual(errors, [])
   console.log(
     'Composer layout: project/no-project/folder drafts stay centered on commit at desktop, phone and 320px; send, checkout locking, history and overflow checks passed.',

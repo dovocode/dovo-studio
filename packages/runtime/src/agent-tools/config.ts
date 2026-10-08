@@ -10,6 +10,7 @@ export function taskToolsServer(
   readOnly = false,
   artifactsEnabled = false,
   parentRunId?: string,
+  pullRequestWatchingEnabled = false,
 ): McpServer {
   const localHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   const urlHost = localHost.includes(':') ? `[${localHost}]` : localHost
@@ -31,6 +32,7 @@ export function taskToolsServer(
       DOVO_TASK_TOKEN: token,
       DOVO_TASK_READ_ONLY: readOnly ? '1' : '0',
       DOVO_TASK_ARTIFACTS_ENABLED: artifactsEnabled ? '1' : '0',
+      DOVO_TASK_PR_WATCHING_ENABLED: pullRequestWatchingEnabled ? '1' : '0',
     },
   })
 }

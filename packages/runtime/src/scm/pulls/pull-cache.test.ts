@@ -24,6 +24,52 @@ function setup() {
   })
   return { db, store, pulls, cache }
 }
+it('shares PR feedback across worktrees and accounts correctly, invalidates it on actions and coalesces refreshes', async () => {
+  const { cache, pulls, db, store } = setup()
+  const detail: PullDetail = {
+    pull: {
+      number: 7,
+      title: 'PR',
+      url: 'https://github.com/a/b/pull/7',
+      repositoryUrl: 'https://github.com/a/b',
+      state: 'open',
+      draft: false,
+      author: 'dev',
+      updatedAt: '2026-10-07',
+      head: 'fix',
+      base: 'main',
+      labels: [],
+      headSha: 'a'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      body: '',
+      additions: 0,
+      deletions: 0,
+      changedFiles: 0,
+      mergeable: true,
+      reviewers: [],
+      assignees: [],
+    },
+    comments: [],
+    checks: [],
+    files: [],
+    warnings: [],
+  }
+  const load = vi.spyOn(pulls, 'feedback').mockResolvedValue(detail)
+  let account = 'account-1'
+  const shared = new PullCache(db, pulls, store, async () => account)
+  cleanup.push(() => shared.dispose())
+  await Promise.all([shared.feedback('/repo', 7), shared.feedback('/worktree', 7)])
+  expect(load).toHaveBeenCalledTimes(1)
+  shared.invalidate('/repo', 7)
+  expect((await shared.feedback('/worktree', 7)).stale).toBe(true)
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+  await vi.waitFor(async () => expect((await shared.feedback('/repo', 7)).stale).toBe(false))
+  account = 'account-2'
+  await shared.feedback('/repo', 7)
+  expect(load).toHaveBeenCalledTimes(3)
+  expect((await cache.feedback('/other-repo', 7)).pull.number).toBe(7)
+  expect(load).toHaveBeenCalledTimes(4)
+})
 it('persists pages, coalesces requests, serves stale data immediately and retains it on failure', async () => {
   const { cache, pulls, db, store } = setup()
   const load = vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })

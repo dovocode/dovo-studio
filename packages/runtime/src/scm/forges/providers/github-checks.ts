@@ -46,7 +46,12 @@ const annotation = mutableStruct({
   message: Schema.String,
   title: Schema.optional(Schema.NullOr(Schema.String)),
 })
-export async function githubChecks(json: GithubJSON, repo: GithubLocation, headSha: string) {
+export async function githubChecks(
+  json: GithubJSON,
+  repo: GithubLocation,
+  headSha: string,
+  includeAnnotations = true,
+) {
   const pages = decode(
     mutableArray(
       mutableStruct({
@@ -101,7 +106,7 @@ export async function githubChecks(json: GithubJSON, repo: GithubLocation, headS
                 }
               : {}),
           }
-          if (run.output?.annotations_count) {
+          if (includeAnnotations && run.output?.annotations_count) {
             try {
               const annotations = decode(
                 mutableArray(mutableArray(annotation)),

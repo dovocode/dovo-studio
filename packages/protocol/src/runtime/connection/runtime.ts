@@ -285,6 +285,10 @@ export const runtimePreferencesSchema = mutableStruct({
     Schema.withDecodingDefaultType(Effect.sync(() => 'forever' as const)),
   ),
   enableArtifacts: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
+  /** Experimental: let agents hand PR feedback monitoring to this runtime. */
+  enablePullRequestWatching: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
   browserProfiles: browserProfilesSchema.pipe(
     Schema.withDecodingDefaultType(Effect.sync(defaultBrowserProfiles)),
   ),

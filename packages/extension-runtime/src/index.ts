@@ -28,7 +28,7 @@ export const runtimeExtension = defineStudioExtension(
       order: 3,
       settingsSection: 'coding',
       keywords:
-        'agent model harness reasoning new task working directory local checkout worktree start from origin fetch remote default branch base setup command install',
+        'agent model harness reasoning new task default server project computer working directory local checkout worktree start from origin fetch remote default branch base setup command install',
       load: () => import('./task-defaults-view'),
     },
     {

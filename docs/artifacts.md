@@ -10,6 +10,11 @@ Agents can create persistent artifacts inside a thread using the built-in `dovo_
 external MCP server or artifact service is required. The same tools are supplied to the existing
 Codex, Claude, OpenCode and ACP harnesses.
 
+Harness guidance favors normal replies and repository files for routine explanations, plans, reports
+and code changes. Agents should create an artifact when requested or when a persistent, viewable
+deliverable adds clear value, and update an existing artifact when appropriate. Progress updates and
+copies of existing answers or files do not need artifacts.
+
 - `artifact_create`: title, format, full content and optional language. Returns an ID and revision.
 - `artifact_list`: metadata for the current thread, without content bodies.
 - `artifact_read`: ID and optional revision; returns content and metadata.

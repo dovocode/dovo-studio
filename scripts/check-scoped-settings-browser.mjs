@@ -108,6 +108,32 @@ try {
     assert.deepEqual(write.after.taskDefaults, {})
     assert.equal(write.after.prompts[0].text, 'Local override')
     assert.equal(write.repositoryId, 'project')
+    await scopes.selectOption('project')
+    const defaultServer = page.getByLabel('Default server', { exact: true })
+    await defaultServer.waitFor()
+    await page.waitForFunction(
+      () => !document.querySelector('[aria-label="Default server"]').disabled,
+    )
+    await defaultServer.selectOption('remote')
+    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+    await page.getByText('Defaults saved for new tasks.', { exact: true }).waitFor()
+    write = await page.evaluate(() => window.writes.at(-1))
+    assert.equal(write.scope, 'project')
+    assert.equal(write.after.taskDefaults.defaultServerId, 'remote')
+    assert.equal(write.projectKey, 'project:github.com/team/repo')
+    await scopes.selectOption('global')
+    await scopes.selectOption('project')
+    await page.waitForFunction(
+      () => document.querySelector('[aria-label="Default server"]')?.value === 'remote',
+    )
+    await defaultServer.selectOption('')
+    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+    await page.getByText('Defaults saved for new tasks.', { exact: true }).waitFor()
+    assert.equal(
+      await page.evaluate(() => window.writes.at(-1).after.taskDefaults.defaultServerId),
+      undefined,
+    )
+    await scopes.selectOption('global')
     await page.evaluate(() => (window.delayProject = true))
     await scopes.selectOption('project')
     await page.waitForFunction(() => !!window.releaseProject)

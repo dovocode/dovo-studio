@@ -77,6 +77,8 @@ export const agentSchema = mutableStruct({
 export const taskHarnessSchema = agentPresetSchema.mapFields(Struct.omit(['id', 'name', 'icon']))
 export type TaskHarness = Schema.Schema.Type<typeof taskHarnessSchema>
 export const projectTaskDefaultsSchema = mutableStruct({
+  /** Preferred paired server for this project; used only when that server has an online copy. */
+  defaultServerId: Schema.optional(maxValue(minValue(Schema.String, 1), 500)),
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
   permission: Schema.optional(agentSchema.fields.permission),
   harness: Schema.optional(taskHarnessSchema.mapFields(Struct.omit(['resources']))),

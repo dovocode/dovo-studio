@@ -7,14 +7,15 @@ import {
   type Task,
   type Repository,
 } from '@dovo/studio-core'
-import { Button, Input, DropdownMenu } from '@dovo/studio-ui'
+import { taskProjectGroups, preferredProjectEntry, projectDefaultServer } from '@dovo/protocol'
+import { Button, Input, Popover } from '@dovo/studio-ui'
 import { RepositoryDialog } from '@dovo/extension-scm/repository-dialog'
 import {
   Check,
   ChevronDown,
-  ChevronRight,
   Folder,
   Monitor,
+  LoaderCircle,
   Plus,
   MessageCircle,
 } from 'lucide-react'
@@ -34,17 +35,19 @@ export function ComposerProject({
   onMoving?: (moving: boolean) => void
   onSelectRemote?: (source: TaskSource, repository: Repository) => Promise<void>
 }) {
-  const menu = useRef<HTMLDivElement>(null)
+  const search = useRef<HTMLInputElement>(null)
+  const projects = useRef<HTMLDivElement>(null)
   const store = useWorkspace()
   const host = useStudioHost()
   const [open, setOpen] = useState(false)
-  const [machine, setMachine] = useState<string | null | undefined>(store.activeRuntimeId)
+  const [serverOpen, setServerOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState<TaskSource | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const sources = taskSources(store)
   const current = sources.find((source) => source.runtimeId === store.activeRuntimeId)
+  const multipleMachines = sources.length > 1
   const repository = store.workspace.repositories.find((item) => item.id === task.repositoryId)
   const editable =
     canChangeTaskCheckout(task) && !task.archivedAt && !task.pullRequest && !task.workItem
@@ -53,6 +56,7 @@ export function ComposerProject({
     if (locked || !source.online || target.gitIdentityError) return
     if (source.runtimeId === store.activeRuntimeId && target.id === task.repositoryId) {
       setOpen(false)
+      setServerOpen(false)
       return
     }
     setBusy(true)
@@ -74,6 +78,7 @@ export function ComposerProject({
       } else if (onSelectRemote) await onSelectRemote(source, target)
       else await moveTaskDraft(store, host, task, source, target)
       setOpen(false)
+      setServerOpen(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -81,10 +86,96 @@ export function ComposerProject({
       onMoving?.(false)
     }
   }
-  const matchesSearch = (item: Repository) =>
-    `${item.kind === 'scratch' ? 'No project' : item.name} ${item.path}`
-      .toLowerCase()
-      .includes(query.trim().toLowerCase())
+  const groups = taskProjectGroups(
+    sources.flatMap((source) =>
+      source.workspace.repositories.map((repository) => ({
+        repository,
+        source,
+        runtimeId: source.runtimeId,
+        online: source.online,
+        defaults: source.snapshot?.defaults,
+      })),
+    ),
+  )
+  const normalizedQuery = query.trim().toLowerCase()
+  const matches = groups.filter(
+    (group) =>
+      group.key !== 'scratch' &&
+      group.entries.some(({ repository, source }) =>
+        `${group.name} ${repository.name} ${repository.path} ${repository.gitIdentity ?? ''} ${source.name}`
+          .toLowerCase()
+          .includes(normalizedQuery),
+      ),
+  )
+  const scratch = groups.find((group) => group.key === 'scratch')
+  const projectRow = (group: (typeof groups)[number]) => {
+    const preferred = preferredProjectEntry(group.entries, store.activeRuntimeId)
+    const defaultId = projectDefaultServer(group.entries)
+    const defaultSource = sources.find((item) => item.runtimeId === defaultId)
+    const selected = group.entries.some(
+      ({ repository, runtimeId }) =>
+        runtimeId === store.activeRuntimeId && repository.id === task.repositoryId,
+    )
+    const serverCount = new Set(group.entries.map((entry) => entry.runtimeId)).size
+    return (
+      <button
+        type="button"
+        key={group.key}
+        aria-label={group.name}
+        title={
+          preferred?.repository.path ??
+          group.entries.find((entry) => entry.repository.gitIdentityError)?.repository
+            .gitIdentityError ??
+          'No online copy of this project.'
+        }
+        aria-pressed={selected}
+        disabled={locked || !preferred}
+        onClick={() => {
+          if (preferred) void choose(preferred.source, preferred.repository)
+        }}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
+      >
+        {group.key === 'scratch' ? (
+          <MessageCircle className="size-4 shrink-0" />
+        ) : (
+          <Folder className="size-4 shrink-0" />
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">{group.name}</span>
+          {multipleMachines && (
+            <span className="block truncate text-[0.6875rem] text-muted-foreground">
+              {serverCount > 1 ? `${serverCount} servers` : group.entries[0]?.source.name}
+              {defaultSource ? ` · Default: ${defaultSource.name}` : ''}
+              {!preferred ? ' · Unavailable' : ''}
+            </span>
+          )}
+        </span>
+        {selected && <Check className="size-4 shrink-0" />}
+      </button>
+    )
+  }
+  const serverRepository = (source: TaskSource) =>
+    source.workspace.repositories.find((item) =>
+      repository?.kind === 'scratch'
+        ? item.kind === 'scratch'
+        : repository?.gitIdentity
+          ? item.gitIdentity === repository.gitIdentity
+          : source.runtimeId === store.activeRuntimeId && item.id === task.repositoryId,
+    )
+  const feedback = (
+    <>
+      {busy && (
+        <p role="status" className="flex items-center gap-2 p-2 text-xs text-muted-foreground">
+          <LoaderCircle className="size-3.5 animate-spin" /> Selecting project…
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="p-2 text-xs text-destructive">
+          {error}
+        </p>
+      )}
+    </>
+  )
   const addingProfile = store.runtimeRegistry.profiles.find(
     (profile) => profile.id === adding?.runtimeId,
   )
@@ -99,18 +190,20 @@ export function ComposerProject({
   )
   return (
     <>
-      <DropdownMenu.Root
+      <Popover.Root
         open={open}
         onOpenChange={(value) => {
+          if (busy) return
           setOpen(value)
           if (value) {
-            setMachine(store.activeRuntimeId)
             setQuery('')
+            setError('')
           }
         }}
       >
-        <DropdownMenu.Trigger asChild>
+        <Popover.Trigger asChild>
           <Button
+            type="button"
             variant="ghost"
             disabled={locked}
             aria-label="Task project"
@@ -124,121 +217,184 @@ export function ComposerProject({
             <span className="max-w-32 truncate">
               {repository?.kind === 'scratch'
                 ? 'No project'
-                : (repository?.name ?? 'Choose folder')}
+                : (repository?.name ?? 'Choose project')}
             </span>
-            <Monitor className="size-3.5" />
-            <span className="max-w-28 truncate">{current?.name ?? 'This machine'}</span>
             <ChevronDown className="size-3" />
           </Button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            ref={menu}
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
             side="top"
             align="start"
             sideOffset={8}
-            className="z-50 min-w-56 rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
+            aria-label="Choose a project"
+            onOpenAutoFocus={(event) => {
+              event.preventDefault()
+              search.current?.focus()
+            }}
+            onEscapeKeyDown={(event) => {
+              if (busy) event.preventDefault()
+            }}
+            className="z-50 w-72 max-w-[calc(100vw-24px)] rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
           >
-            {sources.map((source) => (
-              <DropdownMenu.Sub
-                key={source.runtimeId ?? 'local'}
-                open={machine === source.runtimeId}
-                onOpenChange={(value) => {
-                  if (value) {
-                    setMachine(source.runtimeId)
-                    setQuery('')
-                  } else
-                    setMachine((current) => (current === source.runtimeId ? undefined : current))
+            <Input
+              ref={search}
+              aria-label="Search projects"
+              placeholder="Search projects"
+              value={query}
+              disabled={locked}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  projects.current
+                    ?.querySelector<HTMLButtonElement>('button:not(:disabled)')
+                    ?.focus()
+                }
+              }}
+              className="mb-2"
+            />
+            <div
+              ref={projects}
+              role="group"
+              aria-label="Projects"
+              onKeyDown={(event) => {
+                if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+                const buttons = Array.from(
+                  event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+                )
+                const index = buttons.findIndex((button) => button === event.target)
+                if (index < 0) return
+                event.preventDefault()
+                if (event.key === 'ArrowUp' && index === 0) {
+                  search.current?.focus()
+                  return
+                }
+                const next =
+                  event.key === 'Home'
+                    ? 0
+                    : event.key === 'End'
+                      ? buttons.length - 1
+                      : (index + (event.key === 'ArrowDown' ? 1 : -1)) % buttons.length
+                buttons[next]?.focus()
+              }}
+            >
+              {scratch && <div className="mb-1 border-b pb-1">{projectRow(scratch)}</div>}
+              <div className="max-h-64 overflow-y-auto">
+                {matches.map(projectRow)}
+                {!matches.length && (
+                  <p role="status" className="p-2 text-xs text-muted-foreground">
+                    {query.trim() ? 'No matching projects.' : 'No projects yet.'}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="mt-2 border-t pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={locked || !current?.online}
+                onClick={() => {
+                  if (!current) return
+                  setOpen(false)
+                  setAdding(current)
                 }}
+                className="w-full justify-start gap-2 px-2 text-sm font-normal"
               >
-                <DropdownMenu.SubTrigger
-                  disabled={!source.online || locked}
-                  className="flex items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[state=open]:bg-accent data-[disabled]:opacity-40"
-                >
-                  <Monitor className="size-3.5" />
-                  <span className="flex-1">
-                    {source.name}
-                    {source.online ? '' : ' · Offline'}
-                  </span>
-                  {source.runtimeId === store.activeRuntimeId && <Check className="size-3.5" />}
-                  <ChevronRight className="size-3.5" />
-                </DropdownMenu.SubTrigger>
-                <DropdownMenu.Portal>
-                  <DropdownMenu.SubContent
-                    onFocusOutside={(event) => {
-                      if (event.target === menu.current) event.preventDefault()
+                <Plus className="size-4" />
+                {multipleMachines
+                  ? `Add project on ${current?.name ?? 'this server'}`
+                  : 'Add project'}
+              </Button>
+            </div>
+            {feedback}
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+      {multipleMachines && (
+        <Popover.Root
+          open={serverOpen}
+          onOpenChange={(value) => {
+            if (busy) return
+            setServerOpen(value)
+            if (value) {
+              setOpen(false)
+              setError('')
+            }
+          }}
+        >
+          <Popover.Trigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={locked}
+              aria-label="Task server"
+              className="h-7 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal"
+            >
+              <Monitor className="size-3.5" />
+              <span className="max-w-28 truncate">{current?.name ?? 'This server'}</span>
+              <ChevronDown className="size-3" />
+            </Button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              side="top"
+              align="start"
+              sideOffset={8}
+              aria-label="Choose a server"
+              onEscapeKeyDown={(event) => {
+                if (busy) event.preventDefault()
+              }}
+              className="z-50 w-72 max-w-[calc(100vw-24px)] rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
+            >
+              <p className="px-2 pb-2 text-xs text-muted-foreground">
+                Run {repository?.kind === 'scratch' ? 'without a project' : repository?.name} on
+              </p>
+              {sources.map((source) => {
+                const target = serverRepository(source)
+                return (
+                  <button
+                    key={source.runtimeId ?? 'local'}
+                    type="button"
+                    aria-label={source.name}
+                    aria-pressed={source.runtimeId === store.activeRuntimeId}
+                    disabled={locked || !source.online || !target || !!target.gitIdentityError}
+                    onClick={() => {
+                      if (target) void choose(source, target)
                     }}
-                    sideOffset={8}
-                    className="z-50 w-72 rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
                   >
-                    <Input
-                      autoFocus
-                      aria-label="Search folders"
-                      placeholder="Search folders"
-                      value={machine === source.runtimeId ? query : ''}
-                      onChange={(event) => setQuery(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'ArrowDown') {
-                          event.preventDefault()
-                          const first = event.currentTarget.nextElementSibling?.querySelector(
-                            '[role="menuitem"]:not([data-disabled])',
-                          )
-                          if (first instanceof HTMLElement) first.focus()
-                        }
-                        if (event.key !== 'Escape' && event.key !== 'Tab') event.stopPropagation()
-                      }}
-                      className="mb-2"
-                    />
-                    <div className="max-h-64 overflow-y-auto">
-                      {source.workspace.repositories.filter(matchesSearch).map((item) => (
-                        <DropdownMenu.Item
-                          key={item.id}
-                          disabled={!!item.gitIdentityError || locked || !source.online}
-                          title={item.gitIdentityError || item.path}
-                          onSelect={() => {
-                            void choose(source, item)
-                          }}
-                          className="flex items-center gap-2 rounded-md px-2 py-2 text-sm outline-none focus:bg-accent data-[disabled]:opacity-40"
-                        >
-                          {item.kind === 'scratch' ? (
-                            <MessageCircle className="size-4" />
-                          ) : (
-                            <Folder className="size-4" />
-                          )}
-                          <span className="flex-1 truncate">
-                            {item.kind === 'scratch' ? 'No project' : item.name}
-                          </span>
-                          {source.runtimeId === store.activeRuntimeId &&
-                            item.id === task.repositoryId && <Check className="size-4" />}
-                        </DropdownMenu.Item>
-                      ))}
-                      {!source.workspace.repositories.some(matchesSearch) && (
-                        <p className="p-2 text-xs text-muted-foreground">No matching folders.</p>
+                    <Monitor className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{source.name}</span>
+                      {(!source.online || !target || target.gitIdentityError) && (
+                        <span className="block text-xs text-muted-foreground">
+                          {!source.online
+                            ? 'Offline'
+                            : !target
+                              ? 'Project not added on this server'
+                              : target.gitIdentityError}
+                        </span>
                       )}
-                    </div>
-                    <DropdownMenu.Separator className="my-2 border-t" />
-                    <DropdownMenu.Item
-                      disabled={locked || !source.online}
-                      onSelect={() => setAdding(source)}
-                      className="flex items-center gap-2 rounded-md px-2 py-2 text-sm outline-none focus:bg-accent"
-                    >
-                      <Plus className="size-4" />
-                      Add project
-                    </DropdownMenu.Item>
-                  </DropdownMenu.SubContent>
-                </DropdownMenu.Portal>
-              </DropdownMenu.Sub>
-            ))}
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+                    </span>
+                    {source.runtimeId === store.activeRuntimeId && (
+                      <Check className="size-4 shrink-0" />
+                    )}
+                  </button>
+                )
+              })}
+              {feedback}
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
+      )}
       {adding &&
         (adding.runtimeId === store.activeRuntimeId ? (
           dialog
         ) : addingProfile ? (
           <WorkspaceScope profile={addingProfile}>{dialog}</WorkspaceScope>
         ) : null)}
-      {error && (
+      {error && !open && !serverOpen && (
         <p role="alert" className="text-xs text-destructive">
           {error}
         </p>

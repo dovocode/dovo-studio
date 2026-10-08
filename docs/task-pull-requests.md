@@ -1,5 +1,42 @@
 # Thread pull requests
 
+## Experimental PR feedback watcher
+
+Enable **PR feedback watcher (experimental)** under a computer’s **Optional features** settings
+(desktop: Settings → Computers → Running tasks; mobile: the computer settings). It is disabled by
+default. The flag is saved on the runtime and shared by connected devices.
+
+With the flag enabled, writable harness sessions receive `dovo_task pull_request_watch`:
+
+- `action: "watch", url: "https://github.com/owner/repo/pull/123"` registers the thread’s PR and
+  returns any currently failed checks. A thread has one watch; choosing another PR replaces it.
+- `action: "status"` returns the current watch and any refresh error.
+- `action: "stop"` stops the watch.
+
+Registration verifies the URL against the project’s configured forge and records existing comments
+as its baseline. Dovo then checks every two minutes, reusing credential-scoped caches and the
+existing GitHub rate limiter. GitHub feedback reads skip diffs, review-thread metadata, repository
+settings and check annotations; other configured forges use their existing detail adapters. New
+conversation comments, submitted reviews, inline comments and newly failing checks are queued as
+external feedback in the same thread. An idle thread wakes through its normal message queue; an
+active turn finishes before handling that feedback. Long comments are sent as excerpts with links.
+Large batches drain over subsequent polls. Successful or pending checks do not wake the agent.
+
+Watches and delivery cursors survive turns and runtime restarts. Re-registering the same active
+watch preserves its cursor. Queue admission and cursor updates commit together, preventing duplicate
+deliveries after a restart. Failed reads retain progress and show an error in watch status; stale or
+unavailable sections cannot generate notifications. Cache refreshes can add one polling interval to
+delivery latency.
+
+Paused queues remain paused, and archived, settled or read-only threads are not awakened. Disabling
+the feature pauses existing watches and rejects calls from older harness sessions; enabling it again
+resumes them. A watch ends when the PR closes or merges, or is stopped explicitly. Changing the
+thread’s project stops the watch. Deleted threads’ watch records are cleaned up by the watcher.
+Agents are instructed to use this tool for requested ongoing monitoring and finish their turn,
+rather than keeping their own polling loop alive. Creating a PR alone does not start a watch.
+
+## Linking and lifecycle
+
 Each computer has **Smart PR linking** and **Settle when the PR closes** options in its task
 settings, available on desktop and mobile. Smart linking is enabled by default; auto-settle is off.
 

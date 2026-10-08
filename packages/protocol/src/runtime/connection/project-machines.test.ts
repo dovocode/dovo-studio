@@ -1,5 +1,12 @@
 import { expect, it } from 'vite-plus/test'
-import { gitRemoteIdentity, projectMachineGroups } from './project-machines'
+import {
+  gitRemoteIdentity,
+  projectMachineGroups,
+  taskProjectGroups,
+  preferredProjectEntry,
+  projectDefaultServer,
+} from './project-machines'
+import { runtimeDefaultsSchema } from './runtime-setup'
 import { taskMachineDraft } from '../../tasks/task-machine-draft'
 import { decode } from '../../shared/schema'
 import { taskSchema } from '../../workspace'
@@ -91,4 +98,119 @@ it('uses stable group labels independent of runtime order', () => {
   expect(projectMachineGroups(entries)[0].name).toBe(
     projectMachineGroups([...entries].reverse())[0].name,
   )
+})
+
+it('pins one project-free choice and groups the same project across servers', () => {
+  const repository = {
+    id: 'repo',
+    name: 'Project',
+    path: '/repo',
+    branch: 'main',
+    gitIdentity: 'host/team/project',
+  }
+  const groups = taskProjectGroups([
+    { runtimeId: 'local', repository },
+    { runtimeId: 'remote', repository: { ...repository, id: 'copy' } },
+    {
+      runtimeId: 'local',
+      repository: {
+        ...repository,
+        id: 'scratch',
+        kind: 'scratch' as const,
+        gitIdentity: undefined,
+      },
+    },
+    {
+      runtimeId: 'remote',
+      repository: {
+        ...repository,
+        id: 'scratch',
+        kind: 'scratch' as const,
+        gitIdentity: undefined,
+      },
+    },
+  ])
+  expect(groups.map((group) => group.name)).toEqual(['No project', 'Project'])
+  expect(groups[0].entries).toHaveLength(2)
+  expect(groups[1].entries).toHaveLength(2)
+})
+
+it('prefers a project default server and falls back to online valid copies', () => {
+  const repository = {
+    id: 'repo',
+    name: 'Project',
+    path: '/repo',
+    branch: 'main',
+    gitIdentity: 'host/team/project',
+  }
+  const defaults = decode(runtimeDefaultsSchema, {
+    scopedSettings: {
+      environment: {},
+      shared: [
+        {
+          key: 'project:host/team/project',
+          updatedAt: 1,
+          changeId: 'one',
+          value: { taskDefaults: { defaultServerId: 'remote' } },
+        },
+      ],
+    },
+  })
+  const entries = ['local', 'remote', 'third'].map((runtimeId) => ({
+    repository,
+    runtimeId,
+    online: true,
+    defaults,
+  }))
+  expect(preferredProjectEntry(entries, 'local')?.runtimeId).toBe('remote')
+  const offline = entries.map((entry) => ({ ...entry, online: entry.runtimeId !== 'remote' }))
+  expect(preferredProjectEntry(offline, 'local')?.runtimeId).toBe('local')
+  expect(preferredProjectEntry(offline, 'missing')?.runtimeId).toBe('local')
+  const invalid = entries.map((entry) => ({
+    ...entry,
+    repository:
+      entry.runtimeId === 'remote'
+        ? { ...repository, gitIdentityError: 'Invalid remote' }
+        : repository,
+  }))
+  expect(preferredProjectEntry(invalid, 'local')?.runtimeId).toBe('local')
+  expect(
+    preferredProjectEntry(
+      entries.map((entry) => ({ ...entry, online: false })),
+      'local',
+    ),
+  ).toBeUndefined()
+})
+
+it('uses the latest shared default and respects a synced reset instead of a stale server', () => {
+  const repository = {
+    id: 'repo',
+    name: 'Project',
+    path: '/repo',
+    branch: 'main',
+    gitIdentity: 'host/team/project',
+  }
+  const defaults = (updatedAt: number, defaultServerId?: string) =>
+    decode(runtimeDefaultsSchema, {
+      scopedSettings: {
+        environment: {},
+        shared: [
+          {
+            key: 'project:host/team/project',
+            updatedAt,
+            changeId: String(updatedAt),
+            value: { taskDefaults: { defaultServerId } },
+          },
+        ],
+      },
+    })
+  const entries = [
+    { repository, runtimeId: 'local', online: true, defaults: defaults(1, 'remote') },
+    { repository, runtimeId: 'remote', online: true, defaults: defaults(2, 'local') },
+  ]
+  expect(projectDefaultServer(entries)).toBe('local')
+  expect(preferredProjectEntry(entries, 'remote')?.runtimeId).toBe('local')
+  entries[1].defaults = defaults(3)
+  expect(projectDefaultServer(entries)).toBeUndefined()
+  expect(preferredProjectEntry(entries, 'remote')?.runtimeId).toBe('remote')
 })

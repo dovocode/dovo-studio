@@ -29,6 +29,66 @@ const comment = {
   created_at: '2026-09-07T10:00:00Z',
 }
 afterEach(() => vi.restoreAllMocks())
+it('loads background PR feedback without files, thread metadata, repository settings or annotations', async () => {
+  const git = new GitService()
+  const run = vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {
+    if (args[0] === 'repo')
+      return JSON.stringify({
+        nameWithOwner: 'team/project',
+        url: 'https://git.example.com/team/project',
+      })
+    if (args[0] === 'pr')
+      return JSON.stringify({
+        statusCheckRollup: [
+          { name: 'tests', conclusion: 'FAILURE', detailsUrl: 'https://git.example.com/checks/42' },
+        ],
+      })
+    const endpoint = args[3]
+    if (endpoint.endsWith('/pulls/7')) return JSON.stringify(pull)
+    if (endpoint.includes('/issues/')) return JSON.stringify([[comment]])
+    if (endpoint.includes('/reviews?'))
+      return JSON.stringify([
+        [{ ...comment, id: 2, state: 'CHANGES_REQUESTED', submitted_at: comment.created_at }],
+      ])
+    if (endpoint.includes('/comments?'))
+      return JSON.stringify([
+        [{ ...comment, id: 3, path: 'app.ts', line: 1, original_line: 1, diff_hunk: '' }],
+      ])
+    if (endpoint.includes('/check-runs?'))
+      return JSON.stringify([
+        {
+          check_runs: [
+            {
+              id: 42,
+              name: 'tests',
+              status: 'completed',
+              conclusion: 'failure',
+              details_url: 'https://git.example.com/checks/42',
+              output: { summary: 'Failure details', annotations_count: 3 },
+            },
+          ],
+        },
+      ])
+    throw new Error(`Unexpected feedback request: ${endpoint}`)
+  })
+  const result = await new PullRequests(git).feedback('/project/worktree', 7)
+  expect(result.comments).toHaveLength(3)
+  expect(result.checks).toEqual([
+    {
+      id: '42',
+      name: 'tests',
+      status: 'failure',
+      url: 'https://git.example.com/checks/42',
+      summary: 'Failure details',
+    },
+  ])
+  expect(result.files).toEqual([])
+  expect(result.warnings).toEqual([])
+  expect(run.mock.calls.filter(([, args]) => args[0] !== 'repo')).toHaveLength(6)
+  expect(
+    run.mock.calls.filter(([, args]) => args[0] !== 'repo').every(([, , background]) => background),
+  ).toBe(true)
+})
 it('loads repository-scoped pages and keeps merged and draft states', async () => {
   const git = new GitService()
   const run = vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) =>

@@ -1,4 +1,4 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeComputerName, taskProjectGroups, preferredProjectEntry } from '@dovo/protocol'
 import { TaskLauncherControls } from './task-launcher-controls'
 import { useEffect, useRef, useState } from 'react'
 import { useAppPreferences, useWorkspace, useStudioHost, WorkspaceScope } from '@dovo/studio-core'
@@ -85,8 +85,12 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
     void bridge.dismiss().catch((error: unknown) => setError(String(error)))
   }
   useEffect(() => {
-    if (!open || runtimeId) return
-    setRuntimeId(activeRuntimeId ?? runtimeRegistry.profiles[0]?.id ?? '')
+    if (!open || runtimeRegistry.profiles.some((profile) => profile.id === runtimeId)) return
+    setRuntimeId(
+      runtimeRegistry.profiles.find((profile) => profile.id === activeRuntimeId)?.id ??
+        runtimeRegistry.profiles[0]?.id ??
+        '',
+    )
   }, [open, runtimeId, activeRuntimeId, runtimeRegistry.profiles])
   useEffect(() => {
     if (!open || attempt.current) return
@@ -172,6 +176,25 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
   const locked = busy || !!attempt.current
   const selectedRepository = snapshot?.workspace.repositories.find(
     (entry) => entry.id === repositoryId,
+  )
+  const projectGroups = taskProjectGroups(
+    runtimeRegistry.profiles.flatMap((profile) => {
+      const overview = runtimes.find((entry) => entry.profile.id === profile.id)
+      const current = profile.id === runtimeId && loadedRuntimeId === runtimeId && snapshot
+      const available = current || overview?.snapshot
+      return (available?.workspace.repositories ?? []).map((repository) => ({
+        repository,
+        runtimeId: profile.id,
+        profile,
+        defaults: available?.defaults,
+        online: overview?.connected ?? !!current,
+      }))
+    }),
+  )
+  const selectedGroup = projectGroups.find((group) =>
+    group.entries.some(
+      (entry) => entry.runtimeId === runtimeId && entry.repository.id === repositoryId,
+    ),
   )
   const selectedProfile = runtimeRegistry.profiles.find((profile) => profile.id === runtimeId)
   const selectClass =
@@ -266,43 +289,83 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
               <select
                 aria-label="Project"
                 className={selectClass}
-                value={repositoryId}
-                disabled={locked || loading || !snapshot}
-                onChange={(event) => setRepositoryId(event.target.value)}
+                value={selectedGroup?.key ?? ''}
+                disabled={locked || !projectGroups.length}
+                onChange={(event) => {
+                  const group = projectGroups.find((group) => group.key === event.target.value)
+                  const preferred = group && preferredProjectEntry(group.entries, runtimeId)
+                  if (preferred) {
+                    setRuntimeId(preferred.runtimeId)
+                    setRepositoryId(preferred.repository.id)
+                  }
+                }}
               >
                 <option value="" disabled>
                   {loading ? 'Loading projects…' : 'Choose a project'}
                 </option>
-                {snapshot?.workspace.repositories.map((repository) => (
-                  <option key={repository.id} value={repository.id}>
-                    {repository.kind === 'scratch' ? 'No project' : repository.name}
+                {projectGroups.map((group) => (
+                  <option
+                    key={group.key}
+                    value={group.key}
+                    disabled={!preferredProjectEntry(group.entries, runtimeId)}
+                  >
+                    {group.name}
                   </option>
                 ))}
               </select>
               <ChevronDown className="pointer-events-none absolute right-2 size-3" />
             </label>
-            <span className="h-4 border-l border-border/60" aria-hidden="true" />
-            <label className="relative flex min-w-0 items-center gap-1.5 px-2">
-              <Monitor className="size-3 shrink-0" />
-              <select
-                aria-label="Server"
-                className={selectClass}
-                value={runtimeId}
-                disabled={locked}
-                onChange={(event) => setRuntimeId(event.target.value)}
-              >
-                {!runtimeRegistry.profiles.length && <option value="">Connect a computer</option>}
-                {runtimeRegistry.profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {runtimeComputerName({
-                      profile,
-                      snapshot: runtimes.find((entry) => entry.profile.id === profile.id)?.snapshot,
-                    })}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2 size-3" />
-            </label>
+            {runtimeRegistry.profiles.length !== 1 && (
+              <>
+                <span className="h-4 border-l border-border/60" aria-hidden="true" />
+                <label className="relative flex min-w-0 items-center gap-1.5 px-2">
+                  <Monitor className="size-3 shrink-0" />
+                  <select
+                    aria-label="Server"
+                    className={selectClass}
+                    value={runtimeId}
+                    disabled={locked}
+                    onChange={(event) => {
+                      const target = selectedGroup?.entries.find(
+                        (entry) =>
+                          entry.runtimeId === event.target.value &&
+                          entry.online &&
+                          !entry.repository.gitIdentityError,
+                      )
+                      if (target) {
+                        setRuntimeId(target.runtimeId)
+                        setRepositoryId(target.repository.id)
+                      }
+                    }}
+                  >
+                    {!runtimeRegistry.profiles.length && (
+                      <option value="">Connect a computer</option>
+                    )}
+                    {runtimeRegistry.profiles.map((profile) => (
+                      <option
+                        key={profile.id}
+                        value={profile.id}
+                        disabled={
+                          !selectedGroup?.entries.some(
+                            (entry) =>
+                              entry.runtimeId === profile.id &&
+                              entry.online &&
+                              !entry.repository.gitIdentityError,
+                          )
+                        }
+                      >
+                        {runtimeComputerName({
+                          profile,
+                          snapshot: runtimes.find((entry) => entry.profile.id === profile.id)
+                            ?.snapshot,
+                        })}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2 size-3" />
+                </label>
+              </>
+            )}
           </ComposerWorkspaceBar>
           {error && !attempt.current && !loading && (
             <Button

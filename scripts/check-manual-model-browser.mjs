@@ -41,6 +41,7 @@ const mocks = {
     export {ComposerSurface,ComposerSubmit,ComposerTextarea} from '../studio-ui/src/composer-surface';
     export const ContextMenu={Label:Box,Sub:Box,SubTrigger:Box,Portal:Box,SubContent:Box,Item:Box};
     export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+    export * as Popover from '@radix-ui/react-popover';
   `,
   './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:()=>{},remove:()=>{}});`,
   './task-row': `export const TaskRow=({task,selected,onSelect})=><button data-row-id={task.id} aria-current={selected?'true':undefined} onClick={onSelect}>{task.title} · {task.status}</button>;`,
@@ -114,7 +115,7 @@ const built = await build({
           return {ok:true};
         };
         const readRuntime=async(_profile,path,input)=>path==='/api/snapshot'?snapshot:request(path,input);
-        return <WorkspaceContext.Provider value={{workspace,setWorkspace,snapshot,activeRuntimeId:'mac',runtimes:[],runtimeRegistry:{profiles:[{id:'mac',name:'This computer',connection:{address:'http://runtime',token:'token'}}]},readRuntime,connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}>{window.launcher?<TaskLauncherForm bridge={{subscribe:()=>()=>{},dismiss:async()=>{}}}/>:<TasksView entityId={entity}/>}</WorkspaceContext.Provider>
+        return <WorkspaceContext.Provider value={{workspace,setWorkspace,snapshot,activeRuntimeId:window.invalidRuntime?'removed':'mac',runtimes:[],runtimeRegistry:{profiles:[{id:'mac',name:'This computer',connection:{address:'http://runtime',token:'token'}}]},readRuntime,connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}>{window.launcher?<TaskLauncherForm bridge={{subscribe:()=>()=>{},dismiss:async()=>{}}}/>:<TasksView entityId={entity}/>}</WorkspaceContext.Provider>
       }
       createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
     `,
@@ -151,6 +152,7 @@ try {
     { defaultProvider: 'codex', selectBeforeTyping: true },
     { defaultProvider: 'claude', selectBeforeTyping: true, selectProject: true },
     { defaultProvider: 'claude', selectBeforeTyping: true, selectProject: true, launcher: true },
+    { defaultProvider: 'claude', selectBeforeTyping: true, launcher: true, invalidRuntime: true },
   ]) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
     page.setDefaultTimeout(10000)
@@ -163,12 +165,15 @@ try {
     await page.evaluate((fixture) => {
       window.defaultProvider = fixture.defaultProvider
       window.launcher = fixture.launcher
+      window.invalidRuntime = fixture.invalidRuntime
     }, fixture)
     await page.addScriptTag({ content: built.outputFiles[0].text })
     const editor = page.getByLabel(fixture.launcher ? 'Task prompt' : 'Message task', {
       exact: true,
     })
     if (!fixture.selectBeforeTyping) await editor.fill('Use my chosen Claude model')
+    if (fixture.launcher)
+      assert.equal(await page.getByRole('combobox', { name: 'Server', exact: true }).count(), 0)
     await page.getByRole('button', { name: 'Choose agent and model' }).click()
     if (fixture.defaultProvider !== 'claude')
       await page.getByRole('button', { name: 'Claude models', exact: true }).click()
@@ -183,10 +188,12 @@ try {
     if (!fixture.launcher) await page.waitForFunction(() => window.saved.length === 2)
     if (fixture.selectProject) {
       if (fixture.launcher)
-        await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('project')
+        await page
+          .getByRole('combobox', { name: 'Project', exact: true })
+          .selectOption({ label: 'Project with Sonnet default' })
       else {
         await page.getByRole('button', { name: 'Task project' }).click()
-        await page.getByRole('menuitem', { name: 'Project with Sonnet default' }).click()
+        await page.getByRole('button', { name: 'Project with Sonnet default' }).click()
         await page.waitForFunction(() =>
           window.saved.some((task) => task.repositoryId === 'project'),
         )

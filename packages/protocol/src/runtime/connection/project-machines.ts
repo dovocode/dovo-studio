@@ -1,3 +1,5 @@
+import { mergeSharedSettings, sharedProjectKey } from './scoped-settings.js'
+import type { RuntimeDefaults } from './runtime-setup.js'
 import type { Repository } from '../../workspace.js'
 
 /** Canonical remote identity only: never expose embedded credentials to paired clients. */
@@ -69,4 +71,49 @@ export function projectMachineGroups<
       identity: group.entries[0].repository.gitIdentity,
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key))
+}
+
+/** A project-first task picker has one pinned scratch choice across all servers. */
+export function taskProjectGroups<T extends { repository: Repository; runtimeId: string | null }>(
+  entries: readonly T[],
+) {
+  const scratch = entries.filter((entry) => entry.repository.kind === 'scratch')
+  return [
+    ...(scratch.length
+      ? [{ key: 'scratch', name: 'No project', entries: scratch, identity: undefined }]
+      : []),
+    ...projectMachineGroups(entries.filter((entry) => entry.repository.kind !== 'scratch')),
+  ]
+}
+
+export function projectDefaultServer(
+  entries: readonly { repository: Repository; defaults?: RuntimeDefaults }[],
+) {
+  const key = sharedProjectKey(entries[0]?.repository)
+  if (!key) return undefined
+  return mergeSharedSettings(
+    ...entries.map((entry) => entry.defaults?.scopedSettings?.shared ?? []),
+  ).find((entry) => entry.key === key)?.value.taskDefaults?.defaultServerId
+}
+
+/** Prefer the saved server, then the current server, then a stable online copy. */
+export function preferredProjectEntry<
+  T extends {
+    repository: Repository
+    runtimeId: string | null
+    online: boolean
+    defaults?: RuntimeDefaults
+  },
+>(entries: readonly T[], currentRuntimeId: string | null): T | undefined {
+  const available = entries.filter((entry) => entry.online && !entry.repository.gitIdentityError)
+  const preferred = projectDefaultServer(entries)
+  return (
+    available.find((entry) => preferred !== undefined && entry.runtimeId === preferred) ??
+    available.find((entry) => entry.runtimeId === currentRuntimeId) ??
+    [...available].sort(
+      (a, b) =>
+        (a.runtimeId ?? '').localeCompare(b.runtimeId ?? '') ||
+        a.repository.id.localeCompare(b.repository.id),
+    )[0]
+  )
 }

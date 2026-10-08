@@ -16,6 +16,7 @@ import { TitleGeneration } from './agents/tasks/title-generation.js'
 import { Attachments } from './storage/attachments.js'
 import { Activity } from './storage/activity.js'
 import { PullCache } from './scm/pulls/pull-cache.js'
+import { PullRequestWatch } from './scm/tasks/pull-request-watch.js'
 import { ForgePullRequests } from './scm/forges/integration/forge-pulls.js'
 import { ForgeCliAccounts } from './scm/forges/integration/forge-cli-accounts.js'
 import { ForgeWork } from './scm/work/forge-work.js'
@@ -119,6 +120,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       db.name === ':memory:'
         ? join(tmpdir(), 'dovo-catalog-skills')
         : join(dirname(resolve(db.name)), 'skills'),
+      () => preferences.get().enablePullRequestWatching,
     ),
     jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git)
   const mcpApps = new McpApps(db, store, activity, approvals)
@@ -156,6 +158,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     ]
   })
   return {
+    pullRequestWatch: new PullRequestWatch(db, { store, preferences, pullCache, tasks, activity }),
     mutations: new MutationReceipts(db),
     instanceId: randomUUID(),
     mcpApps,
@@ -199,6 +202,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  pullRequestWatch: PullRequestWatch
   artifacts: Artifacts
   mutations: MutationReceipts
   mcpApps: McpApps

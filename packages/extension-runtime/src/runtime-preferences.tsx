@@ -83,6 +83,17 @@ export function RunningTaskPreferences() {
       </SettingsGroup>
       <SettingsGroup title="Optional features">
         <SettingRow
+          label="PR feedback watcher (experimental)"
+          description="Let agents hand PR monitoring to this computer. New comments, reviews and failing checks wake the thread. Watches survive turns and restarts; paused queues and archived threads stay paused."
+        >
+          <Toggle
+            label="Enable experimental PR feedback watcher"
+            checked={value?.enablePullRequestWatching ?? false}
+            disabled={disabled}
+            onChange={(enablePullRequestWatching) => save({ enablePullRequestWatching })}
+          />
+        </SettingRow>
+        <SettingRow
           label="Dovo Artifacts"
           description="Let agents create documents, diagrams, code and interactive previews inside threads. Shared by desktop and mobile for this computer."
         >

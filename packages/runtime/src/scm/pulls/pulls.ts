@@ -297,7 +297,16 @@ export class PullRequests {
   async status(cwd: string, number: number, background = false) {
     return this.detail(cwd, number, true, background)
   }
-  async detail(cwd: string, number: number, monitor = false, background = false) {
+  async feedback(cwd: string, number: number) {
+    return this.detail(cwd, number, false, true, true)
+  }
+  async detail(
+    cwd: string,
+    number: number,
+    monitor = false,
+    background = false,
+    feedbackOnly = false,
+  ) {
     const repo = await this.location(cwd)
     const json = (args: string[]) => this.json(cwd, args, background)
     const api = (path: string, paginate = false) =>
@@ -369,9 +378,11 @@ export class PullRequests {
       api(`pulls/${number}/comments?per_page=100`, true).then((v) =>
         decode(mutableArray(mutableArray(restInline)), v).flat(),
       ),
-      api(`pulls/${number}/files?per_page=100`, true).then((v) =>
-        decode(mutableArray(mutableArray(restFile)), v).flat(),
-      ),
+      feedbackOnly
+        ? Promise.resolve([])
+        : api(`pulls/${number}/files?per_page=100`, true).then((v) =>
+            decode(mutableArray(mutableArray(restFile)), v).flat(),
+          ),
       json([
         'pr',
         'view',
@@ -381,18 +392,31 @@ export class PullRequests {
         '--json',
         'statusCheckRollup',
       ]).then((v) => decode(checkRollup, v).statusCheckRollup ?? []),
-      githubThreads(json, repo, number),
-      githubChecks(json, repo, pull.head.sha),
-      json(['api', '--hostname', repo.host, repo.path]).then((value) =>
-        decode(
-          mutableStruct({
-            allow_merge_commit: Schema.optional(Schema.Boolean),
-            allow_squash_merge: Schema.optional(Schema.Boolean),
-            allow_rebase_merge: Schema.optional(Schema.Boolean),
-          }),
-          value,
-        ),
-      ),
+      feedbackOnly
+        ? Promise.resolve(
+            new Map<
+              string,
+              Pick<PullComment, 'threadId' | 'resolved' | 'outdated' | 'canResolve'>
+            >(),
+          )
+        : githubThreads(json, repo, number),
+      githubChecks(json, repo, pull.head.sha, !feedbackOnly),
+      feedbackOnly
+        ? Promise.resolve({
+            allow_merge_commit: false,
+            allow_squash_merge: false,
+            allow_rebase_merge: false,
+          })
+        : json(['api', '--hostname', repo.host, repo.path]).then((value) =>
+            decode(
+              mutableStruct({
+                allow_merge_commit: Schema.optional(Schema.Boolean),
+                allow_squash_merge: Schema.optional(Schema.Boolean),
+                allow_rebase_merge: Schema.optional(Schema.Boolean),
+              }),
+              value,
+            ),
+          ),
     ])
     const warnings: string[] = [],
       comments: PullComment[] = []
@@ -452,7 +476,7 @@ export class PullRequests {
         })),
       )
     comments.sort((a, b) => (a.date || '\uffff').localeCompare(b.date || '\uffff'))
-    if (files.status === 'fulfilled' && files.value.length < pull.changed_files)
+    if (!feedbackOnly && files.status === 'fulfilled' && files.value.length < pull.changed_files)
       warnings.push(
         'GitHub returned only part of this PR’s file list. Open GitHub for the remaining files.',
       )
@@ -475,7 +499,7 @@ export class PullRequests {
         'reviewers',
         'close',
         'reopen',
-        ...(threads.status === 'fulfilled' ? ['resolve' as const] : []),
+        ...(!feedbackOnly && threads.status === 'fulfilled' ? ['resolve' as const] : []),
         ...(mergeMethods.length ? ['merge' as const] : []),
       ],
       reviewDecisions: ['comment', 'approve', 'request-changes'],

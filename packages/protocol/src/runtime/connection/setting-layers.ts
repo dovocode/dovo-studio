@@ -60,6 +60,8 @@ export function settingBaseLabel(field: SettingField) {
     return 'Off · Dovo default'
   }
   switch (field.key) {
+    case 'defaultServerId':
+      return 'Automatic · prefer current server'
     case 'harness':
       return 'Codex · provider default model · Dovo default'
     case 'permission':

@@ -30,6 +30,56 @@ async function setup() {
   runtime.services.store.update(() => f.workspace)
   return runtime.services
 }
+it('refreshes harness sessions when optional MCP features change and favors replies over artifacts', async () => {
+  const s = await setup()
+  const runs: AgentRun[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      run.onSession('feature-session')
+      run.onText('Done')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Optional tools',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  const tools = (index: number) =>
+    runs[index]?.agent.resources?.mcpServers.find((server) => server.name === 'dovo_task')
+  expect(tools(0)?.envValues).toMatchObject({
+    DOVO_TASK_PR_WATCHING_ENABLED: '0',
+    DOVO_TASK_ARTIFACTS_ENABLED: '0',
+  })
+  expect(runs[0]?.agent.instructions).not.toContain('Experimental PR watching')
+  s.preferences.save({ enablePullRequestWatching: true, enableArtifacts: true })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs[1]?.sessionId).toBeUndefined()
+  expect(tools(1)?.envValues).toMatchObject({
+    DOVO_TASK_PR_WATCHING_ENABLED: '1',
+    DOVO_TASK_ARTIFACTS_ENABLED: '1',
+  })
+  expect(runs[1]?.agent.instructions).toContain('instead of running your own polling loops')
+  expect(runs[1]?.agent.instructions).toContain('Prefer normal replies and repository files')
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs[2]?.sessionId).toBe('feature-session')
+  s.preferences.save({ enablePullRequestWatching: false })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs[3]?.sessionId).toBeUndefined()
+  expect(tools(3)?.envValues?.DOVO_TASK_PR_WATCHING_ENABLED).toBe('0')
+  expect(runs[3]?.agent.instructions).not.toContain('Experimental PR watching')
+})
 it('publishes the first provider text immediately and batches subsequent tokens', async () => {
   const s = await setup()
   const run = vi.fn<AgentAdapter['run']>(async (input) => {

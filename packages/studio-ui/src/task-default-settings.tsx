@@ -2,6 +2,7 @@ import { Struct } from 'effect'
 import { useCallback, useEffect } from 'react'
 import {
   accessLabel,
+  runtimeComputerName,
   agentSchema,
   agentConnectionValue,
   changeAgentConnection,
@@ -79,7 +80,7 @@ function TaskDefaultSettingsForm({
   onDirtyChange?: (dirty: boolean) => void
   onSavingChange?: (saving: boolean) => void
 }) {
-  const { connected, request, snapshot } = useWorkspace()
+  const { connected, request, snapshot, runtimes } = useWorkspace()
   const [localScope, setScope] = useApplicationState<SettingsScope>(
     repository ? 'environment-project' : 'environment',
   )
@@ -145,6 +146,11 @@ function TaskDefaultSettingsForm({
       )
     )
   }
+  const projectServers = runtimes.filter((entry) =>
+    entry.snapshot?.workspace.repositories.some(
+      (item) => repository?.gitIdentity && item.gitIdentity === repository.gitIdentity,
+    ),
+  )
   const configurations = scopedAgentEntries(
     snapshot?.defaults,
     repository,
@@ -247,6 +253,31 @@ function TaskDefaultSettingsForm({
           title="New tasks"
           description="Choose the agent and access for new tasks. Existing conversations keep their launch settings."
         >
+          {repository && scope === 'project' && (
+            <SettingRow
+              label="Default server"
+              description="Use this server when choosing the project. If it is offline, use another online copy. You can change servers in the composer."
+              source={source('defaultServerId')}
+            >
+              <ChoicePicker
+                aria-label="Default server"
+                value={draft.defaultServerId ?? ''}
+                onValueChange={(value) => change({ ...draft, defaultServerId: value || undefined })}
+              >
+                <option value="">Automatic · prefer current server</option>
+                {draft.defaultServerId &&
+                  !projectServers.some((entry) => entry.profile.id === draft.defaultServerId) && (
+                    <option value={draft.defaultServerId}>Unavailable server</option>
+                  )}
+                {projectServers.map((entry) => (
+                  <option key={entry.profile.id} value={entry.profile.id}>
+                    {runtimeComputerName(entry)}
+                    {entry.connected ? '' : ' · Offline'}
+                  </option>
+                ))}
+              </ChoicePicker>
+            </SettingRow>
+          )}
           <SettingRow
             label="Agent configuration"
             description={`${providerDisplayName((harness ?? inheritedHarness).provider)} · ${modelDisplayName((harness ?? inheritedHarness).model) || 'Provider default model'}`}

@@ -339,6 +339,7 @@ export function settingsTargetAtScope<T extends SettingsTargetSource>(
 }
 
 const taskDefaultFields = [
+  { key: 'defaultServerId', label: 'Default server' },
   { key: 'harness', label: 'Agent, model & instructions' },
   { key: 'permission', label: 'Permissions' },
   { key: 'execution', label: 'Working directory' },

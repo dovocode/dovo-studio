@@ -34,7 +34,8 @@ export class PullCache {
   private demanded = new Map<string, number>()
   constructor(
     private db: Database.Database,
-    private pulls: Pick<PullRequests, 'list' | 'detail'> & Partial<Pick<PullRequests, 'status'>>,
+    private pulls: Pick<PullRequests, 'list' | 'detail'> &
+      Partial<Pick<PullRequests, 'status' | 'feedback'>>,
     private store: WorkspaceStore,
     private identity?: (cwd: string, refresh: boolean) => Promise<string>,
   ) {
@@ -293,6 +294,24 @@ export class PullCache {
   detail(cwd: string, number: number, force = false) {
     return runClientEffect(this.detailEffect(cwd, number, force))
   }
+  /** Feedback watches share a credential-scoped cache without loading files or annotations. */
+  feedback(cwd: string, number: number, force = false) {
+    return runClientEffect(
+      Effect.gen({ self: this }, function* () {
+        const identify = this.identity
+        const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+        this.rememberScope(cwd, scope)
+        return yield* this.readEffect(
+          JSON.stringify(['feedback', scope, number]),
+          pullDetailSchema,
+          () =>
+            this.pulls.feedback ? this.pulls.feedback(cwd, number) : this.pulls.detail(cwd, number),
+          force,
+          retainUnavailableSections,
+        )
+      }),
+    )
+  }
   status(cwd: string, number: number, force = false, background = false) {
     return runClientEffect(
       Effect.gen({ self: this }, function* () {
@@ -330,7 +349,9 @@ export class PullCache {
           parsed.success &&
           (parsed.data[1] === cwd || parsed.data[1] === scope) &&
           (parsed.data[0] === 'list' ||
-            ((parsed.data[0] === 'detail' || parsed.data[0] === 'status') &&
+            ((parsed.data[0] === 'detail' ||
+              parsed.data[0] === 'status' ||
+              parsed.data[0] === 'feedback') &&
               (number === undefined || parsed.data[2] === number)))
         )
       } catch {

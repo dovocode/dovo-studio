@@ -2,6 +2,7 @@ import { Struct } from 'effect'
 import { randomUUID } from 'expo-crypto'
 import {
   runtimePreferencesSchema,
+  runtimeComputerName,
   scopedSettingsResultSchema,
   taskDefaultOrigins,
   taskBehaviorOrigin,
@@ -88,7 +89,7 @@ function TaskDefaultSettingsForm({
 }) {
   const { styles } = useTheme()
 
-  const { connected, call, snapshot } = useRuntime()
+  const { connected, call, snapshot, overviews } = useRuntime()
   const { busy, error, act } = useAction()
   const [setup, setSetup] = useApplicationState<{ defaults: RuntimeDefaults } | null>(null)
   const [localScope, setScope] = useApplicationState<SettingsScope>(
@@ -175,6 +176,11 @@ function TaskDefaultSettingsForm({
       )
     )
   }
+  const projectServers = overviews.filter((entry) =>
+    entry.snapshot?.workspace.repositories.some(
+      (item) => repository?.gitIdentity && item.gitIdentity === repository.gitIdentity,
+    ),
+  )
   const configurations = scopedAgentEntries(
     snapshot?.defaults,
     repository,
@@ -226,6 +232,33 @@ function TaskDefaultSettingsForm({
                 ])
             }}
           />
+        </>
+      )}
+      {repository && scope === 'project' && (
+        <>
+          <Choice
+            row
+            label="Default server"
+            disabled={disabled}
+            value={draft.defaultServerId ?? ''}
+            items={[
+              { id: '', name: 'Automatic · prefer current server' },
+              ...(draft.defaultServerId &&
+              !projectServers.some((entry) => entry.profile.id === draft.defaultServerId)
+                ? [{ id: draft.defaultServerId, name: 'Unavailable server' }]
+                : []),
+              ...projectServers.map((entry) => ({
+                id: entry.profile.id,
+                name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`,
+              })),
+            ]}
+            onChange={(value) => change({ ...draft, defaultServerId: value || undefined })}
+          />
+          <Text style={styles.muted}>
+            If the default is offline, use another online copy. You can change servers in the
+            composer.
+          </Text>
+          {source('defaultServerId')}
         </>
       )}
       <Choice

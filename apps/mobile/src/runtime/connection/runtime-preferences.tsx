@@ -68,6 +68,22 @@ export function RuntimePreferences() {
       <Section title="Optional features">
         <View style={{ gap: 6 }}>
           <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
+            <Text style={[styles.text, { flex: 1 }]}>PR feedback watcher (experimental)</Text>
+            <Switch
+              accessibilityLabel="Enable experimental PR feedback watcher"
+              value={value?.enablePullRequestWatching ?? false}
+              disabled={disabled}
+              onValueChange={(enablePullRequestWatching) => save({ enablePullRequestWatching })}
+            />
+          </View>
+          <Text style={styles.muted}>
+            Let agents hand PR monitoring to this computer. New comments, reviews and failing checks
+            wake the thread. Watches survive turns and restarts; paused queues and archived threads
+            stay paused.
+          </Text>
+        </View>
+        <View style={{ gap: 6 }}>
+          <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
             <Text style={[styles.text, { flex: 1 }]}>Dovo Artifacts</Text>
             <Switch
               accessibilityLabel="Enable Dovo Artifacts"

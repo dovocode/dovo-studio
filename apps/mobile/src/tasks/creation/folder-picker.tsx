@@ -1,4 +1,10 @@
-import { runtimeComputerName, type Repository } from '@dovo/protocol'
+import {
+  runtimeComputerName,
+  taskProjectGroups,
+  preferredProjectEntry,
+  projectDefaultServer,
+  type Repository,
+} from '@dovo/protocol'
 import { Pressable, View } from 'react-native'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Sheet } from '../../ui/layout/sheet'
@@ -30,24 +36,54 @@ export function FolderPicker({
   onMoving?: (moving: boolean) => void
 }) {
   const { colors, styles } = useTheme()
-
   const runtime = useRuntime()
   const [open, setOpen] = useApplicationState(false)
-  const [machine, setMachine] = useApplicationState<string | null>(null)
+  const [mode, setMode] = useApplicationState<'projects' | 'servers'>('projects')
   const [query, setQuery] = useApplicationState('')
   const [adding, setAdding] = useApplicationState<string | null>(null)
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const selected = repositories.find((repository) => repository.id === value)
   const label = (repository: Repository) =>
-    repository.kind === 'scratch' ? 'Chat' : repository.name
+    repository.kind === 'scratch' ? 'No project' : repository.name
   const sources = runtime.overviews.filter(
     (entry) => allowMachineChange || entry.profile.id === runtime.activeId,
   )
-  const selectedMachine = machine ?? runtime.activeId
+  const current = sources.find((entry) => entry.profile.id === runtime.activeId)
+  const multipleMachines = sources.length > 1
+  const groups = taskProjectGroups(
+    sources.flatMap((source) =>
+      (source.profile.id === runtime.activeId
+        ? repositories
+        : (source.snapshot?.workspace.repositories ?? [])
+      ).map((repository) => ({
+        repository,
+        source,
+        runtimeId: source.profile.id,
+        online: source.connected,
+        defaults: source.snapshot?.defaults,
+      })),
+    ),
+  )
+  const scratch = groups.find((group) => group.key === 'scratch')
+  const matches = groups.filter(
+    (group) =>
+      !chatOnly &&
+      group.key !== 'scratch' &&
+      group.entries.some(({ repository, source }) =>
+        `${group.name} ${repository.path} ${repository.gitIdentity ?? ''} ${runtimeComputerName(source)}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase()),
+      ),
+  )
   const locked = disabled || busy
   const choose = async (repository: Repository, runtimeId: string) => {
-    if (locked || repository.gitIdentityError) return
+    if (
+      locked ||
+      repository.gitIdentityError ||
+      !sources.find((source) => source.profile.id === runtimeId)?.connected
+    )
+      return
     setBusy(true)
     onMoving?.(true)
     setError('')
@@ -61,143 +97,219 @@ export function FolderPicker({
       onMoving?.(false)
     }
   }
-  return (
-    <>
+  const projectRow = (group: (typeof groups)[number]) => {
+    const preferred = preferredProjectEntry(group.entries, runtime.activeId)
+    const defaultId = projectDefaultServer(group.entries)
+    const defaultSource = sources.find((entry) => entry.profile.id === defaultId)
+    const identityError =
+      !preferred &&
+      group.entries.find((entry) => entry.repository.gitIdentityError)?.repository.gitIdentityError
+    const selected = group.entries.some(
+      (entry) => entry.runtimeId === runtime.activeId && entry.repository.id === value,
+    )
+    const serverCount = new Set(group.entries.map((entry) => entry.runtimeId)).size
+    return (
       <Pressable
+        key={group.key}
         accessibilityRole="button"
-        accessibilityLabel="Folder"
-        accessibilityValue={{
-          text: `${selected ? label(selected) : 'Choose folder'} · ${runtimeComputerName(runtime)}`,
-        }}
-        accessibilityState={{ disabled: locked, expanded: open }}
-        disabled={locked}
+        accessibilityLabel={group.name}
+        accessibilityState={{ selected, disabled: locked || !preferred }}
+        disabled={locked || !preferred}
         onPress={() => {
-          setMachine(runtime.activeId)
-          setQuery('')
-          setOpen(true)
+          if (preferred) void choose(preferred.repository, preferred.runtimeId)
         }}
         style={[
           styles.row,
           {
             padding: 12,
-            minHeight: 44,
-            borderRadius: 12,
-            backgroundColor: colors.surface,
-            opacity: locked ? 0.45 : 1,
+            minHeight: 48,
+            borderRadius: 10,
+            opacity: locked || !preferred ? 0.45 : 1,
           },
         ]}
       >
-        <Icon name="folder" size={18} />
-        <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
-          {selected ? label(selected) : 'Choose folder'}
-        </Text>
-        <Icon name="device" size={16} />
-        <Text numberOfLines={1} style={styles.muted}>
-          {runtimeComputerName(runtime)}
-        </Text>
-        <Icon name="down" size={14} />
+        <Icon name={group.key === 'scratch' ? 'chat' : 'folder'} size={18} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.text}>{group.name}</Text>
+          {!!identityError && <Text style={styles.error}>{identityError}</Text>}
+          {multipleMachines && (
+            <Text style={styles.muted}>
+              {serverCount > 1
+                ? `${serverCount} servers`
+                : runtimeComputerName(group.entries[0].source)}
+              {defaultSource ? ` · Default: ${runtimeComputerName(defaultSource)}` : ''}
+              {!preferred ? ' · Unavailable' : ''}
+            </Text>
+          )}
+        </View>
+        {selected && <Icon name="check" size={17} />}
       </Pressable>
+    )
+  }
+  const show = (mode: 'projects' | 'servers') => {
+    setMode(mode)
+    setQuery('')
+    setError('')
+    setOpen(true)
+  }
+  return (
+    <>
+      <View style={[styles.row, { gap: 8 }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Folder"
+          accessibilityValue={{ text: selected ? label(selected) : 'Choose project' }}
+          accessibilityState={{ disabled: locked, expanded: open && mode === 'projects' }}
+          disabled={locked}
+          onPress={() => show('projects')}
+          style={[
+            styles.row,
+            {
+              flex: 1,
+              padding: 12,
+              minHeight: 44,
+              borderRadius: 12,
+              backgroundColor: colors.surface,
+              opacity: locked ? 0.45 : 1,
+            },
+          ]}
+        >
+          <Icon name={selected?.kind === 'scratch' ? 'chat' : 'folder'} size={18} />
+          <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
+            {selected ? label(selected) : 'Choose project'}
+          </Text>
+          <Icon name="down" size={14} />
+        </Pressable>
+        {multipleMachines && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Task server"
+            accessibilityValue={{ text: runtimeComputerName(runtime) }}
+            accessibilityState={{ disabled: locked, expanded: open && mode === 'servers' }}
+            disabled={locked}
+            onPress={() => show('servers')}
+            style={[
+              styles.row,
+              {
+                maxWidth: '45%',
+                padding: 12,
+                minHeight: 44,
+                borderRadius: 12,
+                backgroundColor: colors.surface,
+                opacity: locked ? 0.45 : 1,
+              },
+            ]}
+          >
+            <Icon name="device" size={16} />
+            <Text numberOfLines={1} style={[styles.muted, { flexShrink: 1 }]}>
+              {runtimeComputerName(runtime)}
+            </Text>
+            <Icon name="down" size={14} />
+          </Pressable>
+        )}
+      </View>
       {open && !adding && (
-        <Sheet title="Machine & project" busy={busy} onClose={() => setOpen(false)}>
-          {sources.map((entry) => {
-            const expanded = entry.profile.id === selectedMachine
-            const folders =
-              entry.profile.id === runtime.activeId
-                ? repositories
-                : (entry.snapshot?.workspace.repositories ?? [])
-            const matches = folders.filter(
-              (repository) =>
-                (!chatOnly || repository.kind === 'scratch') &&
-                `${label(repository)} ${repository.path}`
-                  .toLowerCase()
-                  .includes(query.trim().toLowerCase()),
-            )
-            return (
-              <View key={entry.profile.id} style={{ gap: 8 }}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={runtimeComputerName(entry)}
-                  accessibilityState={{ expanded, disabled: !entry.connected }}
-                  disabled={!entry.connected || locked}
-                  onPress={() => {
-                    setMachine(entry.profile.id)
-                    setQuery('')
-                  }}
-                  style={[
-                    styles.row,
-                    {
-                      padding: 12,
-                      minHeight: 48,
-                      borderRadius: 10,
-                      backgroundColor: expanded ? colors.elevated : undefined,
-                      opacity: entry.connected ? 1 : 0.45,
-                    },
-                  ]}
-                >
-                  <Icon name="device" size={18} />
-                  <Text style={[styles.text, { flex: 1 }]}>
-                    {runtimeComputerName(entry)}
-                    {entry.connected ? '' : ' · Offline'}
-                  </Text>
-                  {entry.profile.id === runtime.activeId && <Icon name="check" size={17} />}
-                  <Icon name="down" size={14} />
-                </Pressable>
-                {expanded && entry.connected && (
-                  <View style={{ paddingLeft: 16, gap: 8 }}>
-                    <SearchField
-                      label="Search folders"
-                      placeholder="Search folders"
-                      value={query}
-                      onChangeText={setQuery}
-                    />
-                    {matches.map((repository) => (
-                      <Pressable
-                        key={repository.id}
-                        accessibilityRole="button"
-                        accessibilityLabel={label(repository)}
-                        accessibilityState={{
-                          selected:
-                            entry.profile.id === runtime.activeId && repository.id === value,
-                          disabled: !!repository.gitIdentityError,
-                        }}
-                        disabled={locked || !!repository.gitIdentityError}
-                        onPress={() => {
-                          void choose(repository, entry.profile.id)
-                        }}
-                        style={[
-                          styles.row,
-                          {
-                            padding: 12,
-                            minHeight: 48,
-                            borderRadius: 10,
-                            opacity: repository.gitIdentityError ? 0.45 : 1,
-                          },
-                        ]}
-                      >
-                        <Icon name={repository.kind === 'scratch' ? 'chat' : 'folder'} size={18} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.text}>{label(repository)}</Text>
-                          {!!repository.gitIdentityError && (
-                            <Text style={styles.error}>{repository.gitIdentityError}</Text>
-                          )}
-                        </View>
-                        {entry.profile.id === runtime.activeId && repository.id === value && (
-                          <Icon name="check" size={17} />
-                        )}
-                      </Pressable>
-                    ))}
-                    {!matches.length && <Text style={styles.muted}>No matching folders.</Text>}
-                    <Action
-                      secondary
-                      label="Add project"
-                      disabled={locked}
-                      onPress={() => setAdding(entry.profile.id)}
-                    />
-                  </View>
-                )}
-              </View>
-            )
-          })}
+        <Sheet
+          title={mode === 'projects' ? 'Project' : 'Server'}
+          busy={busy}
+          onClose={() => setOpen(false)}
+        >
+          {mode === 'projects' ? (
+            <>
+              {scratch && projectRow(scratch)}
+              {!chatOnly && (
+                <SearchField
+                  label="Search projects"
+                  placeholder="Search projects"
+                  value={query}
+                  onChangeText={setQuery}
+                />
+              )}
+              {matches.map(projectRow)}
+              {!chatOnly && !matches.length && (
+                <Text style={styles.muted}>
+                  {query.trim() ? 'No matching projects.' : 'No projects yet.'}
+                </Text>
+              )}
+              <Action
+                secondary
+                label={
+                  multipleMachines
+                    ? `Add project on ${runtimeComputerName(runtime)}`
+                    : 'Add project'
+                }
+                disabled={locked || !current?.connected}
+                onPress={() => {
+                  if (current) setAdding(current.profile.id)
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.muted}>
+                Run {selected?.kind === 'scratch' ? 'without a project' : selected?.name} on
+              </Text>
+              {sources.map((source) => {
+                const target = (
+                  source.profile.id === runtime.activeId
+                    ? repositories
+                    : (source.snapshot?.workspace.repositories ?? [])
+                ).find((item) =>
+                  selected?.kind === 'scratch'
+                    ? item.kind === 'scratch'
+                    : selected?.gitIdentity
+                      ? item.gitIdentity === selected.gitIdentity
+                      : source.profile.id === runtime.activeId && item.id === value,
+                )
+                const unavailable = !source.connected || !target || !!target.gitIdentityError
+                return (
+                  <Pressable
+                    key={source.profile.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={runtimeComputerName(source)}
+                    accessibilityState={{
+                      selected: source.profile.id === runtime.activeId,
+                      disabled: locked || unavailable,
+                    }}
+                    disabled={locked || unavailable}
+                    onPress={() => {
+                      if (target) void choose(target, source.profile.id)
+                    }}
+                    style={[
+                      styles.row,
+                      {
+                        padding: 12,
+                        minHeight: 48,
+                        borderRadius: 10,
+                        opacity: unavailable ? 0.45 : 1,
+                      },
+                    ]}
+                  >
+                    <Icon name="device" size={18} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.text}>{runtimeComputerName(source)}</Text>
+                      {unavailable && (
+                        <Text style={styles.muted}>
+                          {!source.connected
+                            ? 'Offline'
+                            : !target
+                              ? 'Project not added on this server'
+                              : target.gitIdentityError}
+                        </Text>
+                      )}
+                    </View>
+                    {source.profile.id === runtime.activeId && <Icon name="check" size={17} />}
+                  </Pressable>
+                )
+              })}
+            </>
+          )}
+          {busy && <Text style={styles.muted}>Selecting project…</Text>}
+          {!!error && (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          )}
         </Sheet>
       )}
       {adding && (
@@ -214,7 +326,7 @@ export function FolderPicker({
           />
         </RuntimeScope>
       )}
-      {!!error && (
+      {!!error && !open && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
         </Text>

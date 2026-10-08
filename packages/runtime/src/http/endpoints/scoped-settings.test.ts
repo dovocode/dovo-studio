@@ -660,3 +660,40 @@ it('shares uploaded project icons and resets across different runtime repository
     await b.close()
   }
 })
+
+it('persists, syncs and clears the default server without replacing other project settings', async () => {
+  const f = await fixture()
+  try {
+    expect(
+      (
+        await f.save('project', {
+          taskDefaults: { defaultServerId: 'http://linux:8787', setupCommand: 'pnpm install' },
+        })
+      ).status,
+    ).toBe(200)
+    expect((await f.read('project')).value.taskDefaults).toEqual({
+      defaultServerId: 'http://linux:8787',
+      setupCommand: 'pnpm install',
+    })
+    const shared = f.runtime.services.defaults.get().scopedSettings?.shared ?? []
+    expect(
+      shared.find((entry) => entry.key === 'project:github.com/team/project')?.value.taskDefaults
+        ?.defaultServerId,
+    ).toBe('http://linux:8787')
+    expect(
+      (
+        await f.call('settings/sync', {
+          shared: shared.map((entry) => ({
+            ...entry,
+            updatedAt: entry.updatedAt + 1,
+            changeId: 'reset',
+            value: { ...entry.value, taskDefaults: { setupCommand: 'pnpm install' } },
+          })),
+        })
+      ).status,
+    ).toBe(200)
+    expect((await f.read('project')).value.taskDefaults).toEqual({ setupCommand: 'pnpm install' })
+  } finally {
+    await f.close()
+  }
+})
