@@ -2,8 +2,6 @@ import { expect, it, vi } from 'vite-plus/test'
 import { Terminals } from './terminals'
 import { fixture } from '../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration'
-import { stripVTControlCharacters } from 'node:util'
-import { Terminal } from '@xterm/headless'
 import { createServer } from 'node:net'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -198,11 +196,6 @@ it.skipIf(process.platform !== 'win32')(
     }
   },
 )
-// Keep the marker out of echoed input and use the actual platform shell syntax.
-const outputCommand =
-  process.platform === 'win32'
-    ? "Write-Output ('dovo-pty-' + 'verified')\r"
-    : "printf 'dovo-pty-%s\\n' verified\r"
 it.skipIf(process.platform === 'win32')('stops commands that ignore terminal hangup', async () => {
   const f = await fixture()
   const terminals = new Terminals()
@@ -274,84 +267,6 @@ it('reuses a live shell across simultaneous terminal openings', async () => {
     await terminals.close(first.id)
     expect((await terminals.ensure('task', directory)).id).not.toBe(first.id)
   } finally {
-    await terminals.dispose()
-    await f.cleanup()
-  }
-})
-it('runs a real PTY and retains output when clients detach', async () => {
-  const f = await fixture(),
-    terminals = new Terminals(),
-    display = new Terminal({ cols: 100, rows: 24 })
-  try {
-    const session = terminals.create('task', f.directory)
-    // Act like the app's xterm client: ConPTY waits for terminal query replies at startup.
-    display.onData((data) => terminals.input(session.id, data))
-    const detachDisplay = terminals.attach(session.id, (data) => display.write(data))
-    let output = ''
-    const detachOutput = terminals.attach(session.id, (data) => {
-      output += data
-    })
-    // ConPTY may encode the prompt's trailing space as cursor movement rather than text.
-    // Wait for the prompt itself before sending input to PowerShell's line editor.
-    await waitForRuntime(() => {
-      const text = stripVTControlCharacters(output)
-      expect({
-        ready: process.platform !== 'win32' || /PS [^\r\n]*>/.test(text),
-        output: text,
-      }).toMatchObject({ ready: true })
-    })
-    terminals.input(session.id, outputCommand)
-    await waitForRuntime(() => expect(output).toContain('dovo-pty-verified'))
-    detachDisplay()
-    detachOutput()
-    let replay = ''
-    const detach = terminals.attach(session.id, (data) => {
-      replay += data
-    })
-    expect(replay).toContain('dovo-pty-verified')
-    detach()
-    terminals.resize(session.id, 80, 30)
-    await terminals.close(session.id)
-    expect(terminals.list()).toEqual([])
-  } finally {
-    display.dispose()
-    await terminals.dispose()
-    await f.cleanup()
-  }
-})
-it('keeps delivering terminal output when one client throws', async () => {
-  const f = await fixture(),
-    terminals = new Terminals(),
-    display = new Terminal({ cols: 100, rows: 24 })
-  const reported = vi.spyOn(console, 'error').mockImplementation(() => {})
-  try {
-    const session = terminals.create('task', f.directory)
-    // Act like the app's xterm client: ConPTY waits for terminal query replies at startup.
-    display.onData((data) => terminals.input(session.id, data))
-    terminals.attach(session.id, (data) => display.write(data))
-    let armed = false
-    terminals.attach(session.id, (data) => {
-      if (armed && data) throw new Error('closed client')
-    })
-    armed = true
-    let output = ''
-    terminals.attach(session.id, (data) => {
-      output += data
-    })
-    await waitForRuntime(() => {
-      const text = stripVTControlCharacters(output)
-      expect({
-        ready: process.platform !== 'win32' || /PS [^\r\n]*>/.test(text),
-        output: text,
-      }).toMatchObject({ ready: true })
-    })
-    terminals.input(session.id, outputCommand)
-    await waitForRuntime(() => expect(output).toContain('dovo-pty-verified'))
-    expect(reported).toHaveBeenCalled()
-    await terminals.close(session.id)
-  } finally {
-    display.dispose()
-    reported.mockRestore()
     await terminals.dispose()
     await f.cleanup()
   }

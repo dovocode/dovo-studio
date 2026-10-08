@@ -134,6 +134,7 @@ jobs:
       - run: node --test scripts/packaging/desktop-build-stamp.test.mjs scripts/packaging/prepared-runtime.test.mjs
       - run: >-
           pnpm exec vp test --maxWorkers=4
+          --exclude packages/runtime/src/terminal/terminal-shell.test.ts
           packages/runtime/src/terminal
           packages/runtime/src/services.test.ts
           packages/runtime/src/computer-use
@@ -148,5 +149,8 @@ jobs:
           apps/api/src/server-manager.test.ts
           apps/api/src/server-service.test.ts
           apps/api/src/server-cli.test.ts
-      # Keep cold PowerShell startup separate from concurrent PTY and server tests.
-      - run: pnpm exec vp test --maxWorkers=1 apps/desktop/electron/windows-security.test.ts
+      # Keep cold interactive PowerShell startup separate from PTY stress and server tests.
+      - run: >-
+          pnpm exec vp test --maxWorkers=1
+          packages/runtime/src/terminal/terminal-shell.test.ts
+          apps/desktop/electron/windows-security.test.ts
