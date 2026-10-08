@@ -57,3 +57,7 @@ apps/mobile/google-services.json
 /packages/studio-ui/mcp-apps/host.json
 /packages/studio-ui/mcp-apps/sandbox.json
 .vitest/
+
+# Next.js site output
+.next/
+apps/site/out/

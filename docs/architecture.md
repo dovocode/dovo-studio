@@ -18,6 +18,7 @@ files.
 | `packages/studio-shell`    | Shared workbench shell, navigation, command palette, and extension catalog.                                                         |
 | `packages/extension-*`     | Feature-owned desktop/web views and behavior: tasks, SCM, agents, jobs, and runtime/device settings.                                |
 | `apps/desktop`, `apps/web` | Desktop and web composition roots: register extensions and provide platform-specific host behavior.                                 |
+| `apps/site`                | Public Next.js brand website, downloads and getting-started content. Independent of the runtime and workbench packages.             |
 | `apps/mobile`              | Native Expo screens and navigation. Mobile shares protocol and client-runtime contracts, while native interactions stay in the app. |
 
 The practical dependency direction is:

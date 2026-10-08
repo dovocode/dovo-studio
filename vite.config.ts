@@ -5,6 +5,9 @@ export default defineConfig({
     plugins: ['typescript'],
     ignorePatterns: [
       '**/dist/**',
+      '**/.next/**',
+      'apps/site/out/**',
+      'apps/site/next-env.d.ts',
       '**/node_modules/**',
       '**/.expo/**',
       '**/routeTree.gen.ts',
@@ -39,7 +42,13 @@ export default defineConfig({
   },
   fmt: {
     // Design snapshots and downloaded references are not application source.
-    ignorePatterns: ['work/**', '**/generated/browser-viewer.ts'],
+    ignorePatterns: [
+      'work/**',
+      '**/generated/browser-viewer.ts',
+      '**/.next/**',
+      'apps/site/out/**',
+      'apps/site/next-env.d.ts',
+    ],
     semi: false,
     singleQuote: true,
     printWidth: 100,

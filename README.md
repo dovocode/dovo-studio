@@ -29,6 +29,9 @@ pnpm install
 pnpm dev:desktop
 ```
 
+For the public brand website, run `pnpm dev:site` (http://localhost:3001). See
+[the site README](apps/site/README.md) for static deployment instructions.
+
 For web, run the runtime and web app in separate terminals:
 
 ```sh

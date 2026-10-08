@@ -73,7 +73,9 @@
     "test:remote-browser-recovery:browser": "node scripts/check-remote-browser-recovery-browser.mjs",
     "test:diff-scroll:browser": "node scripts/check-diff-scroll-browser.mjs",
     "test:github-accounts:browser": "node scripts/check-github-accounts-browser.mjs",
-    "test:mobile:smoke": "maestro test apps/mobile/maestro/smoke.yaml"
+    "test:mobile:smoke": "maestro test apps/mobile/maestro/smoke.yaml",
+    "dev:site": "pnpm --filter @dovo/site dev",
+    "test:site:browser": "pnpm --filter @dovo/site build && node scripts/check-site-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
