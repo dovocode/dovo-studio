@@ -64,6 +64,8 @@ jobs:
       - run: node scripts/retry-browser.mjs pnpm test:composer-send:browser
       - run: node scripts/retry-browser.mjs pnpm test:composer-providers:browser
       - run: node scripts/retry-browser.mjs pnpm test:composer-project:browser
+      - run: node scripts/retry-browser.mjs pnpm test:git-primary-action:browser
+      - run: node scripts/retry-browser.mjs pnpm test:task-lifecycle:browser
       - run: node scripts/retry-browser.mjs pnpm test:composer-unification:browser
       # The next four suites load apps/desktop/dist, which composer-unification builds above.
       - run: node scripts/retry-browser.mjs pnpm test:pull-workspace:browser

@@ -1147,7 +1147,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
           <ResizablePanel id="conversation" minSize="30%">
             {usingStartupDraft ? (
               <StartupDraft
-                key={taskCollectionKey(activeRuntimeId, String(draftVersion))}
+                key={draftVersion}
                 onDraftChange={reportStartupDraft}
                 onProject={() => void startTask()}
                 renderThread={renderThread}

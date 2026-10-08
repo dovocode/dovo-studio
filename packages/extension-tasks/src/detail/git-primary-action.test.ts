@@ -18,7 +18,14 @@ it('pushes unpublished commits before opening a PR', () => {
   expect(gitPrimaryAction({ ...clean, tracking: false }, false)).toBe('Push branch')
   expect(gitPrimaryAction(clean, true)).toBe('Open PR')
 })
-it('does not suggest a push when behind and preserves manual controls', () => {
-  expect(gitPrimaryAction({ ...clean, ahead: 1, behind: 1 }, false)).toBe('Git actions')
-  expect(gitPrimaryAction(null, false)).toBe('Git actions')
+it('does not suggest a push when behind', () => {
+  expect(gitPrimaryAction({ ...clean, ahead: 1, behind: 1 }, false)).toBe('Commit')
+  expect(gitPrimaryAction({ ...clean, dirty: true, behind: 1 }, false)).toBe('Commit')
+})
+
+it('keeps the commit action consistent while loading or clean', () => {
+  expect(gitPrimaryAction(null, false)).toBe('Commit & push')
+  expect(gitPrimaryAction(clean, false)).toBe('Commit & push')
+  expect(gitPrimaryAction({ ...clean, canPush: false }, false)).toBe('Commit')
+  expect(gitPrimaryAction(null, true)).toBe('Open PR')
 })

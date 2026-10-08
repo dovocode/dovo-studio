@@ -34,13 +34,13 @@ const built = await build({
       import {FolderPicker} from './src/tasks/creation/folder-picker';
       const repo=(id,name,gitIdentity)=>({id,name,path:'/'+id,branch:'main',gitIdentity});
       const scratch=id=>({...repo(id,'Private folder'),kind:'scratch'});
-      const inventory={local:[scratch('scratch'),repo('local','Shared project','host/team/project')],remote:[scratch('remote-scratch'),repo('remote','Shared project','host/team/project'),repo('notes','Remote notes')]};
+      const inventory={local:[scratch('scratch'),repo('local','Shared project','host/team/project')],remote:[scratch('remote-scratch'),repo('remote','Shared project','host/team/project'),repo('notes','Remote notes')],empty:[scratch('empty-scratch')]};
       window.choices=[];window.fail=false;
       function App(){
         const [active,setActive]=useState('local'),[repository,setRepository]=useState('local'),[multiple,setMultiple]=useState(false),[remoteOnline,setRemoteOnline]=useState(true),[allow,setAllow]=useState(true);
         window.update=changes=>{if('multiple' in changes)setMultiple(changes.multiple);if('remoteOnline' in changes)setRemoteOnline(changes.remoteOnline);if('allow' in changes)setAllow(changes.allow)};
         const defaults={scopedSettings:{environment:{},shared:[{key:'project:host/team/project',updatedAt:1,changeId:'one',value:{taskDefaults:{defaultServerId:'remote'}}}]}};
-        const overviews=(multiple?['local','remote']:['local']).map(id=>({profile:{id,name:id+' server',nameIsCustom:true,connection:{address:'http://'+id,token:'test'}},connected:id==='local'||remoteOnline,snapshot:{defaults,workspace:{repositories:inventory[id]}}}));
+        const overviews=(multiple?['local','remote','empty']:['local']).map(id=>({profile:{id,name:id+' server',nameIsCustom:true,connection:{address:'http://'+id,token:'test'}},connected:id==='local'||remoteOnline,snapshot:{defaults,workspace:{repositories:inventory[id]}}}));
         window.runtime={activeId:active,overviews,profile:overviews.find(entry=>entry.profile.id===active)?.profile};window.active=active;window.repository=repository;
         return <FolderPicker repositories={inventory[active]} value={repository} allowMachineChange={allow}
           onChange={async(id,target,runtimeId)=>{if(window.fail)throw Error('Fixture move failed');window.choices.push({id,runtimeId});setActive(runtimeId);setRepository(id)}}/>;
@@ -105,12 +105,29 @@ try {
     runtimeId: 'remote',
   })
   await server.click()
+  assert.equal(await page.getByRole('button', { name: 'empty server', exact: true }).count(), 0)
   await page.getByRole('button', { name: 'local server', exact: true }).click()
   await page.getByRole('dialog', { name: 'Server', exact: true }).waitFor({ state: 'hidden' })
   assert.deepEqual(await page.evaluate(() => window.choices.at(-1)), {
     id: 'local',
     runtimeId: 'local',
   })
+
+  await project.click()
+  await page.getByRole('button', { name: 'Remote notes', exact: true }).click()
+  await panel.waitFor({ state: 'hidden' })
+  await server.click()
+  assert.equal(await page.getByRole('button', { name: 'local server', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'empty server', exact: true }).count(), 0)
+  assert.equal(
+    await page.getByRole('button', { name: 'remote server', exact: true }).isEnabled(),
+    true,
+  )
+  await page.getByRole('button', { name: 'Close picker' }).click()
+  assert.equal(await page.evaluate(() => window.repository), 'notes')
+  await project.click()
+  await page.getByRole('button', { name: 'Shared project', exact: true }).click()
+  await panel.waitFor({ state: 'hidden' })
 
   await page.evaluate(() => window.update({ remoteOnline: false }))
   await project.click()

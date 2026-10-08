@@ -81,6 +81,15 @@ for (const [path, names] of [
 ])
   mocks[path] = names.map((name) => `export const ${name}=()=>null;`).join('\n')
 
+// Exercise remote selection through the real TasksView/StartupDraft boundary.
+mocks['../chat/composer/composer-workspace'] = `
+  import {useWorkspace} from '@dovo/studio-core';
+  export const ComposerWorkspace=({task,onSelectRemote})=>{
+    const store=useWorkspace();
+    return <div data-composer-project={task.repositoryId}><button onClick={()=>onSelectRemote({runtimeId:store.activeRuntimeId==='mac'?'remote':'mac'}, {id:store.activeRuntimeId==='mac'?'remote-project':'local-project'})}>Switch project server</button></div>;
+  };
+`
+
 const built = await build({
   stdin: {
     contents: `
@@ -91,7 +100,8 @@ const built = await build({
       window.host={navigate:target=>{window.navigations.push(target);window.setEntity(target.entityId)},registerCommand:command=>{window.commands.set(command.id,command.run);return ()=>window.commands.delete(command.id)}};
       const other=createTask({title:'Existing',objective:'',agentId:'',repositoryId:'scratch'});
       function App(){
-        const [entity,setEntity]=useState(),[revision,setRevision]=useState(0);
+        const [entity,setEntity]=useState(),[revision,setRevision]=useState(0),[active,setActive]=useState('mac');
+        const repositories=id=>[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''},{id:id==='mac'?'local-project':'remote-project',name:'Shared project',path:'/project',branch:'main'}];
         const [workspace,setWorkspace]=useState({tasks:[other],agents:[],skills:[],mcpServers:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]});
         window.setEntity=setEntity;window.saved=workspace.tasks;window.setWorkspace=setWorkspace;
         const snapshot={questions:[],approvals:[],defaults:{},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
@@ -102,7 +112,7 @@ const built = await build({
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',messages:[{id:'message',role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
           return {ok:true};
         };
-        return <WorkspaceContext.Provider value={{workspace,setWorkspace,snapshot,activeRuntimeId:'mac',runtimes:[],runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView entityId={entity}/></WorkspaceContext.Provider>
+        return <WorkspaceContext.Provider value={{workspace,setWorkspace,snapshot,activeRuntimeId:active,switchRuntime:async id=>{setWorkspace(current=>({...current,tasks:id==='mac'?[other]:[],repositories:repositories(id)}));setActive(id)},runtimes:[],runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView entityId={entity}/></WorkspaceContext.Provider>
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -145,6 +155,18 @@ try {
   const editor = page.getByLabel('Message task', { exact: true })
   await editor.waitFor()
   assert.equal(await page.evaluate(() => window.saved.length), 1)
+  await page.getByRole('button', { name: 'Switch project server' }).click()
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-composer-project]')?.dataset.composerProject ===
+      'remote-project',
+  )
+  await page.getByRole('button', { name: 'Switch project server' }).click()
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-composer-project]')?.dataset.composerProject ===
+      'local-project',
+  )
   await editor.fill('abcdef')
   await editor.evaluate((element) => {
     window.originalEditor = element

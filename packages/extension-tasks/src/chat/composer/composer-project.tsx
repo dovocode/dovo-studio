@@ -350,39 +350,37 @@ export function ComposerProject({
               <p className="px-2 pb-2 text-xs text-muted-foreground">
                 Run {repository?.kind === 'scratch' ? 'without a project' : repository?.name} on
               </p>
-              {sources.map((source) => {
-                const target = serverRepository(source)
-                return (
-                  <button
-                    key={source.runtimeId ?? 'local'}
-                    type="button"
-                    aria-label={source.name}
-                    aria-pressed={source.runtimeId === store.activeRuntimeId}
-                    disabled={locked || !source.online || !target || !!target.gitIdentityError}
-                    onClick={() => {
-                      if (target) void choose(source, target)
-                    }}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
-                  >
-                    <Monitor className="size-4 shrink-0" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">{source.name}</span>
-                      {(!source.online || !target || target.gitIdentityError) && (
-                        <span className="block text-xs text-muted-foreground">
-                          {!source.online
-                            ? 'Offline'
-                            : !target
-                              ? 'Project not added on this server'
-                              : target.gitIdentityError}
-                        </span>
+              {sources
+                .flatMap((source) => {
+                  const target = serverRepository(source)
+                  return target ? [{ source, target }] : []
+                })
+                .map(({ source, target }) => {
+                  return (
+                    <button
+                      key={source.runtimeId ?? 'local'}
+                      type="button"
+                      aria-label={source.name}
+                      aria-pressed={source.runtimeId === store.activeRuntimeId}
+                      disabled={locked || !source.online || !!target.gitIdentityError}
+                      onClick={() => void choose(source, target)}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
+                    >
+                      <Monitor className="size-4 shrink-0" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{source.name}</span>
+                        {(!source.online || target.gitIdentityError) && (
+                          <span className="block text-xs text-muted-foreground">
+                            {!source.online ? 'Offline' : target.gitIdentityError}
+                          </span>
+                        )}
+                      </span>
+                      {source.runtimeId === store.activeRuntimeId && (
+                        <Check className="size-4 shrink-0" />
                       )}
-                    </span>
-                    {source.runtimeId === store.activeRuntimeId && (
-                      <Check className="size-4 shrink-0" />
-                    )}
-                  </button>
-                )
-              })}
+                    </button>
+                  )
+                })}
               {feedback}
             </Popover.Content>
           </Popover.Portal>

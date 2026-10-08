@@ -95,7 +95,8 @@ export function TaskHeader({
   bottomTerminalOpen: boolean
   onBottomTerminal: () => void
 }) {
-  const { workspace, snapshot, connected, request, runtimes, activeRuntimeId } = useWorkspace()
+  const { workspace, snapshot, connected, connection, request, runtimes, activeRuntimeId } =
+    useWorkspace()
   const updates = useRuntimeReleaseCheck()
   const serverUpdate = runtimeUpdate(snapshot, updates.releases)
   const host = useStudioHost()
@@ -126,11 +127,14 @@ export function TaskHeader({
     } catch (cause) {
       setCommitStatus(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      committing.current = false
-      setCommitBusy(false)
-      void refreshGit().catch((cause: unknown) =>
-        setCommitStatus(cause instanceof Error ? cause.message : String(cause)),
-      )
+      try {
+        await refreshGit()
+      } catch (cause) {
+        setCommitStatus(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        committing.current = false
+        setCommitBusy(false)
+      }
     }
   }
   const [gitOpen, setGitOpen] = useApplicationState(false)
@@ -144,29 +148,44 @@ export function TaskHeader({
     return () => clearInterval(timer)
   }, [task.status])
   const repo = workspace.repositories.find((r) => r.id === task.repositoryId)
-  const [gitState, setGitState] = useApplicationState<Schema.Schema.Type<
-    typeof responses.gitActionState
-  > | null>(null)
+  const gitKey = JSON.stringify([
+    activeRuntimeId,
+    connection?.address,
+    task.id,
+    task.repositoryId,
+    repo?.path,
+    task.execution,
+    task.existingWorktreePath,
+    task.checkoutBranch,
+  ])
+  const [gitResult, setGitResult] = useApplicationState<{
+    key: string
+    state: Schema.Schema.Type<typeof responses.gitActionState>
+  } | null>(null)
+  const gitState = gitResult?.key === gitKey ? gitResult.state : null
   const gitReady =
     !compact &&
     connected &&
     !!repo &&
     !repo.kind &&
     !(task.execution === 'worktree' && !task.existingWorktreePath && canChangeTaskCheckout(task))
-  const gitTarget = useRef({ id: task.id, request })
-  gitTarget.current = { id: task.id, request }
+  const gitTarget = useRef({ key: gitKey, request })
+  gitTarget.current = { key: gitKey, request }
+  const gitRead = useRef(0)
   const refreshGit = useCallback(async () => {
+    const read = ++gitRead.current
     const state = await request(
       '/api/scm/action-state',
       { repositoryId: task.repositoryId, taskId: task.id },
       responses.gitActionState,
     )
-    if (gitTarget.current.id === task.id && gitTarget.current.request === request)
-      setGitState(state)
-  }, [request, task.repositoryId, task.id])
-  useEffect(() => {
-    setGitState(null)
-  }, [task.id, request])
+    if (
+      gitTarget.current.key === gitKey &&
+      gitTarget.current.request === request &&
+      gitRead.current === read
+    )
+      setGitResult({ key: gitKey, state })
+  }, [request, task.repositoryId, task.id, gitKey])
   const gitError = useLiveRefresh(gitReady, refreshGit)
   const mutable = gitReady && !!gitState && !gitError && !commitBusy && task.status !== 'running'
   const pushAvailable =
@@ -182,11 +201,14 @@ export function TaskHeader({
     } catch (cause) {
       setCommitStatus(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      committing.current = false
-      setCommitBusy(false)
-      void refreshGit().catch((cause: unknown) =>
-        setCommitStatus(cause instanceof Error ? cause.message : String(cause)),
-      )
+      try {
+        await refreshGit()
+      } catch (cause) {
+        setCommitStatus(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        committing.current = false
+        setCommitBusy(false)
+      }
     }
   }
   const primary = gitPrimaryAction(gitState, linkedPulls.length > 0)
@@ -280,10 +302,23 @@ export function TaskHeader({
           <Button
             size="sm"
             variant="outline"
-            className="h-7 gap-1 rounded-r-none px-2 text-[0.6875rem]"
-            disabled={primary === 'Open PR' || primary === 'Git actions' ? false : !mutable}
+            className="h-7 min-w-28 justify-center gap-1 rounded-r-none px-2 text-[0.6875rem]"
+            disabled={
+              primary === 'Open PR' ? commitBusy : !mutable || (!gitState?.dirty && !pushAvailable)
+            }
             onClick={primaryAction}
-            title={gitError || primary}
+            title={
+              gitError ||
+              (commitBusy
+                ? 'Updating Git status…'
+                : !gitState
+                  ? 'Checking Git status…'
+                  : primary === 'Open PR'
+                    ? primary
+                    : !gitState.dirty && !pushAvailable
+                      ? 'No changes to commit or push'
+                      : primary)
+            }
           >
             <GitBranch className="size-3.5" /> {commitBusy ? 'Working…' : primary}
           </Button>

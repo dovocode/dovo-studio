@@ -708,11 +708,7 @@ export function TaskList({
                     }
                     multiSelected={selected.has(entry.key)}
                     source={entry.source}
-                    editable={
-                      entry.key !== temporaryEntry?.key &&
-                      entry.source.runtimeId === activeRuntimeId &&
-                      !busy
-                    }
+                    editable={entry.key !== temporaryEntry?.key && entry.source.online && !busy}
                     disabled={
                       busy ||
                       bulkBusy ||

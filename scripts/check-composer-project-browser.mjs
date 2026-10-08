@@ -175,10 +175,7 @@ try {
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].repositoryId), 'notes')
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
   await server.click()
-  assert.equal(
-    await page.getByRole('button', { name: 'local machine', exact: true }).isDisabled(),
-    true,
-  )
+  assert.equal(await page.getByRole('button', { name: 'local machine', exact: true }).count(), 0)
   await page.keyboard.press('Escape')
 
   // Selecting a project uses its saved default; explicit server changes keep that project.
@@ -190,6 +187,7 @@ try {
   await page.waitForFunction(() => window.active === 'local')
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].repositoryId), 'local')
   await server.click()
+  assert.equal(await serverPanel.getByRole('button').count(), 2)
   await page.getByRole('button', { name: 'remote machine', exact: true }).click()
   await page.evaluate(() => window.finish())
   await serverPanel.waitFor({ state: 'hidden' })

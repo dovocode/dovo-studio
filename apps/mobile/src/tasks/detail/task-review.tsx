@@ -10,7 +10,7 @@ import { useMemo, useEffect, useState } from 'react'
 import { Alert, ScrollView, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { createTwoFilesPatch, FILE_HEADERS_ONLY } from 'diff'
-import { Effect, Schema } from 'effect'
+import { Schema } from 'effect'
 import { responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
@@ -19,6 +19,7 @@ import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import { DiffView } from '../preview/diff-view'
 import { PullStatus } from './pull-status'
+import { CommitSection } from './commit-section'
 export function TaskReview({
   initialCheckpoint = '',
   initialPath = '',
@@ -162,7 +163,7 @@ export function TaskReview({
             Snapshot diff for this turn. Select Current changes to edit files.
           </Text>
         )}
-        {!checkoutId && !checkpoint && !!task.files.length && <CommitSection task={task} />}
+        {!checkoutId && !checkpoint && <CommitSection task={task} />}
         <View style={styles.row}>
           <Action
             secondary
@@ -359,78 +360,6 @@ export function TaskReview({
           {error}
         </Text>
       )}
-    </View>
-  )
-}
-
-const messageSchema = mutableStruct({ message: Schema.String })
-const commitSchema = mutableStruct({
-  commit: Schema.String,
-  pushError: Schema.optional(Schema.String),
-})
-/** Commit everything in the task's checkout, with a message the title model can write. */
-function CommitSection({ task }: { task: Task }) {
-  const { styles } = useTheme()
-
-  const { connected, callEffect } = useRuntime()
-  const { act, busy, error } = useAction()
-  const [message, setMessage] = useApplicationState('')
-  const [status, setStatus] = useApplicationState('')
-  const idle = connected && !busy && task.status !== 'running'
-  const commit = (push: boolean) =>
-    act(() =>
-      (message.trim()
-        ? Effect.succeed({ message: message.trim() })
-        : callEffect('/api/tasks/commit-message', { id: task.id }, messageSchema)
-      ).pipe(
-        Effect.flatMap(({ message }) =>
-          callEffect('/api/tasks/commit', { id: task.id, message, push }, commitSchema),
-        ),
-        Effect.tap((result) =>
-          Effect.sync(() => {
-            setMessage('')
-            setStatus(
-              result.pushError
-                ? `Committed ${result.commit.slice(0, 8)}, but push failed: ${result.pushError}`
-                : `Committed ${result.commit.slice(0, 8)}${push ? ' and pushed' : ''}.`,
-            )
-          }),
-        ),
-      ),
-    )
-  return (
-    <View style={[styles.card, { gap: 8 }]}>
-      <Field
-        label="Commit message"
-        value={message}
-        onChangeText={setMessage}
-        multiline
-        maxLength={4000}
-        editable={!busy}
-      />
-      <View style={styles.row}>
-        <Action
-          secondary
-          label="Write message"
-          disabled={!idle}
-          onPress={() =>
-            act(() =>
-              callEffect('/api/tasks/commit-message', { id: task.id }, messageSchema).pipe(
-                Effect.tap((result) => Effect.sync(() => setMessage(result.message))),
-              ),
-            )
-          }
-        />
-        <Action
-          secondary
-          label="Commit all"
-          disabled={!idle || !message.trim()}
-          onPress={() => commit(false)}
-        />
-        <Action label="Commit & push" disabled={!idle} onPress={() => commit(true)} />
-      </View>
-      {!!status && <Text style={styles.muted}>{status}</Text>}
-      {!!error && <Text style={styles.error}>{error}</Text>}
     </View>
   )
 }

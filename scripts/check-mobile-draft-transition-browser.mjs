@@ -135,6 +135,8 @@ for (const [path, names] of Object.entries({
 }))
   mocks[path] = names.map((name) => `export const ${name}=()=>null;`).join('\n')
 
+mocks['./task-review'] = 'export const TaskReview=()=> <div data-git-controls>Git controls</div>;'
+
 const built = await build({
   stdin: {
     contents: `
@@ -160,6 +162,7 @@ const built = await build({
         window.openRoute=href=>setRoute(route=>({href:typeof href==='string'?href:href.pathname,params:typeof href==='string'?{}:href.params,key:route.key+1}));
         window.publish=(runtimeId,task,detailed=true)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],detailTaskIds:detailed?[task.id]:[],workspace:{...s[runtimeId].workspace,tasks:[task]}}}));
         window.online=setOnline;
+        window.makeGit=runtimeId=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],workspace:{...s[runtimeId].workspace,repositories:s[runtimeId].workspace.repositories.map(repo=>({...repo,id:window.created.repositoryId,kind:undefined}))}}}));
         const overviews=profiles.map(profile=>({profile,connected:online,snapshot:snapshots[profile.id]}));
         const request=(runtimeId,path,input)=>Effect.tryPromise({try:async()=>{
           window.requests.push({runtimeId,path,input});
@@ -321,6 +324,17 @@ try {
   await page.waitForFunction(() => window.requests.length === 1)
   assert.equal(await page.evaluate(() => window.requests[0].path), '/api/tasks/message')
   assert.equal(await page.evaluate(() => window.requests[0].runtimeId), 'b')
+
+  // Committing must not remove the Changes pane while a push retry is still possible.
+  await page.evaluate(() => {
+    window.makeGit('b')
+    window.publish('b', { ...window.created, status: 'done', files: [{ path: 'changed.ts' }] })
+  })
+  await page.getByRole('button', { name: 'Changes (1)', exact: true }).click()
+  await page.locator('[data-git-controls]').waitFor()
+  await page.evaluate(() => window.publish('b', { ...window.created, status: 'done', files: [] }))
+  await page.getByRole('button', { name: 'Changes (0)', exact: true }).waitFor()
+  assert.equal(await page.locator('[data-git-controls]').count(), 1)
 
   await page.evaluate(() => {
     window.online(false)

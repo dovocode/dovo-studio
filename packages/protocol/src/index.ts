@@ -183,3 +183,5 @@ export * from './runtime/connection/setting-layers.js'
 export * from './runtime/connection/project-icons.js'
 
 export * from './runtime/connection/diagnostics.js'
+
+export { gitPrimaryAction } from './scm/git-primary-action.js'

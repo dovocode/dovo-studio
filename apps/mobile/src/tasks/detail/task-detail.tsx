@@ -396,7 +396,9 @@ function TaskDetailContent({
   const [pane, setPane] = useApplicationState<
     'chat' | 'diff' | 'terminal' | 'browser' | 'devices' | 'agents'
   >('chat')
+  // Keep Git controls reachable after committing, including push-only retries.
   const hasDiff =
+    (!!repository && !repository.kind) ||
     !!task.pullStatus ||
     !!task.linkedPullRequests?.length ||
     task.files.length > 0 ||

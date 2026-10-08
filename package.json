@@ -42,6 +42,8 @@
     "test:mobile-thread-folder:browser": "node scripts/check-mobile-thread-folder-browser.mjs",
     "test:thread-folder:browser": "node scripts/check-thread-folder-browser.mjs",
     "test:startup-checkout:browser": "node scripts/check-startup-checkout-browser.mjs",
+    "test:git-primary-action:browser": "node scripts/check-git-primary-action-browser.mjs && node scripts/check-mobile-git-actions-browser.mjs",
+    "test:task-lifecycle:browser": "node scripts/check-task-lifecycle-browser.mjs",
     "test:startup-draft:browser": "node scripts/check-startup-draft-browser.mjs && node scripts/check-startup-sidebar-browser.mjs && node scripts/check-startup-composer-browser.mjs",
     "test:thread-startup:browser": "node scripts/check-thread-startup-browser.mjs",
     "test:mobile-notifications:browser": "node scripts/check-mobile-notifications-browser.mjs",

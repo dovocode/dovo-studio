@@ -261,7 +261,8 @@ export function FolderPicker({
                       ? item.gitIdentity === selected.gitIdentity
                       : source.profile.id === runtime.activeId && item.id === value,
                 )
-                const unavailable = !source.connected || !target || !!target.gitIdentityError
+                if (!target) return null
+                const unavailable = !source.connected || !!target.gitIdentityError
                 return (
                   <Pressable
                     key={source.profile.id}
@@ -272,9 +273,7 @@ export function FolderPicker({
                       disabled: locked || unavailable,
                     }}
                     disabled={locked || unavailable}
-                    onPress={() => {
-                      if (target) void choose(target, source.profile.id)
-                    }}
+                    onPress={() => void choose(target, source.profile.id)}
                     style={[
                       styles.row,
                       {
@@ -290,11 +289,7 @@ export function FolderPicker({
                       <Text style={styles.text}>{runtimeComputerName(source)}</Text>
                       {unavailable && (
                         <Text style={styles.muted}>
-                          {!source.connected
-                            ? 'Offline'
-                            : !target
-                              ? 'Project not added on this server'
-                              : target.gitIdentityError}
+                          {!source.connected ? 'Offline' : target.gitIdentityError}
                         </Text>
                       )}
                     </View>

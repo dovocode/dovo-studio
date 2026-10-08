@@ -1,11 +1,31 @@
 import { AlarmClock, Check, Undo2 } from 'lucide-react'
 import { updateTask, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button, DropdownMenu } from '@dovo/studio-ui'
+import { useRef, useState } from 'react'
+import { taskActionClient, type TaskRowChanges } from '../list/task-row-actions'
+import type { TaskSource } from '../list/task-collection'
 import { isSnoozed } from '../list/task-priority'
-export function TaskLifecycleActions({ task }: { task: Task }) {
-  const { setWorkspace } = useWorkspace()
-  const snooze = (until: string | null) =>
-    setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, snoozedUntil: until })))
+export function TaskLifecycleActions({ task, source }: { task: Task; source?: TaskSource }) {
+  const store = useWorkspace()
+  const pendingRef = useRef(false)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  const change = async (updates: TaskRowChanges) => {
+    if (pendingRef.current) return
+    pendingRef.current = true
+    setPending(true)
+    setError('')
+    try {
+      if (source) await taskActionClient(store, source).patch(task, updates)
+      else store.setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, ...updates })))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      pendingRef.current = false
+      setPending(false)
+    }
+  }
+  const snooze = (until: string | null) => void change({ snoozedUntil: until })
   return (
     <>
       {!task.archived && (
@@ -16,6 +36,7 @@ export function TaskLifecycleActions({ task }: { task: Task }) {
               variant="ghost"
               size="icon"
               className="size-6"
+              disabled={pending}
               aria-label="Snooze task"
               title="Snooze task"
             >
@@ -59,16 +80,20 @@ export function TaskLifecycleActions({ task }: { task: Task }) {
         variant="ghost"
         className="h-6 gap-1 px-1 text-[0.6875rem]"
         aria-label={task.archived ? 'Reopen task' : 'Settle task'}
-        disabled={task.status === 'running'}
-        onClick={() =>
-          setWorkspace((w) =>
-            updateTask(w, task.id, (t) => ({ ...t, archived: !t.archived, snoozedUntil: null })),
-          )
-        }
+        disabled={pending || task.status === 'running'}
+        onClick={() => void change({ archived: !task.archived, snoozedUntil: null })}
       >
         {task.archived ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
         {task.archived ? 'Reopen' : 'Settle'}
       </Button>
+      {error && (
+        <span
+          role="alert"
+          className="absolute right-0 top-full z-10 w-56 rounded-md border bg-popover p-2 text-xs text-destructive"
+        >
+          {error}
+        </span>
+      )}
     </>
   )
 }

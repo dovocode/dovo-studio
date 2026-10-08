@@ -174,7 +174,7 @@ function TaskRowView({
             <span
               className={cn(
                 'block w-full truncate text-sm font-medium leading-5',
-                unread ? 'text-foreground' : 'text-foreground/75',
+                unread ? 'text-foreground' : 'text-foreground/40',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}
@@ -314,7 +314,7 @@ function TaskRowView({
         )}
       {editable && (
         <div className="pointer-events-none absolute right-2 top-1.5 flex h-6 items-center gap-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-has-[:focus-visible]/task:pointer-events-auto group-has-[:focus-visible]/task:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 motion-safe:translate-x-0.5 motion-safe:group-hover/task:translate-x-0 motion-safe:group-has-[:focus-visible]/task:translate-x-0 motion-safe:has-[[data-state=open]]:translate-x-0 motion-reduce:transition-none">
-          <TaskLifecycleActions key={source.runtimeId ?? 'local'} task={task} />
+          <TaskLifecycleActions key={source.runtimeId ?? 'local'} task={task} source={source} />
         </div>
       )}
     </div>
