@@ -1,7 +1,10 @@
 import type Database from 'better-sqlite3'
 import { decode, mutableStruct, runtimePreferencesSchema } from '@dovo/protocol'
 import { Schema } from 'effect'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, isAbsolute } from 'node:path'
+import { homedir } from 'node:os'
+import { HttpError } from '../errors.js'
+import { worktreesRoot } from '../scm/tasks/task-worktree-keys.js'
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 export class RuntimePreferences {
   private readonly settingsPath: string | null
@@ -28,6 +31,10 @@ export class RuntimePreferences {
   save(value: unknown) {
     const changes = value && typeof value === 'object' ? value : {}
     const settings = decode(runtimePreferencesSchema, { ...this.get(), ...changes })
+    const root = settings.worktreesRoot.trim()
+    if (root && root !== '~' && !root.startsWith('~/') && !isAbsolute(root))
+      throw new HttpError(400, 'Worktree location must be an absolute path on this computer')
+    settings.worktreesRoot = root
     if (this.settingsPath) writeLocalSettingsSection('runtime', () => settings, this.settingsPath)
     else
       this.db
@@ -36,5 +43,25 @@ export class RuntimePreferences {
         )
         .run('runtime-preferences', JSON.stringify(settings))
     return settings
+  }
+  worktreesRoot() {
+    return this.worktreesLocation().root
+  }
+  worktreesLocation() {
+    const configured = this.get().worktreesRoot.trim()
+    if (!configured)
+      return {
+        root: worktreesRoot(),
+        source: process.env.DOVO_DATA_ROOT ? 'DOVO_DATA_ROOT' : 'Default (~/.dovo/worktrees)',
+      }
+    const root =
+      configured === '~'
+        ? homedir()
+        : configured.startsWith('~/')
+          ? join(homedir(), configured.slice(2))
+          : configured
+    if (!isAbsolute(root))
+      throw new HttpError(400, 'Worktree location must be an absolute path on this computer')
+    return { root: resolve(root), source: 'Settings' }
   }
 }

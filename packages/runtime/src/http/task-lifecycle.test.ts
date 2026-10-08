@@ -134,7 +134,7 @@ it('keeps the whole family visible until a nested child terminal closes', async 
       expect((await action(operation)).status).toBe(409)
     for (const id of ids) expect(store.task(id).archivedAt).toBeUndefined()
   } finally {
-    terminals.close(session.id)
+    await terminals.close(session.id)
   }
   expect((await action('archive')).status).toBe(200)
   for (const id of ids) expect(store.task(id).archivedAt).toBeTruthy()
@@ -225,7 +225,7 @@ it('keeps a visible thread when its terminal is still running', async () => {
     expect(store.task(task.id).archivedAt).toBeUndefined()
     expect(store.get().tasks).toHaveLength(2)
   } finally {
-    terminals.close(session.id)
+    await terminals.close(session.id)
   }
   expect((await action('archive')).status).toBe(200)
 })

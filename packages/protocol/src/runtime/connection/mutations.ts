@@ -44,6 +44,7 @@ export type MutationStorage = {
 }
 type State = {
   supported?: boolean
+  acknowledgements?: boolean
   pending: MutationOutbox
   error: string | null
   lock: Semaphore.Semaphore
@@ -96,7 +97,10 @@ export class RuntimeMutations {
           connection.address,
           '/api/mutations/status',
           undefined,
-          mutableStruct({ version: Schema.Literal(1) }),
+          mutableStruct({
+            version: Schema.Literal(1),
+            acknowledgements: Schema.optional(Schema.Boolean),
+          }),
           'GET',
         ),
       )
@@ -105,6 +109,7 @@ export class RuntimeMutations {
           return (state.supported = false)
         return yield* Effect.fail(result.failure)
       }
+      state.acknowledgements = result.success.acknowledgements
       return (state.supported = true)
     })
   }
@@ -150,6 +155,20 @@ export class RuntimeMutations {
       { mutationId: item.id },
     )
   }
+  private acknowledge(connection: RuntimeConnection, state: State, id: string) {
+    if (!state.acknowledgements) return Effect.void
+    // Only after durable journal removal. Lost acknowledgements retain the full receipt safely.
+    return runtimeRequestEffect(
+      connection,
+      connection.address,
+      '/api/mutations/acknowledge',
+      { ids: [id] },
+      Schema.Unknown,
+    ).pipe(
+      Effect.asVoid,
+      Effect.catch(() => Effect.void),
+    )
+  }
   private drain(connection: RuntimeConnection, state: State, retry = false, stopBefore?: string) {
     return Effect.gen({ self: this }, function* () {
       if (!state.pending.length) return
@@ -176,6 +195,7 @@ export class RuntimeMutations {
         yield* this.save(connection, state, (pending) =>
           pending.filter((entry) => entry.id !== item.id),
         )
+        yield* this.acknowledge(connection, state, item.id)
       }
       if (!state.pending.length) {
         state.error = null
@@ -340,6 +360,7 @@ export class RuntimeMutations {
           yield* this.save(connection, state, (pending) =>
             pending.filter((entry) => entry.id !== command.id),
           )
+          yield* this.acknowledge(connection, state, command.id)
           state.error = null
           this.changed()
           return value

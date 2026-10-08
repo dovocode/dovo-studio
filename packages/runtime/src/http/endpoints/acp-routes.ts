@@ -192,7 +192,8 @@ export function acpRoute(request: IncomingMessage, path: string) {
             )
           if ('type' in method && method.type === 'terminal') {
             for (const previous of s.terminals.list()) {
-              if (previous.taskId === `acp:${id}` && previous.exited) s.terminals.close(previous.id)
+              if (previous.taskId === `acp:${id}` && previous.exited)
+                yield* serviceResult(s.terminals.close(previous.id))
             }
             const terminal = s.terminals.createCommand(
               `acp:${id}`,

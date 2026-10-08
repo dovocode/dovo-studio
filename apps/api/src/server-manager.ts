@@ -1,3 +1,4 @@
+import { rotateRuntimeLogs } from '@dovo/runtime'
 import { spawn } from 'node:child_process'
 import { closeSync, existsSync, openSync, readFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
@@ -121,6 +122,7 @@ export async function startServer(directory: string, entrypoint: string) {
     throw new Error(
       'Runtime build is missing. Run pnpm --filter @dovo/api... -r build, then pnpm server start.',
     )
+  await rotateRuntimeLogs(directory)
   const log = openSync(status.logPath, 'a', 0o600)
   const env: NodeJS.ProcessEnv = {
     ...process.env,

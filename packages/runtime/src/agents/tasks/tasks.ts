@@ -97,10 +97,31 @@ export class Tasks {
     if (task.status === 'running' || this.running.has(id))
       throw new HttpError(409, 'Stop the active turn before archiving or deleting this thread.')
   }
+  schedulerStatus = {
+    lastSuccess: null as string | null,
+    error: null as string | null,
+    startedAt: null as string | null,
+  }
   startScheduler() {
     if (this.scheduleTimer) return
-    const tick = () =>
-      void this.runScheduled().catch((error) => console.error('Task schedule failed', error))
+    const tick = () => {
+      if (this.checkingSchedule || this.stopping) return
+      this.schedulerStatus.startedAt = new Date().toISOString()
+      void this.runScheduled()
+        .then(
+          () => {
+            this.schedulerStatus.lastSuccess = new Date().toISOString()
+            this.schedulerStatus.error = null
+          },
+          (error) => {
+            this.schedulerStatus.error = error instanceof Error ? error.message : String(error)
+            console.error('Task schedule failed', error)
+          },
+        )
+        .finally(() => {
+          this.schedulerStatus.startedAt = null
+        })
+    }
     this.scheduleTimer = setInterval(tick, 5000)
     tick()
   }
@@ -253,11 +274,13 @@ export class Tasks {
     const cwd = await this.checkouts.directory(id)
     const entries = [
       ...(checkpoint.before ? [{ key: 'primary', directory: cwd, checkpoint }] : []),
-      ...(checkpoint.linked ?? []).map((value) => ({
-        key: value.checkoutId,
-        directory: value.directory,
-        checkpoint: value,
-      })),
+      ...(await Promise.all(
+        (checkpoint.linked ?? []).map(async (value) => ({
+          key: value.checkoutId,
+          directory: await this.checkouts.linked.checkpointDirectory(value, true),
+          checkpoint: value,
+        })),
+      )),
     ]
     const lockAll = <A>(paths: string[], action: () => Promise<A>): Promise<A> =>
       paths.length
@@ -362,7 +385,9 @@ export class Tasks {
     if (turnId && checkoutId && !linked) throw new HttpError(404, 'Linked checkpoint not found')
     const before = turnId ? (checkoutId ? linked?.before : saved?.before) : undefined
     if (turnId && !before) throw new HttpError(404, 'This turn has no saved snapshot.')
-    const cwd = linked?.directory ?? (await this.checkouts.selectedDirectory(id, checkoutId))
+    const cwd = linked
+      ? await this.checkouts.linked.checkpointDirectory(linked, true)
+      : await this.checkouts.selectedDirectory(id, checkoutId)
     if (
       !turnId &&
       checkoutId &&
@@ -398,14 +423,22 @@ export class Tasks {
       return { ok: true }
     })
   }
-  async filePreview(id: string, path: string, turnId?: string, checkoutId?: string) {
+  async filePreview(
+    id: string,
+    path: string,
+    turnId?: string,
+    checkoutId?: string,
+    working = false,
+  ) {
     const task = this.store.task(id)
     const saved = task.turns?.find((turn) => turn.id === turnId)?.checkpoint
     const linked = checkoutId
       ? saved?.linked?.find((item) => item.checkoutId === checkoutId)
       : undefined
     if (checkoutId && turnId && !linked) throw new HttpError(404, 'Linked checkpoint not found')
-    const cwd = linked?.directory ?? (await this.checkouts.selectedDirectory(id, checkoutId))
+    const cwd = linked
+      ? await this.checkouts.linked.checkpointDirectory(linked)
+      : await this.checkouts.selectedDirectory(id, checkoutId)
     if (turnId) {
       const checkpoint = checkoutId ? linked : saved
       if (!checkpoint?.after) throw new HttpError(404, 'This turn has no saved snapshot.')
@@ -416,6 +449,7 @@ export class Tasks {
         throw new HttpError(404, 'This file was not changed in this turn.')
       return this.git.checkpointFilePreview(cwd, checkpoint.before, checkpoint.after, path)
     }
+    if (working) return this.git.workingFilePreview(cwd, path)
     const trees = await this.git.branchTrees(cwd)
     return this.git.checkpointFilePreview(cwd, trees.before, trees.after, path)
   }

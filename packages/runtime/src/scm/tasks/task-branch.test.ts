@@ -1,5 +1,22 @@
 import { expect, it } from 'vite-plus/test'
 import { taskBranchName } from './task-branch'
+import { taskWorktreePath } from './task-branch'
+import { taskWorktreeKeys, isTaskWorktree, withinWorktrees } from './task-worktree-keys'
+
+it('keeps long linked branch suffixes unique and recognizes registered branches after a root change', () => {
+  const first = taskWorktreeKeys('/repo/.git', 'task:linked:a', '/old/worktrees')
+  const second = taskWorktreeKeys('/repo/.git', 'task:linked:b', '/old/worktrees')
+  const branch = `feature/${'a'.repeat(200)}-${first.suffix}`
+  const path = taskWorktreePath(undefined, '/repo', branch)
+  expect(path).toMatch(new RegExp(`-${first.suffix}$`))
+  expect(path).not.toBe(
+    taskWorktreePath(undefined, '/repo', `feature/${'a'.repeat(200)}-${second.suffix}`),
+  )
+  const changed = taskWorktreeKeys('/repo/.git', 'task:linked:a', '/new/worktrees')
+  expect(isTaskWorktree(`/old/worktrees/${path}`, changed, branch)).toBe(true)
+  expect(withinWorktrees('/new/worktrees-external/repo', '/new/worktrees')).toBe(false)
+  expect(withinWorktrees('/new/worktrees', '/new/worktrees')).toBe(false)
+})
 
 it('uses the AI task title with a unique suffix and strips Git ref metacharacters', () => {
   expect(taskBranchName('Fix café checkout: API / reconnect?', 'a123')).toBe(

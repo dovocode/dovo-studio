@@ -31,6 +31,49 @@ function fixture(initial: MutationOutbox = [], changed: () => void = () => {}) {
     storage,
   }
 }
+it('recovers body interruption and retires receipts only after durable journal removal', async () => {
+  const f = fixture()
+  let interrupted = true
+  const acknowledgements: MutationOutbox[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status'))
+        return Response.json({ version: 1, acknowledgements: true })
+      if (urlPath(url).endsWith('/acknowledge')) {
+        acknowledgements.push(f.stored())
+        return Response.json({ ok: true })
+      }
+      if (interrupted)
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new Error('Connection reset'))
+            },
+          }),
+        )
+      return Response.json({ ok: true })
+    }),
+  )
+  expect(
+    (
+      await run(
+        f.queue.requestEffect(
+          connection,
+          '/api/tasks/lifecycle',
+          { id: 'task', action: 'archive' },
+          ok,
+        ),
+      )
+    )._tag,
+  ).toBe('Failure')
+  expect(f.stored()).toEqual([expect.objectContaining({ id: 'operation-1' })])
+  expect(f.stored()[0]?.blocked).toBeUndefined()
+  interrupted = false
+  expect((await run(f.restart().recoverEffect(connection)))._tag).toBe('Success')
+  expect(f.stored()).toEqual([])
+  expect(acknowledgements).toEqual([[]])
+})
 it('persists before sending and recovers a lost response with the same action ID after restart', async () => {
   const f = fixture(),
     ids: string[] = []
@@ -520,4 +563,32 @@ it('notifies clearing a stale error once when the durable journal is already emp
   changed.mockClear()
   await run(f.queue.recoverEffect(connection))
   expect(changed).not.toHaveBeenCalled()
+})
+it('keeps the receipt unretired when durable outbox removal fails after acceptance', async () => {
+  const f = fixture()
+  const update = f.storage.update
+  f.storage.update = async (connection, change) => {
+    if (!change(f.stored()).length) throw new Error('Journal disk full')
+    return update(connection, change)
+  }
+  const fetcher = vi.fn<typeof fetch>(async (url) =>
+    Response.json(
+      urlPath(url).endsWith('/status') ? { version: 1, acknowledgements: true } : { ok: true },
+    ),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  expect(
+    (
+      await run(
+        f.queue.requestEffect(
+          connection,
+          '/api/tasks/lifecycle',
+          { id: 'task', action: 'archive' },
+          ok,
+        ),
+      )
+    )._tag,
+  ).toBe('Failure')
+  expect(f.stored()).toHaveLength(1)
+  expect(fetcher.mock.calls.some(([url]) => urlPath(url).endsWith('/acknowledge'))).toBe(false)
 })

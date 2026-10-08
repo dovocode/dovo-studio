@@ -28,7 +28,7 @@ export default function AppUpdates() {
         setBusy(true)
         setMessage('')
         return yield* mobileWorkflow(function* () {
-          const releases = yield* nativeEffect(fetchRuntimeReleases)
+          const releases = yield* nativeEffect(() => fetchRuntimeReleases())
           const next = releases.stable
           if (!next) {
             setRelease(null)

@@ -46,6 +46,13 @@ Existing user-owned launchers are preserved; DEB/RPM launchers are installed by 
 For a standalone Linux server, [the one-command installer](server-setup.md) selects and verifies the
 matching server archive, registers the user service, and uses the same command for upgrades.
 
+The Linux installer, managed server updater, desktop release checks and WSL runtime installation
+reuse `GH_TOKEN`, `GITHUB_TOKEN`, or the host user's existing `gh auth` login, in that order, for
+GitHub API metadata. Credential lookup is noninteractive and optional. Tokens stay on the host and
+are not sent to archive downloads, public metadata fallbacks or paired clients. Managed Homebrew
+upgrades also use this fallback when `HOMEBREW_GITHUB_API_TOKEN` is unset. Browser and mobile
+release checks retain their public metadata fallback.
+
 1. Update the root `package.json` version and mobile `app.json` version as appropriate.
 2. Verify with `pnpm check`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
 3. Configure Mac-only GitHub Actions secrets: `MAC_CERTIFICATE` (Developer ID `.p12` as base64),

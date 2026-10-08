@@ -192,8 +192,8 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
           try: () => response.text(),
           catch: (cause) =>
             new RuntimeRequestError({
-              kind: 'response',
-              message: 'Cannot read runtime response.',
+              kind: 'connection',
+              message: 'Connection lost while reading runtime response.',
               cause,
             }),
         })

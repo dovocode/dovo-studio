@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { managedProcessIsAlive, serverStatus, startServer, stopServer } from './server-manager.js'
 import { writePrivateJson } from './server-config.js'
-import { backupRuntimeDatabase } from '@dovo/runtime'
+import { backupRuntimeDatabase, rotateRuntimeLogs } from '@dovo/runtime'
 interface ServerRelease {
   entrypoint: string
   previousEntrypoint?: string
@@ -35,6 +35,7 @@ export function selectedEntrypoint(directory: string) {
   return value.entrypoint
 }
 async function execute(command: string, args: string[], cwd: string, logPath: string) {
+  await rotateRuntimeLogs(dirname(logPath))
   const log = openSync(logPath, 'a', 0o600)
   const child = spawn(command, args, {
     windowsHide: true,
@@ -48,18 +49,28 @@ async function execute(command: string, args: string[], cwd: string, logPath: st
     },
   })
   closeSync(log)
-  await new Promise<void>((resolve, reject) => {
-    child.once('error', reject)
-    child.once('exit', (code) =>
-      code === 0
-        ? resolve()
-        : reject(
-            new Error(
-              `${command} exited with ${code}. Read ${logPath}. The running runtime was not changed.`,
-            ),
-          ),
+  const rotation = setInterval(() => {
+    void rotateRuntimeLogs(dirname(logPath)).catch((error) =>
+      console.error('Update log rotation failed', error),
     )
-  })
+  }, 60_000)
+  try {
+    await new Promise<void>((resolve, reject) => {
+      child.once('error', reject)
+      child.once('exit', (code) =>
+        code === 0
+          ? resolve()
+          : reject(
+              new Error(
+                `${command} exited with ${code}. Read ${logPath}. The running runtime was not changed.`,
+              ),
+            ),
+      )
+    })
+  } finally {
+    clearInterval(rotation)
+    await rotateRuntimeLogs(dirname(logPath))
+  }
 }
 // Snapshot only runtime source, manifests and lockfile. Credentials, databases, other app
 // source, Git state and the working checkout's node_modules never enter a release.

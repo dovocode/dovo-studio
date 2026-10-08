@@ -368,3 +368,40 @@ it('persists prompt submission time without moving it for answers, reviews or qu
     db.close()
   }
 })
+it('rejects queued restoration beyond the combined attachment limit without changing either input', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const files = Array.from({ length: 6 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      name: `${index}.txt`,
+      mime: 'text/plain',
+      size: 1,
+    }))
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'draft',
+          title: 'Task',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: 'Preserve draft',
+          draftAttachments: files.slice(0, 3),
+          example: false,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    queue.add('draft', 'queued', 'Preserve queue', files.slice(3))
+    const before = store.task('draft')
+    expect(() => queue.change('draft', 'restore', 'queued')).toThrow('attachments')
+    expect(store.task('draft')).toEqual(before)
+  } finally {
+    db.close()
+  }
+})

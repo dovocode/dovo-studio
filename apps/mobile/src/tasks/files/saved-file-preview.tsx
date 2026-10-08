@@ -16,16 +16,18 @@ export function SavedFilePreview({
   taskId,
   turnId,
   checkoutId,
+  working = false,
 }: {
   file: ChangedFile
   taskId: string
   turnId?: string
   checkoutId?: string
+  working?: boolean
 }) {
   const { styles } = useTheme()
 
   const { call } = useRuntime()
-  const key = JSON.stringify([taskId, turnId, checkoutId, file.path])
+  const key = JSON.stringify([taskId, turnId, checkoutId, working, file.path])
   const [result, setResult] = useState<{
     key: string
     preview: FilePreview | null
@@ -37,7 +39,7 @@ export function SavedFilePreview({
     let active = true
     void call(
       '/api/tasks/file/preview',
-      { id: taskId, path: file.path, turnId, checkoutId },
+      { id: taskId, path: file.path, turnId, checkoutId, working },
       filePreviewSchema,
     ).then(
       (result) => {
@@ -55,16 +57,18 @@ export function SavedFilePreview({
     return () => {
       active = false
     }
-  }, [call, taskId, turnId, checkoutId, file.path, key])
+  }, [call, taskId, turnId, checkoutId, working, file.path, key])
   return (
     <ScrollView contentContainerStyle={[styles.content, { gap: 12 }]}>
       <Text style={styles.muted}>
         {filePreviewLabel(file)} ·{' '}
-        {file.preview?.kind === 'submodule' ||
-        preview?.before?.kind === 'submodule' ||
-        preview?.after?.kind === 'submodule'
-          ? 'Submodule commit references saved in Git.'
-          : 'Full contents saved in Git.'}
+        {working
+          ? 'Current working checkout · preview only.'
+          : file.preview?.kind === 'submodule' ||
+              preview?.before?.kind === 'submodule' ||
+              preview?.after?.kind === 'submodule'
+            ? 'Submodule commit references saved in Git.'
+            : 'Full contents saved in Git.'}
       </Text>
       {error ? (
         <Text accessibilityRole="alert" style={styles.error}>

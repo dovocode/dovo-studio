@@ -61,6 +61,8 @@ it('recovers a stalled helper instead of reporting endless progress', () => {
 })
 
 it('runs the Linux updater outside the server service and reports launch failures', () => {
+  vi.stubEnv('GH_TOKEN', 'gh_fixture_secret')
+  vi.stubEnv('GH_CONFIG_DIR', '/fixture/gh-config')
   vi.stubEnv('DOVO_DATABASE_PATH', join(directory, 'runtime.sqlite'))
   vi.stubEnv('DOVO_SERVER_DISTRIBUTION', 'archive')
   vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
@@ -81,12 +83,16 @@ it('runs the Linux updater outside the server service and reports launch failure
       '--user',
       '--collect',
       '--property=Type=exec',
+      '--setenv=GH_TOKEN',
+      '--setenv=GH_CONFIG_DIR',
+      '--setenv=PATH',
       process.execPath,
       join(directory, 'server-cli.js'),
       'remote-update',
     ]),
     expect.objectContaining({ stdio: expect.any(Array) }),
   )
+  expect(vi.mocked(spawn).mock.calls[0]![1]!.join(' ')).not.toContain('gh_fixture_secret')
   child.emit('exit', 1)
   expect(serverUpdateStatus()).toMatchObject({
     status: 'error',

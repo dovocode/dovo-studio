@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 // Deliberately exclude shell hooks, NODE_OPTIONS and unrelated application secrets.
 export const runtimeEnvironmentKeys = [
+  'DOVO_DATA_ROOT',
   'DOVO_OWNER_TOKEN',
   'DOVO_NOTIFICATION_RELAY_URL',
   'DOVO_NOTIFICATION_RELAY_TOKEN',

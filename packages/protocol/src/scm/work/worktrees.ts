@@ -4,6 +4,7 @@ import { mutableArray, mutableStruct } from '../../shared/schema.js'
 /** Dovo-created task worktrees on one computer (Settings → Coding → Worktrees). */
 export const worktreeListSchema = mutableStruct({
   root: Schema.String,
+  rootSource: Schema.optional(Schema.String),
   worktrees: mutableArray(
     mutableStruct({
       path: Schema.String,
@@ -15,6 +16,7 @@ export const worktreeListSchema = mutableStruct({
       /** active: its task is in use · archived: task archived · missing: task deleted */
       state: Schema.Literals(['active', 'archived', 'missing']),
       dirty: Schema.Boolean,
+      retainedLocation: Schema.optional(Schema.Boolean),
       /** Git reports the folder is gone; removing only clears Git's record. */
       prunable: Schema.Boolean,
     }),

@@ -333,6 +333,7 @@ function PrimaryReviewPane({
                   file={file}
                   taskId={task.id}
                   turnId={selectedTurn?.id}
+                  working={source.kind === 'working'}
                 />
               ) : (
                 <PierreEditor

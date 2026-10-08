@@ -1,9 +1,12 @@
+import { acquireProcessLock } from './process-lock.js'
+import { githubReleaseToken } from '@dovo/protocol/github-release-auth'
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -17,6 +20,7 @@ import { persistRuntimeEnvironment } from './runtime-environment.js'
 import { readServerConfig, setupServer, writePrivateJson } from './server-config.js'
 import { processExists, serverStatus } from './server-manager.js'
 import { selectedEntrypoint, updateServer } from './server-update.js'
+import { activateServerRelease } from './server-activation.js'
 
 type ServicePlatform = 'darwin' | 'linux'
 type ServiceRecord = { platform: ServicePlatform; name: string; path: string; launcher: string }
@@ -81,8 +85,8 @@ function readService(directory: string): ServiceRecord {
     throw new Error(`Invalid server service record: ${path}`)
   return value as ServiceRecord
 }
-async function run(command: string, args: string[], cwd?: string) {
-  const child = spawn(command, args, { stdio: 'inherit', cwd })
+async function run(command: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv) {
+  const child = spawn(command, args, { stdio: 'inherit', cwd, ...(env ? { env } : {}) })
   const code = await new Promise<number>((resolve, reject) => {
     child.once('error', reject)
     child.once('exit', (exit) => resolve(exit ?? 1))
@@ -154,10 +158,22 @@ async function waitForRuntime(directory: string, previousPid?: number) {
 async function stopServiceRuntime(directory: string, record: ServiceRecord) {
   const previous = await serverStatus(directory)
   await control(record, 'stop', directory)
-  if (!previous.pid) return
+  if (!previous.pid) {
+    const release = acquireProcessLock(
+      join(dirname(readServerConfig(directory).databasePath), 'runtime-process.lock'),
+    )
+    release()
+    return
+  }
   const deadline = Date.now() + 30000
   while (Date.now() < deadline) {
-    if (!processExists(previous.pid)) return
+    if (!processExists(previous.pid)) {
+      const release = acquireProcessLock(
+        join(dirname(readServerConfig(directory).databasePath), 'runtime-process.lock'),
+      )
+      release()
+      return
+    }
     await delay(100)
   }
   throw new Error(`Runtime ${previous.pid} is still shutting down after the service stopped.`)
@@ -260,8 +276,44 @@ export async function removeService(directory: string) {
   if (record.platform === 'linux') await run('systemctl', ['--user', 'daemon-reload'])
   return { removed: true, directory }
 }
-export async function updateService(directory: string, nextLauncher?: string) {
+export async function updateService(
+  directory: string,
+  nextLauncher?: string,
+  verify?: () => Promise<void>,
+) {
   const record = readService(directory)
+  const activateLauncher = async (
+    replacement: string,
+    previousLauncher = record.launcher,
+    prepare?: () => Promise<void>,
+  ) => {
+    const status = await serverStatus(directory)
+    const link = join(directory, 'service-launcher')
+    const temporary = `${link}.${process.pid}.tmp`
+    const select = (launcher: string) => {
+      rmSync(temporary, { force: true })
+      symlinkSync(launcher, temporary)
+      renameSync(temporary, link)
+      writePrivateJson(recordPath(directory), { ...record, launcher })
+    }
+    await activateServerRelease({
+      databasePath: status.databasePath,
+      backupPath: join(directory, 'backups', `runtime-before-${Date.now()}-${randomUUID()}.sqlite`),
+      wasRunning: status.running,
+      stop: () => stopServiceRuntime(directory, record),
+      select: async () => {
+        await prepare?.()
+        select(replacement)
+      },
+      rollback: () => select(previousLauncher),
+      start: async () => {
+        await control(record, 'start', directory)
+        await waitForRuntime(directory, status.pid)
+      },
+      verify,
+    })
+    return serverStatus(directory)
+  }
   if (nextLauncher) {
     if (process.env.DOVO_SERVER_DISTRIBUTION !== 'archive')
       throw new Error('--launcher is for packaged server installations.')
@@ -269,24 +321,7 @@ export async function updateService(directory: string, nextLauncher?: string) {
     if (!existsSync(replacement) || basename(replacement) !== basename(record.launcher))
       throw new Error('The replacement launcher must exist and match the current server channel.')
     await run(replacement, ['--help'])
-    const status = await serverStatus(directory)
-    if (status.running) await stopServiceRuntime(directory, record)
-    const link = join(directory, 'service-launcher')
-    const temporary = `${link}.${process.pid}.tmp`
-    symlinkSync(replacement, temporary)
-    renameSync(temporary, link)
-    writePrivateJson(recordPath(directory), { ...record, launcher: replacement })
-    try {
-      await control(record, 'start', directory)
-      return await waitForRuntime(directory, status.pid)
-    } catch (error) {
-      await stopServiceRuntime(directory, record)
-      symlinkSync(record.launcher, temporary)
-      renameSync(temporary, link)
-      writePrivateJson(recordPath(directory), record)
-      if (status.running) await control(record, 'start', directory).catch(() => undefined)
-      throw error
-    }
+    return activateLauncher(replacement)
   }
   if (process.env.DOVO_SERVER_DISTRIBUTION !== 'archive') {
     const previous = await serverStatus(directory)
@@ -311,15 +346,14 @@ export async function updateService(directory: string, nextLauncher?: string) {
       'This service is not using the Homebrew launcher. Install the new package with its manager, then run server service update --launcher /path/to/new/bin/dovo-server.',
     )
   await run('brew', ['list', '--formula', formula])
-  const status = await serverStatus(directory)
-  // Download and switch the formula while the old process is still serving clients.
-  await run('brew', ['upgrade', formula])
-  if (status.running) await stopServiceRuntime(directory, record)
-  try {
-    await control(record, 'start', directory)
-    return waitForRuntime(directory, status.pid)
-  } catch (error) {
-    if (status.running) await control(record, 'start', directory).catch(() => undefined)
-    throw error
-  }
+  // Preserve the resolved old Cellar launcher; the public brew symlink changes on upgrade.
+  const previousLauncher = realpathSync(record.launcher)
+  const githubToken = process.env.HOMEBREW_GITHUB_API_TOKEN || (await githubReleaseToken())
+  return activateLauncher(record.launcher, previousLauncher, () =>
+    run('brew', ['upgrade', formula], undefined, {
+      ...process.env,
+      HOMEBREW_NO_INSTALL_CLEANUP: '1',
+      ...(githubToken ? { HOMEBREW_GITHUB_API_TOKEN: githubToken } : {}),
+    }),
+  )
 }

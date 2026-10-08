@@ -341,6 +341,7 @@ export function TaskReview({
           file={file}
           taskId={task.id}
           turnId={checkpoint || undefined}
+          working={!checkpoint}
           checkoutId={checkoutId || undefined}
         />
       ) : (

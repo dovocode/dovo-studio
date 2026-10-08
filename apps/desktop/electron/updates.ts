@@ -1,5 +1,6 @@
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 import { decode, fetchRuntimeReleases } from '@dovo/protocol'
+import { fetchGitHubRelease, githubReleaseToken } from '@dovo/protocol/github-release-auth'
 import { app, dialog, Menu, BrowserWindow, shell, type MenuItemConstructorOptions } from 'electron'
 import updater from 'electron-updater'
 import { snapshotSchema, type DesktopUpdateChannel, type DesktopUpdateState } from '@dovo/protocol'
@@ -36,6 +37,7 @@ export function registerUpdates(
   let busy = false
   let state: DesktopUpdateState = { status: 'idle', channel }
   let checking: Promise<boolean> | undefined
+  let genericFeed = false
   const publish = (next: DesktopUpdateState) => {
     state = { ...next, channel }
     for (const window of BrowserWindow.getAllWindows())
@@ -52,7 +54,7 @@ export function registerUpdates(
   }
   const fetchReleaseNotes = async (version: string) => {
     try {
-      const response = await fetch(
+      const response = await fetchGitHubRelease(
         `https://api.github.com/repos/dovocode/dovo-studio/releases/tags/v${encodeURIComponent(version)}`,
         {
           headers: { Accept: 'application/vnd.github+json' },
@@ -77,14 +79,20 @@ export function registerUpdates(
       return Promise.resolve(true)
     if (checking) return checking
     checking = (async () => {
-      // GitHub's prerelease selector matches tag channels, not architecture-suffixed feeds.
-      if (process.platform === 'win32' && process.arch === 'arm64') {
-        const release = (await fetchRuntimeReleases())[channel]
+      // Resolve authenticated release metadata ourselves; keep tokens out of updater logs/downloads.
+      // GitHub's prerelease selector also cannot handle architecture-suffixed feeds.
+      if (
+        genericFeed ||
+        (await githubReleaseToken()) ||
+        (process.platform === 'win32' && process.arch === 'arm64')
+      ) {
+        const release = (await fetchRuntimeReleases(fetchGitHubRelease))[channel]
         if (!release) throw new Error(`No ${channel} desktop release is published`)
         autoUpdater.setFeedURL({
           provider: 'generic',
           url: `https://github.com/dovocode/dovo-studio/releases/download/v${release.version}/`,
         })
+        genericFeed = true
       }
       return autoUpdater.checkForUpdates()
     })()

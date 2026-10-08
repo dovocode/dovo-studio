@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { cachedThread, retainCachedThreads } from './thread-cache.js'
+import { cachedThread, retainCachedThreads, boundedSnapshotCache } from './thread-cache.js'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from '../connection/runtime.js'
 import type { Task } from '../../workspace.js'
@@ -35,6 +35,28 @@ const snapshot = (tasks: Task[], detailTaskIds?: string[]) =>
     devices: [],
     pendingDevices: [],
   })
+it('bounds persisted thread details while preserving metadata and prioritizing the latest selections', () => {
+  const tasks = Array.from({ length: 30 }, (_, index) => task(String(index)))
+  const bounded = boundedSnapshotCache(snapshot(tasks, tasks.map((task) => task.id).reverse()))
+  expect(bounded.detailTaskIds).toHaveLength(20)
+  expect(bounded.detailTaskIds?.[0]).toBe('29')
+  expect(bounded.workspace.tasks).toHaveLength(30)
+  expect(bounded.workspace.tasks[0]?.messages).toEqual([])
+  expect(bounded.workspace.tasks.at(-1)?.messages).toEqual(tasks.at(-1)?.messages)
+  const huge = boundedSnapshotCache(
+    snapshot(
+      [
+        {
+          ...task('large'),
+          messages: [{ id: 'huge', role: 'assistant', text: 'x'.repeat(9 * 1024 * 1024) }],
+        },
+      ],
+      ['large'],
+    ),
+  )
+  expect(huge.detailTaskIds).toEqual([])
+  expect(huge.workspace.tasks[0]?.title).toBe('large')
+})
 it('retains cached history without restoring deleted tasks or overwriting fresh drafts and status', () => {
   const old = snapshot([{ ...task('a'), historyBefore: 'm60' }, task('deleted')])
   const shell = { ...task('a'), title: 'New title', draft: 'New draft', messages: [] }

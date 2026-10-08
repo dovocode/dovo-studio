@@ -1,3 +1,4 @@
+import { RuntimeDiagnosticsPanel } from './runtime-diagnostics'
 import { PageHeader } from '@dovo/studio-ui'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -97,6 +98,7 @@ export default function RuntimeView() {
             {source ? (
               <WorkspaceScope profile={managing}>
                 <DeviceManager key={managing.id} />
+                {source.snapshot?.owner && <RuntimeDiagnosticsPanel />}
                 {/* Per-computer settings live on their own pages, like Codex and T3 Code. */}
                 <div className="flex flex-wrap gap-2">
                   {[

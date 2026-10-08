@@ -67,7 +67,7 @@ const appName = !app.isPackaged
     ? 'Dovo Studio (Nightly)'
     : 'Dovo Studio'
 const explicitDirectory = app.commandLine.hasSwitch('user-data-dir')
-const dataRoot = desktopDataRoot(homedir(), app.isPackaged)
+const dataRoot = process.env.DOVO_DATA_ROOT ?? desktopDataRoot(homedir(), app.isPackaged)
 const currentDirectory =
   !app.isPackaged && !explicitDirectory
     ? join(app.getPath('appData'), appName)

@@ -1,3 +1,5 @@
+import { createServices } from '../../services'
+import { openDatabase } from '../../storage/database'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import type { Task } from '@dovo/protocol'
 import { Housekeeping, inactiveTaskIds } from './housekeeping'
@@ -225,4 +227,39 @@ it('protects drafts, pending input, queued work and quota continuations from ina
     })),
   }))
   expect(await housekeeping.settleInactive(now)).toEqual([])
+})
+it('waits for an already-started backup step when polling is cancelled during shutdown', async () => {
+  const db = openDatabase(':memory:')
+  const s = createServices(db, 'shutdown-test-owner-token-with-32-characters')
+  cleanups.push(async () => {
+    await s.attachments.dispose()
+    db.close()
+  })
+  let enter: () => void = () => {},
+    finish: () => void = () => {}
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
+  })
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  vi.spyOn(s.backups, 'automatic').mockImplementation(async () => {
+    enter()
+    await pending
+  })
+  const housekeeping = new Housekeeping(s)
+  housekeeping.start()
+  await entered
+  let stopped = false
+  const closing = housekeeping.dispose().then(() => {
+    stopped = true
+  })
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(stopped).toBe(false)
+  } finally {
+    finish()
+    await closing
+  }
+  expect(stopped).toBe(true)
 })

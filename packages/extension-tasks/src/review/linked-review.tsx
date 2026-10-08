@@ -121,6 +121,7 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
               file={file}
               taskId={task.id}
               turnId={turnId || undefined}
+              working={!turnId}
               checkoutId={checkoutId}
             />
           ) : (

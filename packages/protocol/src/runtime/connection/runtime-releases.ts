@@ -19,15 +19,15 @@ export function newerRuntimeVersion(a: string, b: string) {
   return false
 }
 
-async function fetchGitHubReleases(): Promise<RuntimeReleases> {
+async function fetchGitHubReleases(fetcher: typeof fetch): Promise<RuntimeReleases> {
   const options: RequestInit = {
     cache: 'no-store',
     headers: { Accept: 'application/vnd.github+json' },
     signal: AbortSignal.timeout(15000),
   }
   const [response, stableResponse] = await Promise.all([
-    fetch('https://api.github.com/repos/dovocode/dovo-studio/releases?per_page=100', options),
-    fetch('https://api.github.com/repos/dovocode/dovo-studio/releases/latest', options),
+    fetcher('https://api.github.com/repos/dovocode/dovo-studio/releases?per_page=100', options),
+    fetcher('https://api.github.com/repos/dovocode/dovo-studio/releases/latest', options),
   ])
   if (!response.ok) throw new Error(`Release check failed (HTTP ${response.status})`)
   if (!stableResponse.ok && stableResponse.status !== 404)
@@ -45,6 +45,8 @@ async function fetchGitHubReleases(): Promise<RuntimeReleases> {
       typeof item.html_url !== 'string'
     )
       continue
+    // Authenticated GitHub users can see drafts; offer only publicly published releases.
+    if ('draft' in item && item.draft !== false) continue
     if (!item.html_url.startsWith('https://github.com/dovocode/dovo-studio/releases/')) continue
     const channel = item.tag_name.includes('-nightly.') ? 'nightly' : 'stable'
     const release = {
@@ -89,10 +91,11 @@ async function publishedRuntimeReleases(): Promise<RuntimeReleases> {
   if (!entries.some(Boolean)) throw new Error('No published release metadata is available')
   return Object.fromEntries(entries.filter((entry) => entry !== undefined))
 }
-let pending: Promise<RuntimeReleases> | undefined
-export function fetchRuntimeReleases(): Promise<RuntimeReleases> {
-  if (pending) return pending
-  const request = fetchGitHubReleases().catch(async (cause: unknown) => {
+const pending = new Map<typeof fetch, Promise<RuntimeReleases>>()
+export function fetchRuntimeReleases(fetcher: typeof fetch = fetch): Promise<RuntimeReleases> {
+  const current = pending.get(fetcher)
+  if (current) return current
+  const request = fetchGitHubReleases(fetcher).catch(async (cause: unknown) => {
     try {
       return await publishedRuntimeReleases()
     } catch (fallback: unknown) {
@@ -102,9 +105,9 @@ export function fetchRuntimeReleases(): Promise<RuntimeReleases> {
       )
     }
   })
-  pending = request
+  pending.set(fetcher, request)
   const clear = () => {
-    if (pending === request) pending = undefined
+    if (pending.get(fetcher) === request) pending.delete(fetcher)
   }
   void request.then(clear, clear)
   return request

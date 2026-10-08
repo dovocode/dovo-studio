@@ -6,6 +6,9 @@ import { openDatabase } from './storage/database.js'
 import { createServices, type Services } from './services.js'
 import { createRuntimeServer } from './http/server.js'
 import { ExternalListener } from './http/external-listener.js'
+export { RuntimeBackups, restoreRuntimeBackup, verifyRuntimeBackup } from './storage/backups.js'
+export { exportRuntimeRecovery } from './storage/recovery.js'
+export { rotateRuntimeLogs } from './storage/log-rotation.js'
 export { backupRuntimeDatabase } from './storage/backup.js'
 export { checkAdapterUpdates, type AdapterDiagnostic } from './agents/execution/diagnostics.js'
 
@@ -72,6 +75,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         closeTasks,
         () => services.agents.dispose(),
         () => services.mcpApps.dispose(),
+        () => services.backups.settle(),
         () => services.attachments.dispose(),
         () => services.liveActivities.dispose(),
         () => services.pushNotifications.dispose(),

@@ -1,6 +1,7 @@
 import { waitForWslRuntime } from './wsl-runtime-health.js'
 import { desktopRuntimeDirectory } from './runtime-data-directory.js'
 import { app } from 'electron'
+import { fetchGitHubRelease } from '@dovo/protocol/github-release-auth'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -139,7 +140,7 @@ export async function prepareWslRuntime(distribution: string) {
     `${rootScript}${location}"; test ! -f "$base/VERSION" || cat "$base/VERSION"`,
   )
   if (installed === version) return
-  const response = await fetch(
+  const response = await fetchGitHubRelease(
     `https://api.github.com/repos/dovocode/dovo-studio/releases/tags/v${version}`,
     { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15000) },
   )

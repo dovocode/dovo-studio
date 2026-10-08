@@ -1,3 +1,4 @@
+import { RuntimeBackups, restoreRuntimeBackup, exportRuntimeRecovery } from '@dovo/runtime'
 import { spawn } from 'node:child_process'
 import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -33,6 +34,8 @@ async function main() {
       host: { type: 'string' },
       port: { type: 'string' },
       database: { type: 'string' },
+      backup: { type: 'string' },
+      output: { type: 'string' },
       'public-address': { type: 'string' },
       launcher: { type: 'string' },
       version: { type: 'string' },
@@ -51,13 +54,15 @@ async function main() {
       'This server is managed by Homebrew, mise or an archive install. Finish active work, stop the server, upgrade with your package manager, then run dovo-server start. Your data directory is preserved.',
     )
   if (values.help) {
-    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | doctor | update | service install|status|restart|update|remove> [options]
+    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | doctor | backup | backups | restore | recovery-export | update | service install|status|restart|update|remove> [options]
   --data-dir <directory>    Workspace data directory (default: ~/.dovo)
   --host <host>             Setup: 0.0.0.0, an IP, local, tailscale, or netbird
   --port <number>           Setup: fixed port (default: 51464)
   --database <path>         Setup: database in the selected data directory
   --public-address <url>    Setup/pair: reachable LAN/VPN or HTTPS proxy origin
   --launcher <path>         Service update: new mise/archive bin/dovo-server path
+  --backup <path>          Restore: verified SQLite backup (runtime must be stopped)
+  --output <directory>     Recovery export: new private output directory
   --json                   Print status/configuration as JSON, never owner tokens
   --check-updates           Doctor: compare installed adapters with npm registry versions
 
@@ -84,6 +89,10 @@ Build first: pnpm --filter @dovo/api... -r build`
       'restart',
       'pair',
       'doctor',
+      'backup',
+      'backups',
+      'restore',
+      'recovery-export',
       'update',
       'service',
       'remote-update',
@@ -116,6 +125,12 @@ Build first: pnpm --filter @dovo/api... -r build`
     throw new Error('--launcher is a service update option.')
   if (command !== 'remote-update' && values.version)
     throw new Error('--version is a remote update option.')
+  if ((values.backup && command !== 'restore') || (values.output && command !== 'recovery-export'))
+    throw new Error('--backup is a restore option; --output is a recovery-export option.')
+  if (command === 'restore' && !values.backup)
+    throw new Error('Restore requires --backup <path>. Stop the runtime and its service first.')
+  if (command === 'recovery-export' && !values.output)
+    throw new Error('Recovery export requires --output <new-directory>.')
   const directory = serverDirectory(values['data-dir'])
   if (command === 'service' && args[0] === 'run') {
     await runService(directory)
@@ -163,7 +178,15 @@ Build first: pnpm --filter @dovo/api... -r build`
   const release =
     command === 'status' ? () => {} : acquireProcessLock(join(directory, 'server-operation.lock'))
   try {
-    if (command === 'setup')
+    if (['backup', 'backups', 'restore', 'recovery-export'].includes(command)) {
+      const config = readServerConfig(directory)
+      const backups = new RuntimeBackups(config.databasePath)
+      if (command === 'backup') result = await backups.create()
+      else if (command === 'backups') result = await backups.status()
+      else if (command === 'restore')
+        result = await restoreRuntimeBackup(config.databasePath, resolve(values.backup!))
+      else result = await exportRuntimeRecovery(config.databasePath, resolve(values.output!))
+    } else if (command === 'setup')
       result = setupServer(directory, {
         host: values.host,
         port: values.port,
@@ -197,7 +220,8 @@ Build first: pnpm --filter @dovo/api... -r build`
   } finally {
     release()
   }
-  if (values.json) console.log(JSON.stringify(result))
+  if (values.json || ['backup', 'backups', 'restore', 'recovery-export'].includes(command))
+    console.log(JSON.stringify(result, null, values.json ? undefined : 2))
   else if (command === 'setup')
     console.log(
       `Server configured in ${directory}.\nStart: ${cliName} start --data-dir ${JSON.stringify(directory)}\nPair: ${cliName} pair --data-dir ${JSON.stringify(directory)}`,

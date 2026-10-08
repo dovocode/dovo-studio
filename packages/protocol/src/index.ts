@@ -181,3 +181,5 @@ export * from './scm/pulls/pull-sources.js'
 
 export * from './runtime/connection/setting-layers.js'
 export * from './runtime/connection/project-icons.js'
+
+export * from './runtime/connection/diagnostics.js'

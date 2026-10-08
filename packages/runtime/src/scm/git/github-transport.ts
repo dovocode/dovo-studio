@@ -113,17 +113,51 @@ const nextLink = (header: string | null) =>
     .find((part) => /rel="next"/.test(part))
     ?.match(/^<([^>]+)>/)?.[1]
 const ETAG_ENTRIES = 500
+const RESPONSE_BYTES = 16 * 1024 * 1024
+const CACHE_BYTES = 32 * 1024 * 1024
+
+async function responseText(response: Response, limit: number) {
+  const reader = response.body?.getReader()
+  if (!reader) return ''
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const next = await reader.read()
+      if (next.done) break
+      size += next.value.byteLength
+      if (size > limit) throw new GithubApiError(502, 'GitHub response exceeded its byte limit')
+      chunks.push(next.value)
+    }
+    return Buffer.concat(chunks).toString('utf8')
+  } catch (error) {
+    if (error instanceof GithubApiError) throw error
+    throw new GithubApiError(
+      502,
+      'GitHub response was interrupted. Refresh before retrying a write; it may have completed.',
+    )
+  } finally {
+    await reader.cancel().catch(() => {}) // A broken stream may also reject cancellation.
+    reader.releaseLock()
+  }
+}
 /** Sends GitHub API requests with one bearer token. Conditional GET requests reuse cached
  * bodies on 304, which GitHub does not count against the quota. */
 export class GithubTransport {
-  private etags = new Map<string, { etag: string; body: string }>()
+  private etags = new Map<
+    string,
+    { etag: string; body: string; link: string | null; bytes: number }
+  >()
+  private cachedBytes = 0
   constructor(private fetcher: typeof fetch = fetch) {}
   async send(
     request: GithubApiRequest,
     token: string,
-    options: { onUnauthorized?: () => void } = {},
+    options: { onUnauthorized?: () => void; maxBytes?: number } = {},
   ): Promise<string> {
     const pages: string[] = []
+    let total = 0
+    const limit = options.maxBytes ?? RESPONSE_BYTES
     let url: URL | undefined = githubApiUrl(request.host, request.path)
     for (const [key, value] of request.query) url.searchParams.append(key, value)
     const body =
@@ -140,7 +174,7 @@ export class GithubTransport {
           : undefined)
     const credential = createHash('sha256').update(token).digest('hex').slice(0, 16)
     for (let page = 0; url && page < 100; page++) {
-      const cacheKey = `${credential} ${url.href}`
+      const cacheKey: string = `${credential} ${url.href}`
       const cached = request.method === 'GET' ? this.etags.get(cacheKey) : undefined
       let response: Response
       try {
@@ -164,16 +198,35 @@ export class GithubTransport {
           `Could not reach ${request.host}: ${error instanceof Error ? error.message : String(error)}`,
         )
       }
-      const text = await response.text()
-      if (response.status === 304 && cached) pages.push(cached.body)
-      else if (response.ok) {
+      const text = await responseText(response, Math.min(RESPONSE_BYTES, limit - total))
+      const linkHeader: string | null =
+        response.status === 304 && cached
+          ? (response.headers.get('link') ?? cached.link)
+          : response.headers.get('link')
+      const bytes = Buffer.byteLength(response.status === 304 && cached ? cached.body : text)
+      total += bytes
+      if (total > limit)
+        throw new GithubApiError(502, 'GitHub paginated response exceeded its byte limit')
+      if (response.status === 304 && cached) {
+        cached.link = linkHeader
+        cached.etag = response.headers.get('etag') ?? cached.etag
+        this.etags.delete(cacheKey)
+        this.etags.set(cacheKey, cached)
+        pages.push(cached.body)
+      } else if (response.ok) {
         const etag = response.headers.get('etag')
-        if (etag && request.method === 'GET') {
+        if (request.method === 'GET' && cached) {
           this.etags.delete(cacheKey)
-          this.etags.set(cacheKey, { etag, body: text })
-          if (this.etags.size > ETAG_ENTRIES) {
+          this.cachedBytes -= cached.bytes
+        }
+        if (etag && request.method === 'GET') {
+          this.etags.set(cacheKey, { etag, body: text, link: linkHeader, bytes })
+          this.cachedBytes += bytes
+          while (this.etags.size > ETAG_ENTRIES || this.cachedBytes > CACHE_BYTES) {
             const oldest = this.etags.keys().next().value
-            if (oldest !== undefined) this.etags.delete(oldest)
+            if (oldest === undefined) break
+            this.cachedBytes -= this.etags.get(oldest)!.bytes
+            this.etags.delete(oldest)
           }
         }
         pages.push(text)
@@ -181,11 +234,16 @@ export class GithubTransport {
         if (response.status === 401) options.onUnauthorized?.()
         throw githubError(response, text)
       }
-      const link = request.paginate ? nextLink(response.headers.get('link')) : undefined
+      const link = request.paginate ? nextLink(linkHeader) : undefined
       url = link ? new URL(link) : undefined
       if (url && url.host !== githubApiUrl(request.host, request.path).host)
         throw new GithubApiError(502, 'GitHub pagination left its API host')
     }
+    if (url)
+      throw new GithubApiError(
+        502,
+        'GitHub pagination exceeded 100 pages; the result is incomplete',
+      )
     if (!request.paginate) return pages[0] ?? ''
     if (request.slurp) return `[${pages.join(',')}]`
     // Without --slurp, gh concatenates array pages; the runtime only uses --slurp.

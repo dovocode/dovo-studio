@@ -438,17 +438,17 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         if (action !== 'restore') for (const taskId of ids) s.titles.cancelSideChats(taskId)
         if (action === 'delete') {
           for (const terminal of s.terminals.list())
-            if (ids.has(terminal.taskId)) s.terminals.close(terminal.id)
+            if (ids.has(terminal.taskId)) yield* serviceResult(s.terminals.close(terminal.id))
           s.store.transaction(() => {
             for (const taskId of ids) {
               s.db.prepare('DELETE FROM activity WHERE scope = ?').run(taskId)
-              s.db.prepare('DELETE FROM attachments WHERE task = ?').run(taskId)
             }
             s.store.update((workspace) => ({
               ...workspace,
               tasks: workspace.tasks.filter((task) => !ids.has(task.id)),
             }))
           })
+          yield* serviceResult(s.attachments.prune())
         } else {
           const now = new Date().toISOString()
           s.store.update((workspace) => ({
@@ -922,11 +922,12 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             path: maxValue(minValue(Schema.String, 1), 4000),
             turnId: Schema.optional(idSchema),
             checkoutId: Schema.optional(idSchema),
+            working: Schema.optional(Schema.Boolean),
           }),
           yield* serviceResult(body(request)),
         )
         return yield* serviceResult(
-          s.tasks.filePreview(input.id, input.path, input.turnId, input.checkoutId),
+          s.tasks.filePreview(input.id, input.path, input.turnId, input.checkoutId, input.working),
         )
       }
       if (method === 'POST' && path === '/api/tasks/file/restore') {

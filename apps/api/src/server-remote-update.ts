@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { fetchGitHubRelease } from '@dovo/protocol/github-release-auth'
 import { runServerUpdateCommand } from './server-update-command.js'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
@@ -43,7 +44,7 @@ function serviceLauncher(directory: string) {
 }
 export async function releaseAsset(version: string, channel: 'stable' | 'nightly') {
   const tag = `v${version}`
-  const response = await fetch(
+  const response = await fetchGitHubRelease(
     `https://api.github.com/repos/dovocode/dovo-studio/releases/tags/${tag}`,
     {
       headers: { Accept: 'application/vnd.github+json' },
@@ -221,8 +222,7 @@ export async function runRemoteServerUpdate(directory: string, version: string) 
         status(directory, { status: 'installing', version, progress: 100 })
         const cancel = await prepareRestart(directory)
         try {
-          await updateService(directory, launcher)
-          await verifyInstalled(directory, version)
+          await updateService(directory, launcher, () => verifyInstalled(directory, version))
         } catch (error) {
           await cancel()
           throw error

@@ -8,6 +8,7 @@ const receiptSchema = mutableStruct({
   result: Schema.NullOr(Schema.String),
 })
 const outcomeSchema = Schema.Union([
+  mutableStruct({ retired: Schema.Literal(true) }),
   mutableStruct({ ok: Schema.Literal(true), value: Schema.Unknown }),
   mutableStruct({ ok: Schema.Literal(false), status: Schema.Number, error: Schema.String }),
 ])
@@ -19,6 +20,17 @@ export class MutationReceipts {
     db.exec(
       'CREATE TABLE IF NOT EXISTS mutation_receipts (device_id TEXT NOT NULL, id TEXT NOT NULL, fingerprint TEXT NOT NULL, result TEXT, PRIMARY KEY(device_id,id))',
     )
+  }
+  /** Retain compact identities forever so an old journal cannot repeat acknowledged effects. */
+  acknowledge(deviceId: string, ids: readonly string[]) {
+    const retire = this.db.prepare(
+      'UPDATE mutation_receipts SET result=? WHERE device_id=? AND id=? AND result IS NOT NULL',
+    )
+    this.db.transaction(() => {
+      for (const id of ids)
+        if (!this.pending.has(JSON.stringify([deviceId, id])))
+          retire.run(JSON.stringify({ retired: true }), deviceId, id)
+    })()
   }
   async execute(
     deviceId: string,
@@ -40,6 +52,11 @@ export class MutationReceipts {
       if (pending) return pending
       if (previous.result !== null) {
         const result = decode(outcomeSchema, JSON.parse(previous.result))
+        if ('retired' in result)
+          throw new HttpError(
+            409,
+            'This action was already acknowledged. Discard the stale saved action; it was not repeated.',
+          )
         if (!result.ok) throw new HttpError(result.status, result.error)
         return result.value
       }

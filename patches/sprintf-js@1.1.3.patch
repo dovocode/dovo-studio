@@ -1,0 +1,36 @@
+diff --git a/src/sprintf.js b/src/sprintf.js
+index 65d6324645ef1d0133614a71497751009dc5c912..f33f5c0db65d8ee6d384c52aa65de49ca78d1288 100644
+--- a/src/sprintf.js
++++ b/src/sprintf.js
+@@ -149,9 +149,19 @@
+         var _fmt = fmt, match, parse_tree = [], arg_names = 0
+         while (_fmt) {
+             if ((match = re.text.exec(_fmt)) !== null) {
++                // ECMAScript numeric formatters accept at most 100 precision digits.
++                // Clamp untrusted format precision before calling native methods.
++                if (/[efg]/.test(match[8]) && match[7] !== undefined) {
++                    match[7] = String(Math.max(match[8] === 'g' ? 1 : 0, Math.min(Number(match[7]), 100)))
++                }
+                 parse_tree.push(match[0])
+             }
+             else if ((match = re.modulo.exec(_fmt)) !== null) {
++                // ECMAScript numeric formatters accept at most 100 precision digits.
++                // Clamp untrusted format precision before calling native methods.
++                if (/[efg]/.test(match[8]) && match[7] !== undefined) {
++                    match[7] = String(Math.max(match[8] === 'g' ? 1 : 0, Math.min(Number(match[7]), 100)))
++                }
+                 parse_tree.push('%')
+             }
+             else if ((match = re.placeholder.exec(_fmt)) !== null) {
+@@ -184,6 +194,11 @@
+                     throw new Error('[sprintf] mixing positional and named placeholders is not (yet) supported')
+                 }
+ 
++                // ECMAScript numeric formatters accept at most 100 precision digits.
++                // Clamp untrusted format precision before calling native methods.
++                if (/[efg]/.test(match[8]) && match[7] !== undefined) {
++                    match[7] = String(Math.max(match[8] === 'g' ? 1 : 0, Math.min(Number(match[7]), 100)))
++                }
+                 parse_tree.push(
+                     {
+                         placeholder: match[0],

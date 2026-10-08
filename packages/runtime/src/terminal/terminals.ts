@@ -9,6 +9,7 @@ import type * as pty from 'node-pty'
 import type { TerminalInfo } from '@dovo/protocol'
 import { processEnvironment } from '../process.js'
 import { HttpError } from '../errors.js'
+import { stopUnixTerminal } from './stop-terminal.js'
 // node-pty is a native addon that is only needed once a terminal is opened. Loading it
 // lazily keeps it (and its native binding) out of the runtime's startup module graph.
 let ptyModule: typeof pty | undefined
@@ -31,11 +32,11 @@ type Session = {
   process: pty.IPty
   buffer: string
   listeners: Set<(data: string) => void>
-  shutdown?: ReturnType<typeof setTimeout>
 }
 export class Terminals {
   private pendingEnsure = new Map<string, Promise<TerminalInfo>>()
   private exits = new Set<Promise<void>>()
+  private shutdowns = new Set<Promise<void>>()
   constructor(
     private settings: () => CommandSettings = () => decode(commandsSchema, {}),
     private activity?: Pick<Activity, 'add'>,
@@ -102,11 +103,15 @@ export class Terminals {
     // must not permanently consume slots needed by new work. Attached output stays.
     for (const [id, session] of this.sessions) {
       if (this.sessions.size < 20) break
-      if (session.info.exited && !session.listeners.size) this.close(id)
+      if (session.info.exited && !session.listeners.size) void this.close(id)
     }
     if (this.sessions.size >= 20)
       throw new HttpError(409, 'Close a terminal before opening another (limit 20)')
-    const env = { ...processEnvironment(), ...launch.env }
+    const inherited = processEnvironment()
+    // PORT selects Dovo's own listener. Project servers must use their own defaults;
+    // an explicit command environment can still select a port.
+    delete inherited.PORT
+    const env = { ...inherited, ...launch.env }
     delete env.DOVO_OWNER_TOKEN
     delete env.ELECTRON_RUN_AS_NODE
     const id = randomUUID(),
@@ -149,7 +154,6 @@ export class Terminals {
       notify(session.listeners, data)
     })
     terminal.onExit(({ exitCode }) => {
-      clearTimeout(session.shutdown)
       session.info = {
         ...session.info,
         exited: true,
@@ -187,35 +191,35 @@ export class Terminals {
   }
   close(id: string) {
     const session = this.get(id)
+    let shutdown = Promise.resolve()
     if (!session.info.exited) {
-      session.process.kill()
-      // A shell or custom command can ignore SIGHUP. Keep ownership until exit,
-      // but do not let it survive a closed terminal or block runtime shutdown.
-      if (process.platform !== 'win32')
-        session.shutdown = setTimeout(() => {
-          if (session.info.exited) return
-          try {
-            // forkpty gives each terminal its own process group.
-            process.kill(-session.process.pid, 'SIGKILL')
-          } catch (error) {
-            if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH'))
-              console.error('Terminal forced shutdown failed', error)
-          }
-        }, 1000)
+      if (process.platform === 'win32') session.process.kill()
+      else shutdown = stopUnixTerminal(session.process, () => session.info.exited)
     }
+    this.shutdowns.add(shutdown)
+    void shutdown.then(
+      () => this.shutdowns.delete(shutdown),
+      (error) => console.error('Terminal shutdown failed', error),
+    )
     this.activity?.add('terminal', id, 'Terminal closed', {
       taskId: session.info.taskId,
     })
     this.sessions.delete(id)
+    return shutdown
   }
   async dispose() {
-    for (const id of this.sessions.keys()) this.close(id)
+    for (const id of this.sessions.keys()) void this.close(id)
     // kill() can be deferred until a Windows PTY is ready. Closing the list entry
     // does not mean its process and working-directory handles have been released.
     let timeout: ReturnType<typeof setTimeout> | undefined
     try {
       await Promise.race([
-        Promise.all(this.exits),
+        Promise.allSettled([...this.exits, ...this.shutdowns]).then((results) => {
+          const failures: unknown[] = []
+          for (const result of results)
+            if (result.status === 'rejected') failures.push(result.reason)
+          if (failures.length) throw new AggregateError(failures, 'Terminal shutdown failed')
+        }),
         new Promise<never>((_, reject) => {
           timeout = setTimeout(
             () => reject(new Error('Terminal processes did not exit during shutdown')),

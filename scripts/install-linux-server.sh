@@ -44,11 +44,31 @@ case "$(uname -m)" in
 esac
 
 api=https://api.github.com/repos/dovocode/dovo-studio/releases
+github_token=${GH_TOKEN:-}
+[[ "$github_token" =~ ^[A-Za-z0-9_]+$ ]] || github_token=${GITHUB_TOKEN:-}
+[[ "$github_token" =~ ^[A-Za-z0-9_]+$ ]] || github_token=
+if [[ -z "$github_token" ]] && command -v gh >/dev/null 2>&1; then
+  if command -v timeout >/dev/null 2>&1; then
+    github_token=$(GH_PROMPT_DISABLED=1 timeout 5s gh auth token --hostname github.com 2>/dev/null) || github_token=
+  else
+    github_token=$(GH_PROMPT_DISABLED=1 gh auth token --hostname github.com 2>/dev/null) || github_token=
+  fi
+fi
+[[ "$github_token" =~ ^[A-Za-z0-9_]+$ ]] || github_token=
+github_api() {
+  if [[ -n "$github_token" ]]; then
+    # Feed the header through stdin so credentials never appear in curl's command arguments.
+    printf 'header = "Authorization: Bearer %s"\n' "$github_token" |
+      curl -fsSL --retry 2 --config - -H 'Accept: application/vnd.github+json' "$1"
+  else
+    curl -fsSL --retry 2 -H 'Accept: application/vnd.github+json' "$1"
+  fi
+}
 if [[ "$channel" == stable ]]; then
-  release=$(curl -fsSL --retry 2 -H 'Accept: application/vnd.github+json' "$api/latest") ||
+  release=$(github_api "$api/latest") ||
     fail 'Could not load the latest Stable release'
 else
-  releases=$(curl -fsSL --retry 2 -H 'Accept: application/vnd.github+json' "$api?per_page=30") ||
+  releases=$(github_api "$api?per_page=30") ||
     fail 'Could not load Nightly releases'
   release=$(jq -c '[.[] | select(.prerelease and (.draft | not) and (.tag_name | test("-nightly[.]")))][0] // empty' <<<"$releases") ||
     fail 'Invalid release metadata'

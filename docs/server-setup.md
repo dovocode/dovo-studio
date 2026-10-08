@@ -59,6 +59,12 @@ the pipe in the quoted command. Run as your normal user, without `sudo`. To keep
 after logout or boot, an administrator can enable user lingering with
 `sudo loginctl enable-linger "$USER"`. A failed update keeps the existing data and pairings.
 
+Release checks use `GH_TOKEN`, then `GITHUB_TOKEN`, then an existing GitHub CLI login
+(`gh auth token --hostname github.com`) to avoid GitHub's unauthenticated API rate limit. If `gh` is
+missing or signed out, installation and updates still try anonymously. Run `gh auth login` as the OS
+user that runs Dovo to enable this fallback. Tokens are used only for GitHub API metadata; public
+archive downloads remain unauthenticated.
+
 ```sh
 # From a source checkout:
 pnpm server service install --host 0.0.0.0
@@ -487,6 +493,12 @@ that phone again. Avoid operating two processes over the same database.
 
 ## Troubleshooting
 
+Project terminals do not inherit the runtime's `PORT` setting; development servers use their own
+defaults or an explicitly configured command port. A terminal connection drop preserves the shell
+and its running commands. Reconnecting attaches to that same session and replays recent output;
+hide/show also keeps commands running. Closing the terminal tab stops its commands and child
+processes.
+
 | Symptom                                      | Check and next action                                                                                                                                                                                     |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Phone says offline or never connects         | Run `server status` on the host. If stopped, run `server start`. Verify host sleep, VPN connection on both devices, and the exact address/port.                                                           |
@@ -681,3 +693,75 @@ or alter Windows terminal delegation. Code signing is handled separately.
 
 The chooser, security check and supervisor have automated tests. Full provisioning, Windows/WSL
 networking and actual agent runs still require verification on a Windows machine.
+
+### Worktree location, readiness and recovery
+
+Set **Settings → Computers → Worktrees → Worktree folder location** on the computer that runs
+agents. It accepts an absolute host path or `~/…`. That setting takes precedence over
+`DOVO_DATA_ROOT/worktrees`; an empty setting uses the environment default, or `~/.dovo/worktrees`.
+Desktop and background launchers preserve `DOVO_DATA_ROOT`. New checkouts use the selected folder.
+Existing registered checkouts remain at their original location and retain their task ownership.
+Cleanup keeps branches, and saved linked-history previews read the repository's Git objects even
+when the original worktree is gone. Undo/Redo reattaches the saved branch when necessary.
+
+**Devices & runtime → Manage computer** shows authenticated readiness and backup controls.
+`dovo-server doctor --json` includes the same roots, scheduler progress, storage availability,
+queued/paused input, waiting approvals/questions, running durations and uncertain provider actions.
+A scheduler without a successful tick for 20 seconds needs attention; this does not cancel an agent
+or replay a provider action. The public `/health` endpoint remains a simple connectivity check. HTTP
+LAN/VPN addresses, pairing codes and device tokens continue to work.
+
+The runtime creates a verified SQLite backup on its first upkeep pass and at least daily while it
+runs. Backups live beside the database in `backups/`, with five copies and a 512 MB retention
+budget. The newest pre-update rollback snapshot is always retained, even if it alone exceeds that
+budget. Routine backups larger than 512 MB fail explicitly; use operator-managed SQLite backups for
+larger databases. Failed writes retain earlier snapshots, and an interrupted partial snapshot is
+removed under the backup lock before the next write. The panel shows the most recent successful
+snapshot and persisted failure. SQLite's backup API includes committed WAL contents and attachment
+BLOBs; repository/worktree files, host `settings.json` and owner-token files need their own backup.
+
+```sh
+dovo-server backup --data-dir ~/.dovo
+dovo-server backups --data-dir ~/.dovo --json
+# Stop the OS service as well, if installed, so it cannot restart the runtime.
+dovo-server stop --data-dir ~/.dovo
+dovo-server restore --data-dir ~/.dovo --backup /absolute/path/to/runtime-backup-….sqlite
+dovo-server start --data-dir ~/.dovo
+```
+
+Restore verifies SQLite integrity, obtains the runtime's process lock, preserves the current
+database as another backup and replaces it atomically. It refuses a live runtime. Device pairings
+and conversation data return to the selected snapshot; host owner-token/configuration files remain
+in place. Inspect the pre-restore copy if newer work must be recovered. A structurally readable
+SQLite backup can still contain damaged conversation records; restoring it does not silently repair
+or discard those records.
+
+If a conversation cannot hydrate, export the data without starting the runtime:
+
+```sh
+dovo-server recovery-export --data-dir ~/.dovo --output /absolute/path/to/new-recovery-folder
+```
+
+The destination must be new. It contains a consistent SQLite copy, raw document/history/job JSONL
+and an integrity/history inspection report. Malformed values are preserved verbatim; no agent
+resumes and no workspace records are rewritten. These private files include sensitive runtime data.
+Retain the original database and inspect the report before choosing a backup to restore.
+
+Runtime logs (`server.log`, `runtime-service.log`, `service.log`, `server-update.log`) are checked
+once a minute. Files above 10 MB rotate into three retained 10 MB tails. Copy/truncate keeps the
+runtime and supervisor's append descriptors valid. A burst may exceed the budget until the next
+check, and writes racing truncation can be lost. Use the OS journal or an external log collector if
+complete log retention is required. Server startup and source-update commands also check rotation
+before opening a log. Source-build `update.log` files rotate in their release directory. The OS
+journal remains managed by the OS.
+
+Archive and Homebrew update activation now covers stopping, SQLite backup, launcher selection,
+startup and authenticated version verification in one recovery operation. A failed candidate
+restores the old release and database only after the candidate is confirmed stopped. If stopping or
+recovery fails, the error names the retained backup; Dovo does not overwrite a database beneath a
+live process.
+
+Homebrew activation keeps the previous Cellar installation by disabling automatic install cleanup
+during the upgrade. Recovery pins the service to that previous launcher; keep it until the updated
+runtime is confirmed healthy. After a failed upgrade, select a verified replacement explicitly with
+`dovo-server service update --launcher /path/to/bin/dovo-server`.

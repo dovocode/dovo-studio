@@ -19,6 +19,12 @@
       "import": "./dist/generated/browser-viewer.js",
       "default": "./dist/generated/browser-viewer.js"
     },
+    "./github-release-auth": {
+      "types": "./src/node/github-release-auth.ts",
+      "development": "./src/node/github-release-auth.ts",
+      "import": "./dist/node/github-release-auth.js",
+      "default": "./dist/node/github-release-auth.js"
+    },
     "./local-settings": {
       "types": "./src/node/local-settings.ts",
       "development": "./src/node/local-settings.ts",

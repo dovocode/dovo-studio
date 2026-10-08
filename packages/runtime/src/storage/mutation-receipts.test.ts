@@ -4,6 +4,32 @@ import { MutationReceipts } from './mutation-receipts.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+it('compacts acknowledged results while retaining deduplication and unresolved receipts', async () => {
+  const db = openDatabase(':memory:')
+  try {
+    const receipts = new MutationReceipts(db)
+    const run = vi.fn<() => Promise<{ large: string }>>(async () => ({ large: 'x'.repeat(10000) }))
+    await receipts.execute('phone', 'done', {}, run)
+    db.prepare('INSERT INTO mutation_receipts VALUES (?,?,?,NULL)').run(
+      'phone',
+      'uncertain',
+      'fingerprint',
+    )
+    receipts.acknowledge('phone', ['done', 'uncertain'])
+    expect(db.prepare('SELECT result FROM mutation_receipts WHERE id=?').get('done')).toEqual({
+      result: '{"retired":true}',
+    })
+    expect(db.prepare('SELECT result FROM mutation_receipts WHERE id=?').get('uncertain')).toEqual({
+      result: null,
+    })
+    await expect(new MutationReceipts(db).execute('phone', 'done', {}, run)).rejects.toThrow(
+      'already acknowledged',
+    )
+    expect(run).toHaveBeenCalledOnce()
+  } finally {
+    db.close()
+  }
+})
 it('replays committed responses across restart without repeating work or accepting changed payloads', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'dovo-receipts-'))
   let db = openDatabase(join(directory, 'runtime.sqlite'))

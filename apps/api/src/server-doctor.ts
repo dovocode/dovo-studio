@@ -1,7 +1,14 @@
 import { decode } from '@dovo/protocol'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { commandsSchema, commandSettingsResponse, snapshotSchema, type Agent } from '@dovo/protocol'
+import {
+  commandsSchema,
+  commandSettingsResponse,
+  snapshotSchema,
+  runtimeDiagnosticsSchema,
+  type RuntimeDiagnostics,
+  type Agent,
+} from '@dovo/protocol'
 import { checkAdapterUpdates } from '@dovo/runtime'
 import { readConnection } from './connection.js'
 import { serverStatus } from './server-manager.js'
@@ -9,6 +16,7 @@ export async function serverDoctor(directory: string, checkUpdates = false) {
   const status = await serverStatus(directory)
   let settings = decode(commandsSchema, {})
   let agents: Agent[] = []
+  let diagnostics: RuntimeDiagnostics | null = null
   const warnings: string[] = []
   if (status.running) {
     try {
@@ -17,7 +25,7 @@ export async function serverDoctor(directory: string, checkUpdates = false) {
         Authorization: `Bearer ${connection.token}`,
         'Content-Type': 'application/json',
       }
-      const [commands, snapshot] = await Promise.all([
+      const [commands, snapshot, diagnostic] = await Promise.all([
         fetch(connection.address + '/api/commands/read', {
           method: 'POST',
           body: '{}',
@@ -30,8 +38,22 @@ export async function serverDoctor(directory: string, checkUpdates = false) {
           redirect: 'error',
           signal: AbortSignal.timeout(5000),
         }),
+        fetch(connection.address + '/api/runtime/diagnostics', {
+          method: 'POST',
+          body: '{}',
+          headers,
+          redirect: 'error',
+          signal: AbortSignal.timeout(5000),
+        }),
       ])
       if (!commands.ok || !snapshot.ok) throw new Error('Runtime settings could not be read.')
+      if (diagnostic.ok) {
+        diagnostics = decode(runtimeDiagnosticsSchema, await diagnostic.json())
+        warnings.push(...diagnostics.warnings)
+      } else
+        warnings.push(
+          'Runtime diagnostics are unavailable. Update the runtime to enable readiness checks.',
+        )
       settings = decode(commandSettingsResponse, await commands.json()).settings
       agents = decode(snapshotSchema, await snapshot.json()).workspace.agents
     } catch (error) {
@@ -62,6 +84,7 @@ export async function serverDoctor(directory: string, checkUpdates = false) {
     nodeVersion: process.version,
     platform: `${process.platform}/${process.arch}`,
     runtime: status,
+    diagnostics,
     warnings,
     adapters,
   }

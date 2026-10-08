@@ -105,14 +105,25 @@ export class Jobs {
     )
       throw new HttpError(409, 'Finish or cancel the automation before changing this thread.')
   }
+  schedulerStatus = { lastSuccess: null as string | null, error: null as string | null }
+  scheduleDiagnostics() {
+    return [...this.scheduleErrors.entries()].map(([id, error]) => ({ id, error }))
+  }
   startScheduler() {
     if (this.scheduler || this.stopping) return
     this.scheduler = startPolling(
-      Effect.try(() => this.tick()),
+      Effect.try(() => {
+        this.tick()
+        this.schedulerStatus.lastSuccess = new Date().toISOString()
+        this.schedulerStatus.error = null
+      }),
       {
         interval: 1000,
         immediate: false,
-        onError: (error) => console.error('Scheduler failed', error),
+        onError: (error) => {
+          this.schedulerStatus.error = String(error)
+          console.error('Scheduler failed', error)
+        },
       },
     )
     this.githubScheduler = startPolling(

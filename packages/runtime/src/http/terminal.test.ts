@@ -3,6 +3,79 @@ import { once } from 'node:events'
 import { WebSocket } from 'ws'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
+import { runtimeIntegration, waitForRuntime } from '../testing/integration'
+vi.setConfig(runtimeIntegration)
+
+it('reconnects to the same running command after a terminal socket disconnects', async () => {
+  const f = await fixture(),
+    runtime = await startRuntime({
+      databasePath: ':memory:',
+      ownerToken: 'test-owner-token-with-at-least-32-characters',
+      port: 0,
+    })
+  const sockets: WebSocket[] = []
+  try {
+    const s = runtime.services,
+      token = 'test-device-token-with-at-least-32-characters'
+    s.devices.add('Phone', token)
+    const terminal = s.terminals.createCommand(
+      'task',
+      f.directory,
+      {
+        command: process.execPath,
+        args: [
+          '-e',
+          `const server = require('node:http').createServer((request, response) => response.end(String(process.pid)));
+           server.listen(0, '127.0.0.1', () => console.log('listener-port:' + server.address().port));`,
+        ],
+        env: {},
+      },
+      'Running server',
+    )
+    const pid = s.terminals.get(terminal.id).process.pid
+    let port = 0
+    await waitForRuntime(() => {
+      const match = s.terminals.get(terminal.id).buffer.match(/listener-port:(\d+)/)
+      expect(match).not.toBeNull()
+      port = Number(match![1])
+    })
+    const connect = async () => {
+      const socket = new WebSocket(
+        `ws://127.0.0.1:${runtime.port}/ws/terminal?ticket=${s.tickets.issue(token, terminal.id)}`,
+      )
+      sockets.push(socket)
+      let output = ''
+      socket.on('message', (data, binary) => {
+        if (!binary)
+          output += (
+            Array.isArray(data)
+              ? Buffer.concat(data)
+              : Buffer.isBuffer(data)
+                ? data
+                : Buffer.from(data)
+          ).toString('utf8')
+      })
+      await once(socket, 'open')
+      await waitForRuntime(() => expect(output).toContain(`listener-port:${port}`))
+      return socket
+    }
+    const first = await connect()
+    const closed = once(first, 'close')
+    first.terminate()
+    await closed
+    await waitForRuntime(() => expect(s.terminals.get(terminal.id).listeners.size).toBe(0))
+    await connect()
+    expect(s.terminals.list()).toEqual([terminal])
+    expect(s.terminals.get(terminal.id).process.pid).toBe(pid)
+    const response = await fetch(`http://127.0.0.1:${port}`)
+    expect(await response.text()).toBe(String(pid))
+  } finally {
+    for (const socket of sockets) socket.terminate()
+    await runtime.close()
+    await f.cleanup()
+  }
+})
+
 it('uses one-time socket tickets and disconnects revoked devices', async () => {
   const f = await fixture(),
     runtime = await startRuntime({

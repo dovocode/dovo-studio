@@ -4,6 +4,9 @@ import { fixture } from '../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration'
 import { stripVTControlCharacters } from 'node:util'
 import { Terminal } from '@xterm/headless'
+import { createServer } from 'node:net'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 vi.setConfig(runtimeIntegration)
 function killIfRunning(pid: number) {
   try {
@@ -12,6 +15,150 @@ function killIfRunning(pid: number) {
     if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error
   }
 }
+
+it('keeps the runtime listener port out of project commands but honors command overrides', async () => {
+  const f = await fixture()
+  const terminals = new Terminals()
+  const runtimeListener = createServer()
+  try {
+    await new Promise<void>((resolve) => runtimeListener.listen(0, '127.0.0.1', resolve))
+    const address = runtimeListener.address()
+    if (!address || typeof address === 'string') throw new Error('Invalid listener fixture')
+    vi.stubEnv('PORT', String(address.port))
+    const session = terminals.createCommand(
+      'task',
+      f.directory,
+      {
+        command: process.execPath,
+        args: [
+          '-e',
+          `const server = require('node:net').createServer();
+           server.on('error', error => { console.log(error.code); process.exit(1); });
+           server.listen(Number(process.env.PORT ?? 0), '127.0.0.1', () => console.log('project-port:' + server.address().port));`,
+        ],
+        env: {},
+      },
+      'Project server',
+    )
+    await waitForRuntime(() => {
+      const output = terminals.get(session.id).buffer
+      expect(output).not.toContain('EADDRINUSE')
+      const match = output.match(/project-port:(\d+)/)
+      expect(match).not.toBeNull()
+      expect(Number(match![1])).not.toBe(address.port)
+    })
+    const explicit = terminals.createCommand(
+      'task',
+      f.directory,
+      {
+        command: process.execPath,
+        args: ['-e', "console.log('configured-port:' + process.env.PORT)"],
+        env: { PORT: '24680' },
+      },
+      'Configured command',
+    )
+    await waitForRuntime(() =>
+      expect(terminals.get(explicit.id).buffer).toContain('configured-port:24680'),
+    )
+    expect(runtimeListener.listening).toBe(true)
+  } finally {
+    vi.unstubAllEnvs()
+    await terminals.dispose()
+    await new Promise<void>((resolve) => runtimeListener.close(() => resolve()))
+    await f.cleanup()
+  }
+})
+
+for (const foreground of [false, true])
+  it.skipIf(process.platform === 'win32')(
+    `releases a child server port after closing its ${foreground ? 'interactive foreground' : 'launcher'} terminal`,
+    async () => {
+      const f = await fixture()
+      const terminals = new Terminals()
+      const unrelated = createServer()
+      let descendantPid: number | undefined
+      let replacement: ReturnType<typeof createServer> | undefined
+      try {
+        await new Promise<void>((resolve) => unrelated.listen(0, '127.0.0.1', resolve))
+        const record = join(f.directory, 'listener.json')
+        const source = `
+          process.on('SIGHUP', () => {});
+          process.on('SIGTERM', () => {});
+          const server = require('node:net').createServer();
+          server.listen(0, '127.0.0.1', () => {
+            require('node:fs').writeFileSync(process.argv[1], JSON.stringify({pid:process.pid,port:server.address().port}));
+            console.log('listener-ready');
+          });`
+        const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+        const session = terminals.createCommand(
+          'task',
+          f.directory,
+          foreground
+            ? {
+                command: '/bin/bash',
+                // The trailing command keeps bash alive while job control gives the server its own group.
+                args: [
+                  '--noprofile',
+                  '--norc',
+                  '-i',
+                  '-c',
+                  `${quote(process.execPath)} -e ${quote(source)} ${quote(record)}; :`,
+                ],
+                env: {},
+              }
+            : {
+                command: process.execPath,
+                args: [
+                  '-e',
+                  `require('node:child_process').spawn(process.execPath, ['-e', process.argv[1], process.argv[2]], {stdio:'inherit'}); setInterval(()=>{},1000)`,
+                  source,
+                  record,
+                ],
+                env: {},
+              },
+          'Child server',
+        )
+        let port = 0
+        await waitForRuntime(async () => {
+          const saved: unknown = JSON.parse(await readFile(record, 'utf8'))
+          if (
+            !saved ||
+            typeof saved !== 'object' ||
+            !('pid' in saved) ||
+            typeof saved.pid !== 'number' ||
+            !('port' in saved) ||
+            typeof saved.port !== 'number'
+          )
+            throw new Error('Invalid listener fixture')
+          descendantPid = saved.pid
+          port = saved.port
+          expect(terminals.get(session.id).buffer).toContain('listener-ready')
+        })
+        const rootPid = terminals.get(session.id).process.pid
+        const detach = terminals.attach(session.id, () => {})
+        detach()
+        const reattach = terminals.attach(session.id, () => {})
+        expect((await terminals.ensure('task', async () => f.directory)).id).toBe(session.id)
+        expect(terminals.get(session.id).process.pid).toBe(rootPid)
+        reattach()
+        await terminals.close(session.id)
+        await terminals.dispose()
+        replacement = createServer()
+        await new Promise<void>((resolve, reject) => {
+          replacement!.once('error', reject)
+          replacement!.listen(port, '127.0.0.1', resolve)
+        })
+        expect(unrelated.listening).toBe(true)
+      } finally {
+        if (descendantPid) killIfRunning(descendantPid)
+        if (replacement?.listening)
+          await new Promise<void>((resolve) => replacement!.close(() => resolve()))
+        await new Promise<void>((resolve) => unrelated.close(() => resolve()))
+        await terminals.dispose()
+        await f.cleanup()
+      }
+    },
+  )
 it.skipIf(process.platform !== 'win32')(
   'closes the Windows pseudoconsole and its child processes',
   async () => {
@@ -40,7 +187,7 @@ it.skipIf(process.platform !== 'win32')(
         expect(match).not.toBeNull()
         descendantPid = Number(match![1])
       })
-      terminals.close(session.id)
+      await terminals.close(session.id)
       await terminals.dispose()
       await waitForRuntime(() => expect(() => process.kill(descendantPid!, 0)).toThrow(/ESRCH/))
     } finally {
@@ -75,7 +222,7 @@ it.skipIf(process.platform === 'win32')('stops commands that ignore terminal han
     )
     const child = terminals.get(session.id)
     await waitForRuntime(() => expect(child.buffer).toContain('hangup-ready'))
-    terminals.close(session.id)
+    await terminals.close(session.id)
     await terminals.dispose()
     expect(child.info.exited).toBe(true)
     expect(() => process.kill(child.process.pid, 0)).toThrow(/ESRCH/)
@@ -102,9 +249,10 @@ it('waits for previously closed terminals to exit before completing disposal', a
     terminals.get(session.id).process.onExit(() => {
       exited = true
     })
-    terminals.close(session.id)
+    const closed = terminals.close(session.id)
     expect(terminals.list()).toEqual([])
     await terminals.dispose()
+    await closed
     expect(exited).toBe(true)
   } finally {
     await terminals.dispose()
@@ -123,7 +271,7 @@ it('reuses a live shell across simultaneous terminal openings', async () => {
     expect(first.id).toBe(second.id)
     expect(directory).toHaveBeenCalledTimes(1)
     expect((await terminals.ensure('task', directory)).id).toBe(first.id)
-    terminals.close(first.id)
+    await terminals.close(first.id)
     expect((await terminals.ensure('task', directory)).id).not.toBe(first.id)
   } finally {
     await terminals.dispose()
@@ -163,7 +311,7 @@ it('runs a real PTY and retains output when clients detach', async () => {
     expect(replay).toContain('dovo-pty-verified')
     detach()
     terminals.resize(session.id, 80, 30)
-    terminals.close(session.id)
+    await terminals.close(session.id)
     expect(terminals.list()).toEqual([])
   } finally {
     display.dispose()
@@ -200,7 +348,7 @@ it('keeps delivering terminal output when one client throws', async () => {
     terminals.input(session.id, outputCommand)
     await waitForRuntime(() => expect(output).toContain('dovo-pty-verified'))
     expect(reported).toHaveBeenCalled()
-    terminals.close(session.id)
+    await terminals.close(session.id)
   } finally {
     display.dispose()
     reported.mockRestore()

@@ -1,7 +1,7 @@
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
-import { mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdir, writeFile, rm, readdir } from 'node:fs/promises'
 import { mkdtempSync } from 'node:fs'
 import { dirname, join, resolve, basename } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -151,6 +151,39 @@ export class Attachments {
       ...attachment,
       path,
       data,
+    }
+  }
+  /** Reference-aware collection also repairs disk leftovers from interrupted task deletion. */
+  async prune() {
+    const retained = new Set(
+      this.store
+        .get()
+        .tasks.flatMap((task) => [
+          ...(task.draftAttachments ?? []),
+          ...task.messages.flatMap((message) => message.attachments ?? []),
+          ...(task.queue ?? []).flatMap((message) => message.attachments ?? []),
+        ])
+        .map((file) => file.id),
+    )
+    const rows = this.db
+      .prepare('SELECT id FROM attachments')
+      .all()
+      .map((row) => decode(mutableStruct({ id: Schema.String }), row).id)
+    const remove = this.db.prepare('DELETE FROM attachments WHERE id=?')
+    this.db.transaction(() => {
+      for (const id of rows) if (!retained.has(id)) remove.run(id)
+    })()
+    let entries: string[]
+    try {
+      entries = await readdir(this.root)
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return
+      throw error
+    }
+    for (const id of entries) {
+      // Check again after asynchronous directory I/O; a new upload may have just committed.
+      if (!this.db.prepare('SELECT 1 FROM attachments WHERE id=?').get(id))
+        await rm(join(this.root, id), { recursive: true, force: true })
     }
   }
   async dispose() {

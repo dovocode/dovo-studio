@@ -1,11 +1,16 @@
 import { isDeepStrictEqual } from 'node:util'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { decode, linkedCheckoutsSchema, type LinkedCheckout } from '@dovo/protocol'
+import {
+  decode,
+  linkedCheckoutsSchema,
+  type LinkedCheckout,
+  type LinkedCheckpoint,
+} from '@dovo/protocol'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { GitService } from '../git/git.js'
 import { HttpError } from '../../errors.js'
-import { isTaskWorktree, taskWorktreeKeys } from './task-worktree-keys.js'
+import { isTaskWorktree, taskWorktreeKeys, worktreesRoot } from './task-worktree-keys.js'
 import { taskBranchName, taskWorktreePath } from './task-branch.js'
 import { repositoryPath } from '../repositories/paths.js'
 import { listBranches } from '../git/branches.js'
@@ -25,7 +30,38 @@ export class LinkedCheckouts {
   constructor(
     private store: WorkspaceStore,
     private git: GitService,
+    private worktrees: () => string = worktreesRoot,
   ) {}
+
+  /** Saved trees belong to the repository, not to the lifetime of a linked directory. */
+  async checkpointDirectory(checkpoint: LinkedCheckpoint, restore = false) {
+    const repo = this.store.get().repositories.find((item) => item.id === checkpoint.repositoryId)
+    if (!repo || repo.kind) throw new HttpError(404, 'The saved checkpoint project is unavailable')
+    const root = (await this.git.inspect(repo.path)).path
+    if (!restore) return root
+    const records = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
+      .split('\0\0')
+      .map((block) => block.split('\0'))
+      .filter((record) => !record.some((line) => line.startsWith('prunable')))
+    const branch = checkpoint.branch && `branch refs/heads/${checkpoint.branch}`
+    const listed =
+      records.find(
+        (record) =>
+          record.includes(`worktree ${checkpoint.directory}`) &&
+          (!branch || record.includes(branch)),
+      ) ?? (branch ? records.find((record) => record.includes(branch)) : undefined)
+    const directory = listed?.find((line) => line.startsWith('worktree '))?.slice(9)
+    if (directory) return directory
+    if (!checkpoint.branch)
+      throw new HttpError(409, 'Restore the saved linked checkout before undoing its changes')
+    const identity = await this.git.repositoryIdentity(root)
+    const target = join(this.worktrees(), taskWorktreePath(identity, root, checkpoint.branch))
+    await mkdir(dirname(target), { recursive: true })
+    await this.git.command(root, ['worktree', 'prune'])
+    // Reattach only the saved branch; never reset another checkout or invent a replacement branch.
+    await this.git.command(root, ['worktree', 'add', target, checkpoint.branch])
+    return target
+  }
 
   validate(value: unknown) {
     const links = decode(linkedCheckoutsSchema, value)
@@ -123,12 +159,12 @@ export class LinkedCheckouts {
         const common = (
           await this.git.command(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
         ).trim()
-        const keys = taskWorktreeKeys(common, `${id}:linked:${link.id}`)
-        directory = records
-          .flatMap((record) =>
-            record.filter((line) => line.startsWith('worktree ')).map((line) => line.slice(9)),
-          )
-          .find((path) => isTaskWorktree(path, keys))
+        const keys = taskWorktreeKeys(common, `${id}:linked:${link.id}`, this.worktrees())
+        directory = records.flatMap((record) => {
+          const path = record.find((line) => line.startsWith('worktree '))?.slice(9)
+          const branch = record.find((line) => line.startsWith('branch '))?.slice(7)
+          return path && isTaskWorktree(path, keys, branch) ? [path] : []
+        })[0]
         if (!directory) {
           const kept = (
             await this.git.command(root, [

@@ -1,6 +1,8 @@
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 const f = vi.hoisted(() => ({
+  token: vi.fn<() => Promise<string | undefined>>(async () => undefined),
+  githubFetch: vi.fn<typeof fetch>(async (input, init) => fetch(input, init)),
   open: vi.fn<(url: string) => Promise<void>>(async (_url) => {}),
   listeners: new Map<
     string,
@@ -22,6 +24,10 @@ const f = vi.hoisted(() => ({
   notes: 'Faster setup and fixes' as string | undefined,
   menu: undefined as unknown,
   states: [] as unknown[],
+}))
+vi.mock('@dovo/protocol/github-release-auth', () => ({
+  githubReleaseToken: f.token,
+  fetchGitHubRelease: f.githubFetch,
 }))
 vi.mock('@dovo/protocol/local-settings', () => ({
   readLocalSettingsSection: vi.fn<typeof readLocalSettingsSection>(() => undefined),
@@ -91,6 +97,7 @@ afterEach(() => {
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
   vi.clearAllMocks()
+  f.token.mockResolvedValue(undefined)
   vi.mocked(readLocalSettingsSection).mockReturnValue(undefined)
   f.listeners.clear()
   f.next = 'next'
@@ -155,6 +162,34 @@ it('loads release notes from the release when updater metadata omits them', asyn
   const updates = registerUpdates('/unused', async () => async () => {})
   await updates.refresh()
   await vi.waitFor(() => expect(updates.state().notes).toBe('New release changes'))
+  expect(f.githubFetch).toHaveBeenCalledOnce()
+})
+
+it('uses authenticated release discovery without sending a token to updater downloads', async () => {
+  f.token.mockResolvedValue('gh_fixture')
+  const metadata = {
+    tag_name: 'v0.0.9',
+    html_url: 'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.9',
+  }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      return Response.json(url.endsWith('/latest') ? metadata : [metadata])
+    }),
+  )
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => async () => {})
+  await updates.refresh()
+  expect(f.githubFetch).toHaveBeenCalledTimes(2)
+  expect(f.feed).toHaveBeenLastCalledWith({
+    provider: 'generic',
+    url: 'https://github.com/dovocode/dovo-studio/releases/download/v0.0.9/',
+  })
+  // Continue resolving each new version after the CLI login has been removed.
+  f.token.mockResolvedValue(undefined)
+  await updates.refresh()
+  expect(f.githubFetch).toHaveBeenCalledTimes(4)
 })
 it('asks again after the download before restarting', async () => {
   vi.stubGlobal(

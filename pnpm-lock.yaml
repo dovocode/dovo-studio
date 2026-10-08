@@ -115,6 +115,10 @@ catalogs:
       version: 1.0.0
 
 overrides:
+  shell-quote@<1.11.0: 1.12.0
+  compression@<1.8.2: 1.8.2
+  prosemirror-view@<1.42.6: 1.42.6
+  katex@<0.18.2: 0.18.2
   h3-v2: npm:h3@2.0.1-rc.20
   effect: 4.0.1
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-arm64': '-'
@@ -139,10 +143,13 @@ overrides:
 
 patchedDependencies:
   app-builder-lib@26.15.3: 4688f96749e3d76cf27bc535d874470bf264610a331db13644df7715d699acf1
+  braces@3.0.3: de064a4d75e634c66eb99d727b5ba9bf2034053a255d342706578a7e2894abea
   decode-uri-component@0.2.2: e231f71fc619a04192ab399e3c4bc6f2935a1a346617895db275cb001afe0d2c
+  node-forge@1.4.0: 921ab7252db4f3a5bce2da71cba23c50f86eafee34392708f328de6b87158400
   node-pty@1.2.0-beta.15: 37fdac163ed4da76b410333015449ae5101dd110c1cff818ae62a379e7771bfa
   react-native-diffs@1.0.3: 3af6deeb51afb3c84a029d698c27493d85c9d8870d20a46a17433acb1a1ce799
   react-native-enriched-markdown@1.1.0: eeab3cc9092dd8a0c2db9d4b01ba20498f87e975df04ad2fb5fe30c80de8ca1d
+  sprintf-js@1.1.3: 150ae794ae4b4b0c19e0b66fe0419c3de0a8a6d60c3a0d228d269db2c3047ba9
 
 importers:
 
@@ -419,7 +426,7 @@ importers:
         version: 1.0.3(patch_hash=3af6deeb51afb3c84a029d698c27493d85c9d8870d20a46a17433acb1a1ce799)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
       react-native-enriched-markdown:
         specifier: 1.1.0
-        version: 1.1.0(patch_hash=eeab3cc9092dd8a0c2db9d4b01ba20498f87e975df04ad2fb5fe30c80de8ca1d)(katex@0.16.47)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
+        version: 1.1.0(patch_hash=eeab3cc9092dd8a0c2db9d4b01ba20498f87e975df04ad2fb5fe30c80de8ca1d)(katex@0.18.2)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
       react-native-gesture-handler:
         specifier: ~2.32.0
         version: 2.32.0(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
@@ -796,7 +803,7 @@ importers:
         version: 1.2.1
       mdast-util-from-adf:
         specifier: ^2.2.0
-        version: 2.2.0(react@18.3.1)
+        version: 2.2.0(react@19.3.0)
       mdast-util-gfm:
         specifier: ^3.1.0
         version: 3.1.0(supports-color@8.1.1)
@@ -4451,62 +4458,73 @@ packages:
     resolution: {integrity: sha512-4O4lkCQIzPZGjiNB1GORSI6hBECbiiSBS/APZXPvNKYH+nhY4uuqv03LNXA+SET3hoBjvr95P5rIhY8KQaQUBA==}
     cpu: [arm64]
     os: [darwin]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-darwin-x64@0.9.5':
     resolution: {integrity: sha512-9EvoUO0SEhD6/d8VHdWuPerepPMSR1y84+UEgz8Un1Ope14Oe7xMvePpEQLTLovoIFZ8Zg3iZ8z8E11pZMqC3g==}
     cpu: [x64]
     os: [darwin]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-freebsd-x64@0.9.5':
     resolution: {integrity: sha512-HqT78WwgHTmp8lwujoUa9CrIortX4DdpuiVC18ZPSGvuuJf4ylpIEI6QrQEM78Zwz3muhAWAOXZ5irdiYY+AyA==}
     cpu: [x64]
     os: [freebsd]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-arm-gnu@0.9.5':
     resolution: {integrity: sha512-QJXwIW6Ms3QIawbcBIedmrmXnfdpuAOjZJ/eAABq5XTzWvSxZ7lutu9W5yIHahlaTaFnBo7ikrVMD1szLTpPUw==}
     cpu: [arm]
     os: [linux]
     libc: [glibc]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-arm-musl@0.9.5':
     resolution: {integrity: sha512-eHbFy3IHGb+IYarrYwAo0yWSEQV3eAmEn6VrsKA6I1Wy1YPJxWqSJlV69JhqsHtJuJlljUIF3ex0y46yaKIu9w==}
     cpu: [arm]
     os: [linux]
     libc: [musl]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-arm64-gnu@0.9.5':
     resolution: {integrity: sha512-ByoJMbySTaDhjAXSu8q6Lh7HKg3YoesXpcT72aYk0Aiw4PCznmY4ybpLTq0RCvp0RIPhFm/6yECFiGBwyCC1nw==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-arm64-musl@0.9.5':
     resolution: {integrity: sha512-gD9vfXIoBw1toSxhO9rgmSu/FEfy3PMznJAxVjIuH8DrWEiDKXmJO0pJKfj1Ltbe/TmtWVZR+TjISqeSIGQzMg==}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-x64-gnu@0.9.5':
     resolution: {integrity: sha512-BARvdnvqMGjOr5Iel2JH+9H5vAIE0R6H0Z2fsT02xrvmI/1ZXNB8lkuX+ZGevPhZb3zJ9WeC/R8JZstrsUOK5g==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-linux-x64-musl@0.9.5':
     resolution: {integrity: sha512-x8flcevS1fbb7ESrmpOY/pON4eInSaE/7Ktjqx2udOE2W33BNSZmJuwpyUgo54AoHNqrcaM7szqydyJn5fNvew==}
     cpu: [x64]
     os: [linux]
     libc: [musl]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-win32-arm64@0.9.5':
     resolution: {integrity: sha512-KOL/rBatWqH4ZpCNoF8ZtSNdOJbAxBJLmk/VeRciepGROPTbPum1A9t67GpFgOU7qrkUWlPJdJ+KHKbvbmOt+w==}
     cpu: [arm64]
     os: [win32]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-codegen/binding-win32-x64@0.9.5':
     resolution: {integrity: sha512-FxENahEjWSan59Syh/us/Kf4wNq8qrJLFJ3R2N4Oiwtb6yNdz/rWLNTIoNSssnsp7IoWJdUP6o/Z8ppg7lXMcg==}
     cpu: [x64]
     os: [win32]
+    deprecated: yuku-codegen is pure JavaScript since 0.14
 
   '@yuku-parser/binding-android-arm64@0.9.5':
     resolution: {integrity: sha512-A2JCFCSHfnficqYEw4Iujpx7XrkMM3UfFcgJFmYpZSo9zM4nyhmdIIE0FogSduuU60lhM0/UcfuUBXIVNBMlGQ==}
@@ -4518,62 +4536,73 @@ packages:
     resolution: {integrity: sha512-3PiyU+Eare4YuKaQ22N98/yAiROPY5o/NQJHraICzDvk4pgS+m+bgLKOvkGBRn33OnV95Vdv1Mn38b+MQHpULQ==}
     cpu: [arm64]
     os: [darwin]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-darwin-x64@0.9.5':
     resolution: {integrity: sha512-blFMAFI7AInI83XaiOF8cIeiRM46Nz9EfpZtZPRLbKxSA9aAr5v8aHYpmfN6NoyXxAv/10pwS4gsAuc1W6fy5Q==}
     cpu: [x64]
     os: [darwin]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-freebsd-x64@0.9.5':
     resolution: {integrity: sha512-TsNuL4qsZdO0tHp5GW43Y5fHeLPpPHA675wdcPNTcdq2ZO5AvsQWFFoiDg8CH4oBktfsQ9tdvKhjLnLYwKvp4g==}
     cpu: [x64]
     os: [freebsd]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-arm-gnu@0.9.5':
     resolution: {integrity: sha512-b0afYK5gHeV8RdmOcqAlgM8ONsye4cax4DMnIBaoJyPMd1UTGvTbpkqQcPVdhmHlcfcGVGMV1laeVovlr/dscw==}
     cpu: [arm]
     os: [linux]
     libc: [glibc]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-arm-musl@0.9.5':
     resolution: {integrity: sha512-fD3lKzl+r6j6n8DwiMY53qnh5DLqD8KJjCp+NbVud54Nnh3Q9Wprqss3YzyMHP3NSJk663Wlg1E1X5qOuFVFig==}
     cpu: [arm]
     os: [linux]
     libc: [musl]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-arm64-gnu@0.9.5':
     resolution: {integrity: sha512-aRU/aCphV1MWCl/lvI6NX8LgucHQ68Fx+vz7NBb/5MEr2EuzCxiPOQqeFcMdWh+2AED/p0AvAREch0c+cSnlhA==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-arm64-musl@0.9.5':
     resolution: {integrity: sha512-5+Guro0l8H473YXlEjVNBRLN/IbPbJdnQh1zo0OLt49xxnON+XMJRRaEyTOTfkn9QSRg0+BhEKGR4W9Gu2uZJQ==}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-x64-gnu@0.9.5':
     resolution: {integrity: sha512-pwwSyV9q+GlvzSXlsMZBMlgk22L5bud714/vqZCdeUTivzeUVltQzUaf3IQXOGXdpc59JYTeuMCtbGquaAUoCA==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-linux-x64-musl@0.9.5':
     resolution: {integrity: sha512-z18j6JN3lBHH8vzN7gG1M8fI0nlgItSfnC9PfbmUbt97iHViKfw2iA2G9fGwRMe5LyPRZBrejIlapbygPbpdaw==}
     cpu: [x64]
     os: [linux]
     libc: [musl]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-win32-arm64@0.9.5':
     resolution: {integrity: sha512-s6Gwttb1dQvtPX6Bgkw+UPC9IO3UBDXc6Zezog8MMgvu3UfJBBB9TQqKBX/2quu0Eyh+lLSAyNlIyyecaagUPg==}
     cpu: [arm64]
     os: [win32]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-parser/binding-win32-x64@0.9.5':
     resolution: {integrity: sha512-FrERt9YWatY3bJfSUdi4YWY+6iQcyo3MzCC821BxlWM5TFZEHijnpz/bknR79VHlXY/9CvXz8ZlaAGPsTtN3nw==}
     cpu: [x64]
     os: [win32]
+    deprecated: yuku-parser runs on yuku-core since 0.14
 
   '@yuku-toolchain/types@0.9.5':
     resolution: {integrity: sha512-KiuLNNgX9uNealaWAR+G3/cMXnRk9x4TY2EkYe/KIag+UPdwiA0RRf1hr1WAxzTP8KGzCTkqUdLPvqh32sEO3w==}
@@ -5099,8 +5128,8 @@ packages:
     resolution: {integrity: sha512-AF3r7P5dWxL8MxyITRMlORQNaOA2IkAFaTr4k7BUumjPtRpGDTZpl0Pb1XCO6JeDCBdp126Cgs9sMxqSjgYyRg==}
     engines: {node: '>= 0.6'}
 
-  compression@1.8.1:
-    resolution: {integrity: sha512-9mAqGPHLakhCLeNyxPkK4xVo746zQ/czLH1Ky+vkitMnWfWZps8r0qXuwhwizagCRttsL4lfG4pIOvaWLpAP0w==}
+  compression@1.8.2:
+    resolution: {integrity: sha512-o8vI5RE5A6EVVOd9o41jKp41aJom+QTEO/Bx8MYNjexMo/Bv2WOjUfZr+aL0WnYSgymUy6zeguqLTsIhV0gMvQ==}
     engines: {node: '>= 0.8.0'}
 
   concat-map@0.0.1:
@@ -6586,8 +6615,8 @@ packages:
   jws@4.0.1:
     resolution: {integrity: sha512-EKI/M/yqPncGUUh44xz0PxSidXFr/+r0pA70+gIYhjv+et7yxM+s29Y+VGDkovRofQem0fs7Uvf4+YmAdyRduA==}
 
-  katex@0.16.47:
-    resolution: {integrity: sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg==}
+  katex@0.18.2:
+    resolution: {integrity: sha512-3snve4y0SXTMequLim1FMiPvLGElySam0blN5xQZBqEY3lOJz1TnuaaiugnBZBqHzlSAGmFTYL7MCQkORuLKCA==}
     hasBin: true
 
   keyv@4.5.4:
@@ -7685,9 +7714,6 @@ packages:
       prosemirror-model: ^1.19.2
       prosemirror-state: ^1.4.3
 
-  prosemirror-view@1.41.5:
-    resolution: {integrity: sha512-UDQbIPnDrjE8tqUBbPmCOZgtd75htE6W3r0JCmY9bL6W1iemDM37MZEKC49d+tdQ0v/CKx4gjxLoLsfkD2NiZA==}
-
   prosemirror-view@1.42.6:
     resolution: {integrity: sha512-3g25f6hKV2bBxo3puH3EcYWmmVNSH0iWmNsMVT7sugDSpA025jgpOLarcDWr39SdzPjYMaiYtRdNtXialPSjEQ==}
 
@@ -7809,7 +7835,7 @@ packages:
   react-native-enriched-markdown@1.1.0:
     resolution: {integrity: sha512-80hNegdnSOymxelFF56qwYFSOp/zGd/nHGVXgvgOGG0Hky4V5r8sOSmtSEVICvfva81jIJJtNL6cQlQN/T0R0Q==}
     peerDependencies:
-      katex: '>=0.16.0'
+      katex: 0.18.2
       react: '*'
       react-native: '*'
     peerDependenciesMeta:
@@ -7926,10 +7952,6 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
-
-  react@18.3.1:
-    resolution: {integrity: sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==}
-    engines: {node: '>=0.10.0'}
 
   react@19.2.3:
     resolution: {integrity: sha512-Ku/hhYbVjOQnXDZFv2+RibmLFGwFdeeKHFcOTlrt7xplBnya5OGn/hIRDsqDiSUcfORsDC7MPxwork8jBwsIWA==}
@@ -8221,8 +8243,8 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  shell-quote@1.10.0:
-    resolution: {integrity: sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA==}
+  shell-quote@1.12.0:
+    resolution: {integrity: sha512-PcByqNyT/38F2kDNi006HAMRJaULuBzq/FOsw3qdZvX/GA9W/jamDaRskgHjubHiftXK5sIFxLNkvrXUwcof6Q==}
     engines: {node: '>= 0.4'}
 
   shiki@4.5.0:
@@ -9179,11 +9201,11 @@ snapshots:
       '@types/react': 19.2.18
       react: 19.2.3
 
-  '@atlaskit/adf-schema@24.0.3(react@18.3.1)':
+  '@atlaskit/adf-schema@24.0.3(react@19.3.0)':
     dependencies:
       '@atlaskit/codemod-utils': 4.3.0
       '@atlaskit/editor-palette': 0.1.0
-      '@atlaskit/editor-tables': 2.10.23(react@18.3.1)
+      '@atlaskit/editor-tables': 2.10.23(react@19.3.0)
       '@babel/runtime': 7.29.7
       '@types/linkify-it': 2.1.0
       '@types/prosemirror-model': 1.17.0
@@ -9196,15 +9218,15 @@ snapshots:
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/atlassian-context@0.11.0(react@18.3.1)':
+  '@atlaskit/atlassian-context@0.11.0(react@19.3.0)':
     dependencies:
       '@babel/runtime': 7.29.7
-      react: 18.3.1
+      react: 19.3.0
 
-  '@atlaskit/browser-apis@0.0.2(react@18.3.1)':
+  '@atlaskit/browser-apis@0.0.2(react@19.3.0)':
     dependencies:
       '@babel/runtime': 7.29.7
-      react: 18.3.1
+      react: 19.3.0
 
   '@atlaskit/codemod-utils@4.3.0':
     dependencies:
@@ -9226,20 +9248,20 @@ snapshots:
       prosemirror-state: 1.4.4
       prosemirror-transform: 1.10.5
       prosemirror-utils: 1.2.2(prosemirror-model@1.25.4)(prosemirror-state@1.4.4)
-      prosemirror-view: 1.41.5
+      prosemirror-view: 1.42.6
 
-  '@atlaskit/editor-tables@2.10.23(react@18.3.1)':
+  '@atlaskit/editor-tables@2.10.23(react@19.3.0)':
     dependencies:
       '@atlaskit/editor-prosemirror': 7.3.0
-      '@atlaskit/platform-feature-flags': 1.1.3(react@18.3.1)
-      '@atlaskit/tmp-editor-statsig': 103.0.1(react@18.3.1)
+      '@atlaskit/platform-feature-flags': 1.1.3(react@19.3.0)
+      '@atlaskit/tmp-editor-statsig': 103.0.1(react@19.3.0)
       '@babel/runtime': 7.29.7
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/feature-gate-js-client@5.8.0(react@18.3.1)':
+  '@atlaskit/feature-gate-js-client@5.8.0(react@19.3.0)':
     dependencies:
-      '@atlaskit/atlassian-context': 0.11.0(react@18.3.1)
+      '@atlaskit/atlassian-context': 0.11.0(react@19.3.0)
       '@babel/runtime': 7.29.7
       '@statsig/client-core': 3.33.5
       '@statsig/js-client': 3.33.5
@@ -9247,40 +9269,40 @@ snapshots:
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/interaction-context@3.1.0(react@18.3.1)':
+  '@atlaskit/interaction-context@3.1.0(react@19.3.0)':
     dependencies:
       '@babel/runtime': 7.29.7
-      react: 18.3.1
+      react: 19.3.0
 
-  '@atlaskit/platform-feature-flags@1.1.3(react@18.3.1)':
+  '@atlaskit/platform-feature-flags@1.1.3(react@19.3.0)':
     dependencies:
-      '@atlaskit/feature-gate-js-client': 5.8.0(react@18.3.1)
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.3.0)
       '@babel/runtime': 7.29.7
     transitivePeerDependencies:
       - react
 
-  '@atlaskit/react-ufo@6.7.5(react@18.3.1)':
+  '@atlaskit/react-ufo@6.7.5(react@19.3.0)':
     dependencies:
-      '@atlaskit/atlassian-context': 0.11.0(react@18.3.1)
-      '@atlaskit/browser-apis': 0.0.2(react@18.3.1)
-      '@atlaskit/feature-gate-js-client': 5.8.0(react@18.3.1)
-      '@atlaskit/interaction-context': 3.1.0(react@18.3.1)
-      '@atlaskit/platform-feature-flags': 1.1.3(react@18.3.1)
+      '@atlaskit/atlassian-context': 0.11.0(react@19.3.0)
+      '@atlaskit/browser-apis': 0.0.2(react@19.3.0)
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.3.0)
+      '@atlaskit/interaction-context': 3.1.0(react@19.3.0)
+      '@atlaskit/platform-feature-flags': 1.1.3(react@19.3.0)
       '@babel/runtime': 7.29.7
       '@opentelemetry/api': 1.9.1
       bind-event-listener: 3.0.0
       bowser-ultralight: 1.0.6
-      react: 18.3.1
+      react: 19.3.0
       scheduler: 0.23.2
       uuid: 11.1.1
 
-  '@atlaskit/tmp-editor-statsig@103.0.1(react@18.3.1)':
+  '@atlaskit/tmp-editor-statsig@103.0.1(react@19.3.0)':
     dependencies:
-      '@atlaskit/feature-gate-js-client': 5.8.0(react@18.3.1)
-      '@atlaskit/platform-feature-flags': 1.1.3(react@18.3.1)
-      '@atlaskit/react-ufo': 6.7.5(react@18.3.1)
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.3.0)
+      '@atlaskit/platform-feature-flags': 1.1.3(react@19.3.0)
+      '@atlaskit/react-ufo': 6.7.5(react@19.3.0)
       '@babel/runtime': 7.29.7
-      react: 18.3.1
+      react: 19.3.0
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -10062,7 +10084,7 @@ snapshots:
       bplist-parser: 0.3.2
       chalk: 4.1.2
       ci-info: 3.9.0
-      compression: 1.8.1(supports-color@8.1.1)
+      compression: 1.8.2(supports-color@8.1.1)
       connect: 3.7.0(supports-color@8.1.1)
       debug: 4.4.3(supports-color@8.1.1)
       dnssd-advertise: 1.1.6
@@ -10073,7 +10095,7 @@ snapshots:
       glob: 13.0.6
       lan-network: 0.2.1
       multitars: 1.0.2
-      node-forge: 1.4.0
+      node-forge: 1.4.0(patch_hash=921ab7252db4f3a5bce2da71cba23c50f86eafee34392708f328de6b87158400)
       npm-package-arg: 11.0.3
       ora: 3.4.0
       picomatch: 4.0.7
@@ -10110,7 +10132,7 @@ snapshots:
 
   '@expo/code-signing-certificates@0.0.6':
     dependencies:
-      node-forge: 1.4.0
+      node-forge: 1.4.0(patch_hash=921ab7252db4f3a5bce2da71cba23c50f86eafee34392708f328de6b87158400)
 
   '@expo/config-plugins@57.0.10(supports-color@8.1.1)(typescript@7.0.2)':
     dependencies:
@@ -13353,7 +13375,7 @@ snapshots:
     dependencies:
       balanced-match: 4.0.4
 
-  braces@3.0.3:
+  braces@3.0.3(patch_hash=de064a4d75e634c66eb99d727b5ba9bf2034053a255d342706578a7e2894abea):
     dependencies:
       fill-range: 7.1.1
 
@@ -13578,11 +13600,12 @@ snapshots:
     dependencies:
       mime-db: 1.54.0
 
-  compression@1.8.1(supports-color@8.1.1):
+  compression@1.8.2(supports-color@8.1.1):
     dependencies:
       bytes: 3.1.2
       compressible: 2.0.18
       debug: 2.6.9(supports-color@8.1.1)
+      destroy: 1.2.0
       negotiator: 0.6.4
       on-headers: 1.1.0
       safe-buffer: 5.2.1
@@ -15439,7 +15462,7 @@ snapshots:
       jwa: 2.0.1
       safe-buffer: 5.2.1
 
-  katex@0.16.47:
+  katex@0.18.2:
     dependencies:
       commander: 8.3.0
 
@@ -15733,9 +15756,9 @@ snapshots:
       unist-util-is: 6.0.1
       unist-util-visit-parents: 6.0.2
 
-  mdast-util-from-adf@2.2.0(react@18.3.1):
+  mdast-util-from-adf@2.2.0(react@19.3.0):
     dependencies:
-      '@atlaskit/adf-schema': 24.0.3(react@18.3.1)
+      '@atlaskit/adf-schema': 24.0.3(react@19.3.0)
       '@types/mdast': 4.0.4
       unist-builder: 3.0.1
     transitivePeerDependencies:
@@ -15924,7 +15947,7 @@ snapshots:
       dompurify: 3.4.16
       es-toolkit: 1.52.0
       fastdom: 1.0.12
-      katex: 0.16.47
+      katex: 0.18.2
       khroma: 2.1.0
       marked: 16.4.2
       roughjs: 4.6.6
@@ -15950,7 +15973,7 @@ snapshots:
       dompurify: 3.4.16
       elkjs: 0.9.3
       es-toolkit: 1.52.0
-      katex: 0.16.47
+      katex: 0.18.2
       khroma: 2.1.0
       marked: 16.4.2
       roughjs: 4.6.6
@@ -16328,7 +16351,7 @@ snapshots:
 
   micromatch@4.0.8:
     dependencies:
-      braces: 3.0.3
+      braces: 3.0.3(patch_hash=de064a4d75e634c66eb99d727b5ba9bf2034053a255d342706578a7e2894abea)
       picomatch: 2.3.2
 
   mime-db@1.52.0: {}
@@ -16438,7 +16461,7 @@ snapshots:
       fetch-blob: 3.2.0
       formdata-polyfill: 4.0.10
 
-  node-forge@1.4.0: {}
+  node-forge@1.4.0(patch_hash=921ab7252db4f3a5bce2da71cba23c50f86eafee34392708f328de6b87158400): {}
 
   node-gyp@12.4.0:
     dependencies:
@@ -16794,13 +16817,13 @@ snapshots:
     dependencies:
       prosemirror-state: 1.4.4
       prosemirror-transform: 1.10.5
-      prosemirror-view: 1.41.5
+      prosemirror-view: 1.42.6
 
   prosemirror-history@1.5.0:
     dependencies:
       prosemirror-state: 1.4.4
       prosemirror-transform: 1.10.5
-      prosemirror-view: 1.41.5
+      prosemirror-view: 1.42.6
       rope-sequence: 1.3.4
 
   prosemirror-keymap@1.2.3:
@@ -16845,17 +16868,11 @@ snapshots:
       prosemirror-model: 1.25.4
       prosemirror-state: 1.4.4
 
-  prosemirror-view@1.41.5:
-    dependencies:
-      prosemirror-model: 1.25.4
-      prosemirror-state: 1.4.4
-      prosemirror-transform: 1.10.5
-
   prosemirror-view@1.42.6:
     dependencies:
       prosemirror-model: 1.25.12
       prosemirror-state: 1.4.4
-      prosemirror-transform: 1.3.2
+      prosemirror-transform: 1.10.5
 
   proto3-json-serializer@3.0.4:
     dependencies:
@@ -16938,7 +16955,7 @@ snapshots:
 
   react-devtools-core@6.1.5:
     dependencies:
-      shell-quote: 1.10.0
+      shell-quote: 1.12.0
       ws: 7.5.13
     transitivePeerDependencies:
       - bufferutil
@@ -16983,12 +17000,12 @@ snapshots:
       react-native-reanimated: 4.5.1(react-native-worklets@0.10.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
       use-latest-callback: 0.2.6(react@19.2.3)
 
-  react-native-enriched-markdown@1.1.0(patch_hash=eeab3cc9092dd8a0c2db9d4b01ba20498f87e975df04ad2fb5fe30c80de8ca1d)(katex@0.16.47)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3):
+  react-native-enriched-markdown@1.1.0(patch_hash=eeab3cc9092dd8a0c2db9d4b01ba20498f87e975df04ad2fb5fe30c80de8ca1d)(katex@0.18.2)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3):
     dependencies:
       react: 19.2.3
       react-native: 0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1)
     optionalDependencies:
-      katex: 0.16.47
+      katex: 0.18.2
 
   react-native-gesture-handler@2.32.0(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3):
     dependencies:
@@ -17170,10 +17187,6 @@ snapshots:
       tslib: 2.8.1
     optionalDependencies:
       '@types/react': 19.3.0
-
-  react@18.3.1:
-    dependencies:
-      loose-envify: 1.4.0
 
   react@19.2.3: {}
 
@@ -17357,7 +17370,7 @@ snapshots:
       globalthis: 1.0.4
       json-stringify-safe: 5.0.1
       semver-compare: 1.0.0
-      sprintf-js: 1.1.3
+      sprintf-js: 1.1.3(patch_hash=150ae794ae4b4b0c19e0b66fe0419c3de0a8a6d60c3a0d228d269db2c3047ba9)
     optional: true
 
   robust-predicates@3.0.3: {}
@@ -17543,7 +17556,7 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  shell-quote@1.10.0: {}
+  shell-quote@1.12.0: {}
 
   shiki@4.5.0:
     dependencies:
@@ -17632,7 +17645,7 @@ snapshots:
 
   split-on-first@1.1.0: {}
 
-  sprintf-js@1.1.3:
+  sprintf-js@1.1.3(patch_hash=150ae794ae4b4b0c19e0b66fe0419c3de0a8a6d60c3a0d228d269db2c3047ba9):
     optional: true
 
   srvx@0.11.22: {}

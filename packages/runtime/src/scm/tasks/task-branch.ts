@@ -36,5 +36,9 @@ export function taskWorktreePath(
     '/',
     '-',
   )
-  return `${pathPart(owner)}/${pathPart(repository)}-${pathPart(name)}`
+  const suffix = name.match(/-[a-f0-9]{8}$/)?.[0] ?? ''
+  const readable = suffix
+    ? pathPart(name.slice(0, -suffix.length)).slice(0, 80 - suffix.length) + suffix
+    : pathPart(name)
+  return `${pathPart(owner)}/${pathPart(repository)}-${readable}`
 }

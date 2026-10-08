@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from 'vite-plus/test'
 import { existsSync } from 'node:fs'
-import { rm, writeFile } from 'node:fs/promises'
+import { rm, writeFile, mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
@@ -8,10 +9,67 @@ import { listWorktreesEffect, removeWorktreeEffect, worktreeChoicesEffect } from
 import { Housekeeping } from '../../agents/tasks/housekeeping'
 import { runClientEffect } from '@dovo/client-runtime'
 import { handoffTask } from '../tasks/task-handoff'
+import { TaskCheckout } from '../tasks/task-checkout'
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+})
+
+it('uses configured locations for new tasks while retaining and protecting old checkouts across restarts', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const roots = await mkdtemp(join(tmpdir(), 'dovo-root-test-'))
+  cleanups.push(() => rm(roots, { recursive: true, force: true }))
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'root-test-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  s.preferences.save({ worktreesRoot: join(roots, 'first') })
+  const first = s.tasks.create({
+    title: 'First',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Work',
+  })
+  const directory = await s.checkouts.directory(first.id)
+  expect(directory.startsWith(join(roots, 'first'))).toBe(true)
+  s.preferences.save({ worktreesRoot: join(roots, 'second') })
+  const restarted = new TaskCheckout(
+    s.store,
+    s.git,
+    () => 'dovo/',
+    undefined,
+    () => s.preferences.worktreesRoot(),
+  )
+  expect(await restarted.directory(first.id)).toBe(directory)
+  expect((await runClientEffect(listWorktreesEffect(s))).worktrees).toContainEqual(
+    expect.objectContaining({ path: directory, state: 'active' }),
+  )
+  await expect(runClientEffect(removeWorktreeEffect(s, directory))).rejects.toThrow('active task')
+  const second = s.tasks.create({
+    title: 'Second',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Work',
+  })
+  expect((await restarted.directory(second.id)).startsWith(join(roots, 'second'))).toBe(true)
+  const sibling = join(roots, 'second-external', 'checkout')
+  await s.git.command(f.directory, ['worktree', 'add', '-b', 'unrelated', sibling])
+  expect(
+    (await runClientEffect(listWorktreesEffect(s))).worktrees.some(
+      (entry) => entry.path === sibling,
+    ),
+  ).toBe(false)
+  await expect(runClientEffect(removeWorktreeEffect(s, sibling))).rejects.toThrow(
+    'no longer listed',
+  )
 })
 
 it('lists task worktrees and removes only clean ones whose task is archived, keeping the branch', async () => {

@@ -1,3 +1,5 @@
+import { rotateRuntimeLogs } from '../../storage/log-rotation.js'
+import { dirname, resolve } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { startPolling } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -131,7 +133,18 @@ export async function archiveTask(
 
 /** Per-computer upkeep from Settings → Task defaults: auto-archive and keep-awake. */
 export class Housekeeping {
+  private pending = new Set<Promise<unknown>>()
+  private async runStep(run: () => unknown) {
+    const work = Promise.resolve(run())
+    this.pending.add(work)
+    try {
+      await work
+    } finally {
+      this.pending.delete(work)
+    }
+  }
   private archiver?: ReturnType<typeof startPolling>
+  private logs?: ReturnType<typeof startPolling>
   private waker?: ReturnType<typeof startPolling>
   private caffeinate?: ChildProcess
   constructor(
@@ -148,15 +161,16 @@ export class Housekeeping {
       | 'approvals'
       | 'activity'
       | 'artifacts'
+      | 'attachments'
+      | 'backups'
+      | 'db'
       | 'git'
     >,
   ) {}
   start() {
     // Each step is independent: a failed archive pass must not skip pruning or cleanup.
     const step = (name: string, run: () => unknown) =>
-      Effect.tryPromise(async () => {
-        await run()
-      }).pipe(
+      Effect.tryPromise(() => this.runStep(run)).pipe(
         Effect.catch((error) =>
           Effect.sync(() => console.error(`Housekeeping could not ${name}`, error.cause)),
         ),
@@ -168,6 +182,8 @@ export class Housekeeping {
           step('archive inactive tasks', () => this.archiveInactive()),
           step('prune activity history', () => this.pruneActivity()),
           step('prune expired artifacts', () => this.s.artifacts.prune()),
+          step('prune unreferenced attachments', () => this.s.attachments.prune()),
+          step('create and retain verified backups', () => this.s.backups.automatic()),
           step('prune automation runs', () => this.s.jobs.prune()),
           step('remove archived worktrees', () => this.removeArchivedWorktrees()),
         ],
@@ -178,6 +194,13 @@ export class Housekeeping {
         onError: (error) => console.error('Housekeeping failed', error),
       },
     )
+    if (this.s.db.name !== ':memory:')
+      this.logs = startPolling(
+        Effect.tryPromise(() =>
+          this.runStep(() => rotateRuntimeLogs(dirname(resolve(this.s.db.name)))),
+        ),
+        { interval: 60_000, onError: (error) => console.error('Log rotation failed', error) },
+      )
     this.waker = startPolling(
       Effect.try(() => this.updateKeepAwake()),
       {
@@ -304,7 +327,13 @@ export class Housekeeping {
     }
   }
   async dispose() {
-    await Promise.all([this.archiver?.stop(), this.waker?.stop()])
+    await Promise.all([this.archiver?.stop(), this.waker?.stop(), this.logs?.stop()])
+    // Poll cancellation cannot abort filesystem/SQLite promises. Drain them before DB close.
+    const results = await Promise.allSettled([...this.pending])
+    for (const result of results)
+      if (result.status === 'rejected')
+        console.error('Housekeeping failed during shutdown', result.reason)
+    await this.s.backups.settle()
     this.caffeinate?.kill()
     this.caffeinate = undefined
   }

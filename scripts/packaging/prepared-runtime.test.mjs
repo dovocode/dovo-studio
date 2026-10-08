@@ -1,10 +1,24 @@
-import { test } from 'node:test'
+import { test, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, symlink, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildDigest } from './build-fingerprint.mjs'
 import { copyPreparedRuntime } from './prepared-runtime.mjs'
+
+const releaseEnvironment = new Map()
+beforeEach(() => {
+  for (const key of ['DOVO_RELEASE_VERSION', 'DOVO_RELEASE_CHANNEL']) {
+    releaseEnvironment.set(key, process.env[key])
+    delete process.env[key]
+  }
+})
+afterEach(() => {
+  for (const [key, value] of releaseEnvironment) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+})
 
 await test('shared runtime copies survive relocation and reject incompatible build stamps', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dovo-prepared-copy-'))

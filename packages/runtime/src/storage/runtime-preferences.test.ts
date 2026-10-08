@@ -5,6 +5,21 @@ import { join } from 'node:path'
 import { openDatabase } from './database'
 import { RuntimePreferences } from './runtime-preferences'
 
+it('persists a host worktree location across partial saves and rejects relative locations', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const preferences = new RuntimePreferences(db)
+    const path = join(tmpdir(), 'configured-worktrees')
+    preferences.save({ worktreesRoot: path })
+    preferences.save({ autoArchiveDays: 7 })
+    expect(new RuntimePreferences(db).worktreesRoot()).toBe(path)
+    expect(() => preferences.save({ worktreesRoot: 'relative/path' })).toThrow('absolute path')
+    expect(preferences.worktreesRoot()).toBe(path)
+  } finally {
+    db.close()
+  }
+})
+
 it('moves saved runtime preferences from SQLite to settings.json', () => {
   const directory = mkdtempSync(join(tmpdir(), 'dovo-runtime-settings-'))
   vi.stubEnv('DOVO_SETTINGS_PATH', join(directory, 'settings.json'))

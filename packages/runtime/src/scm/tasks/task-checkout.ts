@@ -13,7 +13,7 @@ import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { GitService } from '../git/git.js'
 import { HttpError } from '../../errors.js'
 export { worktreesRoot, taskWorktreeKeys, isTaskWorktree } from './task-worktree-keys.js'
-import { taskWorktreeKeys, isTaskWorktree } from './task-worktree-keys.js'
+import { taskWorktreeKeys, isTaskWorktree, worktreesRoot } from './task-worktree-keys.js'
 export class TaskCheckout {
   readonly linked: LinkedCheckouts
   private pending = new PendingCheckouts<string>()
@@ -33,8 +33,9 @@ export class TaskCheckout {
     /** Settings → Coding → Task defaults → Branch prefix for new task branches. */
     private branchPrefix: () => string = () => 'dovo/',
     private scratch?: ScratchWorkspaces,
+    private worktrees: () => string = worktreesRoot,
   ) {
-    this.linked = new LinkedCheckouts(store, git)
+    this.linked = new LinkedCheckouts(store, git, worktrees)
   }
   /** Delegated runs keep primary-project defaults but may execute in a linked project. */
   executionRepository(id: string) {
@@ -147,18 +148,19 @@ export class TaskCheckout {
     const common = (
       await this.git.command(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
     ).trim()
-    const keys = taskWorktreeKeys(common, id)
+    const keys = taskWorktreeKeys(common, id, this.worktrees())
     const { key, suffix, worktrees } = keys
     // A worktree whose directory was deleted out of band stays listed as prunable; git would
     // refuse to check it out, so recreate it instead of failing every start with ENOENT.
-    const paths = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
+    const records = (await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']))
       .split('\0\0')
       .map((block) => block.split('\0'))
       .filter((record) => !record.some((line) => line.startsWith('prunable')))
-      .flatMap((record) =>
-        record.flatMap((line) => (line.startsWith('worktree ') ? [line.slice(9)] : [])),
-      )
-    const existing = paths.find((path) => isTaskWorktree(path, keys))
+    const existing = records.flatMap((record) => {
+      const path = record.find((line) => line.startsWith('worktree '))?.slice(9)
+      const branch = record.find((line) => line.startsWith('branch '))?.slice(7)
+      return path && isTaskWorktree(path, keys, branch) ? [path] : []
+    })[0]
     const setup = !!task.setupCommand?.trim()
     if (existing) {
       const steps = setup && !task.worktreeSetupComplete ? ['setup', 'agent'] : []

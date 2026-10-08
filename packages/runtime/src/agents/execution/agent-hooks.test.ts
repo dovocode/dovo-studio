@@ -5,6 +5,26 @@ import { join } from 'node:path'
 import { executeHook, runWithHooks } from './agent-hooks.js'
 import type { AgentRun } from './types.js'
 
+it('does not expose runtime credentials to project hooks', async () => {
+  vi.stubEnv('DOVO_OWNER_TOKEN', 'synthetic-owner-token')
+  try {
+    const result = await executeHook(
+      {
+        name: 'environment',
+        enabled: true,
+        event: 'before-turn',
+        command: 'node -e "process.stdout.write(String(process.env.DOVO_OWNER_TOKEN))"',
+        timeoutSeconds: 10,
+      },
+      process.cwd(),
+      new AbortController().signal,
+    )
+    expect(result).toMatchObject({ ok: true, output: 'undefined' })
+  } finally {
+    vi.unstubAllEnvs()
+  }
+})
+
 it('runs a hook in its checkout and reports a failed command', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'dovo-hook-'))
   try {

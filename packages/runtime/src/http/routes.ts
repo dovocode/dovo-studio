@@ -1,3 +1,4 @@
+import { runtimeDiagnostics } from './diagnostics.js'
 import { cuaCheckRequest, cuaActionRequest } from '@dovo/protocol'
 import { pullRequestWatchRequestSchema } from '../scm/tasks/pull-request-watch.js'
 import { checkCua, cuaAction } from '../computer-use/cua.js'
@@ -150,6 +151,13 @@ export function route(
         )
       }
       const device = s.devices.authenticate(token)
+      if (method === 'POST' && ['/api/runtime/diagnostics', '/api/runtime/backup'].includes(path)) {
+        if (!device.owner)
+          throw new HttpError(403, 'Only the runtime host can manage diagnostics and backups')
+        return yield* serviceResult(
+          path === '/api/runtime/backup' ? s.backups.create() : runtimeDiagnostics(s),
+        )
+      }
       if (method === 'POST' && path === '/api/pull-request-watch') {
         if (!device.owner)
           throw new HttpError(403, 'PR watches are controlled by the thread’s agent')
@@ -239,7 +247,16 @@ export function route(
         )
         return yield* serviceResult({ app: s.mcpApps.read(taskId, id) })
       }
-      if (method === 'GET' && path === '/api/mutations/status') return { version: 1 }
+      if (method === 'GET' && path === '/api/mutations/status')
+        return { version: 1, acknowledgements: true }
+      if (method === 'POST' && path === '/api/mutations/acknowledge') {
+        const { ids } = decode(
+          mutableStruct({ ids: maxValue(mutableArray(idSchema), 100) }),
+          yield* serviceResult(body(request, 32 * 1024)),
+        )
+        s.mutations.acknowledge(device.id, ids)
+        return { ok: true }
+      }
       if (!receipted && request.headers['x-dovo-mutation-id'] !== undefined) {
         if (!recoverableMutation(path, method))
           throw new HttpError(400, 'This action does not support mutation recovery.')

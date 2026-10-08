@@ -44,6 +44,79 @@ async function setup() {
   return { s, primary, secondary }
 }
 
+it('keeps long linked identities protected and restores saved history after clean removal and a root change', async () => {
+  const { s } = await setup()
+  const root = await mkdtemp(join(tmpdir(), 'dovo-linked-history-'))
+  cleanups.push(() => rm(root, { recursive: true, force: true }))
+  s.preferences.save({ worktreesRoot: join(root, 'first') })
+  const task = s.tasks.create({
+    title: 'History',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: 'Work',
+    linkedCheckouts: [
+      {
+        id: 'link',
+        repositoryId: 'backend',
+        execution: 'worktree',
+        access: 'edit',
+        branch: `feature/${'long'.repeat(40)}`,
+      },
+    ],
+  })
+  const [link] = await s.checkouts.linked.resolve(task.id)
+  expect((await runClientEffect(listWorktreesEffect(s))).worktrees).toContainEqual(
+    expect.objectContaining({ path: link.directory, taskId: task.id, state: 'active' }),
+  )
+  const before = await s.git.snapshot(link.directory, 'refs/dovo/checkpoints/linked-history/before')
+  await writeFile(join(link.directory, 'hello.txt'), 'saved history\n')
+  const after = await s.git.snapshot(link.directory, 'refs/dovo/checkpoints/linked-history/after')
+  const checkpoint = {
+    checkoutId: link.id,
+    repositoryId: link.repositoryId,
+    directory: link.directory,
+    branch: link.branch,
+    before,
+    after,
+    ...(await s.git.checkpointChanges(link.directory, before, after)),
+  }
+  await s.git.stage(link.directory, ['hello.txt'])
+  await s.git.commit(link.directory, 'Save linked work')
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    archivedAt: new Date().toISOString(),
+    turns: [
+      {
+        id: 'turn',
+        assistantId: 'reply',
+        agentId: 'agent',
+        provider: 'codex',
+        model: 'fixture',
+        status: 'completed',
+        startedAt: new Date().toISOString(),
+        checkpoint: { before: '', files: [], omitted: [], linked: [checkpoint] },
+      },
+    ],
+  }))
+  await runClientEffect(removeWorktreeEffect(s, link.directory))
+  s.preferences.save({ worktreesRoot: join(root, 'second') })
+  // History survives removal of the link from today's task settings too.
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    archivedAt: undefined,
+    linkedCheckouts: [],
+  }))
+  expect((await s.tasks.filePreview(task.id, 'hello.txt', 'turn', 'link')).after?.text).toBe(
+    'saved history\n',
+  )
+  await s.tasks.restoreTurn(task.id, 'turn', 'undo')
+  const restored = await s.checkouts.linked.checkpointDirectory(checkpoint, true)
+  expect(restored.startsWith(join(root, 'second'))).toBe(true)
+  expect(await readFile(join(restored, 'hello.txt'), 'utf8')).toBe('original\n')
+  await s.tasks.restoreTurn(task.id, 'turn', 'redo')
+  expect(await readFile(join(restored, 'hello.txt'), 'utf8')).toBe('saved history\n')
+})
+
 it.each([
   { direction: 'git-to-folder', nestedExplicit: false },
   { direction: 'git-to-folder', nestedExplicit: true },

@@ -9,8 +9,19 @@ import { gitRemoteIdentity } from '@dovo/protocol'
 import { defaultShell, shellArguments } from '../../terminal/shell.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode, urlSchema } from '@dovo/protocol'
-import { readFile, writeFile, stat, mkdir, mkdtemp, rm, copyFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import {
+  readFile,
+  writeFile,
+  stat,
+  lstat,
+  readlink,
+  open,
+  mkdir,
+  mkdtemp,
+  rm,
+  copyFile,
+} from 'node:fs/promises'
+import { join, dirname, basename } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { Schema } from 'effect'
 import { commandsSchema, REPOSITORY_CLONE_TIMEOUT_MS, type CommandSettings } from '@dovo/protocol'
@@ -31,6 +42,7 @@ export class GitService {
     env: NodeJS.ProcessEnv,
     background: boolean,
     input?: string,
+    maxBytes?: number,
   ) {
     const request = parseGithubApiArgs(args, input)
     const audited = [this.settings().gh, ...args]
@@ -44,6 +56,7 @@ export class GitService {
         key,
         async () => {
           const text = await this.githubTransport.send(request, token, {
+            maxBytes,
             onUnauthorized: () => this.githubCredentials.invalidate(request.host, cwd, env),
           })
           if (request.graphql) this.githubBudget.observeGraphql(key, text)
@@ -72,7 +85,8 @@ export class GitService {
     background = false,
     input?: string,
   ) {
-    if (args[0] === 'api') return this.githubApiRequest(cwd, args, env, background, input)
+    if (args[0] === 'api')
+      return this.githubApiRequest(cwd, args, env, background, input, maxBuffer)
     if (input !== undefined) throw new HttpError(400, 'Only gh api requests accept a body')
     const hostIndex = args.indexOf('--hostname')
     const repoIndex = args.indexOf('--repo')
@@ -572,50 +586,138 @@ export class GitService {
         hasHead = false
       else throw error
     }
+    const names = [...new Set(changed)]
+    const old = hasHead
+      ? await this.treeFiles(root, 'HEAD', names)
+      : new Map<string, NonNullable<FilePreviewMetadata['before']>>()
     const files: ChangedFile[] = []
-    for (const name of [...new Set(changed)].slice(0, 200)) {
-      const file = await safeFile(root, name)
-      let after = ''
-      try {
-        const info = await stat(file)
-        if (!info.isFile() || info.size > 2 * 1024 * 1024) continue
-        after = await readFile(file, 'utf8')
-      } catch (error) {
-        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
-      }
-      let before = ''
-      if (hasHead) {
-        // One oversized or unreadable committed blob must not fail the whole listing.
+    let remaining = 1024 * 1024
+    for (const name of names) {
+      const before = old.get(name)
+      let unreadable = false
+      const after = await this.workingFile(root, name).catch(() => {
+        unreadable = true
+        return undefined
+      })
+      const sides = { before, after }
+      const entries = [before, after].filter((side) => side !== undefined)
+      let kind: FilePreviewMetadata['kind'] = entries.some((side) => side.mode === '160000')
+        ? 'submodule'
+        : entries.some((side) => side.mode === '120000')
+          ? 'symlink'
+          : entries.some((side) => side.size > 64 * 1024)
+            ? 'large'
+            : 'deferred'
+      if (
+        files.length < 200 &&
+        !unreadable &&
+        entries.length &&
+        entries.every(
+          (side) => side.mode !== '160000' && side.mode !== '120000' && side.size <= 64 * 1024,
+        ) &&
+        entries.reduce((sum, side) => sum + side.size, 0) <= remaining
+      ) {
         try {
-          const exists = await this.command(root, [
-            '--literal-pathspecs',
-            'ls-tree',
-            'HEAD',
-            '--',
-            name,
-          ])
-          if (exists) {
-            const size = Number(
-              (await this.command(root, ['cat-file', '-s', `HEAD:${name}`])).trim(),
+          const preview = await this.workingFilePreview(root, name, sides)
+          if (
+            [preview.before, preview.after].every(
+              (side) => !side || (side.kind === 'text' && !side.truncated),
             )
-            if (!Number.isFinite(size) || size > 2 * 1024 * 1024) continue
-            before = await this.command(root, ['show', `HEAD:${name}`])
+          ) {
+            const text = preview.after?.text ?? ''
+            files.push({
+              path: name,
+              before: preview.before?.text ?? '',
+              after: text,
+              diskContents: text,
+              viewed: false,
+            })
+            remaining -= entries.reduce((sum, side) => sum + side.size, 0)
+            continue
           }
+          kind = /\.(png|jpe?g|webp|gif|avif|tiff?|heic|ico)$/i.test(name) ? 'image' : 'binary'
         } catch {
-          continue
+          // Keep an unreadable or concurrently removed path visible; opening it reports the error.
         }
       }
-      if (before.includes('\0') || after.includes('\0')) continue
-      files.push({
-        path: name,
-        before,
-        after,
-        diskContents: after,
-        viewed: false,
-      })
+      files.push({ path: name, before: '', after: '', viewed: false, preview: { kind, ...sides } })
     }
     return files
   }
+  private async workingFile(root: string, name: string) {
+    // Validate the parent without following the leaf: symlink targets are previewed as text.
+    const parent = dirname(name)
+    if (
+      !name ||
+      name.includes('\\') ||
+      name.includes('\0') ||
+      name.split('/').some((part) => part === '.git' || part === '..') ||
+      ['.', '..'].includes(name)
+    )
+      throw new HttpError(400, 'Invalid file path')
+    const file =
+      parent === '.'
+        ? join(root, basename(name))
+        : join(await safeFile(root, parent), basename(name))
+    const info = await lstat(file).catch((error: unknown) => {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+      throw error
+    })
+    if (!info) return undefined
+    if (!info.isFile() && !info.isSymbolicLink() && !info.isDirectory())
+      throw new HttpError(400, 'This file type cannot be previewed.')
+    if (info.isDirectory() && (await this.command(file, ['rev-parse', '--show-prefix'])).trim())
+      throw new HttpError(400, 'This path is now a directory; select a file inside it.')
+    const mode = info.isSymbolicLink()
+      ? '120000'
+      : info.isDirectory()
+        ? '160000'
+        : info.mode & 0o111
+          ? '100755'
+          : '100644'
+    const hash = info.isDirectory()
+      ? (await this.command(file, ['rev-parse', 'HEAD'])).trim()
+      : 'working'
+    return { hash, size: info.size, mode }
+  }
+  async workingFilePreview(
+    root: string,
+    name: string,
+    metadata?: Pick<FilePreviewMetadata, 'before' | 'after'>,
+  ) {
+    const sides = metadata ?? {
+      before: (
+        await this.treeFiles(root, 'HEAD', [name]).catch(async (error) => {
+          if ((await this.command(root, ['rev-list', '--all', '--count'])).trim() === '0')
+            return new Map<string, NonNullable<FilePreviewMetadata['before']>>()
+          throw error
+        })
+      ).get(name),
+      after: await this.workingFile(root, name),
+    }
+    if (!sides.before && !sides.after)
+      throw new HttpError(404, 'File is unavailable in the working checkout.')
+    return createFilePreview(name, sides, async (hash, limit) => {
+      if (hash !== 'working') return this.blobPrefix(root, hash, limit)
+      // Revalidate before reading and never follow the final symlink as a regular file.
+      const parent = dirname(name)
+      const file =
+        parent === '.'
+          ? join(root, basename(name))
+          : join(await safeFile(root, parent), basename(name))
+      const info = await lstat(file)
+      if (info.isSymbolicLink()) return Buffer.from(await readlink(file)).subarray(0, limit)
+      const handle = await open(await safeFile(root, name), 'r')
+      try {
+        const bytes = Buffer.alloc(Math.min(limit, info.size))
+        const result = await handle.read(bytes, 0, bytes.length, 0)
+        return bytes.subarray(0, result.bytesRead)
+      } finally {
+        await handle.close()
+      }
+    })
+  }
+
   // An alternate index captures staged and unstaged contents without touching the user's index.
   async snapshot(cwd: string, ref: string) {
     const directory = await mkdtemp(join(tmpdir(), 'dovo-checkpoint-'))

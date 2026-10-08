@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import type { AgentHook } from '@dovo/protocol'
 import type { AgentAdapter, AgentRun } from './types.js'
 import { stopOwnedChild } from './stop-owned-child.js'
+import { processEnvironment } from '../../process.js'
 
 export interface HookResult {
   hook: AgentHook
@@ -18,6 +19,7 @@ export async function executeHook(
   const child = spawn(hook.command, {
     windowsHide: true,
     cwd,
+    env: processEnvironment(),
     shell: true,
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],

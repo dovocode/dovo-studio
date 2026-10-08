@@ -278,6 +278,12 @@ export const responses = {
 }
 
 export const runtimePreferencesSchema = mutableStruct({
+  /** Host-local root for new worktrees. Empty uses the launcher's default. */
+  worktreesRoot: Schema.String.pipe(
+    Schema.check(Schema.isMaxLength(4096)),
+    Schema.check(Schema.isPattern(/^[^\0]*$/)),
+    Schema.withDecodingDefaultType(Effect.sync(() => '')),
+  ),
   settledArtifactRetention: artifactRetentionSchema.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => 'forever' as const)),
   ),

@@ -119,6 +119,27 @@ it('sends bearer requests, follows pagination into a slurped array and revalidat
   expect(new Headers(fetcher.mock.calls[3]![1]?.headers).get('if-none-match')).toBe('"v1"')
 })
 
+it('revalidates later cached pages when a 304 omits pagination headers and rejects oversized bodies', async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      reply([{ id: 1 }], {
+        headers: { etag: '"one"', link: '<https://api.github.com/items?page=2>; rel="next"' },
+      }),
+    )
+    .mockResolvedValueOnce(reply([{ id: 2 }], { headers: { etag: '"two"' } }))
+    .mockResolvedValueOnce(new Response(null, { status: 304 }))
+    .mockResolvedValueOnce(new Response(null, { status: 304 }))
+  const transport = new GithubTransport(fetcher)
+  const request = parseGithubApiArgs(['api', 'items', '--paginate', '--slurp'])
+  expect(JSON.parse(await transport.send(request, 'token'))).toEqual([[{ id: 1 }], [{ id: 2 }]])
+  expect(JSON.parse(await transport.send(request, 'token'))).toEqual([[{ id: 1 }], [{ id: 2 }]])
+  fetcher.mockResolvedValueOnce(new Response('too much data'))
+  await expect(
+    transport.send(parseGithubApiArgs(['api', 'large']), 'token', { maxBytes: 2 }),
+  ).rejects.toThrow('byte limit')
+})
+
 it('reports rate limits in the budget wording and drops a rejected token', async () => {
   const fetcher = vi.fn<typeof fetch>()
   const transport = new GithubTransport(fetcher)
@@ -167,4 +188,32 @@ it('mints one token per host and checkout through gh, prefers environment tokens
   await expect(credentials.token('github.com', '/new', {})).rejects.toThrow('No GitHub login')
   runner.mockResolvedValueOnce({ stdout: 'fresh' })
   expect(await credentials.token('github.com', '/new', {})).toBe('fresh')
+})
+it('reports pagination exhaustion instead of returning the first hundred pages as complete', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () =>
+    reply([], { headers: { link: '<https://api.github.com/items?page=next>; rel="next"' } }),
+  )
+  await expect(
+    new GithubTransport(fetcher).send(
+      parseGithubApiArgs(['api', 'items', '--paginate', '--slurp']),
+      'token',
+    ),
+  ).rejects.toThrow('incomplete')
+  expect(fetcher).toHaveBeenCalledTimes(100)
+})
+it('evicts large conditional bodies by total bytes and discards validators when a 200 omits ETag', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () =>
+    reply('x'.repeat(12 * 1024 * 1024), { headers: { etag: '"body"' } }),
+  )
+  const transport = new GithubTransport(fetcher)
+  for (const name of ['one', 'two', 'three'])
+    await transport.send(parseGithubApiArgs(['api', name]), 'token')
+  fetcher.mockResolvedValueOnce(reply('new body'))
+  await transport.send(parseGithubApiArgs(['api', 'one']), 'token')
+  expect(new Headers(fetcher.mock.calls[3]?.[1]?.headers).has('if-none-match')).toBe(false)
+  fetcher.mockResolvedValueOnce(reply('no validator'))
+  await transport.send(parseGithubApiArgs(['api', 'three']), 'token')
+  fetcher.mockResolvedValueOnce(reply('another body'))
+  await transport.send(parseGithubApiArgs(['api', 'three']), 'token')
+  expect(new Headers(fetcher.mock.calls[5]?.[1]?.headers).has('if-none-match')).toBe(false)
 })

@@ -144,7 +144,7 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
   await vi.waitFor(() =>
     expect(s.terminals.get(terminal.id).buffer).toContain(`CHECKOUT:${cwd}:END`),
   )
-  s.terminals.close(terminal.id)
+  await s.terminals.close(terminal.id)
   const bin = join(f.directory, '.git', 'fake-bin')
   await mkdir(bin)
   await writeFile(

@@ -228,6 +228,11 @@ export function WorktreePreferences() {
   const { value, save, error, disabled } = useRuntimePreferences()
   return (
     <SettingsGroup title="Branches and cleanup">
+      <WorktreeRoot
+        value={value?.worktreesRoot}
+        disabled={disabled}
+        onSave={(worktreesRoot) => save({ worktreesRoot })}
+      />
       <BranchPrefix
         value={value?.branchPrefix}
         disabled={disabled}
@@ -246,6 +251,42 @@ export function WorktreePreferences() {
       </SettingRow>
       <Problem error={error} />
     </SettingsGroup>
+  )
+}
+
+function WorktreeRoot({
+  value,
+  disabled,
+  onSave,
+}: {
+  value: string | undefined
+  disabled: boolean
+  onSave: (root: string) => void
+}) {
+  const [draft, setDraft] = useApplicationState<string | null>(null)
+  useEffect(() => {
+    setDraft(null)
+  }, [value, setDraft])
+  const commit = () => {
+    if (draft !== null && draft.trim() !== value) onSave(draft.trim())
+  }
+  return (
+    <SettingRow
+      label="Worktree folder location"
+      description="Absolute folder on this computer for new worktrees. Leave empty to use the default. Existing checkouts stay in their current locations."
+    >
+      <Input
+        aria-label="Worktree folder location"
+        value={draft ?? value ?? ''}
+        disabled={disabled}
+        placeholder="Default worktrees folder"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur()
+        }}
+      />
+    </SettingRow>
   )
 }
 

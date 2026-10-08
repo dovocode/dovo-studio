@@ -31,21 +31,71 @@ export function retainCachedThreads(
 ): RuntimeSnapshot {
   if (!previous || !next.detailTaskIds) return next
   const old = new Map(previous.workspace.tasks.map((task) => [task.id, task]))
-  const oldIds = new Set(previous.detailTaskIds ?? [...old.keys()])
+  const summaries = new Map(next.workspace.tasks.map((task) => [task.id, task]))
   const ids = new Set(next.detailTaskIds)
-  const tasks = next.workspace.tasks.map((task) => {
-    const cached = old.get(task.id)
+  const retained = new Map<string, Task>()
+  let retainedBytes = 0
+  // Stored detail order is most recently selected first, independently of workspace ordering.
+  for (const id of previous.detailTaskIds ?? [...old.keys()]) {
+    const task = summaries.get(id),
+      cached = old.get(id)
     if (
-      ids.has(task.id) ||
+      ids.has(id) ||
+      !task ||
       !cached ||
-      !oldIds.has(task.id) ||
       (task.historyRevision ?? 0) !== (cached.historyRevision ?? 0)
     )
-      return task
-    ids.add(task.id)
-    return cachedThread(task, cached)
-  })
+      continue
+    const size = new TextEncoder().encode(JSON.stringify(cached)).byteLength
+    if (ids.size >= 20 || retainedBytes + size > 8 * 1024 * 1024) continue
+    retainedBytes += size
+    ids.add(id)
+    retained.set(id, cachedThread(task, cached))
+  }
+  const tasks = next.workspace.tasks.map((task) => retained.get(task.id) ?? task)
+
   return { ...next, detailTaskIds: [...ids], workspace: { ...next.workspace, tasks } }
+}
+
+/** Bound the persistent aggregate too, including full snapshots from older runtimes. */
+export function boundedSnapshotCache(snapshot: RuntimeSnapshot): RuntimeSnapshot {
+  const ids = snapshot.detailTaskIds ?? snapshot.workspace.tasks.map((task) => task.id)
+  const byId = new Map(snapshot.workspace.tasks.map((task) => [task.id, task]))
+  const kept = new Set<string>()
+  let bytes = 0
+  for (const id of ids) {
+    const task = byId.get(id)
+    if (!task) continue
+    const size = new TextEncoder().encode(JSON.stringify(task)).byteLength
+    if (kept.size >= 20 || bytes + size > 8 * 1024 * 1024) continue
+    kept.add(id)
+    bytes += size
+  }
+  return {
+    ...snapshot,
+    detailTaskIds: [...kept],
+    workspace: {
+      ...snapshot.workspace,
+      tasks: snapshot.workspace.tasks.map((task) =>
+        kept.has(task.id)
+          ? task
+          : {
+              ...task,
+              messages: [],
+              historyBefore: undefined,
+              sideChats: task.sideChats?.map((chat) => ({ ...chat, messages: [] })),
+              files: task.files.map((file) => ({
+                ...file,
+                before: '',
+                after: '',
+                diskContents: undefined,
+              })),
+              turns: task.turns?.map((turn) => ({ ...turn, checkpoint: undefined })),
+              forkedFrom: task.forkedFrom ? { ...task.forkedFrom, snapshot: undefined } : undefined,
+            },
+      ),
+    },
+  }
 }
 type Envelope = typeof runtimeSnapshotCacheSchema.Type
 const replicas = new WeakMap<
@@ -68,7 +118,7 @@ export function writeRuntimeSnapshotCache(cache: RuntimeReadCache, envelope: Env
         ))?.value.snapshot
         state.loaded = true
       }
-      const snapshot = retainCachedThreads(state.snapshot, envelope.snapshot)
+      const snapshot = boundedSnapshotCache(retainCachedThreads(state.snapshot, envelope.snapshot))
       yield* cache.writeEffect('snapshot', { ...envelope, snapshot })
       state.snapshot = snapshot
     }),

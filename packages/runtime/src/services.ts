@@ -1,3 +1,4 @@
+import { RuntimeBackups } from './storage/backups.js'
 import { MutationReceipts } from './storage/mutation-receipts.js'
 import { McpApps } from './mcp-apps/bridge.js'
 import { Artifacts } from './artifacts/artifacts.js'
@@ -104,7 +105,13 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     store,
     git,
   )
-  const checkouts = new TaskCheckout(store, git, () => preferences.get().branchPrefix, scratch)
+  const checkouts = new TaskCheckout(
+    store,
+    git,
+    () => preferences.get().branchPrefix,
+    scratch,
+    () => preferences.worktreesRoot(),
+  )
   const titles = new TitleGeneration(db, store, agents)
   const tasks = new Tasks(
       store,
@@ -159,6 +166,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   })
   return {
     pullRequestWatch: new PullRequestWatch(db, { store, preferences, pullCache, tasks, activity }),
+    backups: new RuntimeBackups(db.name),
     mutations: new MutationReceipts(db),
     instanceId: randomUUID(),
     mcpApps,
@@ -202,6 +210,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  backups: RuntimeBackups
   pullRequestWatch: PullRequestWatch
   artifacts: Artifacts
   mutations: MutationReceipts

@@ -3,7 +3,8 @@ import { readdir, rmdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { Services } from '../../services.js'
 import { HttpError, runtimeOperation, runtimeProgram } from '../../errors.js'
-import { isTaskWorktree, taskWorktreeKeys, worktreesRoot } from '../tasks/task-checkout.js'
+import { isTaskWorktree, taskWorktreeKeys } from '../tasks/task-checkout.js'
+import { withinWorktrees } from '../tasks/task-worktree-keys.js'
 import { worktreeListSchema } from '@dovo/protocol'
 
 type Worktree = (typeof worktreeListSchema.Type.worktrees)[number]
@@ -40,10 +41,10 @@ export function worktreeChoicesEffect(s: Pick<Services, 'git' | 'store'>, reposi
 }
 
 /** Dovo-created task worktrees across registered projects (Settings → Coding → Worktrees). */
-export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
+export function listWorktreesEffect(s: Pick<Services, 'git' | 'store' | 'preferences'>) {
   return runtimeProgram(
     Effect.gen(function* () {
-      const root = worktreesRoot()
+      const root = s.preferences.worktreesRoot()
       const workspace = s.store.get()
       const worktrees: Worktree[] = []
       const seen = new Set<string>()
@@ -66,7 +67,7 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
         const { common, records } = listed.success
         const tasks = workspace.tasks.flatMap((task) => [
           ...(task.repositoryId === repository.id
-            ? [{ task, keys: taskWorktreeKeys(common, task.id) }]
+            ? [{ task, keys: taskWorktreeKeys(common, task.id, root) }]
             : []),
           ...(task.linkedCheckouts ?? [])
             .filter(
@@ -77,15 +78,29 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
             )
             .map((link) => ({
               task,
-              keys: taskWorktreeKeys(common, `${task.id}:linked:${link.id}`),
+              keys: taskWorktreeKeys(common, `${task.id}:linked:${link.id}`, root),
             })),
         ])
+        for (const task of workspace.tasks) {
+          const saved = new Set(
+            task.turns
+              ?.flatMap((turn) => turn.checkpoint?.linked ?? [])
+              .filter((link) => link.repositoryId === repository.id)
+              .map((link) => link.checkoutId),
+          )
+          for (const checkoutId of saved)
+            tasks.push({
+              task,
+              keys: taskWorktreeKeys(common, `${task.id}:linked:${checkoutId}`, root),
+            })
+        }
         for (const record of records) {
           const path = record.find((line) => line.startsWith('worktree '))?.slice(9)
-          if (!path || !path.startsWith(root) || seen.has(path)) continue
-          seen.add(path)
+          if (!path || seen.has(path)) continue
           const branch = record.find((line) => line.startsWith('branch '))?.slice(7) ?? ''
-          const owner = tasks.find(({ keys }) => isTaskWorktree(path, keys))?.task
+          const owner = tasks.find(({ keys }) => isTaskWorktree(path, keys, branch))?.task
+          if (!withinWorktrees(path, root) && !owner) continue
+          seen.add(path)
           const inUse = workspace.tasks.some(
             (task) =>
               !task.archivedAt &&
@@ -112,17 +127,21 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store'>) {
             // Unreadable status counts as changed: never offer to delete what we can't inspect.
             dirty: !!dirty && (dirty._tag === 'Failure' || !!dirty.success.trim()),
             prunable,
+            retainedLocation: !withinWorktrees(path, root),
           })
         }
       }
-      return { root, worktrees }
+      return { root, rootSource: s.preferences.worktreesLocation().source, worktrees }
     }),
   )
 }
 
 /** Removes a worktree whose task is archived or deleted. Uncommitted changes and active tasks
  * are refused; the branch is always kept so no commits are lost. */
-export function removeWorktreeEffect(s: Pick<Services, 'git' | 'store'>, path: string) {
+export function removeWorktreeEffect(
+  s: Pick<Services, 'git' | 'store' | 'preferences'>,
+  path: string,
+) {
   return runtimeProgram(
     Effect.gen(function* () {
       const { worktrees, root } = yield* listWorktreesEffect(s)
@@ -146,8 +165,7 @@ export function removeWorktreeEffect(s: Pick<Services, 'git' | 'store'>, path: s
         else await s.git.command(top, ['worktree', 'remove', path])
         // Tidy the now-empty <owner> folder, but never the worktrees root itself.
         const parent = dirname(path)
-        if (parent !== root && parent.startsWith(root) && !(await readdir(parent)).length)
-          await rmdir(parent)
+        if (withinWorktrees(parent, root) && !(await readdir(parent)).length) await rmdir(parent)
       })
       return { ok: true }
     }),

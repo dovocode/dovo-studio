@@ -74,6 +74,6 @@ directly when that keeps dependencies clear. Avoid import cycles and cross-packa
 another package's private source. See [architecture and code ownership](docs/architecture.md) for
 package boundaries.
 
-Effect 3 is used alongside existing Promise APIs. Follow the nearest integration boundary, reuse the
+Effect 4 is used alongside existing Promise APIs. Follow the nearest integration boundary, reuse the
 repository's Effect helpers for IO, cancellation, and polling, and avoid wrapping pure UI in
 Effects. See [Effect patterns](docs/effect-patterns.md) for error-channel and lifecycle conventions.

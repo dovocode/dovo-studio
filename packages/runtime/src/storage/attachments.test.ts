@@ -57,7 +57,8 @@ it('validates uploads, deduplicates concurrent retries, isolates tasks and logs 
   expect(history).not.toContain(png)
   expect(JSON.stringify(s.store.get())).not.toContain(png)
   s.attachments.removeDraft(task.id, a.attachment.id)
-  expect(s.attachments.read(task.id, a.attachment.id).data).toBe(png)
+  await s.attachments.prune()
+  expect(() => s.attachments.read(task.id, a.attachment.id)).toThrow('not found')
 })
 it('keeps queued attachments through restart, supplies content and paths to agents, and resumes without re-sending consumed files', async () => {
   const f = await fixture()
@@ -240,4 +241,41 @@ it('restores the live workspace and history when an attachment transaction fails
   })
   expect(s.store.task(task.id).draftAttachments).toEqual([accepted.attachment])
   expect(s.attachments.read(task.id, accepted.attachment.id).data).toBe(png)
+})
+it('prunes materialized orphan files but keeps attachments referenced by conversation history', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const task = s.tasks.create({
+    title: 'GC',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const upload = async (name: string) =>
+    (
+      await s.attachments.upload({
+        taskId: task.id,
+        id: randomUUID(),
+        name,
+        data: Buffer.from(name).toString('base64'),
+      })
+    ).attachment
+  const retained = await upload('retained.txt'),
+    orphan = await upload('orphan.txt')
+  const retainedDisk = await s.attachments.materialize(task.id, retained),
+    orphanDisk = await s.attachments.materialize(task.id, orphan)
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    draftAttachments: [],
+    messages: [{ id: 'history', role: 'user', text: 'Keep file', attachments: [retained] }],
+  }))
+  await s.attachments.prune()
+  expect(await readFile(retainedDisk.path, 'utf8')).toBe('retained.txt')
+  expect(s.attachments.read(task.id, retained.id).attachment).toEqual(retained)
+  await expect(readFile(orphanDisk.path)).rejects.toThrow('ENOENT')
+  expect(() => s.attachments.read(task.id, orphan.id)).toThrow('not found')
 })

@@ -107,6 +107,10 @@ export function startServerUpdate(version: string) {
         `--property=StandardOutput=append:${logPath}`,
         `--property=StandardError=append:${logPath}`,
         '--setenv=DOVO_SERVER_DISTRIBUTION=archive',
+        // With no value, systemd-run copies the caller's variable without putting secrets in argv.
+        ...['GH_TOKEN', 'GITHUB_TOKEN', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'PATH']
+          .filter((key) => process.env[key] !== undefined)
+          .map((key) => `--setenv=${key}`),
         ...(process.env.DOVO_RELEASE_VERSION
           ? [`--setenv=DOVO_RELEASE_VERSION=${process.env.DOVO_RELEASE_VERSION}`]
           : []),

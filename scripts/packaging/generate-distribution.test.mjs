@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { test, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -6,6 +6,20 @@ import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 const script = new URL('./generate-distribution.mjs', import.meta.url)
+const releaseEnvironment = new Map()
+beforeEach(() => {
+  for (const key of ['DOVO_RELEASE_VERSION', 'DOVO_RELEASE_CHANNEL']) {
+    releaseEnvironment.set(key, process.env[key])
+    delete process.env[key]
+  }
+})
+afterEach(() => {
+  for (const [key, value] of releaseEnvironment) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+})
+
 await test('generates matching Homebrew and mise checksums and rejects incomplete releases', async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'dovo-distribution-test-'))
   try {

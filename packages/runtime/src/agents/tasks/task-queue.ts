@@ -1,4 +1,4 @@
-import type { Attachment } from '@dovo/protocol'
+import { MAX_ATTACHMENTS, type Attachment } from '@dovo/protocol'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { Activity } from '../../storage/activity.js'
 import { HttpError } from '../../errors.js'
@@ -134,6 +134,18 @@ export class TaskQueue {
     const queue = [...(task.queue ?? [])],
       index = queue.findIndex((m) => m.id === messageId)
     if (index < 0) throw new HttpError(409, 'This message already started or was removed')
+    if (action === 'restore') {
+      const ids = new Set(
+        [...(task.draftAttachments ?? []), ...(queue[index].attachments ?? [])].map(
+          (file) => file.id,
+        ),
+      )
+      if (ids.size > MAX_ATTACHMENTS)
+        throw new HttpError(
+          409,
+          'Restoring this message would exceed the five-file draft limit. Remove draft attachments first; the queued message is unchanged.',
+        )
+    }
     const removed = action === 'remove' || action === 'restore' ? queue[index] : undefined
     if (removed) queue.splice(index, 1)
     else {

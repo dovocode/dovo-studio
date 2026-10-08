@@ -32,14 +32,17 @@ function WorktreeList() {
   const [list, setList] = useApplicationState<WorktreeList | null>(null)
   const [busy, setBusy] = useApplicationState('')
   const [error, setError] = useApplicationState('')
-  const load = useCallback(async () => {
-    setError('')
-    try {
-      setList(await request('/api/scm/worktrees/read', {}, worktreeListSchema))
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    }
-  }, [request])
+  const load = useCallback(
+    async (clearError = true) => {
+      if (clearError) setError('')
+      try {
+        setList(await request('/api/scm/worktrees/read', {}, worktreeListSchema))
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    },
+    [request],
+  )
   useEffect(() => {
     if (connected) void load()
   }, [connected, load])
@@ -56,7 +59,7 @@ function WorktreeList() {
       }
     }
     setBusy('')
-    await load()
+    await load(false)
   }
   if (!list) return <p className="text-xs text-muted-foreground">{error || 'Loading worktrees…'}</p>
   const groups = [
@@ -67,8 +70,9 @@ function WorktreeList() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          {list.worktrees.length} worktree{list.worktrees.length === 1 ? '' : 's'} in{' '}
-          <code className="font-mono">{list.root}</code>
+          {list.worktrees.length} worktree{list.worktrees.length === 1 ? '' : 's'}. New worktrees
+          use <code className="font-mono">{list.root}</code>
+          {list.rootSource ? ` (${list.rootSource})` : ''}
         </p>
         <Button
           size="sm"
@@ -106,6 +110,8 @@ function WorktreeList() {
                     <p className="truncate text-xs text-muted-foreground">
                       {item.repositoryName} · {item.branch} · {stateLabels[item.state]}
                       {item.dirty ? ' · Uncommitted changes' : ''}
+                      {item.prunable ? ' · Checkout directory missing' : ''}
+                      {item.retainedLocation ? ' · Retained previous location' : ''}
                     </p>
                     <p className="truncate font-mono text-[0.6875rem] text-muted-foreground/80">
                       {item.path}
