@@ -50,8 +50,8 @@ const built = await build({
         runtimeHost:profile.id,
         defaults:{harness:{...defaultTaskHarness('codex'),model:'gpt-6.1-sol',reasoning:'xhigh',permission:'full-access'}},
         workspace:{version:1,runtimeAddress:'',agents:[],tasks:[],automations:[],repositories:[
-          {id:profile.id+'-repo',name:'dovo-studio',path:'/repo',branch:'main'},
-          {id:profile.id+'-other',name:'Another project',path:'/other',branch:'main'}
+          {id:profile.id+'-repo',name:'dovo-studio',path:'/repo',branch:'main',gitIdentity:'github.com/team/dovo-studio'},
+          {id:profile.id+'-other',name:'Another project',path:'/other',branch:'main',gitIdentity:'github.com/team/another'}
         ]}
       })]));
       window.requests=[];window.pendingSnapshots=[];window.holdSnapshots=false;window.failNextSnapshot=false;window.pendingMessage=null;window.dismissed=0;
@@ -183,7 +183,7 @@ try {
   await page.evaluate(() => window.setPreferences({ markdownComposerPreview: true }))
   await page.getByLabel('Formatted message preview').waitFor()
   await page.evaluate(() => window.setPreferences({ markdownComposerPreview: false }))
-  await project.selectOption('one-other')
+  await project.selectOption({ label: 'Another project' })
   assert(
     (await input.inputValue()).startsWith('Make it uniform'),
     'Project selection lost the draft',
@@ -204,7 +204,8 @@ try {
   await reasoning.waitFor()
   await server.selectOption('two')
   await page.waitForFunction(
-    () => document.querySelector('select[aria-label="Project"]').value === 'two-repo',
+    () =>
+      document.querySelector('select[aria-label="Project"]').value === 'github.com/team/another',
   )
   await reasoning.waitFor()
   assert(
@@ -224,10 +225,12 @@ try {
   await reasoning.waitFor()
   await server.selectOption('two')
   await page.waitForFunction(
-    () => document.querySelector('select[aria-label="Project"]').value === 'two-repo',
+    () =>
+      document.querySelector('select[aria-label="Project"]').value === 'github.com/team/another',
   )
   await reasoning.waitFor()
 
+  await project.selectOption({ label: 'dovo-studio' })
   await reasoning.click()
   await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
   await reasoning.click()
