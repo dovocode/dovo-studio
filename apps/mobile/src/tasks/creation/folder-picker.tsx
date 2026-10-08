@@ -9,7 +9,6 @@ import { Pressable, View } from 'react-native'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Sheet } from '../../ui/layout/sheet'
 import { SearchField } from '../../ui/controls/field'
-import { Action } from '../../ui/controls/action'
 import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
@@ -40,7 +39,7 @@ export function FolderPicker({
   const { colors, styles } = useTheme()
   const runtime = useRuntime()
   const [open, setOpen] = useApplicationState(false)
-  const [mode, setMode] = useApplicationState<'projects' | 'servers'>('projects')
+  const [mode, setMode] = useApplicationState<'projects' | 'servers' | 'add-runtime'>('projects')
   const [query, setQuery] = useApplicationState('')
   const [adding, setAdding] = useApplicationState<string | null>(null)
   const [busy, setBusy] = useApplicationState(false)
@@ -51,7 +50,6 @@ export function FolderPicker({
   const sources = runtime.overviews.filter(
     (entry) => allowMachineChange || entry.profile.id === runtime.activeId,
   )
-  const current = sources.find((entry) => entry.profile.id === runtime.activeId)
   const multipleMachines = sources.length > 1
   const groups = taskProjectGroups(
     sources.flatMap((source) =>
@@ -217,7 +215,20 @@ export function FolderPicker({
       </View>
       {open && !adding && (
         <Sheet
-          title={mode === 'projects' ? 'Project' : 'Server'}
+          title={
+            mode === 'projects' ? 'Project' : mode === 'add-runtime' ? 'Select runtime' : 'Server'
+          }
+          headerAction={
+            mode === 'projects'
+              ? {
+                  label: 'Add project',
+                  icon: 'add',
+                  disabled:
+                    locked || !sources.some((source) => source.connected && source.snapshot),
+                  onPress: () => setMode('add-runtime'),
+                }
+              : undefined
+          }
           busy={busy}
           onClose={() => setOpen(false)}
         >
@@ -238,18 +249,36 @@ export function FolderPicker({
                   {query.trim() ? 'No matching projects.' : 'No projects yet.'}
                 </Text>
               )}
-              <Action
-                secondary
-                label={
-                  multipleMachines
-                    ? `Add project on ${runtimeComputerName(runtime)}`
-                    : 'Add project'
-                }
-                disabled={locked || !current?.connected}
-                onPress={() => {
-                  if (current) setAdding(current.profile.id)
-                }}
-              />
+            </>
+          ) : mode === 'add-runtime' ? (
+            <>
+              <Text style={styles.muted}>Choose where to add the project.</Text>
+              {sources.map((source) => (
+                <Pressable
+                  key={source.profile.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={runtimeComputerName(source)}
+                  accessibilityState={{ disabled: locked || !source.connected || !source.snapshot }}
+                  disabled={locked || !source.connected || !source.snapshot}
+                  onPress={() => setAdding(source.profile.id)}
+                  style={[
+                    styles.row,
+                    {
+                      padding: 12,
+                      minHeight: 48,
+                      borderRadius: 10,
+                      opacity: source.connected && source.snapshot ? 1 : 0.45,
+                    },
+                  ]}
+                >
+                  <Icon name="device" size={18} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.text}>{runtimeComputerName(source)}</Text>
+                    {!source.connected && <Text style={styles.muted}>Offline</Text>}
+                  </View>
+                  <Icon name="down" size={14} />
+                </Pressable>
+              ))}
             </>
           ) : (
             <>

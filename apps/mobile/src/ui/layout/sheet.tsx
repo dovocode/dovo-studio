@@ -24,6 +24,8 @@ import {
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
 import { Text } from '../content/text'
 import { Action } from '../controls/action'
+import { IconButton } from '../controls/icon-button'
+import type { IconName } from '../controls/icon'
 import { useTheme } from '../theme'
 const SheetContext = createContext(false)
 export function useInsideSheet() {
@@ -36,6 +38,7 @@ export function Sheet({
   busy = false,
   scrollable = true,
   footer,
+  headerAction,
 }: {
   title: string
   children: ReactNode
@@ -43,6 +46,7 @@ export function Sheet({
   busy?: boolean
   scrollable?: boolean
   footer?: ReactNode
+  headerAction?: { label: string; icon: IconName; onPress: () => void; disabled?: boolean }
 }) {
   const { colors, styles, mode: appearanceMode } = useTheme()
 
@@ -134,6 +138,19 @@ export function Sheet({
                   </View>
                 </RNHostView>
                 <Toolbar.Content>
+                  {headerAction && (
+                    <NativeMenuButton
+                      testID={headerAction.label}
+                      label={headerAction.label}
+                      icon={headerAction.icon}
+                      onPress={headerAction.onPress}
+                      modifiers={[
+                        labelStyle('iconOnly'),
+                        accessibilityLabel(headerAction.label),
+                        disabled(busy || !presented || !!headerAction.disabled),
+                      ]}
+                    />
+                  )}
                   {keyboard && (
                     <NativeMenuButton
                       testID="Dismiss keyboard"
@@ -184,6 +201,14 @@ export function Sheet({
               {title}
             </Text>
             {keyboard && <Action label="Dismiss keyboard" secondary onPress={Keyboard.dismiss} />}
+            {headerAction && (
+              <IconButton
+                label={headerAction.label}
+                icon={headerAction.icon}
+                onPress={headerAction.onPress}
+                disabled={busy || !!headerAction.disabled}
+              />
+            )}
             <Action label="Close" secondary disabled={busy} onPress={close} />
           </View>
           {scrollable ? (
