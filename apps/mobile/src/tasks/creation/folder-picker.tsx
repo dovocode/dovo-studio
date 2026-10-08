@@ -25,7 +25,9 @@ export function FolderPicker({
   allowMachineChange = true,
   chatOnly = false,
   onMoving,
+  stacked = false,
 }: {
+  stacked?: boolean
   repositories: readonly Repository[]
   value: string
   disabled?: boolean
@@ -154,7 +156,7 @@ export function FolderPicker({
   }
   return (
     <>
-      <View style={[styles.row, { gap: 8 }]}>
+      <View style={stacked ? { gap: 8 } : [styles.row, { gap: 8 }]}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Folder"
@@ -165,7 +167,8 @@ export function FolderPicker({
           style={[
             styles.row,
             {
-              flex: 1,
+              flex: stacked ? undefined : 1,
+              flexWrap: 'nowrap',
               padding: 12,
               minHeight: 44,
               borderRadius: 12,
@@ -180,7 +183,7 @@ export function FolderPicker({
           </Text>
           <Icon name="down" size={14} />
         </Pressable>
-        {multipleMachines && (
+        {(multipleMachines || (stacked && !!runtime.profile)) && (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Task server"
@@ -191,7 +194,8 @@ export function FolderPicker({
             style={[
               styles.row,
               {
-                maxWidth: '45%',
+                maxWidth: stacked ? '100%' : '45%',
+                flexWrap: 'nowrap',
                 padding: 12,
                 minHeight: 44,
                 borderRadius: 12,
@@ -201,7 +205,10 @@ export function FolderPicker({
             ]}
           >
             <Icon name="device" size={16} />
-            <Text numberOfLines={1} style={[styles.muted, { flexShrink: 1 }]}>
+            <Text
+              numberOfLines={1}
+              style={[styles.muted, stacked ? { flex: 1 } : { flexShrink: 1 }]}
+            >
               {runtimeComputerName(runtime)}
             </Text>
             <Icon name="down" size={14} />

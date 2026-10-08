@@ -90,7 +90,7 @@ const mocks = {
     import {Schema} from 'effect';
     import {runClientEffect} from '@dovo/client-runtime';
     import {useRuntime} from '../../runtime/connection/provider';
-    export const Composer=({task,onSelectRemote})=>{
+    export const Composer=({task,onSelectRemote,renderAbove})=>{
       const runtime=useRuntime();
       const [text,setText]=useState(task.draft);
       const [pending,setPending]=useState(false);
@@ -104,6 +104,7 @@ const mocks = {
         }catch(error){window.failure=String(error)}finally{setPending(false)}
       };
       return <>
+        {renderAbove?.(null)}
         <input aria-label="Message" value={text} onChange={e=>setText(e.target.value)}/>
         <span data-pending={pending}>{pending?'Sending':'Ready'}</span>
         <button onClick={()=>runClientEffect(runtime.callEffect('/api/workspace',{collection:'tasks',id:task.id,changes:{setupCommand:{before:task.setupCommand,after:'pnpm install'}}},Schema.Unknown,'PATCH'))}>Settings</button>

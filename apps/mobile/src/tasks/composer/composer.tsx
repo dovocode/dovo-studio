@@ -10,7 +10,7 @@ import { Glass } from '../../ui/layout/glass'
 import { MessageAttachments } from '../conversation/components/message-attachments'
 import { ActivityIndicator, Alert, Keyboard, Linking, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   REVIEW_PROMPT,
   contextMeter,
@@ -45,8 +45,10 @@ export function Composer({
   task,
   onAsk,
   onSelectRemote,
+  renderAbove,
 }: {
   task: Task
+  renderAbove?: (setup: ReactNode) => ReactNode
   onAsk?: () => void
   onSelectRemote?: (runtimeId: string, repository: Repository, text: string) => Promise<void>
 }) {
@@ -153,8 +155,13 @@ export function Composer({
     !!task.archivedAt ||
     !task.sessionId ||
     !!task.queue?.length
-  const hasGit = !snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
-    ?.kind
+  const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
+  const hasGit = !!repository && !repository.kind
+  const checkoutLabel = task.existingWorktreePath
+    ? `Existing worktree · ${task.existingWorktreePath.split(/[\\/]/).at(-1)}`
+    : task.execution === 'worktree'
+      ? `New worktree${task.worktreeBaseBranch ? ` · ${task.worktreeBaseBranch}` : ''}`
+      : `Local checkout${repository?.branch ? ` · ${repository.branch}` : ''}`
   const worktreeAction = useAction()
   const [worktrees, setWorktrees] = useApplicationState<WorktreeChoices | null>(null)
   const [choosingWorktree, setChoosingWorktree] = useApplicationState(false)
@@ -242,26 +249,129 @@ export function Composer({
             : dictation.state?.status === 'done'
               ? 'Dictation cleaned up'
               : ''
+  const setup =
+    checkoutEditable ||
+    (task.execution === 'worktree' && task.pullRequest && !task.checkoutBranch) ? (
+      <>
+        {checkoutEditable && (
+          <View testID="Task setup" style={{ gap: 8, width: '100%' }}>
+            <TaskMachineSelector
+              task={task}
+              text={draft.text}
+              disabled={busy || !draft.ready || attaching || dictation.active}
+              onMoving={setMachineMoving}
+              onSelectRemote={onSelectRemote}
+              onProjectChange={async (repository) => {
+                if (repository.id === task.repositoryId) return
+                const id = repository.id
+                const defaults = resolveTaskDefaults(snapshot?.defaults, repository)
+                await patch({
+                  repositoryId: { before: task.repositoryId, after: id },
+                  agentId: { before: task.agentId, after: '' },
+                  agentOverrides: { before: task.agentOverrides ?? null, after: null },
+                  harness: { before: task.harness ?? null, after: defaults.harness },
+                  harnessCustomized: { before: task.harnessCustomized ?? null, after: null },
+                  execution: { before: task.execution ?? null, after: defaults.execution },
+                  setupCommand: {
+                    before: task.setupCommand ?? null,
+                    after: defaults.setupCommand ?? null,
+                  },
+                  worktreeFromOrigin: {
+                    before: task.worktreeFromOrigin ?? null,
+                    after: defaults.worktreeFromOrigin,
+                  },
+                  existingWorktreePath: { before: task.existingWorktreePath ?? null, after: null },
+                  worktreeBaseBranch: { before: task.worktreeBaseBranch ?? null, after: null },
+                })
+              }}
+            />
+            {hasGit && !dictation.active && (
+              <Pressable
+                testID="Checkout & branch"
+                accessibilityRole="button"
+                accessibilityLabel="Checkout & branch"
+                accessibilityValue={{ text: checkoutLabel }}
+                accessibilityState={{
+                  disabled: busy,
+                }}
+                disabled={busy}
+                onPress={() => {
+                  Keyboard.dismiss()
+                  setCheckout(true)
+                }}
+                style={({ pressed }) => ({
+                  minWidth: 44,
+                  minHeight: 44,
+                  borderRadius: 12,
+                  backgroundColor: colors.surface,
+                  flexWrap: 'nowrap',
+                  paddingHorizontal: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                  opacity: pressed || busy ? 0.5 : 1,
+                })}
+              >
+                <Icon
+                  name={task.execution === 'worktree' ? 'changes' : 'folder'}
+                  size={14}
+                  color={colors.muted}
+                />
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.muted,
+                    {
+                      flex: 1,
+                    },
+                  ]}
+                >
+                  {checkoutLabel}
+                </Text>
+                <Icon name="down" size={10} color={colors.muted} />
+              </Pressable>
+            )}
+          </View>
+        )}
+        {task.execution === 'worktree' && task.pullRequest && !task.checkoutBranch && (
+          <Text style={styles.muted}>
+            {task.pullRequest.checkoutMode === 'pr-branch'
+              ? 'PR branch in new worktree:'
+              : 'New worktree from'}{' '}
+            {task.pullRequest.headBranch || `PR #${task.pullRequest.number}`}
+          </Text>
+        )}
+      </>
+    ) : null
   if (
     snapshot?.questions.some(
       (question) => question.taskId === task.id && question.prompt.blocking !== false,
     )
   )
     return (
-      <View
-        style={[
-          styles.content,
-          {
-            paddingVertical: 8,
-          },
-        ]}
-      >
-        <Action label="Stop" disabled={!connected || stopping} onPress={stop} />
-        {!!error && <Text style={styles.error}>{error}</Text>}
-      </View>
+      <>
+        {renderAbove?.(null)}
+        <View
+          style={[
+            styles.content,
+            {
+              paddingVertical: 8,
+            },
+          ]}
+        >
+          <Action label="Stop" disabled={!connected || stopping} onPress={stop} />
+          {!!error && <Text style={styles.error}>{error}</Text>}
+        </View>
+      </>
     )
-  if (car && !typing) return <CarComposer task={task} onType={() => setTyping(true)} />
-  return (
+  if (car && !typing)
+    return (
+      <>
+        {renderAbove?.(null)}
+        <CarComposer task={task} onType={() => setTyping(true)} />
+      </>
+    )
+  const input = (
     <View
       testID="Composer"
       style={[
@@ -312,103 +422,7 @@ export function Composer({
           </View>
         </Pressable>
       )}
-      {checkoutEditable && (
-        <View testID="Task setup" style={{ gap: 4, marginBottom: 4 }}>
-          <TaskMachineSelector
-            task={task}
-            text={draft.text}
-            disabled={busy || !draft.ready || attaching || dictation.active}
-            onMoving={setMachineMoving}
-            onSelectRemote={onSelectRemote}
-            onProjectChange={async (repository) => {
-              if (repository.id === task.repositoryId) return
-              const id = repository.id
-              const defaults = resolveTaskDefaults(snapshot?.defaults, repository)
-              await patch({
-                repositoryId: { before: task.repositoryId, after: id },
-                agentId: { before: task.agentId, after: '' },
-                agentOverrides: { before: task.agentOverrides ?? null, after: null },
-                harness: { before: task.harness ?? null, after: defaults.harness },
-                harnessCustomized: { before: task.harnessCustomized ?? null, after: null },
-                execution: { before: task.execution ?? null, after: defaults.execution },
-                setupCommand: {
-                  before: task.setupCommand ?? null,
-                  after: defaults.setupCommand ?? null,
-                },
-                worktreeFromOrigin: {
-                  before: task.worktreeFromOrigin ?? null,
-                  after: defaults.worktreeFromOrigin,
-                },
-                existingWorktreePath: { before: task.existingWorktreePath ?? null, after: null },
-                worktreeBaseBranch: { before: task.worktreeBaseBranch ?? null, after: null },
-              })
-            }}
-          />
-          {hasGit && !dictation.active && (
-            <Pressable
-              testID="Checkout & branch"
-              accessibilityRole="button"
-              accessibilityLabel="Checkout & branch"
-              accessibilityValue={{
-                text: task.existingWorktreePath
-                  ? 'Existing worktree'
-                  : task.execution === 'worktree'
-                    ? 'New worktree'
-                    : 'Local checkout',
-              }}
-              accessibilityState={{
-                disabled: busy,
-              }}
-              disabled={busy}
-              onPress={() => {
-                Keyboard.dismiss()
-                setCheckout(true)
-              }}
-              style={({ pressed }) => ({
-                minWidth: 44,
-                minHeight: 44,
-                alignSelf: 'flex-start',
-                paddingHorizontal: 12,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 4,
-                opacity: pressed || busy ? 0.5 : 1,
-              })}
-            >
-              <Icon
-                name={task.execution === 'worktree' ? 'changes' : 'folder'}
-                size={14}
-                color={colors.muted}
-              />
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.muted,
-                  {
-                    flexShrink: 1,
-                    fontSize: 13,
-                  },
-                ]}
-              >
-                {task.existingWorktreePath
-                  ? 'Existing'
-                  : task.execution === 'worktree'
-                    ? 'Worktree'
-                    : 'Local'}
-              </Text>
-              <Icon name="down" size={10} color={colors.muted} />
-            </Pressable>
-          )}
-        </View>
-      )}
-      {task.execution === 'worktree' && task.pullRequest && !task.checkoutBranch && (
-        <Text style={styles.muted}>
-          {task.pullRequest.checkoutMode === 'pr-branch'
-            ? 'PR branch in new worktree:'
-            : 'New worktree from'}{' '}
-          {task.pullRequest.headBranch || `PR #${task.pullRequest.number}`}
-        </Text>
-      )}
+      {!renderAbove && setup}
       <Glass
         style={{
           borderRadius: 26,
@@ -764,7 +778,10 @@ export function Composer({
               act(() =>
                 patch({
                   execution: { before: task.execution ?? null, after: execution },
-                  existingWorktreePath: { before: task.existingWorktreePath ?? null, after: null },
+                  existingWorktreePath: {
+                    before: task.existingWorktreePath ?? null,
+                    after: null,
+                  },
                 }),
               )
             }}
@@ -832,5 +849,13 @@ export function Composer({
       )}
       {settings && <HarnessSettings task={task} onClose={() => setSettings(false)} />}
     </View>
+  )
+  return renderAbove ? (
+    <>
+      {renderAbove(setup)}
+      {input}
+    </>
+  ) : (
+    input
   )
 }

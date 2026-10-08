@@ -12,7 +12,7 @@ import { MessageActions } from './components/message-actions'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
-import { useCallback, useEffect, useRef, useMemo, memo } from 'react'
+import { useCallback, useEffect, useRef, useMemo, memo, type ReactNode } from 'react'
 import {
   ActivityIndicator,
   FlatList,
@@ -486,7 +486,7 @@ const renderConversationMessage = ({
   item: { message: ThreadMessage; index: number }
 }) => <ConversationMessageCell index={item.index} />
 const messageKey = (item: { message: ThreadMessage; index: number }) => item.message.id
-export function Conversation({ onBrowse }: { onBrowse?: () => void }) {
+export function Conversation({ onBrowse, setup }: { onBrowse?: () => void; setup?: ReactNode }) {
   const { colors, styles } = useTheme()
 
   const history = useConversationSelector((value) => value.history)
@@ -549,7 +549,7 @@ export function Conversation({ onBrowse }: { onBrowse?: () => void }) {
     scroll.endInteraction(nativeEvent.contentOffset.y)
     setFollowing(scroll.following)
   }
-  return (
+  const conversation = (
     <ThreadPrimitive.Root
       style={{
         flex: 1,
@@ -646,7 +646,7 @@ export function Conversation({ onBrowse }: { onBrowse?: () => void }) {
           emptyDraft ? (
             // FlatList applies its inversion and measurement props to this native view.
             <View style={{ flex: 1 }}>
-              <TaskEmptyState onBrowse={onBrowse} />
+              <TaskEmptyState onBrowse={onBrowse} setup={setup} />
             </View>
           ) : null
         }
@@ -696,5 +696,13 @@ export function Conversation({ onBrowse }: { onBrowse?: () => void }) {
         )}
       </View>
     </ThreadPrimitive.Root>
+  )
+  return (
+    <>
+      {conversation}
+      {!emptyDraft && setup && (
+        <View style={{ paddingHorizontal: 12, paddingBottom: 4 }}>{setup}</View>
+      )}
+    </>
   )
 }

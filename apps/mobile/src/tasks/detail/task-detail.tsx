@@ -656,128 +656,138 @@ function TaskDetailContent({
             display: pane === 'chat' ? 'flex' : 'none',
           }}
         >
-          <Conversation onBrowse={startup?.onBrowse} />
-          {preparation ? (
-            <PreparationProgress
-              preparation={preparation}
-              onRetry={
-                connected
-                  ? () =>
-                      retry.act(() => callEffect('/api/tasks/run', { id: task.id }, responses.ok))
-                  : undefined
-              }
-              retrying={retry.busy}
-              retryError={retry.error}
-            />
-          ) : task.status === 'running' && task.runPhase === 'preparing' ? (
-            <View
-              accessibilityRole="text"
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 10,
-                paddingHorizontal: 16,
-                paddingVertical: 8,
-              }}
-            >
-              <ActivityIndicator size="small" color={colors.muted} />
-              <Text style={[styles.muted, { flex: 1 }]}>Starting agent…</Text>
-            </View>
-          ) : null}
-          {task.quotaContinuation && (
-            <View style={{ padding: 12, gap: 8 }}>
-              <Text style={styles.muted}>
-                {task.quotaContinuation.resume ? 'Scheduled to resume' : 'Snoozed'} at{' '}
-                {new Date(task.quotaContinuation.at).toLocaleString()}
-              </Text>
-              <Action
-                secondary
-                label="Cancel quota continuation"
-                disabled={!connected || quota.busy}
-                onPress={() =>
-                  quota.act(() =>
-                    callEffect('/api/tasks/quota/cancel', { id: task.id }, responses.ok),
-                  )
-                }
-              />
-              {quota.error && <Text style={{ color: colors.error }}>{quota.error}</Text>}
-            </View>
-          )}
-          <TaskQuestions taskId={task.id} questionId={questionId} />
-          {(budget.tokenExceeded || budget.timeExceeded) && (
-            <Text
-              accessibilityRole="alert"
-              style={[styles.muted, { color: colors.warning, paddingHorizontal: 16 }]}
-            >
-              Task budget reached · {budget.tokens ?? 'unknown'} tokens ·{' '}
-              {Math.round(budget.minutes)} agent minutes. The agent can continue.
-            </Text>
-          )}
-          {task.restartRecovery &&
-            task.status !== 'running' &&
-            !task.archived &&
-            !snapshot?.runs.some((run) => run.taskIds.includes(task.id)) && (
-              <View style={{ paddingHorizontal: 16, gap: 8 }}>
-                <Action
-                  label={task.runPhase === 'finalizing' ? 'Retry saving changes' : 'Resume task'}
-                  disabled={!connected || resume.busy}
-                  onPress={() =>
-                    resume.act(() => callEffect('/api/tasks/run', { id: task.id }, responses.ok))
-                  }
-                />
-                {!!resume.error && (
-                  <Text accessibilityRole="alert" style={styles.error}>
-                    {resume.error}
+          <Composer
+            renderAbove={(setup) => (
+              <>
+                <Conversation onBrowse={startup?.onBrowse} setup={setup} />
+                {preparation ? (
+                  <PreparationProgress
+                    preparation={preparation}
+                    onRetry={
+                      connected
+                        ? () =>
+                            retry.act(() =>
+                              callEffect('/api/tasks/run', { id: task.id }, responses.ok),
+                            )
+                        : undefined
+                    }
+                    retrying={retry.busy}
+                    retryError={retry.error}
+                  />
+                ) : task.status === 'running' && task.runPhase === 'preparing' ? (
+                  <View
+                    accessibilityRole="text"
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 10,
+                      paddingHorizontal: 16,
+                      paddingVertical: 8,
+                    }}
+                  >
+                    <ActivityIndicator size="small" color={colors.muted} />
+                    <Text style={[styles.muted, { flex: 1 }]}>Starting agent…</Text>
+                  </View>
+                ) : null}
+                {task.quotaContinuation && (
+                  <View style={{ padding: 12, gap: 8 }}>
+                    <Text style={styles.muted}>
+                      {task.quotaContinuation.resume ? 'Scheduled to resume' : 'Snoozed'} at{' '}
+                      {new Date(task.quotaContinuation.at).toLocaleString()}
+                    </Text>
+                    <Action
+                      secondary
+                      label="Cancel quota continuation"
+                      disabled={!connected || quota.busy}
+                      onPress={() =>
+                        quota.act(() =>
+                          callEffect('/api/tasks/quota/cancel', { id: task.id }, responses.ok),
+                        )
+                      }
+                    />
+                    {quota.error && <Text style={{ color: colors.error }}>{quota.error}</Text>}
+                  </View>
+                )}
+                <TaskQuestions taskId={task.id} questionId={questionId} />
+                {(budget.tokenExceeded || budget.timeExceeded) && (
+                  <Text
+                    accessibilityRole="alert"
+                    style={[styles.muted, { color: colors.warning, paddingHorizontal: 16 }]}
+                  >
+                    Task budget reached · {budget.tokens ?? 'unknown'} tokens ·{' '}
+                    {Math.round(budget.minutes)} agent minutes. The agent can continue.
                   </Text>
                 )}
-              </View>
-            )}
-          {task.status === 'cancelled' && !task.archived && !task.restartRecovery && (
-            <View style={{ paddingHorizontal: 16, gap: 8 }}>
-              <Text style={styles.muted}>
-                Stopped ·{' '}
-                {task.queue?.length
-                  ? `${task.queue.length} queued messages ready`
-                  : 'continue with a follow-up'}
-              </Text>
-              <Action
-                label="Continue"
-                disabled={!connected || resume.busy}
-                onPress={() =>
-                  resume.act(() =>
-                    Effect.gen(function* () {
-                      if (!task.queue?.length)
-                        yield* callEffect(
-                          '/api/tasks/message',
-                          {
-                            id: task.id,
-                            messageId: randomUUID(),
-                            text: 'Continue from where you stopped.',
-                            attachmentIds: [],
-                          },
-                          responses.ok,
+                {task.restartRecovery &&
+                  task.status !== 'running' &&
+                  !task.archived &&
+                  !snapshot?.runs.some((run) => run.taskIds.includes(task.id)) && (
+                    <View style={{ paddingHorizontal: 16, gap: 8 }}>
+                      <Action
+                        label={
+                          task.runPhase === 'finalizing' ? 'Retry saving changes' : 'Resume task'
+                        }
+                        disabled={!connected || resume.busy}
+                        onPress={() =>
+                          resume.act(() =>
+                            callEffect('/api/tasks/run', { id: task.id }, responses.ok),
+                          )
+                        }
+                      />
+                      {!!resume.error && (
+                        <Text accessibilityRole="alert" style={styles.error}>
+                          {resume.error}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                {task.status === 'cancelled' && !task.archived && !task.restartRecovery && (
+                  <View style={{ paddingHorizontal: 16, gap: 8 }}>
+                    <Text style={styles.muted}>
+                      Stopped ·{' '}
+                      {task.queue?.length
+                        ? `${task.queue.length} queued messages ready`
+                        : 'continue with a follow-up'}
+                    </Text>
+                    <Action
+                      label="Continue"
+                      disabled={!connected || resume.busy}
+                      onPress={() =>
+                        resume.act(() =>
+                          Effect.gen(function* () {
+                            if (!task.queue?.length)
+                              yield* callEffect(
+                                '/api/tasks/message',
+                                {
+                                  id: task.id,
+                                  messageId: randomUUID(),
+                                  text: 'Continue from where you stopped.',
+                                  attachmentIds: [],
+                                },
+                                responses.ok,
+                              )
+                            yield* callEffect(
+                              '/api/tasks/queue',
+                              { id: task.id, action: 'resume' },
+                              responses.ok,
+                            )
+                          }),
                         )
-                      yield* callEffect(
-                        '/api/tasks/queue',
-                        { id: task.id, action: 'resume' },
-                        responses.ok,
-                      )
-                    }),
-                  )
-                }
-              />
-              {!!resume.error && (
-                <Text accessibilityRole="alert" style={styles.error}>
-                  {resume.error}
-                </Text>
-              )}
-            </View>
-          )}
-          <PlanApproval task={task} />
-          <ReviewFindings task={task} onOpen={() => setPane('diff')} />
-          <ReviewComments task={task} />
-          <MessageQueue task={task} />
-          <Composer
+                      }
+                    />
+                    {!!resume.error && (
+                      <Text accessibilityRole="alert" style={styles.error}>
+                        {resume.error}
+                      </Text>
+                    )}
+                  </View>
+                )}
+                <PlanApproval task={task} />
+                <ReviewFindings task={task} onOpen={() => setPane('diff')} />
+                <ReviewComments task={task} />
+                <MessageQueue task={task} />
+              </>
+            )}
             key={task.id}
             task={task}
             onSelectRemote={startup?.temporary ? startup.onSelectRemote : undefined}

@@ -35,6 +35,7 @@ export function TaskMachineSelector({
   return (
     <View style={{ gap: 4 }}>
       <FolderPicker
+        stacked
         value={task.repositoryId}
         repositories={runtime.snapshot?.workspace.repositories ?? []}
         disabled={
