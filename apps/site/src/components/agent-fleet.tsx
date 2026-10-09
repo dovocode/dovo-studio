@@ -23,10 +23,10 @@ const stages = [
     name: 'Parallel threads',
     title: 'Give every idea room to run.',
     description:
-      'Let separate threads move at the same time. Your API, interface and review each have an agent, their own context and a separate checkout.',
-    count: '3 parallel threads',
+      'Let separate threads move at the same time. Your API, interface, review and delivery each have an agent, their own context and a separate checkout.',
+    count: '4 threads running simultaneously',
     event: [
-      'Start three independent threads',
+      'Start four independent threads',
       'API and UI work in parallel',
       'Review follows the changes',
       'Agents stream progress',
@@ -40,7 +40,7 @@ const stages = [
     title: 'Build a team inside each thread.',
     description:
       'Agents delegate focused work to subagents. Research, implementation and tests can move together, with results flowing back to the parent.',
-    count: '3 threads · 6 subagents',
+    count: '4 threads · 12 subagents',
     event: [
       'Parent agents break down the work',
       'Delegate focused subtasks',
@@ -55,8 +55,8 @@ const stages = [
     name: 'Connected runtimes',
     title: 'One fleet. Multiple machines.',
     description:
-      'Coming soon: experimental agent orchestration across your laptop, build server and remote workstation. Agents will hand off work and exchange findings between paired runtimes. Connecting to multiple runtimes is available today.',
-    count: 'Coming soon · 3 runtimes',
+      'Coming soon: experimental agent orchestration across your laptop, build server, remote workstation and test runner. Agents will hand off work and exchange findings between paired runtimes. Connecting to multiple runtimes is available today.',
+    count: 'Coming soon · 4 runtimes · 64 agents',
     event: [
       'Connect the fleet across runtimes',
       'Laptop agent sends the build brief',
@@ -74,22 +74,152 @@ const threads = [
     name: 'API thread',
     agent: 'API agent',
     task: 'Build the endpoint',
-    children: ['Research', 'Tests'],
+    file: 'api/routes.ts',
+    children: ['Research', 'Implement', 'Tests'],
   },
   {
     name: 'UI thread',
     agent: 'UI agent',
     task: 'Build the interface',
-    children: ['Components', 'Accessibility'],
+    file: 'app/dashboard.tsx',
+    children: ['Components', 'Styles', 'A11y'],
   },
   {
     name: 'Review thread',
     agent: 'Review agent',
     task: 'Review the changes',
-    children: ['Diff review', 'Checks'],
+    file: 'pull-request.diff',
+    children: ['Diff review', 'Types', 'Security'],
+  },
+  {
+    name: 'Delivery thread',
+    agent: 'Delivery agent',
+    task: 'Prepare the release',
+    file: 'release/workflow.yml',
+    children: ['Build', 'Checks', 'Docs'],
   },
 ] as const
-const runtimes = ['Your laptop', 'Build server', 'Remote workstation']
+const runtimes = [
+  {
+    name: 'Your laptop',
+    detail: 'LOCAL / PLAN + IMPLEMENT',
+    tasks: [
+      'Map the requirements',
+      'Build the dashboard',
+      'Inspect the changes',
+      'Prepare the handoff',
+    ],
+  },
+  {
+    name: 'Build server',
+    detail: 'REMOTE / BUILD + VALIDATE',
+    tasks: [
+      'Compile the API',
+      'Bundle the interface',
+      'Check the types',
+      'Build release artifacts',
+    ],
+  },
+  {
+    name: 'Remote workstation',
+    detail: 'REMOTE / RESEARCH + REVIEW',
+    tasks: ['Review the contract', 'Check accessibility', 'Audit the changes', 'Update the docs'],
+  },
+  {
+    name: 'Test runner',
+    detail: 'REMOTE / TEST + REPORT',
+    tasks: ['Run API tests', 'Run browser tests', 'Verify the migration', 'Report the results'],
+  },
+] as const
+const activities = [
+  'Reading project context',
+  'Editing implementation',
+  'Running targeted tests',
+  'Reviewing the diff',
+  'Sending findings',
+  'Applying feedback',
+  'Preparing handoff',
+]
+const fleetSize = [1, 4, 16, 64]
+
+function FleetThread({
+  index,
+  runtime,
+  stage,
+  beat,
+}: {
+  index: number
+  runtime: number
+  stage: number
+  beat: number
+}) {
+  const thread = threads[index]
+  const sequence = runtime * 4 + index
+  const progress = 16 + ((beat * 11 + sequence * 17) % 80)
+  return (
+    <div className="fleet-thread" style={{ animationDelay: `${sequence * 45}ms` }}>
+      <div className="fleet-agent">
+        <div className="fleet-agent-heading">
+          <span className="fleet-agent-mark" aria-hidden="true">
+            ✳
+          </span>
+          <strong>
+            {stage === 3 && runtime === 0 && index === 0 ? 'Lead agent' : thread.agent}
+          </strong>
+          <span className="fleet-node-status">● WORKING</span>
+        </div>
+        <p>
+          {stage === 3
+            ? runtimes[runtime].tasks[index]
+            : stage === 0
+              ? thread.task
+              : activities[(beat + sequence) % activities.length]}
+        </p>
+        <div className="fleet-agent-file">
+          <span>{thread.file}</span>
+          <span>{progress}%</span>
+        </div>
+        <div className="fleet-task-progress" aria-hidden="true">
+          <i style={{ width: `${progress}%` }} />
+        </div>
+      </div>
+      {stage >= 2 && (
+        <div className="fleet-subagents expanded">
+          <span className="fleet-delegation">
+            ↓ delegate <span>↑ return findings</span>
+          </span>
+          <div>
+            {thread.children.map((child, childIndex) => (
+              <div
+                className="fleet-child"
+                key={child}
+                style={{ animationDelay: `${(sequence * 3 + childIndex) * 35}ms` }}
+              >
+                <div>
+                  <span className="fleet-child-light" aria-hidden="true" />
+                  <strong>{child}</strong>
+                </div>
+                <small>
+                  {
+                    ['Reading', 'Editing', 'Testing', 'Reporting'][
+                      (beat + sequence + childIndex) % 4
+                    ]
+                  }
+                </small>
+                <div className="fleet-work-bars" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const stageLength = 7
 
 export function AgentFleet() {
@@ -104,6 +234,7 @@ export function AgentFleet() {
   const current = stages[stage]
   const running = playing && visible && foreground && !reduced
   const activeThread = beat < 3 ? 0 : beat < 5 ? 1 : 2
+  const runtimeCount = stage === 3 ? 4 : 1
 
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -114,7 +245,7 @@ export function AgentFleet() {
     preference.addEventListener('change', syncPreference)
     document.addEventListener('visibilitychange', syncVisibility)
     const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), {
-      threshold: 0.2,
+      threshold: 0.01,
     })
     if (root.current) observer.observe(root.current)
     return () => {
@@ -235,81 +366,136 @@ export function AgentFleet() {
           tabIndex={0}
           aria-label={`${current.name}: ${current.description}`}
         >
-          <div className="fleet-diagram">
+          <div className="fleet-scene-top">
             <div className="fleet-you">
               <span className="status-dot" /> YOU <span>Direction · Decisions · Final review</span>
             </div>
-            <svg className="fleet-connections" viewBox="0 0 900 460" fill="none" aria-hidden="true">
-              <path
-                className="fleet-link"
-                d="M450 58V112M150 112H750M150 112V170M450 112V170M750 112V170"
-              />
-              {stage === 3 && (
-                <>
-                  <path className="fleet-link fleet-exchange" d="M230 236H370M530 236H670" />
-                  <path className="fleet-link fleet-return" d="M750 375V422H150V375" />
-                  <text x="450" y="450" textAnchor="middle">
-                    findings + handoffs → shared progress
-                  </text>
-                </>
-              )}
-            </svg>
-            <div className="fleet-runtime-label">
-              {stage === 3 ? 'CONNECTED FLEET / 3 RUNTIMES' : 'YOUR LAPTOP / LOCAL RUNTIME'}
+            <div className="fleet-scale">
+              <strong>{fleetSize[stage]}</strong>
+              <span>
+                active {stage === 0 ? 'agent' : 'agents'}
+                <small>1 → 4 → 16 → 64</small>
+              </span>
             </div>
-            <div className="fleet-columns">
-              {threads.map((thread, index) => {
-                const active = stage > 0 || activeThread === index
-                const done = stage === 0 && index < activeThread
-                return (
-                  <div
-                    className={`fleet-runtime ${active ? 'active' : ''} ${done ? 'done' : ''}`}
-                    key={thread.name}
+          </div>
+          <div className="fleet-diagram">
+            {stage === 3 && (
+              <svg
+                className="fleet-connections"
+                viewBox="0 0 1400 800"
+                preserveAspectRatio="none"
+                fill="none"
+                aria-hidden="true"
+              >
+                <defs>
+                  <marker
+                    id="fleet-arrow"
+                    viewBox="0 0 10 10"
+                    refX="8"
+                    refY="5"
+                    markerWidth="5"
+                    markerHeight="5"
+                    orient="auto-start-reverse"
                   >
-                    <div className="fleet-runtime-header">
-                      <span aria-hidden="true">▣</span>
-                      {stage === 3 ? runtimes[index] : thread.name}
-                      <span className="fleet-runtime-status">
-                        {active ? '●' : done ? '✓' : '○'}
-                      </span>
+                    <path d="m2 2 6 3-6 3" fill="none" stroke="#7cc9ff" />
+                  </marker>
+                </defs>
+                {[
+                  'M620 190H780',
+                  'M620 610H780',
+                  'M350 360V440',
+                  'M1050 360V440',
+                  'M620 320L780 480',
+                  'M780 320L620 480',
+                ].map((path, index) => (
+                  <g key={path}>
+                    <path
+                      className="fleet-link fleet-exchange"
+                      d={path}
+                      markerEnd="url(#fleet-arrow)"
+                    />
+                    {running && (
+                      <>
+                        <circle r="4" fill="#7cc9ff">
+                          <animateMotion
+                            dur={`${1.6 + index * 0.25}s`}
+                            repeatCount="indefinite"
+                            path={path}
+                          />
+                        </circle>
+                        <circle r="2.5" fill="#ededed">
+                          <animateMotion
+                            dur={`${2.3 + index * 0.3}s`}
+                            begin="-.9s"
+                            repeatCount="indefinite"
+                            path={path}
+                          />
+                        </circle>
+                      </>
+                    )}
+                  </g>
+                ))}
+              </svg>
+            )}
+            <div className="fleet-runtime-grid">
+              {runtimes.slice(0, runtimeCount).map((runtime, runtimeIndex) => (
+                <div
+                  className="fleet-runtime active"
+                  key={runtime.name}
+                  style={{ animationDelay: `${runtimeIndex * 150}ms` }}
+                >
+                  <div className="fleet-runtime-header">
+                    <div>
+                      <span className="status-dot" />
+                      <strong>{runtime.name}</strong>
+                      <small>{runtime.detail}</small>
                     </div>
-                    <div className="fleet-agent">
-                      <div className="fleet-agent-mark" aria-hidden="true">
-                        ✳
-                      </div>
-                      <strong>{stage === 3 && index === 0 ? 'Lead agent' : thread.agent}</strong>
-                      <small>
-                        {active
-                          ? stage === 3
-                            ? ['Orchestrating', 'Building', 'Reviewing'][index]
-                            : thread.task
-                          : done
-                            ? 'Complete · next thread'
-                            : 'Queued · waiting its turn'}
-                      </small>
-                      <div className="fleet-work-bars" aria-hidden="true">
-                        <i />
-                        <i />
-                        <i />
-                      </div>
-                    </div>
-                    <div className={`fleet-subagents ${stage >= 2 ? 'expanded' : ''}`}>
-                      <span className="fleet-delegation">
-                        ↓ delegate <span>↑ results</span>
-                      </span>
-                      <div>
-                        {thread.children.map((child) => (
-                          <div className="fleet-child" key={child}>
-                            <span aria-hidden="true">↳</span>
-                            <strong>{child}</strong>
-                            <small>Subagent</small>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    <span>
+                      {stage === 0
+                        ? '01'
+                        : stage === 3
+                          ? '16'
+                          : String(fleetSize[stage]).padStart(2, '0')}{' '}
+                      AGENTS
+                    </span>
                   </div>
-                )
-              })}
+                  <div className="fleet-thread-grid">
+                    {(stage === 0 ? [activeThread] : [0, 1, 2, 3]).map((index) => (
+                      <FleetThread
+                        key={index}
+                        index={index}
+                        runtime={runtimeIndex}
+                        stage={stage}
+                        beat={beat}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="fleet-handoff-label">
+              {stage === 3
+                ? 'BRIEF → DELEGATE → BUILD → TEST → REVIEW → HAND OFF'
+                : stage >= 2
+                  ? 'FOCUSED SUBTASKS. SIMULTANEOUS PROGRESS.'
+                  : 'EVERY THREAD HAS ITS OWN CONTEXT.'}
+            </div>
+          </div>
+          <div className="fleet-activity" aria-hidden="true">
+            <div className="fleet-activity-title">
+              <span className="status-dot" /> FLEET ACTIVITY <small>Illustrated</small>
+            </div>
+            <div className="fleet-activity-stream" key={`${stage}-${beat}`}>
+              {Array.from({ length: stage === 0 ? 1 : stage === 1 ? 3 : 5 }, (_, index) => (
+                <div key={index}>
+                  <span>+{String(beat * 3 + index).padStart(2, '0')}s</span>
+                  <strong>
+                    {stage === 3 ? runtimes[index % 4].name : threads[(beat + index) % 4].agent}
+                  </strong>
+                  <span>{activities[(beat + index * 2) % activities.length]}</span>
+                  <i>●</i>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -322,7 +508,6 @@ export function AgentFleet() {
         </div>
         <p className="fleet-note">
           Illustrated workflow · Use the stages to explore at your own pace.
-          <span className="fleet-pan-note"> Swipe the diagram to see the full fleet.</span>
         </p>
       </div>
     </section>

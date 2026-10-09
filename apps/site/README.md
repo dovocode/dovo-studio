@@ -32,7 +32,9 @@ The homepage fleet animation illustrates serial threads, parallel threads in sep
 nested subagents and a clearly labelled coming-soon stage for experimental cross-runtime
 orchestration. Playback starts in view, pauses offscreen or in hidden tabs, and stops after one
 cycle. Visitors can pause, replay or select any stage; reduced-motion settings disable autoplay. The
-wide diagram scrolls inside its panel on small screens and can receive keyboard focus.
+expanded animation grows from 1 to 4 to 16 to 64 illustrated agents, with concurrent activity
+streams and animated handoffs between four runtimes. Runtime groups stack on small screens without
+horizontal scrolling.
 
 Stable and Nightly Linux setup commands are shown directly on the homepage, downloads and docs,
 including service installation, pairing, and the separate Nightly launcher name. Commands use the

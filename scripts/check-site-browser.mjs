@@ -193,10 +193,12 @@ try {
   await page.waitForTimeout(1100)
   assert.equal(await fleet.locator('.fleet-event').textContent(), pausedEvent)
   await fleet.getByRole('button', { name: '02 Parallel threads' }).click()
-  assert.equal(await fleet.locator('.fleet-runtime.active').count(), 3)
+  assert.equal(await fleet.locator('.fleet-agent').count(), 4)
+  assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '4')
   await fleet.getByRole('button', { name: '03 Threads + subagents' }).click()
-  assert.equal(await fleet.locator('.fleet-subagents.expanded').count(), 3)
-  assert.equal(await fleet.locator('.fleet-child:visible').count(), 6)
+  assert.equal(await fleet.locator('.fleet-subagents.expanded').count(), 4)
+  assert.equal(await fleet.locator('.fleet-child:visible').count(), 12)
+  assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '16')
   await fleet.getByRole('button', { name: /04 Connected runtimes/ }).click()
   assert.equal(await fleet.getAttribute('data-stage'), '3')
   assert.equal(
@@ -210,9 +212,14 @@ try {
     await fleet.locator('.fleet-runtime-header').filter({ hasText: 'Build server' }).isVisible(),
     true,
   )
-  assert.equal(await fleet.locator('.fleet-exchange').count(), 1)
+  assert.equal(await fleet.locator('.fleet-exchange').count(), 6)
+  assert.equal(await fleet.locator('.fleet-runtime').count(), 4)
+  assert.equal(await fleet.locator('.fleet-agent').count(), 16)
+  assert.equal(await fleet.locator('.fleet-child:visible').count(), 48)
+  assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '64')
   await fleet.getByRole('button', { name: 'Play animation', exact: true }).click()
   await fleet.getByRole('button', { name: 'Pause animation', exact: true }).waitFor()
+  assert.equal(await fleet.locator('animateMotion').count(), 12)
   await fleet.getByRole('button', { name: 'Play animation', exact: true }).waitFor()
   assert.equal(await fleet.getAttribute('data-stage'), '3')
   assert.match(await fleet.locator('.fleet-event').textContent(), /You review what ships/)
@@ -230,6 +237,22 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Pause animation' }).count(), 0)
   await page.getByRole('button', { name: /04 Connected runtimes/ }).click()
   assert.equal(await page.locator('.fleet').getAttribute('data-stage'), '3')
+  for (const width of [320, 375, 768, 1000, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    assert.equal(await page.locator('.fleet-agent').count(), 16)
+    assert.equal(await page.locator('.fleet-child:visible').count(), 48)
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      true,
+      `Expanded fleet overflows at ${width}px`,
+    )
+    assert.equal(
+      await page
+        .locator('.fleet-canvas')
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+      true,
+    )
+  }
   await page.locator('.fleet').screenshot({ path: '/tmp/dovo-fleet-desktop.png' })
   await page.evaluate(() => document.fonts.ready)
   await page.screenshot({ path: '/tmp/dovo-site-desktop.png', fullPage: true })
@@ -243,7 +266,7 @@ try {
   assert.equal(
     await page
       .locator('.fleet-canvas')
-      .evaluate((element) => element.scrollWidth > element.clientWidth),
+      .evaluate((element) => element.scrollWidth <= element.clientWidth),
     true,
   )
   console.log(
