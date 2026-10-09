@@ -8,6 +8,7 @@ const mocks = {
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
   '@dovo/studio-core/state': `export * from '../studio-core/src/runtime/application-state';`,
   '@dovo/studio-core': `
+    export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';
     export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';

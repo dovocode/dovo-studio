@@ -17,6 +17,7 @@ if (screenshotDirectory) mkdirSync(screenshotDirectory, { recursive: true })
 const mocks = {
   '@dovo/studio-core': `
     import {createContext,useContext} from 'react';
+    export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';
     export * from '@dovo/protocol';
     export {providers} from '../studio-core/src/providers';
     export {studioSyntaxTheme} from '../studio-core/src/themes';
